@@ -1,0 +1,197 @@
+<header class="doc-head">
+  <div class="wrap">
+    <span class="logo"><span style="letter-spacing:.04em">RELAY</span><span class="dot"></span></span>
+    <span class="eyebrow" style="margin-left:14px">Trust &amp; legal · content reference · v1.0</span>
+    <h1>Trust &amp; legal — the <em>source-of-truth content</em> behind every page in the footer.</h1>
+    <p class="lede">The marketing site is final. The remaining drafting work lives here: the trust center and the legal pages, gathered on one screen so counsel and security teams can review the whole package before the production cutover.</p>
+    <div class="meta">
+      <div><b>Owner</b>Brand · Relay, Inc.</div>
+      <div><b>Status</b>Draft for counsel review</div>
+      <div><b>Audience</b>Counsel, security, customers&rsquo; review teams</div>
+      <div><b>Cadence</b>Quarterly</div>
+    </div>
+  </div>
+</header>
+
+<nav class="toc"><div class="wrap toc-inner">
+  <a href="#trust">01 Trust center</a>
+  <a href="#legal">02 Legal &amp; policies</a>
+  <a href="#footer-links">03 Footer link map</a>
+</div></nav>
+
+<!-- 01 TRUST CENTER ============================================ -->
+<section class="s" id="trust">
+  <div class="wrap">
+    <div class="s-head">
+      <div class="s-num">— 01</div>
+      <div>
+        <h2>Trust &amp; security center.</h2>
+        <p class="lede">A small, dense site of its own at <code class="mono">/trust</code>. Linked from the footer, every Enterprise touchpoint, and the bottom of every legal page.</p>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3>/trust <span class="pill green">live</span></h3>
+        <p><b>H1.</b> <em>Press once. The receipts are already filed.</em></p>
+        <p>Quiet posture page. Links to all sub-pages. A current state-of-compliance card (SOC 2 Type II in progress, GDPR posture in place, HIPAA roadmap, ISO 27001 planned). Last-updated timestamp.</p>
+      </div>
+      <div class="card">
+        <h3>/trust/security <span class="pill green">live</span></h3>
+        <p><b>Tone.</b> Plain English. No vendor-speak. Four pillars.</p>
+        <p>Defense-in-depth narrative: identity (SSO, SCIM, MFA mandatory for engineers), data (encryption at rest and in transit, per-tenant isolation, no model training on customer data), platform (least privilege, hardware MFA on production access), people (background checks, signed code of conduct, annual security training).</p>
+      </div>
+      <div class="card">
+        <h3>/trust/privacy <span class="pill green">live</span></h3>
+        <p>Companion to the legal Privacy Policy. Plainer language. Diagrams of where data lives. The four customer rights, with self-serve buttons.</p>
+      </div>
+      <div class="card">
+        <h3>/trust/compliance <span class="pill green">live</span></h3>
+        <p>Live status of every framework: SOC 2 Type II (audit firm, period, status), GDPR posture, HIPAA (BAA available on Enterprise), ISO 27001 (planned), DPDP (India-resident handling), CCPA. Auditor reports gated behind NDA request — link to <code class="mono">/company/contact</code>.</p>
+      </div>
+      <div class="card">
+        <h3>/trust/data-handling <span class="pill green">live</span></h3>
+        <p>Lifecycle of session data: capture, retention, anonymization, deletion. Region map. The 90-day default retention and how to change it. The &ldquo;we don&rsquo;t train on your code&rdquo; commitment, in writing.</p>
+      </div>
+      <div class="card">
+        <h3>/trust/subprocessors <span class="pill green">live</span></h3>
+        <p>Live, dated table of cloud, email, billing, observability, and analytics providers — vendor, purpose, region, DPA link per row. Updated quarterly. Single source-of-truth for both <code class="mono">/legal/dpa</code> and <code class="mono">/legal/sub-processors</code>.</p>
+      </div>
+      <div class="card">
+        <h3>/trust/responsible-disclosure <span class="pill green">live</span></h3>
+        <p>Scope, safe harbor, contact (<code class="mono">security@relay.green</code>), PGP key fingerprint, response SLA (5 business days), recognition policy. No bug bounty at launch — under review for 2026.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 02 LEGAL ============================================ -->
+<section class="s" id="legal">
+  <div class="wrap">
+    <div class="s-head">
+      <div class="s-num">— 02</div>
+      <div>
+        <h2>Legal &amp; policies. <em>Drafted.</em></h2>
+        <p class="lede">Anthropic-style: plain English, declarative, scoped narrowly, structured for humans first. Counsel must finalize. Headers and structure are settled; the prose is a working draft.</p>
+      </div>
+    </div>
+
+    <div class="draft-banner">DRAFT — NOT FOR PUBLICATION. All policies require review by Relay&rsquo;s outside counsel before going live. Each page renders a draft banner at the top until counsel sign-off.</div>
+
+    <h3>/legal/privacy-policy</h3>
+    <div class="card">
+      <h4>What we collect</h4>
+      <p>Account information you give us (name, email, billing). Session telemetry produced when you press for an engineer (the AI tool, the project metadata your tool exposes, the diff and conversation handed off, the duration and outcome). Operational logs needed to run the service (auth events, billing events, support tickets). Cookies as listed in our Cookie Notice.</p>
+      <h4>What we don&rsquo;t collect</h4>
+      <p>We do not train models on customer code. We do not sell personal information. We do not track you across the web. We do not retain raw session diffs for longer than 90 days unless you ask us to.</p>
+      <h4>How we use it</h4>
+      <p>To run the service you signed up for; to staff the bench in the regions you build from; to bill you; to investigate abuse and security incidents; to improve our own internal classifiers, in aggregated and anonymized form only.</p>
+      <h4>Who we share it with</h4>
+      <p>The Relay engineer assigned to your session, for the duration of the session and any agreed retainer. Sub-processors listed at <code class="mono">/trust/subprocessors</code> (cloud, email, billing, observability). Authorities, when compelled by valid legal process and within the limits of applicable law.</p>
+      <h4>Where we store it</h4>
+      <p>Primary data residency in the region you select at signup (US, EU, UK, IN, AU). Cross-border transfers governed by Standard Contractual Clauses where applicable; UK Addendum for UK customers; India DPDP-aligned handling for India residents.</p>
+      <h4>Your rights</h4>
+      <p>Access, correction, deletion, portability, restriction, objection, withdrawal of consent. Where you live determines exactly how, but every customer has all of these. We respond to a request within 30 days.</p>
+      <h4>Children</h4>
+      <p>The service is not directed to anyone under 16.</p>
+      <h4>Changes</h4>
+      <p>We will email you 30 days before any material change.</p>
+    </div>
+
+    <h3>/legal/terms-commercial</h3>
+    <div class="card">
+      <h4>What you&rsquo;re buying</h4>
+      <p>The right, for your team, to press for a senior Relay engineer and have one show up. The right to have that engineer pair with your team, modify your code, deploy with your permission, and stay on retainer if you and they agree.</p>
+      <h4>What we promise</h4>
+      <p>Senior, vetted engineers on call during your contracted hours. SOC 2 and GDPR-aligned posture. Customer always owns the code we touch. We will fix bugs we introduce; we will not knowingly ship code that does not work.</p>
+      <h4>What you promise</h4>
+      <p>Pay your invoice on the terms in your order form. Do not press for engineers to do work that violates our Acceptable Use Policy. Don&rsquo;t reverse-engineer the desktop. Tell us if a Relay engineer behaves in a way you wouldn&rsquo;t tolerate from your own.</p>
+      <h4>Confidentiality and IP</h4>
+      <p>Mutual NDA included by default. Customer owns all output of any Relay session. Relay retains rights to general know-how the engineer carries between sessions; we never use one customer&rsquo;s code to do another customer&rsquo;s work.</p>
+      <h4>Term, termination, refunds</h4>
+      <p>Monthly subscriptions auto-renew; cancel any time before the next billing date. Annual subscriptions cancel at term end. Pro-rated refund if we materially fail to deliver. Termination for cause on 30 days&rsquo; notice, either way.</p>
+      <h4>Liability</h4>
+      <p>Capped at fees paid in the prior 12 months. Indirect damages excluded. Nothing in this contract limits liability for fraud, willful misconduct, or anything that can&rsquo;t lawfully be limited.</p>
+      <h4>Governing law</h4>
+      <p>For US customers: New York. For EU customers: Netherlands. For UK customers: England and Wales. For India customers: Maharashtra. Disputes go to arbitration first; we do not pursue class action.</p>
+    </div>
+
+    <h3>/legal/terms-consumer</h3>
+    <div class="card">
+      <p>Plain-English version of the commercial terms, for individuals using the Try Relay personal tier. Two pages, eighth-grade reading level. Same headers as the commercial version, shorter prose. Final draft after counsel review.</p>
+    </div>
+
+    <h3>/legal/acceptable-use</h3>
+    <div class="card">
+      <p>You may not press for a Relay engineer to: build malware; build content that sexually exploits minors; build software whose primary purpose is to deceive a person about who they are interacting with; build tools that surveil people without their knowledge; circumvent another company&rsquo;s security; violate a sanctioned-party export control. We reserve the right to decline any session for any reason; we will tell you why.</p>
+    </div>
+
+    <h3>/legal/dpa</h3>
+    <div class="card">
+      <p>Standard Data Processing Addendum. EEA SCCs (Module 2) annexed. UK Addendum annexed. India DPDP-compliant clauses annexed. Sub-processor list at <code class="mono">/trust/subprocessors</code>. Updated quarterly.</p>
+    </div>
+
+    <h3>/legal/sub-processors</h3>
+    <div class="card">
+      <p>Cross-link to <code class="mono">/trust/subprocessors</code> as the live source. The legal page renders the same table inside the Legal IA so customers&rsquo; procurement systems that crawl <code class="mono">/legal/*</code> pick it up.</p>
+    </div>
+
+    <h3>/legal/cookies</h3>
+    <div class="card">
+      <p>A four-category cookie table — strictly necessary, functional, analytics, marketing — with purpose, vendor, retention per row. The Accept Cookies banner on first visit writes the user&rsquo;s choice to <code class="mono">localStorage[&ldquo;relay.cookies&rdquo;]</code>; this page is the canonical reference for what each category contains.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 03 FOOTER LINK MAP ============================================ -->
+<section class="s" id="footer-links">
+  <div class="wrap">
+    <div class="s-head">
+      <div class="s-num">— 03</div>
+      <div>
+        <h2>Footer link map.</h2>
+        <p class="lede">The Trust &amp; legal column in the footer points at exactly these routes. The bottom-strip Privacy / Terms / Cookies links are short-form aliases of the legal pages — same destinations, smaller surface.</p>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr><th>Footer label</th><th>Route</th><th>Notes</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Trust center</td><td><code class="mono">/trust</code></td><td>Index page with state-of-compliance card</td></tr>
+        <tr><td>Security</td><td><code class="mono">/trust/security</code></td><td>Identity · Data · Platform · People</td></tr>
+        <tr><td>Privacy policy</td><td><code class="mono">/legal/privacy-policy</code></td><td>Counsel-final required before going live</td></tr>
+        <tr><td>Terms (Commercial)</td><td><code class="mono">/legal/terms-commercial</code></td><td>For B2B subscriptions and retainer</td></tr>
+        <tr><td>Terms (Consumer)</td><td><code class="mono">/legal/terms-consumer</code></td><td>For Try Relay personal tier</td></tr>
+        <tr><td>Acceptable use</td><td><code class="mono">/legal/acceptable-use</code></td><td>Single paragraph + intro</td></tr>
+        <tr><td>DPA</td><td><code class="mono">/legal/dpa</code></td><td>SCCs · UK addendum · DPDP annex</td></tr>
+        <tr><td>Responsible disclosure</td><td><code class="mono">/trust/responsible-disclosure</code></td><td>security@relay.green · 5-day SLA</td></tr>
+      </tbody>
+    </table>
+
+    <h3 style="margin-top:32px">Bottom-strip aliases</h3>
+    <table>
+      <thead>
+        <tr><th>Label</th><th>Resolves to</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Privacy</td><td><code class="mono">/legal/privacy-policy</code></td></tr>
+        <tr><td>Terms</td><td><code class="mono">/legal/terms-commercial</code></td></tr>
+        <tr><td>Cookies</td><td><code class="mono">/legal/cookies</code></td></tr>
+        <tr><td>Brand Guidelines ↗</td><td><code class="mono">/brand-guidelines</code></td></tr>
+      </tbody>
+    </table>
+
+    <p class="callout">The Accept Cookies banner at <code class="mono">/login</code> uses <code class="mono">localStorage[&ldquo;relay.cookies&rdquo;]</code>. The <em>Cookie Notice</em> link inside the banner deep-links here to <code class="mono">/legal/cookies</code>.</p>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer style="background:var(--ink);color:rgba(244,242,238,.7);padding:32px 0;font-size:13px">
+  <div class="wrap" style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;align-items:center">
+    <span class="logo" style="color:var(--cream)"><span>RELAY</span><span class="dot"></span></span>
+    <span class="mono" style="color:rgba(244,242,238,.5)">Trust &amp; legal · content reference · v1.0 · Living document</span>
+    <a href="/" style="color:#a4c074">← Back to site</a>
+  </div>
+</footer>

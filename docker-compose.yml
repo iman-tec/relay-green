@@ -1,0 +1,31 @@
+# Local development Postgres for Relay.green.
+#
+# Usage:
+#   docker compose up -d            # start postgres on localhost:5432
+#   docker compose down             # stop and keep volume
+#   docker compose down -v          # stop and wipe volume
+#
+# The connection string for .env:
+#   DATABASE_URL="postgresql://relay:relaylocaldev@localhost:5432/relay_green?schema=public"
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: relay-green-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: relay
+      POSTGRES_PASSWORD: relaylocaldev
+      POSTGRES_DB: relay_green
+    ports:
+      - "5432:5432"
+    volumes:
+      - relay-green-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U relay -d relay_green"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  relay-green-pgdata:

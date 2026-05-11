@@ -1,0 +1,906 @@
+// Relay.green data model — see docs/RelayGreen_Technical_Architecture_v1.md §4
+// 28 entities covering identity, organizations, engineers, sessions, billing,
+// hour-bucket ledger, supervisor monitoring, and audit.
+//
+// Keep this file in sync with the Architecture document. On any conflict,
+// docs/RelayGreen_Spec_Decisions_v1.md is canonical.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// =====================================================================
+// ENUMS
+// =====================================================================
+
+enum UserRole {
+  CUSTOMER
+  ENGINEER
+  SUPERVISOR
+  ENTERPRISE_ADMIN
+  INTERNAL_ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  INVITED
+}
+
+enum OrganizationStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum BillingMode {
+  WALLET
+  INDIVIDUAL_CARD
+}
+
+enum DiscountType {
+  NONE
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+enum OrganizationCodeStatus {
+  ACTIVE
+  EXHAUSTED
+  EXPIRED
+  REVOKED
+}
+
+enum WalletStatus {
+  ACTIVE
+  LOW_BALANCE
+  DEPLETED
+  FROZEN
+}
+
+enum EnterpriseUserPolicyStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ProjectStatus {
+  DRAFT
+  ACTIVE
+  LAUNCHED
+  ARCHIVED
+}
+
+enum EngineerStatus {
+  AVAILABLE
+  ASSIGNED
+  IN_ZOOM
+  WRAPPING_UP
+  ON_BREAK
+  OFFLINE
+  TRAINING
+  SHADOWING
+  ESCALATED
+}
+
+enum AvailabilitySource {
+  SHIFT
+  CALENDAR
+  MANUAL
+}
+
+enum SkillType {
+  AI_TOOL
+  TECHNOLOGY
+  PRODUCT_TYPE
+  FUNCTIONAL_EXPERTISE
+  LANGUAGE
+}
+
+enum ProficiencyLevel {
+  FAMILIAR
+  PROFICIENT
+  EXPERT
+}
+
+enum SessionStatus {
+  DRAFT
+  TRIAGE
+  MATCHING
+  ENGINEER_ASSIGNED
+  WAITING_FOR_ZOOM
+  LIVE
+  PAUSED
+  ESCALATED
+  ENDING
+  CLOSED
+  MEMORY_UPDATE
+  REVIEWED
+  BILLED
+  ARCHIVED
+}
+
+enum BillingStatus {
+  PENDING
+  PROCESSING
+  BILLED
+  FAILED
+  REFUNDED
+}
+
+enum TriageSource {
+  CUSTOMER
+  AI
+  SYSTEM
+}
+
+enum ArtifactType {
+  FILE
+  IMAGE
+  LINK
+  TEXT_NOTE
+  VOICE_NOTE
+  CODE_SNIPPET
+  LOG
+}
+
+enum ZoomMeetingStatus {
+  CREATED
+  ACTIVE
+  ENDED
+  FAILED
+}
+
+enum RemoteControlStatus {
+  REQUESTED
+  GRANTED
+  REVOKED
+  EXPIRED
+}
+
+enum MemoryType {
+  PROJECT
+  SESSION
+  ENGINEER_OBSERVATION
+  FOLLOW_UP
+}
+
+enum MemoryVisibility {
+  CUSTOMER_SAFE
+  ENGINEER_CONTEXT
+  INTERNAL_ONLY
+}
+
+enum NoteVisibility {
+  PRIVATE_ENGINEER
+  INTERNAL_AUTHORIZED
+}
+
+enum SupervisorEventType {
+  AI_RISK_FLAG
+  PRIVATE_MESSAGE
+  JOIN_REQUESTED
+  JOINED
+  TAKEOVER
+  SPECIALIST_ASSIGNED
+  CREDIT_APPROVED
+  ENGINEER_REMOVED
+}
+
+enum SupervisorNotePurpose {
+  TRAINING
+  PERFORMANCE
+  INCIDENT
+  GENERAL
+}
+
+enum BillingSource {
+  INDIVIDUAL_CARD
+  ENTERPRISE_WALLET
+  INVOICE
+  FREE_TRIAL
+}
+
+enum CreditStatus {
+  PENDING
+  APPROVED
+  APPLIED
+  REJECTED
+}
+
+enum EngagementType {
+  STUCK
+  LAUNCH
+  MAINTAIN
+}
+
+enum BucketStatus {
+  ACTIVE
+  EXHAUSTED
+  EXPIRED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum RefundEligibility {
+  FULL
+  PRORATED
+  NONE
+}
+
+enum LedgerEntryType {
+  DRAWDOWN
+  FREE_TRIAL
+  CREDIT_REVERSAL
+  ADJUSTMENT
+}
+
+enum LaunchEstimateStatus {
+  DRAFT
+  RECOMMENDED
+  ACCEPTED
+  EXPIRED
+}
+
+enum VarianceCustomerDecision {
+  PENDING
+  ACCEPTED
+  REJECTED
+  REVERTED_TO_REMAINING_HOURS
+}
+
+enum EmploymentType {
+  GATEWAY_SALARIED
+  EXTERNAL_CONTRACTOR
+}
+
+enum InterruptionType {
+  PLATFORM_FAULT_EMBED
+  ZOOM_OUTAGE
+  ENGINEER_NO_SHOW
+  ENGINEER_LATE_JOIN
+  ENGINEER_VERY_LATE
+  CUSTOMER_DROPOUT
+  CUSTOMER_NETWORK_OUTAGE
+  BOTH_RECONNECTED
+  NEVER_RECOVERED
+}
+
+enum BillingImpact {
+  CREDIT_TO_BUCKET
+  REFUND_REQUESTED
+  NO_IMPACT
+  MINUTES_CONSUMED
+}
+
+enum DetectionSource {
+  PLATFORM_AUTOMATIC
+  ENGINEER_FLAGGED
+  CUSTOMER_REPORTED
+  SUPERVISOR_DETERMINED
+}
+
+enum SupportedCurrency {
+  EUR
+  USD
+  GBP
+  INR
+}
+
+// =====================================================================
+// IDENTITY & ORGANIZATIONS
+// =====================================================================
+
+// 4.1 User — any authenticated person
+model User {
+  id             String     @id @default(cuid())
+  email          String     @unique
+  displayName    String
+  role           UserRole
+  status         UserStatus @default(INVITED)
+  organizationId String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  organization Organization? @relation(fields: [organizationId], references: [id])
+
+  // Reverse relations
+  customerProjects        Project[]               @relation("ProjectCustomer")
+  customerSessions        SupportSession[]        @relation("SessionCustomer")
+  artifactsUploaded       SessionArtifact[]
+  remoteControlGrants     RemoteControlGrant[]    @relation("RemoteControlCustomer")
+  engineerProfile         EngineerProfile?
+  enterpriseUserPolicy    EnterpriseUserPolicy?
+  customerHourBuckets     HourBucket[]
+  customerLedgerEntries   HourLedgerEntry[]
+  customerBillingRecords  BillingRecord[]
+  customerCredits         CreditRecord[]          @relation("CreditCustomer")
+  approvedCredits         CreditRecord[]          @relation("CreditApprover")
+  launchEstimatesAsCust   LaunchEstimate[]        @relation("LaunchEstimateCustomer")
+  supervisedEvents        SupervisorEvent[]
+  supervisorNotesAuthored SupervisorNote[]
+  auditLogs               AuditLog[]
+  varianceReviews         LaunchVarianceRequest[] @relation("VarianceReviewer")
+  estimateApprovals       LaunchEstimate[]        @relation("EstimateSupervisor")
+
+  @@index([organizationId])
+  @@index([role, status])
+}
+
+// 4.2 Organization — enterprise customer account
+model Organization {
+  id                 String             @id @default(cuid())
+  name               String
+  primaryDomain      String?            @unique
+  status             OrganizationStatus @default(ACTIVE)
+  defaultBillingMode BillingMode        @default(INDIVIDUAL_CARD)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  users          User[]
+  codes          OrganizationCode[]
+  wallet         EnterpriseWallet?
+  policies       EnterpriseUserPolicy[]
+  projects       Project[]
+  sessions       SupportSession[]
+  hourBuckets    HourBucket[]
+  billingRecords BillingRecord[]
+}
+
+// 4.3 OrganizationCode — enterprise onboarding, accounting, access, discounts
+model OrganizationCode {
+  id             String                 @id @default(cuid())
+  organizationId String
+  code           String                 @unique
+  status         OrganizationCodeStatus @default(ACTIVE)
+  discountType   DiscountType           @default(NONE)
+  discountValue  Decimal?               @db.Decimal(10, 4)
+  validFrom      DateTime?
+  validTo        DateTime?
+  maxUsers       Int?
+  metadata       Json?
+  createdAt      DateTime               @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId, status])
+}
+
+// 4.4 EnterpriseWallet — central company balance / invoiced credit
+model EnterpriseWallet {
+  id                  String            @id @default(cuid())
+  organizationId      String            @unique
+  balanceAmount       Decimal           @default(0) @db.Decimal(12, 2)
+  currency            SupportedCurrency
+  lowBalanceThreshold Decimal?          @db.Decimal(12, 2)
+  status              WalletStatus      @default(ACTIVE)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+}
+
+// 4.5 EnterpriseUserPolicy — wallet vs individual-card per user
+model EnterpriseUserPolicy {
+  id                 String                     @id @default(cuid())
+  organizationId     String
+  userId             String                     @unique
+  billingMode        BillingMode                @default(INDIVIDUAL_CARD)
+  monthlyLimitAmount Decimal?                   @db.Decimal(12, 2)
+  projectLimitAmount Decimal?                   @db.Decimal(12, 2)
+  status             EnterpriseUserPolicyStatus @default(ACTIVE)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  user         User         @relation(fields: [userId], references: [id])
+
+  @@index([organizationId])
+}
+
+// =====================================================================
+// PROJECT
+// =====================================================================
+
+// 4.6 Project — customer-owned work area
+model Project {
+  id             String        @id @default(cuid())
+  customerId     String
+  organizationId String?
+  name           String
+  description    String?
+  aiToolTrack    String?
+  productType    String?
+  techStack      Json?
+  status         ProjectStatus @default(DRAFT)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  customer        User             @relation("ProjectCustomer", fields: [customerId], references: [id])
+  organization    Organization?    @relation(fields: [organizationId], references: [id])
+  sessions        SupportSession[]
+  memories        SessionMemory[]
+  hourBuckets     HourBucket[]     @relation("ProjectLaunchBuckets")
+  launchEstimates LaunchEstimate[]
+
+  @@index([customerId, status])
+  @@index([organizationId])
+}
+
+// =====================================================================
+// ENGINEER
+// =====================================================================
+
+// 4.7 EngineerProfile — platform-controlled, customer-facing alias
+model EngineerProfile {
+  id              String         @id @default(cuid())
+  userId          String         @unique
+  aliasName       String
+  avatarUrl       String?
+  bioSummary      String?
+  languages       String[]       @default([])
+  timezone        String?
+  status          EngineerStatus @default(OFFLINE)
+  supervisorId    String?
+  isExternal      Boolean        @default(false)
+  customerVisible Boolean        @default(true)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  user                  User                         @relation(fields: [userId], references: [id])
+  skills                EngineerSkill[]
+  availability          EngineerAvailability[]
+  compensation          EngineerCompensationProfile?
+  supportSessions       SupportSession[]
+  remoteControlGrants   RemoteControlGrant[]
+  engineerNotes         EngineerNote[]
+  customerFollowUps     CustomerFollowUp[]
+  supervisorNotesAbout  SupervisorNote[]             @relation("SupervisorNoteAboutEngineer")
+  ledgerEntries         HourLedgerEntry[]
+  launchEstimates       LaunchEstimate[]
+  varianceRequests      LaunchVarianceRequest[]
+
+  @@index([status])
+  @@index([supervisorId])
+}
+
+// 4.8 EngineerSkill — searchable skill profile
+model EngineerSkill {
+  id                String           @id @default(cuid())
+  engineerProfileId String
+  skillType         SkillType
+  skillName         String
+  proficiency       ProficiencyLevel @default(FAMILIAR)
+  verified          Boolean          @default(false)
+
+  engineerProfile EngineerProfile @relation(fields: [engineerProfileId], references: [id])
+
+  @@unique([engineerProfileId, skillType, skillName])
+  @@index([skillType, skillName])
+}
+
+// 4.9 EngineerAvailability — calendar / shift availability
+model EngineerAvailability {
+  id                String             @id @default(cuid())
+  engineerProfileId String
+  status            EngineerStatus     @default(AVAILABLE)
+  startsAt          DateTime
+  endsAt            DateTime
+  source            AvailabilitySource @default(SHIFT)
+
+  engineerProfile EngineerProfile @relation(fields: [engineerProfileId], references: [id])
+
+  @@index([engineerProfileId, startsAt])
+}
+
+// 4.27 EngineerCompensationProfile — per-engineer comp parameters
+model EngineerCompensationProfile {
+  id                           String            @id @default(cuid())
+  engineerProfileId            String            @unique
+  employmentType               EmploymentType    @default(GATEWAY_SALARIED)
+  bonusPercentage              Decimal?          @default(3.00) @db.Decimal(5, 2)
+  externalCommissionPercentage Decimal?          @db.Decimal(5, 2)
+  paymentCurrency              SupportedCurrency
+  payrollVendor                String
+  stripeConnectAccountId       String?
+  effectiveFrom                DateTime          @default(now())
+  effectiveTo                  DateTime?
+  overrideReason               String?
+  overrideExpiresAt            DateTime?
+  createdAt                    DateTime          @default(now())
+  updatedAt                    DateTime          @updatedAt
+
+  engineerProfile EngineerProfile @relation(fields: [engineerProfileId], references: [id])
+}
+
+// =====================================================================
+// SESSION
+// =====================================================================
+
+// 4.10 SupportSession — main session object
+model SupportSession {
+  id                        String            @id @default(cuid())
+  customerId                String
+  projectId                 String?
+  organizationId            String?
+  engineerProfileId         String?
+  supervisorId              String?
+  status                    SessionStatus     @default(DRAFT)
+  aiToolTrack               String?
+  productType               String?
+  issueType                 String?
+  functionalExpertiseNeeded String?
+  urgency                   String?
+  language                  String            @default("en")
+  startedAt                 DateTime?
+  engineerJoinedAt          DateTime?
+  endedAt                   DateTime?
+  freeTrialApplied          Boolean           @default(false)
+  paidStartedAt             DateTime?
+  billableMinutes           Decimal           @default(0) @db.Decimal(8, 2)
+  totalAmount               Decimal           @default(0) @db.Decimal(12, 2)
+  currency                  SupportedCurrency
+  billingStatus             BillingStatus     @default(PENDING)
+  createdAt                 DateTime          @default(now())
+  updatedAt                 DateTime          @updatedAt
+
+  customer          User                  @relation("SessionCustomer", fields: [customerId], references: [id])
+  project           Project?              @relation(fields: [projectId], references: [id])
+  organization      Organization?         @relation(fields: [organizationId], references: [id])
+  engineer          EngineerProfile?      @relation(fields: [engineerProfileId], references: [id])
+  triageResponses   TriageResponse[]
+  artifacts         SessionArtifact[]
+  zoomMeeting       ZoomMeeting?
+  remoteControl     RemoteControlGrant[]
+  memories          SessionMemory[]
+  engineerNotes     EngineerNote[]
+  customerFollowUps CustomerFollowUp[]
+  supervisorEvents  SupervisorEvent[]
+  supervisorNotes   SupervisorNote[]
+  billingRecord     BillingRecord?
+  creditRecords     CreditRecord[]
+  ledgerEntries     HourLedgerEntry[]
+  interruptions     SessionInterruption[]
+
+  @@index([customerId, status])
+  @@index([engineerProfileId, status])
+  @@index([organizationId])
+}
+
+// 4.11 TriageResponse — pre-match and waiting-room context
+model TriageResponse {
+  id        String       @id @default(cuid())
+  sessionId String
+  question  String
+  answer    String
+  source    TriageSource @default(CUSTOMER)
+  createdAt DateTime     @default(now())
+
+  session SupportSession @relation(fields: [sessionId], references: [id])
+
+  @@index([sessionId])
+}
+
+// 4.12 SessionArtifact — files, links, screenshots, voice notes, text notes
+model SessionArtifact {
+  id               String       @id @default(cuid())
+  sessionId        String
+  uploadedByUserId String
+  artifactType     ArtifactType
+  url              String?
+  textContent      String?
+  metadata         Json?
+  createdAt        DateTime     @default(now())
+
+  session    SupportSession @relation(fields: [sessionId], references: [id])
+  uploadedBy User           @relation(fields: [uploadedByUserId], references: [id])
+
+  @@index([sessionId])
+}
+
+// 4.13 ZoomMeeting — Zoom Video SDK meeting metadata
+model ZoomMeeting {
+  id                         String            @id @default(cuid())
+  sessionId                  String            @unique
+  provider                   String            @default("zoom-video-sdk")
+  providerMeetingId          String
+  joinUrlCustomer            String
+  joinUrlEngineer            String
+  recordingEnabled           Boolean           @default(false)
+  recordingConsentCustomerAt DateTime?
+  recordingConsentEngineerAt DateTime?
+  recordingUrl               String?
+  status                     ZoomMeetingStatus @default(CREATED)
+
+  session SupportSession @relation(fields: [sessionId], references: [id])
+}
+
+// 4.14 RemoteControlGrant — explicit consent for remote control
+model RemoteControlGrant {
+  id                String              @id @default(cuid())
+  sessionId         String
+  customerId        String
+  engineerProfileId String
+  grantedAt         DateTime            @default(now())
+  revokedAt         DateTime?
+  status            RemoteControlStatus @default(REQUESTED)
+
+  session         SupportSession  @relation(fields: [sessionId], references: [id])
+  customer        User            @relation("RemoteControlCustomer", fields: [customerId], references: [id])
+  engineerProfile EngineerProfile @relation(fields: [engineerProfileId], references: [id])
+
+  @@index([sessionId])
+}
+
+// 4.15 SessionMemory — project / session continuity record
+model SessionMemory {
+  id         String           @id @default(cuid())
+  projectId  String?
+  sessionId  String
+  memoryType MemoryType
+  content    String
+  visibility MemoryVisibility @default(ENGINEER_CONTEXT)
+  createdBy  String
+  createdAt  DateTime         @default(now())
+
+  project Project?       @relation(fields: [projectId], references: [id])
+  session SupportSession @relation(fields: [sessionId], references: [id])
+
+  @@index([sessionId])
+  @@index([projectId])
+}
+
+// 4.16 EngineerNote — private engineer notes
+model EngineerNote {
+  id                String         @id @default(cuid())
+  sessionId         String
+  engineerProfileId String
+  note              String
+  visibility        NoteVisibility @default(PRIVATE_ENGINEER)
+  createdAt         DateTime       @default(now())
+
+  session         SupportSession  @relation(fields: [sessionId], references: [id])
+  engineerProfile EngineerProfile @relation(fields: [engineerProfileId], references: [id])
+
+  @@index([sessionId])
+}
+
+// 4.17 CustomerFollowUp — customer-visible follow-up from engineer
+model CustomerFollowUp {
+  id                String   @id @default(cuid())
+  sessionId         String
+  engineerProfileId String
+  content           String
+  attachmentUrl     String?
+  createdAt         DateTime @default(now())
+
+  session         SupportSession  @relation(fields: [sessionId], references: [id])
+  engineerProfile EngineerProfile @relation(fields: [engineerProfileId], references: [id])
+
+  @@index([sessionId])
+}
+
+// 4.18 SupervisorEvent — supervisor intervention record
+model SupervisorEvent {
+  id           String              @id @default(cuid())
+  sessionId    String
+  supervisorId String
+  eventType    SupervisorEventType
+  details      Json?
+  createdAt    DateTime            @default(now())
+
+  session    SupportSession @relation(fields: [sessionId], references: [id])
+  supervisor User           @relation(fields: [supervisorId], references: [id])
+
+  @@index([sessionId])
+  @@index([supervisorId])
+}
+
+// 4.19 SupervisorNote — internal supervisor note
+model SupervisorNote {
+  id                String                @id @default(cuid())
+  sessionId         String?
+  engineerProfileId String?
+  supervisorId      String
+  note              String
+  purpose           SupervisorNotePurpose @default(GENERAL)
+  createdAt         DateTime              @default(now())
+
+  session         SupportSession?  @relation(fields: [sessionId], references: [id])
+  engineerProfile EngineerProfile? @relation("SupervisorNoteAboutEngineer", fields: [engineerProfileId], references: [id])
+  supervisor      User             @relation(fields: [supervisorId], references: [id])
+
+  @@index([supervisorId])
+  @@index([engineerProfileId])
+}
+
+// =====================================================================
+// BILLING — HOUR-BUCKET LEDGER MODEL
+// =====================================================================
+
+// 4.23 HourBucket — customer's prepaid block of engineer hours
+model HourBucket {
+  id                    String            @id @default(cuid())
+  customerId            String
+  organizationId        String?
+  engagementType        EngagementType
+  bucketSize            Int
+  pricePaid             Decimal           @db.Decimal(12, 2)
+  currency              SupportedCurrency
+  effectiveRatePerHour  Decimal           @db.Decimal(8, 2)
+  hoursRemaining        Decimal           @db.Decimal(8, 2)
+  launchProjectId       String?
+  purchasedAt           DateTime          @default(now())
+  expiresAt             DateTime
+  status                BucketStatus      @default(ACTIVE)
+  stripePaymentIntentId String?
+  refundEligibility     RefundEligibility @default(FULL)
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  customer       User              @relation(fields: [customerId], references: [id])
+  organization   Organization?     @relation(fields: [organizationId], references: [id])
+  launchProject  Project?          @relation("ProjectLaunchBuckets", fields: [launchProjectId], references: [id])
+  ledgerEntries  HourLedgerEntry[]
+  billingRecords BillingRecord[]
+
+  @@index([customerId, status])
+  @@index([engagementType, status])
+}
+
+// 4.24 HourLedgerEntry — per-minute drawdown record
+model HourLedgerEntry {
+  id                String          @id @default(cuid())
+  hourBucketId      String
+  sessionId         String
+  customerId        String
+  engineerProfileId String
+  minutesDrawn      Decimal         @db.Decimal(8, 2)
+  ratePerHour       Decimal         @db.Decimal(8, 2)
+  amountDrawn       Decimal         @db.Decimal(12, 2)
+  entryType         LedgerEntryType @default(DRAWDOWN)
+  createdAt         DateTime        @default(now())
+
+  hourBucket      HourBucket      @relation(fields: [hourBucketId], references: [id])
+  session         SupportSession  @relation(fields: [sessionId], references: [id])
+  customer        User            @relation(fields: [customerId], references: [id])
+  engineerProfile EngineerProfile @relation(fields: [engineerProfileId], references: [id])
+
+  @@index([hourBucketId])
+  @@index([sessionId])
+  @@index([engineerProfileId, createdAt])
+}
+
+// 4.25 LaunchEstimate — engineer's hour estimate for Launch buckets
+model LaunchEstimate {
+  id                         String               @id @default(cuid())
+  customerId                 String
+  launchProjectId            String
+  engineerProfileId          String
+  estimatedHours             Decimal              @db.Decimal(8, 2)
+  bucketRecommendedSize      Int
+  aiCopilotDraftId           String?
+  supervisorApprovalRequired Boolean              @default(false)
+  supervisorApprovedByUserId String?
+  status                     LaunchEstimateStatus @default(DRAFT)
+  createdAt                  DateTime             @default(now())
+  updatedAt                  DateTime             @updatedAt
+
+  customer           User                    @relation("LaunchEstimateCustomer", fields: [customerId], references: [id])
+  launchProject      Project                 @relation(fields: [launchProjectId], references: [id])
+  engineerProfile    EngineerProfile         @relation(fields: [engineerProfileId], references: [id])
+  supervisorApprover User?                   @relation("EstimateSupervisor", fields: [supervisorApprovedByUserId], references: [id])
+  varianceRequests   LaunchVarianceRequest[]
+
+  @@index([customerId, status])
+  @@index([launchProjectId])
+}
+
+// 4.26 LaunchVarianceRequest — engineer requests for additional hours beyond 10%
+model LaunchVarianceRequest {
+  id                         String                   @id @default(cuid())
+  launchEstimateId           String
+  engineerProfileId          String
+  requestedAdditionalHours   Decimal                  @db.Decimal(8, 2)
+  justification              String
+  supervisorReviewedByUserId String?
+  customerDecision           VarianceCustomerDecision @default(PENDING)
+  createdAt                  DateTime                 @default(now())
+  decidedAt                  DateTime?
+
+  launchEstimate     LaunchEstimate  @relation(fields: [launchEstimateId], references: [id])
+  engineerProfile    EngineerProfile @relation(fields: [engineerProfileId], references: [id])
+  supervisorReviewer User?           @relation("VarianceReviewer", fields: [supervisorReviewedByUserId], references: [id])
+
+  @@index([launchEstimateId])
+}
+
+// 4.20 BillingRecord — per-session billing reconciliation
+model BillingRecord {
+  id                 String            @id @default(cuid())
+  sessionId          String            @unique
+  customerId         String
+  organizationId     String?
+  hourBucketId       String?
+  billingSource      BillingSource
+  ratePerHour        Decimal           @db.Decimal(8, 2)
+  currency           SupportedCurrency
+  freeMinutesApplied Decimal           @default(0) @db.Decimal(8, 2)
+  billableMinutes    Decimal           @default(0) @db.Decimal(8, 2)
+  subtotal           Decimal           @default(0) @db.Decimal(12, 2)
+  discountAmount     Decimal           @default(0) @db.Decimal(12, 2)
+  taxAmount          Decimal           @default(0) @db.Decimal(12, 2)
+  total              Decimal           @default(0) @db.Decimal(12, 2)
+  status             BillingStatus     @default(PENDING)
+  createdAt          DateTime          @default(now())
+
+  session      SupportSession @relation(fields: [sessionId], references: [id])
+  customer     User           @relation(fields: [customerId], references: [id])
+  organization Organization?  @relation(fields: [organizationId], references: [id])
+  hourBucket   HourBucket?    @relation(fields: [hourBucketId], references: [id])
+
+  @@index([customerId])
+  @@index([organizationId])
+}
+
+// 4.21 CreditRecord — customer credit issued by supervisor / admin
+model CreditRecord {
+  id               String       @id @default(cuid())
+  sessionId        String
+  customerId       String
+  approvedByUserId String
+  amount           Decimal      @db.Decimal(12, 2)
+  minutes          Decimal      @db.Decimal(8, 2)
+  reason           String
+  status           CreditStatus @default(PENDING)
+  createdAt        DateTime     @default(now())
+
+  session    SupportSession @relation(fields: [sessionId], references: [id])
+  customer   User           @relation("CreditCustomer", fields: [customerId], references: [id])
+  approvedBy User           @relation("CreditApprover", fields: [approvedByUserId], references: [id])
+
+  @@index([customerId])
+  @@index([sessionId])
+}
+
+// =====================================================================
+// SESSION INTERRUPTION & AUDIT
+// =====================================================================
+
+// 4.28 SessionInterruption — dropouts, no-shows, late joins, customer dropouts
+model SessionInterruption {
+  id                               String           @id @default(cuid())
+  sessionId                        String
+  interruptionType                 InterruptionType
+  startedAt                        DateTime         @default(now())
+  endedAt                          DateTime?
+  minutesAffected                  Decimal          @default(0) @db.Decimal(8, 2)
+  billingImpact                    BillingImpact    @default(NO_IMPACT)
+  bucketCreditAmount               Decimal?         @db.Decimal(12, 2)
+  refundRecordId                   String?
+  detectedBy                       DetectionSource  @default(PLATFORM_AUTOMATIC)
+  resolutionNotes                  String?
+  engineerNoShowCounterIncremented Boolean          @default(false)
+  createdAt                        DateTime         @default(now())
+
+  session SupportSession @relation(fields: [sessionId], references: [id])
+
+  @@index([sessionId])
+  @@index([interruptionType, createdAt])
+}
+
+// 4.22 AuditLog — sensitive-operation audit trail
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String
+  action      String
+  entityType  String
+  entityId    String
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  actor User @relation(fields: [actorUserId], references: [id])
+
+  @@index([actorUserId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}

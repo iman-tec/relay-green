@@ -1,0 +1,377 @@
+// Zoom webhook: handles meeting.started / meeting.ended and bills credits per minute.
+// Rate: $30/hr at $0.03/credit  =>  1000 credits/hr  =>  ~16.6667 credits/min.
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const ZOOM_WEBHOOK_SECRET_TOKEN = Deno.env.get("ZOOM_WEBHOOK_SECRET_TOKEN") ?? "";
+
+const CREDITS_PER_MINUTE = 1000 / 60; // ≈16.6667
+
+let _admin: ReturnType<typeof createClient> | null = null;
+function admin() {
+  if (!_admin) _admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  return _admin;
+}
+
+async function hmacHex(secret: string, message: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
+  return Array.from(new Uint8Array(sig))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function verifyZoomSignature(req: Request, body: string): Promise<boolean> {
+  if (!ZOOM_WEBHOOK_SECRET_TOKEN) return true; // allow during local setup
+  const ts = req.headers.get("x-zm-request-timestamp") ?? "";
+  const sig = req.headers.get("x-zm-signature") ?? "";
+  if (!ts || !sig) return false;
+  const message = `v0:${ts}:${body}`;
+  const expected = `v0=${await hmacHex(ZOOM_WEBHOOK_SECRET_TOKEN, message)}`;
+  return expected === sig;
+}
+
+async function handleMeetingStarted(payload: any) {
+  const obj = payload.object ?? {};
+  const zoomId = String(obj.id ?? "");
+  if (!zoomId) return;
+
+  // Find the matching message + request
+  const { data: msg } = await admin()
+    .from("request_messages")
+    .select("id, request_id, sender_id")
+    .eq("meeting_zoom_id", zoomId)
+    .maybeSingle();
+  if (!msg) {
+    console.log("No matching request_message for zoom id", zoomId);
+    return;
+  }
+  const { data: reqRow } = await admin()
+    .from("requests")
+    .select("id, builder_id, assigned_engineer_id")
+    .eq("id", msg.request_id)
+    .maybeSingle();
+  if (!reqRow) return;
+
+  const startedAt = obj.start_time ? new Date(obj.start_time).toISOString() : new Date().toISOString();
+
+  await admin().from("call_sessions").upsert(
+    {
+      zoom_meeting_id: zoomId,
+      request_id: reqRow.id,
+      message_id: msg.id,
+      builder_id: reqRow.builder_id,
+      engineer_id: reqRow.assigned_engineer_id ?? msg.sender_id,
+      started_at: startedAt,
+      status: "in_progress",
+    },
+    { onConflict: "zoom_meeting_id" },
+  );
+}
+
+async function handleMeetingEnded(payload: any) {
+  const obj = payload.object ?? {};
+  const zoomId = String(obj.id ?? "");
+  if (!zoomId) return;
+
+  const { data: session } = await admin()
+    .from("call_sessions")
+    .select("*")
+    .eq("zoom_meeting_id", zoomId)
+    .maybeSingle();
+  if (!session) {
+    console.log("No call_session for zoom id", zoomId);
+    return;
+  }
+  if (session.status === "billed") {
+    console.log("Already billed", zoomId);
+    return;
+  }
+
+  const endedAt = obj.end_time ? new Date(obj.end_time).toISOString() : new Date().toISOString();
+  const startedAt = session.started_at ?? obj.start_time ?? endedAt;
+  const ms = new Date(endedAt).getTime() - new Date(startedAt).getTime();
+  const minutes = Math.max(0, ms / 60000);
+  // Round up to next minute for fairness/predictability
+  const billedMinutes = Math.ceil(minutes);
+  const billedCredits = +(billedMinutes * CREDITS_PER_MINUTE).toFixed(2);
+
+  await admin()
+    .from("call_sessions")
+    .update({
+      ended_at: endedAt,
+      actual_minutes: billedMinutes,
+      billed_credits: billedCredits,
+      status: "completed",
+    })
+    .eq("id", session.id);
+
+  if (billedCredits > 0) {
+    const { error } = await admin().rpc("debit_credits", {
+      _user_id: session.builder_id,
+      _amount: billedCredits,
+      _reason: "call_charge",
+      _request_id: session.request_id,
+      _call_session_id: session.id,
+      _description: `Zoom call (${billedMinutes} min)`,
+      _metadata: { zoom_meeting_id: zoomId, minutes: billedMinutes },
+    });
+    if (error) {
+      console.error("debit_credits failed:", error);
+      return;
+    }
+  }
+
+  // Post a system message in the chat summarizing the call
+  const creditsLabel = Math.round(billedCredits).toLocaleString();
+  const summary = billedMinutes > 0
+    ? `📞 Zoom call ended · ${billedMinutes} min · ${creditsLabel} credits used`
+    : `📞 Zoom call ended`;
+  await admin().from("request_messages").insert({
+    request_id: session.request_id,
+    sender_id: session.engineer_id ?? session.builder_id,
+    body: summary,
+    message_type: "system",
+  });
+
+  await admin().from("call_sessions").update({ status: "billed" }).eq("id", session.id);
+}
+
+Deno.serve(async (req) => {
+  if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
+  const body = await req.text();
+  let payload: any;
+  try {
+    payload = JSON.parse(body);
+  } catch {
+    return new Response("Bad JSON", { status: 400 });
+  }
+
+  // Zoom URL validation challenge (CRC)
+  if (payload.event === "endpoint.url_validation") {
+    const plainToken = payload.payload?.plainToken ?? "";
+    const encryptedToken = await hmacHex(ZOOM_WEBHOOK_SECRET_TOKEN, plainToken);
+    return new Response(
+      JSON.stringify({ plainToken, encryptedToken }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
+  const valid = await verifyZoomSignature(req, body);
+  if (!valid) return new Response("Invalid signature", { status: 401 });
+
+  try {
+    if (payload.event === "meeting.started") {
+      await handleMeetingStarted(payload.payload);
+    } else if (payload.event === "meeting.ended") {
+      await handleMeetingEnded(payload.payload);
+    } else if (payload.event === "recording.completed") {
+      await handleRecordingCompleted(payload.payload);
+    } else if (
+      payload.event === "meeting.summary_completed" ||
+      payload.event === "meeting_summary.completed"
+    ) {
+      await handleSummaryCompleted(payload.payload);
+    } else {
+      console.log("Unhandled zoom event:", payload.event);
+    }
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (e) {
+    console.error("zoom-webhook error:", e);
+    return new Response("Error", { status: 500 });
+  }
+});
+
+async function handleRecordingCompleted(payload: any) {
+  const obj = payload.object ?? {};
+  const zoomId = String(obj.id ?? "");
+  if (!zoomId) return;
+
+  const files: any[] = Array.isArray(obj.recording_files) ? obj.recording_files : [];
+  const videoFile = files.find((f) => f.file_type === "MP4") ?? files[0] ?? {};
+  const playUrl: string | null = obj.share_url ?? videoFile.play_url ?? null;
+  const downloadUrl: string | null = videoFile.download_url ?? null;
+  const password: string | null = obj.password ?? obj.recording_play_passcode ?? null;
+  const duration: number | null = Number.isFinite(obj.duration) ? Number(obj.duration) : null;
+
+  // Path A: anonymous guest sessions
+  const { data: gc } = await admin()
+    .from("guest_calls")
+    .select("id")
+    .eq("zoom_meeting_id", zoomId)
+    .maybeSingle();
+  if (gc) {
+    await admin()
+      .from("guest_calls")
+      .update({ recording_play_url: playUrl, recording_password: password, duration_minutes: duration })
+      .eq("id", gc.id);
+    if (playUrl) {
+      const passLine = password ? `\nPasscode: ${password}` : "";
+      await admin().from("guest_messages").insert({
+        guest_call_id: gc.id,
+        sender_kind: "system",
+        sender_name: "Relay",
+        body: `🎥 Recording available: ${playUrl}${passLine}`,
+      });
+    }
+    return;
+  }
+
+  // Path B: logged-in request flow
+  const { data: msg } = await admin()
+    .from("request_messages")
+    .select("id, request_id")
+    .eq("meeting_zoom_id", zoomId)
+    .maybeSingle();
+  if (!msg) {
+    console.log("No matching record for recording", zoomId);
+    return;
+  }
+  const { data: session } = await admin()
+    .from("call_sessions")
+    .select("id")
+    .eq("zoom_meeting_id", zoomId)
+    .maybeSingle();
+
+  await admin().from("call_recordings").upsert(
+    {
+      call_session_id: session?.id ?? null,
+      request_id: msg.request_id,
+      zoom_meeting_id: zoomId,
+      recording_play_url: playUrl,
+      recording_download_url: downloadUrl,
+      recording_password: password,
+      duration_minutes: duration,
+      recording_files: files,
+    },
+    { onConflict: "zoom_meeting_id" },
+  );
+
+  if (playUrl) {
+    const passLine = password ? `\nPasscode: ${password}` : "";
+    await admin().from("request_messages").insert({
+      request_id: msg.request_id,
+      sender_id: null,
+      body: `🎥 Recording available: ${playUrl}${passLine}`,
+      message_type: "system",
+    });
+  }
+}
+
+async function handleSummaryCompleted(payload: any) {
+  const obj = payload.object ?? payload;
+  const zoomId = String(obj.meeting_id ?? obj.id ?? "");
+  if (!zoomId) return;
+
+  const title: string | null = obj.summary_title ?? obj.meeting_topic ?? null;
+  const overview: string | null = obj.summary_overview ?? obj.summary_content ?? null;
+  const details = obj.summary_details ?? obj.summary ?? null;
+  const nextSteps = obj.next_steps ?? null;
+
+  // Path A: anonymous guest sessions — also refresh rolling brief
+  const { data: gc } = await admin()
+    .from("guest_calls")
+    .select("id, thread_id")
+    .eq("zoom_meeting_id", zoomId)
+    .maybeSingle();
+  if (gc) {
+    await admin()
+      .from("guest_calls")
+      .update({
+        ai_summary_title: title,
+        ai_summary_overview: overview,
+        ai_next_steps: nextSteps,
+      })
+      .eq("id", gc.id);
+
+    const lines: string[] = ["🤖 AI Companion summary"];
+    if (title) lines.push(title);
+    if (overview) lines.push(overview);
+    if (Array.isArray(nextSteps) && nextSteps.length > 0) {
+      lines.push("\nNext steps:");
+      for (const step of nextSteps) {
+        const text = typeof step === "string" ? step : step?.text ?? step?.description;
+        if (text) lines.push(`• ${text}`);
+      }
+    }
+    await admin().from("guest_messages").insert({
+      guest_call_id: gc.id,
+      sender_kind: "system",
+      sender_name: "Relay",
+      body: lines.join("\n"),
+    });
+
+    if (gc.thread_id) {
+      try {
+        await fetch(`${SUPABASE_URL}/functions/v1/regenerate-guest-brief`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          },
+          body: JSON.stringify({ thread_id: gc.thread_id }),
+        });
+      } catch (e) {
+        console.error("brief refresh failed:", e);
+      }
+    }
+    return;
+  }
+
+  // Path B: logged-in request flow
+  const { data: msg } = await admin()
+    .from("request_messages")
+    .select("id, request_id")
+    .eq("meeting_zoom_id", zoomId)
+    .maybeSingle();
+  if (!msg) {
+    console.log("No matching record for summary", zoomId);
+    return;
+  }
+  const { data: session } = await admin()
+    .from("call_sessions")
+    .select("id")
+    .eq("zoom_meeting_id", zoomId)
+    .maybeSingle();
+
+  await admin().from("call_recordings").upsert(
+    {
+      call_session_id: session?.id ?? null,
+      request_id: msg.request_id,
+      zoom_meeting_id: zoomId,
+      ai_summary_title: title,
+      ai_summary_overview: overview,
+      ai_summary_details: details,
+      ai_next_steps: nextSteps,
+    },
+    { onConflict: "zoom_meeting_id" },
+  );
+
+  const lines: string[] = ["🤖 **AI Companion summary**"];
+  if (title) lines.push(`**${title}**`);
+  if (overview) lines.push(overview);
+  if (Array.isArray(nextSteps) && nextSteps.length > 0) {
+    lines.push("\n**Next steps:**");
+    for (const step of nextSteps) {
+      const text = typeof step === "string" ? step : step?.text ?? step?.description;
+      if (text) lines.push(`• ${text}`);
+    }
+  }
+  await admin().from("request_messages").insert({
+    request_id: msg.request_id,
+    sender_id: null,
+    body: lines.join("\n"),
+    message_type: "system",
+  });
+}
+

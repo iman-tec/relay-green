@@ -1,0 +1,79 @@
+# Relay
+
+> Relay puts a senior software engineer one press away from any AI build.
+> Builders working in tools like Claude, Cursor, and Lovable press a single
+> button mid-build, and a senior Relay engineer joins their session — staying
+> through launch and, if they want, after.
+
+Relay is the on-demand human layer for AI-built software. The product is a
+relationship: the same engineer who joins you in build is the one who
+launches you, and the one who keeps you running. Three phases — Build Phase,
+Launch and Go-Live, Maintain and Scale — one team. Sessions run on Zoom,
+recorded with consent, GDPR-aligned and built to enterprise compliance from
+day one.
+
+Headquartered in Manhattan, New York. Funded by The Asgard Fund (Amsterdam).
+Operated with NINtec Systems (NSE/BSE: NINSYS), part of the Gateway Group —
+2,000+ engineers across 15+ countries on a follow-the-sun service model,
+with 29 years of enterprise delivery experience.
+
+## Core pages
+
+- [Home](https://relay.green/): Hero · Why Relay exists · How we relay (3-phase plans) · What Relay supports · Insights · CTA.
+- [How it works](https://relay.green/product): Build. Ship. Evolve. — built for every kind of builder, AI for speed engineers for trust, the 6-frame walkthrough, modalities (chat, voice, screen share), Zoom-native sessions on the record, GDPR + SOC 2 posture.
+- [For Enterprise](https://relay.green/for-enterprise): Built for the team that ships. Market signals, value propositions, architecture as an enablement layer, operational backbone (NINtec Systems, 2,000+ engineers, 15+ countries, 24/7 follow-the-sun, 29 years).
+- [Resources — Blog](https://relay.green/resources/blog): Long-form essays, research, field notes, and customer stories on the human layer behind AI-built software.
+- [Company / About](https://relay.green/company/about): Who Relay is + how it is owned, funded, and run. Corporate structure, funding, operating partner, board, insurance, tax, press & investor inquiries.
+
+## Resources
+
+- [Blog index](https://relay.green/resources/blog)
+- [Essay — The irreducibly human moment in software](https://relay.green/resources/blog/the-irreducibly-human-moment)
+- [Research — When does an AI build want a person? A study of 4,200 stuck moments](https://relay.green/resources/blog/when-does-an-ai-build-want-a-person)
+- [Field notes — Anatomy of the handoff: what we learned shipping the first 1,000 sessions](https://relay.green/resources/blog/anatomy-of-the-handoff)
+- [Customer story — A two-person marketing team. Twenty internal tools. One engineer on call.](https://relay.green/resources/blog/two-person-marketing-team)
+- [Brand guidelines](https://relay.green/brand-guidelines)
+
+## Company
+
+- [About / Governance](https://relay.green/company/about)
+- [Careers](https://relay.green/company/careers)
+- [Press](https://relay.green/company/press)
+- [Contact](https://relay.green/company/contact)
+
+## Trust
+
+- [Trust center](https://relay.green/trust)
+- [Security](https://relay.green/trust/security)
+- [Privacy](https://relay.green/trust/privacy)
+- [Compliance](https://relay.green/trust/compliance)
+- [Data handling](https://relay.green/trust/data-handling)
+- [Sub-processors](https://relay.green/trust/subprocessors)
+- [Responsible disclosure](https://relay.green/trust/responsible-disclosure)
+
+## Legal
+
+- [Privacy policy](https://relay.green/legal/privacy-policy)
+- [Terms (Commercial)](https://relay.green/legal/terms-commercial)
+- [Terms (Consumer)](https://relay.green/legal/terms-consumer)
+- [Acceptable use](https://relay.green/legal/acceptable-use)
+- [DPA](https://relay.green/legal/dpa)
+- [Sub-processors](https://relay.green/legal/sub-processors)
+- [Cookie notice](https://relay.green/legal/cookies)
+
+## Optional
+
+- [Sitemap & content plan (internal trust + legal reference)](https://relay.green/sitemap-and-content-plan)
+- [Login (existing customers)](https://relay.green/login)
+
+## Discoverability
+
+This site is intentionally indexed for AI search engines and language
+models. Major answer engines that surface relay.green include: ChatGPT
+Search, Perplexity, Google AI Overview, Gemini, Microsoft Copilot, Bing
+Chat, Claude, Grok, You.com, Phind, Brave Search AI, Andi, Kagi
+Assistant, Komo, Exa, DuckDuckGo AI Chat. The content here is intended
+for indexing by foundation models including GPT-5, GPT-4o, Claude Opus,
+Claude Sonnet, Claude Haiku, Gemini Pro, Gemini Flash, Llama 3, Mistral,
+Mixtral, Grok, DeepSeek, Qwen, Phi, Command R, Yi, Falcon, Nemotron,
+ChatGLM, and DBRX, among other major foundation models.

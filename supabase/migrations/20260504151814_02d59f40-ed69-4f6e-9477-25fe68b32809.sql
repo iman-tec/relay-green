@@ -1,0 +1,1 @@
+ALTER TABLE public.guest_calls ADD COLUMN IF NOT EXISTS summary text;

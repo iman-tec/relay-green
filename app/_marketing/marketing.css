@@ -1,0 +1,1556 @@
+/*
+ * Scoped styles for the Relay marketing site.
+ *
+ * Ported from project/relay-styles.css. All rules either target .mk-root
+ * tokens or .r-* class selectors that exist only within this surface, so
+ * styles do not leak to dashboards.
+ */
+
+.mk-root {
+  /* Cream / ink scale — the editorial backbone */
+  --cream: #f4f2ee;
+  --cream-2: #ece8df;
+  --cream-3: #e3ddd0;
+  --paper: #faf8f4;
+  --ink: #141413;
+  --ink-2: #2a2a27;
+  --ink-soft: #5b5b54;
+  --ink-mute: #8c8a82;
+  --rule: #d8d3c6;
+  --rule-soft: #e6e1d3;
+
+  /* Brand greens — Moss. Considered, alive, grounded. */
+  --green-deep: #3f5c2e;
+  --green: #4f6b3a;
+  --green-bright: #4f6b3a;
+  --green-glow: rgba(79, 107, 58, 0.22);
+  --green-tint: #eaece0;
+  --green-wash: #f3f4ec;
+
+  /* Supporting accents */
+  --clay: #cc785c;
+  --clay-soft: #e8c8b8;
+  --slate: #2f3a3f;
+
+  /* Type — bound to next/font CSS variables exposed by app/layout.tsx */
+  --font-display: var(--font-fraunces), "Newsreader", "Source Serif 4", serif;
+  --font-sans: var(--font-instrument-sans), -apple-system, BlinkMacSystemFont,
+    "Segoe UI", system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Scale */
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 15px;
+  --text-md: 17px;
+  --text-lg: 20px;
+  --text-xl: 26px;
+  --text-2xl: 34px;
+  --text-3xl: 46px;
+  --text-4xl: 64px;
+  --text-5xl: 88px;
+
+  /* Layout */
+  --maxw: 1240px;
+  --pad: 24px;
+  --radius: 4px;
+  --radius-lg: 14px;
+
+  /* Motion */
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  background: var(--cream);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  min-height: 100vh;
+}
+
+.mk-root *,
+.mk-root *::before,
+.mk-root *::after {
+  box-sizing: border-box;
+}
+
+.mk-root a {
+  color: inherit;
+  text-decoration: none;
+}
+.mk-root img {
+  max-width: 100%;
+  display: block;
+}
+.mk-root button {
+  font: inherit;
+  cursor: pointer;
+}
+
+/* ============ Layout primitives ============ */
+.mk-root .r-wrap {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 0 var(--pad);
+}
+.mk-root .r-wrap-narrow {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 0 var(--pad);
+}
+
+.mk-root .r-section {
+  padding: 96px 0;
+  border-top: 1px solid var(--rule);
+}
+.mk-root .r-section-tight {
+  padding: 56px 0;
+}
+
+.mk-root .r-eyebrow {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.mk-root .r-eyebrow::before {
+  content: "";
+  display: inline-block;
+  width: 18px;
+  height: 1px;
+  background: var(--ink-soft);
+}
+
+.mk-root .r-num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-feature-settings: "tnum";
+  color: var(--ink-mute);
+  letter-spacing: 0.06em;
+}
+
+/* ============ Type ============ */
+.mk-root .r-h-display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(44px, 6.6vw, 96px);
+  line-height: 1.02;
+  letter-spacing: -0.022em;
+  color: var(--ink);
+  margin: 0;
+}
+.mk-root .r-h-display em {
+  font-style: italic;
+  font-weight: 400;
+  color: var(--green);
+}
+.mk-root .r-h-1 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(36px, 4.6vw, 64px);
+  line-height: 1.05;
+  letter-spacing: -0.018em;
+  margin: 0 0 24px;
+}
+.mk-root .r-h-1 em {
+  font-style: italic;
+  color: var(--ink);
+}
+.mk-root .r-h-2 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(28px, 3vw, 42px);
+  line-height: 1.1;
+  letter-spacing: -0.014em;
+  margin: 0 0 18px;
+}
+.mk-root .r-h-2 em {
+  font-style: italic;
+  color: var(--ink);
+}
+.mk-root .r-h-3 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(22px, 2.1vw, 28px);
+  line-height: 1.18;
+  letter-spacing: -0.01em;
+  margin: 0 0 12px;
+}
+.mk-root .r-lede {
+  font-family: var(--font-display);
+  font-weight: 300;
+  font-size: clamp(19px, 1.6vw, 24px);
+  line-height: 1.4;
+  letter-spacing: -0.005em;
+  color: var(--ink-2);
+  max-width: 64ch;
+}
+.mk-root .r-body {
+  font-size: var(--text-md);
+  line-height: 1.6;
+  color: var(--ink-2);
+  max-width: 64ch;
+}
+.mk-root .r-small {
+  font-size: var(--text-sm);
+  color: var(--ink-soft);
+  line-height: 1.55;
+}
+
+/* ============ Buttons ============ */
+.mk-root .r-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 18px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  transition: all 0.18s var(--ease);
+  cursor: pointer;
+  background: transparent;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.mk-root .r-btn-ink {
+  background: var(--ink);
+  color: var(--cream);
+  border-color: var(--ink);
+}
+.mk-root .r-btn-ink:hover {
+  background: var(--ink-2);
+  transform: translateY(-1px);
+}
+.mk-root .r-btn-green {
+  background: var(--green);
+  color: white;
+  border-color: var(--green);
+}
+.mk-root .r-btn-green:hover {
+  background: var(--green-deep);
+}
+.mk-root .r-btn-ghost {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--rule);
+}
+.mk-root .r-btn-ghost:hover {
+  border-color: var(--ink);
+  background: rgba(0, 0, 0, 0.02);
+}
+.mk-root .r-btn-link {
+  height: auto;
+  padding: 4px 0;
+  border-radius: 0;
+  color: var(--ink);
+  border-bottom: 1px solid var(--ink);
+  background: transparent;
+  font-weight: 500;
+}
+.mk-root .r-btn-link:hover {
+  color: var(--green);
+  border-color: var(--green);
+}
+.mk-root .r-btn .arrow {
+  display: inline-block;
+  transition: transform 0.2s var(--ease);
+}
+.mk-root .r-btn:hover .arrow {
+  transform: translateX(3px);
+}
+
+/* ============ The green dot — central brand motif ============ */
+.mk-root .r-dot {
+  position: relative;
+  display: inline-block;
+  width: var(--dot-size, 10px);
+  height: var(--dot-size, 10px);
+  border-radius: 50%;
+  background: var(--green-bright);
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+.mk-root .r-dot::before {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: var(--green-glow);
+  filter: blur(2px);
+  opacity: 0.7;
+  animation: r-dot-pulse 2.4s var(--ease) infinite;
+}
+.mk-root .r-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--green-bright);
+  opacity: 0;
+  animation: r-dot-ring 4s var(--ease) infinite;
+}
+.mk-root .r-dot-static::before,
+.mk-root .r-dot-static::after {
+  display: none;
+}
+
+@keyframes r-dot-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+@keyframes r-dot-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+.mk-root .r-logo-dot {
+  display: inline-block;
+  border-radius: 50%;
+  background: var(--green);
+  vertical-align: baseline;
+  margin-left: 6px;
+  position: relative;
+  top: 0;
+}
+
+/* Brand wordmark dot — animate the green dot on every "RELAY •" lockup
+   sitewide. Subtle pulse: scale 1 → 1.7, opacity 0.5 → 0 over 2.4s.
+   Apply via className="r-mark-dot" on top of an inline-styled or .r-logo-dot
+   span. The dot stays solid; the animation is a fading halo behind it. */
+.mk-root .r-mark-dot,
+.mk-root .r-logo-dot {
+  position: relative;
+}
+.mk-root .r-mark-dot::after,
+.mk-root .r-logo-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--green);
+  opacity: 0.5;
+  animation: r-mark-pulse 2.4s var(--ease) infinite;
+  pointer-events: none;
+  z-index: -1;
+}
+@keyframes r-mark-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.7);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mk-root .r-mark-dot::after,
+  .mk-root .r-logo-dot::after {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+/* ============ Nav ============ */
+.mk-root .r-nav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: rgba(244, 242, 238, 0.85);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.2s ease;
+}
+.mk-root .r-nav.scrolled {
+  border-bottom-color: var(--rule);
+}
+.mk-root .r-nav-inner {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 0 var(--pad);
+  height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+.mk-root .r-logo {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: 22px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--ink);
+}
+.mk-root .r-logo-word {
+  display: inline-block;
+}
+.mk-root .r-logo .r-logo-dot {
+  margin-left: 4px;
+}
+.mk-root .r-nav-links {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+  align-items: center;
+}
+.mk-root .r-nav-link {
+  padding: 8px 14px;
+  font-size: 14px;
+  color: var(--ink-2);
+  border-radius: 999px;
+  transition: all 0.15s ease;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  font-weight: 450;
+}
+.mk-root .r-nav-link:hover {
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.04);
+}
+.mk-root .r-nav-link.active {
+  color: var(--ink);
+}
+.mk-root .r-nav-cta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.mk-root .r-try-relay {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 18px 0 16px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--cream);
+  font-size: 14px;
+  font-weight: 500;
+  border: 1px solid var(--ink);
+  transition: background 0.22s var(--ease), border-color 0.22s var(--ease),
+    transform 0.22s var(--ease), color 0.22s var(--ease);
+  position: relative;
+  cursor: pointer;
+  overflow: visible;
+}
+.mk-root .r-try-relay:hover {
+  background: var(--green-deep);
+  border-color: var(--green-deep);
+  color: var(--cream);
+  transform: translateY(-1px);
+}
+/* Animated border ring on hover — outward pulse echoing the brand "press" */
+.mk-root .r-try-relay::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 999px;
+  border: 1.5px solid var(--green);
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.96);
+  transition: opacity 0.2s ease;
+}
+.mk-root .r-try-relay:hover::after {
+  opacity: 1;
+  animation: r-try-ring 1.6s var(--ease) infinite;
+}
+@keyframes r-try-ring {
+  0% {
+    transform: scale(0.96);
+    opacity: 0.85;
+    border-color: var(--green);
+  }
+  100% {
+    transform: scale(1.14);
+    opacity: 0;
+    border-color: var(--green-bright);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mk-root .r-try-relay::after {
+    animation: none !important;
+  }
+}
+.mk-root .r-try-relay .r-dot {
+  --dot-size: 10px;
+}
+.mk-root .r-try-relay .arrow {
+  font-size: 12px;
+  opacity: 0.7;
+  transition: transform 0.2s var(--ease);
+}
+.mk-root .r-try-relay:hover .arrow {
+  transform: translateX(3px);
+  opacity: 1;
+}
+
+/* ============ Footer ============ */
+.mk-root .r-footer {
+  background: var(--ink);
+  color: var(--cream);
+  padding: 80px 0 32px;
+}
+.mk-root .r-footer .r-wrap {
+  padding-top: 0;
+}
+.mk-root .r-footer-grid {
+  display: grid;
+  grid-template-columns: 1.4fr repeat(4, 1fr);
+  gap: 48px;
+  margin-bottom: 64px;
+}
+.mk-root .r-footer-col h5 {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(244, 242, 238, 0.5);
+  margin: 0 0 16px;
+  font-weight: 500;
+}
+.mk-root .r-footer-col ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.mk-root .r-footer-col li {
+  margin-bottom: 10px;
+}
+.mk-root .r-footer-col a {
+  color: rgba(244, 242, 238, 0.78);
+  font-size: 14px;
+  transition: color 0.15s;
+  cursor: pointer;
+}
+.mk-root .r-footer-col a:hover {
+  color: var(--cream);
+}
+.mk-root .r-footer-bottom {
+  padding-top: 32px;
+  border-top: 1px solid rgba(244, 242, 238, 0.12);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: rgba(244, 242, 238, 0.5);
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.mk-root .r-footer-logo {
+  font-family: var(--font-display);
+  font-size: 28px;
+  color: var(--cream);
+  margin-bottom: 12px;
+  display: inline-flex;
+  align-items: baseline;
+}
+.mk-root .r-footer-tag {
+  font-family: var(--font-display);
+  font-size: 16px;
+  line-height: 1.4;
+  color: rgba(244, 242, 238, 0.78);
+  font-style: italic;
+  max-width: 28ch;
+}
+
+/* ============ Hero ============ */
+.mk-root .r-hero {
+  position: relative;
+  padding: 0;
+  min-height: clamp(640px, 88vh, 980px);
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  isolation: isolate;
+}
+.mk-root .r-hero > .r-wrap {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  padding-top: 80px;
+  padding-bottom: 80px;
+}
+.mk-root .r-hero-content {
+  max-width: 720px;
+}
+.mk-root .r-hero-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+  margin-bottom: 32px;
+}
+.mk-root .r-hero-eyebrow .r-num {
+  color: var(--ink-mute);
+}
+.mk-root .r-hero-cta {
+  display: flex;
+  gap: 12px;
+  margin-top: 40px;
+  flex-wrap: wrap;
+}
+
+/* ============ Spline as hero background ============ */
+.mk-root .r-spline-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: var(--paper);
+  pointer-events: auto;
+  /* New stacking context so the tint layer below blends only with the
+     Spline canvas, never with the cream gradient or the text content. */
+  isolation: isolate;
+}
+.mk-root .r-spline-bg > * {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Moss-green tint over the Spline canvas. mix-blend-mode: color keeps
+   the canvas's lightness (so shape, depth, and lighting still read) but
+   replaces hue + saturation with the brand green dot color. */
+.mk-root .r-spline-tint {
+  position: absolute;
+  inset: 0;
+  background: var(--green-bright);
+  mix-blend-mode: color;
+  pointer-events: none;
+}
+/* Cream→transparent gradient on the left so the text column stays
+   readable over whatever the 3D scene is doing. Sits above the Spline
+   canvas (z-index 1) but below the text content (z-index 2). */
+.mk-root .r-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(
+    100deg,
+    var(--cream) 0%,
+    rgba(244, 242, 238, 0.92) 28%,
+    rgba(244, 242, 238, 0.55) 48%,
+    rgba(244, 242, 238, 0) 72%
+  );
+  pointer-events: none;
+}
+.mk-root .r-hero::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 64px;
+  z-index: 1;
+  background: linear-gradient(180deg, transparent, var(--cream));
+  pointer-events: none;
+}
+@media (max-width: 980px) {
+  .mk-root .r-hero {
+    min-height: clamp(720px, 100vh, 1100px);
+  }
+  .mk-root .r-hero::before {
+    background: linear-gradient(
+      180deg,
+      var(--cream) 0%,
+      rgba(244, 242, 238, 0.85) 32%,
+      rgba(244, 242, 238, 0.4) 60%,
+      rgba(244, 242, 238, 0) 100%
+    );
+  }
+}
+
+/* ============ Stat block ============ */
+.mk-root .r-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+.mk-root .r-stat {
+  padding: 28px 24px;
+  border-right: 1px solid var(--rule);
+}
+.mk-root .r-stat:last-child {
+  border-right: none;
+}
+.mk-root .r-stat-num {
+  font-family: var(--font-display);
+  font-size: clamp(36px, 4vw, 56px);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin-bottom: 8px;
+}
+.mk-root .r-stat-num em {
+  font-style: italic;
+  color: var(--green);
+}
+.mk-root .r-stat-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-soft);
+}
+
+/* ============ Tile grid ============ */
+.mk-root .r-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  border-top: 1px solid var(--rule);
+  border-left: 1px solid var(--rule);
+}
+/* Trio variant: 3 across with a 4th tile spanning all 3 below as a base. */
+.mk-root .r-tiles-trio {
+  grid-template-columns: repeat(3, 1fr);
+}
+.mk-root .r-tile {
+  padding: 36px 32px;
+  border-right: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  background: var(--cream);
+  position: relative;
+  transition:
+    background 0.2s ease,
+    transform 0.3s var(--ease),
+    box-shadow 0.3s var(--ease);
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  cursor: default;
+}
+.mk-root .r-tile:hover {
+  background: var(--paper);
+}
+/* Hover lift only inside the quad layout, and only on the four upper tiles. */
+.mk-root .r-tiles-trio .r-tile:not(.r-tile-base):hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 28px rgba(20, 20, 19, 0.08);
+  z-index: 1;
+}
+
+/* The dark base tile: full-width, two-column layout (title + body), ink. */
+.mk-root .r-tile-base {
+  grid-column: 1 / -1;
+  background: var(--ink);
+  color: var(--cream);
+  padding: 48px 40px;
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 56px;
+  align-items: center;
+  min-height: auto;
+}
+.mk-root .r-tile-base .r-tile-num {
+  color: rgba(244, 242, 238, 0.5);
+  margin-bottom: 12px;
+}
+.mk-root .r-tile-base .r-tile-title {
+  color: var(--cream);
+  font-size: clamp(28px, 3vw, 36px);
+  margin: 0;
+  letter-spacing: -0.015em;
+}
+.mk-root .r-tile-base .r-tile-body {
+  color: rgba(244, 242, 238, 0.78);
+  font-size: 17px;
+  line-height: 1.55;
+  max-width: 60ch;
+}
+.mk-root .r-tile-num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-mute);
+  margin-bottom: 18px;
+  letter-spacing: 0.06em;
+}
+.mk-root .r-tile-title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  margin: 0 0 10px;
+  color: var(--ink);
+}
+.mk-root .r-tile-body {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  flex: 1;
+}
+
+/* ============ Tracks (9 AI tools) ============ */
+.mk-root .r-tracks-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  border-top: 1px solid var(--rule);
+  border-left: 1px solid var(--rule);
+}
+.mk-root .r-track {
+  padding: 28px 26px;
+  border-right: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  background: var(--cream);
+  cursor: pointer;
+  position: relative;
+  transition: background 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  min-height: 180px;
+}
+.mk-root .r-track:hover {
+  background: var(--paper);
+}
+.mk-root .r-track-mark {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--cream);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+.mk-root .r-track-name {
+  font-family: var(--font-display);
+  font-size: 22px;
+  letter-spacing: -0.01em;
+  margin: 0 0 6px;
+}
+.mk-root .r-track-desc {
+  font-size: 13px;
+  color: var(--ink-soft);
+  line-height: 1.5;
+  flex: 1;
+}
+.mk-root .r-track-arrow {
+  margin-top: 14px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-soft);
+  transition:
+    color 0.2s,
+    transform 0.2s;
+}
+.mk-root .r-track:hover .r-track-arrow {
+  color: var(--green);
+  transform: translateX(2px);
+}
+
+/* ============ Marquee ============ */
+.mk-root .r-marquee {
+  overflow: hidden;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  padding: 22px 0;
+  background: var(--cream);
+}
+.mk-root .r-marquee-track {
+  display: flex;
+  gap: 56px;
+  animation: r-marquee 4s linear infinite;
+  white-space: nowrap;
+  font-family: var(--font-display);
+  font-size: 22px;
+  color: var(--ink-soft);
+  letter-spacing: -0.01em;
+}
+.mk-root .r-marquee-track span {
+  display: inline-flex;
+  align-items: center;
+  gap: 56px;
+}
+.mk-root .r-marquee-track span::after {
+  content: "";
+  width: 4px;
+  height: 4px;
+  background: var(--green-bright);
+  border-radius: 50%;
+}
+@keyframes r-marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+/* ============ Three legs ============ */
+.mk-root .r-legs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+}
+.mk-root .r-leg {
+  background: var(--cream);
+  padding: 36px 32px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+.mk-root .r-leg-num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-mute);
+  letter-spacing: 0.08em;
+  margin-bottom: 20px;
+}
+.mk-root .r-leg-title {
+  font-family: var(--font-display);
+  font-size: 30px;
+  line-height: 1.1;
+  letter-spacing: -0.015em;
+  margin: 0 0 8px;
+}
+.mk-root .r-leg-tag {
+  font-size: 13px;
+  color: var(--green);
+  margin-bottom: 18px;
+  font-weight: 500;
+}
+.mk-root .r-leg-desc {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  flex: 1;
+}
+.mk-root .r-leg-price {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ink);
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--rule);
+}
+
+/* ============ Insights cards ============ */
+.mk-root .r-insights-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+.mk-root .r-insight {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--rule);
+  cursor: pointer;
+}
+.mk-root .r-insight-tag {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--green);
+  font-weight: 500;
+}
+.mk-root .r-insight-title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  margin: 0;
+  color: var(--ink);
+  transition: color 0.2s;
+}
+.mk-root .r-insight:hover .r-insight-title {
+  color: var(--green);
+}
+.mk-root .r-insight-meta {
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin-top: auto;
+  padding-top: 16px;
+}
+
+/* ============ Pull quote / banner ============ */
+.mk-root .r-pull {
+  padding: 80px 0;
+  border-top: 1px solid var(--rule);
+}
+.mk-root .r-pull-quote {
+  font-family: var(--font-display);
+  font-size: clamp(28px, 3.4vw, 44px);
+  line-height: 1.18;
+  letter-spacing: -0.014em;
+  max-width: 22ch;
+  margin: 0 auto;
+  text-align: center;
+  font-style: italic;
+  color: var(--ink);
+}
+.mk-root .r-pull-quote em {
+  color: var(--green-deep);
+  font-style: italic;
+}
+
+/* ============ CTA Banner ============ */
+.mk-root .r-cta-banner {
+  background: var(--ink);
+  color: var(--cream);
+  padding: 96px 0;
+  text-align: center;
+}
+.mk-root .r-cta-banner .r-h-1 {
+  color: var(--cream);
+}
+.mk-root .r-cta-banner .r-h-1 em {
+  color: var(--green-bright);
+}
+.mk-root .r-cta-banner .r-lede {
+  color: rgba(244, 242, 238, 0.78);
+  margin: 0 auto 32px;
+  text-align: center;
+}
+
+/* ============ Page header (non-home pages) ============ */
+.mk-root .r-page-header {
+  padding: 96px 0 56px;
+}
+.mk-root .r-page-header .r-num {
+  display: block;
+  margin-bottom: 16px;
+}
+
+/* ============ How-it-works animated stage ============ */
+.mk-root .r-how-stage {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  position: relative;
+  min-height: 480px;
+  overflow: hidden;
+}
+.mk-root .r-how-frame {
+  position: absolute;
+  inset: 32px;
+  opacity: 0;
+  transition: opacity 0.6s var(--ease);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  pointer-events: none;
+}
+.mk-root .r-how-frame.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+.mk-root .r-how-controls {
+  display: flex;
+  gap: 0;
+  margin-top: 24px;
+  border-top: 1px solid var(--rule);
+}
+.mk-root .r-how-step {
+  flex: 1;
+  padding: 18px 16px;
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--rule);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s;
+  position: relative;
+}
+.mk-root .r-how-step:last-child {
+  border-right: none;
+}
+.mk-root .r-how-step:hover {
+  background: var(--cream-2);
+}
+.mk-root .r-how-step.active {
+  background: var(--cream);
+}
+.mk-root .r-how-step.active::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--green);
+}
+.mk-root .r-how-step .num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-mute);
+  margin-bottom: 6px;
+  display: block;
+}
+.mk-root .r-how-step .label {
+  font-size: 13px;
+  color: var(--ink);
+  font-weight: 500;
+}
+
+/* Code window */
+.mk-root .r-code-window {
+  background: #18181a;
+  color: #f4f2ee;
+  border-radius: 8px;
+  padding: 16px 18px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  position: relative;
+  overflow: hidden;
+}
+.mk-root .r-code-window .err {
+  color: #ff8a7a;
+}
+.mk-root .r-code-window .key {
+  color: #88c9ff;
+}
+.mk-root .r-code-window .str {
+  color: #a8e88c;
+}
+.mk-root .r-code-window .com {
+  color: #6e6e6a;
+}
+.mk-root .r-code-window .head {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.mk-root .r-code-window .head span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #444;
+}
+
+/* Engineer card */
+.mk-root .r-engineer-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  background: var(--cream);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+}
+.mk-root .r-engineer-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--clay) 0%, #b25b3e 100%);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 500;
+  flex-shrink: 0;
+  position: relative;
+}
+.mk-root .r-engineer-avatar .r-dot {
+  --dot-size: 12px;
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  border: 2px solid var(--cream);
+}
+.mk-root .r-engineer-info {
+  flex: 1;
+  min-width: 0;
+}
+.mk-root .r-engineer-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  margin: 0 0 2px;
+}
+.mk-root .r-engineer-status {
+  font-size: 12px;
+  color: var(--ink-soft);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mk-root .r-engineer-status .r-dot {
+  --dot-size: 6px;
+}
+
+/* Modality / segmented toggle */
+.mk-root .r-modality {
+  display: flex;
+  gap: 4px;
+  margin-top: 14px;
+  background: var(--cream-2);
+  padding: 4px;
+  border-radius: 999px;
+}
+.mk-root .r-modality button {
+  flex: 1;
+  height: 36px;
+  border: none;
+  background: transparent;
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  transition: all 0.15s ease;
+  font-weight: 450;
+  padding: 0 18px;
+}
+.mk-root .r-modality button.active {
+  background: var(--cream);
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+/* Press-for-an-engineer button (used in hero demo / how-it-works) */
+.mk-root .r-press-button {
+  width: 100%;
+  height: 64px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--cream);
+  border: none;
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 20px;
+  cursor: pointer;
+  transition: all 0.18s var(--ease);
+  position: relative;
+  overflow: hidden;
+}
+.mk-root .r-press-button:hover {
+  background: var(--green-deep);
+}
+
+/* Chat message */
+.mk-root .r-chat-message {
+  background: var(--cream);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 14px;
+  line-height: 1.5;
+  max-width: 80%;
+}
+.mk-root .r-chat-message.from-engineer {
+  background: var(--green-tint);
+  border-color: rgba(46, 168, 79, 0.25);
+  margin-left: auto;
+}
+.mk-root .r-chat-message .who {
+  font-size: 11px;
+  color: var(--ink-soft);
+  margin-bottom: 4px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Pricing */
+.mk-root .r-pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  border-top: 1px solid var(--rule);
+  border-left: 1px solid var(--rule);
+}
+.mk-root .r-price-card {
+  padding: 36px 28px;
+  border-right: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  background: var(--cream);
+  display: flex;
+  flex-direction: column;
+}
+.mk-root .r-price-card.featured {
+  background: var(--ink);
+  color: var(--cream);
+  position: relative;
+}
+.mk-root .r-price-card.featured .r-price-name,
+.mk-root .r-price-card.featured .r-price-amount,
+.mk-root .r-price-card.featured .r-price-feat li {
+  color: var(--cream);
+}
+.mk-root .r-price-card.featured .r-price-feat li::before {
+  background: var(--green-bright);
+}
+.mk-root .r-price-name {
+  font-family: var(--font-display);
+  font-size: 26px;
+  margin: 0 0 8px;
+  letter-spacing: -0.01em;
+}
+.mk-root .r-price-tag {
+  font-size: 13px;
+  color: var(--ink-soft);
+  margin-bottom: 24px;
+  min-height: 40px;
+}
+.mk-root .r-price-card.featured .r-price-tag {
+  color: rgba(244, 242, 238, 0.72);
+}
+.mk-root .r-price-amount {
+  font-family: var(--font-display);
+  font-size: 44px;
+  line-height: 1;
+  margin-bottom: 4px;
+  letter-spacing: -0.02em;
+}
+.mk-root .r-price-amount .per {
+  font-size: 14px;
+  color: var(--ink-soft);
+  font-family: var(--font-sans);
+  font-style: normal;
+}
+.mk-root .r-price-card.featured .r-price-amount .per {
+  color: rgba(244, 242, 238, 0.6);
+}
+.mk-root .r-price-feat {
+  list-style: none;
+  padding: 24px 0 0;
+  margin: 24px 0 0;
+  border-top: 1px solid var(--rule);
+  flex: 1;
+}
+.mk-root .r-price-card.featured .r-price-feat {
+  border-color: rgba(244, 242, 238, 0.18);
+}
+.mk-root .r-price-feat li {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  padding: 8px 0 8px 22px;
+  position: relative;
+}
+.mk-root .r-price-feat li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 14px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+}
+.mk-root .r-price-cta {
+  margin-top: 24px;
+}
+
+/* Try Relay modal */
+.mk-root-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 20, 19, 0.6);
+  backdrop-filter: blur(8px);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: r-fade-in 0.18s ease;
+}
+.mk-root-modal {
+  background: var(--cream, #f4f2ee);
+  border-radius: 16px;
+  padding: 40px;
+  max-width: 520px;
+  width: 100%;
+  position: relative;
+  border: 1px solid var(--rule, #d8d3c6);
+  font-family: var(--font-instrument-sans), system-ui, sans-serif;
+  color: var(--ink, #141413);
+}
+.mk-root-modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: transparent;
+  border: none;
+  font-size: 22px;
+  color: #5b5b54;
+  cursor: pointer;
+  padding: 8px;
+  line-height: 1;
+}
+.mk-root-modal h2 {
+  font-family: var(--font-fraunces), Georgia, serif;
+  font-weight: 400;
+  font-size: 32px;
+  letter-spacing: -0.014em;
+  margin: 0 0 12px;
+  line-height: 1.1;
+}
+.mk-root-modal p.body {
+  font-size: 15px;
+  color: #2a2a27;
+  line-height: 1.55;
+  margin: 0 0 24px;
+}
+.mk-root-modal .console-card {
+  background: #faf8f4;
+  border: 1px solid #d8d3c6;
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 24px;
+  font-family: var(--font-jetbrains), monospace;
+  font-size: 12px;
+  color: #5b5b54;
+}
+.mk-root-modal .console-card .url {
+  margin-bottom: 4px;
+}
+.mk-root-modal .console-card .meta {
+  color: #8c8a82;
+}
+.mk-root-modal-form {
+  display: flex;
+  gap: 8px;
+}
+.mk-root-modal-input {
+  flex: 1;
+  height: 44px;
+  padding: 0 16px;
+  border: 1px solid #d8d3c6;
+  border-radius: 999px;
+  font-size: 14px;
+  background: #faf8f4;
+  font-family: inherit;
+  color: #141413;
+}
+@keyframes r-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* FAQ details */
+.mk-root .r-faq summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.mk-root .r-faq summary::-webkit-details-marker {
+  display: none;
+}
+.mk-root .r-faq h4 {
+  font-family: var(--font-display);
+  font-size: 22px;
+  margin: 0;
+  letter-spacing: -0.01em;
+  font-weight: 400;
+  color: var(--ink);
+}
+
+/* ============ Responsive ============ */
+@media (max-width: 980px) {
+  .mk-root .r-hero-grid {
+    grid-template-columns: 1fr;
+    gap: 48px;
+  }
+  .mk-root .r-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .mk-root .r-stat:nth-child(2) {
+    border-right: none;
+  }
+  .mk-root .r-stat:nth-child(1),
+  .mk-root .r-stat:nth-child(2) {
+    border-bottom: 1px solid var(--rule);
+  }
+  .mk-root .r-tiles,
+  .mk-root .r-tiles-trio,
+  .mk-root .r-tracks-grid,
+  .mk-root .r-insights-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .mk-root .r-tile-base {
+    grid-template-columns: 1fr;
+    gap: 16px;
+    padding: 32px 28px;
+  }
+  .mk-root .r-legs {
+    grid-template-columns: 1fr;
+  }
+  .mk-root .r-footer-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+  }
+  .mk-root .r-nav-links {
+    display: none;
+  }
+  .mk-root .r-section {
+    padding: 64px 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .mk-root .r-tiles,
+  .mk-root .r-tiles-trio,
+  .mk-root .r-tracks-grid,
+  .mk-root .r-insights-grid {
+    grid-template-columns: 1fr;
+  }
+  .mk-root .r-stats {
+    grid-template-columns: 1fr;
+  }
+  .mk-root .r-stat {
+    border-right: none;
+    border-bottom: 1px solid var(--rule);
+  }
+  .mk-root .r-hero {
+    padding: 48px 0 64px;
+  }
+  .mk-root .r-footer-grid {
+    grid-template-columns: 1fr;
+  }
+}
