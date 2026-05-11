@@ -68,15 +68,17 @@ export async function requireRole(
   return user;
 }
 
-/** Returns the dashboard route for a role. */
+/** Returns the dashboard route for a role.
+ *  Legacy /customer, /engineer, /supervisor routes were retired — modern
+ *  routes are /room, /dashboard (+ /inbox), /supervise. */
 export function dashboardForRole(role: UserRole): string {
   switch (role) {
     case "CUSTOMER":
-      return "/customer";
+      return "/room";
     case "ENGINEER":
-      return "/engineer";
+      return "/dashboard";
     case "SUPERVISOR":
-      return "/supervisor";
+      return "/supervise";
     case "ENTERPRISE_ADMIN":
       return "/enterprise";
     case "INTERNAL_ADMIN":

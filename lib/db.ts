@@ -1,51 +1,46 @@
 /*
- * Prisma client singleton (Prisma 7 + pg driver adapter).
+ * Prisma is no longer wired up — Supabase IS the database (managed Postgres
+ * + auth + realtime), and every active code path goes through @supabase/
+ * supabase-js. This file used to import @/app/generated/prisma/client and
+ * created a runtime Prisma client; that generated folder isn't checked in
+ * (rightly so) and was breaking production builds because Vercel can't
+ * regenerate it without DATABASE_URL.
  *
- * Next.js dev server hot-reloads modules; without this guard we'd spawn a new
- * PrismaClient per reload and exhaust the database connection pool. The pattern
- * is from the Prisma docs: https://pris.ly/d/help/next-js-best-practices
+ * To keep the legacy imports compiling without dragging Prisma into the
+ * build, we export a Proxy that throws if anyone actually calls a query.
+ * The legacy pages (`/customer`, `/engineer`, `/supervisor`, etc.) are not
+ * linked from the live UX — the redesigned routes (/room, /dashboard,
+ * /inbox, /supervise, /staff/session/[id]) all use Supabase directly.
  *
- * Prisma 7 requires either an `adapter` or `accelerateUrl` to be passed at
- * construction; we use the pg adapter for direct PostgreSQL connections.
+ * If you see "Prisma is no longer used" at runtime, you hit one of those
+ * legacy pages — either delete the page or rewrite it against Supabase.
  */
 
-import { PrismaClient } from "@/app/generated/prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+type AnyFn = (...args: unknown[]) => unknown;
 
-const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
+function deadStub(): never {
+  throw new Error(
+    "Prisma is no longer wired in this app. All persistence goes through " +
+    "@supabase/supabase-js. If you reached this error, the calling page is " +
+    "legacy code that should be rewritten or removed.",
+  );
+}
+
+const handler: ProxyHandler<object> = {
+  get(_target, prop): unknown {
+    // Allow framework introspection like Symbol.toPrimitive, then/util.inspect
+    // — these get called by error formatters and shouldn't throw.
+    if (typeof prop === "symbol") return undefined;
+    if (prop === "then" || prop === "catch") return undefined;
+    // Anything else: return a function that throws on call OR a nested proxy
+    // (so prisma.foo.findMany() also throws cleanly).
+    const fn: AnyFn = () => deadStub();
+    return new Proxy(fn, handler);
+  },
+  apply() {
+    return deadStub();
+  },
 };
 
-function createPrismaClient(): PrismaClient {
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) {
-    throw new Error(
-      "DATABASE_URL is not set. Copy .env.example to .env and ensure docker compose up is running."
-    );
-  }
-  const adapter = new PrismaPg({ connectionString });
-  return new PrismaClient({
-    adapter,
-    log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
-  });
-}
-
-/*
- * Lazy proxy: defer client construction until first property access. The
- * marketing surface and other public routes import lib/auth (which imports
- * this module) but never touch a query method, so without this proxy the
- * "DATABASE_URL is not set" error fires at module load and breaks pages
- * that don't actually need the database.
- */
-function getClient(): PrismaClient {
-  if (!globalForPrisma.prisma) {
-    globalForPrisma.prisma = createPrismaClient();
-  }
-  return globalForPrisma.prisma;
-}
-
-export const prisma: PrismaClient = new Proxy({} as PrismaClient, {
-  get(_target, prop, receiver) {
-    return Reflect.get(getClient(), prop, receiver);
-  },
-});
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const prisma: any = new Proxy(() => undefined, handler);
