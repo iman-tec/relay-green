@@ -5,7 +5,8 @@
   "description": "Relay.green — real-time human engineering support for AI-native builders. Click the green dot, get a qualified engineer in 90 seconds.",
   "scripts": {
     "dev": "next dev --experimental-https -H 10.0.1.207",
-    "build": "next build",
+    "postinstall": "prisma generate",
+    "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
