@@ -14,7 +14,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "./db";
-import type { UserRole } from "@/app/generated/prisma/enums";
+export type UserRole = "CUSTOMER" | "ENGINEER" | "SUPERVISOR" | "ENTERPRISE_ADMIN" | "INTERNAL_ADMIN";
 
 const SESSION_COOKIE = "relay_demo_session";
 const SESSION_MAX_AGE_S = 60 * 60 * 24 * 7; // 1 week
