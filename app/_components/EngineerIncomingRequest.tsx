@@ -105,6 +105,72 @@ export function EngineerIncomingRequest() {
     };
   }, [request?.id]);
 
+  // Desktop-shell integration: inside the Relay Electron app, surface
+  // incoming calls via tray flash + taskbar flash + a custom desktop-level
+  // Accept / Decline notification window, so the engineer doesn't have to
+  // keep the main window open. No-op in a plain browser.
+  //
+  // Only the hidden /widget/engineer service window fires the IPC — the
+  // same component is also mounted via EngineerShell on /dashboard etc.,
+  // and we don't want both copies to fire (duplicate notifications).
+  useEffect(() => {
+    if (!request || typeof window === "undefined") return;
+    if (!window.location.pathname.startsWith("/widget/engineer")) return;
+
+    type Unsubscribe = () => void;
+    type RelayBridge = {
+      setTrayRinging: (on: boolean) => void;
+      flashFrame: (on: boolean) => void;
+      showIncomingCall: (data: {
+        sessionId: string;
+        guestName: string;
+        urgency: "normal" | "urgent" | "critical";
+      }) => void;
+      hideIncomingCall: () => void;
+      reportClaimResult: (sessionId: string, success: boolean) => void;
+      onClaimTrigger: (cb: (sessionId: string) => void) => Unsubscribe;
+      onDeclineTrigger: (cb: (sessionId: string) => void) => Unsubscribe;
+    };
+    const relay = (window as unknown as { relay?: RelayBridge }).relay;
+    if (!relay?.showIncomingCall) return;
+
+    relay.setTrayRinging(true);
+    relay.flashFrame(true);
+    relay.showIncomingCall({
+      sessionId: request.id,
+      guestName: request.guest_name,
+      urgency: request.urgency,
+    });
+
+    const unsubClaim = relay.onClaimTrigger((triggeredId) => {
+      if (triggeredId !== request.id) return;
+      void (async () => {
+        const sb = supabaseRef.current;
+        const { error } = await sb.rpc("claim_session", { _session_id: request.id });
+        relay.reportClaimResult(request.id, !error);
+        if (error) {
+          // Race lost / RLS / stale — local dismiss; realtime feed surfaces next head.
+          declinedRef.current.add(request.id);
+          setRequest(null);
+        }
+      })();
+    });
+
+    const unsubDecline = relay.onDeclineTrigger((triggeredId) => {
+      if (triggeredId !== request.id) return;
+      declinedRef.current.add(request.id);
+      setRequest(null);
+    });
+
+    return () => {
+      relay.setTrayRinging(false);
+      relay.flashFrame(false);
+      relay.hideIncomingCall();
+      unsubClaim();
+      unsubDecline();
+    };
+  }, [request?.id, request?.guest_name, request?.urgency]);
+
   if (!request || onSessionRoute) return null;
 
   const urgencyCfg = request.urgency === "critical"
