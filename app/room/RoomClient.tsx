@@ -23,7 +23,8 @@ import {
 } from "react-resizable-panels";
 import {
   Plus, Send, Sparkles, Video, Phone, X, PhoneOff, MessageSquare, Lock,
-  AlertTriangle, Loader2, ChevronDown, Search,
+  AlertTriangle, Loader2, ChevronDown, Search, PanelLeftClose, PanelLeftOpen,
+  Wallet, RefreshCw, Settings, LogOut, Check,
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { ZoomEmbed } from "@/app/_components/ZoomEmbed";
@@ -599,7 +600,7 @@ function pillConfig(status: SessionStatus, urgency: Urgency) {
   return { label: status,                                          bg: BRAND_GREEN_SOFT,  fg: BRAND_GREEN,  pulse: false };
 }
 
-// ── Sidebar (claude.ai style) ──────────────────────────────────────────────
+// ── Sidebar (claude.ai style, collapsible) ────────────────────────────────
 type PastSession = { id: string; title: string; agent: string | null; minutes: number | null; date: string };
 
 function Sidebar({
@@ -614,11 +615,10 @@ function Sidebar({
   onNewSession: () => Promise<void>;
   onWalletClick: () => void;
 }) {
+  const [collapsed, setCollapsed] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [past, setPast] = useState<PastSession[]>([]);
 
-  // Load past (ended) sessions for this customer — keyed by user id so the
-  // list shows regardless of whether there's an active session.  Refreshes
-  // whenever the active session id flips (a session just ended).
   useEffect(() => {
     if (!customerUserId) return;
     const sb = createClient();
@@ -645,17 +645,120 @@ function Sidebar({
 
   const buckets = useMemo(() => groupByDate(past), [past]);
 
+  const hasActiveSession = session && !["ended", "cancelled", "abandoned"].includes(session.status);
+
+  // ── Collapsed state: icon-only rail ──────────────────────────────────────
+  if (collapsed) {
+    return (
+      <aside
+        className="flex h-full w-12 shrink-0 flex-col items-center py-2"
+        style={{ borderRight: "1px solid var(--border)", backgroundColor: "var(--surface)" }}
+      >
+        {/* Expand toggle */}
+        <button
+          onClick={() => setCollapsed(false)}
+          title="Expand sidebar"
+          className="mb-1 flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          style={{ color: "var(--text-muted)" }}
+        >
+          <PanelLeftOpen size={18} />
+        </button>
+
+        {/* New session */}
+        <button
+          onClick={() => void onNewSession()}
+          title="New session"
+          className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          style={{ color: BRAND_GREEN }}
+        >
+          <Plus size={18} />
+        </button>
+
+        {/* Search */}
+        <button
+          title="Search"
+          className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          style={{ color: "var(--text-muted)" }}
+        >
+          <Search size={16} />
+        </button>
+
+        {/* Sessions */}
+        <button
+          title="Sessions"
+          className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          style={{ color: "var(--text-muted)" }}
+        >
+          <MessageSquare size={16} />
+        </button>
+
+        {/* Active session indicator */}
+        {hasActiveSession && (
+          <button
+            onClick={() => onViewPast(null)}
+            title="Current session"
+            className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors"
+            style={{ color: BRAND_GREEN }}
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inset-0 rounded-full opacity-70"
+                style={{ backgroundColor: BRAND_GREEN, animation: "ping 1.4s cubic-bezier(0,0,0.2,1) infinite" }} />
+              <span className="relative h-2 w-2 rounded-full" style={{ backgroundColor: BRAND_GREEN }} />
+            </span>
+          </button>
+        )}
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Profile avatar — opens user menu */}
+        <div className="relative">
+          <button
+            onClick={() => setUserMenuOpen((v) => !v)}
+            title={email.split("@")[0]}
+            className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          >
+            <div
+              className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold uppercase"
+              style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+            >
+              {(email || "?")[0]}
+            </div>
+          </button>
+          {userMenuOpen && (
+            <UserMenu
+              email={email}
+              entitlement={entitlement}
+              onRecharge={() => { setUserMenuOpen(false); onWalletClick(); }}
+              onClose={() => setUserMenuOpen(false)}
+              collapsed
+            />
+          )}
+        </div>
+      </aside>
+    );
+  }
+
+  // ── Expanded state ────────────────────────────────────────────────────────
   return (
     <aside
       className="flex h-full w-[260px] shrink-0 flex-col"
       style={{ borderRight: "1px solid var(--border)", backgroundColor: "var(--surface)" }}
     >
-      {/* Brand row */}
-      <div className="flex h-12 items-center px-4">
+      {/* Brand row + collapse toggle */}
+      <div className="flex h-12 items-center justify-between px-3">
         <Wordmark size="md" />
+        <button
+          onClick={() => setCollapsed(true)}
+          title="Collapse sidebar"
+          className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          style={{ color: "var(--text-muted)" }}
+        >
+          <PanelLeftClose size={16} />
+        </button>
       </div>
 
-      {/* New session + Search (claude-style nav rows) */}
+      {/* New session + Search */}
       <div className="px-2 py-1">
         <button
           onClick={() => void onNewSession()}
@@ -682,8 +785,7 @@ function Sidebar({
           </span>
         </div>
 
-        {/* Current session row — only when truly active (not terminal) */}
-        {session && !["ended","cancelled","abandoned"].includes(session.status) && (
+        {hasActiveSession && (
           <button
             onClick={() => onViewPast(null)}
             className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left transition-colors"
@@ -705,7 +807,6 @@ function Sidebar({
           </button>
         )}
 
-        {/* Bucketed past sessions */}
         {buckets.map(([label, items]) => items.length === 0 ? null : (
           <div key={label} className="mt-3">
             <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
@@ -751,12 +852,9 @@ function Sidebar({
       </div>
 
       {/* Profile (bottom) */}
-      <div
-        className="border-t p-2"
-        style={{ borderColor: "var(--border)" }}
-      >
+      <div className="relative border-t p-2" style={{ borderColor: "var(--border)" }}>
         <button
-          onClick={onWalletClick}
+          onClick={() => setUserMenuOpen((v) => !v)}
           className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 transition-colors hover:bg-black/5 dark:hover:bg-white/5"
         >
           <div
@@ -775,6 +873,14 @@ function Sidebar({
           </div>
           <ChevronDown size={12} style={{ color: "var(--text-muted)" }} />
         </button>
+        {userMenuOpen && (
+          <UserMenu
+            email={email}
+            entitlement={entitlement}
+            onRecharge={() => { setUserMenuOpen(false); onWalletClick(); }}
+            onClose={() => setUserMenuOpen(false)}
+          />
+        )}
       </div>
     </aside>
   );
@@ -785,9 +891,136 @@ function formatEntitlement(e: { free_consumed_at: string | null; free_minutes_us
     const m = Math.floor(e.paid_minutes_remaining);
     return `${m} min paid`;
   }
-  // Free is BINARY — used or not. One session per customer, max 10 min.
   if (e.free_consumed_at) return "Free used · upgrade to continue";
   return "10 min free available";
+}
+
+function planLabel(e: { free_consumed_at: string | null; paid_minutes_remaining: number }): string {
+  if (e.paid_minutes_remaining > 0) return "Paid plan";
+  return "Free plan";
+}
+
+// ── User menu dropdown (Claude-style) ─────────────────────────────────────
+function UserMenu({
+  email, entitlement, onRecharge, onClose, collapsed = false,
+}: {
+  email: string;
+  entitlement: { free_consumed_at: string | null; free_minutes_used: number; paid_minutes_remaining: number };
+  onRecharge: () => void;
+  onClose: () => void;
+  collapsed?: boolean;
+}) {
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    const sb = createClient();
+    await sb.auth.signOut();
+    router.push("/login");
+  };
+
+  const menuItems = [
+    {
+      icon: <Settings size={15} />,
+      label: "Settings",
+      onClick: () => { onClose(); router.push("/settings"); },
+    },
+    {
+      icon: <LogOut size={15} />,
+      label: "Log out",
+      onClick: () => void handleLogout(),
+      danger: true,
+    },
+  ];
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+
+      {/* Menu panel */}
+      <div
+        className="absolute z-50 w-64 rounded-xl border shadow-xl"
+        style={{
+          bottom: "calc(100% + 8px)",
+          left: collapsed ? "48px" : "0px",
+          backgroundColor: "var(--surface)",
+          borderColor: "var(--border)",
+          boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
+        }}
+      >
+        {/* Email header */}
+        <div className="border-b px-4 py-3" style={{ borderColor: "var(--border)" }}>
+          <p className="truncate text-[12px] font-medium" style={{ color: "var(--text-muted)" }}>
+            {email}
+          </p>
+        </div>
+
+        {/* Plan + wallet */}
+        <div className="border-b px-3 py-2" style={{ borderColor: "var(--border)" }}>
+          <div className="flex items-center justify-between rounded-lg px-1 py-2">
+            <div className="flex items-center gap-2.5">
+              <div
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold uppercase"
+                style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+              >
+                {(email || "?")[0]}
+              </div>
+              <div>
+                <div className="text-[13px] font-medium" style={{ color: "var(--text)" }}>
+                  {email.split("@")[0]}
+                </div>
+                <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                  {planLabel(entitlement)}
+                </div>
+              </div>
+            </div>
+            <Check size={14} style={{ color: BRAND_GREEN }} />
+          </div>
+
+          {/* Wallet balance row */}
+          <div
+            className="mt-1 flex items-center justify-between rounded-lg px-2 py-2"
+            style={{ backgroundColor: BRAND_GREEN_SOFT }}
+          >
+            <div className="flex items-center gap-2">
+              <Wallet size={14} style={{ color: BRAND_GREEN }} />
+              <div>
+                <div className="text-[12px] font-medium" style={{ color: "var(--text)" }}>
+                  Wallet
+                </div>
+                <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                  {formatEntitlement(entitlement)}
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={onRecharge}
+              className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium transition-opacity hover:opacity-80"
+              style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+            >
+              <RefreshCw size={10} />
+              Recharge
+            </button>
+          </div>
+        </div>
+
+        {/* Menu items */}
+        <div className="px-2 py-1.5">
+          {menuItems.map((item) => (
+            <button
+              key={item.label}
+              onClick={item.onClick}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+              style={{ color: item.danger ? "#e05c4b" : "var(--text)" }}
+            >
+              <span style={{ color: item.danger ? "#e05c4b" : "var(--text-muted)" }}>{item.icon}</span>
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </>
+  );
 }
 
 function humanState(s: SessionStatus): string {

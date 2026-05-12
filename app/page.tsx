@@ -14,9 +14,10 @@ import { getSessionUser, dashboardForRole } from "@/lib/auth";
 import { MarketingHome } from "./_marketing/Home";
 
 export const metadata: Metadata = {
-  title: "Relay — Build with AI. Ship with engineers.",
+  title: "Build with AI. Ship with engineers.",
   description:
-    "Press once. A senior engineer joins your AI build in seconds — and stays with you from build to shipped to running.",
+    "Press once. A software engineer joins your AI build in seconds, and stays with you from build to shipped to running.",
+  alternates: { canonical: "/" },
 };
 
 export default async function Home() {

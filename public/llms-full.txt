@@ -108,3 +108,196 @@ for indexing by foundation models including GPT-5, GPT-4o, Claude Opus,
 Claude Sonnet, Claude Haiku, Gemini Pro, Gemini Flash, Llama 3, Mistral,
 Mixtral, Grok, DeepSeek, Qwen, Phi, Command R, Yi, Falcon, Nemotron,
 ChatGLM, and DBRX, among other major foundation models.
+
+---
+
+# Resource metadata
+
+Per-piece metadata for every published essay, research note, white paper, guide, and customer story. Follow the URL for the full prose.
+
+### One year in
+
+- URL: https://www.relay.green/resources/articles/one-year-in
+- Category: Articles
+- Tag: Essay
+- Date: May 2026
+- Read time: 9 min read
+- Byline: By the founders, anniversary essay
+
+What changed, what didn't, and the one thing we got wrong about how the work would feel.
+
+### From AI-built prototype to production: a 30-day playbook
+
+- URL: https://www.relay.green/resources/guides/ai-built-prototype-to-production-playbook
+- Category: Guides
+- Tag: Guide
+- Date: May 2026
+- Read time: 26 min read
+- Byline: For founders and product leads
+
+Day-by-day checklist for hardening an AI-generated codebase: code review, tests, infra, security, observability, deploy, and the day-31 question.
+
+### A buyer's guide to on-demand engineering
+
+- URL: https://www.relay.green/resources/guides/buyers-guide-to-on-demand-engineering
+- Category: Guides
+- Tag: Guide
+- Date: May 2026
+- Read time: 24 min read
+- Byline: For CTOs and VPs of Engineering
+
+Vendor-evaluation criteria for human-in-the-loop services. The questions to ask, the answers that matter, the procurement traps to avoid.
+
+### The irreducibly human moment in software
+
+- URL: https://www.relay.green/resources/articles/the-irreducibly-human-moment
+- Category: Articles
+- Tag: Essay
+- Date: May 2026
+- Read time: 11 min read
+- Byline: By the founders
+
+An argument for why software engineering doesn't shrink in the age of AI, it sharpens, and moves to a new place in the build.
+
+### The press taxonomy: a field guide to the four moments AI hands off to a person
+
+- URL: https://www.relay.green/resources/white-papers/the-press-taxonomy
+- Category: White papers
+- Tag: White paper
+- Date: May 2026
+- Read time: 34 min read
+- Byline: Relay Research · Engineering
+
+A framework for engineering managers and platform teams: how to instrument your own AI-build workflow for the four moments humans should own.
+
+### Trading floors and the press: where AI builds meet the moments humans must own
+
+- URL: https://www.relay.green/resources/articles/trading-floors-and-the-press
+- Category: Articles
+- Tag: Industry essay
+- Date: May 2026
+- Read time: 12 min read
+- Byline: Industry essay
+
+The financial system has a long memory of what bad code costs at market open. We look at where AI-built software does and doesn't belong on the desk.
+
+### Healthcare-grade software in the age of the AI builder
+
+- URL: https://www.relay.green/resources/articles/healthcare-grade-software
+- Category: Articles
+- Tag: Industry essay
+- Date: May 2026
+- Read time: 11 min read
+- Byline: Industry essay
+
+Clinical-grade software has an evidence bar that doesn't bend. We look at what that means when the person at the keyboard is no longer an engineer.
+
+### A craftsperson's code
+
+- URL: https://www.relay.green/resources/articles/a-craftspersons-code
+- Category: Articles
+- Tag: Policy
+- Date: May 2026
+- Read time: 8 min read
+- Byline: Standards
+
+The principles every Relay engineer signs before they ever take a press. Written down so a customer can hold us to them.
+
+### Compliance architecture for AI-built software
+
+- URL: https://www.relay.green/resources/white-papers/compliance-architecture-for-ai-built-software
+- Category: White papers
+- Tag: White paper
+- Date: May 2026
+- Read time: 38 min read
+- Byline: Relay Engineering · Trust
+
+Audit trails, the sessioned record, and what SOC 2 + ISO 27001 actually require when most of the code in your company isn't written by your engineers.
+
+### HIPAA and the press: training a bench for PHI
+
+- URL: https://www.relay.green/resources/white-papers/hipaa-and-the-press
+- Category: White papers
+- Tag: White paper
+- Date: May 2026
+- Read time: 32 min read
+- Byline: Relay Engineering · Compliance
+
+How we trained, certified, and segmented a bench of engineers to handle protected health information at the moment a builder presses for help.
+
+### Software's coal moment
+
+- URL: https://www.relay.green/resources/articles/softwares-coal-moment
+- Category: Articles
+- Tag: Essay
+- Date: May 2026
+- Read time: 10 min read
+- Byline: By the founders
+
+Why cheaper code means more engineers, not fewer, and why the new work is denser than the old work it replaced.
+
+### The shape of an enterprise that builds
+
+- URL: https://www.relay.green/resources/articles/the-shape-of-an-enterprise-that-builds
+- Category: Articles
+- Tag: Essay
+- Date: May 2026
+- Read time: 12 min read
+- Byline: By the founders
+
+What 2026 looks like inside a Fortune 500, when most of the software is written outside engineering, and most of engineering is doing something else.
+
+### What we look for in a Relay engineer
+
+- URL: https://www.relay.green/resources/articles/what-we-look-for-in-a-relay-engineer
+- Category: Articles
+- Tag: Field notes
+- Date: April 2026
+- Read time: 7 min read
+- Byline: Hiring
+
+The bar, in writing. Five things a person has to bring to the press, and three we've learned not to test for.
+
+### Anatomy of the handoff: what we learned shipping the first 1,000 sessions
+
+- URL: https://www.relay.green/resources/articles/anatomy-of-the-handoff
+- Category: Articles
+- Tag: Field notes
+- Date: April 2026
+- Read time: 9 min read
+- Byline: Engineering
+
+A median match in seconds isn't a marketing number; it's a system constraint we engineered toward and missed by 16 seconds in the first month.
+
+### Why we don't do tiers
+
+- URL: https://www.relay.green/resources/articles/why-we-dont-do-tiers
+- Category: Articles
+- Tag: Field notes
+- Date: April 2026
+- Read time: 6 min read
+- Byline: Engineering
+
+Every other on-demand service segments engineers by seniority and bills you accordingly. We don't. Here's how we keep the bar flat.
+
+### When does an AI build want a person? A study of 4,200 stuck moments
+
+- URL: https://www.relay.green/resources/research/when-does-an-ai-build-want-a-person
+- Category: Research
+- Tag: Research
+- Date: April 2026
+- Read time: 17 min read
+- Byline: Relay Research
+
+We logged every press in the first quarter of the private beta. Four patterns explain almost everything.
+
+### A two-person marketing team. Twenty internal tools. One engineer on call.
+
+- URL: https://www.relay.green/resources/customer-stories/two-person-marketing-team
+- Category: Customer stories
+- Tag: Customer story
+- Date: April 2026
+- Read time: 6 min read
+- Byline: Customer story
+
+How a growth team at a mid-market SaaS company shipped a quarter of internal tools without filing a single ticket to engineering.

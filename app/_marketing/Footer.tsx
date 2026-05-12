@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { RelayLogo } from "./RelayLogo";
 
 /**
  * Visible-text mention of every major LLM and AI-search engine, sitting in
@@ -13,48 +14,25 @@ const AI_SEARCH_ENGINES = [
   "Perplexity",
   "Google AI Overview",
   "Gemini",
-  "Microsoft Copilot",
-  "Bing Chat",
+  "Copilot",
   "Claude",
-  "Grok",
-  "You.com",
-  "Phind",
-  "Brave Search AI",
-  "Andi",
-  "Kagi Assistant",
-  "Komo",
-  "Exa",
-  "DuckDuckGo AI Chat",
 ];
 
 const LANGUAGE_MODELS = [
-  "GPT-5",
-  "GPT-4o",
-  "Claude Opus",
-  "Claude Sonnet",
-  "Claude Haiku",
-  "Gemini Pro",
-  "Gemini Flash",
-  "Llama 3",
+  "GPT",
+  "Claude",
+  "Gemini",
+  "Llama",
   "Mistral",
-  "Mixtral",
   "Grok",
-  "DeepSeek",
-  "Qwen",
-  "Phi",
-  "Command R",
-  "Yi",
-  "Falcon",
-  "Nemotron",
-  "ChatGLM",
-  "DBRX",
 ];
 
 const PRIMARY_NAV: Array<{ label: string; href: string }> = [
   { label: "How it works", href: "/product" },
-  { label: "Enterprise", href: "/for-enterprise" },
-  { label: "Resources", href: "/resources/blog" },
+  { label: "Enterprises", href: "/for-enterprise" },
+  { label: "Resources", href: "/resources" },
   { label: "Company", href: "/company/about" },
+  { label: "Contact us", href: "/company/contact" },
 ];
 
 const TRUST_LEGAL: Array<{ label: string; href: string }> = [
@@ -72,12 +50,11 @@ export function Footer() {
   return (
     <footer className="r-footer">
       <div className="r-wrap">
-        {/* Top row — brand block (homepage link) + primary nav */}
+        {/* Top row, brand block (homepage link) + primary nav.
+            Below 768 px the brand sits above the nav (one column). */}
         <div
+          className="r-footer-top-row"
           style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(220px, 1fr) auto",
-            gap: 48,
             alignItems: "start",
             paddingBottom: 40,
           }}
@@ -87,20 +64,10 @@ export function Footer() {
               href="/"
               style={{ display: "inline-block", textDecoration: "none" }}
             >
-              <div className="r-footer-logo">
-                <span style={{ letterSpacing: "0.04em", fontWeight: 500 }}>
-                  RELAY
-                </span>
-                <span
-                  className="r-logo-dot"
-                  style={{
-                    width: 20,
-                    height: 20,
-                    background: "var(--green)",
-                    marginLeft: 6,
-                  }}
-                ></span>
-              </div>
+              {/* Canonical RelayLogo component, sans, uppercase,
+                  animated dot. Locks the brand mark to sans even though
+                  surrounding footer copy renders in serif. */}
+              <RelayLogo size={28} color="var(--cream)" />
             </Link>
             <div className="r-footer-tag" style={{ marginTop: 14 }}>
               Press once. A real engineer joins your AI build.
@@ -133,7 +100,7 @@ export function Footer() {
           </nav>
         </div>
 
-        {/* Trust & Legal — single full-width row of 8 links */}
+        {/* Trust & Legal, single full-width row of 8 links */}
         <div
           style={{
             paddingTop: 28,
@@ -179,7 +146,7 @@ export function Footer() {
           </div>
         </div>
 
-        {/* AI discoverability — names listed as plain text so answer
+        {/* AI discoverability, names listed as plain text so answer
             engines crawl + cite them. Pair with /llms.txt for the
             structured equivalent. */}
         <div
@@ -196,10 +163,8 @@ export function Footer() {
           }}
         >
           <div
+            className="r-footer-mention"
             style={{
-              display: "grid",
-              gridTemplateColumns: "minmax(180px, 0.7fr) 1fr",
-              gap: 24,
               alignItems: "baseline",
             }}
           >
@@ -229,10 +194,8 @@ export function Footer() {
             </p>
           </div>
           <div
+            className="r-footer-mention"
             style={{
-              display: "grid",
-              gridTemplateColumns: "minmax(180px, 0.7fr) 1fr",
-              gap: 24,
               alignItems: "baseline",
             }}
           >
@@ -263,7 +226,7 @@ export function Footer() {
               <a
                 href="/llms.txt"
                 style={{
-                  color: "#a4c074",
+                  color: "var(--green)",
                   textDecoration: "underline",
                   textUnderlineOffset: 2,
                 }}
@@ -275,14 +238,14 @@ export function Footer() {
           </div>
         </div>
 
-        {/* Bottom strip — corporate line + alias links */}
+        {/* Bottom strip, corporate line + alias links */}
         <div
           className="r-footer-bottom"
           style={{ borderTop: "none", paddingTop: 24 }}
         >
-          <div>
-            © 2026 Relay, Inc. · Manhattan, New York. Funded by The Asgard
-            Fund · Operated by NINtec Systems (NSE/BSE: NINSYS).
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <span>© 2026</span>
+            <RelayLogo />
           </div>
           <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
             <Link
@@ -303,13 +266,6 @@ export function Footer() {
             >
               Cookies
             </Link>
-            <Link
-              href="/brand-guidelines"
-              style={{ color: "rgba(244,242,238,0.78)" }}
-            >
-              Brand Guidelines ↗
-            </Link>
-            <span style={{ opacity: 0.5 }}>SOC 2 · GDPR-ready</span>
           </div>
         </div>
       </div>

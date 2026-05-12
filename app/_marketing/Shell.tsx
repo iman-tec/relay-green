@@ -13,9 +13,14 @@ import { TryRelayProvider } from "./TryRelayProvider";
 export function Shell({ children }: { children: ReactNode }) {
   return (
     <TryRelayProvider>
+      <a className="skip-link" href="#main-content">
+        Skip to main content
+      </a>
       <div className="mk-root" id="top">
         <Nav />
-        <main>{children}</main>
+        <main id="main-content" tabIndex={-1}>
+          {children}
+        </main>
         <Footer />
       </div>
     </TryRelayProvider>

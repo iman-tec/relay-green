@@ -6,7 +6,7 @@
  * The marketing surface has multiple "Try Relay" entry points (nav, hero,
  * CTA banner) that all need to open the same modal. A Context Provider
  * keeps modal state in one place and lets server-rendered descendants
- * pass through unchanged — only the buttons themselves need to be client
+ * pass through unchanged, only the buttons themselves need to be client
  * components.
  */
 
@@ -79,10 +79,7 @@ function TryRelayModal() {
       aria-labelledby="tryrelay-title"
       onClick={close}
     >
-      <div
-        className="mk-root-modal"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="mk-root-modal" onClick={(e) => e.stopPropagation()}>
         <button
           type="button"
           className="mk-root-modal-close"
@@ -123,10 +120,9 @@ function TryRelayModal() {
         <h2 id="tryrelay-title">The console opens here.</h2>
         <p className="body">
           Once you click <em style={{ color: "#3f5c2e" }}>Try Relay</em>, the
-          Relay desktop opens — same way Claude.ai opens behind{" "}
-          <em style={{ color: "#3f5c2e" }}>Try Claude</em>. The green dot
-          lives top-right; press it any time you want a senior engineer in the
-          loop.
+          Relay desktop opens, same way Claude.ai opens behind{" "}
+          <em style={{ color: "#3f5c2e" }}>Try Claude</em>. The green dot lives
+          top-right; press it any time you want a software engineer in the loop.
         </p>
         <div className="console-card">
           <div className="url">→ relay.green/console</div>
@@ -141,7 +137,11 @@ function TryRelayModal() {
             close();
           }}
         >
+          <label htmlFor="tryrelay-email" className="sr-only">
+            Email address
+          </label>
           <input
+            id="tryrelay-email"
             type="email"
             required
             placeholder="you@company.com"

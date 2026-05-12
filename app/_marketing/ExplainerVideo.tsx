@@ -1,15 +1,15 @@
 "use client";
 
 /*
- * Relay 45-second animated explainer — v2.
+ * Relay 45-second animated explainer, v2.
  *
  * Leads with the WHY (AI changed who can build · the hard parts still need
- * a senior engineer), then walks through the press, the Zoom session, the
- * three phases, and the brand backbone (Manhattan HQ, 29 years, 2,000+
- * engineers, 15+ countries) before the end card.
+ * a software engineer), then walks through the press, the Zoom session, the
+ * three phases, and the closing press-joins-stays beat before the
+ * end card.
  *
  * Voiceover plays through the browser's Web Speech API
- * (SpeechSynthesisUtterance) — works in Chrome / Edge / Safari without any
+ * (SpeechSynthesisUtterance), works in Chrome / Edge / Safari without any
  * dependencies. A mute toggle is exposed in the controls.
  *
  * Screen-record this in a tab to produce a clean MP4 with audio
@@ -47,7 +47,7 @@ const scenes: Scene[] = [
   {
     start: 0,
     end: 6,
-    vo: "AI changed who can build software. The hard parts still want a senior engineer.",
+    vo: "AI changed who can build software. The hard parts still want a software engineer.",
     render: (e) => (
       <CenteredScene>
         <WhyVisual progress={localProgress(e, 0, 5)} />
@@ -64,7 +64,7 @@ const scenes: Scene[] = [
   {
     start: 6,
     end: 13,
-    vo: "Architecture, security, deployment, maintenance — the ninety percent behind the curtain.",
+    vo: "Architecture, security, deployment, maintenance, the ninety percent behind the curtain.",
     render: (e) => (
       <CenteredScene>
         <FourMoments progress={localProgress(e, 6, 12)} />
@@ -79,7 +79,7 @@ const scenes: Scene[] = [
   {
     start: 13,
     end: 18,
-    vo: "Press the green dot. A senior engineer joins.",
+    vo: "Press the green dot. A software engineer joins.",
     render: () => (
       <CenteredScene>
         <PressPanel />
@@ -94,7 +94,7 @@ const scenes: Scene[] = [
   {
     start: 18,
     end: 26,
-    vo: "A senior engineer enters your live session, on Zoom you already use.",
+    vo: "A software engineer enters your live session, on Zoom you already use.",
     render: (e) => (
       <CenteredScene>
         <ZoomInterface progress={localProgress(e, 18, 25)} />
@@ -126,7 +126,7 @@ const scenes: Scene[] = [
   {
     start: 33,
     end: 40,
-    vo: "Relay is headquartered in Manhattan. Backed by twenty-nine years of engineering, two thousand engineers across fifteen countries.",
+    vo: "One press. An engineer joins. The same engineer stays with you.",
     render: (e) => (
       <CenteredScene>
         <BackboneStats progress={localProgress(e, 33, 39)} />
@@ -162,7 +162,7 @@ export function ExplainerVideo() {
     }
   }, []);
 
-  // Speak a scene's VO line — lazy-pick the first English voice we find.
+  // Speak a scene's VO line, lazy-pick the first English voice we find.
   const speakScene = useCallback(
     (sceneIndex: number) => {
       if (muted) return;
@@ -177,7 +177,7 @@ export function ExplainerVideo() {
       u.pitch = 0.95;
       u.volume = 1;
       // Prefer an English voice; SpeechSynthesis may have a slight async
-      // load on first call — getVoices() returns [] briefly. Fall back to
+      // load on first call, getVoices() returns [] briefly. Fall back to
       // the engine default if so.
       const voices = window.speechSynthesis.getVoices();
       const en = voices.find(
@@ -275,7 +275,7 @@ export function ExplainerVideo() {
           color: var(--ink, #1a1814);
           border-radius: 14px;
           overflow: hidden;
-          font-family: var(--font-instrument-sans, system-ui), system-ui, sans-serif;
+          font-family: var(--font-inter, system-ui), system-ui, sans-serif;
           isolation: isolate;
         }
         .explainer-stage { position: absolute; inset: 0; }
@@ -402,12 +402,15 @@ export function ExplainerVideo() {
       {finishedOverlay && (
         <div
           className="explainer-overlay"
-          style={{ background: "rgba(244,242,238,0.92)", backdropFilter: "none" }}
+          style={{
+            background: "rgba(244,242,238,0.92)",
+            backdropFilter: "none",
+          }}
         >
           <div style={{ textAlign: "center" }}>
             <div
               style={{
-                fontFamily: "var(--font-fraunces, serif)",
+                fontFamily: "var(--font-source-serif, serif)",
                 fontSize: "clamp(28px, 3.4vw, 44px)",
                 letterSpacing: "-0.018em",
                 marginBottom: 16,
@@ -415,7 +418,9 @@ export function ExplainerVideo() {
               }}
             >
               Build with AI. Ship with{" "}
-              <em style={{ color: "var(--green-deep, #3f5c2e)" }}>engineers.</em>
+              <em style={{ color: "var(--green-deep, #3f5c2e)" }}>
+                engineers.
+              </em>
             </div>
             <div
               style={{
@@ -496,7 +501,9 @@ export function ExplainerVideo() {
 
 function formatTime(s: number): string {
   const mm = Math.floor(s / 60);
-  const ss = Math.floor(s % 60).toString().padStart(2, "0");
+  const ss = Math.floor(s % 60)
+    .toString()
+    .padStart(2, "0");
   return `${mm}:${ss}`;
 }
 
@@ -526,7 +533,16 @@ function PauseIcon() {
 }
 function SpeakerIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M11 5L6 9H3v6h3l5 4z" />
       <path d="M15.5 8.5a4 4 0 0 1 0 7M18.5 5.5a8 8 0 0 1 0 13" />
     </svg>
@@ -534,7 +550,16 @@ function SpeakerIcon() {
 }
 function SpeakerMutedIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M11 5L6 9H3v6h3l5 4z" />
       <path d="M22 9l-6 6M16 9l6 6" />
     </svg>
@@ -573,7 +598,7 @@ function SceneCaption({
   return (
     <div
       style={{
-        fontFamily: "var(--font-fraunces, Georgia, serif)",
+        fontFamily: "var(--font-source-serif, Georgia, serif)",
         fontStyle: italic ? "italic" : "normal",
         fontSize: "clamp(16px, 1.6vw, 22px)",
         lineHeight: 1.4,
@@ -592,7 +617,7 @@ function SceneTitle({ children }: { children: React.ReactNode }) {
   return (
     <h2
       style={{
-        fontFamily: "var(--font-fraunces, Georgia, serif)",
+        fontFamily: "var(--font-source-serif, Georgia, serif)",
         fontWeight: 400,
         fontSize: "clamp(28px, 4.2vw, 56px)",
         letterSpacing: "-0.022em",
@@ -624,7 +649,7 @@ function MonoTag({ children }: { children: React.ReactNode }) {
   );
 }
 
-/* ───────── Beat 1 · WHY visual — AI-symbol → person silhouette ───────── */
+/* ───────── Beat 1 · WHY visual, AI-symbol → person silhouette ───────── */
 
 function WhyVisual({ progress }: { progress: number }) {
   return (
@@ -635,7 +660,7 @@ function WhyVisual({ progress }: { progress: number }) {
         gap: 56,
       }}
     >
-      {/* AI sigil — abstract grid of dots */}
+      {/* AI sigil, abstract grid of dots */}
       <div
         style={{
           width: 80,
@@ -658,7 +683,8 @@ function WhyVisual({ progress }: { progress: number }) {
               width: "100%",
               aspectRatio: "1 / 1",
               borderRadius: 3,
-              background: i === 4 ? "var(--green, #4f6b3a)" : "var(--rule, #d8d2c5)",
+              background:
+                i === 4 ? "var(--green, #4f6b3a)" : "var(--rule, #d8d2c5)",
               opacity: i === 4 ? 1 : 0.5 + Math.sin(progress * 8 + i) * 0.3,
               transition: "opacity 0.3s",
             }}
@@ -801,7 +827,7 @@ function FourMoments({ progress }: { progress: number }) {
             <div
               style={{
                 position: "relative",
-                fontFamily: "var(--font-fraunces, serif)",
+                fontFamily: "var(--font-source-serif, serif)",
                 fontSize: 18,
                 color: "var(--ink, #1a1814)",
                 letterSpacing: "-0.01em",
@@ -848,13 +874,14 @@ function PressPanel() {
             borderRadius: "50%",
             background: "var(--green, #4f6b3a)",
             opacity: 0.5,
-            animation: "explainer-pulse 1.4s cubic-bezier(0.2,0.7,0.2,1) infinite",
+            animation:
+              "explainer-pulse 1.4s cubic-bezier(0.2,0.7,0.2,1) infinite",
           }}
         ></span>
       </span>
       <span
         style={{
-          fontFamily: "var(--font-instrument-sans, system-ui), system-ui",
+          fontFamily: "var(--font-inter, system-ui), system-ui",
           fontSize: 14,
           fontWeight: 500,
           color: "var(--ink, #1a1814)",
@@ -892,7 +919,7 @@ function ZoomInterface({ progress }: { progress: number }) {
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
-          fontFamily: "var(--font-instrument-sans, system-ui), system-ui",
+          fontFamily: "var(--font-inter, system-ui), system-ui",
           fontSize: 11,
           color: "rgba(255,255,255,0.6)",
         }}
@@ -991,7 +1018,7 @@ function ZoomInterface({ progress }: { progress: number }) {
               padding: "4px 10px",
               background: "rgba(0,0,0,0.55)",
               borderRadius: 4,
-              fontFamily: "var(--font-instrument-sans, system-ui), system-ui",
+              fontFamily: "var(--font-inter, system-ui), system-ui",
               fontSize: 11,
               color: "rgba(255,255,255,0.9)",
               display: "flex",
@@ -1086,7 +1113,7 @@ function ZoomInterface({ progress }: { progress: number }) {
               padding: "3px 8px",
               background: "rgba(0,0,0,0.55)",
               borderRadius: 4,
-              fontFamily: "var(--font-instrument-sans, system-ui), system-ui",
+              fontFamily: "var(--font-inter, system-ui), system-ui",
               fontSize: 10,
               color: "rgba(255,255,255,0.8)",
             }}
@@ -1120,14 +1147,14 @@ function ZoomInterface({ progress }: { progress: number }) {
             style={{
               padding: "6px 12px",
               borderRadius: 6,
-              fontFamily: "var(--font-instrument-sans, system-ui), system-ui",
+              fontFamily: "var(--font-inter, system-ui), system-ui",
               fontSize: 10.5,
               letterSpacing: "0.02em",
               color: b.accent
                 ? "#fff"
                 : b.active
-                ? "rgba(255,255,255,0.85)"
-                : "rgba(255,255,255,0.5)",
+                  ? "rgba(255,255,255,0.85)"
+                  : "rgba(255,255,255,0.5)",
               background: b.accent
                 ? "rgba(79,107,58,0.85)"
                 : "rgba(255,255,255,0.06)",
@@ -1153,7 +1180,7 @@ function ZoomInterface({ progress }: { progress: number }) {
           style={{
             padding: "6px 12px",
             borderRadius: 6,
-            fontFamily: "var(--font-instrument-sans, system-ui), system-ui",
+            fontFamily: "var(--font-inter, system-ui), system-ui",
             fontSize: 10.5,
             color: "#fff",
             background: "#cc4040",
@@ -1233,9 +1260,13 @@ function PhaseTrack({ progress }: { progress: number }) {
             <div
               key={p.num}
               style={{
-                background: reached ? "var(--paper, #f9f7f3)" : "var(--cream, #f4f2ee)",
+                background: reached
+                  ? "var(--paper, #f9f7f3)"
+                  : "var(--cream, #f4f2ee)",
                 border: `1px solid ${
-                  reached ? "var(--green-deep, #3f5c2e)" : "var(--rule, #d8d2c5)"
+                  reached
+                    ? "var(--green-deep, #3f5c2e)"
+                    : "var(--rule, #d8d2c5)"
                 }`,
                 borderRadius: 10,
                 padding: "12px 14px",
@@ -1246,7 +1277,7 @@ function PhaseTrack({ progress }: { progress: number }) {
               <MonoTag>Phase {p.num}</MonoTag>
               <div
                 style={{
-                  fontFamily: "var(--font-fraunces, serif)",
+                  fontFamily: "var(--font-source-serif, serif)",
                   fontSize: 17,
                   marginTop: 4,
                   color: "var(--ink, #1a1814)",
@@ -1257,7 +1288,7 @@ function PhaseTrack({ progress }: { progress: number }) {
               <div
                 style={{
                   fontStyle: "italic",
-                  fontFamily: "var(--font-fraunces, serif)",
+                  fontFamily: "var(--font-source-serif, serif)",
                   fontSize: 11.5,
                   color: "var(--green-deep, #3f5c2e)",
                   marginTop: 2,
@@ -1277,10 +1308,9 @@ function PhaseTrack({ progress }: { progress: number }) {
 
 function BackboneStats({ progress }: { progress: number }) {
   const stats = [
-    { num: "Manhattan", label: "Headquarters", small: true },
-    { num: "29", label: "Years of delivery" },
-    { num: "2,000+", label: "Engineers" },
-    { num: "15+", label: "Countries" },
+    { num: "Press", label: "the dot" },
+    { num: "Joins", label: "in seconds" },
+    { num: "Stays", label: "build · launch · maintain" },
   ];
   return (
     <div
@@ -1325,8 +1355,8 @@ function BackboneStats({ progress }: { progress: number }) {
             >
               <div
                 style={{
-                  fontFamily: "var(--font-fraunces, serif)",
-                  fontSize: s.small ? "clamp(18px, 2.4vw, 28px)" : "clamp(24px, 3vw, 40px)",
+                  fontFamily: "var(--font-source-serif, serif)",
+                  fontSize: "clamp(24px, 3vw, 40px)",
                   lineHeight: 1,
                   color: "var(--cream, #f4f2ee)",
                   letterSpacing: "-0.022em",
@@ -1373,7 +1403,7 @@ function EndCard({ progress }: { progress: number }) {
         style={{
           display: "inline-flex",
           alignItems: "baseline",
-          fontFamily: "var(--font-instrument-sans, system-ui), system-ui",
+          fontFamily: "var(--font-inter, system-ui), system-ui",
           fontWeight: 500,
           fontSize: "clamp(54px, 9vw, 110px)",
           letterSpacing: "0.04em",
@@ -1411,7 +1441,7 @@ function EndCard({ progress }: { progress: number }) {
       </div>
       <div
         style={{
-          fontFamily: "var(--font-fraunces, serif)",
+          fontFamily: "var(--font-source-serif, serif)",
           fontStyle: "italic",
           fontSize: "clamp(18px, 2vw, 24px)",
           color: "var(--ink-soft, #4a4640)",

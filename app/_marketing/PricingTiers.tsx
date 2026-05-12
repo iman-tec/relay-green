@@ -2,7 +2,7 @@
 
 /*
  * Pricing tier grid with monthly/annual toggle. The annual price is
- * derived from the monthly amount (20% off, rounded) — kept simple
+ * derived from the monthly amount (20% off, rounded), kept simple
  * because the tier copy itself is identical between plans.
  */
 
@@ -55,7 +55,7 @@ const TIERS: Tier[] = [
     cta: "Start Max",
     feats: [
       "Everything in Pro",
-      "Priority dispatch — 30s target",
+      "Priority dispatch, 30s target",
       "Dedicated lead engineer",
       "Project workspace + Git mirroring",
       "Quarterly architecture review",
@@ -119,7 +119,8 @@ export function PricingTiers() {
         <div className="r-wrap">
           <div className="r-pricing-grid">
             {TIERS.map((p) => {
-              const shown = billing === "annual" ? discount(p.amount) : p.amount;
+              const shown =
+                billing === "annual" ? discount(p.amount) : p.amount;
               return (
                 <div
                   key={p.name}

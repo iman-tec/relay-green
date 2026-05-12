@@ -7,16 +7,21 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { TryRelayButton } from "./TryRelayButton";
 
 type Step = { num: string; label: string; title: string };
 
 const STEPS: Step[] = [
-  { num: "01", label: "Build", title: "AI takes you eighty percent of the way." },
+  {
+    num: "01",
+    label: "Build",
+    title: "AI takes you eighty percent of the way.",
+  },
   { num: "02", label: "Press", title: "You press the green dot." },
   {
     num: "03",
     label: "Match",
-    title: "A senior engineer joins. By name. By face.",
+    title: "A software engineer joins. By name. By face.",
   },
   {
     num: "04",
@@ -79,7 +84,7 @@ export function HowItWorks() {
             </div>
             <div>
               <span className="com">
-                # Want a senior engineer to take it from here.
+                # Want a software engineer to take it from here.
               </span>
             </div>
           </div>
@@ -175,8 +180,8 @@ export function HowItWorks() {
               Stripe webhook 401s in prod. Works locally.
             </div>
             <div className="r-chat-message from-engineer">
-              Got it — your prod endpoint just needs the signing secret. Want
-              to share screen so I can show you?
+              Got it, your prod endpoint just needs the signing secret. Want to
+              share screen so I can show you?
             </div>
             <div className="r-chat-message">yes please</div>
             <div className="r-chat-message from-engineer">
@@ -219,7 +224,7 @@ export function HowItWorks() {
                 lineHeight: 1.5,
               }}
             >
-              Want me to take this one to launch? Same — me. ~5 days.{" "}
+              Want me to take this one to launch? Same, me. ~5 days.{" "}
               <strong>€2,400 fixed.</strong>
             </div>
             <div
@@ -263,9 +268,8 @@ export function HowItWorks() {
           title={STEPS[5].title}
         >
           <div
+            className="r-grid-2-even"
             style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
               gap: 12,
               marginTop: 16,
             }}
@@ -340,6 +344,51 @@ export function HowItWorks() {
           </button>
         ))}
       </div>
+
+      {/* Phase bracket row, groups the 6 steps into the 3 contractual
+          phases. Widths intentionally mirror the step strip above:
+          Phase 1 spans steps 01-04 (flex 4), Phase 2 is step 05 (flex 1),
+          Phase 3 is step 06 (flex 1). Stacks to a single column on mobile. */}
+      <div className="r-how-phases" aria-label="Phase grouping">
+        <div className="r-how-phase">
+          <span className="r-how-phase-head">
+            <span className="r-how-phase-num">Phase 1</span>
+            <span className="r-how-phase-range">Steps 01–04</span>
+          </span>
+          <span className="r-how-phase-title">Build &amp; solve</span>
+          <span className="r-how-phase-desc">
+            AI builds. You press. A software engineer joins. The stuck moment is
+            solved — same session.
+          </span>
+        </div>
+        <div className="r-how-phase">
+          <span className="r-how-phase-head">
+            <span className="r-how-phase-num">Phase 2</span>
+            <span className="r-how-phase-range">Step 05</span>
+          </span>
+          <span className="r-how-phase-title">Baton</span>
+          <span className="r-how-phase-desc">
+            Same engineer takes you to launch.
+          </span>
+        </div>
+        <div className="r-how-phase">
+          <span className="r-how-phase-head">
+            <span className="r-how-phase-num">Phase 3</span>
+            <span className="r-how-phase-range">Step 06</span>
+          </span>
+          <span className="r-how-phase-title">Retain</span>
+          <span className="r-how-phase-desc">
+            Same engineer keeps it running.
+          </span>
+        </div>
+      </div>
+
+      <div className="r-how-cta">
+        <span className="r-how-cta-tagline">
+          Same Engineering Team
+        </span>
+        <TryRelayButton />
+      </div>
     </>
   );
 }
@@ -350,7 +399,7 @@ function Frame({
   children,
 }: {
   active: boolean;
-  /** Optional eyebrow label — accepted for API compatibility but no longer rendered. */
+  /** Optional eyebrow label, accepted for API compatibility but no longer rendered. */
   eyebrow?: string;
   title: string;
   children: React.ReactNode;

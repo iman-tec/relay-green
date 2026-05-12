@@ -1,0 +1,122 @@
+{
+  "voice": {
+    "voice": "en-US-AndrewMultilingualNeural",
+    "rate": "-12%",
+    "pitch": "-2Hz"
+  },
+  "voSource": "ai-edge-tts",
+  "generatedAt": "2026-05-10T20:50:50.530Z",
+  "totalDuration": 59.877914,
+  "beats": [
+    {
+      "id": "1-build",
+      "label": "The build moment",
+      "plannedStart": 0,
+      "plannedEnd": 6,
+      "actualStart": 0,
+      "actualEnd": 6,
+      "spokenDuration": 4.032,
+      "vo": "You're building with AI. It works. Most of the way."
+    },
+    {
+      "id": "2-wall",
+      "label": "The wall",
+      "plannedStart": 6,
+      "plannedEnd": 13,
+      "actualStart": 6,
+      "actualEnd": 13,
+      "spokenDuration": 4.896,
+      "vo": "And then the AI runs out, and you wish a real engineer was in the room."
+    },
+    {
+      "id": "3-press",
+      "label": "The press",
+      "plannedStart": 13,
+      "plannedEnd": 19,
+      "actualStart": 13,
+      "actualEnd": 19,
+      "spokenDuration": 5.016,
+      "vo": "That's the press. One button. Inside the tool you're already using."
+    },
+    {
+      "id": "4-arrival",
+      "label": "The arrival",
+      "plannedStart": 19,
+      "plannedEnd": 27,
+      "actualStart": 19,
+      "actualEnd": 26.978163000000002,
+      "spokenDuration": 8,
+      "vo": "A software engineer joins your build. By name. By face. Through the same Zoom your team already uses."
+    },
+    {
+      "id": "5-modalities",
+      "label": "Three modalities",
+      "plannedStart": 27,
+      "plannedEnd": 33,
+      "actualStart": 26.978163000000002,
+      "actualEnd": 32.963016,
+      "spokenDuration": 6,
+      "vo": "Chat, voice, or screen share. You pick. Tied to your project, recorded with consent."
+    },
+    {
+      "id": "6a-phase1",
+      "label": "Phase 01 - Build",
+      "plannedStart": 33,
+      "plannedEnd": 38,
+      "actualStart": 32.963016,
+      "actualEnd": 37.963016,
+      "spokenDuration": 4.176,
+      "vo": "Phase one. You build. Your engineer supports."
+    },
+    {
+      "id": "6b-phase2",
+      "label": "Phase 02 - Launch & Go-Live",
+      "plannedStart": 38,
+      "plannedEnd": 43,
+      "actualStart": 37.963016,
+      "actualEnd": 42.963016,
+      "spokenDuration": 4.344,
+      "vo": "Phase two. Launch and go live. Your engineer leads."
+    },
+    {
+      "id": "6c-phase3",
+      "label": "Phase 03 - Maintain & Scale",
+      "plannedStart": 43,
+      "plannedEnd": 49,
+      "actualStart": 42.963016,
+      "actualEnd": 48.94059,
+      "spokenDuration": 6,
+      "vo": "Phase three. Maintain and scale. Your engineer takes accountability."
+    },
+    {
+      "id": "6d-relay",
+      "label": "The relay payoff",
+      "plannedStart": 49,
+      "plannedEnd": 51,
+      "actualStart": 48.94059,
+      "actualEnd": 50.922948,
+      "spokenDuration": 2,
+      "vo": "Same engineer. End to end."
+    },
+    {
+      "id": "7-trust",
+      "label": "Trust posture",
+      "plannedStart": 51,
+      "plannedEnd": 56,
+      "actualStart": 50.922948,
+      "actualEnd": 55.900726,
+      "spokenDuration": 5,
+      "vo": "Engineers in fifteen plus countries. Compliance built in."
+    },
+    {
+      "id": "8-close",
+      "label": "End card",
+      "plannedStart": 56,
+      "plannedEnd": 60,
+      "actualStart": 55.900726,
+      "actualEnd": 59.877914,
+      "spokenDuration": 4,
+      "vo": "Build with AI. Ship with engineers. Relay."
+    }
+  ]
+}
