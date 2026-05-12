@@ -22,6 +22,8 @@
     "db:seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@fontsource/inter": "^5.2.8",
+    "@fontsource/source-serif-4": "^5.2.9",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "@splinetool/react-spline": "^4.1.0",
