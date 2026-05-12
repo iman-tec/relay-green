@@ -1,20 +1,20 @@
 /*
- * Edge proxy — Supabase auth presence check.
+ * Edge proxy — Supabase auth session refresh + route protection.
  *
- * Cheap cookie sniff at the Edge. Real authorization (role, RLS) happens
- * server-side in route handlers / RPCs / via useStaffGuard on the client.
- * This proxy just redirects clearly-unauthed traffic before it hits the
- * React tree on protected routes.
+ * Two jobs:
+ *   1. Refresh the Supabase JWT on every request so the session stays alive
+ *      (required by @supabase/ssr — without this the access token expires).
+ *   2. Redirect clearly-unauthed traffic away from protected routes before
+ *      it hits the React tree.
  *
- * Replaces the legacy `middleware.ts` file convention (deprecated in Next.js 16).
+ * Real authorization (role checks, RLS) happens server-side in route handlers
+ * and RPCs, and client-side in useStaffGuard. This proxy is the fast edge layer.
+ *
+ * Replaces the legacy `middleware.ts` convention (deprecated in Next.js 16).
  */
 
+import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-
-// Supabase SSR uses cookies named `sb-<project_ref>-auth-token` (and a
-// potential `-code-verifier` companion). We sniff for any cookie whose
-// name starts with `sb-` and ends with `-auth-token`.
-const SUPABASE_AUTH_COOKIE_RE = /^sb-.+-auth-token(\.\d+)?$/;
 
 const PROTECTED_PREFIXES = [
   "/dashboard",
@@ -28,33 +28,55 @@ const PROTECTED_PREFIXES = [
 
 const STAFF_LOGIN = "/staff/login";
 
-export function proxy(req: NextRequest) {
+export async function proxy(req: NextRequest) {
+  let res = NextResponse.next({ request: req });
+
+  // Refresh the Supabase session — keeps the JWT alive across page loads.
+  // createServerClient writes updated cookies back onto the response.
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (supabaseUrl && supabaseKey) {
+    const supabase = createServerClient(supabaseUrl, supabaseKey, {
+      cookies: {
+        getAll() {
+          return req.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) => req.cookies.set(name, value));
+          res = NextResponse.next({ request: req });
+          cookiesToSet.forEach(({ name, value, options }) =>
+            res.cookies.set(name, value, options)
+          );
+        },
+      },
+    });
+    await supabase.auth.getUser();
+  }
+
+  // Route protection — redirect unauthenticated users on staff pages.
   const { pathname } = req.nextUrl;
   const isProtected = PROTECTED_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
   );
-  if (!isProtected) return NextResponse.next();
+  if (isProtected) {
+    // After the getUser() call above, the cookie may have been refreshed.
+    // Check for a valid Supabase auth cookie to decide redirect.
+    const hasSession = req.cookies
+      .getAll()
+      .some((c) => /^sb-.+-auth-token(\.\d+)?$/.test(c.name));
 
-  const hasSupabaseSession = req.cookies
-    .getAll()
-    .some((c) => SUPABASE_AUTH_COOKIE_RE.test(c.name));
-
-  if (!hasSupabaseSession) {
-    const url = req.nextUrl.clone();
-    url.pathname = STAFF_LOGIN;
-    return NextResponse.redirect(url);
+    if (!hasSession) {
+      const url = req.nextUrl.clone();
+      url.pathname = STAFF_LOGIN;
+      return NextResponse.redirect(url);
+    }
   }
-  return NextResponse.next();
+
+  return res;
 }
 
 export const config = {
   matcher: [
-    "/dashboard/:path*",
-    "/inbox/:path*",
-    "/triage/:path*",
-    "/supervise/:path*",
-    "/admin/:path*",
-    "/enterprise/:path*",
-    "/staff/session/:path*",
+    "/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

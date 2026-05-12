@@ -3,7 +3,7 @@
  *
  * GET /api/dev/sign-in-as?role=engineer
  *   → signs in as the demo account for that role (via known password)
- *   → sets the SSR auth cookies
+ *   → sets the SSR auth cookies on the redirect response
  *   → 302 redirects to the role's landing page
  *
  * The five demo accounts are provisioned by scripts/reset.mjs and share
@@ -14,7 +14,7 @@
 
 import { NextResponse } from "next/server";
 import { createClient as createBrowserStyleClient } from "@supabase/supabase-js";
-import { createClient as createServerClient } from "@/lib/supabase/server";
+import { createServerClient } from "@supabase/ssr";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -53,14 +53,14 @@ export async function GET(request: Request) {
     );
   }
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !anonKey) {
+  if (!supabaseUrl || !anonKey) {
     return NextResponse.json({ error: "supabase_env_missing" }, { status: 500 });
   }
 
   // Anon-key client to perform a real signInWithPassword.
-  const anon = createBrowserStyleClient(url, anonKey, {
+  const anon = createBrowserStyleClient(supabaseUrl, anonKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
   const { data: signed, error: signErr } = await anon.auth.signInWithPassword({
@@ -74,9 +74,23 @@ export async function GET(request: Request) {
     );
   }
 
-  // Write the SSR auth cookies via the server-side helper so the rest of
-  // the app sees us as authed on the next render.
-  const server = await createServerClient();
+  const next = searchParams.get("next") ?? target.landing;
+  const response = NextResponse.redirect(`${origin}${next}`);
+
+  // Write SSR auth cookies directly onto the redirect response.
+  // Using cookies() from next/headers + returning NextResponse.redirect() is a
+  // separate response object — cookies set via cookieStore.set() do NOT
+  // propagate to the redirect. We must write directly to response.cookies.
+  const server = createServerClient(supabaseUrl, anonKey, {
+    cookies: {
+      getAll: () => [],
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value, options }) => {
+          response.cookies.set(name, value, options ?? {});
+        });
+      },
+    },
+  });
   const { error: setErr } = await server.auth.setSession({
     access_token: signed.session.access_token,
     refresh_token: signed.session.refresh_token,
@@ -85,6 +99,5 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "set_session_failed", detail: setErr.message }, { status: 500 });
   }
 
-  const next = searchParams.get("next") ?? target.landing;
-  return NextResponse.redirect(`${origin}${next}`);
+  return response;
 }

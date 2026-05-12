@@ -53,18 +53,16 @@ export function useEngineerSession(sessionId: string): EngineerSessionState {
     setError(null);
     const sb = supabaseRef.current;
     try {
-      // Identify the viewer once per refresh so the UI can branch into
-      // engineer vs monitor mode without an extra effect.
-      sb.auth.getUser().then(({ data }) => {
-        setViewerUserId(data.user?.id ?? null);
-      }, () => { /* transient — ignored */ });
-
-      const [callRes, msgRes] = await Promise.all([
+      // Fetch the viewer identity in parallel with session data so
+      // isAssignedEngineer is correct on the very first render after load.
+      const [userRes, callRes, msgRes] = await Promise.all([
+        sb.auth.getUser().catch(() => ({ data: { user: null } })),
         sb.from("guest_calls").select("*").eq("id", sessionId).maybeSingle()
           .then((r) => r, (e) => ({ data: null, error: e })),
         sb.from("guest_messages").select("*").eq("guest_call_id", sessionId).order("created_at")
           .then((r) => r, (e) => ({ data: null, error: e })),
       ]);
+      setViewerUserId(userRes.data.user?.id ?? null);
       if (callRes.error) {
         console.warn("[eng-session] call query:", asString(callRes.error));
         setError(asString(callRes.error));
