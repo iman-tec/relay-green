@@ -4,11 +4,14 @@
  * Single source of truth for the customer's active session.
  *
  * Contract:
- *   1. On mount, ensure auth → call get_or_create_active_customer_session().
+ *   1. On mount, ensure auth → check for an EXISTING active session (read-only).
+ *      We do NOT auto-create a session on mount — the customer must explicitly
+ *      start one via the project-name form. This prevents the ConnectingModal
+ *      from popping up on every page load.
  *   2. Subscribe to that session's row via Postgres CDC (Realtime).
  *   3. Subscribe to incoming messages for that session.
  *   4. Expose state-driven booleans for the UI to react to.
- *   5. Provide actions: recall(), cancel(), sendMessage().
+ *   5. Provide actions: recall(), cancel(), sendMessage(), startNewSession().
  *
  * Reconnection: on Realtime drop we re-fetch the session row authoritatively
  * (the server is the truth). No replay buffers, no sequence numbers.
@@ -58,13 +61,18 @@ export type CustomerSessionState = {
   /** Force-load a brand-new session (used after cancel/abandon).
    *  Returns the new GuestCall row so callers can chain on it immediately
    *  without waiting for React state to flush. */
-  startNewSession: () => Promise<GuestCall | null>;
+  startNewSession: (projectId?: string) => Promise<GuestCall | null>;
   /** Send a message; auto-creates a session if none exists or current is
    *  terminal (cancelled/abandoned). Returns the resolved session id. */
-  sendOrStart: (body: string) => Promise<void>;
+  sendOrStart: (body: string, projectId?: string) => Promise<void>;
 };
 
 const TERMINAL_STATES: SessionStatus[] = ["ended", "abandoned", "cancelled"];
+
+// Statuses where a session is still "in progress" (not yet terminal).
+const ACTIVE_STATUSES: SessionStatus[] = [
+  "queued", "assigned", "joining", "live", "grace", "ending", "expired_free",
+];
 
 export function useCustomerSession(): CustomerSessionState {
   const [auth, setAuth] = useState<AuthState>({ kind: "loading" });
@@ -119,21 +127,96 @@ export function useCustomerSession(): CustomerSessionState {
     };
   }, []);
 
-  // ── Fetch or create session once authed ───────────────────────────────────
-  const loadSession = useCallback(async (): Promise<GuestCall | null> => {
+  // ── Read-only mount: look for an existing active session ──────────────────
+  // Does NOT call get_or_create — we never auto-create on page load.
+  // This prevents the ConnectingModal from firing every time the user opens
+  // the app. Session creation only happens via startNewSession() after the
+  // customer has gone through the project-name form.
+  // A queued session that's more than 10 min old without an engineer claim
+  // is almost certainly a ghost (browser closed mid-wait, test run, etc.).
+  // Silently cancel it so the sidebar doesn't show "Current session / Connecting…"
+  // on every page load.
+  const STALE_QUEUED_MS = 10 * 60_000; // 10 minutes
+
+  const loadExisting = useCallback(async (): Promise<void> => {
+    if (auth.kind !== "authed") return;
+    setLoading(true);
+    setError(null);
+    const sb = supabaseRef.current;
+    try {
+      const { data, error: qErr } = await sb
+        .from("guest_calls")
+        .select("*")
+        .eq("customer_user_id", auth.userId)
+        .in("status", ACTIVE_STATUSES)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (qErr) {
+        console.warn("[customer-session] loadExisting query:", asString(qErr));
+      }
+      let row = (data as GuestCall | null) ?? null;
+
+      // Stale-queued cleanup: if the session is still queued but was created
+      // more than 30 minutes ago, cancel it silently so it doesn't appear as
+      // "Current session / Connecting…" every time the user opens the app.
+      if (row && row.status === "queued") {
+        const ageMs = Date.now() - new Date(row.created_at).getTime();
+        if (ageMs > STALE_QUEUED_MS) {
+          void (async () => { await sb.rpc("cancel_customer_session", { _session_id: row!.id }); })();
+          row = null;
+        }
+      }
+
+      setSession(row);
+      if (row) {
+        const { data: msgs } = await sb
+          .from("guest_messages")
+          .select("*")
+          .eq("guest_call_id", row.id)
+          .order("created_at", { ascending: true });
+        setMessages((msgs ?? []) as GuestMessage[]);
+      } else {
+        setMessages([]);
+      }
+    } catch (e) {
+      if (isTransientNetworkError(e)) {
+        console.warn("[customer-session] transient network blip (loadExisting):", asString(e));
+      } else {
+        console.error("[customer-session] loadExisting failed:", asString(e));
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [auth]);
+
+  useEffect(() => {
+    loadExisting().catch((e) => {
+      if (isTransientNetworkError(e)) {
+        console.warn("[customer-session] transient network blip:", asString(e));
+      } else {
+        console.error("[customer-session] unhandled:", asString(e));
+      }
+    });
+  }, [loadExisting]);
+
+  // ── Create (or re-fetch) a session via get_or_create RPC ─────────────────
+  // Called only when the user explicitly starts a new session through the UI.
+  const loadSession = useCallback(async (projectId?: string): Promise<GuestCall | null> => {
     if (auth.kind !== "authed") return null;
     setLoading(true);
     setError(null);
     const sb = supabaseRef.current;
     try {
+      const rpcArgs = projectId ? { _project_id: projectId } : undefined;
       const { data, error: rpcErr } = await sb.rpc(
         "get_or_create_active_customer_session",
+        rpcArgs,
       );
       if (rpcErr) {
         const msg = asString(rpcErr);
         console.warn("[customer-session] RPC error:", msg);
         if (msg.includes("NO_ENTITLEMENT")) {
-          // Caller should show paywall — surface a typed error
           setError("NO_ENTITLEMENT");
           setSession(null);
           return null;
@@ -149,8 +232,6 @@ export function useCustomerSession(): CustomerSessionState {
         return null;
       }
       setSession(row);
-
-      // Load messages for this session
       const { data: msgs } = await sb
         .from("guest_messages")
         .select("*")
@@ -170,16 +251,6 @@ export function useCustomerSession(): CustomerSessionState {
       setLoading(false);
     }
   }, [auth]);
-
-  useEffect(() => {
-    loadSession().catch((e) => {
-      if (isTransientNetworkError(e)) {
-        console.warn("[customer-session] transient network blip:", asString(e));
-      } else {
-        console.error("[customer-session] unhandled:", asString(e));
-      }
-    });
-  }, [loadSession]);
 
   // Load entitlement (free time used, paid balance) whenever auth/session changes
   useEffect(() => {
@@ -304,25 +375,25 @@ export function useCustomerSession(): CustomerSessionState {
     if (e) setError(e.message);
   }, [session]);
 
-  const startNewSession = useCallback(async (): Promise<GuestCall | null> => {
+  const startNewSession = useCallback(async (projectId?: string): Promise<GuestCall | null> => {
     // Clear local state so the user sees a "loading" beat instead of the
     // stale terminal-state session, then re-call the RPC which will
     // happily create a fresh queued row (the previous one is terminal).
     setSession(null);
     setMessages([]);
-    return await loadSession();
+    return await loadSession(projectId);
   }, [loadSession]);
 
   /** Composer-friendly action: if there's no active session (or the current
    *  one is terminal), start a new one, then insert the message into that
    *  brand-new session row.  Side-steps the React state-flush race where
    *  state.session is stale immediately after startNewSession. */
-  const sendOrStart = useCallback(async (body: string) => {
+  const sendOrStart = useCallback(async (body: string, projectId?: string) => {
     if (!body.trim()) return;
     const sb = supabaseRef.current;
     let s = session;
     if (!s || TERMINAL_STATES.includes(s.status)) {
-      s = await startNewSession();
+      s = await startNewSession(projectId);
     }
     if (!s) return;
     const { error: e } = await sb.from("guest_messages").insert({
@@ -346,7 +417,8 @@ export function useCustomerSession(): CustomerSessionState {
     end,
     markJoined,
     sendMessage,
-    refresh: async () => { await loadSession(); },
+    // refresh re-reads whatever session already exists (no create)
+    refresh: async () => { await loadExisting(); },
     startNewSession,
     sendOrStart,
   };

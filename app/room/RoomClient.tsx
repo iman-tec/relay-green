@@ -16,15 +16,15 @@
  *   ended                   → PostCallView (locked chat + AI summary)
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   PanelGroup, Panel, PanelResizeHandle,
 } from "react-resizable-panels";
 import {
   Plus, Send, Sparkles, Video, Phone, X, PhoneOff, MessageSquare, Lock,
-  AlertTriangle, Loader2, ChevronDown, Search, PanelLeftClose, PanelLeftOpen,
-  Wallet, RefreshCw, Settings, LogOut, Check,
+  AlertTriangle, Loader2, ChevronDown, ChevronRight, Search, PanelLeftClose, PanelLeftOpen,
+  Wallet, RefreshCw, Settings, LogOut, Check, Folder,
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { ZoomEmbed } from "@/app/_components/ZoomEmbed";
@@ -176,7 +176,158 @@ export function RoomClient() {
     return () => clearInterval(id);
   }, [s?.status]);
 
-  if (state.auth.kind === "loading" || state.loading) return <FullScreenLoader />;
+  // ── Projects + new-session gate ────────────────────────────────────────────
+  // Shown in the central pane when the user starts a brand-new session.
+  // Lets the user pick from an existing project or name a new one.
+  const [projectFormOpen, setProjectFormOpen] = useState(false);
+  const [pendingDraft, setPendingDraft] = useState<string | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
+
+  // Reload the project list whenever auth changes or a session ends —
+  // ending one may add a new project (since create happens at session start).
+  const refetchProjects = useCallback(async () => {
+    if (state.auth.kind !== "authed") return;
+    const sb = createClient();
+    const { data, error } = await sb
+      .from("projects")
+      .select("id, name, created_at")
+      .eq("customer_id", state.auth.userId)
+      .order("created_at", { ascending: false });
+    if (error) return;
+    setProjects((data ?? []).map((r) => ({
+      id:        r.id as string,
+      name:      r.name as string,
+      createdAt: r.created_at as string,
+    })));
+  }, [state.auth]);
+  useEffect(() => { void refetchProjects(); }, [refetchProjects, state.session?.id, state.session?.status]);
+
+  // Track initial load so that subsequent startNewSession() calls
+  // (which briefly set loading=true + session=null) don't flash a
+  // full-screen spinner — the project form stays visible instead.
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
+  useEffect(() => {
+    if (!state.loading && state.auth.kind !== "loading") {
+      setInitialLoadDone(true);
+    }
+  }, [state.loading, state.auth.kind]);
+
+  // First-time customer: auto-open the project name form once when the
+  // room mounts with no active session AND zero past sessions. Idempotent —
+  // we only ever check once per page load.
+  const firstTimeCheckedRef = useRef(false);
+  useEffect(() => {
+    if (firstTimeCheckedRef.current) return;
+    if (!initialLoadDone) return;
+    if (state.auth.kind !== "authed") return;
+    if (state.session) return;             // already has (or had) an active session
+    firstTimeCheckedRef.current = true;
+    void (async () => {
+      const sb = createClient();
+      const { count } = await sb
+        .from("guest_calls")
+        .select("id", { count: "exact", head: true })
+        .eq("customer_user_id", state.auth.kind === "authed" ? state.auth.userId : "")
+        .limit(1);
+      if ((count ?? 0) === 0) {
+        setProjectFormOpen(true);
+      }
+    })();
+  }, [initialLoadDone, state.auth, state.session]);
+
+  // Used by the picker pane: either pick an existing project (existingId)
+  // or create a new one with a given name. Either way, start a session
+  // bound to that project; if there's a pending composer draft, send it too.
+  const startSessionInProject = useCallback(async (
+    arg: { existingId: string } | { newName: string },
+  ) => {
+    const sb = createClient();
+    let projectId: string | null = null;
+
+    if ("existingId" in arg) {
+      projectId = arg.existingId;
+    } else {
+      // Create the project first. Properly surface errors — previously
+      // we only destructured { data } and silently swallowed any { error },
+      // which caused every session to land under "General" even when the
+      // user had named a project.
+      const { data, error: createErr } = await sb.rpc("create_project", { _name: arg.newName });
+      if (createErr) {
+        console.warn("[startSessionInProject] create_project failed:", createErr.message);
+        throw new Error(createErr.message);
+      }
+      if (data) {
+        const row = Array.isArray(data)
+          ? (data[0] as { id?: string })
+          : (data as { id?: string });
+        projectId = row?.id ?? null;
+        if (!projectId) {
+          console.warn("[startSessionInProject] create_project returned data but no id:", data);
+        }
+      }
+    }
+
+    // Before creating a new session, cancel any lingering active session in
+    // the DB. Without this, get_or_create_active_customer_session returns the
+    // old session (which has project_id = null) instead of creating a fresh
+    // one in the right project.
+    const userId = state.auth.kind === "authed" ? state.auth.userId : null;
+    if (userId) {
+      const { data: activeSessions } = await sb
+        .from("guest_calls")
+        .select("id, project_id")
+        .eq("customer_user_id", userId)
+        .in("status", ["queued", "assigned", "joining", "live", "grace", "ending", "expired_free"])
+        .order("created_at", { ascending: false })
+        .limit(1);
+      if (activeSessions && activeSessions.length > 0) {
+        const existing = activeSessions[0] as { id: string; project_id: string | null };
+        // Cancel the old session if it has a different project (or no project).
+        // If it's already in the right project, just use it (the RPC will return it).
+        if (existing.project_id !== projectId) {
+          await sb.rpc("cancel_customer_session", { _session_id: existing.id });
+        }
+      }
+    }
+
+    if (pendingDraft) {
+      await state.sendOrStart(pendingDraft, projectId ?? undefined);
+      setPendingDraft(null);
+    } else {
+      await state.startNewSession(projectId ?? undefined);
+    }
+    setProjectFormOpen(false);
+    void refetchProjects();
+  }, [pendingDraft, state, refetchProjects]);
+
+  // Existing call signature kept for the picker pane.
+  const handleProjectConfirmNew  = useCallback((name: string) => startSessionInProject({ newName: name }),  [startSessionInProject]);
+  const handleProjectConfirmPick = useCallback((id: string)   => startSessionInProject({ existingId: id }), [startSessionInProject]);
+
+  // Called from sidebar's "+ inside project" affordance: skips the picker
+  // entirely and starts a session directly in that project.
+  const handleStartInProject = useCallback((projectId: string | null) => {
+    // Entitlement check before we do anything else.
+    const hasFreeLeft = !state.entitlement.free_consumed_at;
+    const hasPaidLeft = state.entitlement.paid_minutes_remaining > 0;
+    if (!hasFreeLeft && !hasPaidLeft) {
+      setPaywallOpen("no_credits");
+      return;
+    }
+    setViewingPastId(null);
+    setPendingDraft(null);
+    if (projectId) {
+      void startSessionInProject({ existingId: projectId });
+    } else {
+      // null = General bucket → open the picker so user can name a project.
+      setProjectFormOpen(true);
+    }
+  }, [state.entitlement, startSessionInProject]);
+
+  // Only show the full-screen loader on the very first load.
+  // After initialLoadDone = true, session creation happens while the project
+  // form (or existing UI) stays on screen — no jarring full-page flash.
+  if (!initialLoadDone) return <FullScreenLoader />;
   if (state.auth.kind === "anonymous") return null;
 
   return (
@@ -190,8 +341,13 @@ export function RoomClient() {
         session={state.session}
         entitlement={state.entitlement}
         viewingPastId={viewingPastId}
-        onViewPast={setViewingPastId}
-        onNewSession={async () => {
+        projects={projects}
+        onViewPast={(id) => {
+          setViewingPastId(id);
+          // Close the project form so the past-session review can take centre stage
+          if (id) setProjectFormOpen(false);
+        }}
+        onNewSession={() => {
           // Entitlement-aware: if neither free nor paid, open the paywall
           // directly instead of round-tripping to the RPC that would just raise.
           const hasFreeLeft = !state.entitlement.free_consumed_at;
@@ -201,8 +357,10 @@ export function RoomClient() {
             return;
           }
           setViewingPastId(null);
-          await state.startNewSession();
+          setPendingDraft(null);
+          setProjectFormOpen(true);
         }}
+        onStartInProject={handleStartInProject}
         onWalletClick={() => {
           const hasFreeLeft = !state.entitlement.free_consumed_at;
           const hasPaidLeft = state.entitlement.paid_minutes_remaining > 0;
@@ -226,6 +384,13 @@ export function RoomClient() {
             viewingPastId={viewingPastId}
             onCloseViewPast={() => setViewingPastId(null)}
             onNeedsCredits={() => setPaywallOpen("no_credits")}
+            projectFormOpen={projectFormOpen}
+            pendingDraft={pendingDraft}
+            projects={projects}
+            onProjectConfirmNew={handleProjectConfirmNew}
+            onProjectConfirmPick={handleProjectConfirmPick}
+            onProjectCancel={() => setProjectFormOpen(false)}
+            onNeedProject={(draft) => { setPendingDraft(draft); setProjectFormOpen(true); }}
           />
         </main>
       </div>
@@ -296,13 +461,16 @@ function useConnectingModalGate(sessionId: string | null, status: string | undef
       return;
     }
     if (typeof window === "undefined") return;
+    // Use localStorage (not sessionStorage) so the "already shown" flag
+    // survives page reloads and new tabs — the modal never re-appears for
+    // the same session ID once the customer has seen it.
     const key = `relay-connecting-shown:${sessionId}`;
     try {
-      if (sessionStorage.getItem(key)) {
+      if (localStorage.getItem(key)) {
         setShow(false);
         return;
       }
-      sessionStorage.setItem(key, "1");
+      localStorage.setItem(key, "1");
       setShow(true);
     } catch {
       setShow(true);
@@ -328,14 +496,37 @@ function shouldRenderSplitLayout(s: GuestCall | null, accepted: boolean): boolea
 // ── Main pane (state-driven) ───────────────────────────────────────────────
 function MainPane({
   state, accepted, viewingPastId, onCloseViewPast, onNeedsCredits,
+  projectFormOpen, pendingDraft, projects,
+  onProjectConfirmNew, onProjectConfirmPick, onProjectCancel, onNeedProject,
 }: {
   state: ReturnType<typeof useCustomerSession>;
   accepted: boolean;
   viewingPastId: string | null;
   onCloseViewPast: () => void;
   onNeedsCredits: () => void;
+  projectFormOpen: boolean;
+  pendingDraft: string | null;
+  projects: Project[];
+  onProjectConfirmNew:  (name: string) => Promise<void>;
+  onProjectConfirmPick: (id: string)   => Promise<void>;
+  onProjectCancel: () => void;
+  onNeedProject: (draft: string) => void;
 }) {
   const session = state.session;
+
+  // ── Project picker pane: pick an existing project or name a new one ──────
+  // Skip if the user is reviewing a past session — let the review pane take over.
+  if (projectFormOpen && !viewingPastId) {
+    return (
+      <ProjectPickerPane
+        pendingText={pendingDraft}
+        projects={projects}
+        onConfirmNew={onProjectConfirmNew}
+        onConfirmPick={onProjectConfirmPick}
+        onCancel={onProjectCancel}
+      />
+    );
+  }
 
   // Active call: Zoom (centre) | chat (right). Mount as soon as the customer
   // accepts the incoming call — the embed itself takes a beat to load.
@@ -388,9 +579,9 @@ function MainPane({
     );
   }
 
-  // Everything else renders the welcome / chat landing. The composer's
-  // send handler auto-creates a new session if the current one is terminal.
-  return <ChatPane state={state} fullWidth onNeedsCredits={onNeedsCredits} />;
+  // Everything else renders the welcome / chat landing. The composer
+  // intercepts new-session creation to show the project name form first.
+  return <ChatPane state={state} fullWidth onNeedsCredits={onNeedsCredits} onNeedProject={onNeedProject} />;
 }
 
 // Loads a past session's row + messages on demand for the review panel.
@@ -425,6 +616,181 @@ function PastSessionReview({ sessionId, onClose }: { sessionId: string; onClose:
     );
   }
   return <ReviewPanel session={row} messages={msgs} onClose={onClose} />;
+}
+
+// ── Project picker pane ────────────────────────────────────────────────────
+// Shown in the central area (not a modal overlay) when the user is about to
+// start a new session. Two options on one screen:
+//   1. Pick one of their existing projects (scrollable list).
+//   2. Or create a new project by typing its name.
+// First-time users see only the input; returning users get both.
+function ProjectPickerPane({
+  pendingText, projects, onConfirmNew, onConfirmPick, onCancel,
+}: {
+  pendingText: string | null;
+  projects: Project[];
+  onConfirmNew:  (name: string) => Promise<void>;
+  onConfirmPick: (id: string)   => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  const handleCreate = async () => {
+    if (!name.trim() || busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await onConfirmNew(name.trim());
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Something went wrong — try again.");
+      setBusy(false);
+    }
+  };
+
+  const handlePick = async (id: string) => {
+    if (busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await onConfirmPick(id);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Something went wrong — try again.");
+      setBusy(false);
+    }
+  };
+
+  const hasProjects = projects.length > 0;
+
+  return (
+    <section
+      className="relative flex h-full flex-col items-center px-4 py-10"
+      style={{ backgroundColor: "var(--surface)" }}
+    >
+      {/* Cancel */}
+      <button
+        onClick={onCancel}
+        className="absolute right-4 top-4 rounded-md p-1 opacity-40 transition-opacity hover:opacity-80"
+        style={{ color: "var(--text-muted)" }}
+        aria-label="Cancel"
+        title="Cancel"
+      >
+        <X size={16} />
+      </button>
+
+      <div className="w-full max-w-md">
+        {/* Header */}
+        <div className="mb-4 flex items-center gap-3">
+          <span className="h-3 w-3 rounded-full" style={{ backgroundColor: BRAND_GREEN }} />
+          <h2
+            className="text-3xl font-semibold tracking-tight sm:text-[36px]"
+            style={{ color: "var(--text)", letterSpacing: "-0.02em" }}
+          >
+            {hasProjects ? "Start a new session" : "Name your project"}
+          </h2>
+        </div>
+        <p className="mb-6 text-base" style={{ color: "var(--text-muted)" }}>
+          {hasProjects
+            ? "Pick one of your projects, or create a new one for this session."
+            : "Sessions live inside projects. Give this one a short name so you can find it later."}
+        </p>
+
+        {/* Existing projects */}
+        {hasProjects && (
+          <>
+            <div className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text-muted)" }}>
+              Your projects
+            </div>
+            <div
+              className="mb-6 max-h-64 overflow-y-auto rounded-xl border"
+              style={{ borderColor: "var(--border)" }}
+            >
+              {projects.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => void handlePick(p.id)}
+                  disabled={busy}
+                  className="flex w-full items-center gap-2.5 border-b px-3 py-2.5 text-left transition-colors last:border-b-0 hover:bg-black/[0.03] dark:hover:bg-white/[0.03] disabled:opacity-50"
+                  style={{ borderColor: "var(--border)" }}
+                >
+                  <Folder size={14} style={{ color: BRAND_GREEN, flexShrink: 0 }} />
+                  <span className="min-w-0 flex-1 truncate text-sm" style={{ color: "var(--text)" }}>
+                    {p.name}
+                  </span>
+                  <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+                    →
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {/* Divider */}
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex-1 border-t" style={{ borderColor: "var(--border)" }} />
+              <span className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--text-muted)" }}>
+                or create new
+              </span>
+              <div className="flex-1 border-t" style={{ borderColor: "var(--border)" }} />
+            </div>
+          </>
+        )}
+
+        {/* New project input */}
+        <div
+          className="relative rounded-2xl border shadow-sm transition-all focus-within:ring-2"
+          style={{
+            borderColor: "var(--border)",
+            backgroundColor: "var(--surface)",
+            ["--tw-ring-color" as string]: BRAND_GREEN_BORDER,
+          }}
+        >
+          <input
+            ref={inputRef}
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void handleCreate(); }
+            }}
+            disabled={busy}
+            placeholder="e.g. Payment API, Login bug, Deploy issue…"
+            className="h-12 w-full rounded-2xl bg-transparent pl-4 pr-12 text-sm outline-none disabled:cursor-not-allowed"
+            style={{ color: "var(--text)" }}
+          />
+          <button
+            onClick={() => void handleCreate()}
+            disabled={!name.trim() || busy}
+            className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-xl transition-opacity hover:opacity-90 disabled:opacity-40"
+            style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+          >
+            {busy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+          </button>
+        </div>
+
+        {err && (
+          <p className="mt-2 text-[12px]" style={{ color: "var(--accent-red, #e05c4b)" }}>
+            {err}
+          </p>
+        )}
+
+        <p className="mt-3 text-center text-[10px]" style={{ color: "var(--text-muted)" }}>
+          Press Enter to create
+        </p>
+
+        {/* Carry-forward draft from composer */}
+        {pendingText && (
+          <p className="mt-5 rounded-xl border px-3 py-2 text-[11px] italic"
+            style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
+            Your message: &ldquo;{pendingText}&rdquo;
+          </p>
+        )}
+      </div>
+    </section>
+  );
 }
 
 function fmtName(auth: ReturnType<typeof useCustomerSession>["auth"]) {
@@ -601,49 +967,189 @@ function pillConfig(status: SessionStatus, urgency: Urgency) {
 }
 
 // ── Sidebar (claude.ai style, collapsible) ────────────────────────────────
-type PastSession = { id: string; title: string; agent: string | null; minutes: number | null; date: string };
+type PastSession = {
+  id: string;
+  title: string;
+  agent: string | null;
+  minutes: number | null;
+  date: string;
+  status: SessionStatus;
+  projectId: string | null;
+  projectName: string | null;
+};
+
+// One row from the `projects` table — the source of truth for what
+// projects exist (even ones with no sessions yet).
+type Project = {
+  id: string;
+  name: string;
+  createdAt: string;
+};
+
+type ProjectGroup = {
+  key: string;           // projectId or "general"
+  name: string;          // display name
+  sessions: PastSession[];
+  latestDate: number;    // ms timestamp — used for sorting
+};
 
 function Sidebar({
-  email, customerUserId, session, entitlement, viewingPastId, onViewPast, onNewSession, onWalletClick,
+  email, customerUserId, session, entitlement, viewingPastId, projects,
+  onViewPast, onNewSession, onStartInProject, onWalletClick,
 }: {
   email: string;
   customerUserId: string | null;
   session: GuestCall | null;
   entitlement: { free_consumed_at: string | null; free_minutes_used: number; paid_minutes_remaining: number };
   viewingPastId: string | null;
+  projects: Project[];
   onViewPast: (id: string | null) => void;
-  onNewSession: () => Promise<void>;
+  /** Top-level "+ New session" — opens picker that lets the user pick a
+   *  project (existing or new) before the session is created. */
+  onNewSession: () => void;
+  /** Inline "+" inside a project row — starts a session bound to that
+   *  exact project, skipping the picker. */
+  onStartInProject: (projectId: string | null) => void;
   onWalletClick: () => void;
 }) {
-  const [collapsed, setCollapsed] = useState(false);
+  // Sidebar starts collapsed; state is persisted in localStorage so the
+  // user's preference survives page reloads.
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem("relay-sidebar-collapsed") !== "false"; }
+    catch { return true; }
+  });
+  const toggleCollapsed = (next: boolean) => {
+    setCollapsed(next);
+    try { localStorage.setItem("relay-sidebar-collapsed", next ? "true" : "false"); } catch {}
+  };
+
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [past, setPast] = useState<PastSession[]>([]);
+  // Global search — filters both project names and session titles/agents.
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     if (!customerUserId) return;
     const sb = createClient();
     void (async () => {
-      const { data } = await sb
+      // Pull *every* session the customer has had — active, terminal, the
+      // works. We want each one to appear inside its project folder so the
+      // sidebar reflects the live state, not just past history. The
+      // currently-active session is marked with a pulse below.
+      const FULL =
+        "id, guest_name, agent_name, duration_minutes, ai_summary_title, created_at, status, project_id, project_name";
+      const SLIM =
+        "id, guest_name, agent_name, duration_minutes, ai_summary_title, created_at, status";
+
+      let rows: Record<string, unknown>[] | null = null;
+      let { data, error } = await sb
         .from("guest_calls")
-        .select("id, guest_name, agent_name, duration_minutes, ai_summary_title, created_at, status")
+        .select(FULL)
         .eq("customer_user_id", customerUserId)
-        .in("status", ["ended"])
         .order("created_at", { ascending: false })
-        .limit(30);
-      setPast((data ?? []).map((r) => {
-        const row = r as Record<string, unknown>;
+        .limit(80);
+      if (error) {
+        const retry = await sb
+          .from("guest_calls")
+          .select(SLIM)
+          .eq("customer_user_id", customerUserId)
+          .order("created_at", { ascending: false })
+          .limit(80);
+        if (retry.error) {
+          console.warn("[sidebar] sessions query failed:", retry.error.message);
+          return;
+        }
+        rows = (retry.data ?? []) as Record<string, unknown>[];
+      } else {
+        rows = (data ?? []) as Record<string, unknown>[];
+      }
+
+      setPast(rows.map((row) => {
+        const status = row.status as SessionStatus;
+        // Synthesise a label for sessions that don't have an AI summary yet
+        // (active ones, or summary generation pending). The status hint
+        // helps the customer find a specific session.
+        const fallbackLabel = status === "ended"     ? "Past session"
+                            : status === "cancelled" ? "Cancelled session"
+                            : status === "abandoned" ? "No engineer found"
+                            : "Active session";
         return {
-          id: row.id as string,
-          title: (row.ai_summary_title as string | null) ?? "Past session",
-          agent: row.agent_name as string | null,
-          minutes: row.duration_minutes != null ? Math.round(Number(row.duration_minutes)) : null,
-          date: row.created_at as string,
+          id:          row.id as string,
+          title:       (row.ai_summary_title as string | null) ?? fallbackLabel,
+          agent:       row.agent_name as string | null,
+          minutes:     row.duration_minutes != null ? Math.round(Number(row.duration_minutes)) : null,
+          date:        row.created_at as string,
+          status,
+          projectId:   (row.project_id   as string | null) ?? null,
+          projectName: (row.project_name as string | null) ?? null,
         };
       }));
     })();
   }, [customerUserId, session?.id, session?.status]);
 
-  const buckets = useMemo(() => groupByDate(past), [past]);
+  // Build the project list shown in the sidebar from BOTH the `projects`
+  // table (authoritative) and any session that has a project_id but is
+  // missing from the table (defensive — e.g., orphan rows from a prior
+  // migration state). Sessions with no project_id all bucket into "General".
+  const projectGroups = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const matchSession = (s: PastSession) => {
+      if (!q) return true;
+      const hay = [s.title, s.agent ?? "", s.projectName ?? ""].join(" ").toLowerCase();
+      return hay.includes(q);
+    };
+    const matchProjectName = (name: string) => !q || name.toLowerCase().includes(q);
+
+    // Build a map keyed by project id.
+    const map = new Map<string, ProjectGroup>();
+    for (const p of projects) {
+      map.set(p.id, {
+        key: p.id,
+        name: p.name,
+        sessions: [],
+        latestDate: new Date(p.createdAt).getTime(),
+      });
+    }
+    // "General" bucket for sessions with no project.
+    const general: ProjectGroup = { key: "general", name: "General", sessions: [], latestDate: 0 };
+
+    for (const s of past) {
+      const g = s.projectId && map.has(s.projectId) ? map.get(s.projectId)!
+              : s.projectId ? (() => {
+                  // Orphan: project_id set but project not in the table.
+                  // Display the denormalised name from the session row.
+                  const orphan: ProjectGroup = {
+                    key: s.projectId!,
+                    name: s.projectName ?? "Unnamed project",
+                    sessions: [],
+                    latestDate: 0,
+                  };
+                  map.set(s.projectId!, orphan);
+                  return orphan;
+                })()
+              : general;
+      g.sessions.push(s);
+      const t = new Date(s.date).getTime();
+      if (t > g.latestDate) g.latestDate = t;
+    }
+    if (general.sessions.length > 0) map.set("general", general);
+
+    // Apply search filter: include a group if its name matches OR any of
+    // its sessions match. Hide groups that have no surviving content.
+    const groups = Array.from(map.values()).map((g) => {
+      const nameHit = matchProjectName(g.name);
+      const sessions = g.sessions.filter(matchSession);
+      // Empty project with name match → keep it visible (lets you start a
+      // session in it even when there's no history yet).
+      if (!q) return g;
+      if (nameHit && sessions.length === 0 && g.sessions.length === 0) return { ...g, sessions };
+      if (sessions.length > 0) return { ...g, sessions };
+      if (nameHit) return g; // name hit, show all its sessions
+      return null;
+    }).filter((g): g is ProjectGroup => g !== null);
+
+    return groups.sort((a, b) => b.latestDate - a.latestDate);
+  }, [projects, past, searchQuery]);
 
   const hasActiveSession = session && !["ended", "cancelled", "abandoned"].includes(session.status);
 
@@ -656,7 +1162,7 @@ function Sidebar({
       >
         {/* Expand toggle */}
         <button
-          onClick={() => setCollapsed(false)}
+          onClick={() => toggleCollapsed(false)}
           title="Expand sidebar"
           className="mb-1 flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5"
           style={{ color: "var(--text-muted)" }}
@@ -666,7 +1172,7 @@ function Sidebar({
 
         {/* New session */}
         <button
-          onClick={() => void onNewSession()}
+          onClick={onNewSession}
           title="New session"
           className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5"
           style={{ color: BRAND_GREEN }}
@@ -674,9 +1180,10 @@ function Sidebar({
           <Plus size={18} />
         </button>
 
-        {/* Search */}
+        {/* Search — expanding the rail makes the input focusable */}
         <button
-          title="Search"
+          onClick={() => toggleCollapsed(false)}
+          title="Search sessions"
           className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5"
           style={{ color: "var(--text-muted)" }}
         >
@@ -749,7 +1256,7 @@ function Sidebar({
       <div className="flex h-12 items-center justify-between px-3">
         <Wordmark size="md" />
         <button
-          onClick={() => setCollapsed(true)}
+          onClick={() => toggleCollapsed(true)}
           title="Collapse sidebar"
           className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-black/5 dark:hover:bg-white/5"
           style={{ color: "var(--text-muted)" }}
@@ -761,31 +1268,43 @@ function Sidebar({
       {/* New session + Search */}
       <div className="px-2 py-1">
         <button
-          onClick={() => void onNewSession()}
+          onClick={onNewSession}
           className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[14px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5"
           style={{ color: "var(--text)" }}
         >
           <Plus size={16} style={{ color: BRAND_GREEN }} />
           New session
         </button>
-        <button
-          className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[14px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-          style={{ color: "var(--text-muted)" }}
+        {/* Search across all past sessions (title / engineer / project). */}
+        <div
+          className="mt-0.5 flex items-center gap-2 rounded-lg border px-2.5 py-1.5"
+          style={{ borderColor: "var(--border)", backgroundColor: "var(--background)" }}
         >
-          <Search size={15} />
-          Search
-        </button>
+          <Search size={14} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search sessions"
+            className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:opacity-60"
+            style={{ color: "var(--text)" }}
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              aria-label="Clear search"
+              className="shrink-0 opacity-60 transition-opacity hover:opacity-100"
+              style={{ color: "var(--text-muted)" }}
+            >
+              <X size={12} />
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Recents */}
-      <div className="flex-1 overflow-y-auto px-2 pb-2 pt-3">
-        <div className="mb-1 flex items-center justify-between px-2.5 py-1">
-          <span className="text-[11px] font-medium" style={{ color: "var(--text-muted)" }}>
-            Recents
-          </span>
-        </div>
-
-        {hasActiveSession && (
+      {/* Current session callout (only when active) */}
+      {hasActiveSession && (
+        <div className="px-2 pt-2">
           <button
             onClick={() => onViewPast(null)}
             className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left transition-colors"
@@ -805,50 +1324,45 @@ function Sidebar({
               </div>
             </div>
           </button>
-        )}
+        </div>
+      )}
 
-        {buckets.map(([label, items]) => items.length === 0 ? null : (
-          <div key={label} className="mt-3">
-            <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-              {label}
-            </div>
-            <div className="space-y-0.5">
-              {items.map((s) => {
-                const isSelected = viewingPastId === s.id;
-                return (
-                  <button
-                    key={s.id}
-                    onClick={() => onViewPast(isSelected ? null : s.id)}
-                    className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                    style={isSelected
-                      ? { backgroundColor: BRAND_GREEN_SOFT, border: `1px solid ${BRAND_GREEN_BORDER}` }
-                      : undefined}
-                  >
-                    <span
-                      className="h-1.5 w-1.5 shrink-0 rounded-full"
-                      style={{ backgroundColor: isSelected ? BRAND_GREEN : "var(--text-muted)" }}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-[13px]" style={{ color: "var(--text)" }}>
-                        {s.title}
-                      </div>
-                      <div className="truncate text-[10px]" style={{ color: "var(--text-muted)" }}>
-                        {s.agent ?? "Engineer"}
-                        {s.minutes != null ? ` · ${s.minutes}m` : ""}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+      {/* Projects (each is a folder containing sessions) */}
+      <div className="flex-1 overflow-y-auto px-2 pb-2 pt-3">
+        <div className="mb-1 flex items-center justify-between px-2.5 py-1">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text-muted)" }}>
+            Projects
+          </span>
+          <button
+            onClick={onNewSession}
+            title="New project + session"
+            aria-label="New project"
+            className="flex h-5 w-5 items-center justify-center rounded-md transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <Plus size={12} />
+          </button>
+        </div>
 
-        {past.length === 0 && (
-          <p className="px-2 py-4 text-[11px]" style={{ color: "var(--text-muted)" }}>
-            Your past sessions will appear here.
-          </p>
-        )}
+        {projectGroups.length > 0
+          ? projectGroups.map((group) => (
+              <ProjectAccordion
+                key={group.key}
+                group={group}
+                viewingPastId={viewingPastId}
+                currentSessionId={session?.id ?? null}
+                onViewPast={onViewPast}
+                onStartInProject={onStartInProject}
+              />
+            ))
+          : (
+            <p className="px-2 py-4 text-[11px]" style={{ color: "var(--text-muted)" }}>
+              {searchQuery
+                ? `No projects or sessions match "${searchQuery}".`
+                : "Start your first project to get going."}
+            </p>
+          )
+        }
       </div>
 
       {/* Profile (bottom) */}
@@ -1038,45 +1552,181 @@ function humanState(s: SessionStatus): string {
   }
 }
 
-function groupByDate(past: PastSession[]): Array<[string, PastSession[]]> {
-  const today = new Date(); today.setHours(0,0,0,0);
+// Human-readable relative date label for session rows inside the accordion.
+function fmtRelDate(d: Date): string {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
   const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
-  const sevenDaysAgo = new Date(today); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-  const buckets: Record<string, PastSession[]> = { "Today": [], "Yesterday": [], "Previous 7 Days": [], "Older": [] };
-  for (const s of past) {
-    const d = new Date(s.date);
-    if (d >= today) buckets.Today.push(s);
-    else if (d >= yesterday) buckets.Yesterday.push(s);
-    else if (d >= sevenDaysAgo) buckets["Previous 7 Days"].push(s);
-    else buckets.Older.push(s);
-  }
-  return Object.entries(buckets);
+  const day = new Date(d); day.setHours(0, 0, 0, 0);
+  if (day >= today)     return "Today";
+  if (day >= yesterday) return "Yesterday";
+  const diff = Math.floor((today.getTime() - day.getTime()) / 86_400_000);
+  if (diff < 7) return `${diff}d ago`;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+// ── Project accordion (collapsible group in the sidebar) ───────────────────
+function ProjectAccordion({
+  group, viewingPastId, currentSessionId, onViewPast, onStartInProject,
+}: {
+  group: ProjectGroup;
+  viewingPastId: string | null;
+  /** Id of the currently-live session, if any. Clicking that row jumps
+   *  back to the live view (onViewPast(null)) rather than opening it as
+   *  a past-session review. */
+  currentSessionId: string | null;
+  onViewPast: (id: string | null) => void;
+  /** Called when the user clicks "+ Start session in this project". null
+   *  is passed for the General bucket (no project id). */
+  onStartInProject: (projectId: string | null) => void;
+}) {
+  const [open, setOpen] = useState(true);
+  // The General bucket doesn't have a real project id and can't be
+  // "started in" — sessions go there only as a fallback.
+  const isGeneral = group.key === "general";
+
+  return (
+    <div className="mb-1 group/proj">
+      {/* Project header */}
+      <div className="relative flex items-center">
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="flex flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+        >
+          <ChevronRight
+            size={11}
+            style={{
+              color: "var(--text-muted)",
+              flexShrink: 0,
+              transform: open ? "rotate(90deg)" : "rotate(0deg)",
+              transition: "transform 0.15s ease",
+            }}
+          />
+          <Folder size={11} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+          <span
+            className="min-w-0 flex-1 truncate text-[11px] font-semibold uppercase tracking-[0.08em]"
+            style={{ color: "var(--text-muted)" }}
+          >
+            {group.name}
+          </span>
+          <span
+            className="ml-1 shrink-0 rounded-full px-1.5 py-0 text-[9px] tabular-nums"
+            style={{
+              backgroundColor: "color-mix(in srgb, var(--text) 7%, transparent)",
+              color: "var(--text-muted)",
+            }}
+          >
+            {group.sessions.length}
+          </span>
+        </button>
+        {!isGeneral && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onStartInProject(group.key); }}
+            title={`New session in ${group.name}`}
+            aria-label={`New session in ${group.name}`}
+            className="ml-0.5 flex h-6 w-6 items-center justify-center rounded-md opacity-0 transition-opacity hover:bg-black/5 dark:hover:bg-white/5 group-hover/proj:opacity-100 focus:opacity-100"
+            style={{ color: BRAND_GREEN }}
+          >
+            <Plus size={12} />
+          </button>
+        )}
+      </div>
+
+      {/* Session rows */}
+      {open && (
+        <div className="ml-2 mt-0.5 space-y-0.5">
+          {group.sessions.length === 0 && !isGeneral ? (
+            <button
+              onClick={() => onStartInProject(group.key)}
+              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[11px] italic transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+              style={{ color: "var(--text-muted)" }}
+            >
+              <Plus size={11} style={{ color: BRAND_GREEN }} />
+              Start your first session here
+            </button>
+          ) : [...group.sessions]
+              .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+              .map((s) => {
+            const selected = viewingPastId === s.id;
+            const isActive = !["ended", "abandoned", "cancelled"].includes(s.status);
+            const isCurrent = isActive && s.id === currentSessionId;
+            return (
+              <button
+                key={s.id}
+                onClick={() => onViewPast(isCurrent ? null : s.id)}
+                className="flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                style={selected ? { backgroundColor: BRAND_GREEN_SOFT } : undefined}
+              >
+                {isActive && (
+                  <span className="relative mt-1.5 flex h-2 w-2 shrink-0">
+                    <span className="absolute inset-0 rounded-full opacity-70"
+                      style={{ backgroundColor: BRAND_GREEN, animation: "ping 1.4s cubic-bezier(0,0,0.2,1) infinite" }} />
+                    <span className="relative h-2 w-2 rounded-full" style={{ backgroundColor: BRAND_GREEN }} />
+                  </span>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div
+                    className="truncate text-[13px]"
+                    style={{ color: selected ? BRAND_GREEN : isActive ? BRAND_GREEN : "var(--text)" }}
+                  >
+                    {s.title}
+                  </div>
+                  <div
+                    className="mt-0.5 flex items-center gap-1 text-[10px]"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {isActive
+                      ? <span>{humanState(s.status)}</span>
+                      : <>
+                          {s.agent && <span>{s.agent}</span>}
+                          {s.agent && <span>·</span>}
+                          <span>{fmtRelDate(new Date(s.date))}</span>
+                          {s.minutes != null && s.minutes > 0 && (
+                            <><span>·</span><span>{s.minutes}m</span></>
+                          )}
+                        </>
+                    }
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Chat pane ──────────────────────────────────────────────────────────────
 function ChatPane({
-  state, fullWidth = false, onNeedsCredits,
+  state, fullWidth = false, onNeedsCredits, onNeedProject,
 }: {
   state: ReturnType<typeof useCustomerSession>;
   fullWidth?: boolean;
   onNeedsCredits?: () => void;
+  /** Called when the user types and a new session would be created.
+   *  Instead of creating immediately, open the project-name gate. */
+  onNeedProject?: (draft: string) => void;
 }) {
   const [draft, setDraft] = useState("");
   const session = state.session;
   // Only `ended` is truly read-only (post-call view). cancelled / abandoned
-  // are equivalent to "no session" — the composer auto-creates a new queued
-  // session when the user types.
+  // are equivalent to "no session" — the composer shows the project form first.
   const isReadOnly = session?.status === "ended";
 
   const onSend = async () => {
     if (!draft.trim()) return;
-    // If the customer would be starting a NEW session here AND they have
-    // no entitlement left → block + show paywall instead.
     const wouldCreateNew = !session || ["cancelled", "abandoned", "ended"].includes(session.status);
     const hasFreeLeft = !state.entitlement.free_consumed_at;
     const hasPaidLeft = state.entitlement.paid_minutes_remaining > 0;
+    // No entitlement → paywall
     if (wouldCreateNew && !hasFreeLeft && !hasPaidLeft && onNeedsCredits) {
       onNeedsCredits();
+      return;
+    }
+    // Would create a new session → show project name form first
+    if (wouldCreateNew && onNeedProject) {
+      onNeedProject(draft.trim());
+      setDraft("");
       return;
     }
     const text = draft.trim();

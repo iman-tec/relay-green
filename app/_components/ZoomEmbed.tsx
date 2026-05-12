@@ -48,6 +48,27 @@ const SCRIPTS = [
 
 let scriptsLoadedPromise: Promise<void> | null = null;
 
+// ── Module-level SDK serialization ─────────────────────────────────────────
+// The Zoom Meeting SDK (Component View) keeps internal singleton state on
+// `window`. Calling `init()` again while a prior meeting/init is still in
+// flight throws errorCode 3000 ("Already has other meetings in progress.").
+// This happens both in production (rapid route changes) and in dev under
+// React StrictMode (which intentionally double-invokes effects). The
+// component-level `clientRef` doesn't see the in-flight join because join
+// is async — clientRef is only assigned *after* it resolves.
+//
+// We solve it by gating every init/join behind a module-level promise chain
+// (`zoomGate`). All callers append themselves to the chain, so a second
+// mount's work doesn't run until the first mount's work has resolved (join
+// + any subsequent leave). The chain also serves as the teardown wait
+// queue.
+let zoomGate: Promise<unknown> = Promise.resolve();
+function chainOnGate<T>(task: () => Promise<T>): Promise<T> {
+  const next = zoomGate.catch(() => undefined).then(task);
+  zoomGate = next.catch(() => undefined);
+  return next;
+}
+
 function loadZoomSdk(): Promise<void> {
   if (typeof window === "undefined") return Promise.resolve();
   if ((window as unknown as Record<string, unknown>).ZoomMtgEmbedded) return Promise.resolve();
@@ -84,6 +105,22 @@ type ZoomClient = {
 type ZoomMtgEmbeddedNS = {
   createClient: () => ZoomClient;
 };
+
+// Network/transient Zoom errors that benefit from a retry — connection
+// resets, WiFi/VPN flaps, ERR_NETWORK_CHANGED. Distinguishable from genuine
+// auth/state errors (which surface as positive errorCodes like 200 / 3000).
+const RETRYABLE_ZOOM_ERROR_CODES = new Set([
+  -3000, // connection error
+  -2001, // signature failure (often transient handshake issue)
+  -1001, // could not connect
+]);
+
+// Opt-in dev bypass — set NEXT_PUBLIC_ZOOM_MOCK=1 in .env.local to render a
+// fake "in call" placeholder instead of trying to reach Zoom. Useful when
+// testing non-video flows on a flaky network.
+const MOCK_ENABLED =
+  typeof process !== "undefined" &&
+  process.env.NEXT_PUBLIC_ZOOM_MOCK === "1";
 
 export function ZoomEmbed({
   meetingNumber,
@@ -129,7 +166,19 @@ export function ZoomEmbed({
       setStatus("loading");
       setError(null);
 
-      // Tear down a previous client
+      // Dev bypass: skip Zoom entirely and immediately mark "joined" so the
+      // rest of the UI (chat, summary, project flow) can be tested on a
+      // network that can't reliably reach Zoom.
+      if (MOCK_ENABLED) {
+        joinedKeyRef.current = key;
+        if (!cancelled) {
+          setStatus("joined");
+          onJoined?.();
+        }
+        return;
+      }
+
+      // Tear down a previous client in this mount
       const prev = clientRef.current;
       if (prev?.leaveMeeting) {
         try { await prev.leaveMeeting(); } catch { /* ignore */ }
@@ -193,13 +242,10 @@ export function ZoomEmbed({
       }, 60_000);
 
       try {
-        const client = ZoomMtgEmbedded.createClient();
-        clientRef.current = client;
-
         const w = Math.max(320, Math.floor(wrapRef.current.clientWidth));
         const h = Math.max(240, Math.floor(wrapRef.current.clientHeight));
 
-        await client.init({
+        const initOpts = {
           zoomAppRoot: rootRef.current,
           language: "en-US",
           patchJsMedia: true,
@@ -208,9 +254,8 @@ export function ZoomEmbed({
             toolbar: { buttons: [] },
             meetingInfo: ["topic", "host", "participant"],
           },
-        });
-
-        await client.join({
+        };
+        const joinOpts = {
           sdkKey,
           signature,
           meetingNumber: String(meetingNumber).replace(/\D/g, ""),
@@ -218,7 +263,63 @@ export function ZoomEmbed({
           userName,
           userEmail: userEmail ?? "",
           ...(role === 1 && zak ? { zak } : {}),
-        });
+        };
+
+        // initAndJoin: creates a (singleton) client, kicks any leftover
+        // session out, then inits and joins. Returns the client. Retryable
+        // when Zoom throws errorCode 3000.
+        const initAndJoin = async (): Promise<ZoomClient> => {
+          const c = ZoomMtgEmbedded.createClient();
+          // Defensive: if a prior page/mount left the SDK thinking a meeting
+          // is in progress, this clears it. Errors are expected when there's
+          // nothing to leave — swallow them.
+          try { await c.leaveMeeting(); } catch { /* nothing to leave */ }
+          await c.init(initOpts);
+          await c.join(joinOpts);
+          return c;
+        };
+
+        // Everything that touches the SDK goes through the module-level gate
+        // so concurrent mounts (StrictMode double-invoke, fast route changes)
+        // are serialised. The gate ensures init/join of mount #2 doesn't
+        // start until mount #1's join/leave has fully resolved.
+        //
+        // Also retry transient network/connection errors (ERR_NETWORK_CHANGED
+        // and friends) with exponential backoff — these surface as Zoom
+        // errorCodes like -3000 / -2001 / -1001 and almost always succeed on
+        // the second or third attempt when the network stabilises.
+        const RETRY_DELAYS_MS = [600, 1500, 3500]; // 3 retries: ~0.6s, 1.5s, 3.5s
+        let client: ZoomClient | null = null;
+        let lastErr: unknown = null;
+        for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+          if (cancelled) return;
+          try {
+            client = await chainOnGate(initAndJoin);
+            lastErr = null;
+            break;
+          } catch (err) {
+            lastErr = err;
+            const code = (err as { errorCode?: number } | null)?.errorCode;
+            // The positive 3000 ("Already has other meetings in progress")
+            // case is handled by force-leave + immediate retry, no backoff.
+            if (code === 3000) {
+              await chainOnGate(async () => {
+                try { await ZoomMtgEmbedded.createClient().leaveMeeting(); } catch { /* ignore */ }
+                await new Promise((r) => setTimeout(r, 500));
+              });
+              continue;
+            }
+            // Transient network/connection errors: back off and retry.
+            if (code != null && RETRYABLE_ZOOM_ERROR_CODES.has(code) && attempt < RETRY_DELAYS_MS.length) {
+              await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
+              continue;
+            }
+            // Anything else (or out of retries) → surface to the catch below.
+            throw err;
+          }
+        }
+        if (!client) throw lastErr;
+        clientRef.current = client;
 
         joinedKeyRef.current = key;
         clearTimeout(watchdog);
@@ -267,8 +368,23 @@ export function ZoomEmbed({
           } | collected=${collectedStr}`,
           { raw: e, role, meetingNumber, signaturePresent: !!signature, sdkKeyPresent: !!sdkKey, zakPresent: !!zak },
         );
+        // Translate raw Zoom messages into human-friendly diagnoses so the
+        // user knows whether to retry, switch networks, or click the
+        // fallback link.
+        const code = (collected.errorCode as number | undefined) ?? null;
+        const friendly = (() => {
+          if (code != null && RETRYABLE_ZOOM_ERROR_CODES.has(code)) {
+            return "Network connection to Zoom keeps dropping. Try a different network (mobile hotspot, disable VPN) or open Zoom directly below.";
+          }
+          if (code === 3000) {
+            return "Another Zoom meeting is still active in this browser. Close other tabs joined to a Zoom call and refresh.";
+          }
+          if (code === 1006) return "Zoom signature was rejected. Check the SDK credentials.";
+          if (code === 200)  return "Zoom rejected the meeting password.";
+          return reason;
+        })();
         if (!cancelled) {
-          setError(reason);
+          setError(friendly);
           setStatus("error");
           onError?.(reason);
         }
@@ -286,7 +402,12 @@ export function ZoomEmbed({
       clientRef.current = null;
       joinedKeyRef.current = null;
       if (c?.leaveMeeting) {
-        try { void c.leaveMeeting(); } catch { /* ignore */ }
+        // Queue the leave on the module gate so the next mount's init waits
+        // for it. Also defensively try the singleton-style leave in case
+        // the SDK has stashed state outside our reference.
+        chainOnGate(async () => {
+          try { await c.leaveMeeting(); } catch { /* ignore */ }
+        });
       }
       onLeave?.();
     };
@@ -304,22 +425,35 @@ export function ZoomEmbed({
           </div>
         </div>
       )}
+      {status === "joined" && MOCK_ENABLED && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="text-center text-white/80">
+            <Video size={32} className="mx-auto mb-2 opacity-70" />
+            <p className="text-sm font-medium">Zoom mock mode</p>
+            <p className="mt-1 text-[11px] opacity-60">Video is bypassed for testing.</p>
+            <p className="mt-0.5 text-[10px] opacity-50">Unset NEXT_PUBLIC_ZOOM_MOCK to use real Zoom.</p>
+          </div>
+        </div>
+      )}
       {status === "error" && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/80 px-6">
           <div className="max-w-sm text-center">
             <Video size={28} className="mx-auto mb-3 text-white/60" />
-            <p className="text-sm font-medium text-white">Couldn&apos;t connect</p>
-            <p className="mt-1 text-xs text-white/60">{error}</p>
-            {fallbackJoinUrl && (
+            <p className="text-sm font-medium text-white">Couldn&apos;t connect to Zoom</p>
+            <p className="mt-2 text-xs leading-relaxed text-white/70">{error}</p>
+            {fallbackJoinUrl ? (
               <a
                 href={fallbackJoinUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="mt-4 inline-flex items-center gap-1.5 rounded-md bg-white px-3 py-1.5 text-xs font-medium text-black"
+                className="mt-5 inline-flex items-center gap-1.5 rounded-md bg-white px-4 py-2 text-sm font-medium text-black"
               >
-                <ExternalLink size={12} /> Open in Zoom directly
+                <ExternalLink size={14} /> Open in Zoom directly
               </a>
-            )}
+            ) : null}
+            <p className="mt-4 text-[10px] uppercase tracking-[0.12em] text-white/40">
+              Or try a different network · disable VPN · use the Zoom desktop app
+            </p>
           </div>
         </div>
       )}

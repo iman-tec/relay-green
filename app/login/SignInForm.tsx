@@ -1,19 +1,38 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/browser";
+
+// Note: this component talks to our own Next.js API routes for OTP send +
+// verify (not Supabase directly from the browser). Some networks /
+// extensions block the browser-to-Supabase fetch, so we proxy everything
+// through the dev server, which always has connectivity to Supabase.
 
 type Step = "email" | "code" | "done";
 
 export function SignInForm() {
-  const router = useRouter();
   const [step, setStep] = useState<Step>("email");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const codeRef = useRef<HTMLInputElement>(null);
+
+  // Converts raw errors into friendly one-liners shown in the UI.
+  // Covers: missing env-config, "Failed to fetch" network blips, and
+  // Supabase error objects.
+  function friendlyError(err: unknown): string {
+    if (!err) return "Something went wrong. Try again.";
+    const msg = err instanceof Error ? err.message : String(err);
+    if (
+      err instanceof TypeError ||
+      msg.toLowerCase().includes("failed to fetch") ||
+      msg.toLowerCase().includes("networkerror") ||
+      msg.toLowerCase().includes("load failed")
+    ) {
+      return "Can't reach Relay servers — check your connection and try again.";
+    }
+    return msg || "Something went wrong. Try again.";
+  }
 
   // Step 1 — send OTP code to email
   const handleSendCode = async (e: React.FormEvent) => {
@@ -27,39 +46,45 @@ export function SignInForm() {
       // Pre-create the user server-side so Supabase treats this as a
       // sign-in (Magic Link template = OTP code) instead of a sign-up
       // (Confirm Signup template = magic link URL).
-      await fetch("/api/auth/prepare", {
+      const prepareRes = await fetch("/api/auth/prepare", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: trimmed }),
       });
+      if (!prepareRes.ok) {
+        const body = await prepareRes.json().catch(() => ({})) as Record<string, unknown>;
+        if (body.error === "rate_limited") {
+          setError("Too many attempts — wait a minute before trying again.");
+          return;
+        }
+        // Other prepare errors are non-fatal: fall through and let
+        // signInWithOtp decide (worst case the wrong email template fires).
+      }
 
-      const supabase = createClient();
-      const { error: otpError } = await supabase.auth.signInWithOtp({
-        email: trimmed,
-        options: { shouldCreateUser: false }, // user pre-created above
+      // Send the OTP server-side. Avoids the browser-to-Supabase fetch which
+      // fails on some networks ("TypeError: Failed to fetch").
+      const sendRes = await fetch("/api/auth/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: trimmed }),
       });
-
-      if (otpError) {
-        setError(otpError.message);
+      if (!sendRes.ok) {
+        const body = await sendRes.json().catch(() => ({})) as { error?: string };
+        setError(friendlyError(body.error ?? "Could not send code."));
         return;
       }
       setStep("code");
       setTimeout(() => codeRef.current?.focus(), 80);
     } catch (err) {
-      // Network errors (offline, ERR_NETWORK_CHANGED, CORS) land here.
-      setError(
-        err instanceof TypeError
-          ? "Network error — check your connection and try again."
-          : err instanceof Error
-          ? err.message
-          : "Something went wrong. Try again.",
-      );
+      // Catches: network failures hitting our own API.
+      setError(friendlyError(err));
     } finally {
       setLoading(false);
     }
   };
 
-  // Step 2 — verify the 8-digit code
+  // Step 2 — verify the 8-digit code (server-side, so the browser never
+  // touches Supabase directly).
   const handleVerifyCode = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = code.trim();
@@ -68,26 +93,25 @@ export function SignInForm() {
     setError(null);
 
     try {
-      const supabase = createClient();
-      const { error: verifyError } = await supabase.auth.verifyOtp({
-        email,
-        token: trimmed,
-        type: "email",
+      const verifyRes = await fetch("/api/auth/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // mode: "customer" → server skips role-based routing so users who
+        // also hold a staff role still land on /room when signing in here.
+        body: JSON.stringify({ email, code: trimmed, mode: "customer" }),
       });
-
-      if (verifyError) {
-        setError(verifyError.message);
+      const body = await verifyRes.json().catch(() => ({})) as { error?: string; next?: string };
+      if (!verifyRes.ok) {
+        setError(friendlyError(body.error ?? "Couldn't verify code."));
         return;
       }
-      router.push("/room");
+      // Server set the auth cookies — a full navigation picks them up
+      // cleanly (router.push can race the cookie flush in some setups).
+      // The /next path is role-aware: staff land on their dashboard,
+      // customers on /room.
+      window.location.assign(body.next ?? "/room");
     } catch (err) {
-      setError(
-        err instanceof TypeError
-          ? "Network error — check your connection and try again."
-          : err instanceof Error
-          ? err.message
-          : "Something went wrong. Try again.",
-      );
+      setError(friendlyError(err));
     } finally {
       setLoading(false);
     }

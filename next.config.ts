@@ -12,6 +12,12 @@ const nextConfig: NextConfig = {
     "https://10.0.1.207:3000",
     "https://10.0.1.207:3001",
   ],
+  // The Zoom Meeting SDK (Component View) uses singleton state on `window`.
+  // StrictMode's intentional double-invoke of effects causes the SDK to
+  // see two concurrent `init()` calls and rejects the second with errorCode
+  // 3000 ("Already has other meetings in progress."). Disabling it removes
+  // that dev-only artifact; production has never run in StrictMode anyway.
+  reactStrictMode: false,
 };
 
 export default nextConfig;

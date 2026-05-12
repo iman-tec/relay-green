@@ -54,6 +54,9 @@ export type GuestCall = {
   free_expired_at: string | null;
   ended_reason: string | null;
   organization_id: string | null;
+  // Phase 4: project grouping. Both nullable for legacy / "General" sessions.
+  project_id: string | null;
+  project_name: string | null;
   created_at: string;
   updated_at: string;
 };

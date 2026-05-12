@@ -14,28 +14,46 @@
  */
 
 import { useState, useRef } from "react";
-import { useRouter } from "next/navigation";
 import { Briefcase, Eye, ShieldCheck, Building2 } from "lucide-react";
-import { createClient } from "@/lib/supabase/browser";
+
+// Talks to our own /api/auth/{send,verify}-otp routes (server-side Supabase)
+// rather than the browser client — some networks block direct browser-to-
+// Supabase fetches. The verify route also clears any pre-existing session
+// before issuing a new one, so a leftover dev quick-pick login can't bleed
+// into the next user's session.
 
 type Step = "email" | "code";
 
+// The four claimable roles on the OTP form. `dbRole` is the value persisted
+// into the `user_roles` table; `devRole` is the demo-account key used by the
+// dev quick-pick buttons below. Keeping both in one list so the labels stay
+// in sync.
+type StaffRole = {
+  label:   string;
+  dbRole:  "engineer" | "pod_lead" | "ops_manager" | "admin";
+  devRole: string;
+  icon:    React.ComponentType<{ size?: number }>;
+  hint:    string;
+};
+
 const BRAND_GREEN = "#3f5c2e";
 
-const ROLES = [
-  { label: "Engineer",         devRole: "engineer",   icon: Briefcase,   hint: "Take calls and run sessions" },
-  { label: "Supervisor",       devRole: "supervisor", icon: Eye,         hint: "Monitor live sessions" },
-  { label: "Internal Admin",   devRole: "internal",   icon: ShieldCheck, hint: "Platform configuration" },
-  { label: "Enterprise Admin", devRole: "enterprise", icon: Building2,   hint: "Org-level controls" },
+const ROLES: StaffRole[] = [
+  { label: "Engineer",         dbRole: "engineer",     devRole: "engineer",   icon: Briefcase,   hint: "Take calls and run sessions" },
+  { label: "Supervisor",       dbRole: "pod_lead",     devRole: "supervisor", icon: Eye,         hint: "Monitor live sessions" },
+  { label: "Internal Admin",   dbRole: "ops_manager",  devRole: "internal",   icon: ShieldCheck, hint: "Platform configuration" },
+  { label: "Enterprise Admin", dbRole: "admin",        devRole: "enterprise", icon: Building2,   hint: "Org-level controls" },
 ];
 
 export function StaffLoginForm() {
-  const router = useRouter();
   const [step, setStep] = useState<Step>("email");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Which role to grant on first sign-in. Defaults to Engineer because that's
+  // the most common staff sign-in we see in dev.
+  const [selectedRole, setSelectedRole] = useState<StaffRole["dbRole"]>("engineer");
   const codeRef = useRef<HTMLInputElement>(null);
 
   const handleSendCode = async (e: React.FormEvent) => {
@@ -45,27 +63,32 @@ export function StaffLoginForm() {
     setLoading(true);
     setError(null);
 
-    // Pre-create user server-side so Supabase uses Magic Link template
-    // (configured for OTP code) instead of Confirm Signup template.
-    await fetch("/api/auth/prepare", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: trimmed }),
-    });
+    try {
+      // Pre-create user server-side so Supabase uses Magic Link template
+      // (configured for OTP code) instead of Confirm Signup template.
+      await fetch("/api/auth/prepare", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: trimmed }),
+      });
 
-    const supabase = createClient();
-    const { error: otpError } = await supabase.auth.signInWithOtp({
-      email: trimmed,
-      options: { shouldCreateUser: false }, // user pre-created above
-    });
-
-    setLoading(false);
-    if (otpError) {
-      setError(otpError.message);
-      return;
+      const sendRes = await fetch("/api/auth/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: trimmed }),
+      });
+      if (!sendRes.ok) {
+        const body = await sendRes.json().catch(() => ({})) as { error?: string };
+        setError(body.error ?? "Could not send code.");
+        return;
+      }
+      setStep("code");
+      setTimeout(() => codeRef.current?.focus(), 80);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not send code.");
+    } finally {
+      setLoading(false);
     }
-    setStep("code");
-    setTimeout(() => codeRef.current?.focus(), 80);
   };
 
   const handleVerifyCode = async (e: React.FormEvent) => {
@@ -75,21 +98,30 @@ export function StaffLoginForm() {
     setLoading(true);
     setError(null);
 
-    const supabase = createClient();
-    const { error: verifyError } = await supabase.auth.verifyOtp({
-      email,
-      token: trimmed,
-      type: "email",
-    });
-
-    setLoading(false);
-    if (verifyError) {
-      setError(verifyError.message);
-      return;
+    try {
+      const verifyRes = await fetch("/api/auth/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // mode: "staff" → server resolves landing by role (engineer →
+        // /dashboard, pod_lead → /supervise, etc.). role is also granted
+        // server-side if the user doesn't already have it.
+        body: JSON.stringify({ email, code: trimmed, role: selectedRole, mode: "staff" }),
+      });
+      const body = await verifyRes.json().catch(() => ({})) as { error?: string; next?: string };
+      if (!verifyRes.ok) {
+        setError(body.error ?? "Couldn't verify code.");
+        return;
+      }
+      // The verify route inspects user_roles and tells us where this user
+      // belongs (engineer → /dashboard, pod_lead → /supervise, admin/ops_manager
+      // → /admin, plain customer → /room). Full navigation so the proxy
+      // reads the freshly-written auth cookies on the next request.
+      window.location.assign(body.next ?? "/dashboard");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't verify code.");
+    } finally {
+      setLoading(false);
     }
-    // TODO: detect role server-side and redirect accordingly. For now route
-    // to /dashboard which is the engineer/supervisor default landing.
-    router.push("/dashboard");
   };
 
   // ── Step 1: Email + Dev quick-pick ────────────────────────────────────────
@@ -116,6 +148,38 @@ export function StaffLoginForm() {
               onFocus={(e) => (e.target.style.borderColor = BRAND_GREEN)}
               onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
             />
+          </div>
+
+          {/* Sign in as — what role to grant on first sign-in. If the user
+              already has a role, this is a no-op (RPC is idempotent). */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium" style={{ color: "var(--text)" }}>
+              Sign in as
+            </label>
+            <div className="grid grid-cols-2 gap-1.5">
+              {ROLES.map((r) => {
+                const Icon   = r.icon;
+                const active = selectedRole === r.dbRole;
+                return (
+                  <button
+                    key={r.dbRole}
+                    type="button"
+                    onClick={() => setSelectedRole(r.dbRole)}
+                    className="flex items-center gap-2 rounded-md border px-3 py-2 text-left text-xs font-medium transition-colors"
+                    style={{
+                      borderColor:     active ? BRAND_GREEN : "var(--border)",
+                      backgroundColor: active
+                        ? "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)"
+                        : "var(--surface)",
+                      color: active ? BRAND_GREEN : "var(--text)",
+                    }}
+                  >
+                    <Icon size={13} />
+                    <span className="truncate">{r.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {error && <ErrorBanner message={error} />}

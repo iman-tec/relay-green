@@ -32,8 +32,19 @@ export function EngineerIncomingRequest() {
   const pathname = usePathname();
   const supabaseRef = useRef(createClient());
   const declinedRef = useRef<Set<string>>(new Set());
+  // Own user ID stored in a ref so it's always current inside the async refresh
+  // callback without causing extra re-renders or stale-closure problems.
+  const myUserIdRef = useRef<string | null>(null);
   const [request, setRequest] = useState<GuestCall | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Resolve own user ID once on mount so we can exclude our own customer
+  // sessions from the incoming-request pop-up.
+  useEffect(() => {
+    supabaseRef.current.auth.getUser().then(({ data }) => {
+      if (data.user?.id) myUserIdRef.current = data.user.id;
+    }, () => {});
+  }, []);
 
   // Don't pop notifications while the engineer is already inside a session room.
   const onSessionRoute = pathname?.startsWith("/staff/session/") ?? false;
@@ -50,7 +61,13 @@ export function EngineerIncomingRequest() {
       }
       const { data, error } = await sb.rpc("list_queue");
       if (cancelled || error) return;
-      const list = ((data ?? []) as GuestCall[]).filter((c) => !declinedRef.current.has(c.id));
+      const myId = myUserIdRef.current;
+      const list = ((data ?? []) as GuestCall[]).filter(
+        (c) =>
+          !declinedRef.current.has(c.id) &&
+          // Never ring the engineer for their own customer session
+          (!myId || c.customer_user_id !== myId),
+      );
       setRequest((prev) => {
         // If we already had one and it's still in the queue, keep it; else swap to new head.
         if (prev && list.some((c) => c.id === prev.id)) return prev;
