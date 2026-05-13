@@ -43,10 +43,13 @@ export function InboxClient() {
   };
 
   return (
-    <div className="grid h-[calc(100vh-3.5rem)] grid-cols-[280px_1fr_320px]">
+    <div className="grid h-screen grid-cols-[280px_1fr_320px]">
       {/* Left — People / Chats */}
       <aside
-        className="flex flex-col border-r"
+        // min-h-0 + overflow-hidden so the inner flex-1 overflow-y-auto
+        // list actually scrolls inside its column instead of pushing the
+        // whole page past the viewport.
+        className="flex min-h-0 flex-col overflow-hidden border-r"
         style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
       >
         <div className="flex gap-1 border-b p-3" style={{ borderColor: "var(--border)" }}>
@@ -222,7 +225,9 @@ export function InboxClient() {
 
       {/* Right — Call log */}
       <aside
-        className="flex flex-col border-l"
+        // Same min-h-0 + overflow-hidden trick as the left column —
+        // contains the call-log scroll inside the 320 px column.
+        className="flex min-h-0 flex-col overflow-hidden border-l"
         style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
       >
         <div className="border-b px-5 py-4" style={{ borderColor: "var(--border)" }}>
