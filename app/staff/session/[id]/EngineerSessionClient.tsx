@@ -25,7 +25,7 @@ import {
   PanelLeftOpen, PanelLeftClose,
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
-import { ZoomEmbed } from "@/app/_components/ZoomEmbed";
+import { ZoomCall as ZoomEmbed } from "@/app/_components/ZoomCall";
 import { PopOutContainer } from "@/app/_components/PopOutContainer";
 import { createClient } from "@/lib/supabase/browser";
 import { useEngineerSession } from "@/lib/relay/useEngineerSession";
@@ -260,23 +260,44 @@ function MainPane({
     return <ChatPane state={state} fullWidth readOnly onJoinSilently={!isEnded && !!session.zoom_meeting_id ? onStart : undefined} />;
   }
 
-  // Engineer mode (unchanged)
-  if (inCall) {
+  // Engineer mode — call-only full-viewport. Zoom embed sits in the middle
+  // of a radial-gradient stage; Dashboard chip + Relay wordmark float on
+  // top in a subtle gradient header. Mirrors the customer view.
+  if (inCall && session.zoom_meeting_id) {
     return (
-      <PanelGroup direction="horizontal" autoSaveId="relay-eng-live" className="h-full">
-        <Panel defaultSize={66} minSize={40} order={1}>
-          <ZoomCenterPane
-            session={session}
-            engineerName={session.agent_name ?? "Engineer"}
-            engineerEmail={engineerEmail}
-            onJoined={state.markJoined}
-          />
-        </Panel>
-        <Resizer />
-        <Panel defaultSize={34} minSize={22} order={2}>
-          <ChatPane state={state} />
-        </Panel>
-      </PanelGroup>
+      <div
+        className="absolute inset-0 flex items-center justify-center"
+        style={{
+          background:
+            "radial-gradient(circle at 50% 30%, #1a1a1a 0%, #0a0a0a 60%, #000000 100%)",
+        }}
+      >
+        <ZoomEmbed
+          meetingNumber={session.zoom_meeting_id}
+          userName={state.isAssignedEngineer ? (session.agent_name ?? "Engineer") : (engineerEmail || "Observer")}
+          userEmail={engineerEmail}
+          role={state.isAssignedEngineer ? 1 : 0}
+          fallbackJoinUrl={state.isAssignedEngineer ? session.zoom_start_url : session.zoom_join_url}
+          onJoined={() => void state.markJoined()}
+        />
+
+        <header
+          className="absolute left-0 right-0 top-0 z-[100] flex items-center justify-between px-6 py-3"
+          style={{
+            background:
+              "linear-gradient(180deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0) 100%)",
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => router.push("/dashboard")}
+            className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3.5 py-1.5 text-xs font-medium text-white/95 backdrop-blur-md transition-colors hover:bg-white/20"
+          >
+            <ArrowLeft size={14} /> Dashboard
+          </button>
+          <Wordmark size="sm" />
+        </header>
+      </div>
     );
   }
 

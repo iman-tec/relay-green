@@ -23,6 +23,10 @@ const NOISE_PATTERNS: RegExp[] = [
   /webrtc_data_message/i,
   // Chrome/Firefox surface these when the page navigates mid-fetch.
   /AbortError: The operation was aborted/i,
+  // Zoom SDK internal hook ('useRenderVideo' etc.) fires a benign cleanup
+  // error during unmount / view switches. Empty error object, no impact.
+  /useRenderVideo/i,
+  /Error during cleanup/i,
 ];
 
 export function silenceSdkNoise(): void {

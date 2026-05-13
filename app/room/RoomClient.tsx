@@ -24,10 +24,10 @@ import {
 import {
   Plus, Send, Sparkles, Phone, X, PhoneOff, MessageSquare, Lock,
   AlertTriangle, Loader2, ChevronDown, ChevronRight, Search, PanelLeftClose, PanelLeftOpen,
-  Wallet, RefreshCw, Settings, LogOut, Check, Folder,
+  Wallet, RefreshCw, Settings, LogOut, Check, Folder, ArrowLeft,
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
-import { ZoomEmbed } from "@/app/_components/ZoomEmbed";
+import { ZoomCall as ZoomEmbed } from "@/app/_components/ZoomCall";
 import { PopOutContainer } from "@/app/_components/PopOutContainer";
 import { PaywallModal } from "@/app/_components/PaywallModal";
 import { useCustomerSession } from "@/lib/relay/useCustomerSession";
@@ -421,6 +421,55 @@ export function RoomClient() {
   // form (or existing UI) stays on screen — no jarring full-page flash.
   if (!initialLoadDone) return <FullScreenLoader />;
   if (state.auth.kind === "anonymous") return null;
+
+  // ── Call-only full-viewport mode ────────────────────────────────────────
+  // When the call is live, hide every other surface — sidebar, chat panel,
+  // FloatingStatus chrome positions itself absolutely so it overlays on top.
+  // The customer sees nothing but the Zoom embed + the End-call button.
+  if (state.session && shouldRenderSplitLayout(state.session, accepted)) {
+    return (
+      <div
+        className="fixed inset-0 flex items-center justify-center"
+        style={{
+          background:
+            "radial-gradient(circle at 50% 30%, #1a1a1a 0%, #0a0a0a 60%, #000000 100%)",
+        }}
+      >
+        {/* Zoom takes its natural size, centered. The radial backdrop
+            makes the unused area feel like a deliberate stage, not empty
+            black space. */}
+        <ZoomEmbed
+          meetingNumber={state.session.zoom_meeting_id ?? ""}
+          userName={fmtName(state.auth)}
+          userEmail={emailOf(state.auth)}
+          role={0}
+          fallbackJoinUrl={state.session.zoom_join_url}
+          onJoined={() => void state.markJoined()}
+        />
+
+        {/* Floating header strip — Relay wordmark + leave button. Glass-
+            morphic, subtle, sits over the backdrop without crowding Zoom. */}
+        <header
+          className="fixed left-0 right-0 top-0 z-[100] flex items-center justify-between px-6 py-3"
+          style={{
+            background:
+              "linear-gradient(180deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0) 100%)",
+          }}
+        >
+          <button
+            type="button"
+            onClick={async () => {
+              try { await state.end("customer_leave"); } catch { /* ignore */ }
+            }}
+            className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3.5 py-1.5 text-xs font-medium text-white/95 backdrop-blur-md transition-colors hover:bg-white/20"
+          >
+            <ArrowLeft size={14} /> Leave
+          </button>
+          <Wordmark size="sm" />
+        </header>
+      </div>
+    );
+  }
 
   return (
     <div

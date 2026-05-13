@@ -62,32 +62,14 @@ function injectToolbarStyleOnce(): void {
   const style = document.createElement("style");
   style.setAttribute("data-relay-zoom-toolbar", "");
   style.textContent = `
-    /* Method 2 — user-supplied spec: explicit medium-horizontal × long-
-       vertical sizing on the SDK wrapper, then stretch inner videos to fill
-       via object-fit: cover. */
-    #meetingSDKElement {
-      width: 100% !important;
-      height: 100% !important;
-      overflow: hidden !important;
-    }
-    #meetingSDKElement video,
-    #ZOOM_WEB_SDK_SELF_VIDEO {
-      object-fit: cover !important;
-      width: 100% !important;
-      height: 100% !important;
-    }
-
-    /* Force the SDK's inner container (where Zoom applies its inline
-       width: 450px from viewSizes.default) to fill the parent. This is
-       what actually controls the visible Zoom panel size — CSS on the
-       outer #meetingSDKElement does nothing because the SDK overrides
-       its inner elements. */
+    /* #meetingSDKElement is sized via React inline style (panelSize); we
+       don't force 100% here so the wrapper's flex centering can take effect.
+       Inner Zoom containers fill the embed — that's what the SDK renders
+       its UI into. */
     [aria-label='Zoom app container'],
     [class*='zoom-MuiPaper-root'] {
       width: 100% !important;
       height: 100% !important;
-      max-width: 100% !important;
-      max-height: 100% !important;
       box-sizing: border-box !important;
       overflow: hidden !important;
     }
@@ -255,9 +237,312 @@ export function ZoomEmbed({
   // Chromium-native CSS `zoom` to scale the panel down enough to fit, then
   // restores it when share stops.
   const [isSharing, setIsSharing] = useState(false);
+  // Computed Zoom panel size that fits the available slot at a 16:9 aspect,
+  // clamped to documented bounds (720×411 min, 1440×720 max). The wrapper
+  // flex-centers this so the Zoom embed sits in the middle of the slot with
+  // clean black margins around it instead of overflowing or under-sizing.
+  const [panelSize, setPanelSize] = useState<{ width: number; height: number }>({
+    width: 1280,
+    height: 720,
+  });
 
-  // Fixed 450×800 viewSizes per the user-supplied spec. CSS overrides on
-  // #meetingSDKElement handle visual sizing; no runtime resize needed.
+  // ── Phase 2: floating draggable camera bubbles during screen share ──
+  // When someone shares their screen:
+  //   1. Find Zoom's participant ribbon container in the rendered DOM
+  //   2. Re-style it as a floating "bubble panel" anchored top-right
+  //   3. Make it draggable (mousedown/move/up)
+  //   4. Force Zoom's share canvas to fill the embed (it natively only takes
+  //      whatever space the ribbon leaves)
+  //   5. MutationObserver watches Zoom's DOM and re-applies the overrides
+  //      when Zoom re-renders (which it does frequently)
+  // Reverts all changes when share stops.
+  useEffect(() => {
+    if (!isSharing || !rootRef.current) return;
+
+    // Inline CSS scoped to this share-active state — easier to remove on
+    // teardown than dozens of style mutations.
+    const RIBBON_SELECTORS = [
+      "[class*='zoom-MuiPaper-root'] [class*='ribbon']",
+      "[class*='zoom-MuiPaper-root'] [class*='Ribbon']",
+      "[class*='zoom-MuiPaper-root'] [class*='participantsList']",
+      "[class*='zoom-MuiPaper-root'] [class*='ParticipantsList']",
+    ].join(",");
+    const SHARE_SELECTORS = [
+      "[class*='zoom-MuiPaper-root'] [class*='share-view']",
+      "[class*='zoom-MuiPaper-root'] [class*='shareView']",
+      "[class*='zoom-MuiPaper-root'] [class*='shared-content']",
+      "[class*='zoom-MuiPaper-root'] [class*='sharedContent']",
+      "[class*='zoom-MuiPaper-root'] [class*='Share-root']",
+      "[class*='zoom-MuiPaper-root'] canvas[id*='share']",
+    ].join(",");
+
+    const style = document.createElement("style");
+    style.setAttribute("data-relay-share-bubble", "");
+    style.textContent = `
+      /* Float the ribbon as a draggable bubble panel anchored top-right of
+         the embed. Round corners + shadow + border give it the bubble look. */
+      ${RIBBON_SELECTORS} {
+        position: absolute !important;
+        top: 16px !important;
+        right: 16px !important;
+        left: auto !important;
+        bottom: auto !important;
+        width: 220px !important;
+        max-height: 60% !important;
+        z-index: 100 !important;
+        border-radius: 14px !important;
+        box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.08) !important;
+        background: rgba(15, 17, 14, 0.85) !important;
+        backdrop-filter: blur(12px) !important;
+        overflow: hidden !important;
+        cursor: move !important;
+        transition: box-shadow 0.18s ease !important;
+      }
+      ${RIBBON_SELECTORS}:hover {
+        box-shadow: 0 12px 36px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.16) !important;
+      }
+      /* Tiles inside the ribbon — round + tighter spacing so they feel like bubbles. */
+      ${RIBBON_SELECTORS} [class*='video-tile'],
+      ${RIBBON_SELECTORS} [class*='VideoTile'],
+      ${RIBBON_SELECTORS} > div > div {
+        border-radius: 10px !important;
+        margin: 6px !important;
+      }
+      /* Force Zoom's share canvas / share view container to fill the embed
+         so the shared content uses the full available area. */
+      ${SHARE_SELECTORS} {
+        position: absolute !important;
+        inset: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        max-width: 100% !important;
+        max-height: 100% !important;
+      }
+    `;
+    document.head.appendChild(style);
+
+    // Drag handling — attaches when we find the ribbon, re-attaches if the
+    // ribbon DOM node changes (Zoom re-render).
+    let draggedRibbon: HTMLElement | null = null;
+    let dragX = 16;
+    let dragY = 16;
+    let pointerStartX = 0;
+    let pointerStartY = 0;
+    let dragging = false;
+    const onPointerDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (!t) return;
+      // Don't start drag from inside a clickable child (toolbar in ribbon, etc.)
+      if (t.closest("button, a, [role='button']")) return;
+      pointerStartX = e.clientX - dragX;
+      pointerStartY = e.clientY - dragY;
+      dragging = true;
+      e.preventDefault();
+    };
+    const onPointerMove = (e: MouseEvent) => {
+      if (!dragging || !draggedRibbon) return;
+      dragX = e.clientX - pointerStartX;
+      dragY = e.clientY - pointerStartY;
+      // Clamp inside the embed bounds
+      const host = rootRef.current;
+      if (host) {
+        const hostBounds = host.getBoundingClientRect();
+        const ribbonBounds = draggedRibbon.getBoundingClientRect();
+        const maxX = hostBounds.width - ribbonBounds.width - 8;
+        const maxY = hostBounds.height - ribbonBounds.height - 8;
+        dragX = Math.max(8, Math.min(maxX, dragX));
+        dragY = Math.max(8, Math.min(maxY, dragY));
+      }
+      draggedRibbon.style.left = `${dragX}px`;
+      draggedRibbon.style.top = `${dragY}px`;
+      draggedRibbon.style.right = "auto";
+      draggedRibbon.style.bottom = "auto";
+    };
+    const onPointerUp = () => { dragging = false; };
+
+    let attachedRibbon: HTMLElement | null = null;
+    const attachToRibbon = () => {
+      const host = rootRef.current;
+      if (!host) return;
+      const ribbon = host.querySelector(RIBBON_SELECTORS) as HTMLElement | null;
+      if (!ribbon || ribbon === attachedRibbon) return;
+      if (attachedRibbon) attachedRibbon.removeEventListener("mousedown", onPointerDown);
+      attachedRibbon = ribbon;
+      draggedRibbon = ribbon;
+      ribbon.addEventListener("mousedown", onPointerDown);
+    };
+    attachToRibbon();
+    window.addEventListener("mousemove", onPointerMove);
+    window.addEventListener("mouseup", onPointerUp);
+
+    // Zoom re-renders often (participants speak, video tiles update layout).
+    // Watch the embed root and re-attach our drag listener whenever the
+    // ribbon node changes.
+    const mo = new MutationObserver(() => attachToRibbon());
+    mo.observe(rootRef.current, { childList: true, subtree: true });
+
+    return () => {
+      mo.disconnect();
+      window.removeEventListener("mousemove", onPointerMove);
+      window.removeEventListener("mouseup", onPointerUp);
+      if (attachedRibbon) attachedRibbon.removeEventListener("mousedown", onPointerDown);
+      style.remove();
+    };
+  }, [isSharing]);
+
+  // ── Phase 3: Teams-style self-preview bubble while NOT sharing ──
+  // In Speaker view (defaultViewType: 'speaker'), Zoom renders one big tile
+  // (the active speaker = remote in a 1:1 call) plus a small self-preview
+  // tile. We re-style that self-preview as a floating bubble in the bottom-
+  // right corner and make it draggable. Reverts when share starts (Phase 2
+  // takes over) or component unmounts.
+  useEffect(() => {
+    if (isSharing || status !== "joined" || !rootRef.current) return;
+
+    // Common selectors for the self-preview tile across Zoom SDK 6.x builds.
+    // We pick the FIRST match — Zoom usually puts it as a small "PIP-style"
+    // tile distinct from the main speaker area.
+    const SELF_SELECTORS = [
+      "[class*='zoom-MuiPaper-root'] [class*='self-video']",
+      "[class*='zoom-MuiPaper-root'] [class*='selfVideo']",
+      "[class*='zoom-MuiPaper-root'] [class*='SelfVideo']",
+      "[class*='zoom-MuiPaper-root'] [class*='localVideo']",
+      "[class*='zoom-MuiPaper-root'] [class*='LocalVideo']",
+      "[class*='zoom-MuiPaper-root'] [class*='thumbnail']",
+      "[class*='zoom-MuiPaper-root'] [class*='Thumbnail']",
+    ].join(",");
+
+    const style = document.createElement("style");
+    style.setAttribute("data-relay-self-bubble", "");
+    style.textContent = `
+      ${SELF_SELECTORS} {
+        position: absolute !important;
+        bottom: 16px !important;
+        right: 16px !important;
+        top: auto !important;
+        left: auto !important;
+        width: 180px !important;
+        height: 120px !important;
+        z-index: 100 !important;
+        border-radius: 14px !important;
+        box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.12) !important;
+        overflow: hidden !important;
+        cursor: move !important;
+        transition: box-shadow 0.18s ease !important;
+      }
+      ${SELF_SELECTORS}:hover {
+        box-shadow: 0 12px 36px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.22) !important;
+      }
+
+    `;
+    document.head.appendChild(style);
+
+    // Drag handling for the self-preview bubble — same pattern as Phase 2.
+    let attached: HTMLElement | null = null;
+    let dragX = 16;
+    let dragY = 16; // measured from bottom-right
+    let startX = 0;
+    let startY = 0;
+    let dragging = false;
+    const onPointerDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (!t) return;
+      if (t.closest("button, a, [role='button']")) return;
+      if (!attached) return;
+      const r = attached.getBoundingClientRect();
+      startX = e.clientX - r.left;
+      startY = e.clientY - r.top;
+      dragging = true;
+      e.preventDefault();
+    };
+    const onPointerMove = (e: MouseEvent) => {
+      if (!dragging || !attached || !rootRef.current) return;
+      const hostBounds = rootRef.current.getBoundingClientRect();
+      const ribbonBounds = attached.getBoundingClientRect();
+      let left = e.clientX - hostBounds.left - startX;
+      let top = e.clientY - hostBounds.top - startY;
+      left = Math.max(8, Math.min(hostBounds.width - ribbonBounds.width - 8, left));
+      top = Math.max(8, Math.min(hostBounds.height - ribbonBounds.height - 8, top));
+      attached.style.left = `${left}px`;
+      attached.style.top = `${top}px`;
+      attached.style.right = "auto";
+      attached.style.bottom = "auto";
+      dragX = left;
+      dragY = top;
+    };
+    const onPointerUp = () => { dragging = false; };
+
+    const attachToSelf = () => {
+      const host = rootRef.current;
+      if (!host) return;
+      const node = host.querySelector(SELF_SELECTORS) as HTMLElement | null;
+      if (!node || node === attached) return;
+      if (attached) attached.removeEventListener("mousedown", onPointerDown);
+      attached = node;
+      node.addEventListener("mousedown", onPointerDown);
+    };
+    attachToSelf();
+    window.addEventListener("mousemove", onPointerMove);
+    window.addEventListener("mouseup", onPointerUp);
+
+    const mo = new MutationObserver(() => attachToSelf());
+    mo.observe(rootRef.current, { childList: true, subtree: true });
+
+    return () => {
+      mo.disconnect();
+      window.removeEventListener("mousemove", onPointerMove);
+      window.removeEventListener("mouseup", onPointerUp);
+      if (attached) attached.removeEventListener("mousedown", onPointerDown);
+      style.remove();
+      // Suppress unused-var lints for the running drag offsets — they are
+      // tracked in closure for the lifetime of this share session.
+      void dragX; void dragY;
+    };
+  }, [isSharing, status]);
+
+  // Size Zoom to a 16:9 box that ALWAYS fits inside the wrapper, with a
+  // ~90px reserve at the bottom for Zoom's toolbar (so the toolbar isn't
+  // pushed below the visible area). Clamped to documented gallery bounds.
+  useEffect(() => {
+    if (!wrapRef.current) return;
+    const ASPECT = 16 / 9;
+    const TOOLBAR_RESERVE = 90;
+    const MIN_W = 720;
+    const MIN_H = 411;
+    const MAX_W = 1440;
+    const MAX_H = 720;
+    const apply = () => {
+      const el = wrapRef.current;
+      if (!el) return;
+      // Available space minus toolbar reserve.
+      const availW = el.clientWidth;
+      const availH = Math.max(MIN_H, el.clientHeight - TOOLBAR_RESERVE);
+      // Fit a 16:9 box inside (availW × availH).
+      let w = availW;
+      let h = availW / ASPECT;
+      if (h > availH) {
+        h = availH;
+        w = availH * ASPECT;
+      }
+      // Clamp to documented gallery bounds.
+      w = Math.max(MIN_W, Math.min(MAX_W, Math.floor(w)));
+      h = Math.max(MIN_H, Math.min(MAX_H, Math.floor(h)));
+      setPanelSize({ width: w, height: h });
+      const c = clientRef.current;
+      try {
+        c?.updateVideoOptions?.({
+          viewSizes: {
+            default: { width: w, height: h },
+            ribbon: { width: 316, height: h },
+          },
+        });
+      } catch { /* SDK not ready */ }
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(wrapRef.current);
+    return () => ro.disconnect();
+  }, [status]);
 
   useEffect(() => {
     let cancelled = false;
@@ -360,13 +645,12 @@ export function ZoomEmbed({
             video: {
               isResizable: true,
               isDisplayAvatar: true,
-              // Initial layout — gallery shows every participant as an equal
-              // tile, so both faces are visible in a 1:1 call. The SDK's
-              // out-of-the-box default is "active" (active-speaker focus),
-              // which hides the local self-view tile unless you're speaking.
-              // Per the SDK type defs this is init-only; we also call
-              // setViewType('gallery') after join as a belt-and-braces.
-              defaultViewType: "gallery",
+              // Phase 3: Teams-style speaker view by default. One big tile
+              // for the active speaker (= the remote participant in a 1:1
+              // call), and the local self-preview gets CSS-extracted as a
+              // floating draggable bubble (see effect below). When a share
+              // begins, the share-state event handler swaps this to 'ribbon'.
+              defaultViewType: "speaker",
               viewSizes: {
                 // Gallery + Speaker view. Sized at gallery max (1280×720)
                 // so two 16:9 tiles fit comfortably side-by-side instead of
@@ -511,10 +795,10 @@ export function ZoomEmbed({
           // eslint-disable-next-line no-console
           console.warn(`[ZoomEmbed] no layout API available — relying on defaultViewType in init`);
         };
-        try { await applyLayout("gallery"); }
+        try { await applyLayout("speaker"); }
         catch (e) {
           // eslint-disable-next-line no-console
-          console.log("[ZoomEmbed] applyLayout('gallery') failed:", e);
+          console.log("[ZoomEmbed] applyLayout('speaker') failed:", e);
         }
 
         try {
@@ -527,7 +811,7 @@ export function ZoomEmbed({
             if (!cancelled) setIsSharing(sharing);
             // Ribbon while someone is sharing (so the shared screen has room);
             // gallery when nobody is sharing so both faces stay visible.
-            void applyLayout(sharing ? "ribbon" : "gallery").catch(() => undefined);
+            void applyLayout(sharing ? "ribbon" : "speaker").catch(() => undefined);
           };
           for (const ev of [
             "active-share-change",
@@ -641,21 +925,21 @@ export function ZoomEmbed({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Strategy: small viewSizes (450×800) + CSS overrides on #meetingSDKElement
-  // + object-fit: cover on inner videos to crop 16:9 into the portrait frame.
+  // Phase 1 strategy: flex-center the Zoom embed inside the wrapper at a
+  // computed 16:9 size that fits the available slot. No CSS-zoom hacks; the
+  // SDK renders at panelSize.width × panelSize.height and we keep both the
+  // outer container and viewSizes in lockstep via the ResizeObserver above.
   return (
     <div
       ref={wrapRef}
-      className="relative h-full w-full overflow-hidden"
-      style={{
-        backgroundColor: "#000",
-        // Scale the panel down only while someone is sharing — share view
-        // natively exceeds the slot at 100% browser zoom. Speaker view fits
-        // fine, so zoom = 1 the rest of the time.
-        zoom: isSharing ? 0.7 : 1,
-      }}
+      className="relative h-full w-full overflow-hidden flex items-center justify-center"
+      style={{ backgroundColor: "#000" }}
     >
-      <div ref={rootRef} id="meetingSDKElement" className="absolute inset-0" />
+      <div
+        ref={rootRef}
+        id="meetingSDKElement"
+        style={{ width: panelSize.width, height: panelSize.height }}
+      />
       {status === "loading" && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/60">
           <div className="flex flex-col items-center gap-2 text-white">
