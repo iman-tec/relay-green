@@ -27,7 +27,7 @@ const ROWS = [
     framework: "GDPR",
     status: "In place",
     period: "Continuous",
-    detail: "EU data residency option. Standard Contractual Clauses on every transfer. DPAs available on request. Data Protection Officer: dpo@relay.green.",
+    detail: "EU data residency option. Standard Contractual Clauses on every transfer. DPAs available on request. Data Protection Officer: support@relay.green.",
   },
   {
     framework: "HIPAA",

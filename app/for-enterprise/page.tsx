@@ -829,7 +829,7 @@ export default function ForEnterprisePage() {
             Let’s talk about how Relay fits your organization.
           </p>
           <a
-            href="mailto:sales@relay.green?subject=Relay%20—%20Enterprise%20inquiry"
+            href="mailto:support@relay.green?subject=Relay%20—%20Enterprise%20inquiry"
             className="r-btn r-btn-green"
             style={{ height: 44, padding: "0 24px" }}
           >

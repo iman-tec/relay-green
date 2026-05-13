@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { EngineerShell } from "@/app/_components/EngineerShell";
 import { AdminClient } from "./AdminClient";
 
 export const metadata: Metadata = {
@@ -7,9 +6,5 @@ export const metadata: Metadata = {
 };
 
 export default function AdminPage() {
-  return (
-    <EngineerShell>
-      <AdminClient />
-    </EngineerShell>
-  );
+  return <AdminClient />;
 }

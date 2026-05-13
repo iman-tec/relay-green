@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { EngineerShell } from "@/app/_components/EngineerShell";
 
 export const metadata: Metadata = {
   title: "Settings — Relay.green",
@@ -15,7 +14,6 @@ const SECTIONS = [
 
 export default function SettingsPage() {
   return (
-    <EngineerShell>
       <div className="mx-auto max-w-3xl space-y-6 px-6 py-8">
         <div>
           <h1 className="text-xl font-semibold" style={{ color: "var(--text)" }}>
@@ -51,6 +49,5 @@ export default function SettingsPage() {
           ))}
         </div>
       </div>
-    </EngineerShell>
   );
 }

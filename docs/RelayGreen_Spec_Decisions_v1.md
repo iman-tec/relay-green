@@ -782,7 +782,7 @@ fonts is a $5–7K decision and trivially retrofittable.
 | O5.a | Primary production domain = `relay.green` |
 | O5.b | Fallback domain on contest = an independent Relay.green-owned TLD (e.g., `relay.app`, `getrelay.com`); NOT a Gateway sub-domain. Platform supports alternate domain via env-var swap |
 | O5.c | Trademark notice: `© Relay.green. All rights reserved.` Legal entity selection (Relay.green Pvt Ltd vs. Gateway parent) is a separate legal-track decision; customer-facing string is "Relay.green" only |
-| O5.d | All email from `@relay.green` only — `billing@relay.green`, `team@relay.green`, `engineers@relay.green`, `support@relay.green`. No `@gatewaygroup.com` in customer-facing flows |
+| O5.d | All email from `@relay.green` only — `support@relay.green`, `support@relay.green`, `support@relay.green`, `support@relay.green`. No `@gatewaygroup.com` in customer-facing flows |
 | O5.e | OAuth callback URLs whitelist **only `relay.green`**. No `thegatewaydigital.com` anywhere in OAuth configs, redirect URIs, or customer-facing references |
 | O5.f | Brand-conflict response plan: 14-day evaluation, then negotiate / rename / relocate; architecture supports rename via env-var swap |
 | O5.g | Auto-renew for 5+ years; calendar alert at year-3 to extend |

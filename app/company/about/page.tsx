@@ -604,12 +604,12 @@ export default function AboutPage() {
           >
             <ContactCard
               label="Press"
-              email="press@relay.green"
+              email="support@relay.green"
               note="Quotes, founder interviews, brand assets."
             />
             <ContactCard
               label="Investors"
-              email="investors@relay.green"
+              email="support@relay.green"
               note="Capital, board, and corporate development."
             />
           </div>

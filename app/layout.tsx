@@ -136,8 +136,9 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${sourceSerif.variable} ${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
-      <body className="flex min-h-full flex-col">
+      <body className="flex min-h-full flex-col" suppressHydrationWarning>
         <JsonLd data={[organizationSchema(), websiteSchema()]} />
         {children}
         <CookieConsent />

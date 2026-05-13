@@ -117,7 +117,7 @@ export default function FieldNotesPage() {
               }}
             >
               &mdash; Posted from the engineering team. Comments and questions
-              welcome at engineering@relay.green.
+              welcome at support@relay.green.
             </p>
           </article>
         </div>

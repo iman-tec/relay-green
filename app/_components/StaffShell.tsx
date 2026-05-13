@@ -1,0 +1,615 @@
+"use client";
+
+/*
+ * Staff shell — left sidebar layout, collapsible, icon-first.
+ *
+ * Mirrors the customer-room sidebar pattern (RoomClient) so admin /
+ * supervisor / engineer surfaces feel consistent with the customer view.
+ *
+ * - Sidebar width: 240px open, 60px collapsed. State persists in
+ *   localStorage so a reload keeps your preference.
+ * - Top: wordmark (full when open, dot-only when collapsed) + toggle.
+ * - Middle: nav items, each rendered as icon + label. Labels hide when
+ *   collapsed; the icon shows a native tooltip with the label.
+ * - Bottom: profile chip with initials avatar + dropdown (email, role,
+ *   logout). When collapsed, chip is just the avatar; click expands a
+ *   dropdown anchored to the right of the sidebar.
+ *
+ * Auth-guarded by useStaffGuard. Drives the same notifications + incoming
+ * call popup as the legacy EngineerShell.
+ */
+
+import Link from "next/link";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import {
+  Bell, PhoneIncoming, Loader2, LogOut, ChevronDown, AlertTriangle, X,
+  PanelLeftClose, PanelLeftOpen, LayoutDashboard, Inbox as InboxIcon,
+  Eye, Users as UsersIcon, Settings as SettingsIcon, ListTree,
+} from "lucide-react";
+import { Wordmark } from "./Wordmark";
+import { useStaffGuard } from "@/lib/relay/useStaffGuard";
+import { highestRoleLabel } from "@/lib/relay/role-labels";
+import { EngineerIncomingRequest } from "./EngineerIncomingRequest";
+import { createClient } from "@/lib/supabase/browser";
+import type { GuestCall } from "@/lib/supabase/types";
+
+const BRAND_GREEN       = "#3f5c2e";
+const BRAND_GREEN_SOFT  = "rgba(63, 92, 46, 0.12)";
+const URGENT_AMBER      = "#c66645";
+const URGENT_AMBER_SOFT = "rgba(198, 102, 69, 0.14)";
+const CRIT_RED          = "#c8553d";
+const CRIT_RED_SOFT     = "rgba(200, 85, 61, 0.18)";
+
+const SIDEBAR_OPEN_W = 240;
+const SIDEBAR_CLOSED_W = 60;
+const COLLAPSED_KEY = "relay.staff.sidebar.collapsed";
+
+type Nav = {
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ size?: number }>;
+  roles: string[];
+};
+
+const NAV: Nav[] = [
+  { href: "/dashboard",   label: "Dashboard", icon: LayoutDashboard, roles: ["engineer"] },
+  { href: "/inbox",       label: "Inbox",     icon: InboxIcon,       roles: ["engineer"] },
+  { href: "/triage",      label: "Triage",    icon: ListTree,        roles: ["engineer", "pod_lead", "ops_manager", "admin", "super_admin"] },
+  { href: "/supervise",   label: "Supervise", icon: Eye,             roles: ["pod_lead", "ops_manager", "admin", "super_admin"] },
+  { href: "/admin/users", label: "Users",     icon: UsersIcon,       roles: ["super_admin"] },
+  { href: "/settings",    label: "Settings",  icon: SettingsIcon,    roles: ["engineer", "pod_lead", "ops_manager", "admin", "super_admin"] },
+];
+
+const ENGINEER_ONLY_PATHS = ["/dashboard", "/inbox", "/staff/session"];
+
+function isEngineer(roles: string[]): boolean {
+  return roles.includes("engineer");
+}
+
+function initials(email: string): string {
+  const local = email.split("@")[0] ?? "";
+  const parts = local.split(/[._-]/);
+  if (parts.length >= 2) {
+    return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase();
+  }
+  return local.slice(0, 2).toUpperCase();
+}
+
+export function StaffShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const router   = useRouter();
+  const guard    = useStaffGuard();
+  const roles    = guard.kind === "staff" ? guard.roles : [];
+  const engineer = isEngineer(roles);
+
+  const [collapsed, setCollapsed] = useState(false);
+
+  // Restore sidebar state from localStorage on mount.
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem(COLLAPSED_KEY);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (v === "1") setCollapsed(true);
+    } catch {
+      /* localStorage unavailable — keep default */
+    }
+  }, []);
+
+  const toggle = useCallback(() => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try { localStorage.setItem(COLLAPSED_KEY, next ? "1" : "0"); } catch {}
+      return next;
+    });
+  }, []);
+
+  // Redirect engineer-only pages if a non-engineer somehow lands there
+  // (e.g. an admin clicks a stale link). Mirrors the legacy guard.
+  const inEngineerOnlyArea = ENGINEER_ONLY_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(p + "/"),
+  );
+  useEffect(() => {
+    if (guard.kind === "staff" && !engineer && inEngineerOnlyArea) {
+      router.replace("/supervise");
+    }
+  }, [guard.kind, engineer, inEngineerOnlyArea, router]);
+
+  if (guard.kind === "loading") {
+    return (
+      <div
+        className="flex min-h-screen items-center justify-center"
+        style={{ backgroundColor: "var(--background)" }}
+      >
+        <Loader2 size={20} className="animate-spin" style={{ color: BRAND_GREEN }} />
+      </div>
+    );
+  }
+  if (guard.kind === "anonymous") return null;
+  if (guard.kind === "not-staff") {
+    return (
+      <div
+        className="flex min-h-screen items-center justify-center px-6"
+        style={{ backgroundColor: "var(--background)" }}
+      >
+        <div className="max-w-sm text-center">
+          <h2 className="mb-2 text-lg font-semibold" style={{ color: "var(--text)" }}>
+            Staff access required
+          </h2>
+          <p className="mb-6 text-sm" style={{ color: "var(--text-muted)" }}>
+            Your account doesn&apos;t have an engineer / supervisor / admin role yet.
+            Contact your admin or sign in with a staff account.
+          </p>
+          <div className="flex justify-center gap-2">
+            <Link
+              href="/staff/login"
+              className="rounded-md px-4 py-2 text-sm font-medium"
+              style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+            >
+              Staff sign in
+            </Link>
+            <Link
+              href="/room"
+              className="rounded-md border px-4 py-2 text-sm"
+              style={{ borderColor: "var(--border)", color: "var(--text)" }}
+            >
+              Customer view
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const navItems = NAV.filter((n) => n.roles.some((r) => roles.includes(r)));
+
+  return (
+    <div className="flex min-h-screen" style={{ backgroundColor: "var(--background)" }}>
+      <aside
+        className="sticky top-0 flex h-screen shrink-0 flex-col border-r transition-[width] duration-200 ease-out"
+        style={{
+          width: collapsed ? SIDEBAR_CLOSED_W : SIDEBAR_OPEN_W,
+          borderColor: "var(--border)",
+          backgroundColor: "var(--surface)",
+        }}
+      >
+        {/* Top: wordmark + toggle */}
+        <div
+          className="flex items-center justify-between border-b px-3 py-3"
+          style={{ borderColor: "var(--border)" }}
+        >
+          <Link
+            href={engineer ? "/dashboard" : "/supervise"}
+            className="flex items-center no-underline"
+            aria-label="Home"
+          >
+            {collapsed ? <DotOnly /> : <Wordmark size="md" />}
+          </Link>
+          {!collapsed && (
+            <button
+              type="button"
+              onClick={toggle}
+              className="rounded-md p-1.5 transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
+              aria-label="Collapse sidebar"
+              style={{ color: "var(--text-muted)" }}
+            >
+              <PanelLeftClose size={16} />
+            </button>
+          )}
+        </div>
+
+        {/* Collapsed-mode toggle (separate row so it's reachable) */}
+        {collapsed && (
+          <button
+            type="button"
+            onClick={toggle}
+            className="mx-2 mt-2 rounded-md p-2 transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
+            aria-label="Expand sidebar"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <PanelLeftOpen size={16} />
+          </button>
+        )}
+
+        {/* Nav */}
+        <nav className="flex flex-1 flex-col gap-0.5 px-2 pt-3">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const active =
+              pathname === item.href || pathname.startsWith(item.href + "/");
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                title={collapsed ? item.label : undefined}
+                className="flex items-center gap-3 rounded-md px-2.5 py-2 text-sm transition-colors"
+                style={{
+                  fontWeight: active ? 600 : 500,
+                  color: active ? BRAND_GREEN : "var(--text)",
+                  backgroundColor: active ? BRAND_GREEN_SOFT : "transparent",
+                  justifyContent: collapsed ? "center" : "flex-start",
+                }}
+              >
+                <Icon size={16} />
+                {!collapsed && <span className="truncate">{item.label}</span>}
+              </Link>
+            );
+          })}
+
+          {/* Spacer pushes alerts + profile to bottom */}
+          <div className="flex-1" />
+
+          {/* Engineer-only inline CTA */}
+          {engineer && !collapsed && (
+            <Link
+              href="/triage"
+              className="mb-2 inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-2 text-xs font-medium transition-colors"
+              style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
+            >
+              <PhoneIncoming size={13} />
+              Take a call
+            </Link>
+          )}
+        </nav>
+
+        {/* Bottom: notification bell + profile */}
+        <div
+          className="border-t px-2 py-2"
+          style={{ borderColor: "var(--border)" }}
+        >
+          <div
+            className="flex items-center"
+            style={{ justifyContent: collapsed ? "center" : "space-between" }}
+          >
+            <NotificationBell roles={roles} collapsed={collapsed} />
+            {!collapsed && (
+              <div className="flex-1 px-2">
+                <ProfileChipInline email={guard.kind === "staff" ? "" : ""} />
+              </div>
+            )}
+          </div>
+          <ProfileButton
+            email={guardEmail(guard)}
+            roles={roles}
+            collapsed={collapsed}
+          />
+        </div>
+      </aside>
+
+      <main className="flex-1 min-w-0">{children}</main>
+
+      {/* Engineer-only: full-screen incoming call popup */}
+      {engineer && <EngineerIncomingRequest />}
+
+      {/* Supervisor-only: non-blocking urgent session alerts */}
+      {!engineer && <SupervisorAlerts roles={roles} />}
+    </div>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+
+type GuardLike = ReturnType<typeof useStaffGuard>;
+
+function guardEmail(g: GuardLike): string {
+  // We don't store email in the guard yet; fetch lazily via supabase
+  // inside the profile button. Returning "" here keeps the API simple.
+  return "";
+}
+
+function DotOnly() {
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        display: "inline-block",
+        width: 12,
+        height: 12,
+        borderRadius: "50%",
+        backgroundColor: BRAND_GREEN,
+      }}
+    />
+  );
+}
+
+function ProfileChipInline({ email }: { email: string }) {
+  // Kept as a stub for future use (e.g. truncated email in the sidebar).
+  // Profile actions live in ProfileButton below.
+  if (!email) return null;
+  return (
+    <span className="truncate text-[12px]" style={{ color: "var(--text-muted)" }}>
+      {email}
+    </span>
+  );
+}
+
+function ProfileButton({
+  email,
+  roles,
+  collapsed,
+}: {
+  email: string;
+  roles: string[];
+  collapsed: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [me, setMe] = useState<{ email: string } | null>(email ? { email } : null);
+  const ref = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+  const supabaseRef = useRef(createClient());
+
+  useEffect(() => {
+    if (me) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabaseRef.current.auth.getUser();
+      if (!cancelled && data.user?.email) {
+        setMe({ email: data.user.email });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [me]);
+
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    }
+    if (open) document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [open]);
+
+  const handleSignOut = async () => {
+    await supabaseRef.current.auth.signOut();
+    router.push("/staff/login");
+  };
+
+  const userEmail = me?.email ?? "";
+  const userInitials = initials(userEmail || "??");
+  const roleText = highestRoleLabel(roles);
+
+  return (
+    <div ref={ref} className="relative mt-1">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
+        style={{ justifyContent: collapsed ? "center" : "flex-start" }}
+        aria-label="Account menu"
+        title={collapsed ? `${userEmail} · ${roleText}` : undefined}
+      >
+        <span
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
+          style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
+        >
+          {userInitials}
+        </span>
+        {!collapsed && (
+          <div className="min-w-0 flex-1">
+            <div
+              className="truncate text-[12px] font-medium"
+              style={{ color: "var(--text)" }}
+            >
+              {userEmail || "—"}
+            </div>
+            <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+              {roleText}
+            </div>
+          </div>
+        )}
+        {!collapsed && (
+          <ChevronDown
+            size={14}
+            style={{
+              color: "var(--text-muted)",
+              transform: open ? "rotate(180deg)" : "none",
+              transition: "transform 120ms ease",
+            }}
+          />
+        )}
+      </button>
+
+      {open && (
+        <div
+          className="absolute z-50 rounded-md border py-1 shadow-md"
+          style={{
+            backgroundColor: "var(--surface)",
+            borderColor: "var(--border)",
+            // Anchor: in collapsed mode → expand to the right; otherwise → up
+            bottom: "100%",
+            left: collapsed ? "100%" : 0,
+            right: collapsed ? "auto" : 0,
+            marginBottom: collapsed ? 0 : 8,
+            marginLeft:   collapsed ? 8 : 0,
+            minWidth: 200,
+          }}
+        >
+          <div
+            className="px-3 py-2"
+            style={{ borderBottom: "1px solid var(--border)" }}
+          >
+            <div
+              className="truncate text-[12px] font-medium"
+              style={{ color: "var(--text)" }}
+            >
+              {userEmail || "—"}
+            </div>
+            <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+              {roleText}
+            </div>
+          </div>
+          <Link
+            href="/settings"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-2 px-3 py-2 text-sm transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
+            style={{ color: "var(--text)" }}
+          >
+            <SettingsIcon size={14} />
+            Settings
+          </Link>
+          <button
+            type="button"
+            onClick={handleSignOut}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
+            style={{ color: "var(--text)" }}
+          >
+            <LogOut size={14} />
+            Sign out
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ──────── Notification bell — count of pending sessions ──────── */
+
+function NotificationBell({
+  roles,
+  collapsed,
+}: {
+  roles: string[];
+  collapsed: boolean;
+}) {
+  const [count, setCount] = useState(0);
+  const supabaseRef = useRef(createClient());
+
+  useEffect(() => {
+    const sb = supabaseRef.current;
+    let cancelled = false;
+
+    const fetchCount = async () => {
+      const target = isEngineer(roles)
+        ? ["queued"]
+        : ["queued", "assigned", "joining", "live", "grace"];
+      const urgencyFilter = isEngineer(roles) ? undefined : ["urgent", "critical"];
+      let q = sb.from("guest_calls").select("id", { count: "exact", head: true })
+        .in("status", target);
+      if (urgencyFilter) q = q.in("urgency", urgencyFilter);
+      const { count } = await q;
+      if (!cancelled) setCount(count ?? 0);
+    };
+    void fetchCount();
+
+    const ch = sb
+      .channel("staff-shell-bell")
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "guest_calls" },
+        () => { void fetchCount(); },
+      )
+      .subscribe();
+    return () => {
+      cancelled = true;
+      sb.removeChannel(ch);
+    };
+  }, [roles]);
+
+  return (
+    <button
+      type="button"
+      aria-label="Notifications"
+      className="relative rounded-md p-2 transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
+      style={{ color: "var(--text-muted)" }}
+      title={`${count} pending`}
+    >
+      <Bell size={16} />
+      {count > 0 && (
+        <span
+          className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold"
+          style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+        >
+          {count > 99 ? "99+" : count}
+        </span>
+      )}
+    </button>
+  );
+}
+
+/* ──────── Supervisor toast alerts (same logic as legacy shell) ──────── */
+
+type AlertToast = { id: string; sessionId: string; name: string; urgency: string };
+
+function SupervisorAlerts({ roles }: { roles: string[] }) {
+  const isSupervisor = !isEngineer(roles);
+  const [alerts, setAlerts] = useState<AlertToast[]>([]);
+  const seenRef = useRef<Set<string>>(new Set());
+  const supabaseRef = useRef(createClient());
+
+  const dismiss = (id: string) =>
+    setAlerts((prev) => prev.filter((a) => a.id !== id));
+
+  useEffect(() => {
+    if (!isSupervisor) return;
+    const sb = supabaseRef.current;
+    const ch = sb
+      .channel("supervisor-alerts-shell")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "guest_calls" },
+        (payload) => {
+          const row = (payload.new ?? payload.old) as GuestCall | null;
+          if (!row || !row.id) return;
+          const urgent = row.urgency === "urgent" || row.urgency === "critical";
+          const liveish = ["queued", "assigned", "joining", "live", "grace"].includes(
+            row.status as string,
+          );
+          if (!urgent || !liveish) return;
+          if (seenRef.current.has(row.id)) return;
+          seenRef.current.add(row.id);
+          setAlerts((prev) => [
+            ...prev,
+            {
+              id: `${row.id}-${Date.now()}`,
+              sessionId: row.id,
+              name: (row as { full_name?: string }).full_name ?? "Guest",
+              urgency: row.urgency as string,
+            },
+          ]);
+        },
+      )
+      .subscribe();
+    return () => { sb.removeChannel(ch); };
+  }, [isSupervisor]);
+
+  if (!isSupervisor || !alerts.length) return null;
+
+  return (
+    <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2">
+      {alerts.map((a) => (
+        <div
+          key={a.id}
+          className="flex items-start gap-3 rounded-lg border px-4 py-3 shadow-lg"
+          style={{
+            backgroundColor:
+              a.urgency === "critical" ? CRIT_RED_SOFT : URGENT_AMBER_SOFT,
+            borderColor:
+              a.urgency === "critical" ? CRIT_RED : URGENT_AMBER,
+            color: "var(--text)",
+            maxWidth: 360,
+          }}
+        >
+          <AlertTriangle
+            size={16}
+            style={{
+              color: a.urgency === "critical" ? CRIT_RED : URGENT_AMBER,
+              marginTop: 2,
+            }}
+          />
+          <div className="flex-1">
+            <div className="text-sm font-medium">{a.name}</div>
+            <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+              {a.urgency} session
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => dismiss(a.id)}
+            className="rounded-md p-1"
+            aria-label="Dismiss"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}

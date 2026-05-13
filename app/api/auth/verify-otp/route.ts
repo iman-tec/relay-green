@@ -90,9 +90,10 @@ export async function POST(request: Request) {
 // Maps a user's role set to the page they should land on after sign-in.
 // Order is significant: admin > ops_manager > pod_lead > engineer > customer.
 function landingForRoles(roles: string[]): string {
-  if (roles.includes("admin"))        return "/admin";
-  if (roles.includes("ops_manager"))  return "/admin";
-  if (roles.includes("pod_lead"))     return "/supervise";
-  if (roles.includes("engineer"))     return "/dashboard";
+  if (roles.includes("super_admin")) return "/admin";
+  if (roles.includes("admin"))       return "/admin";
+  if (roles.includes("ops_manager")) return "/admin";
+  if (roles.includes("pod_lead"))    return "/supervise";
+  if (roles.includes("engineer"))    return "/dashboard";
   return "/room";
 }

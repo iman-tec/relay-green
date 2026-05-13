@@ -176,10 +176,10 @@ export default function TrustSubprocessorsPage() {
           <p className="r-body" style={{ marginBottom: 24 }}>
             Subscribe to sub-processor updates by writing to{" "}
             <a
-              href="mailto:trust@relay.green"
+              href="mailto:support@relay.green"
               style={{ borderBottom: "1px solid var(--ink)" }}
             >
-              trust@relay.green
+              support@relay.green
             </a>
             . Enterprise customers receive a thirty-day notice before any new
             sub-processor begins handling their data.

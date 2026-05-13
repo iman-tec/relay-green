@@ -82,10 +82,10 @@ export default function TrustResponsibleDisclosurePage() {
               }}
             >
               <a
-                href="mailto:security@relay.green"
+                href="mailto:support@relay.green"
                 style={{ borderBottom: "1px solid var(--ink)" }}
               >
-                security@relay.green
+                support@relay.green
               </a>
             </p>
           </div>

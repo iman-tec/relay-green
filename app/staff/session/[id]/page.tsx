@@ -1,18 +1,27 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
 import { EngineerSessionClient } from "./EngineerSessionClient";
 
 export const metadata: Metadata = {
   title: "Session — Relay.green",
 };
 
-// Intentionally no <EngineerShell> — a session room is a focused workspace.
+// Intentionally no StaffShell — a session room is a focused workspace.
 // The engineer returns to /inbox (which carries the global nav) after they
-// end the call.
+// end the call. We still gate the route at the page level since it lives
+// outside the (staff) layout.
 export default async function EngineerSessionPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/staff/login");
+
   const { id } = await params;
   return <EngineerSessionClient sessionId={id} />;
 }
