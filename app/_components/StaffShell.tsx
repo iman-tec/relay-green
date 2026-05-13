@@ -67,6 +67,15 @@ function isEngineer(roles: string[]): boolean {
   return roles.includes("engineer");
 }
 
+// A user is "engineer-primary" when engineer is their HIGHEST role —
+// nothing supervisorial or admin-level above it. Used to gate the
+// full-screen incoming-call popup so super_admins / supervisors who
+// also happen to hold engineer don't get hijacked by ringtones.
+const SUPERVISORY_ROLES = ["pod_lead", "ops_manager", "admin", "super_admin"];
+function isEngineerOnly(roles: string[]): boolean {
+  return roles.includes("engineer") && !roles.some((r) => SUPERVISORY_ROLES.includes(r));
+}
+
 function initials(email: string): string {
   const local = email.split("@")[0] ?? "";
   const parts = local.split(/[._-]/);
@@ -278,8 +287,11 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
 
       <main className="flex-1 min-w-0">{children}</main>
 
-      {/* Engineer-only: full-screen incoming call popup */}
-      {engineer && <EngineerIncomingRequest />}
+      {/* Engineer-PRIMARY only: full-screen incoming call popup. A user
+       *  who also holds a supervisor/admin role (super_admin, admin,
+       *  ops_manager, pod_lead) won't be paged here — they monitor calls
+       *  via Inbox/Supervise instead. */}
+      {isEngineerOnly(roles) && <EngineerIncomingRequest />}
 
       {/* Supervisor-only: non-blocking urgent session alerts */}
       {!engineer && <SupervisorAlerts roles={roles} />}

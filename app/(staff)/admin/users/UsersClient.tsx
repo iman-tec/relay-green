@@ -570,11 +570,21 @@ function DraftRow({
             setDraft({ ...draft, role: e.target.value as RoleKey })
           }
           onKeyDown={onKey}
-          className="w-full bg-transparent text-sm outline-none"
-          style={{ color: "var(--text)" }}
+          className="w-full text-sm outline-none"
+          // Explicit dark surface so the native options popup matches the
+          // rest of the admin UI; bg-transparent let the OS pick a default
+          // (usually white) on Chrome/Linux.
+          style={{
+            color: "var(--text)",
+            backgroundColor: "var(--surface)",
+          }}
         >
           {CREATABLE_ROLES.map((r) => (
-            <option key={r.value} value={r.value}>
+            <option
+              key={r.value}
+              value={r.value}
+              style={{ backgroundColor: "var(--surface)", color: "var(--text)" }}
+            >
               {r.label}
             </option>
           ))}
@@ -792,11 +802,18 @@ function CellSelect({
         if (e.key === "Enter") onCommit(value);
         else if (e.key === "Escape") onCancel();
       }}
-      className="w-full bg-transparent text-sm outline-none"
-      style={{ color: "var(--text)" }}
+      className="w-full text-sm outline-none"
+      style={{
+        color: "var(--text)",
+        backgroundColor: "var(--surface)",
+      }}
     >
       {options.map((o) => (
-        <option key={o.value} value={o.value}>
+        <option
+          key={o.value}
+          value={o.value}
+          style={{ backgroundColor: "var(--surface)", color: "var(--text)" }}
+        >
           {o.label}
         </option>
       ))}

@@ -6,7 +6,7 @@ import { StaffLoginForm } from "./StaffLoginForm";
 
 export const metadata: Metadata = {
   title: "Staff sign in — Relay.green",
-  description: "Sign in to Relay.green. Enter your work email — we'll send a 6-digit code.",
+  description: "Sign in to Relay.green. Enter your work email — we'll send an 8-digit code.",
 };
 
 export default function StaffLoginPage() {
@@ -39,7 +39,7 @@ export default function StaffLoginPage() {
               className="text-sm leading-relaxed"
               style={{ color: "var(--text-muted)" }}
             >
-              Enter your work email — we&apos;ll send you a 6-digit code.
+              Enter your work email — we&apos;ll send you an 8-digit code.
             </p>
           </div>
         </div>

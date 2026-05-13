@@ -5,7 +5,7 @@
  *
  * Two-step OTP flow (same as customer /login, just with mode="staff" so
  * the server routes the user to their role's landing):
- *   1. Enter email → server sends a 6-digit code via Supabase Auth.
+ *   1. Enter email → server sends an 8-digit code via Supabase Auth.
  *   2. Enter the code → server verifies + sets session → forward.
  *
  * On the first sign-in after admin invites a user, they typically arrive
@@ -108,7 +108,7 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = code.trim();
-    if (trimmed.length !== 6) return;
+    if (trimmed.length !== 8) return;
     setLoading(true);
     setError(null);
     setInfo(null);
@@ -160,7 +160,7 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
             <polyline points="20 6 9 17 4 12" />
           </svg>
           <p className="text-sm leading-relaxed" style={{ color: "var(--text)" }}>
-            We sent a 6-digit code to <span style={{ fontWeight: 500 }}>{email}</span>
+            We sent an 8-digit code to <span style={{ fontWeight: 500 }}>{email}</span>
           </p>
         </div>
 
@@ -171,20 +171,20 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
               className="text-sm font-medium"
               style={{ color: "var(--text)" }}
             >
-              6-digit code
+              8-digit code
             </label>
             <input
               id="code"
               ref={codeRef}
               type="text"
               inputMode="numeric"
-              pattern="[0-9]{6}"
-              maxLength={6}
+              pattern="[0-9]{8}"
+              maxLength={8}
               required
-              placeholder="••••••"
+              placeholder="••••••••"
               value={code}
               onChange={(e) =>
-                setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                setCode(e.target.value.replace(/\D/g, "").slice(0, 8))
               }
               disabled={loading}
               className="w-full rounded-md border px-3.5 py-3 text-center text-xl tracking-[0.4em] outline-none transition-colors"
@@ -204,7 +204,7 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
 
           <button
             type="submit"
-            disabled={loading || code.length !== 6}
+            disabled={loading || code.length !== 8}
             className="w-full rounded-md py-2.5 text-sm font-medium transition-opacity disabled:opacity-50"
             style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
           >
@@ -286,7 +286,7 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
           className="text-center text-xs"
           style={{ color: "var(--text-muted)" }}
         >
-          We&apos;ll email you a 6-digit code. No password.
+          We&apos;ll email you an 8-digit code. No password.
         </p>
       </form>
 

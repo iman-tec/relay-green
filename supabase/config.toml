@@ -30,3 +30,6 @@ verify_jwt = false
 
 [functions.relay-stripe-webhook]
 verify_jwt = false
+
+[functions.score-session-health]
+verify_jwt = false

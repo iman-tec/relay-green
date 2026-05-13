@@ -10,9 +10,9 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { Activity, AlertTriangle, Clock, Eye, Loader2 } from "lucide-react";
+import { Activity, AlertTriangle, Clock, Eye, Loader2, ArrowUpRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import type { GuestCall } from "@/lib/supabase/types";
 
@@ -25,8 +25,18 @@ const CRIT_RED_SOFT = "rgba(200, 85, 61, 0.18)";
 
 const ACTIVE_STATES = ["queued", "assigned", "joining", "live", "grace"];
 
+// Per-session AI health snapshot, merged onto GuestCall in the card grid.
+// Sourced from latest_session_health (DISTINCT ON session_id) — one row
+// per active session reflecting the most recent score-session-health tick.
+type HealthSnapshot = {
+  score: number;
+  summary: string;
+  computed_at: string;
+};
+type SessionWithHealth = GuestCall & { health?: HealthSnapshot };
+
 export function SuperviseClient() {
-  const [sessions, setSessions] = useState<GuestCall[]>([]);
+  const [sessions, setSessions] = useState<SessionWithHealth[]>([]);
   const [loading, setLoading] = useState(true);
   const [, setTick] = useState(0);
   const supabaseRef = useRef(createClient());
@@ -34,11 +44,37 @@ export function SuperviseClient() {
 
   const refresh = async () => {
     const sb = supabaseRef.current;
+    // Phase 1: every supervisor / admin sees ALL active calls org-wide.
+    // Phase 1.5 (future): scope to the caller's hierarchy —
+    //   pod_lead     → engineers in their pod
+    //   ops_manager  → engineers in their region/team
+    //   admin        → enterprise's engineers
+    //   super_admin  → everything (no filter)
+    // The hook for that filter lives right here: add a .eq("pod_id", …)
+    // or join-with-engineer_pods once that schema exists.
     const { data } = await sb.from("guest_calls").select("*")
       .in("status", ACTIVE_STATES)
       .order("created_at", { ascending: false })
       .limit(100);
-    setSessions((data as GuestCall[]) ?? []);
+    const rows = (data as GuestCall[]) ?? [];
+
+    // Pull the latest AI health snapshot for each visible session in
+    // one round-trip. Missing rows just mean "not scored yet" — the
+    // card falls back to deterministic colour via deriveHealth.
+    let healthMap = new Map<string, HealthSnapshot>();
+    if (rows.length > 0) {
+      const { data: healths } = await sb
+        .from("latest_session_health")
+        .select("session_id, score, summary, computed_at")
+        .in("session_id", rows.map((s) => s.id));
+      healthMap = new Map(
+        (healths ?? []).map((h: { session_id: string; score: number; summary: string; computed_at: string }) =>
+          [h.session_id, { score: Number(h.score), summary: h.summary, computed_at: h.computed_at }],
+        ),
+      );
+    }
+
+    setSessions(rows.map((s) => ({ ...s, health: healthMap.get(s.id) })));
     setLoading(false);
   };
 
@@ -50,7 +86,10 @@ export function SuperviseClient() {
     return () => clearInterval(id);
   }, []);
 
-  // Realtime
+  // Realtime: re-fetch on any change to guest_calls (new session, status
+  // flip, agent claimed, etc.) AND on any new session_health row (the
+  // per-minute AI score landing). Falls back to a 30s poll in case
+  // Realtime drops, so the supervisor view never goes stale.
   useEffect(() => {
     const sb = supabaseRef.current;
     const ch = sb
@@ -58,9 +97,17 @@ export function SuperviseClient() {
       .on("postgres_changes",
         { event: "*", schema: "public", table: "guest_calls" },
         () => { void refresh(); })
+      .on("postgres_changes",
+        { event: "INSERT", schema: "public", table: "session_health" },
+        () => { void refresh(); })
       .subscribe();
     channelRef.current = ch;
-    return () => { sb.removeChannel(ch); channelRef.current = null; };
+    const fallback = setInterval(() => { void refresh(); }, 30_000);
+    return () => {
+      sb.removeChannel(ch);
+      channelRef.current = null;
+      clearInterval(fallback);
+    };
   }, []);
 
   const metrics = useMemo(() => {
@@ -84,7 +131,9 @@ export function SuperviseClient() {
           Live operations
         </h1>
         <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
-          Every active session, live. Click a tile to observe.
+          Every active session, live. The colored bar is the session&apos;s
+          current health — green is healthy, amber is shaky, red is at risk.
+          Use Join to drop into a session.
         </p>
       </div>
 
@@ -152,33 +201,92 @@ function Metric({
   );
 }
 
-function SessionTile({ session }: { session: GuestCall }) {
-  const u = session.urgency;
-  const accent = u === "critical" ? { bg: CRIT_RED_SOFT, fg: CRIT_RED }
-    : u === "urgent" ? { bg: URGENT_AMBER_SOFT, fg: URGENT_AMBER }
-    : { bg: BRAND_GREEN_SOFT, fg: BRAND_GREEN };
+// Health verdict.
+//   • If the score-session-health edge function has produced a recent
+//     sentiment score for this session, that wins — buckets it into
+//     red (< -0.3), amber (-0.3..0.3), green (>= 0.3).
+//   • Otherwise (no score yet — first ~60s, or queued session with no
+//     chat), fall back to the deterministic verdict from session fields.
+type Health = "green" | "amber" | "red";
+function deriveHealth(s: SessionWithHealth): Health {
+  const score = s.health?.score;
+  if (typeof score === "number" && Number.isFinite(score)) {
+    if (score < -0.3) return "red";
+    if (score <  0.3) return "amber";
+    return "green";
+  }
+  return deriveHealthDeterministic(s);
+}
+function deriveHealthDeterministic(s: GuestCall): Health {
+  if (s.urgency === "critical")     return "red";
+  if (s.status === "grace")         return "red";
+  if (s.status === "expired_free")  return "amber";
+  if (s.urgency === "urgent")       return "amber";
+  if ((s.recall_count ?? 0) >= 2)   return "red";
+  if ((s.recall_count ?? 0) >= 1)   return "amber";
+  if (s.status === "queued" && s.created_at) {
+    const waitSecs = Math.floor((Date.now() - new Date(s.created_at).getTime()) / 1000);
+    if (waitSecs >= 180) return "red";
+    if (waitSecs >= 60)  return "amber";
+  }
+  return "green";
+}
+
+const HEALTH_TOKENS: Record<Health, { bar: string; pill_bg: string; pill_fg: string; label: string }> = {
+  green: { bar: BRAND_GREEN,  pill_bg: BRAND_GREEN_SOFT,  pill_fg: BRAND_GREEN,  label: "Healthy" },
+  amber: { bar: URGENT_AMBER, pill_bg: URGENT_AMBER_SOFT, pill_fg: URGENT_AMBER, label: "Watch"   },
+  red:   { bar: CRIT_RED,     pill_bg: CRIT_RED_SOFT,     pill_fg: CRIT_RED,     label: "At risk" },
+};
+
+function SessionTile({ session }: { session: SessionWithHealth }) {
+  const router = useRouter();
+  const health = deriveHealth(session);
+  const tok    = HEALTH_TOKENS[health];
+  const aiSummary = session.health?.summary;
+  const aiScore   = session.health?.score;
 
   const elapsed = session.joined_at
     ? Math.floor((Date.now() - new Date(session.joined_at).getTime()) / 1000)
     : Math.floor((Date.now() - new Date(session.created_at).getTime()) / 1000);
 
+  const join = () => router.push(`/staff/session/${session.id}`);
+
   return (
-    <Link
-      href={`/staff/session/${session.id}`}
-      className="block rounded-xl border p-4 transition-colors hover:border-[#3f5c2e]/50"
-      style={{ borderColor: u === "normal" ? "var(--border)" : accent.fg + "55", backgroundColor: "var(--surface)" }}
+    <div
+      // Whole card is still clickable (preserves the existing "click to
+      // observe" affordance) but the Join button is the explicit CTA.
+      onClick={join}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); join(); } }}
+      className="group relative cursor-pointer overflow-hidden rounded-xl border p-4 transition-colors hover:border-[var(--text-muted)]/40"
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface)",
+      }}
     >
+      {/* Left accent bar — at-a-glance health indicator */}
+      <span
+        aria-hidden
+        className="absolute inset-y-0 left-0 w-1"
+        style={{ backgroundColor: tok.bar }}
+      />
+
       <div className="mb-3 flex items-center justify-between gap-2">
-        <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-          style={{ backgroundColor: accent.bg, color: accent.fg }}>
+        <span
+          className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+          style={{ backgroundColor: tok.pill_bg, color: tok.pill_fg }}
+        >
           {session.status}
         </span>
-        {u !== "normal" && (
-          <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-            style={{ backgroundColor: accent.bg, color: accent.fg }}>
-            <AlertTriangle size={10} /> {u}
-          </span>
-        )}
+        <span
+          className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+          style={{ backgroundColor: tok.pill_bg, color: tok.pill_fg }}
+          title={`Session health: ${tok.label}`}
+        >
+          {health !== "green" && <AlertTriangle size={10} />}
+          {tok.label}
+        </span>
       </div>
 
       <div className="mb-3">
@@ -190,13 +298,43 @@ function SessionTile({ session }: { session: GuestCall }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 border-t pt-3 text-xs" style={{ borderColor: "var(--border)" }}>
+      <div className="mb-3 grid grid-cols-2 gap-2 border-t pt-3 text-xs" style={{ borderColor: "var(--border)" }}>
         <Stat label={session.status === "live" ? "Live for" : "Waiting"} value={fmtSecs(elapsed)} />
-        <Stat label="Recalls" value={String(session.recall_count)} />
+        <Stat label="Recalls" value={String(session.recall_count ?? 0)} />
         <Stat label="Engineer" value={session.agent_name ?? "—"} />
-        <Stat label="Eye" value={<Eye size={11} className="inline" />} />
+        <Stat label="Project" value={session.project_name ?? "—"} />
       </div>
-    </Link>
+
+      {/* AI sentiment summary — present once score-session-health has run
+       *  at least once for this session (~1 min after it starts). */}
+      {aiSummary && (
+        <div
+          className="mb-4 rounded-md border px-2.5 py-2 text-[11px] leading-snug"
+          style={{
+            borderColor: tok.pill_bg,
+            backgroundColor: tok.pill_bg,
+            color: tok.pill_fg,
+          }}
+          title={typeof aiScore === "number" ? `Sentiment score: ${aiScore.toFixed(2)}` : undefined}
+        >
+          <span className="font-semibold uppercase tracking-wide opacity-80">AI · </span>
+          {aiSummary}
+        </div>
+      )}
+
+      {/* Explicit Join CTA. Stop propagation so clicking the button
+       *  doesn't double-fire on top of the card-level onClick. */}
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); join(); }}
+        className="inline-flex w-full items-center justify-center gap-1.5 rounded-md py-2 text-xs font-semibold transition-opacity hover:opacity-90"
+        style={{ backgroundColor: tok.bar, color: "#fff" }}
+      >
+        <Eye size={12} />
+        Join session
+        <ArrowUpRight size={11} className="opacity-80" />
+      </button>
+    </div>
   );
 }
 
