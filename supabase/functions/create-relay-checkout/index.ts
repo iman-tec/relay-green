@@ -1,11 +1,15 @@
-// Creates a Stripe Checkout session for one of the Relay support packs.
+// Creates a Stripe PaymentIntent for one of the Relay support packs.
 //
-// Body: { plan: "base" | "pro" | "max", return_url: string }
-//   - plan          → which support pack to charge for
-//   - return_url    → where Stripe sends the user after success / cancel
+// Body: { plan: "base" | "pro" | "max" }
 //
 // Caller must be an authenticated Supabase user. We store user_id +
-// minutes on the session metadata so the webhook can credit the wallet.
+// minutes on the PaymentIntent metadata so the webhook can credit the
+// wallet on `payment_intent.succeeded`.
+//
+// Switched from Stripe Checkout Sessions (hosted/embedded iframe whose
+// styling we couldn't control) to a raw PaymentIntent + Stripe Elements
+// on the client. That lets us render a dark-themed payment form inside
+// our own modal, no Stripe Dashboard branding dependency.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import Stripe from "https://esm.sh/stripe@22.0.2";
@@ -57,47 +61,60 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const plan: string | undefined = body.plan;
-    const returnUrl: string = String(body.return_url ?? "https://10.0.1.207:3000/room");
     if (!plan || !PLANS[plan]) {
       return new Response(JSON.stringify({ error: "Invalid plan", valid: Object.keys(PLANS) }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
+    // Pin to a stable, well-tested Stripe API version.
     const stripe = new Stripe(STRIPE_KEY, {
-      apiVersion: "2026-03-25.dahlia",
+      apiVersion: "2024-06-20" as Stripe.LatestApiVersion,
       httpClient: Stripe.createFetchHttpClient(),
     });
 
     const p = PLANS[plan];
-    const session = await stripe.checkout.sessions.create({
-      mode: "payment",
+    const intent = await stripe.paymentIntents.create({
+      amount:   p.priceCents,
+      currency: "eur",
+      // Card-only — no Link / wallets / regional methods. Keeps the form
+      // single-purpose for now. To open up to more methods later, swap
+      // `payment_method_types` for `automatic_payment_methods: { enabled: true }`.
       payment_method_types: ["card"],
-      line_items: [{
-        quantity: 1,
-        price_data: {
-          currency: "eur",
-          unit_amount: p.priceCents,
-          product_data: { name: p.name },
-        },
-      }],
-      customer_email: u.user.email ?? undefined,
-      success_url: `${returnUrl}?relay_paid=${plan}`,
-      cancel_url:  `${returnUrl}?relay_paid=cancelled`,
+      description: p.name,
+      receipt_email: u.user.email ?? undefined,
       metadata: {
         relay_user_id: u.user.id,
         relay_plan:    plan,
         relay_minutes: String(p.minutes),
+        relay_plan_name: p.name,
       },
     });
 
-    return new Response(JSON.stringify({ url: session.url, session_id: session.id }), {
+    return new Response(JSON.stringify({
+      client_secret:     intent.client_secret,
+      payment_intent_id: intent.id,
+      amount_cents:      p.priceCents,
+      plan_name:         p.name,
+      minutes:           p.minutes,
+    }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
-    console.error("[create-relay-checkout]", msg);
-    return new Response(JSON.stringify({ error: msg }), {
+    // Surface the Stripe error type/code in logs so we can diagnose without
+    // having to enable debug mode end-to-end. Also include in the response
+    // body — never leaks secrets, only Stripe error metadata.
+    const stripeMeta = (err && typeof err === "object")
+      ? {
+          type:    (err as { type?: string }).type,
+          code:    (err as { code?: string }).code,
+          param:   (err as { param?: string }).param,
+          status:  (err as { statusCode?: number }).statusCode,
+        }
+      : {};
+    console.error("[create-relay-checkout]", msg, stripeMeta);
+    return new Response(JSON.stringify({ error: msg, stripe: stripeMeta }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }

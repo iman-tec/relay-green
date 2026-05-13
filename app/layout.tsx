@@ -118,10 +118,9 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f5f4ee" },
-    { media: "(prefers-color-scheme: dark)", color: "#2c2a26" },
-  ],
+  // Single dark theme — matches the dark-only tokens in globals.css.
+  themeColor: "#2c2a26",
+  colorScheme: "dark",
   width: "device-width",
   initialScale: 1,
   maximumScale: 5,

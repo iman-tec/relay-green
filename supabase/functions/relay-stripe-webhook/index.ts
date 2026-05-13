@@ -1,10 +1,16 @@
 // Stripe webhook for Relay support-pack purchases.
 //
-// Handles `checkout.session.completed` for sessions created via
-// /functions/v1/create-relay-checkout. Credits the customer's wallet
-// with the minutes encoded in session.metadata.relay_minutes.
+// Handles `payment_intent.succeeded` for PaymentIntents created via
+// /functions/v1/create-relay-checkout (the support-pack purchase path).
+// Credits the customer's wallet with the minutes encoded in metadata.
 //
-// Idempotent: dedupes by Stripe event.id stored in payments_processed table.
+// (We also still handle `checkout.session.completed` for any legacy
+// Stripe Checkout flows that might still be in flight — same payload
+// shape for metadata extraction, different id field for dedupe.)
+//
+// Idempotent: dedupes by the Stripe object id stored in
+// credit_transactions.stripe_session_id (the column name is historical;
+// it now holds either a checkout session id or a payment_intent id).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { encode } from "https://deno.land/std@0.168.0/encoding/hex.ts";
@@ -51,22 +57,26 @@ Deno.serve(async (req) => {
 
   try {
     const event = await verifyAndParse(req);
-    if (event.type !== "checkout.session.completed") {
+    // Accept both event types — PaymentIntent succeeded is the new path,
+    // CheckoutSession completed is the legacy path. Same metadata shape
+    // on both objects, different id semantics for dedupe.
+    if (event.type !== "payment_intent.succeeded" && event.type !== "checkout.session.completed") {
       return new Response(JSON.stringify({ received: true, ignored: event.type }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const session = event.data.object as {
+    const obj = event.data.object as {
       id: string;
       metadata?: { relay_user_id?: string; relay_plan?: string; relay_minutes?: string };
-      amount_total?: number;
+      amount?:       number; // PaymentIntent
+      amount_total?: number; // CheckoutSession
     };
-    const userId = session.metadata?.relay_user_id;
-    const plan   = session.metadata?.relay_plan;
-    const minutes = Number(session.metadata?.relay_minutes ?? "0");
+    const userId = obj.metadata?.relay_user_id;
+    const plan   = obj.metadata?.relay_plan;
+    const minutes = Number(obj.metadata?.relay_minutes ?? "0");
     if (!userId || !plan || !Number.isFinite(minutes) || minutes <= 0) {
-      console.warn("[relay-stripe-webhook] missing metadata", session.metadata);
+      console.warn("[relay-stripe-webhook] missing metadata", obj.metadata);
       return new Response(JSON.stringify({ received: true, note: "missing metadata" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -74,19 +84,19 @@ Deno.serve(async (req) => {
 
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // Idempotency guard: dedupe by stripe checkout session id
-    const dedupeKey = `stripe:${session.id}`;
+    // Idempotency: dedupe by the Stripe object id (PaymentIntent.id or
+    // CheckoutSession.id). The column name stays `stripe_session_id` for
+    // schema compatibility — it's just a unique identifier slot.
     const { data: existing } = await admin
       .from("credit_transactions")
       .select("id")
-      .eq("stripe_session_id", session.id)
+      .eq("stripe_session_id", obj.id)
       .maybeSingle();
     if (existing) {
       return new Response(JSON.stringify({ received: true, dedup: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    void dedupeKey;
 
     // Upsert wallet
     const { data: wallet } = await admin
@@ -118,7 +128,7 @@ Deno.serve(async (req) => {
       user_id: userId,
       delta: minutes,
       reason: `relay_plan:${plan}`,
-      stripe_session_id: session.id,
+      stripe_session_id: obj.id,
     });
 
     // Also reflect on customer_entitlements.paid_minutes_remaining
@@ -131,10 +141,11 @@ Deno.serve(async (req) => {
       .eq("customer_user_id", userId)
       .maybeSingle();
     if (ent) {
+      const amountCents = Number(obj.amount ?? obj.amount_total ?? 0);
       await admin.from("customer_entitlements").update({
         paid_minutes_remaining: Number(ent.paid_minutes_remaining ?? 0) + minutes,
         paid_minutes_lifetime:  Number(ent.paid_minutes_lifetime ?? 0) + minutes,
-        total_paid_cents:       Number(ent.total_paid_cents ?? 0) + Number(session.amount_total ?? 0),
+        total_paid_cents:       Number(ent.total_paid_cents ?? 0) + amountCents,
         updated_at:             new Date().toISOString(),
       }).eq("customer_user_id", userId);
     }

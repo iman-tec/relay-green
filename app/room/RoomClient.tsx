@@ -122,8 +122,21 @@ export function RoomClient() {
   // When set, we render the split layout with chat + summary for that row.
   const [viewingPastId, setViewingPastId] = useState<string | null>(null);
 
-  // Connecting modal: only show once per session id (not on reload).
-  const showConnecting = useConnectingModalGate(state.session?.id ?? null, state.session?.status);
+  // Old localStorage flags from the removed useConnectingModalGate are
+  // wiped on mount so existing customers don't carry forward suppression
+  // for sessions they're still queued in. One-shot cleanup; can be deleted
+  // after a release or two once everyone's flags are flushed.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const keys: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith("relay-connecting-shown:")) keys.push(k);
+      }
+      keys.forEach((k) => localStorage.removeItem(k));
+    } catch { /* ignore — quota / privacy mode */ }
+  }, []);
 
   // Paywall opens when:
   //   - session is in expired_free state (live cap hit, buffer ticking)
@@ -387,9 +400,12 @@ export function RoomClient() {
     setProjectFormOpen(true);
   }, [freeConsumed, paidRemaining]);
 
+  // Recharge / "see plans" handler. Always opens the paywall — even when
+  // the user has credits — so the Recharge button in the profile menu is
+  // a real top-up action, not just an out-of-credits gate.
   const handleWalletClick = useCallback(() => {
-    if (freeConsumed && paidRemaining <= 0) setPaywallOpen("no_credits");
-  }, [freeConsumed, paidRemaining]);
+    setPaywallOpen("manual");
+  }, []);
 
   const handleCloseViewPast = useCallback(() => setViewingPastId(null), []);
   const handleNeedsCredits  = useCallback(() => setPaywallOpen("no_credits"), []);
@@ -450,7 +466,7 @@ export function RoomClient() {
       </div>
 
       {/* Overlays */}
-      {state.session?.status === "queued" && showConnecting && (
+      {state.session?.status === "queued" && (
         <ConnectingModal session={state.session} onRecall={state.recall} onCancel={state.cancel} />
       )}
       {state.session && shouldShowEngineerAssigned(state.session) && !accepted && (
@@ -492,34 +508,6 @@ function shouldShowEngineerAssigned(s: GuestCall): boolean {
     !s.engineer_joined_at &&
     !s.customer_joined_at
   );
-}
-
-// Returns true the FIRST time we want to show the connecting modal for a
-// given session id (in this browser tab). Reloads don't re-trigger.
-function useConnectingModalGate(sessionId: string | null, status: string | undefined): boolean {
-  const [show, setShow] = useState(false);
-  useEffect(() => {
-    if (!sessionId || status !== "queued") {
-      setShow(false);
-      return;
-    }
-    if (typeof window === "undefined") return;
-    // Use localStorage (not sessionStorage) so the "already shown" flag
-    // survives page reloads and new tabs — the modal never re-appears for
-    // the same session ID once the customer has seen it.
-    const key = `relay-connecting-shown:${sessionId}`;
-    try {
-      if (localStorage.getItem(key)) {
-        setShow(false);
-        return;
-      }
-      localStorage.setItem(key, "1");
-      setShow(true);
-    } catch {
-      setShow(true);
-    }
-  }, [sessionId, status]);
-  return show;
 }
 
 function isLiveWithCustomerJoined(s: GuestCall | null): boolean {
@@ -1063,16 +1051,12 @@ const Sidebar = memo(function Sidebar({
   onStartInProject: (projectId: string | null) => void;
   onWalletClick: () => void;
 }) {
-  // Sidebar starts collapsed; state is persisted in localStorage so the
-  // user's preference survives page reloads.
-  const [collapsed, setCollapsed] = useState<boolean>(() => {
-    try { return localStorage.getItem("relay-sidebar-collapsed") !== "false"; }
-    catch { return true; }
-  });
-  const toggleCollapsed = (next: boolean) => {
-    setCollapsed(next);
-    try { localStorage.setItem("relay-sidebar-collapsed", next ? "true" : "false"); } catch {}
-  };
+  // Sidebar ALWAYS starts collapsed on a fresh /room landing — the user
+  // can expand it for the duration of this visit, but each page mount
+  // resets to collapsed. Intentional: prior persistence felt sticky and
+  // confused returning users who wanted a clean canvas.
+  const [collapsed, setCollapsed] = useState<boolean>(true);
+  const toggleCollapsed = (next: boolean) => setCollapsed(next);
 
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [past, setPast] = useState<PastSession[]>([]);
@@ -2146,42 +2130,60 @@ function ConnectingModal({
   onRecall: () => Promise<void>;
   onCancel: () => Promise<void>;
 }) {
-  const queuedAt = new Date(session.created_at).getTime();
-  const [now, setNow] = useState(() => Date.now());
+  // Anchor the 3-min countdown to the most recent of created_at /
+  // last_recall_at. That way clicking "Call again" naturally restarts the
+  // window — no extra timer-reset state needed on the client.
+  const queuedAt     = new Date(session.created_at).getTime();
+  const lastRecallAt = session.last_recall_at ? new Date(session.last_recall_at).getTime() : 0;
+  const anchor       = Math.max(queuedAt, lastRecallAt);
+
+  const [now, setNow] = useState<number>(() => Date.now());
   const [recalling, setRecalling] = useState(false);
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
-  const elapsed   = Math.max(0, Math.floor((now - queuedAt) / 1000));
+
+  const elapsed   = Math.max(0, Math.floor((now - anchor) / 1000));
   const remaining = Math.max(0, 180 - elapsed);
-  const mins = Math.floor(remaining / 60), secs = remaining % 60;
-  const RADIUS = 46, CIRC = 2 * Math.PI * RADIUS;
+  const expired   = remaining === 0;
+  const mins      = Math.floor(remaining / 60);
+  const secs      = remaining % 60;
+
+  // Ring geometry — change RADIUS only; SIZE and CENTER follow so the
+  // outer canvas always fits the full stroke with breathing room.
+  const RADIUS = 68;
+  const STROKE = 6;
+  const PADDING = 8;
+  const SIZE   = 2 * (RADIUS + STROKE / 2 + PADDING); // = 160 for r=68
+  const CENTER = SIZE / 2;
+  const CIRC   = 2 * Math.PI * RADIUS;
+  // Ring drains as time passes; sits at fully-empty when expired.
   const dashOffset = CIRC * (1 - remaining / 180);
+
   const ringColor = session.urgency === "critical" ? CRIT_RED
     : session.urgency === "urgent" ? URGENT_AMBER
     : BRAND_GREEN;
   const ringSoft = session.urgency === "critical" ? CRIT_RED_SOFT
     : session.urgency === "urgent" ? URGENT_AMBER_SOFT
     : BRAND_GREEN_SOFT;
-  const cooldownSeconds = (() => {
-    if (!session.last_recall_at) return 0;
-    return Math.max(0, 30 - Math.floor((now - new Date(session.last_recall_at).getTime()) / 1000));
-  })();
-  const handleRecall = async () => {
+
+  const handleCallAgain = async () => {
     setRecalling(true);
     try { await onRecall(); } finally { setRecalling(false); }
   };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-6"
       style={{ backgroundColor: "rgba(0, 0, 0, 0.55)", backdropFilter: "blur(4px)" }}>
       <div className="relative w-full max-w-sm rounded-2xl border p-8 shadow-xl"
         style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
-        <button onClick={() => void onCancel()} aria-label="Close"
+        <button onClick={() => void onCancel()} aria-label="Cancel"
           className="absolute right-4 top-4 opacity-50 transition-opacity hover:opacity-100"
           style={{ color: "var(--text-muted)" }} title="Cancel">
           <X size={16} />
         </button>
+
         {session.urgency !== "normal" && (
           <div className="mb-4 flex items-center justify-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
             style={{ backgroundColor: ringSoft, color: ringColor }}>
@@ -2189,50 +2191,69 @@ function ConnectingModal({
             {session.urgency === "critical" ? "Critical priority" : "Urgent priority"}
           </div>
         )}
+
+        {/* Timer ring */}
         <div className="mb-5 flex justify-center">
-          <div className="relative h-[120px] w-[120px]">
-            <svg width="120" height="120" viewBox="0 0 120 120" className="-rotate-90">
-              <circle cx="60" cy="60" r={RADIUS} fill="none" strokeWidth="6" style={{ stroke: ringSoft }} />
-              <circle cx="60" cy="60" r={RADIUS} fill="none" strokeWidth="6" strokeLinecap="round"
-                style={{ stroke: ringColor, strokeDasharray: CIRC, strokeDashoffset: dashOffset, transition: "stroke-dashoffset 1s linear" }} />
+          <div className="relative" style={{ height: SIZE, width: SIZE }}>
+            <svg
+              width={SIZE}
+              height={SIZE}
+              viewBox={`0 0 ${SIZE} ${SIZE}`}
+              className="-rotate-90"
+            >
+              <circle cx={CENTER} cy={CENTER} r={RADIUS} fill="none" strokeWidth={STROKE}
+                style={{ stroke: ringSoft }} />
+              <circle cx={CENTER} cy={CENTER} r={RADIUS} fill="none" strokeWidth={STROKE} strokeLinecap="round"
+                style={{
+                  stroke: expired ? "var(--text-muted)" : ringColor,
+                  strokeDasharray: CIRC,
+                  strokeDashoffset: dashOffset,
+                  transition: "stroke-dashoffset 1s linear",
+                }} />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
               <div className="text-3xl font-medium tabular-nums"
-                style={{ fontFamily: "var(--font-source-serif)", color: ringColor }}>
+                style={{
+                  fontFamily: "var(--font-inter)",
+                  color: expired ? "var(--text-muted)" : ringColor,
+                }}>
                 {String(mins).padStart(2, "0")}:{String(secs).padStart(2, "0")}
               </div>
-              <div className="mt-0.5 text-[9px] font-semibold uppercase tracking-[0.15em]" style={{ color: "var(--text-muted)" }}>
-                Avg wait
+              <div className="mt-0.5 text-[9px] font-semibold uppercase tracking-[0.15em]"
+                style={{ color: "var(--text-muted)" }}>
+                {expired ? "No answer" : "Avg wait"}
               </div>
             </div>
           </div>
         </div>
-        <div className="mb-2 text-center">
+
+        {/* Heading + subtitle — flip when the 3-min window has elapsed */}
+        <div className="mb-6 text-center">
           <h2 className="mb-2 text-xl font-medium"
             style={{ fontFamily: "var(--font-source-serif)", color: "var(--text)" }}>
-            Connecting you with the best engineer
+            {expired ? "Still searching…" : "Calling engineer…"}
           </h2>
           <p className="text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
-            Hold tight — an engineer will be with you shortly.
+            {expired
+              ? "No one's picked up just yet. Try calling again — we'll page the next available engineer."
+              : "We're matching you with the right engineer."}
           </p>
         </div>
-        {session.recall_count > 0 && (
-          <p className="mb-4 text-center text-[11px]" style={{ color: "var(--text-muted)" }}>
-            Recalled {session.recall_count} {session.recall_count === 1 ? "time" : "times"}
-            {session.urgency !== "normal" && (<> · marked <span style={{ color: ringColor, fontWeight: 600 }}>{session.urgency}</span></>)}
-          </p>
+
+        {/* "Call again" appears ONLY once the 3-min countdown has elapsed.
+            During the wait we deliberately show no CTA so customers don't
+            spam recalls. */}
+        {expired && (
+          <button
+            onClick={() => void handleCallAgain()}
+            disabled={recalling}
+            className="flex w-full items-center justify-center gap-2 rounded-full py-2.5 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
+            style={{ backgroundColor: ringColor, color: "#fff" }}
+          >
+            {recalling ? <Loader2 size={14} className="animate-spin" /> : <Phone size={14} />}
+            {recalling ? "Calling…" : "Call again"}
+          </button>
         )}
-        <button
-          onClick={() => void handleRecall()}
-          disabled={recalling || cooldownSeconds > 0 || session.recall_count >= 10}
-          className="flex w-full items-center justify-center gap-2 rounded-full py-2.5 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
-          style={{ backgroundColor: ringColor, color: "#fff" }}
-        >
-          {recalling ? <Loader2 size={14} className="animate-spin" /> : <Phone size={14} />}
-          {cooldownSeconds > 0
-            ? `Wait ${cooldownSeconds}s before recalling`
-            : session.recall_count === 0 ? "Call for engineer" : "Recall engineer"}
-        </button>
       </div>
     </div>
   );

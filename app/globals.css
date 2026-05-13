@@ -5,21 +5,30 @@
  * See RelayGreen_Spec_Decisions_v1.md Section E (Design System) for source.
  */
 
+/* Dark-only design tokens. The app is single-theme by product decision — we
+ * don't render the same surfaces under any other context, so there's no
+ * value in a light variant. Removed the previous prefers-color-scheme: dark
+ * media query that flipped these on top of a light :root; the values below
+ * are now the only source. */
 :root {
   /* Surfaces */
-  --background: #f5f4ee; /* warm cream */
-  --surface: #ffffff;
-  --border: #e8e5dd;
+  --background: #2c2a26; /* warm dark */
+  --surface: #1f1e1b;
+  --border: #3a3833;
 
   /* Text */
-  --text: #2c2a26;
-  --text-muted: #6b6862;
+  --text: #f5f4ee;
+  --text-muted: #a6a29b;
 
   /* Brand */
   --primary: #d97757; /* Claude coral — primary CTA only */
   --primary-hover: #c66645;
   --green-dot: #3dcb7e; /* the brand green dot — launcher only */
   --accent-red: #c8553d; /* supervisor red-card alerts only */
+
+  /* Force the browser's native form controls (Stripe iframe, date pickers,
+   * scrollbars, etc.) to render in dark mode regardless of OS preference. */
+  color-scheme: dark;
 
   /* Aliases for compatibility with framework defaults */
   --foreground: var(--text);
@@ -40,16 +49,6 @@
   --font-serif: var(--font-source-serif);
   --font-sans: var(--font-inter);
   --font-mono: var(--font-jetbrains);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #2c2a26;
-    --surface: #1f1e1b;
-    --border: #3a3833;
-    --text: #f5f4ee;
-    --text-muted: #a6a29b;
-  }
 }
 
 body {
