@@ -1956,7 +1956,7 @@ function CustomerZoomPane({
   }
   return (
     <section className="relative h-full" style={{ backgroundColor: "#000" }}>
-      <PopOutContainer title="Relay session — customer">
+      <PopOutContainer>
         <ZoomEmbed
           meetingNumber={session.zoom_meeting_id}
           userName={userName}

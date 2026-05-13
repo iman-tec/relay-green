@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Suspense } from "react";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { StaffLoginForm } from "./StaffLoginForm";
 
@@ -43,7 +44,9 @@ export default function StaffLoginPage() {
           </div>
         </div>
 
-        <StaffLoginForm devMode={devMode} />
+        <Suspense fallback={<div className="h-44" />}>
+          <StaffLoginForm devMode={devMode} />
+        </Suspense>
 
         <div
           className="my-6 border-t"

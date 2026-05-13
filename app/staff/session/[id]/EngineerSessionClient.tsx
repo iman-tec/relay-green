@@ -752,7 +752,7 @@ function ZoomCenterPane({
   }
   return (
     <section className="relative h-full" style={{ backgroundColor: "#000" }}>
-      <PopOutContainer title="Relay session — engineer">
+      <PopOutContainer>
         <ZoomEmbed
           meetingNumber={session.zoom_meeting_id}
           userName={role === 1 ? engineerName : engineerEmail || "Observer"}
