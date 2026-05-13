@@ -57,6 +57,20 @@ export function PopOutContainer({
   const [warmed, setWarmed] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // Tell the Relay desktop shell that a Zoom session is live so it can hide
+  // the floating orb widget. This component only mounts while ZoomEmbed
+  // renders, so its mount/unmount is a clean proxy for session active/ended.
+  // No-op in a plain browser (window.relay is undefined).
+  useEffect(() => {
+    const bridge = (
+      window as unknown as { relay?: { setSessionActive?: (active: boolean) => void } }
+    ).relay;
+    bridge?.setSessionActive?.(true);
+    return () => {
+      bridge?.setSessionActive?.(false);
+    };
+  }, []);
+
   useEffect(() => {
     setSupported(
       typeof document !== "undefined" &&
