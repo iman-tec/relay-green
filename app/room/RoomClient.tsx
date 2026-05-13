@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { ZoomEmbed } from "@/app/_components/ZoomEmbed";
+import { PopOutContainer } from "@/app/_components/PopOutContainer";
 import { PaywallModal } from "@/app/_components/PaywallModal";
 import { useCustomerSession } from "@/lib/relay/useCustomerSession";
 import { useSessionTimer } from "@/lib/relay/useSessionTimer";
@@ -1955,14 +1956,16 @@ function CustomerZoomPane({
   }
   return (
     <section className="relative h-full" style={{ backgroundColor: "#000" }}>
-      <ZoomEmbed
-        meetingNumber={session.zoom_meeting_id}
-        userName={userName}
-        userEmail={userEmail}
-        role={0}
-        fallbackJoinUrl={session.zoom_join_url}
-        onJoined={() => void onJoined()}
-      />
+      <PopOutContainer title="Relay session — customer">
+        <ZoomEmbed
+          meetingNumber={session.zoom_meeting_id}
+          userName={userName}
+          userEmail={userEmail}
+          role={0}
+          fallbackJoinUrl={session.zoom_join_url}
+          onJoined={() => void onJoined()}
+        />
+      </PopOutContainer>
     </section>
   );
 }
