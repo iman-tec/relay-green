@@ -146,7 +146,7 @@ export function SignInForm() {
         <GreenButton loading={loading} label="Send code" loadingLabel="Sending…" />
 
         <p className="text-center text-xs" style={{ color: "var(--text-muted)" }}>
-          We&apos;ll email you the code. No password needed.
+          we&apos;ll send you a code. No password needed.
         </p>
 
         <button

@@ -17,7 +17,7 @@
  * (the server is the truth). No replay buffers, no sequence numbers.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/browser";
 import type { GuestCall, GuestMessage, SessionStatus } from "@/lib/supabase/types";
@@ -405,7 +405,14 @@ export function useCustomerSession(): CustomerSessionState {
     if (e) setError(e.message);
   }, [session, startNewSession]);
 
-  return {
+  // Memoize the refresh closure so its identity stays stable across renders
+  // (loadExisting is stable thanks to its own useCallback).
+  const refresh = useCallback(async () => { await loadExisting(); }, [loadExisting]);
+
+  // Memoize the return object so consumers that wrap with React.memo don't
+  // see a new reference on every render. Every entry below is already
+  // useState/useCallback-stable, so this useMemo never busy-busts.
+  return useMemo(() => ({
     auth,
     session,
     messages,
@@ -417,9 +424,11 @@ export function useCustomerSession(): CustomerSessionState {
     end,
     markJoined,
     sendMessage,
-    // refresh re-reads whatever session already exists (no create)
-    refresh: async () => { await loadExisting(); },
+    refresh,
     startNewSession,
     sendOrStart,
-  };
+  }), [
+    auth, session, messages, entitlement, loading, error,
+    recall, cancel, end, markJoined, sendMessage, refresh, startNewSession, sendOrStart,
+  ]);
 }

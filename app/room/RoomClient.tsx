@@ -9,20 +9,20 @@
  * Main pane is state-driven:
  *   no session / cancelled / abandoned / queued / assigned / joining
  *       → ChatPane full width  (the universal "landing" — composer auto-creates a session)
- *       → overlays: ConnectingModal (while queued), IncomingCallModal (when engineer in Zoom)
+ *       → overlays: ConnectingModal (while queued), EngineerAssignedModal until engineer joins Zoom (then auto-join)
  *
  *   live (both joined)      → ZoomEmbed (66%, centre)   |   ChatPane (34%, right)
  *
  *   ended                   → PostCallView (locked chat + AI summary)
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   PanelGroup, Panel, PanelResizeHandle,
 } from "react-resizable-panels";
 import {
-  Plus, Send, Sparkles, Video, Phone, X, PhoneOff, MessageSquare, Lock,
+  Plus, Send, Sparkles, Phone, X, PhoneOff, MessageSquare, Lock,
   AlertTriangle, Loader2, ChevronDown, ChevronRight, Search, PanelLeftClose, PanelLeftOpen,
   Wallet, RefreshCw, Settings, LogOut, Check, Folder,
 } from "lucide-react";
@@ -42,11 +42,74 @@ const URGENT_AMBER_SOFT = "rgba(198, 102, 69, 0.14)";
 const CRIT_RED          = "#c8553d";
 const CRIT_RED_SOFT     = "rgba(200, 85, 61, 0.18)";
 
+// ── Free-session lifecycle hook ───────────────────────────────────────────
+// Owns the 1-second tick needed to detect free-cap expiry + buffer-expiry,
+// and fires the corresponding RPCs. Kept OUT of RoomClient's body so the
+// per-second re-render scope is local to this hook — none of the sidebar /
+// chat / zoom tree re-renders just because the timer ticked.
+function useFreeSessionLifecycle(
+  session: GuestCall | null,
+  paidMinutesRemaining: number,
+) {
+  // `now` is the only state — replaces a tick counter and lets us derive
+  // isFreeExpired in the body without reading Date.now() directly (which the
+  // lint rule disallows as it's impure for render).
+  const [now, setNow] = useState<number>(() => Date.now());
+  const status      = session?.status;
+  const joinedAt    = session?.joined_at;
+  const freeMinutes = session?.free_minutes ?? 10;
+  const freeExpiredAt    = session?.free_expired_at;
+  const paidExtensionAt  = session?.paid_extension_at;
+  const sessionId        = session?.id;
+
+  // Tick only while the session is in a state whose expiry we care about.
+  useEffect(() => {
+    if (status !== "live" && status !== "expired_free") return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [status]);
+
+  // Derived from `now` in state — pure with respect to render inputs.
+  const isFreeExpired =
+    status === "live" && !!joinedAt &&
+    now - new Date(joinedAt).getTime() >= freeMinutes * 60 * 1000;
+
+  useEffect(() => {
+    if (!sessionId) return;
+    const sb = createClient();
+
+    if (status === "live" && isFreeExpired) {
+      if (paidMinutesRemaining > 0) {
+        if (!paidExtensionAt) {
+          void sb.from("guest_calls").update({ paid_extension_at: new Date().toISOString() }).eq("id", sessionId);
+        }
+        return;
+      }
+      void sb.rpc("expire_to_free", { _session_id: sessionId });
+      return;
+    }
+
+    if (status === "expired_free" && freeExpiredAt) {
+      const elapsedMs = now - new Date(freeExpiredAt).getTime();
+      if (elapsedMs >= 10 * 60_000) {
+        void (async () => {
+          await sb.rpc("end_session", { _session_id: sessionId, _reason: "payment_buffer_expired" });
+          void sb.functions.invoke("summarize-guest-call", { body: { guest_call_id: sessionId } });
+        })();
+      }
+    }
+  }, [sessionId, status, isFreeExpired, paidExtensionAt, freeExpiredAt, paidMinutesRemaining, now]);
+}
+
 // ── Main ───────────────────────────────────────────────────────────────────
 export function RoomClient() {
   const router = useRouter();
   const state  = useCustomerSession();
-  const timer  = useSessionTimer(state.session?.joined_at ?? null, state.session?.free_minutes ?? 10);
+
+  // Free-cap + buffer watchdog. Self-contained — does its own 1s ticking
+  // only when status is "live"/"expired_free", so the whole tree no longer
+  // re-renders every second.
+  useFreeSessionLifecycle(state.session, state.entitlement.paid_minutes_remaining);
 
   // Local: customer accepted the incoming call but hasn't completed Zoom
   // join yet. We use this to mount the split layout immediately so the
@@ -118,6 +181,26 @@ export function RoomClient() {
     }
   }, [state.session?.id, state.session?.status]);
 
+  // Auto-join: as soon as the server stamps engineer_joined_at on the session,
+  // flip accepted + mark_joined so the customer is dropped straight into the
+  // call. Replaces the old click-to-answer IncomingCallModal step.
+  // mark_joined is idempotent — if Zoom's onJoined fires later it's a no-op.
+  useEffect(() => {
+    if (accepted) return;
+    if (!state.session) return;
+    if (!shouldShowIncomingCall(state.session)) return;
+    setAccepted(true);
+    void state.markJoined();
+  }, [
+    state.session?.id,
+    state.session?.engineer_joined_at,
+    state.session?.zoom_meeting_id,
+    state.session?.customer_joined_at,
+    state.session?.status,
+    accepted,
+    state.markJoined,
+  ]);
+
   // Clear past-session preview as soon as the customer starts a new session
   useEffect(() => {
     if (state.session && !["ended","cancelled","abandoned"].includes(state.session.status)) {
@@ -130,51 +213,7 @@ export function RoomClient() {
     if (state.auth.kind === "anonymous") router.replace("/login");
   }, [state.auth.kind, router]);
 
-  // Free-session lifecycle:
-  //   1. live ─10 min, no paid credit─▶ expire_to_free (paywall opens)
-  //   2. live ─10 min, paid credit ok─▶ silently switch to paid time
-  //   3. expired_free ─10 min, no payment─▶ end_session(reason=buffer_expired)
-  //
-  // All RPCs are idempotent — multiple clients can fire safely.
-  const s = state.session;
-  useEffect(() => {
-    if (!s) return;
-    const sb = createClient();
-    const hasPaid = state.entitlement.paid_minutes_remaining > 0;
-
-    if (s.status === "live" && timer.isExpired) {
-      if (hasPaid) {
-        // Customer has paid credit — silently switch billing mode by stamping
-        // paid_extension_at. The clock keeps running on the engineer side too.
-        if (!s.paid_extension_at) {
-          void sb.from("guest_calls").update({ paid_extension_at: new Date().toISOString() }).eq("id", s.id);
-        }
-        return;
-      }
-      // No paid credit → expire to the free-cap state, paywall opens
-      void sb.rpc("expire_to_free", { _session_id: s.id });
-      return;
-    }
-
-    // Buffer watchdog: if we've been in expired_free for 10 min, force-end.
-    if (s.status === "expired_free" && s.free_expired_at) {
-      const elapsedMs = Date.now() - new Date(s.free_expired_at).getTime();
-      if (elapsedMs >= 10 * 60_000) {
-        void (async () => {
-          await sb.rpc("end_session", { _session_id: s.id, _reason: "payment_buffer_expired" });
-          void sb.functions.invoke("summarize-guest-call", { body: { guest_call_id: s.id } });
-        })();
-      }
-    }
-  }, [s?.id, s?.status, s?.free_expired_at, s?.paid_extension_at, timer.isExpired, state.entitlement.paid_minutes_remaining]);
-
-  // Tick every second while in expired_free so the buffer watchdog re-evaluates
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    if (s?.status !== "expired_free") return;
-    const id = setInterval(() => setTick((t) => t + 1), 1000);
-    return () => clearInterval(id);
-  }, [s?.status]);
+  // (Free-session lifecycle moved to useFreeSessionLifecycle — see hook above.)
 
   // ── Projects + new-session gate ────────────────────────────────────────────
   // Shown in the central pane when the user starts a brand-new session.
@@ -324,6 +363,42 @@ export function RoomClient() {
     }
   }, [state.entitlement, startSessionInProject]);
 
+  // ── Stable handlers for the Sidebar / MainPane subtrees ──────────────────
+  // Wrapping every child-bound callback in useCallback so React.memo on
+  // Sidebar / MainPane / ChatPane / UserMenu can short-circuit identity
+  // checks. Deps are narrowed to the smallest values that actually matter.
+  const freeConsumed = !!state.entitlement.free_consumed_at;
+  const paidRemaining = state.entitlement.paid_minutes_remaining;
+  const sidebarEmail = state.auth.kind === "authed" ? state.auth.email : "";
+  const sidebarCustomerUserId = state.auth.kind === "authed" ? state.auth.userId : null;
+
+  const handleViewPast = useCallback((id: string | null) => {
+    setViewingPastId(id);
+    if (id) setProjectFormOpen(false);
+  }, []);
+
+  const handleNewSession = useCallback(() => {
+    if (freeConsumed && paidRemaining <= 0) {
+      setPaywallOpen("no_credits");
+      return;
+    }
+    setViewingPastId(null);
+    setPendingDraft(null);
+    setProjectFormOpen(true);
+  }, [freeConsumed, paidRemaining]);
+
+  const handleWalletClick = useCallback(() => {
+    if (freeConsumed && paidRemaining <= 0) setPaywallOpen("no_credits");
+  }, [freeConsumed, paidRemaining]);
+
+  const handleCloseViewPast = useCallback(() => setViewingPastId(null), []);
+  const handleNeedsCredits  = useCallback(() => setPaywallOpen("no_credits"), []);
+  const handleProjectCancel = useCallback(() => setProjectFormOpen(false), []);
+  const handleNeedProject   = useCallback((draft: string) => {
+    setPendingDraft(draft);
+    setProjectFormOpen(true);
+  }, []);
+
   // Only show the full-screen loader on the very first load.
   // After initialLoadDone = true, session creation happens while the project
   // form (or existing UI) stays on screen — no jarring full-page flash.
@@ -336,43 +411,22 @@ export function RoomClient() {
       style={{ backgroundColor: "var(--background)", color: "var(--text)" }}
     >
       <Sidebar
-        email={state.auth.kind === "authed" ? state.auth.email : ""}
-        customerUserId={state.auth.kind === "authed" ? state.auth.userId : null}
+        email={sidebarEmail}
+        customerUserId={sidebarCustomerUserId}
         session={state.session}
         entitlement={state.entitlement}
         viewingPastId={viewingPastId}
         projects={projects}
-        onViewPast={(id) => {
-          setViewingPastId(id);
-          // Close the project form so the past-session review can take centre stage
-          if (id) setProjectFormOpen(false);
-        }}
-        onNewSession={() => {
-          // Entitlement-aware: if neither free nor paid, open the paywall
-          // directly instead of round-tripping to the RPC that would just raise.
-          const hasFreeLeft = !state.entitlement.free_consumed_at;
-          const hasPaidLeft = state.entitlement.paid_minutes_remaining > 0;
-          if (!hasFreeLeft && !hasPaidLeft) {
-            setPaywallOpen("no_credits");
-            return;
-          }
-          setViewingPastId(null);
-          setPendingDraft(null);
-          setProjectFormOpen(true);
-        }}
+        onViewPast={handleViewPast}
+        onNewSession={handleNewSession}
         onStartInProject={handleStartInProject}
-        onWalletClick={() => {
-          const hasFreeLeft = !state.entitlement.free_consumed_at;
-          const hasPaidLeft = state.entitlement.paid_minutes_remaining > 0;
-          if (!hasFreeLeft && !hasPaidLeft) setPaywallOpen("no_credits");
-        }}
+        onWalletClick={handleWalletClick}
       />
 
       <div className="relative flex min-w-0 flex-1 flex-col">
         {/* Floating status / timer chip + end-meeting button (top-right) */}
         <FloatingStatus
           session={state.session}
-          timer={timer}
           accepted={accepted}
           onEnd={state.end}
         />
@@ -382,15 +436,15 @@ export function RoomClient() {
             state={state}
             accepted={accepted}
             viewingPastId={viewingPastId}
-            onCloseViewPast={() => setViewingPastId(null)}
-            onNeedsCredits={() => setPaywallOpen("no_credits")}
+            onCloseViewPast={handleCloseViewPast}
+            onNeedsCredits={handleNeedsCredits}
             projectFormOpen={projectFormOpen}
             pendingDraft={pendingDraft}
             projects={projects}
             onProjectConfirmNew={handleProjectConfirmNew}
             onProjectConfirmPick={handleProjectConfirmPick}
-            onProjectCancel={() => setProjectFormOpen(false)}
-            onNeedProject={(draft) => { setPendingDraft(draft); setProjectFormOpen(true); }}
+            onProjectCancel={handleProjectCancel}
+            onNeedProject={handleNeedProject}
           />
         </main>
       </div>
@@ -403,18 +457,6 @@ export function RoomClient() {
         <EngineerAssignedModal
           engineerName={state.session.agent_name ?? "Your engineer"}
           onCancel={state.cancel}
-        />
-      )}
-      {state.session && shouldShowIncomingCall(state.session) && !accepted && (
-        <IncomingCallModal
-          engineerName={state.session.agent_name ?? "Your engineer"}
-          onAccept={() => {
-            // Mark joined immediately on accept so the session flips to 'live'
-            // even if the Zoom embed is slow or blocked. mark_joined is
-            // idempotent — Zoom's onJoined firing later is a no-op.
-            setAccepted(true);
-            void state.markJoined();
-          }}
         />
       )}
       {state.error && state.error !== "NO_ENTITLEMENT" && <ErrorToast message={state.error} />}
@@ -439,10 +481,11 @@ function shouldShowIncomingCall(s: GuestCall): boolean {
 }
 
 // Engineer has accepted the request (assigned) but hasn't started video yet.
-// We show a "Engineer found — connecting your call" card so the customer
-// isn't left with the queue's avg-wait timer ticking after the request was
-// already picked up. Dismissed automatically once the engineer joins the
-// Zoom meeting (engineer_joined_at stamped → IncomingCallModal takes over).
+// We show a "{engineer} is connecting with you" card so the customer isn't
+// left with the queue's avg-wait timer ticking after the request was already
+// picked up. Dismissed automatically once engineer_joined_at is stamped —
+// at that point the auto-join effect flips `accepted` and the split layout
+// (chat + Zoom embed) replaces this modal.
 function shouldShowEngineerAssigned(s: GuestCall): boolean {
   return (
     s.status === "assigned" &&
@@ -494,7 +537,7 @@ function shouldRenderSplitLayout(s: GuestCall | null, accepted: boolean): boolea
 }
 
 // ── Main pane (state-driven) ───────────────────────────────────────────────
-function MainPane({
+const MainPane = memo(function MainPane({
   state, accepted, viewingPastId, onCloseViewPast, onNeedsCredits,
   projectFormOpen, pendingDraft, projects,
   onProjectConfirmNew, onProjectConfirmPick, onProjectCancel, onNeedProject,
@@ -582,7 +625,7 @@ function MainPane({
   // Everything else renders the welcome / chat landing. The composer
   // intercepts new-session creation to show the project name form first.
   return <ChatPane state={state} fullWidth onNeedsCredits={onNeedsCredits} onNeedProject={onNeedProject} />;
-}
+});
 
 // Loads a past session's row + messages on demand for the review panel.
 function PastSessionReview({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
@@ -802,11 +845,12 @@ function emailOf(auth: ReturnType<typeof useCustomerSession>["auth"]) {
 }
 
 // ── Floating status chip (top-right) ───────────────────────────────────────
-function FloatingStatus({
-  session, timer, accepted, onEnd,
+// Owns its own session timer so the 1-second tick stays local to this
+// subtree instead of cascading from RoomClient down to Sidebar/MainPane/etc.
+const FloatingStatus = memo(function FloatingStatus({
+  session, accepted, onEnd,
 }: {
   session: GuestCall | null;
-  timer: ReturnType<typeof useSessionTimer>;
   accepted: boolean;
   onEnd: (reason?: string) => Promise<void>;
 }) {
@@ -827,7 +871,7 @@ function FloatingStatus({
       <div className="pointer-events-none absolute right-4 top-3 z-10 flex items-center gap-2">
         {showTimer && (
           <div className="pointer-events-auto">
-            <TimerPill warning={timer.isWarning} expired={timer.isExpired} formatRemaining={timer.formatRemaining} />
+            <LiveTimerPill joinedAt={session!.joined_at ?? null} freeMinutes={session!.free_minutes ?? 10} />
           </div>
         )}
         {showStatus && session && (
@@ -859,6 +903,13 @@ function FloatingStatus({
       )}
     </>
   );
+});
+
+// Wraps TimerPill so the useSessionTimer 1-second tick is scoped to this
+// tiny subtree — only the pill re-renders each second, never its parent.
+function LiveTimerPill({ joinedAt, freeMinutes }: { joinedAt: string | null; freeMinutes: number }) {
+  const timer = useSessionTimer(joinedAt, freeMinutes);
+  return <TimerPill warning={timer.isWarning} expired={timer.isExpired} formatRemaining={timer.formatRemaining} />;
 }
 
 function ConfirmEndModal({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => Promise<void> }) {
@@ -993,7 +1044,7 @@ type ProjectGroup = {
   latestDate: number;    // ms timestamp — used for sorting
 };
 
-function Sidebar({
+const Sidebar = memo(function Sidebar({
   email, customerUserId, session, entitlement, viewingPastId, projects,
   onViewPast, onNewSession, onStartInProject, onWalletClick,
 }: {
@@ -1235,6 +1286,7 @@ function Sidebar({
           {userMenuOpen && (
             <UserMenu
               email={email}
+              session={session}
               entitlement={entitlement}
               onRecharge={() => { setUserMenuOpen(false); onWalletClick(); }}
               onClose={() => setUserMenuOpen(false)}
@@ -1382,7 +1434,7 @@ function Sidebar({
               {email.split("@")[0]}
             </div>
             <div className="truncate text-[10px]" style={{ color: "var(--text-muted)" }}>
-              {formatEntitlement(entitlement)}
+              <WalletBalance session={session} entitlement={entitlement} />
             </div>
           </div>
           <ChevronDown size={12} style={{ color: "var(--text-muted)" }} />
@@ -1390,6 +1442,7 @@ function Sidebar({
         {userMenuOpen && (
           <UserMenu
             email={email}
+            session={session}
             entitlement={entitlement}
             onRecharge={() => { setUserMenuOpen(false); onWalletClick(); }}
             onClose={() => setUserMenuOpen(false)}
@@ -1398,9 +1451,11 @@ function Sidebar({
       </div>
     </aside>
   );
-}
+});
 
-function formatEntitlement(e: { free_consumed_at: string | null; free_minutes_used: number; paid_minutes_remaining: number }): string {
+type EntitlementShape = { free_consumed_at: string | null; free_minutes_used: number; paid_minutes_remaining: number };
+
+function formatEntitlement(e: EntitlementShape): string {
   if (e.paid_minutes_remaining > 0) {
     const m = Math.floor(e.paid_minutes_remaining);
     return `${m} min paid`;
@@ -1409,17 +1464,60 @@ function formatEntitlement(e: { free_consumed_at: string | null; free_minutes_us
   return "10 min free available";
 }
 
+// Wallet text that ticks down DURING a live paid session, without forcing
+// the whole sidebar tree to re-render. Owns its own 1s interval, scoped to
+// this leaf component only — render scope is one <span>.
+const WalletBalance = memo(function WalletBalance({
+  session, entitlement,
+}: {
+  session: GuestCall | null;
+  entitlement: EntitlementShape;
+}) {
+  const isLive   = session?.status === "live";
+  const joinedAt = session?.joined_at ?? null;
+  const paidAt   = session?.paid_extension_at ?? null;
+  const freeConsumed = !!entitlement.free_consumed_at;
+  // Only tick when we'd actually be subtracting paid time from the balance.
+  const shouldTick = isLive && (!!paidAt || freeConsumed);
+
+  // Store the clock in state so the body stays pure for the lint rule.
+  const [now, setNow] = useState<number>(() => Date.now());
+  useEffect(() => {
+    if (!shouldTick) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [shouldTick]);
+
+  let live = entitlement;
+  if (shouldTick) {
+    let paidElapsedMin = 0;
+    if (paidAt) {
+      paidElapsedMin = Math.max(0, (now - new Date(paidAt).getTime()) / 60_000);
+    } else if (joinedAt) {
+      paidElapsedMin = Math.max(0, (now - new Date(joinedAt).getTime()) / 60_000);
+    }
+    if (paidElapsedMin > 0) {
+      live = {
+        ...entitlement,
+        paid_minutes_remaining: Math.max(0, entitlement.paid_minutes_remaining - paidElapsedMin),
+      };
+    }
+  }
+  return <>{formatEntitlement(live)}</>;
+});
+
 function planLabel(e: { free_consumed_at: string | null; paid_minutes_remaining: number }): string {
   if (e.paid_minutes_remaining > 0) return "Paid plan";
   return "Free plan";
 }
 
 // ── User menu dropdown (Claude-style) ─────────────────────────────────────
-function UserMenu({
-  email, entitlement, onRecharge, onClose, collapsed = false,
+const UserMenu = memo(function UserMenu({
+  email, session, entitlement, onRecharge, onClose, collapsed = false,
 }: {
   email: string;
-  entitlement: { free_consumed_at: string | null; free_minutes_used: number; paid_minutes_remaining: number };
+  session: GuestCall | null;
+  entitlement: EntitlementShape;
   onRecharge: () => void;
   onClose: () => void;
   collapsed?: boolean;
@@ -1503,7 +1601,7 @@ function UserMenu({
                   Wallet
                 </div>
                 <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-                  {formatEntitlement(entitlement)}
+                  <WalletBalance session={session} entitlement={entitlement} />
                 </div>
               </div>
             </div>
@@ -1535,7 +1633,7 @@ function UserMenu({
       </div>
     </>
   );
-}
+});
 
 function humanState(s: SessionStatus): string {
   switch (s) {
@@ -1565,7 +1663,7 @@ function fmtRelDate(d: Date): string {
 }
 
 // ── Project accordion (collapsible group in the sidebar) ───────────────────
-function ProjectAccordion({
+const ProjectAccordion = memo(function ProjectAccordion({
   group, viewingPastId, currentSessionId, onViewPast, onStartInProject,
 }: {
   group: ProjectGroup;
@@ -1694,10 +1792,10 @@ function ProjectAccordion({
       )}
     </div>
   );
-}
+});
 
 // ── Chat pane ──────────────────────────────────────────────────────────────
-function ChatPane({
+const ChatPane = memo(function ChatPane({
   state, fullWidth = false, onNeedsCredits, onNeedProject,
 }: {
   state: ReturnType<typeof useCustomerSession>;
@@ -1806,9 +1904,9 @@ function ChatPane({
       </div>
     </section>
   );
-}
+});
 
-function Message({ message }: { message: GuestMessage }) {
+const Message = memo(function Message({ message }: { message: GuestMessage }) {
   if (message.sender_kind === "system") {
     return (
       <div className="flex justify-center">
@@ -1837,7 +1935,7 @@ function Message({ message }: { message: GuestMessage }) {
       </div>
     </div>
   );
-}
+});
 
 // ── Customer Zoom pane (the parent decides when to render this) ────────────
 function CustomerZoomPane({
@@ -2186,10 +2284,10 @@ function EngineerAssignedModal({
           className="mb-2 text-xl font-medium"
           style={{ fontFamily: "var(--font-source-serif)", color: "var(--text)" }}
         >
-          {engineerName} accepted your request
+          {engineerName} is connecting with you
         </h2>
         <p className="text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
-          Setting up your call — they&apos;ll ring you in a moment.
+          You&apos;ll be joined to the call automatically — hold tight.
         </p>
         <div className="mt-6 inline-flex items-center gap-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
           <Loader2 size={11} className="animate-spin" style={{ color: BRAND_GREEN }} />
@@ -2201,72 +2299,6 @@ function EngineerAssignedModal({
           0%   { transform: scale(1);    box-shadow: 0 0 0 0   rgba(63, 92, 46, 0.5); }
           70%  { transform: scale(1.04); box-shadow: 0 0 0 20px rgba(63, 92, 46, 0);   }
           100% { transform: scale(1);    box-shadow: 0 0 0 0   rgba(63, 92, 46, 0);   }
-        }
-      `}</style>
-    </div>
-  );
-}
-
-// ── Incoming-call modal (engineer joined Zoom) ─────────────────────────────
-function IncomingCallModal({
-  engineerName, onAccept,
-}: {
-  engineerName: string;
-  onAccept: () => void;
-}) {
-  useEffect(() => {
-    let ctx: AudioContext | null = null;
-    let iv: ReturnType<typeof setInterval> | null = null;
-    try {
-      const AudioCtx = (window as unknown as { AudioContext?: typeof AudioContext }).AudioContext;
-      if (!AudioCtx) return;
-      ctx = new AudioCtx();
-      const ring = () => {
-        if (!ctx) return;
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain); gain.connect(ctx.destination);
-        osc.frequency.value = 880;
-        gain.gain.setValueAtTime(0, ctx.currentTime);
-        gain.gain.linearRampToValueAtTime(0.04, ctx.currentTime + 0.05);
-        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.4);
-        osc.start(); osc.stop(ctx.currentTime + 0.45);
-      };
-      ring();
-      iv = setInterval(ring, 1500);
-    } catch { /* ignore */ }
-    return () => {
-      if (iv) clearInterval(iv);
-      try { void ctx?.close(); } catch { /* ignore */ }
-    };
-  }, []);
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-6"
-      style={{ backgroundColor: "rgba(0, 0, 0, 0.55)", backdropFilter: "blur(4px)" }}>
-      <div className="relative w-full max-w-sm rounded-2xl border p-8 text-center shadow-xl"
-        style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
-        <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-full"
-          style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN, animation: "relay-ring 1.4s ease-out infinite" }}>
-          <Phone size={32} />
-        </div>
-        <h2 className="mb-2 text-xl font-medium"
-          style={{ fontFamily: "var(--font-source-serif)", color: "var(--text)" }}>
-          {engineerName} is calling
-        </h2>
-        <p className="mb-6 text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
-          Tap below to join the video call.
-        </p>
-        <button onClick={onAccept}
-          className="flex w-full items-center justify-center gap-2 rounded-full py-3 text-sm font-medium transition-opacity hover:opacity-90"
-          style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}>
-          <Video size={16} /> Join the call
-        </button>
-      </div>
-      <style>{`
-        @keyframes relay-ring {
-          0%   { transform: scale(1);   box-shadow: 0 0 0 0   rgba(63, 92, 46, 0.6); }
-          70%  { transform: scale(1.06);box-shadow: 0 0 0 28px rgba(63, 92, 46, 0);   }
-          100% { transform: scale(1);   box-shadow: 0 0 0 0   rgba(63, 92, 46, 0);   }
         }
       `}</style>
     </div>

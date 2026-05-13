@@ -40,7 +40,7 @@ export default function LoginPage() {
               Welcome back
             </h1>
             <p className="text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
-              Sign in with your email — we&apos;ll send you a code.
+              Sign in with your email  
             </p>
           </div>
         </div>
