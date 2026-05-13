@@ -20,7 +20,7 @@ export type StaffGuardState =
   | { kind: "not-staff" }
   | { kind: "staff"; userId: string; roles: string[] };
 
-const STAFF_ROLES = ["engineer", "pod_lead", "ops_manager", "admin"];
+const STAFF_ROLES = ["engineer", "pod_lead", "ops_manager", "admin", "super_admin"];
 
 export function useStaffGuard(): StaffGuardState {
   const [state, setState] = useState<StaffGuardState>({ kind: "loading" });

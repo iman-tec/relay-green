@@ -26,8 +26,8 @@ type Channel = {
 const CHANNELS: Channel[] = [
   {
     label: "Sales",
-    primary: "sales@relay.green",
-    href: "mailto:sales@relay.green",
+    primary: "support@relay.green",
+    href: "mailto:support@relay.green",
     note: "Pricing, pilots, enterprise terms.",
   },
   {
@@ -38,26 +38,26 @@ const CHANNELS: Channel[] = [
   },
   {
     label: "Press",
-    primary: "press@relay.green",
-    href: "mailto:press@relay.green",
+    primary: "support@relay.green",
+    href: "mailto:support@relay.green",
     note: "We aim to respond within one business day.",
   },
   {
     label: "Partnerships",
-    primary: "partners@relay.green",
-    href: "mailto:partners@relay.green",
+    primary: "support@relay.green",
+    href: "mailto:support@relay.green",
     note: "Tool integrations, channel, and co-sell.",
   },
   {
     label: "Security disclosures",
-    primary: "security@relay.green",
-    href: "mailto:security@relay.green",
+    primary: "support@relay.green",
+    href: "mailto:support@relay.green",
     note: "PGP key on request. Coordinated disclosure preferred.",
   },
   {
     label: "Investor inquiries",
-    primary: "investors@relay.green",
-    href: "mailto:investors@relay.green",
+    primary: "support@relay.green",
+    href: "mailto:support@relay.green",
     note: "For Asgard LPs and prospective Series A participants.",
   },
   {

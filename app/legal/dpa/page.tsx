@@ -164,10 +164,10 @@ export default function DpaPage() {
           <div style={footerLineStyle}>
             Questions?{" "}
             <a
-              href="mailto:legal@relay.green"
+              href="mailto:support@relay.green"
               style={{ borderBottom: "1px solid currentColor" }}
             >
-              legal@relay.green
+              support@relay.green
             </a>
             . Related:{" "}
             <Link

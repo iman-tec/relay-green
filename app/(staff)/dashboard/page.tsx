@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { EngineerShell } from "@/app/_components/EngineerShell";
 import { DashboardClient } from "./DashboardClient";
 
 export const metadata: Metadata = {
@@ -7,9 +6,5 @@ export const metadata: Metadata = {
 };
 
 export default function DashboardPage() {
-  return (
-    <EngineerShell>
-      <DashboardClient />
-    </EngineerShell>
-  );
+  return <DashboardClient />;
 }

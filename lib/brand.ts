@@ -14,7 +14,7 @@ export const brand = {
     support:
       process.env.NEXT_PUBLIC_BRAND_SUPPORT_EMAIL ?? "support@relay.green",
     billing:
-      process.env.NEXT_PUBLIC_BRAND_BILLING_EMAIL ?? "billing@relay.green",
+      process.env.NEXT_PUBLIC_BRAND_BILLING_EMAIL ?? "support@relay.green",
   },
   copyright: `© ${process.env.NEXT_PUBLIC_BRAND_NAME ?? "Relay.green"}. All rights reserved.`,
   tagline: "You're building with AI. We're the humans who help you ship.",

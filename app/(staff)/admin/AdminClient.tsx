@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import type { GuestCall } from "@/lib/supabase/types";
+import { formatRole } from "@/lib/relay/role-labels";
 
 const BRAND_GREEN = "#3f5c2e";
 const BRAND_GREEN_SOFT = "rgba(63, 92, 46, 0.12)";
@@ -226,7 +227,7 @@ function UserRolesTable({
               </div>
               <div className="min-w-0 flex-1">
                 <div className="text-sm" style={{ color: "var(--text)" }}>{p.full_name ?? "Unnamed"}</div>
-                <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>{p.primary_role ?? "no primary"}</div>
+                <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>{formatRole(p.primary_role) || "no primary"}</div>
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {userRoles.map((r) => (

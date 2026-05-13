@@ -46,7 +46,7 @@ export function organizationSchema(): JsonLdObject {
       {
         "@type": "ContactPoint",
         contactType: "sales",
-        email: "sales@relay.green",
+        email: "support@relay.green",
         areaServed: ["US", "EU", "UK", "IN"],
         availableLanguage: ["English"],
       },
@@ -59,12 +59,12 @@ export function organizationSchema(): JsonLdObject {
       {
         "@type": "ContactPoint",
         contactType: "press",
-        email: "press@relay.green",
+        email: "support@relay.green",
       },
       {
         "@type": "ContactPoint",
         contactType: "security",
-        email: "security@relay.green",
+        email: "support@relay.green",
       },
     ],
   };

@@ -141,13 +141,13 @@ export default function CareersPage() {
             }}
           >
             <a
-              href="mailto:careers@relay.green"
+              href="mailto:support@relay.green"
               className="r-btn r-btn-ink"
             >
               See open roles <span className="arrow">→</span>
             </a>
             <a
-              href="mailto:careers@relay.green?subject=Engineer%20referral"
+              href="mailto:support@relay.green?subject=Engineer%20referral"
               className="r-btn r-btn-ghost"
             >
               Refer an engineer <span className="arrow">→</span>

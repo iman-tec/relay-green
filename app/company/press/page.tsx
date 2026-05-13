@@ -13,7 +13,7 @@ import { TryRelayButton } from "../../_marketing/TryRelayButton";
 export const metadata: Metadata = {
   title: "Relay — Press kit",
   description:
-    "Boilerplate, founder quotes, and brand assets for journalists, partners, and analysts. Press contact: press@relay.green.",
+    "Boilerplate, founder quotes, and brand assets for journalists, partners, and analysts. Press contact: support@relay.green.",
 };
 
 export default function PressPage() {
@@ -146,13 +146,13 @@ export default function PressPage() {
             The full asset bundle is in production. The list below describes
             what will ship; in the meantime, email{" "}
             <a
-              href="mailto:press@relay.green"
+              href="mailto:support@relay.green"
               style={{
                 borderBottom: "1px solid var(--ink)",
                 paddingBottom: 1,
               }}
             >
-              press@relay.green
+              support@relay.green
             </a>{" "}
             for any specific format.
           </p>
@@ -194,7 +194,7 @@ export default function PressPage() {
           <span className="r-eyebrow">Press contact</span>
           <p className="r-body" style={{ marginTop: 16 }}>
             <a
-              href="mailto:press@relay.green"
+              href="mailto:support@relay.green"
               style={{
                 fontFamily: "var(--font-display)",
                 fontSize: 28,
@@ -203,7 +203,7 @@ export default function PressPage() {
                 paddingBottom: 2,
               }}
             >
-              press@relay.green
+              support@relay.green
             </a>
             <br />
             <span className="r-small" style={{ marginTop: 12, display: "inline-block" }}>

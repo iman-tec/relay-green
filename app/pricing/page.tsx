@@ -51,7 +51,7 @@ const FAQ = [
   },
   {
     q: "Do you offer custom pricing for enterprises?",
-    a: "Yes. Teams is a starting point; large rollouts negotiate volume terms, regional data residency, and named-pod sizing. Talk to sales@relay.green.",
+    a: "Yes. Teams is a starting point; large rollouts negotiate volume terms, regional data residency, and named-pod sizing. Talk to support@relay.green.",
   },
 ];
 
