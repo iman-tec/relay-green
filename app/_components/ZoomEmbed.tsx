@@ -33,7 +33,7 @@ type Props = {
   onError?: (reason: string) => void;
 };
 
-const ZOOM_VERSION = "3.13.2";
+const ZOOM_VERSION = "6.0.2";
 const SDK_BASE = `https://source.zoom.us/${ZOOM_VERSION}`;
 
 // Order matters: react, react-dom, redux, redux-thunk, lodash, then Zoom SDK
@@ -47,6 +47,66 @@ const SCRIPTS = [
 ];
 
 let scriptsLoadedPromise: Promise<void> | null = null;
+let toolbarStyleInjected = false;
+
+/**
+ * Zoom's Component View ships a toolbar that auto-hides after a few seconds
+ * of mouse inactivity (matches the native Zoom client UX). For Relay we want
+ * the mute / camera / share / leave controls always visible so the user
+ * never has to guess where they are. Override the hide rules with broad
+ * selectors that match Zoom's hashed Material-UI class names.
+ */
+function injectToolbarStyleOnce(): void {
+  if (toolbarStyleInjected || typeof document === "undefined") return;
+  toolbarStyleInjected = true;
+  const style = document.createElement("style");
+  style.setAttribute("data-relay-zoom-toolbar", "");
+  style.textContent = `
+    /* Method 2 — user-supplied spec: explicit medium-horizontal × long-
+       vertical sizing on the SDK wrapper, then stretch inner videos to fill
+       via object-fit: cover. */
+    #meetingSDKElement {
+      width: 100% !important;
+      height: 100% !important;
+      overflow: hidden !important;
+    }
+    #meetingSDKElement video,
+    #ZOOM_WEB_SDK_SELF_VIDEO {
+      object-fit: cover !important;
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    /* Force the SDK's inner container (where Zoom applies its inline
+       width: 450px from viewSizes.default) to fill the parent. This is
+       what actually controls the visible Zoom panel size — CSS on the
+       outer #meetingSDKElement does nothing because the SDK overrides
+       its inner elements. */
+    [aria-label='Zoom app container'],
+    [class*='zoom-MuiPaper-root'] {
+      width: 100% !important;
+      height: 100% !important;
+      max-width: 100% !important;
+      max-height: 100% !important;
+      box-sizing: border-box !important;
+      overflow: hidden !important;
+    }
+
+    /* Persistent bottom toolbar — overrides the SDK auto-hide. */
+    [aria-label='Zoom app container'] [class*='oolbar'],
+    [class*='zoom-MuiToolbar-root'],
+    [class*='zoom-MuiPaper-root'] [class*='footer'],
+    [class*='zoom-MuiPaper-root'] [class*='bottomCenter'],
+    [class*='zoom-MuiPaper-root'] [class*='bottomLeft'],
+    [class*='zoom-MuiPaper-root'] [class*='bottomRight'] {
+      opacity: 1 !important;
+      visibility: visible !important;
+      pointer-events: auto !important;
+      transition: none !important;
+    }
+  `;
+  document.head.appendChild(style);
+}
 
 // ── Module-level SDK serialization ─────────────────────────────────────────
 // The Zoom Meeting SDK (Component View) keeps internal singleton state on
@@ -95,11 +155,25 @@ function loadZoomSdk(): Promise<void> {
   return scriptsLoadedPromise;
 }
 
+type SuspensionViewType = "minimized" | "speaker" | "ribbon" | "gallery" | "active";
+
 type ZoomClient = {
   init: (opts: unknown) => Promise<void>;
   join: (opts: unknown) => Promise<void>;
   leaveMeeting: () => Promise<void>;
-  updateVideo?: (opts: unknown) => void;
+  /** Resize the video panel after init. Replaces the older `updateVideo` name. */
+  updateVideoOptions?: (opts: unknown) => void;
+  /**
+   * Canonical post-init layout setter in Component View 3.x — per the
+   * official `embedded.d.ts` (line 1660). Use this; `switchVideoLayout`
+   * doesn't exist in this SDK version.
+   */
+  setViewType?: (view: SuspensionViewType) => Promise<void> | void;
+  /** Legacy alias (3.5 era). Kept as a fallback for older builds. */
+  switchVideoLayout?: (layout: SuspensionViewType) => void;
+  /** Subscribe to SDK events (active-share-change, etc.). */
+  on?: (event: string, handler: (payload: unknown) => void) => void;
+  off?: (event: string, handler: (payload: unknown) => void) => void;
 };
 
 type ZoomMtgEmbeddedNS = {
@@ -139,22 +213,14 @@ export function ZoomEmbed({
   const joinedKeyRef = useRef<string | null>(null);
   const [status, setStatus] = useState<"idle" | "loading" | "joined" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
+  // Share view's natural render exceeds the slot at 100% browser zoom. We
+  // toggle this on while someone is sharing so the wrapper applies a
+  // Chromium-native CSS `zoom` to scale the panel down enough to fit, then
+  // restores it when share stops.
+  const [isSharing, setIsSharing] = useState(false);
 
-  // Resize the canvas with the container
-  useEffect(() => {
-    if (!wrapRef.current) return;
-    const ro = new ResizeObserver(() => {
-      const el = wrapRef.current;
-      const c = clientRef.current;
-      if (!el || !c) return;
-      const w = Math.max(320, Math.floor(el.clientWidth));
-      const h = Math.max(240, Math.floor(el.clientHeight));
-      try { c.updateVideo?.({ viewSizes: { default: { width: w, height: h } } }); }
-      catch { /* SDK not ready */ }
-    });
-    ro.observe(wrapRef.current);
-    return () => ro.disconnect();
-  }, [status]);
+  // Fixed 450×800 viewSizes per the user-supplied spec. CSS overrides on
+  // #meetingSDKElement handle visual sizing; no runtime resize needed.
 
   useEffect(() => {
     let cancelled = false;
@@ -191,6 +257,9 @@ export function ZoomEmbed({
           value: {}, writable: true, configurable: true,
         });
       }
+
+      // Keep Zoom's bottom toolbar always visible (it auto-hides by default).
+      injectToolbarStyleOnce();
 
       // Load Zoom SDK from CDN (caches across embed instances)
       try {
@@ -242,17 +311,42 @@ export function ZoomEmbed({
       }, 60_000);
 
       try {
-        const w = Math.max(320, Math.floor(wrapRef.current.clientWidth));
-        const h = Math.max(240, Math.floor(wrapRef.current.clientHeight));
-
+        // Render the SDK's video tiles at gallery-view max (1440×720) so
+        // participant cards are visibly large. The outer CSS stretches the
+        // Paper container to 100% of the parent slot; this controls the
+        // *internal* tile rendering quality/size.
         const initOpts = {
           zoomAppRoot: rootRef.current,
           language: "en-US",
           patchJsMedia: true,
           customize: {
-            video: { isResizable: true, viewSizes: { default: { width: w, height: h } } },
-            toolbar: { buttons: [] },
-            meetingInfo: ["topic", "host", "participant"],
+            video: {
+              isResizable: true,
+              isDisplayAvatar: true,
+              // Initial layout — gallery shows every participant as an equal
+              // tile, so both faces are visible in a 1:1 call. The SDK's
+              // out-of-the-box default is "active" (active-speaker focus),
+              // which hides the local self-view tile unless you're speaking.
+              // Per the SDK type defs this is init-only; we also call
+              // setViewType('gallery') after join as a belt-and-braces.
+              defaultViewType: "gallery",
+              viewSizes: {
+                // Gallery + Speaker view. Sized at gallery max (1280×720)
+                // so two 16:9 tiles fit comfortably side-by-side instead of
+                // the SDK collapsing to a single active-speaker tile.
+                default: { width: 720, height: 420 },
+                // Used during screen share (vertical ribbon of participants
+                // next to the share). 316 wide is the documented max; 600
+                // tall comfortably holds 2-4 tiles at 135-180px each.
+                ribbon: { width: 316, height: 420 },
+              },
+            },
+            // We don't add custom buttons, but leaving `buttons` undefined
+            // (rather than an explicit empty array) lets Zoom render its
+            // built-in toolbar including the view-switcher, so the user can
+            // manually toggle Speaker/Gallery/Ribbon if our forced view
+            // doesn't match the situation.
+            meetingInfo: [],
           },
         };
         const joinOpts = {
@@ -323,6 +417,78 @@ export function ZoomEmbed({
 
         joinedKeyRef.current = key;
         clearTimeout(watchdog);
+
+        // === DIAGNOSTICS — tells us exactly what the SDK does/doesn't support.
+        // After rejoin, open browser devtools console and report what you see.
+        // eslint-disable-next-line no-console
+        console.log("[ZoomEmbed] client API surface:", {
+          hasSetViewType: typeof (client as Record<string, unknown>).setViewType === "function",
+          hasSwitchVideoLayout: typeof (client as Record<string, unknown>).switchVideoLayout === "function",
+          hasOn: typeof (client as Record<string, unknown>).on === "function",
+          hasUpdateVideoOptions: typeof (client as Record<string, unknown>).updateVideoOptions === "function",
+          allMethods: Object.keys(client),
+        });
+
+        // Gallery view = every participant as an equal tile, so both faces
+        // are visible in a 1:1 call. SDK 3.13's canonical post-init API is
+        // setViewType; switchVideoLayout is a 3.5-era alias that may not
+        // exist here (which is why our earlier call was a no-op). We try
+        // setViewType first, fall back to switchVideoLayout if missing.
+        const applyLayout = async (view: SuspensionViewType): Promise<void> => {
+          if (typeof client.setViewType === "function") {
+            await client.setViewType(view);
+            // eslint-disable-next-line no-console
+            console.log(`[ZoomEmbed] setViewType('${view}') called OK`);
+            return;
+          }
+          if (typeof client.switchVideoLayout === "function") {
+            client.switchVideoLayout(view);
+            // eslint-disable-next-line no-console
+            console.log(`[ZoomEmbed] switchVideoLayout('${view}') (fallback) called OK`);
+            return;
+          }
+          // eslint-disable-next-line no-console
+          console.warn(`[ZoomEmbed] no layout API available — relying on defaultViewType in init`);
+        };
+        try { await applyLayout("gallery"); }
+        catch (e) {
+          // eslint-disable-next-line no-console
+          console.log("[ZoomEmbed] applyLayout('gallery') failed:", e);
+        }
+
+        try {
+          const onShareChange = (payload: unknown) => {
+            // eslint-disable-next-line no-console
+            console.log("[ZoomEmbed] share event payload:", payload);
+            const p = payload as { state?: string; status?: string } | undefined;
+            const state = (p?.state ?? p?.status ?? "").toString().toLowerCase();
+            const sharing = state === "active" || state === "share" || state === "sharing" || state === "started";
+            if (!cancelled) setIsSharing(sharing);
+            // Ribbon while someone is sharing (so the shared screen has room);
+            // gallery when nobody is sharing so both faces stay visible.
+            void applyLayout(sharing ? "ribbon" : "gallery").catch(() => undefined);
+          };
+          for (const ev of [
+            "active-share-change",
+            "share-state-change",
+            "peer-share-state-change",
+            "share-content-change",
+            "active-share-start",
+            "active-share-end",
+          ]) {
+            try {
+              client.on?.(ev, onShareChange);
+              // eslint-disable-next-line no-console
+              console.log(`[ZoomEmbed] listener attached for '${ev}'`);
+            } catch (e) {
+              // eslint-disable-next-line no-console
+              console.log(`[ZoomEmbed] listener FAILED for '${ev}':`, e);
+            }
+          }
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.log("[ZoomEmbed] event listener wiring failed:", e);
+        }
         if (!cancelled) {
           setStatus("joined");
           onJoined?.();
@@ -414,9 +580,21 @@ export function ZoomEmbed({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Strategy: small viewSizes (450×800) + CSS overrides on #meetingSDKElement
+  // + object-fit: cover on inner videos to crop 16:9 into the portrait frame.
   return (
-    <div ref={wrapRef} className="relative h-full w-full" style={{ backgroundColor: "#000" }}>
-      <div ref={rootRef} className="absolute inset-0" />
+    <div
+      ref={wrapRef}
+      className="relative h-full w-full overflow-hidden"
+      style={{
+        backgroundColor: "#000",
+        // Scale the panel down only while someone is sharing — share view
+        // natively exceeds the slot at 100% browser zoom. Speaker view fits
+        // fine, so zoom = 1 the rest of the time.
+        zoom: isSharing ? 0.7 : 1,
+      }}
+    >
+      <div ref={rootRef} id="meetingSDKElement" className="absolute inset-0" />
       {status === "loading" && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/60">
           <div className="flex flex-col items-center gap-2 text-white">
