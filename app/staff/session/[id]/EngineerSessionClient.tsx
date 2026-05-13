@@ -10,7 +10,8 @@
  *       live          → Zoom (centre)  |  chat (right)
  *       ended         → chat (centre, locked)  |  summary + chat-history (right, pill tabs)
  *
- * No global nav inside the room. After end_session → redirect to /inbox.
+ * No global nav inside the room. After end_session → redirect to /inbox
+ * (the post-call landing screen with recent calls + take-next).
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -21,6 +22,7 @@ import {
 } from "react-resizable-panels";
 import {
   Send, Video, PhoneOff, Loader2, ArrowLeft, RotateCw, Sparkles, Lock, MessageSquare, Eye, LogOut,
+  PanelLeftOpen, PanelLeftClose,
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { ZoomEmbed } from "@/app/_components/ZoomEmbed";
@@ -110,7 +112,9 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
     });
   }, []);
 
-  // Redirect back to /inbox after end (give summary fn a moment to write)
+  // Redirect to /inbox after end — that's the dedicated post-call landing.
+  // (3-second beat gives the summary edge fn time to write the AI summary
+  // before the engineer leaves the page.)
   const prevStatusRef = useRef<SessionStatus | null>(null);
   useEffect(() => {
     if (state.session?.status === "ended" && prevStatusRef.current && prevStatusRef.current !== "ended") {
@@ -149,11 +153,11 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
       <div className="mx-auto max-w-md px-6 py-16 text-center" style={{ color: "var(--text)" }}>
         <p className="text-sm" style={{ color: "var(--text-muted)" }}>Session not found.</p>
         <button
-          onClick={() => router.push("/triage")}
+          onClick={() => router.push("/inbox")}
           className="mt-4 text-sm underline"
           style={{ color: BRAND_GREEN }}
         >
-          Back to triage
+          Back to inbox
         </button>
       </div>
     );
@@ -338,22 +342,103 @@ function Sidebar({
 
   const buckets = useMemo(() => groupByDate(past), [past]);
 
+  // Collapsed: 60px icon rail with toggle / customer avatar / status dot /
+  //            engineer avatar. Expanded: full 260px panel.
+  // Default open since the engineer actively uses customer history during
+  // a call; collapse is for when they want more room for the Zoom video.
+  const [collapsed, setCollapsed] = useState(false);
+
+  // ── Collapsed rail ──────────────────────────────────────────────────────
+  if (collapsed) {
+    return (
+      <aside
+        className="flex h-full w-14 shrink-0 flex-col items-center gap-1 py-2"
+        style={{ borderRight: "1px solid var(--border)", backgroundColor: "var(--surface)" }}
+      >
+        <button
+          onClick={() => setCollapsed(false)}
+          title="Expand sidebar"
+          className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          style={{ color: "var(--text-muted)" }}
+        >
+          <PanelLeftOpen size={18} />
+        </button>
+
+        <Link
+          href="/inbox"
+          title="Back to inbox"
+          className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          style={{ color: "var(--text-muted)" }}
+        >
+          <ArrowLeft size={16} />
+        </Link>
+
+        {/* Customer avatar (initial) */}
+        <div
+          title={session.guest_name ?? "Customer"}
+          className="mt-1 flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold uppercase"
+          style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
+        >
+          {(session.guest_name || "?")[0]}
+        </div>
+
+        {/* Live pulse */}
+        {session.status === "live" && (
+          <span
+            title={`Live · ${timer.format}`}
+            className="mt-1 flex h-9 w-9 items-center justify-center"
+          >
+            <span className="relative flex h-2.5 w-2.5">
+              <span
+                className="absolute inset-0 rounded-full opacity-60"
+                style={{ backgroundColor: BRAND_GREEN, animation: "ping 1.4s cubic-bezier(0,0,0.2,1) infinite" }}
+              />
+              <span className="relative h-2.5 w-2.5 rounded-full" style={{ backgroundColor: BRAND_GREEN }} />
+            </span>
+          </span>
+        )}
+
+        <div className="flex-1" />
+
+        {/* Engineer avatar at bottom */}
+        <div
+          title={`${engineerEmail.split("@")[0] || "Engineer"} · Engineer · on call`}
+          className="flex h-9 w-9 items-center justify-center rounded-full text-[11px] font-semibold uppercase"
+          style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+        >
+          {(engineerEmail || "?")[0]}
+        </div>
+      </aside>
+    );
+  }
+
+  // ── Expanded sidebar (260 px) ───────────────────────────────────────────
   return (
     <aside
       className="flex h-full w-[260px] shrink-0 flex-col"
       style={{ borderRight: "1px solid var(--border)", backgroundColor: "var(--surface)" }}
     >
-      {/* Brand + back-to-inbox */}
-      <div className="flex h-12 items-center justify-between px-4">
+      {/* Brand + back-to-inbox + collapse toggle */}
+      <div className="flex h-12 items-center justify-between gap-1 px-3">
         <Wordmark size="md" />
-        <Link
-          href="/inbox"
-          className="rounded-md p-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-          title="Back to inbox"
-          style={{ color: "var(--text-muted)" }}
-        >
-          <ArrowLeft size={14} />
-        </Link>
+        <div className="flex items-center gap-1">
+          <Link
+            href="/inbox"
+            className="rounded-md p-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            title="Back to inbox"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <ArrowLeft size={14} />
+          </Link>
+          <button
+            onClick={() => setCollapsed(true)}
+            title="Collapse sidebar"
+            className="rounded-md p-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <PanelLeftClose size={14} />
+          </button>
+        </div>
       </div>
 
       {/* Customer card */}
@@ -533,9 +618,12 @@ function FloatingStatus({
 
   if (isEnded) {
     return (
-      <div className="pointer-events-none absolute right-4 top-3 z-10 flex items-center gap-2">
+      <div
+        className="flex shrink-0 items-center justify-end gap-2 border-b px-4 py-2"
+        style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}
+      >
         <span
-          className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium"
+          className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium"
           style={{ backgroundColor: "color-mix(in srgb, var(--text) 8%, transparent)", color: "var(--text-muted)" }}
         >
           Session ended · returning to inbox
@@ -572,10 +660,20 @@ function FloatingStatus({
           )}
         </div>
       )}
-      <div className="pointer-events-none absolute right-4 top-3 z-10 flex items-center gap-2">
+      {/* Engineer-side HUD — same pattern as customer side: lives in
+       *  normal flow as a slim header bar, pushing chat content below
+       *  instead of overlaying ("Dev Soni joined as engineer" etc).
+       *  Solid surface + bottom border, no backdrop blur needed. */}
+      <div
+        className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-b px-4 py-2"
+        style={{
+          backgroundColor: "var(--surface)",
+          borderColor: "var(--border)",
+        }}
+      >
         {isExpiredFree && (
           <span
-            className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium tabular-nums"
+            className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium tabular-nums"
             style={{ backgroundColor: URGENT_AMBER_SOFT, color: URGENT_AMBER }}
             title="Customer is at the paywall — buffer countdown"
           >
@@ -584,10 +682,10 @@ function FloatingStatus({
         )}
         {isLive && (
           <span
-            className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium tabular-nums"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold tabular-nums"
             style={{
-              backgroundColor: timer.isExpired ? CRIT_RED_SOFT : timer.isWarning ? URGENT_AMBER_SOFT : BRAND_GREEN_SOFT,
-              color:           timer.isExpired ? CRIT_RED       : timer.isWarning ? URGENT_AMBER       : BRAND_GREEN,
+              fontFamily: "var(--font-inter)",
+              color: timer.isExpired ? CRIT_RED : timer.isWarning ? URGENT_AMBER : BRAND_GREEN,
             }}
           >
             {timer.format}
@@ -596,7 +694,7 @@ function FloatingStatus({
         <StatusPill session={session} />
         {!state.isAssignedEngineer && (
           <span
-            className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium"
+            className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium"
             style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
             title="You are observing — actions are disabled."
           >
@@ -608,7 +706,7 @@ function FloatingStatus({
           <button
             onClick={() => void startVideo()}
             disabled={busyStart}
-            className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
             style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
           >
             {busyStart ? <Loader2 size={11} className="animate-spin" /> : <Video size={11} />}
@@ -618,12 +716,8 @@ function FloatingStatus({
         {state.isAssignedEngineer && (isLive || isPreLive) && (
           <button
             onClick={() => setConfirmEnd(true)}
-            className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors hover:opacity-90"
-            style={{
-              borderColor: "color-mix(in srgb, var(--accent-red) 30%, transparent)",
-              backgroundColor: "color-mix(in srgb, var(--accent-red) 8%, transparent)",
-              color: "var(--accent-red)",
-            }}
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
+            style={{ backgroundColor: "var(--accent-red)" }}
           >
             <PhoneOff size={11} />
             End session
@@ -632,7 +726,7 @@ function FloatingStatus({
         {state.isAssignedEngineer && isPreLive && (
           <button
             onClick={() => void state.release()}
-            className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs transition-colors hover:bg-black/5 dark:hover:bg-white/5"
             style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
             title="Send back to queue"
           >
@@ -655,7 +749,7 @@ function StatusPill({ session }: { session: GuestCall }) {
   const cfg = pillConfig(session.status, session.urgency);
   return (
     <span
-      className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium"
+      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium"
       style={{ backgroundColor: cfg.bg, color: cfg.fg }}
     >
       <span className="relative flex h-2 w-2">

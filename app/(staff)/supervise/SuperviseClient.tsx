@@ -32,8 +32,14 @@ type HealthSnapshot = {
   score: number;
   summary: string;
   computed_at: string;
+  message_count?: number;
 };
 type SessionWithHealth = GuestCall & { health?: HealthSnapshot };
+
+// Minimum chat messages required before we trust the AI verdict. Below
+// this, fall back to deterministic — the LLM has nothing useful to read
+// (most conversations happen on Zoom voice, not chat).
+const MIN_MESSAGES_FOR_AI = 2;
 
 export function SuperviseClient() {
   const [sessions, setSessions] = useState<SessionWithHealth[]>([]);
@@ -65,11 +71,16 @@ export function SuperviseClient() {
     if (rows.length > 0) {
       const { data: healths } = await sb
         .from("latest_session_health")
-        .select("session_id, score, summary, computed_at")
+        .select("session_id, score, summary, computed_at, message_count")
         .in("session_id", rows.map((s) => s.id));
       healthMap = new Map(
-        (healths ?? []).map((h: { session_id: string; score: number; summary: string; computed_at: string }) =>
-          [h.session_id, { score: Number(h.score), summary: h.summary, computed_at: h.computed_at }],
+        (healths ?? []).map((h: { session_id: string; score: number; summary: string; computed_at: string; message_count?: number }) =>
+          [h.session_id, {
+            score:         Number(h.score),
+            summary:       h.summary,
+            computed_at:   h.computed_at,
+            message_count: h.message_count,
+          }],
         ),
       );
     }
@@ -210,7 +221,13 @@ function Metric({
 type Health = "green" | "amber" | "red";
 function deriveHealth(s: SessionWithHealth): Health {
   const score = s.health?.score;
-  if (typeof score === "number" && Number.isFinite(score)) {
+  const msgs  = s.health?.message_count ?? 0;
+  // Trust the AI verdict only when there's enough chat to read. Below the
+  // threshold, the LLM is guessing from "(no messages)" and returning
+  // score=0, which would flag every voice-only call as AMBER. Fall back
+  // to the deterministic verdict instead — it's based on urgency,
+  // recalls, and wait time, which are real signals.
+  if (typeof score === "number" && Number.isFinite(score) && msgs >= MIN_MESSAGES_FOR_AI) {
     if (score < -0.3) return "red";
     if (score <  0.3) return "amber";
     return "green";
@@ -242,8 +259,11 @@ function SessionTile({ session }: { session: SessionWithHealth }) {
   const router = useRouter();
   const health = deriveHealth(session);
   const tok    = HEALTH_TOKENS[health];
-  const aiSummary = session.health?.summary;
-  const aiScore   = session.health?.score;
+  const aiMessageCount = session.health?.message_count ?? 0;
+  // Only surface the AI summary line when the score was derived from real
+  // chat. Otherwise it just shows "Quiet — no signal yet." which is noise.
+  const aiSummary = aiMessageCount >= MIN_MESSAGES_FOR_AI ? session.health?.summary : undefined;
+  const aiScore   = aiMessageCount >= MIN_MESSAGES_FOR_AI ? session.health?.score   : undefined;
 
   const elapsed = session.joined_at
     ? Math.floor((Date.now() - new Date(session.joined_at).getTime()) / 1000)

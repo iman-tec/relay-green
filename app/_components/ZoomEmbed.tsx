@@ -33,7 +33,7 @@ type Props = {
   onError?: (reason: string) => void;
 };
 
-const ZOOM_VERSION = "6.0.2";
+const ZOOM_VERSION = "3.13.2";
 const SDK_BASE = `https://source.zoom.us/${ZOOM_VERSION}`;
 
 // Order matters: react, react-dom, redux, redux-thunk, lodash, then Zoom SDK
@@ -189,6 +189,40 @@ const RETRYABLE_ZOOM_ERROR_CODES = new Set([
   -1001, // could not connect
 ]);
 
+// SDK 3.13.2 has a media-device enumeration race: on first join it can read
+// `device.capabilities` before the browser has populated them, throwing
+// "Cannot read properties of undefined (reading 'caps')". The fix is to
+// (a) pre-warm enumerateDevices() ourselves and (b) retry the whole init/join.
+function isCapsCrash(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  if (/reading\s+['"]?caps['"]?/i.test(msg)) return true;
+  if (/cannot read propert.*of undefined.*caps/i.test(msg)) return true;
+  return false;
+}
+
+// Force the browser to populate MediaDeviceInfo.capabilities() entries
+// before the SDK reads them. Called once per join attempt. Safe to fail —
+// we fall through to the SDK and let our retry catch any caps crash.
+async function prewarmMediaDevices(): Promise<void> {
+  try {
+    if (typeof navigator === "undefined") return;
+    const md = navigator.mediaDevices;
+    if (!md?.enumerateDevices) return;
+    // Calling enumerateDevices twice with a short gap is the documented
+    // workaround — the first call triggers the browser's device-init,
+    // the second returns the now-populated list.
+    await md.enumerateDevices().catch(() => undefined);
+    await new Promise((r) => setTimeout(r, 80));
+    await md.enumerateDevices().catch(() => undefined);
+  } catch { /* ignore — best effort */ }
+}
+
+// Retry budget for first-join failures. Total ≈ 30s across 6 attempts:
+// pre-warm (~0.2s) + init/join (~1-2s) + delay per try.
+// Slightly back-loaded so the first retry is fast but later ones give
+// the browser/network time to settle.
+const FIRST_JOIN_RETRY_DELAYS_MS = [800, 1500, 2500, 4000, 6000, 8000];
+
 // Opt-in dev bypass — set NEXT_PUBLIC_ZOOM_MOCK=1 in .env.local to render a
 // fake "in call" placeholder instead of trying to reach Zoom. Useful when
 // testing non-video flows on a flaky network.
@@ -213,6 +247,9 @@ export function ZoomEmbed({
   const joinedKeyRef = useRef<string | null>(null);
   const [status, setStatus] = useState<"idle" | "loading" | "joined" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
+  // Surfaced during retry loops so the user knows "we're still trying"
+  // instead of staring at a frozen spinner. Updates as attempts progress.
+  const [loadingMessage, setLoadingMessage] = useState<string>("Connecting to Zoom…");
   // Share view's natural render exceeds the slot at 100% browser zoom. We
   // toggle this on while someone is sharing so the wrapper applies a
   // Chromium-native CSS `zoom` to scale the panel down enough to fit, then
@@ -349,6 +386,10 @@ export function ZoomEmbed({
             meetingInfo: [],
           },
         };
+        // SDK v3.x (our current pin) REQUIRES `sdkKey` in joinOptions —
+        // omitting it throws "sdkKey can not empty". v4+ removed the
+        // field (the signature JWT's appKey claim carries it instead);
+        // only drop the line below if/when ZOOM_VERSION is bumped to 4.x.
         const joinOpts = {
           sdkKey,
           signature,
@@ -360,33 +401,48 @@ export function ZoomEmbed({
         };
 
         // initAndJoin: creates a (singleton) client, kicks any leftover
-        // session out, then inits and joins. Returns the client. Retryable
-        // when Zoom throws errorCode 3000.
+        // session out, pre-warms media devices (works around the v3.13.2
+        // caps-undefined crash), then inits and joins.
         const initAndJoin = async (): Promise<ZoomClient> => {
           const c = ZoomMtgEmbedded.createClient();
-          // Defensive: if a prior page/mount left the SDK thinking a meeting
-          // is in progress, this clears it. Errors are expected when there's
-          // nothing to leave — swallow them.
           try { await c.leaveMeeting(); } catch { /* nothing to leave */ }
+          // Pre-warm: the SDK's media-device enumeration races against the
+          // browser's device-init on first join, crashing with "reading
+          // 'caps'". Forcing enumerateDevices() ourselves first populates
+          // capabilities so the SDK sees them ready when it looks.
+          await prewarmMediaDevices();
           await c.init(initOpts);
           await c.join(joinOpts);
           return c;
         };
 
-        // Everything that touches the SDK goes through the module-level gate
-        // so concurrent mounts (StrictMode double-invoke, fast route changes)
-        // are serialised. The gate ensures init/join of mount #2 doesn't
-        // start until mount #1's join/leave has fully resolved.
+        // Everything that touches the SDK goes through the module-level
+        // gate so concurrent mounts (StrictMode / fast route changes) are
+        // serialised. Mount #2 waits for mount #1's join/leave to fully
+        // resolve before starting its own init/join.
         //
-        // Also retry transient network/connection errors (ERR_NETWORK_CHANGED
-        // and friends) with exponential backoff — these surface as Zoom
-        // errorCodes like -3000 / -2001 / -1001 and almost always succeed on
-        // the second or third attempt when the network stabilises.
-        const RETRY_DELAYS_MS = [600, 1500, 3500]; // 3 retries: ~0.6s, 1.5s, 3.5s
+        // Retry strategy:
+        //   • errorCode 3000 ("Already has other meetings in progress")
+        //       → force-leave + immediate retry, no backoff.
+        //   • Negative errorCodes (-3000 / -2001 / -1001) → transient
+        //       network / WiFi flap → back off and retry.
+        //   • caps-undefined TypeError (the 3.13.2 first-join bug, see
+        //       isCapsCrash above) → back off and retry; pre-warm runs
+        //       again and usually succeeds by attempt 2-3.
+        //   • Anything else (signature reject, auth fail, bad meeting id)
+        //       → surface to the error UI immediately. No retry helps.
+        //
+        // Total budget across 6 attempts ≈ 30s including delays + work.
         let client: ZoomClient | null = null;
         let lastErr: unknown = null;
-        for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+        const maxAttempts = FIRST_JOIN_RETRY_DELAYS_MS.length;
+        for (let attempt = 0; attempt <= maxAttempts; attempt++) {
           if (cancelled) return;
+          if (attempt === 0) {
+            setLoadingMessage("Connecting to Zoom…");
+          } else {
+            setLoadingMessage(`Reconnecting… (${attempt}/${maxAttempts})`);
+          }
           try {
             client = await chainOnGate(initAndJoin);
             lastErr = null;
@@ -394,8 +450,8 @@ export function ZoomEmbed({
           } catch (err) {
             lastErr = err;
             const code = (err as { errorCode?: number } | null)?.errorCode;
-            // The positive 3000 ("Already has other meetings in progress")
-            // case is handled by force-leave + immediate retry, no backoff.
+
+            // 3000: stale singleton — drop and immediately retry, no backoff.
             if (code === 3000) {
               await chainOnGate(async () => {
                 try { await ZoomMtgEmbedded.createClient().leaveMeeting(); } catch { /* ignore */ }
@@ -403,12 +459,17 @@ export function ZoomEmbed({
               });
               continue;
             }
-            // Transient network/connection errors: back off and retry.
-            if (code != null && RETRYABLE_ZOOM_ERROR_CODES.has(code) && attempt < RETRY_DELAYS_MS.length) {
-              await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
+
+            const retryable =
+              (code != null && RETRYABLE_ZOOM_ERROR_CODES.has(code)) ||
+              isCapsCrash(err);
+
+            if (retryable && attempt < maxAttempts) {
+              await new Promise((r) => setTimeout(r, FIRST_JOIN_RETRY_DELAYS_MS[attempt]));
               continue;
             }
-            // Anything else (or out of retries) → surface to the catch below.
+
+            // Not retryable, or out of budget — surface to the catch below.
             throw err;
           }
         }
@@ -599,7 +660,7 @@ export function ZoomEmbed({
         <div className="absolute inset-0 flex items-center justify-center bg-black/60">
           <div className="flex flex-col items-center gap-2 text-white">
             <Loader2 size={20} className="animate-spin" />
-            <span className="text-xs">Connecting to Zoom…</span>
+            <span className="text-xs">{loadingMessage}</span>
           </div>
         </div>
       )}

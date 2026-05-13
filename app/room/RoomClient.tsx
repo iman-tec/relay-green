@@ -857,29 +857,40 @@ const FloatingStatus = memo(function FloatingStatus({
 
   return (
     <>
-      <div className="pointer-events-none absolute right-4 top-3 z-10 flex items-center gap-2">
+      {/* Live-call HUD lives in normal flow at the top of the main column —
+       *  it's a slim header bar, not an overlay. That way the chat /
+       *  Zoom content below starts BELOW the HUD instead of being clipped
+       *  by it. A subtle bottom border keeps it visually separate from the
+       *  content without needing a backdrop blur. */}
+      <div
+        className="flex shrink-0 items-center justify-end gap-3 border-b px-4 py-2"
+        style={{
+          backgroundColor: "var(--surface)",
+          borderColor: "var(--border)",
+        }}
+      >
         {showTimer && (
-          <div className="pointer-events-auto">
-            <LiveTimerPill joinedAt={session!.joined_at ?? null} freeMinutes={session!.free_minutes ?? 10} />
-          </div>
+          <LiveTimer joinedAt={session!.joined_at ?? null} freeMinutes={session!.free_minutes ?? 10} />
         )}
-        {showStatus && session && (
-          <div className="pointer-events-auto">
-            <StatusPill session={session} />
-          </div>
+
+        {showTimer && showStatus && (
+          <span aria-hidden className="h-5 w-px" style={{ backgroundColor: "var(--border)" }} />
         )}
+
+        {showStatus && session && <CompactStatus session={session} />}
+
+        {(showTimer || showStatus) && showEnd && (
+          <span aria-hidden className="h-5 w-px" style={{ backgroundColor: "var(--border)" }} />
+        )}
+
         {showEnd && (
           <button
             onClick={() => setConfirmEnd(true)}
-            className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors hover:opacity-90"
-            style={{
-              borderColor: "color-mix(in srgb, var(--accent-red) 30%, transparent)",
-              backgroundColor: "color-mix(in srgb, var(--accent-red) 8%, transparent)",
-              color: "var(--accent-red)",
-            }}
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
+            style={{ backgroundColor: "var(--accent-red)" }}
           >
-            <PhoneOff size={11} />
-            End
+            <PhoneOff size={12} />
+            End session
           </button>
         )}
       </div>
@@ -894,11 +905,43 @@ const FloatingStatus = memo(function FloatingStatus({
   );
 });
 
-// Wraps TimerPill so the useSessionTimer 1-second tick is scoped to this
-// tiny subtree — only the pill re-renders each second, never its parent.
-function LiveTimerPill({ joinedAt, freeMinutes }: { joinedAt: string | null; freeMinutes: number }) {
+// Live timer text — bold mono digits + a "free / left / expired" suffix.
+// Colors track the remaining-time bucket (green / amber / red).
+function LiveTimer({ joinedAt, freeMinutes }: { joinedAt: string | null; freeMinutes: number }) {
   const timer = useSessionTimer(joinedAt, freeMinutes);
-  return <TimerPill warning={timer.isWarning} expired={timer.isExpired} formatRemaining={timer.formatRemaining} />;
+  const color = timer.isExpired ? CRIT_RED : timer.isWarning ? URGENT_AMBER : BRAND_GREEN;
+  const suffix = timer.isExpired ? "Expired" : timer.isWarning ? "left" : "free";
+  return (
+    <span className="inline-flex items-baseline gap-1.5 text-xs font-medium">
+      <span
+        className="font-semibold tabular-nums"
+        style={{ fontFamily: "var(--font-inter)", color, fontSize: 13 }}
+      >
+        {timer.formatRemaining}
+      </span>
+      <span style={{ color: "var(--text-muted)" }}>{suffix}</span>
+    </span>
+  );
+}
+
+// Compact "● LIVE" indicator that fits next to the timer. Reuses the same
+// label/color mapping from the full StatusPill but without the chip border.
+function CompactStatus({ session }: { session: GuestCall }) {
+  const cfg = pillConfig(session.status, session.urgency);
+  return (
+    <span className="inline-flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider" style={{ color: cfg.fg }}>
+      <span className="relative flex h-2 w-2">
+        {cfg.pulse && (
+          <span
+            className="absolute inset-0 rounded-full opacity-70"
+            style={{ backgroundColor: cfg.fg, animation: "ping 1.4s cubic-bezier(0,0,0.2,1) infinite" }}
+          />
+        )}
+        <span className="relative h-2 w-2 rounded-full" style={{ backgroundColor: cfg.fg }} />
+      </span>
+      {cfg.label}
+    </span>
+  );
 }
 
 function ConfirmEndModal({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => Promise<void> }) {
@@ -953,40 +996,6 @@ function ConfirmEndModal({ onCancel, onConfirm }: { onCancel: () => void; onConf
   );
 }
 
-function TimerPill({ warning, expired, formatRemaining }: { warning: boolean; expired: boolean; formatRemaining: string }) {
-  const cfg = expired
-    ? { bg: CRIT_RED_SOFT, fg: CRIT_RED, label: "Free expired" }
-    : warning
-    ? { bg: URGENT_AMBER_SOFT, fg: URGENT_AMBER, label: `${formatRemaining} left` }
-    : { bg: BRAND_GREEN_SOFT, fg: BRAND_GREEN, label: `${formatRemaining} free` };
-  return (
-    <span
-      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium tabular-nums"
-      style={{ backgroundColor: cfg.bg, color: cfg.fg }}
-    >
-      {cfg.label}
-    </span>
-  );
-}
-
-function StatusPill({ session }: { session: GuestCall }) {
-  const cfg = pillConfig(session.status, session.urgency);
-  return (
-    <span
-      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium"
-      style={{ backgroundColor: cfg.bg, color: cfg.fg }}
-    >
-      <span className="relative flex h-2 w-2">
-        {cfg.pulse && (
-          <span className="absolute inset-0 rounded-full opacity-70"
-            style={{ backgroundColor: cfg.fg, animation: "ping 1.4s cubic-bezier(0,0,0.2,1) infinite" }} />
-        )}
-        <span className="relative h-2 w-2 rounded-full" style={{ backgroundColor: cfg.fg }} />
-      </span>
-      {cfg.label}
-    </span>
-  );
-}
 
 function pillConfig(status: SessionStatus, urgency: Urgency) {
   if (status === "abandoned" || status === "cancelled") {

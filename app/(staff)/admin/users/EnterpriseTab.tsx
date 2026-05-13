@@ -628,7 +628,6 @@ function Reveal({
   reveal: { label: string; action: "invited" | "resent" };
   dismiss: () => void;
 }) {
-  const isDev = process.env.NODE_ENV === "development";
   return (
     <div
       className="flex items-start justify-between gap-3 rounded-lg border p-3"
@@ -645,21 +644,6 @@ function Reveal({
             <strong>{reveal.label}</strong>. They&apos;ll click the magic link to sign in.
           </span>
         </div>
-        {isDev && (
-          <div className="text-xs" style={{ color: "var(--text-muted)" }}>
-            Local dev: emails land in{" "}
-            <a
-              href="http://127.0.0.1:54324"
-              target="_blank"
-              rel="noreferrer"
-              className="underline-offset-2 hover:underline"
-              style={{ color: BRAND_GREEN }}
-            >
-              Inbucket at :54324
-            </a>
-            .
-          </div>
-        )}
       </div>
       <div className="flex shrink-0 items-center gap-2">
         <button
