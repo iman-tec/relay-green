@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { ZoomEmbed } from "@/app/_components/ZoomEmbed";
+import { PopOutContainer } from "@/app/_components/PopOutContainer";
 import { createClient } from "@/lib/supabase/browser";
 import { useEngineerSession } from "@/lib/relay/useEngineerSession";
 import { useSessionTimer } from "@/lib/relay/useSessionTimer";
@@ -751,14 +752,16 @@ function ZoomCenterPane({
   }
   return (
     <section className="relative h-full" style={{ backgroundColor: "#000" }}>
-      <ZoomEmbed
-        meetingNumber={session.zoom_meeting_id}
-        userName={role === 1 ? engineerName : engineerEmail || "Observer"}
-        userEmail={engineerEmail}
-        role={role}
-        fallbackJoinUrl={role === 1 ? session.zoom_start_url : session.zoom_join_url}
-        onJoined={() => void onJoined()}
-      />
+      <PopOutContainer>
+        <ZoomEmbed
+          meetingNumber={session.zoom_meeting_id}
+          userName={role === 1 ? engineerName : engineerEmail || "Observer"}
+          userEmail={engineerEmail}
+          role={role}
+          fallbackJoinUrl={role === 1 ? session.zoom_start_url : session.zoom_join_url}
+          onJoined={() => void onJoined()}
+        />
+      </PopOutContainer>
       <div
         className="absolute left-3 top-3 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wider"
         style={{ backgroundColor: role === 1 ? BRAND_GREEN : "#3f5c2e88", color: "#fff" }}
