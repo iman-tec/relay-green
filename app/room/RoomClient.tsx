@@ -1457,8 +1457,8 @@ type EntitlementShape = { free_consumed_at: string | null; free_minutes_used: nu
 
 function formatEntitlement(e: EntitlementShape): string {
   if (e.paid_minutes_remaining > 0) {
-    const m = Math.floor(e.paid_minutes_remaining);
-    return `${m} min paid`;
+    // Always show 2-decimal precision: 100.00, 97.50, 93.25 …
+    return `${e.paid_minutes_remaining.toFixed(2)} min paid`;
   }
   if (e.free_consumed_at) return "Free used · upgrade to continue";
   return "10 min free available";
