@@ -20,7 +20,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { Loader2, X, ArrowRight, Check, ChevronLeft } from "lucide-react";
+import { Loader2, X, ArrowRight, Check, ChevronLeft, Sparkles } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import { SUPPORT_PLANS, LAUNCH_PLANS, RETAINER, type SupportPlanCode } from "@/lib/relay/pricing";
 import { loadStripe, type Appearance } from "@stripe/stripe-js";
@@ -32,14 +32,16 @@ const STRIPE_PUBLISHABLE_KEY =
   (typeof process !== "undefined" && process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) || "";
 const stripePromise = STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY) : null;
 
-const BRAND_GREEN = "#5d8a44";        // brighter on dark
-const SURFACE     = "#0a0a0a";        // modal body
-const CARD        = "#141413";        // card body
-const CARD_EDGE   = "#2a2a28";        // dividers / borders
-const INK         = "#f5f2ec";        // primary text on dark
-const INK_SOFT    = "#c7c5bd";        // body text
-const INK_MUTE    = "#7c7a73";        // footnotes
-const BACKDROP    = "rgba(0, 0, 0, 0.78)";
+// Aligned with the rest of the app: same brand green as supervise/admin,
+// same surface/border/text tokens as ConnectingModal + the customer chat.
+const BRAND_GREEN = "#3f5c2e";
+const SURFACE     = "var(--surface)";
+const CARD        = "var(--surface)";
+const CARD_EDGE   = "var(--border)";
+const INK         = "var(--text)";
+const INK_SOFT    = "color-mix(in srgb, var(--text) 78%, transparent)";
+const INK_MUTE    = "var(--text-muted)";
+const BACKDROP    = "rgba(0, 0, 0, 0.55)";
 
 export function PaywallModal({
   open, reason, onClose,
@@ -126,7 +128,7 @@ export function PaywallModal({
   const eyebrow =
     reason === "free_expired" ? "Your free 10 minutes are up"
     : reason === "no_credits" ? "Pick a plan to continue"
-    : "Three phases. One team.";
+    : "Relay plans";
 
   // When the user has clicked a paid plan, we mount Stripe's embedded
   // Checkout inside the modal instead of the plan grid. Closing the
@@ -135,7 +137,7 @@ export function PaywallModal({
     return (
       <div
         className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6"
-        style={{ backgroundColor: BACKDROP, backdropFilter: "blur(6px)" }}
+        style={{ backgroundColor: BACKDROP, backdropFilter: "blur(4px)" }}
       >
         <div
           className="relative w-full max-w-lg overflow-hidden rounded-2xl border shadow-2xl"
@@ -185,7 +187,7 @@ export function PaywallModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6"
-      style={{ backgroundColor: BACKDROP, backdropFilter: "blur(6px)" }}
+      style={{ backgroundColor: BACKDROP, backdropFilter: "blur(4px)" }}
     >
       <div
         className="relative w-full max-w-5xl rounded-2xl border shadow-2xl"
@@ -202,7 +204,7 @@ export function PaywallModal({
 
         <div className="px-6 pb-7 pt-7 md:px-10 md:pb-9 md:pt-9">
           {/* Eyebrow + title */}
-          <div className="mb-6 text-center">
+          <div className="mb-7 text-center">
             <div
               className="mb-2 inline-block text-[10px] font-semibold uppercase tracking-[0.18em]"
               style={{ color: INK_MUTE }}
@@ -217,9 +219,16 @@ export function PaywallModal({
                 letterSpacing: "-0.02em",
               }}
             >
-              Three phases. One team.{" "}
+              Pay only for what you need.{" "}
               <span style={{ fontStyle: "italic", color: INK_SOFT }}>Same engineer the whole way.</span>
             </h1>
+            <p
+              className="mx-auto mt-3 max-w-md text-[13px]"
+              style={{ color: INK_SOFT }}
+            >
+              Start with a free 10-minute session. Top up minutes whenever you need an
+              engineer — credits stay good for 12 months.
+            </p>
           </div>
 
           {error && (
@@ -235,201 +244,187 @@ export function PaywallModal({
             </div>
           )}
 
-          {/* Three cards */}
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            {/* ── Phase 01 ── */}
-            <PhaseCard
-              tag="Phase 01"
-              title="Build Phase"
-              tagline="You build. We support."
-              description="On-demand sessions while your AI takes a build from concept to MVP."
-              footnotes={[
-                "Each session is 10 min",
-                "Each plan is valid for 12 months",
-              ]}
-              cta={{
-                label: "Get in touch",
-                onClick: () => {
-                  window.location.href = "mailto:support@relay.green?subject=Phase%2001%20—%20Custom%20support%20plan";
-                },
-              }}
-            >
-              {SUPPORT_PLANS.map((p) => {
-                const isPaid = p.purchasable;
-                const busy = busyPlan === p.code;
-                return (
-                  <PlanRow
-                    key={p.code}
-                    name={p.name + (p.code === "free" ? "" : " plan")}
-                    sub={p.minutes ? `${p.minutes} min ${p.code === "free" ? "on us" : "of support"}` : ""}
-                    price={p.cta}
-                    interactive={isPaid}
-                    busy={busy}
-                    onClick={isPaid ? () => void checkout(p.code as SupportPlanCode) : undefined}
-                  />
-                );
-              })}
-            </PhaseCard>
-
-            {/* ── Phase 02 ── */}
-            <PhaseCard
-              tag="Phase 02"
-              title="Launch and Go-Live"
-              tagline="You tell us when. We quote on complexity."
-              description="A Relay engineer takes the wheel through launch — fixed scope, fixed price, calendar promise."
-              footnotes={["Customized quote available for specific cases"]}
-              cta={{
-                label: "Get in touch",
-                onClick: () => {
-                  window.location.href = "mailto:support@relay.green?subject=Phase%2002%20—%20Launch%20project";
-                },
-              }}
-            >
-              {LAUNCH_PLANS.map((p) => (
-                <PlanRow key={p.code} name={p.name} sub={p.blurb} price={p.priceLabel} />
-              ))}
-            </PhaseCard>
-
-            {/* ── Phase 03 ── */}
-            <PhaseCard
-              tag="Phase 03"
-              title="Maintain and Scale"
-              tagline="We take accountability. You focus on your business."
-              description="Monthly retainer. Same team that launched you keeps it shipping, secure, and current."
-              footnotes={["Customized quote available for specific cases"]}
-              cta={{
-                label: "Get in touch",
-                onClick: () => {
-                  window.location.href = "mailto:support@relay.green?subject=Phase%2003%20—%20Monthly%20retainer";
-                },
-              }}
-            >
-              <PlanRow name={RETAINER.name} sub={RETAINER.blurb} price={RETAINER.priceLabel} />
-            </PhaseCard>
+          {/* Build (pay-as-you-go) */}
+          <SectionLabel>Build — pay-as-you-go credits</SectionLabel>
+          <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
+            {SUPPORT_PLANS.map((p) => {
+              const busy = busyPlan === p.code;
+              const isPaid = p.purchasable;
+              return (
+                <PlanCard
+                  key={p.code}
+                  name={p.name}
+                  priceLabel={p.cta}
+                  suffix={p.minutes > 0 ? `/ ${p.minutes} min` : ""}
+                  blurb={p.blurb}
+                  features={[...p.features]}
+                  highlight={"highlight" in p ? !!p.highlight : false}
+                  ctaLabel={isPaid ? `Buy ${p.cta}` : "Start free"}
+                  ctaInteractive={isPaid}
+                  busy={busy}
+                  onClick={
+                    isPaid
+                      ? () => void checkout(p.code as SupportPlanCode)
+                      : onClose
+                  }
+                />
+              );
+            })}
           </div>
 
-          {/* Hint */}
-          <p className="mt-4 text-center text-[10px]" style={{ color: INK_MUTE }}>
-            Tap a Build-phase plan to check out with Stripe · Test card{" "}
-            <span style={{ fontFamily: "var(--font-mono)", color: INK_SOFT }}>4242 4242 4242 4242</span>
-          </p>
+          {/* Launch + retainer */}
+          <div className="mt-4">
+            <SectionLabel>Launch & retainer — quoted on complexity</SectionLabel>
+            <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
+              {LAUNCH_PLANS.map((p) => (
+                <PlanCard
+                  key={p.code}
+                  name={p.name}
+                  priceLabel={p.priceLabel}
+                  suffix={p.suffix}
+                  blurb={p.blurb}
+                  features={[...p.features]}
+                  highlight={false}
+                  ctaLabel="Get in touch"
+                  ctaInteractive={false}
+                  busy={false}
+                  onClick={() => {
+                    window.location.href = `mailto:support@relay.green?subject=Relay%20—%20${encodeURIComponent(p.name)}%20launch%20project`;
+                  }}
+                />
+              ))}
+              <PlanCard
+                name={RETAINER.name}
+                priceLabel={RETAINER.priceLabel}
+                suffix={RETAINER.suffix}
+                blurb={RETAINER.blurb}
+                features={[...RETAINER.features]}
+                highlight={false}
+                ctaLabel="Get in touch"
+                ctaInteractive={false}
+                busy={false}
+                onClick={() => {
+                  window.location.href = "mailto:support@relay.green?subject=Relay%20—%20Monthly%20retainer";
+                }}
+              />
+            </div>
+          </div>
+
         </div>
       </div>
     </div>
   );
 }
 
-// ── Phase card shell ───────────────────────────────────────────────────────
-function PhaseCard({
-  tag, title, tagline, description, footnotes, cta, children,
+// ── Section label ──────────────────────────────────────────────────────────
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em]"
+      style={{ color: INK_MUTE }}
+    >
+      {children}
+    </div>
+  );
+}
+
+// ── Plan card (compact) ────────────────────────────────────────────────────
+function PlanCard({
+  name, priceLabel, suffix, blurb, features, highlight, ctaLabel, ctaInteractive, busy, onClick,
 }: {
-  tag: string;
-  title: string;
-  tagline: string;
-  description: string;
-  footnotes: string[];
-  cta: { label: string; onClick: () => void };
-  children: React.ReactNode;
+  name: string;
+  priceLabel: string;
+  suffix: string;
+  blurb: string;
+  features: string[];
+  highlight: boolean;
+  ctaLabel: string;
+  ctaInteractive: boolean;
+  busy: boolean;
+  onClick: () => void;
 }) {
   return (
     <div
-      className="flex h-full flex-col rounded-xl border p-5"
-      style={{ borderColor: CARD_EDGE, backgroundColor: CARD }}
+      className="relative flex h-full flex-col rounded-xl border p-3"
+      style={{
+        borderColor: highlight ? BRAND_GREEN : CARD_EDGE,
+        backgroundColor: CARD,
+        boxShadow: highlight ? `0 0 0 1px ${BRAND_GREEN} inset` : undefined,
+      }}
     >
-      <div className="mb-0.5 text-[9px] font-semibold uppercase tracking-[0.18em]" style={{ color: INK_MUTE }}>
-        {tag}
-      </div>
-      <h2
-        className="text-lg font-medium tracking-tight"
-        style={{ fontFamily: "var(--font-source-serif)", color: INK, letterSpacing: "-0.01em" }}
-      >
-        {title}
-      </h2>
-      <p className="mt-1 text-[12px] font-medium" style={{ color: INK }}>
-        {tagline}
-      </p>
-      <p className="mt-1.5 text-[12px] leading-snug" style={{ color: INK_SOFT }}>
-        {description}
-      </p>
-
-      <div className="my-3 flex flex-col gap-0" style={{ borderTop: `1px solid ${CARD_EDGE}` }}>
-        {children}
-      </div>
-
-      <div className="mt-auto">
-        {footnotes.map((f, i) => (
-          <p key={i} className="mt-0.5 text-[10px]" style={{ color: INK_MUTE }}>
-            ∗ {f}
-          </p>
-        ))}
-        <button
-          onClick={cta.onClick}
-          className="mt-3 flex w-full items-center justify-center gap-2 rounded-full py-2 text-[12px] font-medium transition-opacity hover:opacity-90"
+      {highlight && (
+        <div
+          className="absolute -top-2 left-3 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.12em]"
           style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
         >
-          {cta.label}
-          <ArrowRight size={12} />
-        </button>
+          <Sparkles size={8} />
+          Popular
+        </div>
+      )}
+
+      <div className="text-[9px] font-semibold uppercase tracking-[0.16em]" style={{ color: INK_MUTE }}>
+        {name}
       </div>
+
+      <div className="mt-0.5 flex items-baseline gap-1">
+        <span
+          className="text-xl font-medium tabular-nums"
+          style={{
+            color: INK,
+            fontFamily: "var(--font-source-serif)",
+            letterSpacing: "-0.02em",
+          }}
+        >
+          {priceLabel}
+        </span>
+        {suffix && (
+          <span className="text-[10px]" style={{ color: INK_MUTE }}>
+            {suffix}
+          </span>
+        )}
+      </div>
+
+      <p
+        className="mt-1.5 line-clamp-2 text-[11px] leading-snug"
+        style={{ color: INK_SOFT }}
+      >
+        {blurb}
+      </p>
+
+      <ul
+        className="mt-2 flex flex-col gap-1 border-t pt-2"
+        style={{ borderColor: CARD_EDGE }}
+      >
+        {features.map((f) => (
+          <li
+            key={f}
+            className="flex items-start gap-1.5 text-[11px] leading-snug"
+            style={{ color: INK_SOFT }}
+          >
+            <Check size={10} style={{ color: BRAND_GREEN, marginTop: 3, flexShrink: 0 }} />
+            <span>{f}</span>
+          </li>
+        ))}
+      </ul>
+
+      <button
+        onClick={onClick}
+        disabled={busy}
+        className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-full py-1.5 text-[11px] font-semibold transition-opacity hover:opacity-90 disabled:opacity-50"
+        style={{
+          backgroundColor: ctaInteractive ? BRAND_GREEN : "transparent",
+          color: ctaInteractive ? "#fff" : INK,
+          border: ctaInteractive ? "none" : `1px solid ${CARD_EDGE}`,
+        }}
+      >
+        {busy ? <Loader2 size={11} className="animate-spin" /> : null}
+        {busy ? "Loading…" : ctaLabel}
+        {!busy && ctaInteractive && <ArrowRight size={11} />}
+      </button>
     </div>
   );
 }
 
-// ── Plan row ───────────────────────────────────────────────────────────────
-function PlanRow({
-  name, sub, price, interactive = false, busy = false, onClick,
-}: {
-  name: string;
-  sub: string;
-  price: string;
-  interactive?: boolean;
-  busy?: boolean;
-  onClick?: () => void;
-}) {
-  const isClickable = interactive && !!onClick && !busy;
-  return (
-    <button
-      onClick={onClick}
-      disabled={!isClickable}
-      className="group flex w-full items-start justify-between gap-3 py-2.5 text-left transition-colors"
-      style={{
-        borderBottom: `1px solid ${CARD_EDGE}`,
-        cursor: isClickable ? "pointer" : "default",
-      }}
-    >
-      <div>
-        <div className="text-[13px] font-medium" style={{ color: INK }}>
-          {name}
-        </div>
-        {sub && (
-          <div className="mt-0.5 text-[10px]" style={{ color: INK_MUTE }}>
-            {sub}
-          </div>
-        )}
-      </div>
-      <div className="flex items-center gap-1.5">
-        {isClickable && (
-          <span
-            className="opacity-0 transition-opacity group-hover:opacity-100"
-            style={{ color: BRAND_GREEN }}
-            aria-hidden
-          >
-            <Check size={12} />
-          </span>
-        )}
-        <span
-          className="text-[13px] font-medium tabular-nums"
-          style={{
-            color: interactive ? BRAND_GREEN : INK,
-            fontFamily: interactive ? "var(--font-mono)" : "var(--font-source-serif)",
-          }}
-        >
-          {busy ? <Loader2 size={12} className="animate-spin inline" /> : price}
-        </span>
-      </div>
-    </button>
-  );
-}
 
 // ── Stripe Elements payment form ───────────────────────────────────────────
 // Builds the payment form from Stripe Elements (PaymentElement). Unlike

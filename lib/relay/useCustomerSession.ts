@@ -136,7 +136,10 @@ export function useCustomerSession(): CustomerSessionState {
   // is almost certainly a ghost (browser closed mid-wait, test run, etc.).
   // Silently cancel it so the sidebar doesn't show "Current session / Connecting…"
   // on every page load.
-  const STALE_QUEUED_MS = 10 * 60_000; // 10 minutes
+  // 3 minutes — matches the ConnectingModal's "No answer" boundary. Once
+  // the customer has crossed that line and abandoned (e.g. signed out),
+  // we don't want the next login to inherit the stale queue + modal.
+  const STALE_QUEUED_MS = 3 * 60_000;
 
   const loadExisting = useCallback(async (): Promise<void> => {
     if (auth.kind !== "authed") return;

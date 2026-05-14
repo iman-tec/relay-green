@@ -149,12 +149,15 @@ export function SuperviseClient() {
       </div>
 
       {/* Metrics */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+      <div className="grid grid-cols-2 items-start gap-3 md:grid-cols-5">
         <Metric icon={Activity} label="Active sessions" value={metrics.active} accent={BRAND_GREEN} bg={BRAND_GREEN_SOFT} />
         <Metric icon={Activity} label="Live now"        value={metrics.live}   accent={BRAND_GREEN} bg={BRAND_GREEN_SOFT} />
         <Metric icon={AlertTriangle} label="Urgent"     value={metrics.urgent} accent={URGENT_AMBER} bg={URGENT_AMBER_SOFT} />
         <Metric icon={Clock} label="Avg wait"           value={fmtSecs(metrics.avgWait)} accent="#0284c7" bg="rgba(2, 132, 199, 0.12)" />
-        <Metric icon={Clock} label="Longest wait"       value={fmtSecs(metrics.longestWait)} accent="#7c3aed" bg="rgba(124, 58, 237, 0.12)" />
+        <div className="flex flex-col">
+          <Metric icon={Clock} label="Longest wait"     value={fmtSecs(metrics.longestWait)} accent="#7c3aed" bg="rgba(124, 58, 237, 0.12)" />
+          <HealthLegend />
+        </div>
       </div>
 
       {loading ? (
@@ -176,6 +179,24 @@ export function SuperviseClient() {
           {sessions.map((s) => <SessionTile key={s.id} session={s} />)}
         </div>
       )}
+    </div>
+  );
+}
+
+function HealthLegend() {
+  return (
+    <div className="px-1 pb-1 pt-3" title="Session health — green healthy, amber neutral, red danger">
+      <div
+        className="h-2 w-full rounded-full"
+        style={{
+          background: `linear-gradient(to right, ${BRAND_GREEN} 0%, ${URGENT_AMBER} 50%, ${CRIT_RED} 100%)`,
+        }}
+      />
+      <div className="mt-1.5 flex justify-between text-[9px] font-medium uppercase tracking-wider">
+        <span style={{ color: BRAND_GREEN }}>Healthy</span>
+        <span style={{ color: URGENT_AMBER }}>Neutral</span>
+        <span style={{ color: CRIT_RED }}>Danger</span>
+      </div>
     </div>
   );
 }

@@ -12,54 +12,118 @@
 export const SUPPORT_PLANS = [
   {
     code: "free",
-    name: "First session",
+    name: "Free",
     minutes: 10,
     priceCents: 0,
-    blurb: "10 minutes on us — one session per customer.",
+    blurb: "Try Relay with a one-time session — no card required.",
     cta: "Free",
     purchasable: false,
+    features: [
+      "One session per customer",
+      "Up to 10 minutes with an engineer",
+      "Live chat + voice + screen share",
+      "No credit card required",
+    ],
   },
   {
     code: "base",
     name: "Base",
     minutes: 100,
     priceCents: 5000,
-    blurb: "100 minutes of support, valid 12 months.",
+    blurb: "Cover small projects with on-demand engineer support.",
     cta: "€50",
     purchasable: true,
+    features: [
+      "100 minutes of support",
+      "€0.50 per minute, billed by the second",
+      "Use across unlimited sessions",
+      "Credits valid for 12 months",
+    ],
   },
   {
     code: "pro",
     name: "Pro",
     minutes: 240,
     priceCents: 10000,
-    blurb: "240 minutes of support, valid 12 months.",
+    blurb: "Best value — for growing apps and mid-size launches.",
     cta: "€100",
     purchasable: true,
     highlight: true,
+    features: [
+      "240 minutes of support",
+      "€0.42 per minute — save ~16% vs Base",
+      "Priority engineer matching",
+      "Credits valid for 12 months",
+    ],
   },
   {
     code: "max",
     name: "Max",
     minutes: 500,
     priceCents: 20000,
-    blurb: "500 minutes of support, valid 12 months.",
+    blurb: "Built for ongoing builds and bigger production teams.",
     cta: "€200",
     purchasable: true,
+    features: [
+      "500 minutes of support",
+      "€0.40 per minute — best per-minute rate",
+      "Priority engineer matching",
+      "Credits valid for 12 months",
+    ],
   },
 ] as const;
 
 export const LAUNCH_PLANS = [
-  { code: "launch_simple",  name: "Simple",  blurb: "Single integration",                          priceLabel: "€1,500" },
-  { code: "launch_medium",  name: "Medium",  blurb: "Multi-system, basic compliance",              priceLabel: "€3,000" },
-  { code: "launch_complex", name: "Complex", blurb: "Regulated · multi-region · high-throughput",  priceLabel: "€5,000" },
+  {
+    code: "launch_simple",
+    name: "Simple",
+    blurb: "Single integration · fixed scope.",
+    priceLabel: "€1,500",
+    suffix: "fixed",
+    features: [
+      "Single integration",
+      "Fixed scope, fixed price",
+      "~2-week delivery",
+    ],
+  },
+  {
+    code: "launch_medium",
+    name: "Medium",
+    blurb: "Multi-system rollout with compliance review.",
+    priceLabel: "€3,000",
+    suffix: "fixed",
+    features: [
+      "Multi-system",
+      "Basic compliance review",
+      "~4-week delivery",
+    ],
+  },
+  {
+    code: "launch_complex",
+    name: "Complex",
+    blurb: "Regulated, multi-region, high-throughput launches.",
+    priceLabel: "€5,000",
+    suffix: "fixed",
+    features: [
+      "Multi-region · regulated",
+      "High-throughput hardening",
+      "Custom delivery plan",
+    ],
+  },
 ] as const;
 
 export const RETAINER = {
-  name: "Monthly retainer",
-  blurb: "Quoted to your needs",
-  priceLabel: "€1K – €8K / mo",
-};
+  code: "retainer",
+  name: "Retainer",
+  blurb: "Same team that launched you keeps it shipping.",
+  priceLabel: "€1K–€8K",
+  suffix: "/ mo",
+  features: [
+    "Monthly retainer",
+    "Same engineers throughout",
+    "Priority response SLA",
+  ],
+} as const;
 
 export type SupportPlanCode = (typeof SUPPORT_PLANS)[number]["code"];
 

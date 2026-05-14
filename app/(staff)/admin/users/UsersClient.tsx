@@ -19,6 +19,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Mail, Trash2, Power, Plus, X } from "lucide-react";
 import { EnterpriseTab } from "./EnterpriseTab";
+import { PodsTab } from "./PodsTab";
 import { formatRole } from "@/lib/relay/role-labels";
 
 type UserRow = {
@@ -32,7 +33,7 @@ type UserRow = {
   createdAt:           string;
 };
 
-type Tab = "staff" | "enterprise";
+type Tab = "staff" | "enterprise" | "pods";
 
 type RoleKey = "engineer" | "pod_lead" | "ops_manager" | "admin";
 
@@ -248,6 +249,8 @@ export function UsersClient({ meEmail }: { meEmail: string }) {
         )}
 
         {tab === "enterprise" && <EnterpriseTab />}
+
+        {tab === "pods" && <PodsTab />}
       </div>
     </main>
   );
@@ -259,6 +262,7 @@ function Tabs({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
   const items: { id: Tab; label: string }[] = [
     { id: "staff",      label: "Internal staff" },
     { id: "enterprise", label: "Enterprise customers" },
+    { id: "pods",       label: "Pods" },
   ];
   return (
     <div className="mb-4 flex gap-1 border-b" style={{ borderColor: "var(--border)" }}>
