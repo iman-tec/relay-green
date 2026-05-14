@@ -22,6 +22,7 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/browser";
 import type { GuestCall, GuestMessage, SessionStatus } from "@/lib/supabase/types";
 import { isTransientNetworkError } from "./transient";
+import { uploadOne, validateStagedFiles } from "./chatAttachments";
 
 function asString(e: unknown): string {
   if (!e) return "Unknown error";
@@ -65,6 +66,9 @@ export type CustomerSessionState = {
   /** Send a message; auto-creates a session if none exists or current is
    *  terminal (cancelled/abandoned). Returns the resolved session id. */
   sendOrStart: (body: string, projectId?: string) => Promise<void>;
+  /** Bundled send: text + up to N files in a single chat bubble.
+   *  Bootstraps a session if needed. */
+  sendBundle: (payload: { text: string; files: File[]; projectId?: string }) => Promise<void>;
 };
 
 const TERMINAL_STATES: SessionStatus[] = ["ended", "abandoned", "cancelled"];
@@ -136,7 +140,10 @@ export function useCustomerSession(): CustomerSessionState {
   // is almost certainly a ghost (browser closed mid-wait, test run, etc.).
   // Silently cancel it so the sidebar doesn't show "Current session / Connecting…"
   // on every page load.
-  const STALE_QUEUED_MS = 10 * 60_000; // 10 minutes
+  // 3 minutes — matches the ConnectingModal's "No answer" boundary. Once
+  // the customer has crossed that line and abandoned (e.g. signed out),
+  // we don't want the next login to inherit the stale queue + modal.
+  const STALE_QUEUED_MS = 3 * 60_000;
 
   const loadExisting = useCallback(async (): Promise<void> => {
     if (auth.kind !== "authed") return;
@@ -172,7 +179,7 @@ export function useCustomerSession(): CustomerSessionState {
       if (row) {
         const { data: msgs } = await sb
           .from("guest_messages")
-          .select("*")
+          .select("*, attachments:guest_message_attachments(*)")
           .eq("guest_call_id", row.id)
           .order("created_at", { ascending: true });
         setMessages((msgs ?? []) as GuestMessage[]);
@@ -300,7 +307,24 @@ export function useCustomerSession(): CustomerSessionState {
         { event: "INSERT", schema: "public", table: "guest_messages", filter: `guest_call_id=eq.${sessionId}` },
         (payload) => {
           const m = payload.new as GuestMessage;
+          // The realtime payload only carries the parent row. If the
+          // message has attachments, the child rows were inserted in a
+          // follow-up batch — pull them so the bubble renders correctly.
           setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]));
+          void (async () => {
+            const { data } = await sb
+              .from("guest_message_attachments")
+              .select("*")
+              .eq("message_id", m.id);
+            if (!data || data.length === 0) return;
+            setMessages((prev) =>
+              prev.map((x) =>
+                x.id === m.id
+                  ? { ...x, attachments: data as GuestMessage["attachments"] }
+                  : x,
+              ),
+            );
+          })();
         },
       )
       .subscribe();
@@ -405,6 +429,74 @@ export function useCustomerSession(): CustomerSessionState {
     if (e) setError(e.message);
   }, [session, startNewSession]);
 
+  /** Bundled send: text + 0..N attachments arrive as a single chat bubble.
+   *  Bootstraps a session if needed (mirrors sendOrStart), uploads each
+   *  file to storage, inserts the parent message row, then inserts the
+   *  child attachment rows. */
+  const sendBundle = useCallback(
+    async (payload: { text: string; files: File[]; projectId?: string }) => {
+      const text = payload.text.trim();
+      if (!text && payload.files.length === 0) return;
+
+      const validation = validateStagedFiles(payload.files);
+      if (!validation.ok) {
+        setError(validation.error);
+        setTimeout(() => setError(null), 4000);
+        return;
+      }
+
+      const sb = supabaseRef.current;
+      let s = session;
+      if (!s || TERMINAL_STATES.includes(s.status)) {
+        s = await startNewSession(payload.projectId);
+      }
+      if (!s) return;
+
+      try {
+        const uploaded = await Promise.all(
+          validation.classified.map((c) =>
+            uploadOne({ sb, sessionId: s!.id, file: c.file, kind: c.kind }),
+          ),
+        );
+
+        const { data: msgRow, error: mErr } = await sb
+          .from("guest_messages")
+          .insert({
+            guest_call_id: s.id,
+            sender_kind: "guest",
+            sender_name: s.guest_name,
+            body: text ? text : null,
+          })
+          .select()
+          .single();
+        if (mErr || !msgRow) {
+          setError(mErr?.message ?? "Send failed.");
+          return;
+        }
+
+        if (uploaded.length > 0) {
+          const rows = uploaded.map((u) => ({
+            message_id: (msgRow as GuestMessage).id,
+            path: u.path,
+            name: u.name,
+            mime: u.mime,
+            size_bytes: u.size,
+            kind: u.kind,
+          }));
+          const { error: aErr } = await sb
+            .from("guest_message_attachments")
+            .insert(rows);
+          if (aErr) {
+            setError(aErr.message);
+          }
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Send failed.");
+      }
+    },
+    [session, startNewSession],
+  );
+
   // Memoize the refresh closure so its identity stays stable across renders
   // (loadExisting is stable thanks to its own useCallback).
   const refresh = useCallback(async () => { await loadExisting(); }, [loadExisting]);
@@ -427,8 +519,9 @@ export function useCustomerSession(): CustomerSessionState {
     refresh,
     startNewSession,
     sendOrStart,
+    sendBundle,
   }), [
     auth, session, messages, entitlement, loading, error,
-    recall, cancel, end, markJoined, sendMessage, refresh, startNewSession, sendOrStart,
+    recall, cancel, end, markJoined, sendMessage, refresh, startNewSession, sendOrStart, sendBundle,
   ]);
 }

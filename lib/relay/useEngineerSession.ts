@@ -11,6 +11,7 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/browser";
 import type { GuestCall, GuestMessage } from "@/lib/supabase/types";
 import { isTransientNetworkError } from "./transient";
+import { uploadOne, validateStagedFiles } from "./chatAttachments";
 
 function asString(e: unknown): string {
   if (!e) return "Unknown error";
@@ -28,6 +29,7 @@ export type EngineerSessionState = {
   loading: boolean;
   error: string | null;
   sendMessage: (body: string) => Promise<void>;
+  sendBundle:  (payload: { text: string; files: File[] }) => Promise<void>;
   end: (reason?: string) => Promise<void>;
   release: () => Promise<void>;
   markJoined: () => Promise<void>;
@@ -59,7 +61,10 @@ export function useEngineerSession(sessionId: string): EngineerSessionState {
         sb.auth.getUser().catch(() => ({ data: { user: null } })),
         sb.from("guest_calls").select("*").eq("id", sessionId).maybeSingle()
           .then((r) => r, (e) => ({ data: null, error: e })),
-        sb.from("guest_messages").select("*").eq("guest_call_id", sessionId).order("created_at")
+        sb.from("guest_messages")
+          .select("*, attachments:guest_message_attachments(*)")
+          .eq("guest_call_id", sessionId)
+          .order("created_at")
           .then((r) => r, (e) => ({ data: null, error: e })),
       ]);
       setViewerUserId(userRes.data.user?.id ?? null);
@@ -104,6 +109,20 @@ export function useEngineerSession(sessionId: string): EngineerSessionState {
         (p) => {
           const m = p.new as GuestMessage;
           setMessages((prev) => prev.some((x) => x.id === m.id) ? prev : [...prev, m]);
+          // Hydrate attachments (if any) on the next tick — realtime only
+          // carries the parent row.
+          void (async () => {
+            const { data } = await sb
+              .from("guest_message_attachments")
+              .select("*")
+              .eq("message_id", m.id);
+            if (!data || data.length === 0) return;
+            setMessages((prev) =>
+              prev.map((x) =>
+                x.id === m.id ? { ...x, attachments: data as GuestMessage["attachments"] } : x,
+              ),
+            );
+          })();
         })
       .subscribe();
     channelRef.current = ch;
@@ -125,6 +144,66 @@ export function useEngineerSession(sessionId: string): EngineerSessionState {
     });
     if (e) setError(e.message);
   }, [session, sessionId]);
+
+  /** Bundled send: text + 0..N attachments as a single chat bubble. */
+  const sendBundle = useCallback(
+    async (payload: { text: string; files: File[] }) => {
+      const text = payload.text.trim();
+      if (!session) return;
+      if (["ended", "abandoned", "cancelled"].includes(session.status)) {
+        setError("This session has ended.");
+        return;
+      }
+      if (!text && payload.files.length === 0) return;
+
+      const validation = validateStagedFiles(payload.files);
+      if (!validation.ok) {
+        setError(validation.error);
+        setTimeout(() => setError(null), 4000);
+        return;
+      }
+
+      const sb = supabaseRef.current;
+      try {
+        const uploaded = await Promise.all(
+          validation.classified.map((c) =>
+            uploadOne({ sb, sessionId, file: c.file, kind: c.kind }),
+          ),
+        );
+        const { data: msgRow, error: mErr } = await sb
+          .from("guest_messages")
+          .insert({
+            guest_call_id: sessionId,
+            sender_kind: "engineer",
+            sender_name: session.agent_name ?? "Engineer",
+            body: text ? text : null,
+          })
+          .select()
+          .single();
+        if (mErr || !msgRow) {
+          setError(mErr?.message ?? "Send failed.");
+          return;
+        }
+        if (uploaded.length > 0) {
+          const rows = uploaded.map((u) => ({
+            message_id: (msgRow as GuestMessage).id,
+            path: u.path,
+            name: u.name,
+            mime: u.mime,
+            size_bytes: u.size,
+            kind: u.kind,
+          }));
+          const { error: aErr } = await sb
+            .from("guest_message_attachments")
+            .insert(rows);
+          if (aErr) setError(aErr.message);
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Send failed.");
+      }
+    },
+    [session, sessionId],
+  );
 
   const end = useCallback(async (reason = "engineer_ended") => {
     const sb = supabaseRef.current;
@@ -152,7 +231,7 @@ export function useEngineerSession(sessionId: string): EngineerSessionState {
 
   return {
     session, messages, loading, error,
-    sendMessage, end, release, markJoined, refresh,
+    sendMessage, sendBundle, end, release, markJoined, refresh,
     viewerUserId, isAssignedEngineer,
   };
 }

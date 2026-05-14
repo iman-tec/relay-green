@@ -59,6 +59,7 @@ CREATE POLICY "Staff read customer_summaries" ON public.customer_summaries
 -- we deliberately don't grant INSERT/UPDATE to authenticated. RLS bypasses
 -- for service role automatically.
 
+DROP TRIGGER IF EXISTS customer_summaries_set_updated_at ON public.customer_summaries;
 CREATE TRIGGER customer_summaries_set_updated_at
   BEFORE UPDATE ON public.customer_summaries
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();

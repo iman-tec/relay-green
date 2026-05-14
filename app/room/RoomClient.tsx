@@ -28,12 +28,14 @@ import {
 import {
   Plus, Send, Sparkles, Phone, X, PhoneOff, MessageSquare, Lock,
   AlertTriangle, Loader2, ChevronDown, ChevronRight, Search, PanelLeftClose, PanelLeftOpen,
-  Wallet, RefreshCw, Settings, LogOut, Check, Folder, PanelRightOpen, PanelRightClose,
+  Wallet, RefreshCw, Settings, LogOut, Check, Folder, Pencil, PanelRightOpen, PanelRightClose,
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { MeetingChatEntry } from "@/app/_components/MeetingChatEntry";
 import { MeetingSummaryEntry, isAiSummaryMessageBody } from "@/app/_components/MeetingSummaryEntry";
 import { PaywallModal } from "@/app/_components/PaywallModal";
+import { ChatComposer } from "@/app/_components/ChatComposer";
+import { MessageAttachments } from "@/app/_components/MessageAttachments";
 import { useCustomerSession } from "@/lib/relay/useCustomerSession";
 import { useSessionTimer } from "@/lib/relay/useSessionTimer";
 import { createClient } from "@/lib/supabase/browser";
@@ -402,8 +404,10 @@ export function RoomClient() {
     if (projectId) {
       void startSessionInProject({ existingId: projectId });
     } else {
-      // null = General bucket → open the picker so user can name a project.
-      setProjectFormOpen(true);
+      // Skip the picker — start a session in a default "project" right
+      // away. The customer renames it from inside the ConnectingModal
+      // while the timer is running.
+      void startSessionInProject({ newName: "project" });
     }
   }, [state.entitlement, startSessionInProject]);
 
@@ -435,8 +439,11 @@ export function RoomClient() {
     }
     setViewingPastId(null);
     setPendingDraft(null);
-    setProjectFormOpen(true);
-  }, [freeConsumed, paidRemaining]);
+    // Start the session immediately with a project named after the
+    // customer. They rename it from inside the ConnectingModal while the
+    // engineer is being matched.
+    void startSessionInProject({ newName: "project" });
+  }, [freeConsumed, paidRemaining, startSessionInProject]);
 
   // Recharge / "see plans" handler. Always opens the paywall — even when
   // the user has credits — so the Recharge button in the profile menu is
@@ -448,10 +455,22 @@ export function RoomClient() {
   const handleCloseViewPast = useCallback(() => setViewingPastId(null), []);
   const handleNeedsCredits  = useCallback(() => setPaywallOpen("no_credits"), []);
   const handleProjectCancel = useCallback(() => setProjectFormOpen(false), []);
+  const handleRenameProject = useCallback(async (projectId: string, newName: string) => {
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+    const sb = createClient();
+    await sb.from("projects").update({ name: trimmed }).eq("id", projectId);
+    // Mirror the rename onto any in-flight session row so the chat header,
+    // sidebar count, and finance feed all see the same name.
+    await sb.from("guest_calls").update({ project_name: trimmed }).eq("project_id", projectId);
+    await refetchProjects();
+  }, [refetchProjects]);
   const handleNeedProject   = useCallback((draft: string) => {
+    // Composer typed-then-send before any session existed. Carry the draft
+    // forward and start a session in a project named after the customer.
     setPendingDraft(draft);
-    setProjectFormOpen(true);
-  }, []);
+    void startSessionInProject({ newName: "project" });
+  }, [startSessionInProject]);
 
   // Only show the full-screen loader on the very first load.
   // After initialLoadDone = true, session creation happens while the project
@@ -475,6 +494,7 @@ export function RoomClient() {
         onViewPast={handleViewPast}
         onNewSession={handleNewSession}
         onStartInProject={handleStartInProject}
+        onRenameProject={handleRenameProject}
         onSelectProject={handleSelectProject}
         onWalletClick={handleWalletClick}
       />
@@ -511,7 +531,12 @@ export function RoomClient() {
 
       {/* Overlays */}
       {state.session?.status === "queued" && (
-        <ConnectingModal session={state.session} onRecall={state.recall} onCancel={state.cancel} />
+        <ConnectingModal
+          session={state.session}
+          onRecall={state.recall}
+          projects={projects}
+          onProjectsChanged={refetchProjects}
+        />
       )}
       {state.session && shouldShowEngineerAssigned(state.session) && !accepted && (
         <EngineerAssignedModal
@@ -992,9 +1017,9 @@ function ReadOnlyChatPane({ messages }: { messages: GuestMessage[] }) {
     const queue: GuestMessage[] = [];
     for (const m of messages) {
       if (m.sender_kind !== "system") continue;
-      if (m.body.includes("Zoom meeting started")) {
+      if ((m.body ?? "").includes("Zoom meeting started")) {
         queue.push(m);
-      } else if (m.body.includes("Zoom meeting ended")) {
+      } else if ((m.body ?? "").includes("Zoom meeting ended")) {
         const start = queue.shift();
         if (start) {
           meetingEnded.set(start.id, m);
@@ -1015,7 +1040,7 @@ function ReadOnlyChatPane({ messages }: { messages: GuestMessage[] }) {
           ) : (
             <div className="space-y-3">
               {messages.flatMap((m) => {
-                if (m.sender_kind === "system" && m.body.includes("Zoom meeting started")) {
+                if (m.sender_kind === "system" && (m.body ?? "").includes("Zoom meeting started")) {
                   const ended = meetingEnded.get(m.id) ?? null;
                   const durationSec = ended
                     ? Math.floor((new Date(ended.created_at).getTime() - new Date(m.created_at).getTime()) / 1000)
@@ -1480,7 +1505,7 @@ type ProjectGroup = {
 
 const Sidebar = memo(function Sidebar({
   email, customerUserId, session, entitlement, viewingPastId, projects,
-  selectedProjectId, onViewPast, onNewSession, onStartInProject, onSelectProject, onWalletClick,
+  selectedProjectId, onViewPast, onNewSession, onStartInProject, onRenameProject, onSelectProject, onWalletClick,
 }: {
   email: string;
   customerUserId: string | null;
@@ -1498,6 +1523,9 @@ const Sidebar = memo(function Sidebar({
   /** Inline "+" inside a project row — starts a session bound to that
    *  exact project, skipping the picker. */
   onStartInProject: (projectId: string | null) => void;
+  /** Inline rename on a project row. Updates projects.name + any active
+   *  guest_calls.project_name in flight. */
+  onRenameProject: (projectId: string, newName: string) => Promise<void>;
   /** Click on a project header — toggle that project as the current
    *  context for the no-session landing. Same id toggles off. */
   onSelectProject: (projectId: string | null) => void;
@@ -1842,6 +1870,7 @@ const Sidebar = memo(function Sidebar({
                 selectedProjectId={selectedProjectId}
                 onViewPast={onViewPast}
                 onStartInProject={onStartInProject}
+                onRenameProject={onRenameProject}
                 onSelectProject={onSelectProject}
               />
             ))
@@ -2103,7 +2132,7 @@ function fmtRelDate(d: Date): string {
 // ── Project accordion (collapsible group in the sidebar) ───────────────────
 const ProjectAccordion = memo(function ProjectAccordion({
   group, viewingPastId, currentSessionId, selectedProjectId,
-  onViewPast, onStartInProject, onSelectProject,
+  onViewPast, onStartInProject, onRenameProject, onSelectProject,
 }: {
   group: ProjectGroup;
   viewingPastId: string | null;
@@ -2118,15 +2147,35 @@ const ProjectAccordion = memo(function ProjectAccordion({
   /** Called when the user clicks "+ Start session in this project". null
    *  is passed for the General bucket (no project id). */
   onStartInProject: (projectId: string | null) => void;
+  onRenameProject: (projectId: string, newName: string) => Promise<void>;
   /** Click on the project header → toggle this project as the landing
    *  CTA context. Not invoked for the General bucket. */
   onSelectProject: (projectId: string | null) => void;
 }) {
   const [open, setOpen] = useState(true);
+  const [renaming, setRenaming] = useState(false);
+  const [draftName, setDraftName] = useState(group.name);
+  const [renameBusy, setRenameBusy] = useState(false);
   // The General bucket doesn't have a real project id and can't be
   // "started in" — sessions go there only as a fallback.
   const isGeneral = group.key === "general";
   const isSelected = !isGeneral && selectedProjectId === group.key;
+
+  const commitRename = async () => {
+    const trimmed = draftName.trim();
+    if (!trimmed || trimmed === group.name) {
+      setRenaming(false);
+      setDraftName(group.name);
+      return;
+    }
+    setRenameBusy(true);
+    try {
+      await onRenameProject(group.key, trimmed);
+    } finally {
+      setRenameBusy(false);
+      setRenaming(false);
+    }
+  };
 
   return (
     <div className="mb-1 group/proj">
@@ -2152,12 +2201,33 @@ const ProjectAccordion = memo(function ProjectAccordion({
             }}
           />
           <Folder size={11} style={{ color: isSelected ? BRAND_GREEN : "var(--text-muted)", flexShrink: 0 }} />
-          <span
-            className="min-w-0 flex-1 truncate text-[11px] font-semibold uppercase tracking-[0.08em]"
-            style={{ color: isSelected ? BRAND_GREEN : "var(--text-muted)" }}
-          >
-            {group.name}
-          </span>
+          {renaming && !isGeneral ? (
+            <input
+              autoFocus
+              value={draftName}
+              disabled={renameBusy}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => setDraftName(e.target.value)}
+              onBlur={() => void commitRename()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter")  (e.currentTarget as HTMLInputElement).blur();
+                if (e.key === "Escape") { setRenaming(false); setDraftName(group.name); }
+              }}
+              className="min-w-0 flex-1 rounded-sm border px-1 py-0 text-[11px] font-semibold uppercase tracking-[0.08em] outline-none"
+              style={{
+                borderColor: BRAND_GREEN,
+                backgroundColor: "var(--background)",
+                color: "var(--text)",
+              }}
+            />
+          ) : (
+            <span
+              className="min-w-0 flex-1 truncate text-[11px] font-semibold uppercase tracking-[0.08em]"
+              style={{ color: isSelected ? BRAND_GREEN : "var(--text-muted)" }}
+            >
+              {group.name}
+            </span>
+          )}
           <span
             className="ml-1 shrink-0 rounded-full px-1.5 py-0 text-[9px] tabular-nums"
             style={{
@@ -2168,16 +2238,31 @@ const ProjectAccordion = memo(function ProjectAccordion({
             {group.sessions.length}
           </span>
         </button>
-        {!isGeneral && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onStartInProject(group.key); }}
-            title={`New session in ${group.name}`}
-            aria-label={`New session in ${group.name}`}
-            className="ml-0.5 flex h-6 w-6 items-center justify-center rounded-md opacity-0 transition-opacity hover:bg-black/5 dark:hover:bg-white/5 group-hover/proj:opacity-100 focus:opacity-100"
-            style={{ color: BRAND_GREEN }}
-          >
-            <Plus size={12} />
-          </button>
+        {!isGeneral && !renaming && (
+          <>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setDraftName(group.name);
+                setRenaming(true);
+              }}
+              title={`Rename ${group.name}`}
+              aria-label={`Rename ${group.name}`}
+              className="ml-0.5 flex h-6 w-6 items-center justify-center rounded-md opacity-0 transition-opacity hover:bg-black/5 dark:hover:bg-white/5 group-hover/proj:opacity-100 focus:opacity-100"
+              style={{ color: "var(--text-muted)" }}
+            >
+              <Pencil size={11} />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onStartInProject(group.key); }}
+              title={`New session in ${group.name}`}
+              aria-label={`New session in ${group.name}`}
+              className="ml-0.5 flex h-6 w-6 items-center justify-center rounded-md opacity-0 transition-opacity hover:bg-black/5 dark:hover:bg-white/5 group-hover/proj:opacity-100 focus:opacity-100"
+              style={{ color: BRAND_GREEN }}
+            >
+              <Plus size={12} />
+            </button>
+          </>
         )}
       </div>
 
@@ -2253,35 +2338,24 @@ const ChatPane = memo(function ChatPane({
   state: ReturnType<typeof useCustomerSession>;
   fullWidth?: boolean;
   onNeedsCredits?: () => void;
-  /** Called when the user types and a new session would be created.
-   *  Instead of creating immediately, open the project-name gate. */
+  /** Retained for back-compat with the project-picker path; the current
+   *  flow auto-starts sessions in a default "project" project so this is
+   *  almost never invoked. */
   onNeedProject?: (draft: string) => void;
 }) {
-  const [draft, setDraft] = useState("");
+  void onNeedProject;
   const session = state.session;
-  // Only `ended` is truly read-only (post-call view). cancelled / abandoned
-  // are equivalent to "no session" — the composer shows the project form first.
   const isReadOnly = session?.status === "ended";
 
-  const onSend = async () => {
-    if (!draft.trim()) return;
+  const handleSend = async ({ text, files }: { text: string; files: File[] }) => {
     const wouldCreateNew = !session || ["cancelled", "abandoned", "ended"].includes(session.status);
     const hasFreeLeft = !state.entitlement.free_consumed_at;
     const hasPaidLeft = state.entitlement.paid_minutes_remaining > 0;
-    // No entitlement → paywall
     if (wouldCreateNew && !hasFreeLeft && !hasPaidLeft && onNeedsCredits) {
       onNeedsCredits();
       return;
     }
-    // Would create a new session → show project name form first
-    if (wouldCreateNew && onNeedProject) {
-      onNeedProject(draft.trim());
-      setDraft("");
-      return;
-    }
-    const text = draft.trim();
-    setDraft("");
-    await state.sendOrStart(text);
+    await state.sendBundle({ text, files });
   };
 
   const maxWidth = fullWidth ? "max-w-3xl" : "max-w-none";
@@ -2297,9 +2371,9 @@ const ChatPane = memo(function ChatPane({
     const queue: GuestMessage[] = [];
     for (const m of state.messages) {
       if (m.sender_kind !== "system") continue;
-      if (m.body.includes("Zoom meeting started")) {
+      if ((m.body ?? "").includes("Zoom meeting started")) {
         queue.push(m);
-      } else if (m.body.includes("Zoom meeting ended")) {
+      } else if ((m.body ?? "").includes("Zoom meeting ended")) {
         const start = queue.shift();
         if (start) {
           meetingEnded.set(start.id, m);
@@ -2331,7 +2405,7 @@ const ChatPane = memo(function ChatPane({
           ) : (
             <div className="space-y-3">
               {state.messages.flatMap((m) => {
-                if (m.sender_kind === "system" && m.body.includes("Zoom meeting started")) {
+                if (m.sender_kind === "system" && (m.body ?? "").includes("Zoom meeting started")) {
                   const ended = meetingEnded.get(m.id) ?? null;
                   const durationSec = ended
                     ? Math.floor((new Date(ended.created_at).getTime() - new Date(m.created_at).getTime()) / 1000)
@@ -2362,42 +2436,11 @@ const ChatPane = memo(function ChatPane({
       {/* Composer */}
       <div className="px-4 pb-6 pt-2">
         <div className={`mx-auto w-full ${maxWidth}`}>
-          <div
-            className="relative rounded-2xl border shadow-sm transition-all focus-within:ring-2"
-            style={{
-              borderColor: "var(--border)",
-              backgroundColor: "var(--surface)",
-              ["--tw-ring-color" as string]: BRAND_GREEN_BORDER,
-              opacity: isReadOnly ? 0.55 : 1,
-            }}
-          >
-            <input
-              type="text"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  void onSend();
-                }
-              }}
-              disabled={isReadOnly}
-              placeholder={isReadOnly ? "This session has ended" : "Describe what you're working on…"}
-              className="h-12 w-full rounded-2xl bg-transparent pl-4 pr-12 text-sm outline-none disabled:cursor-not-allowed"
-              style={{ color: "var(--text)" }}
-            />
-            <button
-              onClick={() => void onSend()}
-              disabled={isReadOnly || !draft.trim()}
-              className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-xl disabled:opacity-40"
-              style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
-            >
-              <Send size={14} />
-            </button>
-          </div>
-          <p className="mt-2 text-center text-[10px]" style={{ color: "var(--text-muted)" }}>
-            Press Enter to send · Shift+Enter for new line
-          </p>
+          <ChatComposer
+            disabled={isReadOnly}
+            placeholder={isReadOnly ? "This session has ended" : "Describe what you're working on…"}
+            onSend={handleSend}
+          />
         </div>
       </div>
     </section>
@@ -2416,20 +2459,23 @@ const Message = memo(function Message({ message }: { message: GuestMessage }) {
     );
   }
   const mine = message.sender_kind === "guest";
+  const hasAttachments = !!message.attachments && message.attachments.length > 0;
+  const hasText = !!message.body && message.body.length > 0;
   return (
     <div className={`flex flex-col ${mine ? "items-end" : "items-start"}`}>
       <div className="mb-0.5 px-1 text-[10px]" style={{ color: "var(--text-muted)" }}>
         {message.sender_name ?? (mine ? "You" : "Engineer")}
       </div>
       <div
-        className="max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm whitespace-pre-wrap"
+        className="flex max-w-[85%] flex-col gap-2 rounded-2xl px-3.5 py-2.5 text-sm whitespace-pre-wrap"
         style={
           mine
             ? { backgroundColor: BRAND_GREEN, color: "#fff", borderBottomRightRadius: 4 }
             : { backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)", color: "var(--text)", borderBottomLeftRadius: 4 }
         }
       >
-        {message.body}
+        {hasAttachments && <MessageAttachments attachments={message.attachments} />}
+        {hasText && <div>{message.body}</div>}
       </div>
     </div>
   );
@@ -2607,13 +2653,204 @@ function Resizer() {
   );
 }
 
+// ── Project name editor (inline at the top of ConnectingModal) ─────────────
+function ProjectNameEditor({
+  session, projects, onProjectsChanged,
+}: {
+  session: GuestCall;
+  projects: Project[];
+  onProjectsChanged: () => void | Promise<void>;
+}) {
+  const fallbackName = "project";
+  const initialName  = session.project_name ?? fallbackName;
+
+  const [draft,    setDraft]    = useState<string>(initialName);
+  const [saving,   setSaving]   = useState(false);
+  const [saved,    setSaved]    = useState(false);
+  const [open,     setOpen]     = useState(false);
+  const [hover,    setHover]    = useState<number>(-1);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  // Keep local state in sync if the session row updates (e.g. realtime patch).
+  useEffect(() => {
+    setDraft(session.project_name ?? fallbackName);
+  }, [session.project_name, fallbackName]);
+
+  // Close the suggestion popover when clicking outside.
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [open]);
+
+  // Filtered project suggestions.
+  const suggestions = (() => {
+    const q = draft.trim().toLowerCase();
+    const list = projects
+      // Don't suggest the project the user is already in.
+      .filter((p) => p.id !== session.project_id)
+      .filter((p) => !q || p.name.toLowerCase().includes(q));
+    return list.slice(0, 6);
+  })();
+
+  const flashSaved = () => {
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1200);
+  };
+
+  const saveRename = async (nextName: string) => {
+    const trimmed = nextName.trim() || fallbackName;
+    if (trimmed === (session.project_name ?? "")) return;
+    setSaving(true);
+    try {
+      const sb = createClient();
+      if (session.project_id) {
+        await sb.from("projects").update({ name: trimmed }).eq("id", session.project_id);
+      }
+      await sb.from("guest_calls").update({ project_name: trimmed }).eq("id", session.id);
+      await onProjectsChanged();
+      flashSaved();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const switchToProject = async (projectId: string) => {
+    setSaving(true);
+    try {
+      const sb = createClient();
+      const proj = projects.find((p) => p.id === projectId);
+      await sb
+        .from("guest_calls")
+        .update({ project_id: projectId, project_name: proj?.name ?? null })
+        .eq("id", session.id);
+      setDraft(proj?.name ?? "");
+      flashSaved();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mb-5">
+      <div className="mb-1 flex items-center justify-between">
+        <label className="text-[10px] font-semibold uppercase tracking-[0.15em]"
+          style={{ color: "var(--text-muted)" }}>
+          Project name
+        </label>
+        {saving ? (
+          <Loader2 size={11} className="animate-spin" style={{ color: "var(--text-muted)" }} />
+        ) : saved ? (
+          <span className="text-[10px]" style={{ color: BRAND_GREEN }}>Saved</span>
+        ) : null}
+      </div>
+      <div ref={wrapRef} className="relative">
+        <input
+          type="text"
+          value={draft}
+          autoFocus
+          placeholder={fallbackName}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            if (projects.length > 0) setOpen(true);
+            setHover(-1);
+          }}
+          onFocus={() => {
+            if (projects.length > 0) setOpen(true);
+          }}
+          onBlur={() => {
+            // Delay so a click on a suggestion still registers.
+            setTimeout(() => {
+              if (!wrapRef.current?.contains(document.activeElement)) {
+                setOpen(false);
+                const match = projects.find((p) => p.name === draft.trim());
+                if (match && match.id !== session.project_id) {
+                  void switchToProject(match.id);
+                } else {
+                  void saveRename(draft);
+                }
+              }
+            }, 120);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowDown" && suggestions.length > 0) {
+              e.preventDefault();
+              setOpen(true);
+              setHover((h) => Math.min(h + 1, suggestions.length - 1));
+            } else if (e.key === "ArrowUp" && suggestions.length > 0) {
+              e.preventDefault();
+              setHover((h) => Math.max(h - 1, 0));
+            } else if (e.key === "Enter") {
+              if (open && hover >= 0 && suggestions[hover]) {
+                e.preventDefault();
+                const pick = suggestions[hover];
+                setDraft(pick.name);
+                setOpen(false);
+                void switchToProject(pick.id);
+              } else {
+                (e.currentTarget as HTMLInputElement).blur();
+              }
+            } else if (e.key === "Escape") {
+              setOpen(false);
+            }
+          }}
+          className="w-full rounded-md border px-2.5 py-1.5 text-sm outline-none transition-colors focus:border-[var(--brand-green,#3f5c2e)]"
+          style={{
+            borderColor: "var(--border)",
+            backgroundColor: "var(--background)",
+            color: "var(--text)",
+          }}
+        />
+        {open && suggestions.length > 0 && (
+          <ul
+            className="absolute left-0 right-0 top-[calc(100%+4px)] z-10 max-h-56 overflow-y-auto rounded-md border py-1 shadow-lg"
+            style={{
+              borderColor: "var(--border)",
+              backgroundColor: "var(--surface)",
+            }}
+          >
+            {suggestions.map((p, i) => (
+              <li
+                key={p.id}
+                onMouseEnter={() => setHover(i)}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setDraft(p.name);
+                  setOpen(false);
+                  void switchToProject(p.id);
+                }}
+                className="cursor-pointer px-2.5 py-1.5 text-sm"
+                style={{
+                  backgroundColor: i === hover ? BRAND_GREEN_SOFT : "transparent",
+                  color: "var(--text)",
+                }}
+              >
+                {p.name}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <p className="mt-1 text-[10px]" style={{ color: "var(--text-muted)" }}>
+        {projects.length > 0
+          ? "Type a new name or pick from your previous projects below. You can rename later."
+          : "You can rename this later."}
+      </p>
+    </div>
+  );
+}
+
 // ── Connecting Modal ───────────────────────────────────────────────────────
 function ConnectingModal({
-  session, onRecall, onCancel,
+  session, onRecall, projects, onProjectsChanged,
 }: {
   session: GuestCall;
   onRecall: () => Promise<void>;
-  onCancel: () => Promise<void>;
+  projects: Project[];
+  onProjectsChanged: () => void | Promise<void>;
 }) {
   // Anchor the 3-min countdown to the most recent of created_at /
   // last_recall_at. That way clicking "Call again" naturally restarts the
@@ -2663,11 +2900,15 @@ function ConnectingModal({
       style={{ backgroundColor: "rgba(0, 0, 0, 0.55)", backdropFilter: "blur(4px)" }}>
       <div className="relative w-full max-w-sm rounded-2xl border p-8 shadow-xl"
         style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
-        <button onClick={() => void onCancel()} aria-label="Cancel"
-          className="absolute right-4 top-4 opacity-50 transition-opacity hover:opacity-100"
-          style={{ color: "var(--text-muted)" }} title="Cancel">
-          <X size={16} />
-        </button>
+
+        {/* Project name editor — visible while the customer waits.
+            Returning customers get a dropdown of their existing projects
+            plus a "New project…" option. */}
+        <ProjectNameEditor
+          session={session}
+          projects={projects}
+          onProjectsChanged={onProjectsChanged}
+        />
 
         {session.urgency !== "normal" && (
           <div className="mb-4 flex items-center justify-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"

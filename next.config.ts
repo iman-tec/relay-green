@@ -1,6 +1,13 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Pin the workspace root so a stray package-lock.json one directory up
+  // (e.g. in a Claude Code worktree parent) doesn't fool Next/Turbopack
+  // into picking the wrong dir and serving 404s for every app/* route.
+  // "." resolves relative to this file's location.
+  turbopack: {
+    root: ".",
+  },
   // Dev server runs on https://10.0.1.207:3000 only — both schemes whitelisted
   // (the http variants stay so a stray http:// link doesn't 403 the asset
   // even though every page redirects to https).

@@ -27,6 +27,8 @@ import {
 import { Wordmark } from "@/app/_components/Wordmark";
 import { MeetingChatEntry } from "@/app/_components/MeetingChatEntry";
 import { MeetingSummaryEntry, isAiSummaryMessageBody } from "@/app/_components/MeetingSummaryEntry";
+import { ChatComposer } from "@/app/_components/ChatComposer";
+import { MessageAttachments } from "@/app/_components/MessageAttachments";
 import { createClient } from "@/lib/supabase/browser";
 import { useEngineerSession } from "@/lib/relay/useEngineerSession";
 import { useSessionTimer } from "@/lib/relay/useSessionTimer";
@@ -776,7 +778,6 @@ function ChatPane({
   fullWidth?: boolean;
   readOnly?: boolean;            // monitor mode — hide composer entirely
 }) {
-  const [draft, setDraft] = useState("");
   const session = state.session!;
   const isReadOnly = readOnly || session.status === "ended";
   const maxW = fullWidth ? "max-w-3xl" : "max-w-none";
@@ -787,13 +788,6 @@ function ChatPane({
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [state.messages.length]);
-
-  const onSend = async () => {
-    if (!draft.trim()) return;
-    const text = draft.trim();
-    setDraft("");
-    await state.sendMessage(text);
-  };
 
   // Engineer-only handler that mints a Zoom meeting via the edge function.
   // Used for the first-time mint and for restart after a previous meeting
@@ -849,9 +843,9 @@ function ChatPane({
   const lastZoomEvent = [...state.messages].reverse().find(
     (m) =>
       m.sender_kind === "system" &&
-      (m.body.includes("Zoom meeting ended") || m.body.includes("Zoom meeting started")),
+      ((m.body ?? "").includes("Zoom meeting ended") || (m.body ?? "").includes("Zoom meeting started")),
   );
-  const zoomEnded = !!lastZoomEvent && lastZoomEvent.body.includes("Zoom meeting ended");
+  const zoomEnded = !!lastZoomEvent && (lastZoomEvent.body ?? "").includes("Zoom meeting ended");
 
   // Composer-level start/restart affordance. Hidden when there's already an
   // active Zoom meeting (mint would be a no-op then) and in monitor mode.
@@ -871,9 +865,9 @@ function ChatPane({
     const queue: GuestMessage[] = [];
     for (const m of state.messages) {
       if (m.sender_kind !== "system") continue;
-      if (m.body.includes("Zoom meeting started")) {
+      if ((m.body ?? "").includes("Zoom meeting started")) {
         queue.push(m);
-      } else if (m.body.includes("Zoom meeting ended")) {
+      } else if ((m.body ?? "").includes("Zoom meeting ended")) {
         const start = queue.shift();
         if (start) {
           meetingEnded.set(start.id, m);
@@ -897,7 +891,7 @@ function ChatPane({
           ) : (
             <div className="space-y-3">
               {state.messages.flatMap((m) => {
-                if (m.sender_kind === "system" && m.body.includes("Zoom meeting started")) {
+                if (m.sender_kind === "system" && (m.body ?? "").includes("Zoom meeting started")) {
                   const ended = meetingEnded.get(m.id) ?? null;
                   const durationSec = ended
                     ? Math.floor((new Date(ended.created_at).getTime() - new Date(m.created_at).getTime()) / 1000)
@@ -957,59 +951,31 @@ function ChatPane({
           )}
           {/* Composer — hidden entirely in monitor (read-only) mode */}
           {!readOnly ? (
-            <div
-              className="relative rounded-2xl border shadow-sm transition-all focus-within:ring-2"
-              style={{
-                borderColor: "var(--border)",
-                backgroundColor: "var(--surface)",
-                ["--tw-ring-color" as string]: BRAND_GREEN_BORDER,
-                opacity: isReadOnly ? 0.55 : 1,
-              }}
-            >
-              <input
-                type="text"
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void onSend(); }
-                }}
-                disabled={isReadOnly}
-                placeholder={isReadOnly ? "Session ended" : `Message ${session.guest_name}…`}
-                className={`h-12 w-full rounded-2xl bg-transparent pl-4 text-sm outline-none disabled:cursor-not-allowed ${
-                  // Reserve room on the right for the Send button alone, or
-                  // Send + Start-meeting when the engineer can mint a new call.
-                  showStartMeetingButton ? "pr-24" : "pr-12"
-                }`}
-                style={{ color: "var(--text)" }}
-              />
-              {/* Start-meeting button — only when there's no active Zoom
-                  meeting OR the latest one ended. Mint is idempotent for
-                  an active meeting so hiding it then keeps the composer
-                  uncluttered and avoids confusing no-op clicks. */}
-              {showStartMeetingButton ? (
+            <div className="flex flex-col gap-2">
+              {showStartMeetingButton && (
                 <button
                   type="button"
                   onClick={() => void handleStartMeeting()}
                   disabled={isReadOnly || minting}
                   title={session.zoom_meeting_id ? "Start a new Zoom meeting" : "Start a Zoom meeting"}
-                  className="absolute right-12 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-xl border transition-colors disabled:opacity-50"
+                  className="inline-flex items-center justify-center gap-1.5 self-start rounded-full border px-3 py-1.5 text-[12px] font-medium transition-colors disabled:opacity-50"
                   style={{
                     borderColor: BRAND_GREEN_BORDER,
                     backgroundColor: BRAND_GREEN_SOFT,
                     color: BRAND_GREEN,
                   }}
                 >
-                  {minting ? <Loader2 size={14} className="animate-spin" /> : <Video size={14} />}
+                  {minting ? <Loader2 size={12} className="animate-spin" /> : <Video size={12} />}
+                  {session.zoom_meeting_id ? "Start a new Zoom meeting" : "Start Zoom meeting"}
                 </button>
-              ) : null}
-              <button
-                onClick={() => void onSend()}
-                disabled={isReadOnly || !draft.trim()}
-                className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-xl disabled:opacity-40"
-                style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
-              >
-                <Send size={14} />
-              </button>
+              )}
+              <ChatComposer
+                disabled={isReadOnly}
+                placeholder={isReadOnly ? "Session ended" : `Message ${session.guest_name}…`}
+                onSend={async ({ text, files }) => {
+                  await state.sendBundle({ text, files });
+                }}
+              />
             </div>
           ) : (
             <div
@@ -1038,20 +1004,23 @@ function Message({ message }: { message: GuestMessage }) {
     );
   }
   const mine = message.sender_kind === "engineer";
+  const hasAttachments = !!message.attachments && message.attachments.length > 0;
+  const hasText = !!message.body && message.body.length > 0;
   return (
     <div className={`flex flex-col ${mine ? "items-end" : "items-start"}`}>
       <div className="mb-0.5 px-1 text-[10px]" style={{ color: "var(--text-muted)" }}>
         {message.sender_name ?? (mine ? "You" : "Customer")}
       </div>
       <div
-        className="max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm whitespace-pre-wrap"
+        className="flex max-w-[85%] flex-col gap-2 rounded-2xl px-3.5 py-2.5 text-sm whitespace-pre-wrap"
         style={
           mine
             ? { backgroundColor: BRAND_GREEN, color: "#fff", borderBottomRightRadius: 4 }
             : { backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)", color: "var(--text)", borderBottomLeftRadius: 4 }
         }
       >
-        {message.body}
+        {hasAttachments && <MessageAttachments attachments={message.attachments} />}
+        {hasText && <div>{message.body}</div>}
       </div>
     </div>
   );
