@@ -168,15 +168,42 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Idempotent: return existing meeting info
+    // Idempotency vs. restart: if zoom_meeting_id is still set but the
+    // latest meeting-lifecycle system message in chat is an "ended" one,
+    // the existing meeting is stale — mint a fresh Zoom. Otherwise return
+    // the current meeting as before.
+    let isStale = false;
     if (session.zoom_meeting_id) {
-      return new Response(JSON.stringify({
-        ok: true,
-        zoom_meeting_id: session.zoom_meeting_id,
-        zoom_join_url: session.zoom_join_url,
-        zoom_start_url: session.zoom_start_url,
-        existing: true,
-      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const { data: lastEnd } = await admin
+        .from("guest_messages")
+        .select("created_at")
+        .eq("guest_call_id", sessionId)
+        .eq("sender_kind", "system")
+        .ilike("body", "%Zoom meeting ended%")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const { data: lastStart } = await admin
+        .from("guest_messages")
+        .select("created_at")
+        .eq("guest_call_id", sessionId)
+        .eq("sender_kind", "system")
+        .ilike("body", "%Zoom meeting started%")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (lastEnd) {
+        isStale = !lastStart || new Date(lastEnd.created_at) > new Date(lastStart.created_at);
+      }
+      if (!isStale) {
+        return new Response(JSON.stringify({
+          ok: true,
+          zoom_meeting_id: session.zoom_meeting_id,
+          zoom_join_url: session.zoom_join_url,
+          zoom_start_url: session.zoom_start_url,
+          existing: true,
+        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
     }
 
     // Mint new meeting
@@ -227,12 +254,24 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Post a "Zoom meeting started" system message into the chat. The
+    // client-side card tracks the latest started-vs-ended event to decide
+    // whether to show "Join meeting" or "Meeting ended". The first-ever
+    // mint posts this too so the same logic works for the initial call.
+    await admin.from("guest_messages").insert({
+      guest_call_id: sessionId,
+      sender_kind: "system",
+      sender_name: "Relay",
+      body: isStale ? "📞 New Zoom meeting started" : "📞 Zoom meeting started",
+    });
+
     return new Response(JSON.stringify({
       ok: true,
       zoom_meeting_id: String(z.id),
       zoom_join_url: z.join_url,
       zoom_start_url: z.start_url,
       existing: false,
+      restarted: isStale,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";

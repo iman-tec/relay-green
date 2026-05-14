@@ -79,8 +79,64 @@ async function handleMeetingStarted(payload: any) {
 async function handleMeetingEnded(payload: any) {
   const obj = payload.object ?? {};
   const zoomId = String(obj.id ?? "");
-  if (!zoomId) return;
+  console.log("[meeting.ended] received — zoomId:", JSON.stringify(zoomId), "uuid:", obj.uuid);
+  if (!zoomId) {
+    console.log("[meeting.ended] empty zoomId, aborting");
+    return;
+  }
 
+  // Path A — anonymous guest sessions. The Relay session keeps running
+  // (chat continues, free/paid timer keeps ticking); we just notify the
+  // chat so the join card flips to "Meeting ended". Session status is
+  // intentionally NOT changed here — that's owned by the engineer's End
+  // button and the free/paid timer expiry.
+  const { data: gc, error: gcErr } = await admin()
+    .from("guest_calls")
+    .select("id")
+    .eq("zoom_meeting_id", zoomId)
+    .maybeSingle();
+  if (gcErr) console.error("[meeting.ended] guest_calls lookup error:", gcErr);
+  console.log("[meeting.ended] guest_calls match:", gc ? gc.id : "NONE");
+  if (gc) {
+    // Dedupe — if Zoom retries the webhook delivery, only emit one banner
+    // per "live → ended" transition. Once the engineer restarts, mint posts
+    // a fresh "started" message so subsequent "ended" events fall through
+    // this check (the previous "ended" is older than the new "started").
+    const { data: lastStart } = await admin()
+      .from("guest_messages")
+      .select("created_at")
+      .eq("guest_call_id", gc.id)
+      .eq("sender_kind", "system")
+      .ilike("body", "%Zoom meeting started%")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const { data: lastEnd } = await admin()
+      .from("guest_messages")
+      .select("created_at")
+      .eq("guest_call_id", gc.id)
+      .eq("sender_kind", "system")
+      .ilike("body", "%Zoom meeting ended%")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const alreadyEnded = !!lastEnd && (!lastStart || new Date(lastEnd.created_at) > new Date(lastStart.created_at));
+    if (!alreadyEnded) {
+      const { error: insErr } = await admin().from("guest_messages").insert({
+        guest_call_id: gc.id,
+        sender_kind: "system",
+        sender_name: "Relay",
+        body: "📞 Zoom meeting ended",
+      });
+      if (insErr) console.error("[meeting.ended] insert system message failed:", insErr);
+      else console.log("[meeting.ended] system message inserted for gc", gc.id);
+    } else {
+      console.log("[meeting.ended] already ended since last start, skipping");
+    }
+    return;
+  }
+
+  // Path B — logged-in request flow (call_sessions / billing).
   const { data: session } = await admin()
     .from("call_sessions")
     .select("*")
@@ -278,22 +334,20 @@ async function handleSummaryCompleted(payload: any) {
   const details = obj.summary_details ?? obj.summary ?? null;
   const nextSteps = obj.next_steps ?? null;
 
-  // Path A: anonymous guest sessions — also refresh rolling brief
+  // Path A: anonymous guest sessions.
+  //
+  // We deliberately do NOT touch guest_calls.ai_summary_* here — those are
+  // owned by the session-level summary (summarize-guest-call → OpenAI),
+  // which runs once at session end and aggregates across every call. The
+  // per-call summary from Zoom AI Companion lives as a system chat message
+  // so each call's summary is preserved in the timeline, not overwritten
+  // on the session row.
   const { data: gc } = await admin()
     .from("guest_calls")
     .select("id, thread_id")
     .eq("zoom_meeting_id", zoomId)
     .maybeSingle();
   if (gc) {
-    await admin()
-      .from("guest_calls")
-      .update({
-        ai_summary_title: title,
-        ai_summary_overview: overview,
-        ai_next_steps: nextSteps,
-      })
-      .eq("id", gc.id);
-
     const lines: string[] = ["🤖 AI Companion summary"];
     if (title) lines.push(title);
     if (overview) lines.push(overview);
