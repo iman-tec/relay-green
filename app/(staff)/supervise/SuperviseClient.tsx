@@ -23,7 +23,10 @@ const URGENT_AMBER_SOFT = "rgba(198, 102, 69, 0.14)";
 const CRIT_RED = "#c8553d";
 const CRIT_RED_SOFT = "rgba(200, 85, 61, 0.18)";
 
-const ACTIVE_STATES = ["queued", "assigned", "joining", "live", "grace"];
+const ACTIVE_STATES  = ["queued", "assigned", "joining", "live", "grace"];
+const LIVE_STATES    = new Set(["live", "joining", "grace"]);
+const WAITING_STATES = new Set(["queued", "assigned"]);
+const PAST_STATES    = ["ended", "cancelled", "abandoned"];
 
 // Per-session AI health snapshot, merged onto GuestCall in the card grid.
 // Sourced from latest_session_health (DISTINCT ON session_id) — one row
@@ -41,9 +44,13 @@ type SessionWithHealth = GuestCall & { health?: HealthSnapshot };
 // (most conversations happen on Zoom voice, not chat).
 const MIN_MESSAGES_FOR_AI = 2;
 
+type Tab = "live" | "waiting" | "past";
+
 export function SuperviseClient() {
   const [sessions, setSessions] = useState<SessionWithHealth[]>([]);
+  const [pastSessions, setPastSessions] = useState<SessionWithHealth[]>([]);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<Tab>("live");
   const [, setTick] = useState(0);
   const supabaseRef = useRef(createClient());
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -58,21 +65,30 @@ export function SuperviseClient() {
     //   super_admin  → everything (no filter)
     // The hook for that filter lives right here: add a .eq("pod_id", …)
     // or join-with-engineer_pods once that schema exists.
-    const { data } = await sb.from("guest_calls").select("*")
-      .in("status", ACTIVE_STATES)
-      .order("created_at", { ascending: false })
-      .limit(100);
-    const rows = (data as GuestCall[]) ?? [];
+    const [liveRes, pastRes] = await Promise.all([
+      sb.from("guest_calls").select("*")
+        .in("status", ACTIVE_STATES)
+        .order("created_at", { ascending: false })
+        .limit(100),
+      sb.from("guest_calls").select("*")
+        .in("status", PAST_STATES)
+        .order("ended_at", { ascending: false, nullsFirst: false })
+        .limit(24),
+    ]);
+    const rows     = (liveRes.data as GuestCall[]) ?? [];
+    const pastRows = (pastRes.data as GuestCall[]) ?? [];
 
-    // Pull the latest AI health snapshot for each visible session in
-    // one round-trip. Missing rows just mean "not scored yet" — the
-    // card falls back to deterministic colour via deriveHealth.
+    // Pull the latest AI health snapshot for every visible session (live
+    // + past) in one round-trip. Missing rows just mean "not scored yet"
+    // — the live card falls back to deterministic colour via deriveHealth;
+    // past cards stay neutral grey when there's no post-session score.
+    const allIds = [...rows.map((s) => s.id), ...pastRows.map((s) => s.id)];
     let healthMap = new Map<string, HealthSnapshot>();
-    if (rows.length > 0) {
+    if (allIds.length > 0) {
       const { data: healths } = await sb
         .from("latest_session_health")
         .select("session_id, score, summary, computed_at, message_count")
-        .in("session_id", rows.map((s) => s.id));
+        .in("session_id", allIds);
       healthMap = new Map(
         (healths ?? []).map((h: { session_id: string; score: number; summary: string; computed_at: string; message_count?: number }) =>
           [h.session_id, {
@@ -86,6 +102,7 @@ export function SuperviseClient() {
     }
 
     setSessions(rows.map((s) => ({ ...s, health: healthMap.get(s.id) })));
+    setPastSessions(pastRows.map((s) => ({ ...s, health: healthMap.get(s.id) })));
     setLoading(false);
   };
 
@@ -160,24 +177,24 @@ export function SuperviseClient() {
         </div>
       </div>
 
+      {/* Tabs: Live · Waiting · Past */}
+      <Tabs tab={tab} setTab={setTab} counts={{
+        live:    sessions.filter((s) => LIVE_STATES.has(s.status)).length,
+        waiting: sessions.filter((s) => WAITING_STATES.has(s.status)).length,
+        past:    pastSessions.length,
+      }} />
+
       {loading ? (
         <div className="flex justify-center py-16">
           <Loader2 size={20} className="animate-spin" style={{ color: BRAND_GREEN }} />
         </div>
-      ) : sessions.length === 0 ? (
-        <div
-          className="rounded-xl border border-dashed px-6 py-16 text-center"
-          style={{ borderColor: "var(--border)" }}
-        >
-          <p className="text-sm font-medium" style={{ color: "var(--text)" }}>All quiet</p>
-          <p className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
-            No active sessions in your org. New activity appears here in real time.
-          </p>
-        </div>
       ) : (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-          {sessions.map((s) => <SessionTile key={s.id} session={s} />)}
-        </div>
+        <TabPanel
+          tab={tab}
+          liveSessions={sessions.filter((s) => LIVE_STATES.has(s.status))}
+          waitingSessions={sessions.filter((s) => WAITING_STATES.has(s.status))}
+          pastSessions={pastSessions}
+        />
       )}
     </div>
   );
@@ -384,6 +401,205 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
     <div>
       <div className="text-[10px] uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>{label}</div>
       <div className="text-xs font-medium" style={{ color: "var(--text)" }}>{value}</div>
+    </div>
+  );
+}
+
+// ── Tabs (Live · Waiting · Past) ───────────────────────────────────────────
+function Tabs({
+  tab, setTab, counts,
+}: {
+  tab: Tab;
+  setTab: (t: Tab) => void;
+  counts: Record<Tab, number>;
+}) {
+  return (
+    <div className="flex items-center gap-1 border-b" style={{ borderColor: "var(--border)" }}>
+      {(["live", "waiting", "past"] as const).map((t) => {
+        const active = t === tab;
+        return (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className="relative px-3 py-2 text-sm capitalize transition-colors"
+            style={{
+              color: active ? "var(--text)" : "var(--text-muted)",
+              fontWeight: active ? 600 : 500,
+            }}
+          >
+            {t}
+            <span className="ml-1.5 text-[10px]" style={{ color: "var(--text-muted)" }}>
+              ({counts[t]})
+            </span>
+            {active && (
+              <span
+                aria-hidden
+                className="absolute -bottom-px left-2 right-2 h-[2px] rounded-t-sm"
+                style={{ backgroundColor: BRAND_GREEN }}
+              />
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Tab panel — chooses the right grid for the active tab ─────────────────
+function TabPanel({
+  tab, liveSessions, waitingSessions, pastSessions,
+}: {
+  tab: Tab;
+  liveSessions: SessionWithHealth[];
+  waitingSessions: SessionWithHealth[];
+  pastSessions: SessionWithHealth[];
+}) {
+  if (tab === "past") {
+    if (pastSessions.length === 0) {
+      return <EmptyState title="No history yet" body="Once a session ends, it'll appear here." />;
+    }
+    return (
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+        {pastSessions.map((s) => <PastSessionTile key={s.id} session={s} />)}
+      </div>
+    );
+  }
+  const list = tab === "live" ? liveSessions : waitingSessions;
+  if (list.length === 0) {
+    return tab === "live"
+      ? <EmptyState title="All quiet" body="No active sessions right now. New activity appears here in real time." />
+      : <EmptyState title="Nothing waiting" body="No customers waiting to be picked up." />;
+  }
+  return (
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+      {list.map((s) => <SessionTile key={s.id} session={s} />)}
+    </div>
+  );
+}
+
+function EmptyState({ title, body }: { title: string; body: string }) {
+  return (
+    <div
+      className="rounded-xl border border-dashed px-6 py-16 text-center"
+      style={{ borderColor: "var(--border)" }}
+    >
+      <p className="text-sm font-medium" style={{ color: "var(--text)" }}>{title}</p>
+      <p className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>{body}</p>
+    </div>
+  );
+}
+
+// ── Past session tile ──────────────────────────────────────────────────────
+// Renders a finished session. The colored accent bar reflects the
+// post-completion sentiment score (latest_session_health row written by
+// summarize-guest-call). When no score is available (the LLM bailed or the
+// session ended before summary), we render a neutral grey bar.
+function PastSessionTile({ session }: { session: SessionWithHealth }) {
+  const router = useRouter();
+  const score  = session.health?.score;
+  const hasScore = typeof score === "number" && Number.isFinite(score);
+  // Post-completion thresholds match the live thresholds (±0.3) so the
+  // colour mapping stays consistent across the two grids.
+  const sentiment: Health | "neutral" = !hasScore
+    ? "neutral"
+    : score! >= 0.3 ? "green"
+    : score! > -0.3 ? "amber"
+    : "red";
+  const sentimentLabel =
+    sentiment === "green"   ? "Positive"
+    : sentiment === "amber" ? "Neutral"
+    : sentiment === "red"   ? "Negative"
+    :                          "Not scored";
+
+  const barColor =
+    sentiment === "neutral"
+      ? "color-mix(in srgb, var(--text-muted) 30%, transparent)"
+      : HEALTH_TOKENS[sentiment as Health].bar;
+
+  const ended = session.ended_at ?? session.created_at;
+  const durationMin = session.duration_minutes ?? null;
+
+  const open = () => router.push(`/staff/session/${session.id}`);
+
+  return (
+    <div
+      onClick={open}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } }}
+      className="group relative cursor-pointer overflow-hidden rounded-xl border p-4 transition-colors hover:border-[var(--text-muted)]/40"
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface)",
+      }}
+    >
+      {/* Left accent bar — colour = post-completion sentiment */}
+      <div
+        className="absolute left-0 top-0 h-full w-1"
+        style={{ backgroundColor: barColor }}
+      />
+
+      {/* Header row — pill + score (mirrors SessionTile spacing) */}
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <span
+          className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+          style={{
+            backgroundColor: "color-mix(in srgb, var(--text-muted) 12%, transparent)",
+            color: "var(--text-muted)",
+          }}
+        >
+          {session.status}
+        </span>
+        {hasScore && (
+          <span
+            className="text-[10px] tabular-nums"
+            style={{ color: "var(--text-muted)" }}
+            title={`sentiment score ${score!.toFixed(2)}`}
+          >
+            {(score! >= 0 ? "+" : "")}{score!.toFixed(2)}
+          </span>
+        )}
+      </div>
+
+      {/* Customer (matches SessionTile typography: base + xs) */}
+      <div className="mb-3">
+        <div className="text-base font-semibold" style={{ color: "var(--text)" }}>
+          {session.guest_name || "Customer"}
+        </div>
+        <div className="truncate text-xs" style={{ color: "var(--text-muted)" }}>
+          {session.guest_email || ""}
+        </div>
+      </div>
+
+      <div className="mb-3 grid grid-cols-2 gap-2 border-t pt-3 text-xs" style={{ borderColor: "var(--border)" }}>
+        <Stat label="Ended" value={new Date(ended).toLocaleString(undefined, {
+          month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+        })} />
+        <Stat label="Duration" value={durationMin != null ? `${Math.round(Number(durationMin))} min` : "—"} />
+        <Stat label="Engineer" value={session.agent_name || "—"} />
+        <Stat label="Project" value={session.project_name || "—"} />
+      </div>
+
+      {/* Post-completion sentiment caption */}
+      <div className="rounded-md border px-2.5 py-2 text-[11px] leading-snug"
+        style={{
+          borderColor: sentiment === "neutral"
+            ? "var(--border)"
+            : HEALTH_TOKENS[sentiment as Health].pill_bg,
+          backgroundColor: sentiment === "neutral"
+            ? "color-mix(in srgb, var(--text-muted) 6%, transparent)"
+            : HEALTH_TOKENS[sentiment as Health].pill_bg,
+          color: sentiment === "neutral"
+            ? "var(--text-muted)"
+            : HEALTH_TOKENS[sentiment as Health].pill_fg,
+        }}
+      >
+        <span className="font-semibold uppercase tracking-wide opacity-80">
+          Post-completion · {sentimentLabel}
+          {session.health?.summary ? " — " : ""}
+        </span>
+        {session.health?.summary ?? (hasScore ? "" : "no summary available")}
+      </div>
     </div>
   );
 }

@@ -33,6 +33,8 @@ import {
 import { Wordmark } from "@/app/_components/Wordmark";
 import { MeetingChatEntry } from "@/app/_components/MeetingChatEntry";
 import { PaywallModal } from "@/app/_components/PaywallModal";
+import { ChatComposer } from "@/app/_components/ChatComposer";
+import { MessageAttachments } from "@/app/_components/MessageAttachments";
 import { useCustomerSession } from "@/lib/relay/useCustomerSession";
 import { useSessionTimer } from "@/lib/relay/useSessionTimer";
 import { createClient } from "@/lib/supabase/browser";
@@ -1014,9 +1016,9 @@ function ReadOnlyChatPane({ messages }: { messages: GuestMessage[] }) {
     const queue: GuestMessage[] = [];
     for (const m of messages) {
       if (m.sender_kind !== "system") continue;
-      if (m.body.includes("Zoom meeting started")) {
+      if ((m.body ?? "").includes("Zoom meeting started")) {
         queue.push(m);
-      } else if (m.body.includes("Zoom meeting ended")) {
+      } else if ((m.body ?? "").includes("Zoom meeting ended")) {
         const start = queue.shift();
         if (start) {
           meetingEnded.set(start.id, m);
@@ -1037,7 +1039,7 @@ function ReadOnlyChatPane({ messages }: { messages: GuestMessage[] }) {
           ) : (
             <div className="space-y-3">
               {messages.flatMap((m) => {
-                if (m.sender_kind === "system" && m.body.includes("Zoom meeting started")) {
+                if (m.sender_kind === "system" && (m.body ?? "").includes("Zoom meeting started")) {
                   const ended = meetingEnded.get(m.id) ?? null;
                   const durationSec = ended
                     ? Math.floor((new Date(ended.created_at).getTime() - new Date(m.created_at).getTime()) / 1000)
@@ -2335,35 +2337,24 @@ const ChatPane = memo(function ChatPane({
   state: ReturnType<typeof useCustomerSession>;
   fullWidth?: boolean;
   onNeedsCredits?: () => void;
-  /** Called when the user types and a new session would be created.
-   *  Instead of creating immediately, open the project-name gate. */
+  /** Retained for back-compat with the project-picker path; the current
+   *  flow auto-starts sessions in a default "project" project so this is
+   *  almost never invoked. */
   onNeedProject?: (draft: string) => void;
 }) {
-  const [draft, setDraft] = useState("");
+  void onNeedProject;
   const session = state.session;
-  // Only `ended` is truly read-only (post-call view). cancelled / abandoned
-  // are equivalent to "no session" — the composer shows the project form first.
   const isReadOnly = session?.status === "ended";
 
-  const onSend = async () => {
-    if (!draft.trim()) return;
+  const handleSend = async ({ text, files }: { text: string; files: File[] }) => {
     const wouldCreateNew = !session || ["cancelled", "abandoned", "ended"].includes(session.status);
     const hasFreeLeft = !state.entitlement.free_consumed_at;
     const hasPaidLeft = state.entitlement.paid_minutes_remaining > 0;
-    // No entitlement → paywall
     if (wouldCreateNew && !hasFreeLeft && !hasPaidLeft && onNeedsCredits) {
       onNeedsCredits();
       return;
     }
-    // Would create a new session → show project name form first
-    if (wouldCreateNew && onNeedProject) {
-      onNeedProject(draft.trim());
-      setDraft("");
-      return;
-    }
-    const text = draft.trim();
-    setDraft("");
-    await state.sendOrStart(text);
+    await state.sendBundle({ text, files });
   };
 
   const maxWidth = fullWidth ? "max-w-3xl" : "max-w-none";
@@ -2379,9 +2370,9 @@ const ChatPane = memo(function ChatPane({
     const queue: GuestMessage[] = [];
     for (const m of state.messages) {
       if (m.sender_kind !== "system") continue;
-      if (m.body.includes("Zoom meeting started")) {
+      if ((m.body ?? "").includes("Zoom meeting started")) {
         queue.push(m);
-      } else if (m.body.includes("Zoom meeting ended")) {
+      } else if ((m.body ?? "").includes("Zoom meeting ended")) {
         const start = queue.shift();
         if (start) {
           meetingEnded.set(start.id, m);
@@ -2413,7 +2404,7 @@ const ChatPane = memo(function ChatPane({
           ) : (
             <div className="space-y-3">
               {state.messages.flatMap((m) => {
-                if (m.sender_kind === "system" && m.body.includes("Zoom meeting started")) {
+                if (m.sender_kind === "system" && (m.body ?? "").includes("Zoom meeting started")) {
                   const ended = meetingEnded.get(m.id) ?? null;
                   const durationSec = ended
                     ? Math.floor((new Date(ended.created_at).getTime() - new Date(m.created_at).getTime()) / 1000)
@@ -2441,42 +2432,11 @@ const ChatPane = memo(function ChatPane({
       {/* Composer */}
       <div className="px-4 pb-6 pt-2">
         <div className={`mx-auto w-full ${maxWidth}`}>
-          <div
-            className="relative rounded-2xl border shadow-sm transition-all focus-within:ring-2"
-            style={{
-              borderColor: "var(--border)",
-              backgroundColor: "var(--surface)",
-              ["--tw-ring-color" as string]: BRAND_GREEN_BORDER,
-              opacity: isReadOnly ? 0.55 : 1,
-            }}
-          >
-            <input
-              type="text"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  void onSend();
-                }
-              }}
-              disabled={isReadOnly}
-              placeholder={isReadOnly ? "This session has ended" : "Describe what you're working on…"}
-              className="h-12 w-full rounded-2xl bg-transparent pl-4 pr-12 text-sm outline-none disabled:cursor-not-allowed"
-              style={{ color: "var(--text)" }}
-            />
-            <button
-              onClick={() => void onSend()}
-              disabled={isReadOnly || !draft.trim()}
-              className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-xl disabled:opacity-40"
-              style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
-            >
-              <Send size={14} />
-            </button>
-          </div>
-          <p className="mt-2 text-center text-[10px]" style={{ color: "var(--text-muted)" }}>
-            Press Enter to send · Shift+Enter for new line
-          </p>
+          <ChatComposer
+            disabled={isReadOnly}
+            placeholder={isReadOnly ? "This session has ended" : "Describe what you're working on…"}
+            onSend={handleSend}
+          />
         </div>
       </div>
     </section>
@@ -2495,20 +2455,23 @@ const Message = memo(function Message({ message }: { message: GuestMessage }) {
     );
   }
   const mine = message.sender_kind === "guest";
+  const hasAttachments = !!message.attachments && message.attachments.length > 0;
+  const hasText = !!message.body && message.body.length > 0;
   return (
     <div className={`flex flex-col ${mine ? "items-end" : "items-start"}`}>
       <div className="mb-0.5 px-1 text-[10px]" style={{ color: "var(--text-muted)" }}>
         {message.sender_name ?? (mine ? "You" : "Engineer")}
       </div>
       <div
-        className="max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm whitespace-pre-wrap"
+        className="flex max-w-[85%] flex-col gap-2 rounded-2xl px-3.5 py-2.5 text-sm whitespace-pre-wrap"
         style={
           mine
             ? { backgroundColor: BRAND_GREEN, color: "#fff", borderBottomRightRadius: 4 }
             : { backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)", color: "var(--text)", borderBottomLeftRadius: 4 }
         }
       >
-        {message.body}
+        {hasAttachments && <MessageAttachments attachments={message.attachments} />}
+        {hasText && <div>{message.body}</div>}
       </div>
     </div>
   );

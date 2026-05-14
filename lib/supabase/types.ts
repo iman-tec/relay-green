@@ -61,12 +61,26 @@ export type GuestCall = {
   updated_at: string;
 };
 
+export type GuestMessageAttachment = {
+  id:          string;
+  message_id:  string;
+  path:        string;
+  name:        string;
+  mime:        string;
+  size_bytes:  number;
+  kind:        "image" | "document";
+  created_at:  string;
+};
+
 export type GuestMessage = {
   id: string;
   guest_call_id: string;
   sender_kind: "guest" | "engineer" | "system";
   sender_id: string | null;
   sender_name: string | null;
-  body: string;
+  /** Now nullable: an attachment-only message has no body. */
+  body: string | null;
   created_at: string;
+  /** Populated by the join on guest_message_attachments. */
+  attachments?: GuestMessageAttachment[];
 };

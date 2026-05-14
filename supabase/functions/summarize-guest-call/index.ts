@@ -179,6 +179,100 @@ Deno.serve(async (req) => {
       body: "Session ended. Summary saved.",
     });
 
+    // ── Post-session sentiment score ─────────────────────────────────────────
+    // Feeds the colored health bar on the supervise pit and the feedback
+    // feed in /finance. Runs ONCE per session at end-time. The model is
+    // tuned to lean neutral (low false-positive rate) — only commits to a
+    // strong score when the summary has explicit evidence.
+    //
+    // Input priority: ai_summary_overview > full summary > transcript head.
+    // If we have nothing usable (no API key, empty transcript), we write a
+    // neutral 0 row so the UI doesn't fall back to the stale per-minute
+    // score from earlier in the session.
+    try {
+      const sentimentInput =
+        (aiOverview && aiOverview.trim()) ||
+        (summary && summary.trim()) ||
+        transcript.slice(0, 2000).trim();
+
+      let score = 0;
+      let scoreBlurb = "Post-session sentiment.";
+
+      if (apiKey && sentimentInput.length > 0) {
+        const ai = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "gpt-4o-mini",
+            response_format: { type: "json_object" },
+            temperature: 0,
+            max_tokens: 120,
+            messages: [
+              {
+                role: "system",
+                content:
+                  "You rate the sentiment of a completed customer-support session given its summary. " +
+                  "Return STRICT JSON only: {\"score\": number, \"summary\": string}.\n" +
+                  "score is a number in [-1.0, +1.0]:\n" +
+                  "  +1.0  problem fully resolved AND customer expresses gratitude / clear satisfaction.\n" +
+                  "  +0.4  solution delivered, mild positive tone, no friction.\n" +
+                  "   0.0  neutral, informational, ambiguous, or insufficient evidence.\n" +
+                  "  -0.4  problem unresolved at end, customer mildly frustrated.\n" +
+                  "  -1.0  customer angry, abusive, or threatened to churn / refund.\n" +
+                  "Rules — minimize false positives:\n" +
+                  "• When evidence is thin or ambiguous, default to 0.0. Do not infer happiness from a polite closing.\n" +
+                  "• Only score >= +0.5 if the summary explicitly says the issue was resolved AND the customer reacted positively.\n" +
+                  "• Only score <= -0.5 if there is explicit evidence of strong frustration, anger, or an unresolved blocker the customer flagged.\n" +
+                  "• Engineer-only neutral tone is 0.0, not negative.\n" +
+                  "• A short or terse summary is 0.0, not negative.\n" +
+                  "summary = one short sentence (<= 80 chars) explaining the score.",
+              },
+              {
+                role: "user",
+                content: sentimentInput.slice(0, 4000),
+              },
+            ],
+          }),
+        });
+
+        if (ai.ok) {
+          const j = await ai.json();
+          const raw = j.choices?.[0]?.message?.content?.trim() ?? "{}";
+          try {
+            const parsed = JSON.parse(raw);
+            const n = Number(parsed.score);
+            if (Number.isFinite(n)) {
+              score = Math.max(-1, Math.min(1, n));
+            }
+            const blurb = typeof parsed.summary === "string" ? parsed.summary.trim() : "";
+            if (blurb) scoreBlurb = blurb.slice(0, 200);
+          } catch {
+            // Malformed JSON from the model — keep score=0 neutral.
+          }
+        } else {
+          console.error(
+            "[summarize-guest-call] sentiment OpenAI error",
+            ai.status,
+            await ai.text().catch(() => ""),
+          );
+        }
+      }
+
+      await supabase.from("session_health").insert({
+        session_id: guest_call_id,
+        score,
+        summary: scoreBlurb,
+        window_start: null,
+        window_end:   endedAtIso,
+        message_count: 0,
+      });
+    } catch (e) {
+      console.error("[summarize-guest-call] sentiment scoring failed:", e);
+    }
+
     // Refresh the rolling "about this customer" brief for the thread.
     if (call?.thread_id) {
       try {
