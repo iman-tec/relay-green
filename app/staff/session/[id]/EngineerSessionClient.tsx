@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { MeetingChatEntry } from "@/app/_components/MeetingChatEntry";
+import { MeetingSummaryEntry, isAiSummaryMessageBody } from "@/app/_components/MeetingSummaryEntry";
 import { createClient } from "@/lib/supabase/browser";
 import { useEngineerSession } from "@/lib/relay/useEngineerSession";
 import { useSessionTimer } from "@/lib/relay/useSessionTimer";
@@ -914,6 +915,9 @@ function ChatPane({
                 }
                 if (m.sender_kind === "system" && suppressedEndedIds.has(m.id)) {
                   return [];
+                }
+                if (m.sender_kind === "system" && isAiSummaryMessageBody(m.body)) {
+                  return [<MeetingSummaryEntry key={m.id} body={m.body} />];
                 }
                 return [<Message key={m.id} message={m} />];
               })}
