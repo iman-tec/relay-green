@@ -2423,7 +2423,7 @@ const ChatPane = memo(function ChatPane({
                 if (m.sender_kind === "system" && suppressedEndedIds.has(m.id)) {
                   return [];
                 }
-                if (m.sender_kind === "system" && isAiSummaryMessageBody(m.body)) {
+                if (m.sender_kind === "system" && m.body && isAiSummaryMessageBody(m.body)) {
                   return [<MeetingSummaryEntry key={m.id} body={m.body} />];
                 }
                 return [<Message key={m.id} message={m} />];
