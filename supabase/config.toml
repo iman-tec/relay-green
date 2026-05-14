@@ -25,6 +25,15 @@ verify_jwt = false
 [functions.zoom-webhook]
 verify_jwt = false
 
+[functions.end-zoom-meeting]
+verify_jwt = false
+
+[functions.summarize-project]
+verify_jwt = false
+
+[functions.summarize-customer]
+verify_jwt = false
+
 [functions.zoom-sdk-signature]
 verify_jwt = false
 

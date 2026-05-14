@@ -25,8 +25,7 @@ import {
   PanelLeftOpen, PanelLeftClose,
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
-import { ZoomEmbed } from "@/app/_components/ZoomEmbed";
-import { PopOutContainer } from "@/app/_components/PopOutContainer";
+import { MeetingChatEntry } from "@/app/_components/MeetingChatEntry";
 import { createClient } from "@/lib/supabase/browser";
 import { useEngineerSession } from "@/lib/relay/useEngineerSession";
 import { useSessionTimer } from "@/lib/relay/useSessionTimer";
@@ -124,6 +123,22 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
     prevStatusRef.current = state.session?.status ?? null;
   }, [state.session?.status, router]);
 
+  // Desktop-shell integration: hide the floating orb widget while a Relay
+  // session is in flight on the engineer side. Bridge is no-op in the
+  // plain browser (window.relay is undefined). Used to live in
+  // PopOutContainer; that mounted with the Zoom embed, which we no longer
+  // use, so we drive the signal from the session status directly.
+  useEffect(() => {
+    const bridge = (
+      window as unknown as { relay?: { setSessionActive?: (active: boolean) => void } }
+    ).relay;
+    if (!bridge?.setSessionActive) return;
+    const status = state.session?.status;
+    const active = !!status && !["ended", "cancelled", "abandoned"].includes(status);
+    bridge.setSessionActive(active);
+    return () => { bridge.setSessionActive?.(false); };
+  }, [state.session?.status]);
+
   // Payment-buffer watchdog: if the customer hasn't paid within 10 min of
   // expired_free, auto-end. Idempotent (end_session is a no-op on terminal
   // states), so customer-side firing the same call is harmless.
@@ -178,12 +193,7 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
           onStart={() => setStarted(true)}
         />
         <main className="min-h-0 flex-1">
-          <MainPane
-            state={state}
-            engineerEmail={meEmail}
-            started={started}
-            onStart={() => setStarted(true)}
-          />
+          <MainPane state={state} />
         </main>
       </div>
 
@@ -200,20 +210,7 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
             color: "var(--accent-red)",
           }}
         >
-          Auto-start failed: {autoStartError} — click <span className="font-semibold">Start video</span> to retry.
-        </div>
-      )}
-      {autoMinting && !started && (
-        <div
-          className="pointer-events-auto fixed bottom-6 left-1/2 z-50 -translate-x-1/2 inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-medium shadow-lg"
-          style={{
-            borderColor: "var(--border)",
-            backgroundColor: "var(--surface)",
-            color: "var(--text-muted)",
-          }}
-        >
-          <Loader2 size={11} className="animate-spin" style={{ color: BRAND_GREEN }} />
-          Setting up the video call…
+          Auto-start failed: {autoStartError} — tap the <span className="font-semibold">video button</span> next to Send to retry.
         </div>
       )}
     </div>
@@ -222,64 +219,15 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
 
 // ── Layout decider ─────────────────────────────────────────────────────────
 function MainPane({
-  state, engineerEmail, started, onStart,
+  state,
 }: {
   state: ReturnType<typeof useEngineerSession>;
-  engineerEmail: string;
-  started: boolean;
-  onStart: () => void;
 }) {
   const session = state.session!;
   const isEnded = session.status === "ended";
-  const inCall  = (started || session.status === "live") && !!session.zoom_meeting_id;
   const isEngineer = state.isAssignedEngineer;
 
-  // Monitor mode (supervisor / admin / other-engineer viewing read-only).
-  // Two states: out-of-Zoom (chat only) or in-Zoom (split, attendee role).
-  if (!isEngineer) {
-    if (inCall) {
-      return (
-        <PanelGroup direction="horizontal" autoSaveId="relay-eng-monitor-live" className="h-full">
-          <Panel defaultSize={66} minSize={40} order={1}>
-            <ZoomCenterPane
-              session={session}
-              engineerName={session.agent_name ?? "Engineer"}
-              engineerEmail={engineerEmail}
-              onJoined={async () => { /* monitors don't mark_joined */ }}
-              role={0}
-              displayLabel="Observer"
-            />
-          </Panel>
-          <Resizer />
-          <Panel defaultSize={34} minSize={22} order={2}>
-            <ChatPane state={state} readOnly />
-          </Panel>
-        </PanelGroup>
-      );
-    }
-    return <ChatPane state={state} fullWidth readOnly onJoinSilently={!isEnded && !!session.zoom_meeting_id ? onStart : undefined} />;
-  }
-
-  // Engineer mode (unchanged)
-  if (inCall) {
-    return (
-      <PanelGroup direction="horizontal" autoSaveId="relay-eng-live" className="h-full">
-        <Panel defaultSize={66} minSize={40} order={1}>
-          <ZoomCenterPane
-            session={session}
-            engineerName={session.agent_name ?? "Engineer"}
-            engineerEmail={engineerEmail}
-            onJoined={state.markJoined}
-          />
-        </Panel>
-        <Resizer />
-        <Panel defaultSize={34} minSize={22} order={2}>
-          <ChatPane state={state} />
-        </Panel>
-      </PanelGroup>
-    );
-  }
-
+  // Post-call review — chat (locked) on the left, AI summary on the right.
   if (isEnded) {
     return (
       <PanelGroup direction="horizontal" autoSaveId="relay-eng-review" className="h-full">
@@ -294,7 +242,10 @@ function MainPane({
     );
   }
 
-  return <ChatPane state={state} fullWidth onStartCall={onStart} />;
+  // Active session (assigned/joining/live/grace/expired_free). Chat full
+  // width; the ZoomJoinCard renders inline at the top of the message stream
+  // and the engineer can start a new Zoom from the icon button next to Send.
+  return <ChatPane state={state} fullWidth readOnly={!isEngineer} />;
 }
 
 // ── Sidebar (customer card + past sessions + engineer profile) ─────────────
@@ -702,17 +653,9 @@ function FloatingStatus({
             Monitoring (silent)
           </span>
         )}
-        {state.isAssignedEngineer && isPreLive && !inCall && (
-          <button
-            onClick={() => void startVideo()}
-            disabled={busyStart}
-            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
-            style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
-          >
-            {busyStart ? <Loader2 size={11} className="animate-spin" /> : <Video size={11} />}
-            {hasMeeting ? "Join video" : "Start video"}
-          </button>
-        )}
+        {/* Join / Start-video button moved into the inline ZoomCallCard in
+            the chat — keep the FloatingStatus focused on session-level
+            controls only (status pill, timer, End, Release). */}
         {state.isAssignedEngineer && (isLive || isPreLive) && (
           <button
             onClick={() => setConfirmEnd(true)}
@@ -824,57 +767,13 @@ function ConfirmEndModal({ onCancel, onConfirm }: { onCancel: () => void; onConf
   );
 }
 
-// ── Zoom centre pane (engineer is host, role=1) ────────────────────────────
-function ZoomCenterPane({
-  session, engineerName, engineerEmail, onJoined, role = 1, displayLabel = "Host",
-}: {
-  session: GuestCall;
-  engineerName: string;
-  engineerEmail: string;
-  onJoined: () => Promise<void>;
-  /** 1 = host (engineer). 0 = attendee (supervisor monitoring). */
-  role?: 0 | 1;
-  /** Label shown in the corner badge. */
-  displayLabel?: string;
-}) {
-  if (!session.zoom_meeting_id) {
-    return (
-      <section className="flex h-full items-center justify-center" style={{ backgroundColor: "#0a0a0a" }}>
-        <Loader2 size={20} className="animate-spin" style={{ color: BRAND_GREEN }} />
-      </section>
-    );
-  }
-  return (
-    <section className="relative h-full" style={{ backgroundColor: "#000" }}>
-      <PopOutContainer>
-        <ZoomEmbed
-          meetingNumber={session.zoom_meeting_id}
-          userName={role === 1 ? engineerName : engineerEmail || "Observer"}
-          userEmail={engineerEmail}
-          role={role}
-          fallbackJoinUrl={role === 1 ? session.zoom_start_url : session.zoom_join_url}
-          onJoined={() => void onJoined()}
-        />
-      </PopOutContainer>
-      <div
-        className="absolute left-3 top-3 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wider"
-        style={{ backgroundColor: role === 1 ? BRAND_GREEN : "#3f5c2e88", color: "#fff" }}
-      >
-        {displayLabel}
-      </div>
-    </section>
-  );
-}
-
 // ── Chat pane ──────────────────────────────────────────────────────────────
 function ChatPane({
-  state, fullWidth = false, onStartCall, readOnly = false, onJoinSilently,
+  state, fullWidth = false, readOnly = false,
 }: {
   state: ReturnType<typeof useEngineerSession>;
   fullWidth?: boolean;
-  onStartCall?: () => void;     // when set, shows the "Start video" banner (engineer)
   readOnly?: boolean;            // monitor mode — hide composer entirely
-  onJoinSilently?: () => void;   // monitor-only — render "Join Zoom (silent)" banner
 }) {
   const [draft, setDraft] = useState("");
   const session = state.session!;
@@ -895,30 +794,93 @@ function ChatPane({
     await state.sendMessage(text);
   };
 
-  // Same as startVideo: no immediate mark_joined — that fires only when the
-  // embed onJoined callback runs.
-  const handleStartCall = async () => {
-    if (!onStartCall) return;
+  // Engineer-only handler that mints a Zoom meeting via the edge function.
+  // Used for the first-time mint and for restart after a previous meeting
+  // ended. The mint function is idempotent for an active meeting (no-op)
+  // and force-mints when the latest lifecycle event is "ended". On success
+  // a "Zoom meeting started" system message arrives via realtime and the
+  // card refreshes.
+  const handleStartMeeting = async () => {
     setMinting(true);
     setMintError(null);
     try {
       const sb = createClient();
-      if (!session.zoom_meeting_id) {
-        const { data, error } = await sb.functions.invoke("mint-zoom-for-session", {
-          body: { session_id: session.id },
-        });
-        if (error || !data?.zoom_meeting_id) {
-          const msg = error?.message ?? (data?.error as string | undefined) ?? "Couldn't mint Zoom meeting";
-          setMintError(msg);
-          setTimeout(() => setMintError(null), 6000);
-          return;
-        }
+      const { error } = await sb.functions.invoke("mint-zoom-for-session", {
+        body: { session_id: session.id },
+      });
+      if (error) {
+        const msg = error.message ?? "Couldn't start a Zoom meeting";
+        setMintError(msg);
+        setTimeout(() => setMintError(null), 6000);
+        return;
       }
-      onStartCall();
+      // Defensive refresh — realtime will deliver the updates, but pulling
+      // the row eagerly keeps the UI in sync if the subscription drops.
+      await state.refresh();
     } finally {
       setMinting(false);
     }
   };
+
+  // Engineer-only handler that hangs up the current Zoom meeting via the
+  // end-zoom-meeting edge function — saves the engineer from having to
+  // open Zoom and click "End meeting for all" themselves when the customer
+  // declines or the call needs to be cut short.
+  const handleCancelMeeting = async () => {
+    setMintError(null);
+    const sb = createClient();
+    const { error } = await sb.functions.invoke("end-zoom-meeting", {
+      body: { session_id: session.id },
+    });
+    if (error) {
+      const msg = error.message ?? "Couldn't end the Zoom meeting";
+      setMintError(msg);
+      setTimeout(() => setMintError(null), 6000);
+      return;
+    }
+    await state.refresh();
+  };
+
+  // Latest "started" vs "ended" event drives whether the composer's
+  // Start-meeting button is visible. The per-meeting cards in the chat
+  // body live alongside their corresponding "started" message — each
+  // meeting is its own inline entry there.
+  const lastZoomEvent = [...state.messages].reverse().find(
+    (m) =>
+      m.sender_kind === "system" &&
+      (m.body.includes("Zoom meeting ended") || m.body.includes("Zoom meeting started")),
+  );
+  const zoomEnded = !!lastZoomEvent && lastZoomEvent.body.includes("Zoom meeting ended");
+
+  // Composer-level start/restart affordance. Hidden when there's already an
+  // active Zoom meeting (mint would be a no-op then) and in monitor mode.
+  const showStartMeetingButton = !readOnly && (!session.zoom_meeting_id || zoomEnded);
+
+  // Join URL the engineer/monitor should open. The latest active meeting
+  // always points at the current session row's URLs.
+  const zoomCardUrl = readOnly
+    ? session.zoom_join_url
+    : session.zoom_start_url ?? session.zoom_join_url;
+
+  // Pair "started" / "ended" system messages in chronological order so each
+  // meeting renders as one inline mini-card. Paired endeds are suppressed.
+  const meetingEnded = new Map<string, GuestMessage>();
+  const suppressedEndedIds = new Set<string>();
+  {
+    const queue: GuestMessage[] = [];
+    for (const m of state.messages) {
+      if (m.sender_kind !== "system") continue;
+      if (m.body.includes("Zoom meeting started")) {
+        queue.push(m);
+      } else if (m.body.includes("Zoom meeting ended")) {
+        const start = queue.shift();
+        if (start) {
+          meetingEnded.set(start.id, m);
+          suppressedEndedIds.add(m.id);
+        }
+      }
+    }
+  }
 
   return (
     <section className="flex h-full flex-col" style={{ backgroundColor: "var(--surface)" }}>
@@ -933,7 +895,28 @@ function ChatPane({
             </div>
           ) : (
             <div className="space-y-3">
-              {state.messages.map((m) => <Message key={m.id} message={m} />)}
+              {state.messages.flatMap((m) => {
+                if (m.sender_kind === "system" && m.body.includes("Zoom meeting started")) {
+                  const ended = meetingEnded.get(m.id) ?? null;
+                  const durationSec = ended
+                    ? Math.floor((new Date(ended.created_at).getTime() - new Date(m.created_at).getTime()) / 1000)
+                    : undefined;
+                  return [
+                    <MeetingChatEntry
+                      key={m.id}
+                      active={!ended}
+                      durationSec={durationSec}
+                      joinUrl={!ended ? zoomCardUrl : null}
+                      onJoin={!ended && !readOnly ? () => void state.markJoined() : undefined}
+                      onCancel={!ended && !readOnly ? handleCancelMeeting : undefined}
+                    />,
+                  ];
+                }
+                if (m.sender_kind === "system" && suppressedEndedIds.has(m.id)) {
+                  return [];
+                }
+                return [<Message key={m.id} message={m} />];
+              })}
             </div>
           )}
         </div>
@@ -968,72 +951,6 @@ function ChatPane({
               )}
             </div>
           )}
-          {/* Prominent "Start video" banner — engineer pre-call only */}
-          {onStartCall && !readOnly && (
-            <button
-              onClick={() => void handleStartCall()}
-              disabled={minting}
-              className="flex w-full items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left transition-colors hover:opacity-90 disabled:opacity-60"
-              style={{
-                borderColor: BRAND_GREEN_BORDER,
-                backgroundColor: BRAND_GREEN_SOFT,
-              }}
-            >
-              <div className="flex items-center gap-3">
-                <span
-                  className="flex h-8 w-8 items-center justify-center rounded-full"
-                  style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
-                >
-                  {minting ? <Loader2 size={14} className="animate-spin" /> : <Video size={14} />}
-                </span>
-                <div className="flex flex-col">
-                  <span className="text-sm font-medium" style={{ color: "var(--text)" }}>
-                    {session.zoom_meeting_id ? "Join the video call" : "Start the video call"}
-                  </span>
-                  <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-                    {minting
-                      ? "Setting up Zoom…"
-                      : `${session.guest_name} will be notified to join`}
-                  </span>
-                </div>
-              </div>
-              <span className="text-xs font-medium" style={{ color: BRAND_GREEN }}>
-                {minting ? "" : "Call →"}
-              </span>
-            </button>
-          )}
-
-          {/* Monitor — "Join Zoom silently" banner (optional). The engineer
-              and customer see the supervisor in the participant list as an
-              attendee but get no chat notification of their arrival. */}
-          {onJoinSilently && (
-            <button
-              onClick={onJoinSilently}
-              className="flex w-full items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left transition-colors hover:opacity-90"
-              style={{ borderColor: BRAND_GREEN_BORDER, backgroundColor: BRAND_GREEN_SOFT }}
-            >
-              <div className="flex items-center gap-3">
-                <span
-                  className="flex h-8 w-8 items-center justify-center rounded-full"
-                  style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
-                >
-                  <Eye size={14} />
-                </span>
-                <div className="flex flex-col">
-                  <span className="text-sm font-medium" style={{ color: "var(--text)" }}>
-                    Join the Zoom silently
-                  </span>
-                  <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-                    Observer role — engineer / customer won&apos;t be notified
-                  </span>
-                </div>
-              </div>
-              <span className="text-xs font-medium" style={{ color: BRAND_GREEN }}>
-                Join →
-              </span>
-            </button>
-          )}
-
           {/* Composer — hidden entirely in monitor (read-only) mode */}
           {!readOnly ? (
             <div
@@ -1054,9 +971,33 @@ function ChatPane({
                 }}
                 disabled={isReadOnly}
                 placeholder={isReadOnly ? "Session ended" : `Message ${session.guest_name}…`}
-                className="h-12 w-full rounded-2xl bg-transparent pl-4 pr-12 text-sm outline-none disabled:cursor-not-allowed"
+                className={`h-12 w-full rounded-2xl bg-transparent pl-4 text-sm outline-none disabled:cursor-not-allowed ${
+                  // Reserve room on the right for the Send button alone, or
+                  // Send + Start-meeting when the engineer can mint a new call.
+                  showStartMeetingButton ? "pr-24" : "pr-12"
+                }`}
                 style={{ color: "var(--text)" }}
               />
+              {/* Start-meeting button — only when there's no active Zoom
+                  meeting OR the latest one ended. Mint is idempotent for
+                  an active meeting so hiding it then keeps the composer
+                  uncluttered and avoids confusing no-op clicks. */}
+              {showStartMeetingButton ? (
+                <button
+                  type="button"
+                  onClick={() => void handleStartMeeting()}
+                  disabled={isReadOnly || minting}
+                  title={session.zoom_meeting_id ? "Start a new Zoom meeting" : "Start a Zoom meeting"}
+                  className="absolute right-12 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-xl border transition-colors disabled:opacity-50"
+                  style={{
+                    borderColor: BRAND_GREEN_BORDER,
+                    backgroundColor: BRAND_GREEN_SOFT,
+                    color: BRAND_GREEN,
+                  }}
+                >
+                  {minting ? <Loader2 size={14} className="animate-spin" /> : <Video size={14} />}
+                </button>
+              ) : null}
               <button
                 onClick={() => void onSend()}
                 disabled={isReadOnly || !draft.trim()}
