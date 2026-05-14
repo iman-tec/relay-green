@@ -143,44 +143,96 @@ export async function POST(request: Request) {
   const trimmedName  = displayName.trim();
   const appUrl       = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3001";
 
-  // Invite via Supabase — creates the auth user (email-unconfirmed) and
-  // sends the magic-link "Invite User" email so they can confirm + sign in
-  // in one click. Subsequent sign-ins use email-OTP at /staff/login.
-  const { data: createRes, error: createErr } =
-    await admin.auth.admin.inviteUserByEmail(trimmedEmail, {
-      data: {
-        display_name: trimmedName,
-        role_label:   role,
-        created_by:   actor.id,
-      },
-      redirectTo: `${appUrl}/auth/callback?next=/auth/post-signin`,
-    });
-  if (createErr || !createRes.user) {
-    return NextResponse.json(
-      { error: createErr?.message ?? "inviteUserByEmail failed" },
-      { status: 400 },
-    );
-  }
-  const userId = createRes.user.id;
+  // If the email already has an auth user, skip the invite and grant the
+  // requested role to that user. Lets super_admin make themselves an
+  // engineer for testing, etc. without needing a brand-new inbox.
+  const { data: existingPage } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  const existingUser = existingPage?.users?.find(
+    (u) => u.email?.toLowerCase() === trimmedEmail,
+  );
 
-  // Profile row is normally auto-created by a Supabase trigger
-  // (handle_new_user). Upsert defensively in case the trigger is missing
-  // or full_name needs updating.
-  const { error: profileErr } = await admin
-    .from("profiles")
-    .upsert(
-      {
-        id:           userId,
-        full_name:    trimmedName,
-        primary_role: role,
-        is_onboarded: true,
+  let userId: string;
+  let mode: "invited" | "attached_existing";
+
+  if (existingUser) {
+    userId = existingUser.id;
+    mode   = "attached_existing";
+
+    // Keep prior primary_role if set; refresh display name only if blank.
+    const { data: currentProfile } = await admin
+      .from("profiles")
+      .select("full_name, primary_role")
+      .eq("id", userId)
+      .maybeSingle();
+    const cp = currentProfile as { full_name: string | null; primary_role: string | null } | null;
+
+    const { error: profileErr } = await admin
+      .from("profiles")
+      .upsert(
+        {
+          id:           userId,
+          full_name:    cp?.full_name?.trim() ? cp.full_name : trimmedName,
+          primary_role: cp?.primary_role ?? role,
+          is_onboarded: true,
+        },
+        { onConflict: "id" },
+      );
+    if (profileErr) {
+      return NextResponse.json({ error: profileErr.message }, { status: 500 });
+    }
+
+    await admin.auth.admin.updateUserById(userId, {
+      user_metadata: {
+        ...(existingUser.user_metadata ?? {}),
+        display_name: cp?.full_name?.trim() || trimmedName,
+        role_label:   role,
       },
-      { onConflict: "id" },
-    );
-  if (profileErr) {
-    // Roll back the auth user — we don't want orphans.
-    await admin.auth.admin.deleteUser(userId).catch(() => {});
-    return NextResponse.json({ error: profileErr.message }, { status: 500 });
+    }).catch(() => {});
+
+    const { error: linkErr } = await admin.auth.admin.generateLink({
+      type:  "magiclink",
+      email: trimmedEmail,
+      options: { redirectTo: `${appUrl}/auth/callback?next=/auth/post-signin` },
+    });
+    if (linkErr) {
+      console.warn(`[admin/users] magic-link send failed for ${trimmedEmail}: ${linkErr.message}`);
+    }
+  } else {
+    const { data: createRes, error: createErr } =
+      await admin.auth.admin.inviteUserByEmail(trimmedEmail, {
+        data: {
+          display_name: trimmedName,
+          role_label:   role,
+          created_by:   actor.id,
+        },
+        redirectTo: `${appUrl}/auth/callback?next=/auth/post-signin`,
+      });
+    if (createErr || !createRes.user) {
+      return NextResponse.json(
+        { error: createErr?.message ?? "inviteUserByEmail failed" },
+        { status: 400 },
+      );
+    }
+    userId = createRes.user.id;
+    mode   = "invited";
+
+    const { error: profileErr } = await admin
+      .from("profiles")
+      .upsert(
+        {
+          id:           userId,
+          full_name:    trimmedName,
+          primary_role: role,
+          is_onboarded: true,
+        },
+        { onConflict: "id" },
+      );
+    if (profileErr) {
+      // Roll back the auth user — we don't want orphans. Only safe for
+      // freshly-invited users; never delete existing ones.
+      await admin.auth.admin.deleteUser(userId).catch(() => {});
+      return NextResponse.json({ error: profileErr.message }, { status: 500 });
+    }
   }
 
   const { error: roleErr } = await admin
@@ -190,12 +242,15 @@ export async function POST(request: Request) {
       { onConflict: "user_id,role", ignoreDuplicates: true },
     );
   if (roleErr) {
-    await admin.auth.admin.deleteUser(userId).catch(() => {});
+    // Only delete the auth user if we just created them in this request.
+    if (mode === "invited") {
+      await admin.auth.admin.deleteUser(userId).catch(() => {});
+    }
     return NextResponse.json({ error: roleErr.message }, { status: 500 });
   }
 
   console.log(
-    `[admin/users] invited ${trimmedEmail} (${role}) — magic-link email dispatched`,
+    `[admin/users] ${mode} ${trimmedEmail} (${role})`,
   );
 
   return NextResponse.json({
@@ -205,6 +260,7 @@ export async function POST(request: Request) {
       displayName:  trimmedName,
       role,
     },
-    invited: true,
+    invited:          mode === "invited",
+    attachedExisting: mode === "attached_existing",
   });
 }

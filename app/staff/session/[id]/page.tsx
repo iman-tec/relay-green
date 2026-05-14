@@ -8,9 +8,9 @@ export const metadata: Metadata = {
 };
 
 // Intentionally no StaffShell — a session room is a focused workspace.
-// The engineer returns to /inbox (which carries the global nav) after they
-// end the call. We still gate the route at the page level since it lives
-// outside the (staff) layout.
+// The engineer returns to /inbox (the post-call landing screen with
+// recent calls + take-next) after they end. We still gate the route at
+// the page level since it lives outside the (staff) layout.
 export default async function EngineerSessionPage({
   params,
 }: {

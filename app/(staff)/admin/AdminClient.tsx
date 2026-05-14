@@ -1,19 +1,16 @@
 "use client";
 
 /*
- * Internal admin: monitor engineers + supervisors, audit logs, role mgmt.
+ * Platform-wide super_admin console.
  *
- * This is intentionally minimal v1:
- *   - Org overview (users, sessions, recent activity)
- *   - Live audit log (paginated)
- *   - Role grant table (set who is engineer/supervisor/admin)
+ * Minimal surface: a 30-day session activity line graph, a users + roles
+ * grant table, and a live audit log. Stats, headings, and recent-sessions
+ * have been intentionally trimmed — super_admin gets a focused workspace.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import {
-  Users, Activity, ListTree, ShieldCheck, Loader2,
-} from "lucide-react";
+import { ListTree, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import type { GuestCall } from "@/lib/supabase/types";
 import { formatRole } from "@/lib/relay/role-labels";
@@ -46,7 +43,7 @@ type AuditRow = {
 export function AdminClient() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [roles, setRoles] = useState<UserRoleRow[]>([]);
-  const [sessions, setSessions] = useState<GuestCall[]>([]);
+  const [sessions, setSessions] = useState<Pick<GuestCall, "id" | "created_at">[]>([]);
   const [audit, setAudit] = useState<AuditRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -56,23 +53,23 @@ export function AdminClient() {
   const refresh = async () => {
     const sb = supabaseRef.current;
     setError(null);
+    const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
     const [p, r, s, a] = await Promise.all([
-      sb.from("profiles").select("id, full_name, primary_role").limit(50),
-      sb.from("user_roles").select("user_id, role").limit(200),
-      sb.from("guest_calls").select("*").order("created_at", { ascending: false }).limit(50),
+      sb.from("profiles").select("id, full_name, primary_role").limit(200),
+      sb.from("user_roles").select("user_id, role").limit(500),
+      sb.from("guest_calls").select("id, created_at").gte("created_at", since).order("created_at", { ascending: false }).limit(500),
       sb.from("session_audit_log").select("*").order("created_at", { ascending: false }).limit(40),
     ]);
     if (p.error) setError(p.error.message);
     setProfiles((p.data ?? []) as Profile[]);
     setRoles((r.data ?? []) as UserRoleRow[]);
-    setSessions((s.data ?? []) as GuestCall[]);
+    setSessions((s.data ?? []) as Pick<GuestCall, "id" | "created_at">[]);
     setAudit((a.data ?? []) as AuditRow[]);
     setLoading(false);
   };
 
   useEffect(() => { void refresh(); }, []);
 
-  // Realtime — refresh on guest_calls or audit changes
   useEffect(() => {
     const sb = supabaseRef.current;
     const ch = sb
@@ -84,23 +81,24 @@ export function AdminClient() {
     return () => { sb.removeChannel(ch); channelRef.current = null; };
   }, []);
 
-  const stats = useMemo(() => {
-    const liveSessions = sessions.filter((s) => s.status === "live").length;
-    const queuedSessions = sessions.filter((s) => s.status === "queued").length;
-    const engineers = roles.filter((r) => r.role === "engineer").length;
-    const supervisors = roles.filter((r) => r.role === "pod_lead" || r.role === "ops_manager").length;
-    return { liveSessions, queuedSessions, engineers, supervisors, users: profiles.length };
-  }, [sessions, roles, profiles]);
+  const buckets = useMemo(() => {
+    const out: { day: string; count: number }[] = [];
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(today.getTime() - i * 86_400_000);
+      out.push({ day: d.toISOString().slice(0, 10), count: 0 });
+    }
+    const byDay = new Map(out.map((b) => [b.day, b]));
+    for (const s of sessions) {
+      const b = byDay.get(s.created_at.slice(0, 10));
+      if (b) b.count += 1;
+    }
+    return out;
+  }, [sessions]);
+  const maxCount = Math.max(1, ...buckets.map((b) => b.count));
 
   return (
-    <div className="mx-auto max-w-screen-2xl space-y-6 px-6 py-8">
-      <div>
-        <h1 className="text-xl font-semibold" style={{ color: "var(--text)" }}>Internal admin</h1>
-        <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
-          Org-wide oversight — users, roles, sessions, and audit trail.
-        </p>
-      </div>
-
+    <div className="mx-auto max-w-screen-2xl space-y-4 px-6 py-6">
       {error && (
         <div className="rounded-md border px-4 py-2.5 text-sm"
           style={{
@@ -112,26 +110,27 @@ export function AdminClient() {
         </div>
       )}
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        <Stat icon={Users}        label="Users"        value={stats.users} />
-        <Stat icon={Users}        label="Engineers"    value={stats.engineers} />
-        <Stat icon={ShieldCheck}  label="Supervisors"  value={stats.supervisors} />
-        <Stat icon={Activity}     label="Live"         value={stats.liveSessions} />
-        <Stat icon={Activity}     label="Queued"       value={stats.queuedSessions} />
-      </div>
+      <Section title="Activity" subtitle="Daily sessions over the last 30 days.">
+        <div className="p-5">
+          {loading ? (
+            <div className="flex h-32 items-center justify-center">
+              <Loader2 size={14} className="animate-spin" style={{ color: BRAND_GREEN }} />
+            </div>
+          ) : (
+            <ActivityLineChart buckets={buckets} max={maxCount} />
+          )}
+        </div>
+      </Section>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        {/* Users + roles */}
         <Section title="Users & roles" subtitle="Click a role to grant. Click again to revoke (engineer only).">
           {loading ? (
             <Loading />
           ) : (
-            <UserRolesTable profiles={profiles} roles={roles} onChange={refresh} />
+            <UserRolesTable profiles={profiles} roles={roles} />
           )}
         </Section>
 
-        {/* Audit log */}
         <Section title="Audit log" subtitle="Latest 40 events across all sessions.">
           {loading ? (
             <Loading />
@@ -144,44 +143,81 @@ export function AdminClient() {
           )}
         </Section>
       </div>
-
-      {/* Recent sessions */}
-      <Section title={`Recent sessions (${sessions.length})`} subtitle="Across the whole org.">
-        {sessions.slice(0, 12).map((s) => (
-          <div key={s.id} className="flex items-center gap-3 border-t px-5 py-2.5" style={{ borderColor: "var(--border)" }}>
-            <span className="h-2 w-2 rounded-full" style={{
-              backgroundColor: s.status === "live" ? BRAND_GREEN : "var(--text-muted)",
-            }} />
-            <div className="min-w-0 flex-1">
-              <div className="text-sm font-medium" style={{ color: "var(--text)" }}>{s.guest_name}</div>
-              <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-                {s.guest_email} · {new Date(s.created_at).toLocaleString()}
-              </div>
-            </div>
-            <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-              style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}>
-              {s.status}
-            </span>
-          </div>
-        ))}
-      </Section>
     </div>
   );
 }
 
-function Stat({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: string | number }) {
+function ActivityLineChart({
+  buckets, max,
+}: {
+  buckets: { day: string; count: number }[];
+  max: number;
+}) {
+  const width  = 800;
+  const height = 140;
+  const padL   = 28;
+  const padR   = 12;
+  const padTop = 12;
+  const padBot = 18;
+  const innerW = width - padL - padR;
+  const innerH = height - padTop - padBot;
+
+  const tickStep = Math.max(1, Math.ceil(max / 5));
+  const ticks: number[] = [];
+  for (let v = 0; v <= max; v += tickStep) ticks.push(v);
+  if (ticks[ticks.length - 1] !== max) ticks.push(max);
+
+  const yFor = (count: number) => padTop + (1 - count / max) * innerH;
+  const points = buckets.map((b, i) => {
+    const x = padL + (buckets.length === 1 ? innerW / 2 : (i / (buckets.length - 1)) * innerW);
+    return { x, y: yFor(b.count), ...b };
+  });
+
+  const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  const areaPath = `${linePath} L${points[points.length - 1].x.toFixed(1)},${(padTop + innerH).toFixed(1)} L${points[0].x.toFixed(1)},${(padTop + innerH).toFixed(1)} Z`;
+
   return (
-    <div className="flex items-center gap-3 rounded-xl border p-4"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}>
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
-        style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}>
-        <Icon size={16} />
-      </div>
-      <div>
-        <div className="text-xl font-bold tabular-nums" style={{ color: "var(--text)" }}>{value}</div>
-        <div className="text-[10px]" style={{ color: "var(--text-muted)" }}>{label}</div>
-      </div>
-    </div>
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="none"
+      className="block h-32 w-full"
+      role="img"
+      aria-label="Daily sessions over the last 30 days"
+    >
+      <defs>
+        <linearGradient id="admin-activity-area" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stopColor={BRAND_GREEN} stopOpacity="0.28" />
+          <stop offset="100%" stopColor={BRAND_GREEN} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {ticks.map((t, i) => {
+        const y = yFor(t);
+        return (
+          <g key={i}>
+            <line
+              x1={padL} x2={width - padR} y1={y} y2={y}
+              stroke="var(--border)" strokeWidth="0.5" strokeDasharray="2 3"
+            />
+            <text
+              x={padL - 6} y={y + 3}
+              textAnchor="end" fontSize="9"
+              fill="var(--text-muted)"
+              style={{ fontFeatureSettings: "'tnum' 1" }}
+            >
+              {t}
+            </text>
+          </g>
+        );
+      })}
+      <path d={areaPath} fill="url(#admin-activity-area)" />
+      <path d={linePath} fill="none" stroke={BRAND_GREEN} strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" />
+      {points.map((p, i) => (
+        <g key={i}>
+          <title>{`${p.day}: ${p.count} session${p.count === 1 ? "" : "s"}`}</title>
+          {p.count > 0 && <circle cx={p.x} cy={p.y} r="2.4" fill={BRAND_GREEN} />}
+        </g>
+      ))}
+    </svg>
   );
 }
 
@@ -200,18 +236,8 @@ function Section({
 }
 
 function UserRolesTable({
-  profiles, roles, onChange,
-}: { profiles: Profile[]; roles: UserRoleRow[]; onChange: () => void | Promise<void> }) {
-  const supabase = useRef(createClient()).current;
-
-  const grant = async (userId: string, role: string) => {
-    // Note: requires service role for arbitrary user role grants.
-    // Self-grant only via dev_grant_my_role; cross-grant comes in a later phase.
-    const { error } = await supabase.rpc("dev_grant_my_role", { _role: role });
-    if (!error) { void onChange(); return; }
-    alert(`Cross-user role grant requires service role. (${error.message})`);
-  };
-
+  profiles, roles,
+}: { profiles: Profile[]; roles: UserRoleRow[] }) {
   return (
     <div className="max-h-[480px] overflow-y-auto">
       {profiles.length === 0 ? (

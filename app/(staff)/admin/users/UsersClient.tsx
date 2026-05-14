@@ -14,14 +14,12 @@
  *   - Click a cell (name or role) on an existing row to edit. Enter saves,
  *     Esc cancels. Tab moves between fields within the same row.
  *   - Right-hand actions: resend invite, deactivate/reactivate, delete.
- *
- * In local dev, emails land in Inbucket at http://127.0.0.1:54324. In prod
- * we'll wire Resend or similar and customise the Invite User template.
  */
 
 import { useEffect, useRef, useState } from "react";
 import { Mail, Trash2, Power, Plus, X } from "lucide-react";
 import { EnterpriseTab } from "./EnterpriseTab";
+import { PodsTab } from "./PodsTab";
 import { formatRole } from "@/lib/relay/role-labels";
 
 type UserRow = {
@@ -35,7 +33,7 @@ type UserRow = {
   createdAt:           string;
 };
 
-type Tab = "staff" | "enterprise";
+type Tab = "staff" | "enterprise" | "pods";
 
 type RoleKey = "engineer" | "pod_lead" | "ops_manager" | "admin";
 
@@ -251,6 +249,8 @@ export function UsersClient({ meEmail }: { meEmail: string }) {
         )}
 
         {tab === "enterprise" && <EnterpriseTab />}
+
+        {tab === "pods" && <PodsTab />}
       </div>
     </main>
   );
@@ -262,6 +262,7 @@ function Tabs({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
   const items: { id: Tab; label: string }[] = [
     { id: "staff",      label: "Internal staff" },
     { id: "enterprise", label: "Enterprise customers" },
+    { id: "pods",       label: "Pods" },
   ];
   return (
     <div className="mb-4 flex gap-1 border-b" style={{ borderColor: "var(--border)" }}>
@@ -294,7 +295,6 @@ function RevealBanner({
   reveal: { email: string; action: "invited" | "resent" };
   dismiss: () => void;
 }) {
-  const isDev = process.env.NODE_ENV === "development";
   return (
     <div
       className="mb-4 flex items-start justify-between gap-3 rounded-lg border p-3"
@@ -312,21 +312,6 @@ function RevealBanner({
             <strong>{reveal.email}</strong>. They&apos;ll click the magic link to sign in.
           </span>
         </div>
-        {isDev && (
-          <div className="text-xs" style={{ color: "var(--text-muted)" }}>
-            Local dev: emails land in{" "}
-            <a
-              href="http://127.0.0.1:54324"
-              target="_blank"
-              rel="noreferrer"
-              className="underline-offset-2 hover:underline"
-              style={{ color: BRAND_GREEN }}
-            >
-              Inbucket at :54324
-            </a>
-            .
-          </div>
-        )}
       </div>
       <div className="flex shrink-0 items-center gap-2">
         <button

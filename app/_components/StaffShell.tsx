@@ -23,9 +23,9 @@ import Link from "next/link";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Bell, PhoneIncoming, Loader2, LogOut, ChevronDown, AlertTriangle, X,
-  PanelLeftClose, PanelLeftOpen, LayoutDashboard, Inbox as InboxIcon,
-  Eye, Users as UsersIcon, Settings as SettingsIcon, ListTree,
+  Bell, Loader2, LogOut, ChevronDown, AlertTriangle, X,
+  PanelLeftClose, PanelLeftOpen, LayoutDashboard,
+  Eye, Users as UsersIcon, Wallet as WalletIcon, Table as TableIcon,
 } from "lucide-react";
 import { Wordmark } from "./Wordmark";
 import { useStaffGuard } from "@/lib/relay/useStaffGuard";
@@ -52,13 +52,26 @@ type Nav = {
   roles: string[];
 };
 
+// /triage, /inbox, and /settings deliberately removed from the staff
+// sidebar. /triage was redundant once /dashboard grew Take-next + queue.
+// /inbox stays as a route but isn't in nav — it's the post-call landing
+// destination only. /settings will return when account-settings land.
 const NAV: Nav[] = [
-  { href: "/dashboard",   label: "Dashboard", icon: LayoutDashboard, roles: ["engineer"] },
-  { href: "/inbox",       label: "Inbox",     icon: InboxIcon,       roles: ["engineer"] },
-  { href: "/triage",      label: "Triage",    icon: ListTree,        roles: ["engineer", "pod_lead", "ops_manager", "admin", "super_admin"] },
-  { href: "/supervise",   label: "Supervise", icon: Eye,             roles: ["pod_lead", "ops_manager", "admin", "super_admin"] },
-  { href: "/admin/users", label: "Users",     icon: UsersIcon,       roles: ["super_admin"] },
-  { href: "/settings",    label: "Settings",  icon: SettingsIcon,    roles: ["engineer", "pod_lead", "ops_manager", "admin", "super_admin"] },
+  { href: "/dashboard",            label: "Dashboard", icon: LayoutDashboard, roles: ["engineer"] },
+  // /supervise renders the platform-wide grid for staff, and the
+  // org-scoped grid for enterprise_admin — see app/(staff)/supervise/page.tsx.
+  { href: "/supervise",            label: "Supervise", icon: Eye,             roles: ["pod_lead", "ops_manager", "admin", "super_admin", "enterprise_admin"] },
+  { href: "/admin/users",          label: "Users",     icon: UsersIcon,       roles: ["super_admin"] },
+  // Super-admin only — assign engineers to a supervisor's pod.
+  { href: "/admin/assignments",    label: "Assignments", icon: TableIcon,     roles: ["super_admin"] },
+  // enterprise_admin's home is /enterprise; the Supervise link above is shared with platform staff.
+  { href: "/enterprise",           label: "Dashboard", icon: LayoutDashboard, roles: ["enterprise_admin"] },
+  // /finance is the money + feedback console for org admins (Internal Admin
+  // = ops_manager, plus Enterprise Admin who already has a richer view).
+  { href: "/finance",              label: "Finance",   icon: WalletIcon,      roles: ["ops_manager", "enterprise_admin"] },
+  // /operations is the supervisor's pod roster — engineers under them with
+  // current customer + last call.
+  { href: "/operations",           label: "Operations", icon: TableIcon,       roles: ["pod_lead"] },
 ];
 
 const ENGINEER_ONLY_PATHS = ["/dashboard", "/inbox", "/staff/session"];
@@ -91,6 +104,8 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   const guard    = useStaffGuard();
   const roles    = guard.kind === "staff" ? guard.roles : [];
   const engineer = isEngineer(roles);
+  const isEnterpriseAdmin = roles.includes("enterprise_admin") && !roles.includes("super_admin");
+  const homeHref = isEnterpriseAdmin ? "/enterprise" : engineer ? "/dashboard" : "/supervise";
 
   const [collapsed, setCollapsed] = useState(false);
 
@@ -170,7 +185,15 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const navItems = NAV.filter((n) => n.roles.some((r) => roles.includes(r)));
+  // Enterprise admins should only see their two-tab console:
+  //   /enterprise  (dashboard)
+  //   /supervise   (org-scoped view, branches server-side on role)
+  // Without this filter, Eric Enterprise — who also holds the legacy
+  // 'admin' role from the seed — would see /admin/users in his sidebar.
+  const ENT_ADMIN_ALLOW = new Set(["/enterprise", "/supervise"]);
+  const navItems = NAV
+    .filter((n) => n.roles.some((r) => roles.includes(r)))
+    .filter((n) => !isEnterpriseAdmin || ENT_ADMIN_ALLOW.has(n.href));
 
   return (
     <div className="flex min-h-screen" style={{ backgroundColor: "var(--background)" }}>
@@ -188,7 +211,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
           style={{ borderColor: "var(--border)" }}
         >
           <Link
-            href={engineer ? "/dashboard" : "/supervise"}
+            href={homeHref}
             className="flex items-center no-underline"
             aria-label="Home"
           >
@@ -247,18 +270,6 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
 
           {/* Spacer pushes alerts + profile to bottom */}
           <div className="flex-1" />
-
-          {/* Engineer-only inline CTA */}
-          {engineer && !collapsed && (
-            <Link
-              href="/triage"
-              className="mb-2 inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-2 text-xs font-medium transition-colors"
-              style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
-            >
-              <PhoneIncoming size={13} />
-              Take a call
-            </Link>
-          )}
         </nav>
 
         {/* Bottom: notification bell + profile */}
@@ -449,15 +460,17 @@ function ProfileButton({
               {roleText}
             </div>
           </div>
-          <Link
-            href="/settings"
-            onClick={() => setOpen(false)}
-            className="flex items-center gap-2 px-3 py-2 text-sm transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
-            style={{ color: "var(--text)" }}
-          >
-            <SettingsIcon size={14} />
-            Settings
-          </Link>
+          {roles.includes("enterprise_admin") && (
+            <Link
+              href="/enterprise/wallet"
+              onClick={() => setOpen(false)}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm no-underline transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
+              style={{ color: "var(--text)" }}
+            >
+              <WalletIcon size={14} />
+              Wallet
+            </Link>
+          )}
           <button
             type="button"
             onClick={handleSignOut}
@@ -482,10 +495,26 @@ function NotificationBell({
   roles: string[];
   collapsed: boolean;
 }) {
+  void collapsed;
+  const router = useRouter();
   const [count, setCount] = useState(0);
   const supabaseRef = useRef(createClient());
 
+  // Org admins (enterprise_admin, ops_manager) don't claim sessions, so a
+  // pending-work counter just creates phantom badges. We still show the
+  // bell so they can jump to /supervise — just without the number.
+  const isOrgAdminOnly =
+    (roles.includes("enterprise_admin") || roles.includes("ops_manager")) &&
+    !isEngineer(roles) &&
+    !roles.includes("pod_lead") &&
+    !roles.includes("admin") &&
+    !roles.includes("super_admin");
+
+  const target = isEngineer(roles) ? "/dashboard" : "/supervise";
+  const onClick = () => router.push(target);
+
   useEffect(() => {
+    if (isOrgAdminOnly) { setCount(0); return; }
     const sb = supabaseRef.current;
     let cancelled = false;
 
@@ -513,15 +542,16 @@ function NotificationBell({
       cancelled = true;
       sb.removeChannel(ch);
     };
-  }, [roles]);
+  }, [roles, isOrgAdminOnly]);
 
   return (
     <button
       type="button"
       aria-label="Notifications"
+      onClick={onClick}
       className="relative rounded-md p-2 transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
       style={{ color: "var(--text-muted)" }}
-      title={`${count} pending`}
+      title={`${count} pending — open ${target}`}
     >
       <Bell size={16} />
       {count > 0 && (

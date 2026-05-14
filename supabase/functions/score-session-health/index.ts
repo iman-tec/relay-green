@@ -110,21 +110,34 @@ Deno.serve(async (req) => {
 
         const { data: msgs } = await admin
           .from("guest_messages")
+          // Only count human-typed chat as "signal" — system messages
+          // ("Engineer joined", "Call started") are noise and shouldn't
+          // trigger a Groq call.
           .select("sender_kind, body, created_at")
           .eq("guest_call_id", s.id)
           .gte("created_at", windowStart.toISOString())
           .order("created_at", { ascending: true });
-        const messages = (msgs ?? []) as MessageRow[];
+        const allRows = (msgs ?? []) as MessageRow[];
+        const messages = allRows.filter((m) => m.sender_kind === "guest" || m.sender_kind === "engineer");
 
-        const transcript = messages.length === 0
-          ? "(no messages in the last 60 seconds)"
-          : messages.map((m) => {
-              const who =
-                m.sender_kind === "guest"     ? "Customer" :
-                m.sender_kind === "engineer"  ? "Engineer" :
-                m.sender_kind === "system"    ? "System"   : m.sender_kind;
-              return `${who}: ${m.body}`;
-            }).join("\n");
+        // SKIP empty-chat sessions entirely. The whole conversation
+        // happens on Zoom (voice); we have nothing to score. Calling
+        // Groq with an empty transcript just produces a flat
+        // score=0 / "Quiet — no signal yet." row that misleads the
+        // supervisor card into AMBER. Better to insert nothing — the
+        // frontend's deriveHealth will fall back to the deterministic
+        // verdict, which is accurate when there's no text signal.
+        if (messages.length === 0) {
+          return { session_id: s.id, skipped: "no_chat" };
+        }
+
+        const transcript = messages.map((m) => {
+          const who =
+            m.sender_kind === "guest"    ? "Customer" :
+            m.sender_kind === "engineer" ? "Engineer" :
+            m.sender_kind;
+          return `${who}: ${m.body}`;
+        }).join("\n");
 
         const userPrompt =
           `Session: ${s.id}\n` +

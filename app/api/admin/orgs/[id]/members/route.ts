@@ -55,36 +55,94 @@ export async function POST(request: Request, { params }: RouteCtx) {
   const trimmedEmail = email.toLowerCase();
   const appUrl       = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3001";
 
-  const { data: createRes, error: createErr } =
-    await admin.auth.admin.inviteUserByEmail(trimmedEmail, {
-      data: {
-        display_name:    displayName,
+  // Same "attach existing user" logic as POST /api/admin/orgs — if the
+  // email is already in Supabase Auth, skip the invite and just bind
+  // them to this org. Lets super_admin spin up org-internal test users
+  // without needing a fresh inbox each time.
+  const { data: existingPage } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  const existingUser = existingPage?.users?.find(
+    (u) => u.email?.toLowerCase() === trimmedEmail,
+  );
+
+  let userId: string;
+  let mode: "invited" | "attached_existing";
+
+  if (existingUser) {
+    userId = existingUser.id;
+    mode   = "attached_existing";
+
+    // Preserve any prior primary_role; only set org binding + onboarding.
+    const { data: currentProfile } = await admin
+      .from("profiles")
+      .select("full_name, primary_role")
+      .eq("id", userId)
+      .maybeSingle();
+    const cp = currentProfile as { full_name: string | null; primary_role: string | null } | null;
+
+    await admin
+      .from("profiles")
+      .upsert(
+        {
+          id:              userId,
+          full_name:       cp?.full_name?.trim() ? cp.full_name : displayName,
+          primary_role:    cp?.primary_role ?? role,
+          organization_id: orgId,
+          is_onboarded:    true,
+        },
+        { onConflict: "id" },
+      );
+
+    await admin.auth.admin.updateUserById(userId, {
+      user_metadata: {
+        ...(existingUser.user_metadata ?? {}),
+        display_name:    cp?.full_name?.trim() || displayName,
         role_label:      role,
         organization_id: orgId,
-        created_by:      actor.id,
+        org_name:        org.name,
       },
-      redirectTo: `${appUrl}/auth/callback?next=/auth/post-signin`,
-    });
-  if (createErr || !createRes.user) {
-    return NextResponse.json(
-      { error: createErr?.message ?? "Couldn't invite user." },
-      { status: 400 },
-    );
-  }
-  const userId = createRes.user.id;
+    }).catch(() => {});
 
-  await admin
-    .from("profiles")
-    .upsert(
-      {
-        id:              userId,
-        full_name:       displayName,
-        primary_role:    role,
-        organization_id: orgId,
-        is_onboarded:    true,
-      },
-      { onConflict: "id" },
-    );
+    const { error: linkErr } = await admin.auth.admin.generateLink({
+      type:  "magiclink",
+      email: trimmedEmail,
+      options: { redirectTo: `${appUrl}/auth/callback?next=/auth/post-signin` },
+    });
+    if (linkErr) {
+      console.warn(`[admin/orgs/${orgId}/members] magic-link send failed for ${trimmedEmail}: ${linkErr.message}`);
+    }
+  } else {
+    const { data: createRes, error: createErr } =
+      await admin.auth.admin.inviteUserByEmail(trimmedEmail, {
+        data: {
+          display_name:    displayName,
+          role_label:      role,
+          organization_id: orgId,
+          created_by:      actor.id,
+        },
+        redirectTo: `${appUrl}/auth/callback?next=/auth/post-signin`,
+      });
+    if (createErr || !createRes.user) {
+      return NextResponse.json(
+        { error: createErr?.message ?? "Couldn't invite user." },
+        { status: 400 },
+      );
+    }
+    userId = createRes.user.id;
+    mode   = "invited";
+
+    await admin
+      .from("profiles")
+      .upsert(
+        {
+          id:              userId,
+          full_name:       displayName,
+          primary_role:    role,
+          organization_id: orgId,
+          is_onboarded:    true,
+        },
+        { onConflict: "id" },
+      );
+  }
 
   await admin
     .from("user_roles")
@@ -94,7 +152,7 @@ export async function POST(request: Request, { params }: RouteCtx) {
     );
 
   console.log(
-    `[admin/orgs/${orgId}/members] invited ${trimmedEmail} (${role})`,
+    `[admin/orgs/${orgId}/members] ${mode} ${trimmedEmail} (${role})`,
   );
 
   return NextResponse.json({
@@ -104,6 +162,7 @@ export async function POST(request: Request, { params }: RouteCtx) {
       displayName,
       role,
     },
-    invited: true,
+    invited:          mode === "invited",
+    attachedExisting: mode === "attached_existing",
   });
 }

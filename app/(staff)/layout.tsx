@@ -2,8 +2,8 @@
  * Staff route-group layout.
  *
  * All authenticated staff surfaces — /admin, /admin/users, /supervise,
- * /triage, /dashboard, /inbox, /settings, /staff/session/[id] — live
- * under app/(staff). The route group means the URL paths stay the same
+ * /dashboard, /inbox, /enterprise — live under app/(staff). The route
+ * group means the URL paths stay the same
  * (no /staff prefix), but they share this layout. Crucially, navigating
  * between siblings (e.g. /admin → /supervise) no longer remounts the
  * shell — which is what made each click feel like a page reload.

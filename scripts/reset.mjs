@@ -50,7 +50,7 @@ const DEMO_USERS = [
   { role: "engineer",   email: "dev.soni@thegatewaycorp.co.in", full_name: "Dev Soni",          primary_role: "engineer",    userRole: "engineer"   },
   { role: "supervisor", email: "supervisor.demo@relay.test",    full_name: "Sam Supervisor",    primary_role: "pod_lead",    userRole: "pod_lead"   },
   { role: "internal",   email: "admin.demo@relay.test",         full_name: "Iris Internal",     primary_role: "ops_manager", userRole: "ops_manager"},
-  { role: "enterprise", email: "enterprise.demo@relay.test",    full_name: "Eric Enterprise",   primary_role: "admin",       userRole: "admin"      },
+  { role: "enterprise", email: "enterprise.demo@relay.test",    full_name: "Eric Enterprise",   primary_role: "enterprise_admin", userRole: "enterprise_admin" },
 ];
 const KEEP_EMAILS = DEMO_USERS.map((u) => u.email);
 

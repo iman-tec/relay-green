@@ -23,7 +23,7 @@ const CRIT_RED_SOFT = "rgba(200, 85, 61, 0.18)";
 
 export function DashboardClient() {
   const router = useRouter();
-  const { myActive, queue, recent, loading, error, takeNext } = useEngineerWorkspace();
+  const { myActive, queue, recent, loading, error, takeNext, claim } = useEngineerWorkspace();
 
   const liveCount = myActive.filter((s) => s.status === "live").length;
   const completedToday = recent.filter((s) => {
@@ -46,6 +46,14 @@ export function DashboardClient() {
 
   const handleTakeNext = async () => {
     const claimed = await takeNext();
+    if (claimed) router.push(`/staff/session/${claimed.id}`);
+  };
+
+  // Per-row claim — clicking a specific QueueRow takes THAT customer,
+  // not the head of the queue. Triage page used to handle this; now we
+  // do it inline since /triage has been removed.
+  const handleClaim = async (sessionId: string) => {
+    const claimed = await claim(sessionId);
     if (claimed) router.push(`/staff/session/${claimed.id}`);
   };
 
@@ -118,11 +126,10 @@ export function DashboardClient() {
       {queue.length > 0 && (
         <Section
           title={`Customers waiting (${queue.length})`}
-          subtitle="Sorted by urgency. Take the top one or pick from triage."
-          link={{ href: "/triage", label: "Open triage" }}
+          subtitle="Sorted by urgency. Click a row to take that customer."
         >
           {queue.slice(0, 5).map((s) => (
-            <QueueRow key={s.id} session={s} onTake={() => router.push("/triage")} />
+            <QueueRow key={s.id} session={s} onTake={() => void handleClaim(s.id)} />
           ))}
         </Section>
       )}

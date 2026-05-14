@@ -10,7 +10,8 @@
  *       live          → Zoom (centre)  |  chat (right)
  *       ended         → chat (centre, locked)  |  summary + chat-history (right, pill tabs)
  *
- * No global nav inside the room. After end_session → redirect to /inbox.
+ * No global nav inside the room. After end_session → redirect to /inbox
+ * (the post-call landing screen with recent calls + take-next).
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -21,10 +22,13 @@ import {
 } from "react-resizable-panels";
 import {
   Send, Video, PhoneOff, Loader2, ArrowLeft, RotateCw, Sparkles, Lock, MessageSquare, Eye, LogOut,
+  PanelLeftOpen, PanelLeftClose,
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
-import { ZoomEmbed } from "@/app/_components/ZoomEmbed";
-import { PopOutContainer } from "@/app/_components/PopOutContainer";
+import { MeetingChatEntry } from "@/app/_components/MeetingChatEntry";
+import { MeetingSummaryEntry, isAiSummaryMessageBody } from "@/app/_components/MeetingSummaryEntry";
+import { ChatComposer } from "@/app/_components/ChatComposer";
+import { MessageAttachments } from "@/app/_components/MessageAttachments";
 import { createClient } from "@/lib/supabase/browser";
 import { useEngineerSession } from "@/lib/relay/useEngineerSession";
 import { useSessionTimer } from "@/lib/relay/useSessionTimer";
@@ -110,7 +114,9 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
     });
   }, []);
 
-  // Redirect back to /inbox after end (give summary fn a moment to write)
+  // Redirect to /inbox after end — that's the dedicated post-call landing.
+  // (3-second beat gives the summary edge fn time to write the AI summary
+  // before the engineer leaves the page.)
   const prevStatusRef = useRef<SessionStatus | null>(null);
   useEffect(() => {
     if (state.session?.status === "ended" && prevStatusRef.current && prevStatusRef.current !== "ended") {
@@ -119,6 +125,22 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
     }
     prevStatusRef.current = state.session?.status ?? null;
   }, [state.session?.status, router]);
+
+  // Desktop-shell integration: hide the floating orb widget while a Relay
+  // session is in flight on the engineer side. Bridge is no-op in the
+  // plain browser (window.relay is undefined). Used to live in
+  // PopOutContainer; that mounted with the Zoom embed, which we no longer
+  // use, so we drive the signal from the session status directly.
+  useEffect(() => {
+    const bridge = (
+      window as unknown as { relay?: { setSessionActive?: (active: boolean) => void } }
+    ).relay;
+    if (!bridge?.setSessionActive) return;
+    const status = state.session?.status;
+    const active = !!status && !["ended", "cancelled", "abandoned"].includes(status);
+    bridge.setSessionActive(active);
+    return () => { bridge.setSessionActive?.(false); };
+  }, [state.session?.status]);
 
   // Payment-buffer watchdog: if the customer hasn't paid within 10 min of
   // expired_free, auto-end. Idempotent (end_session is a no-op on terminal
@@ -149,11 +171,11 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
       <div className="mx-auto max-w-md px-6 py-16 text-center" style={{ color: "var(--text)" }}>
         <p className="text-sm" style={{ color: "var(--text-muted)" }}>Session not found.</p>
         <button
-          onClick={() => router.push("/triage")}
+          onClick={() => router.push("/inbox")}
           className="mt-4 text-sm underline"
           style={{ color: BRAND_GREEN }}
         >
-          Back to triage
+          Back to inbox
         </button>
       </div>
     );
@@ -174,12 +196,7 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
           onStart={() => setStarted(true)}
         />
         <main className="min-h-0 flex-1">
-          <MainPane
-            state={state}
-            engineerEmail={meEmail}
-            started={started}
-            onStart={() => setStarted(true)}
-          />
+          <MainPane state={state} />
         </main>
       </div>
 
@@ -196,20 +213,7 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
             color: "var(--accent-red)",
           }}
         >
-          Auto-start failed: {autoStartError} — click <span className="font-semibold">Start video</span> to retry.
-        </div>
-      )}
-      {autoMinting && !started && (
-        <div
-          className="pointer-events-auto fixed bottom-6 left-1/2 z-50 -translate-x-1/2 inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-medium shadow-lg"
-          style={{
-            borderColor: "var(--border)",
-            backgroundColor: "var(--surface)",
-            color: "var(--text-muted)",
-          }}
-        >
-          <Loader2 size={11} className="animate-spin" style={{ color: BRAND_GREEN }} />
-          Setting up the video call…
+          Auto-start failed: {autoStartError} — tap the <span className="font-semibold">video button</span> next to Send to retry.
         </div>
       )}
     </div>
@@ -218,64 +222,15 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
 
 // ── Layout decider ─────────────────────────────────────────────────────────
 function MainPane({
-  state, engineerEmail, started, onStart,
+  state,
 }: {
   state: ReturnType<typeof useEngineerSession>;
-  engineerEmail: string;
-  started: boolean;
-  onStart: () => void;
 }) {
   const session = state.session!;
   const isEnded = session.status === "ended";
-  const inCall  = (started || session.status === "live") && !!session.zoom_meeting_id;
   const isEngineer = state.isAssignedEngineer;
 
-  // Monitor mode (supervisor / admin / other-engineer viewing read-only).
-  // Two states: out-of-Zoom (chat only) or in-Zoom (split, attendee role).
-  if (!isEngineer) {
-    if (inCall) {
-      return (
-        <PanelGroup direction="horizontal" autoSaveId="relay-eng-monitor-live" className="h-full">
-          <Panel defaultSize={66} minSize={40} order={1}>
-            <ZoomCenterPane
-              session={session}
-              engineerName={session.agent_name ?? "Engineer"}
-              engineerEmail={engineerEmail}
-              onJoined={async () => { /* monitors don't mark_joined */ }}
-              role={0}
-              displayLabel="Observer"
-            />
-          </Panel>
-          <Resizer />
-          <Panel defaultSize={34} minSize={22} order={2}>
-            <ChatPane state={state} readOnly />
-          </Panel>
-        </PanelGroup>
-      );
-    }
-    return <ChatPane state={state} fullWidth readOnly onJoinSilently={!isEnded && !!session.zoom_meeting_id ? onStart : undefined} />;
-  }
-
-  // Engineer mode (unchanged)
-  if (inCall) {
-    return (
-      <PanelGroup direction="horizontal" autoSaveId="relay-eng-live" className="h-full">
-        <Panel defaultSize={66} minSize={40} order={1}>
-          <ZoomCenterPane
-            session={session}
-            engineerName={session.agent_name ?? "Engineer"}
-            engineerEmail={engineerEmail}
-            onJoined={state.markJoined}
-          />
-        </Panel>
-        <Resizer />
-        <Panel defaultSize={34} minSize={22} order={2}>
-          <ChatPane state={state} />
-        </Panel>
-      </PanelGroup>
-    );
-  }
-
+  // Post-call review — chat (locked) on the left, AI summary on the right.
   if (isEnded) {
     return (
       <PanelGroup direction="horizontal" autoSaveId="relay-eng-review" className="h-full">
@@ -290,7 +245,10 @@ function MainPane({
     );
   }
 
-  return <ChatPane state={state} fullWidth onStartCall={onStart} />;
+  // Active session (assigned/joining/live/grace/expired_free). Chat full
+  // width; the ZoomJoinCard renders inline at the top of the message stream
+  // and the engineer can start a new Zoom from the icon button next to Send.
+  return <ChatPane state={state} fullWidth readOnly={!isEngineer} />;
 }
 
 // ── Sidebar (customer card + past sessions + engineer profile) ─────────────
@@ -338,22 +296,103 @@ function Sidebar({
 
   const buckets = useMemo(() => groupByDate(past), [past]);
 
+  // Collapsed: 60px icon rail with toggle / customer avatar / status dot /
+  //            engineer avatar. Expanded: full 260px panel.
+  // Default open since the engineer actively uses customer history during
+  // a call; collapse is for when they want more room for the Zoom video.
+  const [collapsed, setCollapsed] = useState(false);
+
+  // ── Collapsed rail ──────────────────────────────────────────────────────
+  if (collapsed) {
+    return (
+      <aside
+        className="flex h-full w-14 shrink-0 flex-col items-center gap-1 py-2"
+        style={{ borderRight: "1px solid var(--border)", backgroundColor: "var(--surface)" }}
+      >
+        <button
+          onClick={() => setCollapsed(false)}
+          title="Expand sidebar"
+          className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          style={{ color: "var(--text-muted)" }}
+        >
+          <PanelLeftOpen size={18} />
+        </button>
+
+        <Link
+          href="/inbox"
+          title="Back to inbox"
+          className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          style={{ color: "var(--text-muted)" }}
+        >
+          <ArrowLeft size={16} />
+        </Link>
+
+        {/* Customer avatar (initial) */}
+        <div
+          title={session.guest_name ?? "Customer"}
+          className="mt-1 flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold uppercase"
+          style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
+        >
+          {(session.guest_name || "?")[0]}
+        </div>
+
+        {/* Live pulse */}
+        {session.status === "live" && (
+          <span
+            title={`Live · ${timer.format}`}
+            className="mt-1 flex h-9 w-9 items-center justify-center"
+          >
+            <span className="relative flex h-2.5 w-2.5">
+              <span
+                className="absolute inset-0 rounded-full opacity-60"
+                style={{ backgroundColor: BRAND_GREEN, animation: "ping 1.4s cubic-bezier(0,0,0.2,1) infinite" }}
+              />
+              <span className="relative h-2.5 w-2.5 rounded-full" style={{ backgroundColor: BRAND_GREEN }} />
+            </span>
+          </span>
+        )}
+
+        <div className="flex-1" />
+
+        {/* Engineer avatar at bottom */}
+        <div
+          title={`${engineerEmail.split("@")[0] || "Engineer"} · Engineer · on call`}
+          className="flex h-9 w-9 items-center justify-center rounded-full text-[11px] font-semibold uppercase"
+          style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+        >
+          {(engineerEmail || "?")[0]}
+        </div>
+      </aside>
+    );
+  }
+
+  // ── Expanded sidebar (260 px) ───────────────────────────────────────────
   return (
     <aside
       className="flex h-full w-[260px] shrink-0 flex-col"
       style={{ borderRight: "1px solid var(--border)", backgroundColor: "var(--surface)" }}
     >
-      {/* Brand + back-to-inbox */}
-      <div className="flex h-12 items-center justify-between px-4">
+      {/* Brand + back-to-inbox + collapse toggle */}
+      <div className="flex h-12 items-center justify-between gap-1 px-3">
         <Wordmark size="md" />
-        <Link
-          href="/inbox"
-          className="rounded-md p-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-          title="Back to inbox"
-          style={{ color: "var(--text-muted)" }}
-        >
-          <ArrowLeft size={14} />
-        </Link>
+        <div className="flex items-center gap-1">
+          <Link
+            href="/inbox"
+            className="rounded-md p-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            title="Back to inbox"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <ArrowLeft size={14} />
+          </Link>
+          <button
+            onClick={() => setCollapsed(true)}
+            title="Collapse sidebar"
+            className="rounded-md p-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <PanelLeftClose size={14} />
+          </button>
+        </div>
       </div>
 
       {/* Customer card */}
@@ -533,9 +572,12 @@ function FloatingStatus({
 
   if (isEnded) {
     return (
-      <div className="pointer-events-none absolute right-4 top-3 z-10 flex items-center gap-2">
+      <div
+        className="flex shrink-0 items-center justify-end gap-2 border-b px-4 py-2"
+        style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}
+      >
         <span
-          className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium"
+          className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium"
           style={{ backgroundColor: "color-mix(in srgb, var(--text) 8%, transparent)", color: "var(--text-muted)" }}
         >
           Session ended · returning to inbox
@@ -572,10 +614,20 @@ function FloatingStatus({
           )}
         </div>
       )}
-      <div className="pointer-events-none absolute right-4 top-3 z-10 flex items-center gap-2">
+      {/* Engineer-side HUD — same pattern as customer side: lives in
+       *  normal flow as a slim header bar, pushing chat content below
+       *  instead of overlaying ("Dev Soni joined as engineer" etc).
+       *  Solid surface + bottom border, no backdrop blur needed. */}
+      <div
+        className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-b px-4 py-2"
+        style={{
+          backgroundColor: "var(--surface)",
+          borderColor: "var(--border)",
+        }}
+      >
         {isExpiredFree && (
           <span
-            className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium tabular-nums"
+            className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium tabular-nums"
             style={{ backgroundColor: URGENT_AMBER_SOFT, color: URGENT_AMBER }}
             title="Customer is at the paywall — buffer countdown"
           >
@@ -584,10 +636,10 @@ function FloatingStatus({
         )}
         {isLive && (
           <span
-            className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium tabular-nums"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold tabular-nums"
             style={{
-              backgroundColor: timer.isExpired ? CRIT_RED_SOFT : timer.isWarning ? URGENT_AMBER_SOFT : BRAND_GREEN_SOFT,
-              color:           timer.isExpired ? CRIT_RED       : timer.isWarning ? URGENT_AMBER       : BRAND_GREEN,
+              fontFamily: "var(--font-inter)",
+              color: timer.isExpired ? CRIT_RED : timer.isWarning ? URGENT_AMBER : BRAND_GREEN,
             }}
           >
             {timer.format}
@@ -596,7 +648,7 @@ function FloatingStatus({
         <StatusPill session={session} />
         {!state.isAssignedEngineer && (
           <span
-            className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium"
+            className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium"
             style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
             title="You are observing — actions are disabled."
           >
@@ -604,26 +656,14 @@ function FloatingStatus({
             Monitoring (silent)
           </span>
         )}
-        {state.isAssignedEngineer && isPreLive && !inCall && (
-          <button
-            onClick={() => void startVideo()}
-            disabled={busyStart}
-            className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
-            style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
-          >
-            {busyStart ? <Loader2 size={11} className="animate-spin" /> : <Video size={11} />}
-            {hasMeeting ? "Join video" : "Start video"}
-          </button>
-        )}
+        {/* Join / Start-video button moved into the inline ZoomCallCard in
+            the chat — keep the FloatingStatus focused on session-level
+            controls only (status pill, timer, End, Release). */}
         {state.isAssignedEngineer && (isLive || isPreLive) && (
           <button
             onClick={() => setConfirmEnd(true)}
-            className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors hover:opacity-90"
-            style={{
-              borderColor: "color-mix(in srgb, var(--accent-red) 30%, transparent)",
-              backgroundColor: "color-mix(in srgb, var(--accent-red) 8%, transparent)",
-              color: "var(--accent-red)",
-            }}
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
+            style={{ backgroundColor: "var(--accent-red)" }}
           >
             <PhoneOff size={11} />
             End session
@@ -632,7 +672,7 @@ function FloatingStatus({
         {state.isAssignedEngineer && isPreLive && (
           <button
             onClick={() => void state.release()}
-            className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs transition-colors hover:bg-black/5 dark:hover:bg-white/5"
             style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
             title="Send back to queue"
           >
@@ -655,7 +695,7 @@ function StatusPill({ session }: { session: GuestCall }) {
   const cfg = pillConfig(session.status, session.urgency);
   return (
     <span
-      className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium"
+      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium"
       style={{ backgroundColor: cfg.bg, color: cfg.fg }}
     >
       <span className="relative flex h-2 w-2">
@@ -730,59 +770,14 @@ function ConfirmEndModal({ onCancel, onConfirm }: { onCancel: () => void; onConf
   );
 }
 
-// ── Zoom centre pane (engineer is host, role=1) ────────────────────────────
-function ZoomCenterPane({
-  session, engineerName, engineerEmail, onJoined, role = 1, displayLabel = "Host",
-}: {
-  session: GuestCall;
-  engineerName: string;
-  engineerEmail: string;
-  onJoined: () => Promise<void>;
-  /** 1 = host (engineer). 0 = attendee (supervisor monitoring). */
-  role?: 0 | 1;
-  /** Label shown in the corner badge. */
-  displayLabel?: string;
-}) {
-  if (!session.zoom_meeting_id) {
-    return (
-      <section className="flex h-full items-center justify-center" style={{ backgroundColor: "#0a0a0a" }}>
-        <Loader2 size={20} className="animate-spin" style={{ color: BRAND_GREEN }} />
-      </section>
-    );
-  }
-  return (
-    <section className="relative h-full" style={{ backgroundColor: "#000" }}>
-      <PopOutContainer>
-        <ZoomEmbed
-          meetingNumber={session.zoom_meeting_id}
-          userName={role === 1 ? engineerName : engineerEmail || "Observer"}
-          userEmail={engineerEmail}
-          role={role}
-          fallbackJoinUrl={role === 1 ? session.zoom_start_url : session.zoom_join_url}
-          onJoined={() => void onJoined()}
-        />
-      </PopOutContainer>
-      <div
-        className="absolute left-3 top-3 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wider"
-        style={{ backgroundColor: role === 1 ? BRAND_GREEN : "#3f5c2e88", color: "#fff" }}
-      >
-        {displayLabel}
-      </div>
-    </section>
-  );
-}
-
 // ── Chat pane ──────────────────────────────────────────────────────────────
 function ChatPane({
-  state, fullWidth = false, onStartCall, readOnly = false, onJoinSilently,
+  state, fullWidth = false, readOnly = false,
 }: {
   state: ReturnType<typeof useEngineerSession>;
   fullWidth?: boolean;
-  onStartCall?: () => void;     // when set, shows the "Start video" banner (engineer)
   readOnly?: boolean;            // monitor mode — hide composer entirely
-  onJoinSilently?: () => void;   // monitor-only — render "Join Zoom (silent)" banner
 }) {
-  const [draft, setDraft] = useState("");
   const session = state.session!;
   const isReadOnly = readOnly || session.status === "ended";
   const maxW = fullWidth ? "max-w-3xl" : "max-w-none";
@@ -794,37 +789,93 @@ function ChatPane({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [state.messages.length]);
 
-  const onSend = async () => {
-    if (!draft.trim()) return;
-    const text = draft.trim();
-    setDraft("");
-    await state.sendMessage(text);
-  };
-
-  // Same as startVideo: no immediate mark_joined — that fires only when the
-  // embed onJoined callback runs.
-  const handleStartCall = async () => {
-    if (!onStartCall) return;
+  // Engineer-only handler that mints a Zoom meeting via the edge function.
+  // Used for the first-time mint and for restart after a previous meeting
+  // ended. The mint function is idempotent for an active meeting (no-op)
+  // and force-mints when the latest lifecycle event is "ended". On success
+  // a "Zoom meeting started" system message arrives via realtime and the
+  // card refreshes.
+  const handleStartMeeting = async () => {
     setMinting(true);
     setMintError(null);
     try {
       const sb = createClient();
-      if (!session.zoom_meeting_id) {
-        const { data, error } = await sb.functions.invoke("mint-zoom-for-session", {
-          body: { session_id: session.id },
-        });
-        if (error || !data?.zoom_meeting_id) {
-          const msg = error?.message ?? (data?.error as string | undefined) ?? "Couldn't mint Zoom meeting";
-          setMintError(msg);
-          setTimeout(() => setMintError(null), 6000);
-          return;
-        }
+      const { error } = await sb.functions.invoke("mint-zoom-for-session", {
+        body: { session_id: session.id },
+      });
+      if (error) {
+        const msg = error.message ?? "Couldn't start a Zoom meeting";
+        setMintError(msg);
+        setTimeout(() => setMintError(null), 6000);
+        return;
       }
-      onStartCall();
+      // Defensive refresh — realtime will deliver the updates, but pulling
+      // the row eagerly keeps the UI in sync if the subscription drops.
+      await state.refresh();
     } finally {
       setMinting(false);
     }
   };
+
+  // Engineer-only handler that hangs up the current Zoom meeting via the
+  // end-zoom-meeting edge function — saves the engineer from having to
+  // open Zoom and click "End meeting for all" themselves when the customer
+  // declines or the call needs to be cut short.
+  const handleCancelMeeting = async () => {
+    setMintError(null);
+    const sb = createClient();
+    const { error } = await sb.functions.invoke("end-zoom-meeting", {
+      body: { session_id: session.id },
+    });
+    if (error) {
+      const msg = error.message ?? "Couldn't end the Zoom meeting";
+      setMintError(msg);
+      setTimeout(() => setMintError(null), 6000);
+      return;
+    }
+    await state.refresh();
+  };
+
+  // Latest "started" vs "ended" event drives whether the composer's
+  // Start-meeting button is visible. The per-meeting cards in the chat
+  // body live alongside their corresponding "started" message — each
+  // meeting is its own inline entry there.
+  const lastZoomEvent = [...state.messages].reverse().find(
+    (m) =>
+      m.sender_kind === "system" &&
+      ((m.body ?? "").includes("Zoom meeting ended") || (m.body ?? "").includes("Zoom meeting started")),
+  );
+  const zoomEnded = !!lastZoomEvent && (lastZoomEvent.body ?? "").includes("Zoom meeting ended");
+
+  // Composer-level start/restart affordance. Hidden when there's already an
+  // active Zoom meeting (mint would be a no-op then) and in monitor mode.
+  const showStartMeetingButton = !readOnly && (!session.zoom_meeting_id || zoomEnded);
+
+  // Join URL the engineer/monitor should open. The latest active meeting
+  // always points at the current session row's URLs.
+  const zoomCardUrl = readOnly
+    ? session.zoom_join_url
+    : session.zoom_start_url ?? session.zoom_join_url;
+
+  // Pair "started" / "ended" system messages in chronological order so each
+  // meeting renders as one inline mini-card. Paired endeds are suppressed.
+  const meetingEnded = new Map<string, GuestMessage>();
+  const suppressedEndedIds = new Set<string>();
+  {
+    const queue: GuestMessage[] = [];
+    for (const m of state.messages) {
+      if (m.sender_kind !== "system") continue;
+      if ((m.body ?? "").includes("Zoom meeting started")) {
+        queue.push(m);
+      } else if ((m.body ?? "").includes("Zoom meeting ended")) {
+        const start = queue.shift();
+        if (start) {
+          meetingEnded.set(start.id, m);
+          suppressedEndedIds.add(m.id);
+        }
+      }
+    }
+  }
 
   return (
     <section className="flex h-full flex-col" style={{ backgroundColor: "var(--surface)" }}>
@@ -839,7 +890,31 @@ function ChatPane({
             </div>
           ) : (
             <div className="space-y-3">
-              {state.messages.map((m) => <Message key={m.id} message={m} />)}
+              {state.messages.flatMap((m) => {
+                if (m.sender_kind === "system" && (m.body ?? "").includes("Zoom meeting started")) {
+                  const ended = meetingEnded.get(m.id) ?? null;
+                  const durationSec = ended
+                    ? Math.floor((new Date(ended.created_at).getTime() - new Date(m.created_at).getTime()) / 1000)
+                    : undefined;
+                  return [
+                    <MeetingChatEntry
+                      key={m.id}
+                      active={!ended}
+                      durationSec={durationSec}
+                      joinUrl={!ended ? zoomCardUrl : null}
+                      onJoin={!ended && !readOnly ? () => void state.markJoined() : undefined}
+                      onCancel={!ended && !readOnly ? handleCancelMeeting : undefined}
+                    />,
+                  ];
+                }
+                if (m.sender_kind === "system" && suppressedEndedIds.has(m.id)) {
+                  return [];
+                }
+                if (m.sender_kind === "system" && isAiSummaryMessageBody(m.body)) {
+                  return [<MeetingSummaryEntry key={m.id} body={m.body} />];
+                }
+                return [<Message key={m.id} message={m} />];
+              })}
             </div>
           )}
         </div>
@@ -874,103 +949,33 @@ function ChatPane({
               )}
             </div>
           )}
-          {/* Prominent "Start video" banner — engineer pre-call only */}
-          {onStartCall && !readOnly && (
-            <button
-              onClick={() => void handleStartCall()}
-              disabled={minting}
-              className="flex w-full items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left transition-colors hover:opacity-90 disabled:opacity-60"
-              style={{
-                borderColor: BRAND_GREEN_BORDER,
-                backgroundColor: BRAND_GREEN_SOFT,
-              }}
-            >
-              <div className="flex items-center gap-3">
-                <span
-                  className="flex h-8 w-8 items-center justify-center rounded-full"
-                  style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
-                >
-                  {minting ? <Loader2 size={14} className="animate-spin" /> : <Video size={14} />}
-                </span>
-                <div className="flex flex-col">
-                  <span className="text-sm font-medium" style={{ color: "var(--text)" }}>
-                    {session.zoom_meeting_id ? "Join the video call" : "Start the video call"}
-                  </span>
-                  <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-                    {minting
-                      ? "Setting up Zoom…"
-                      : `${session.guest_name} will be notified to join`}
-                  </span>
-                </div>
-              </div>
-              <span className="text-xs font-medium" style={{ color: BRAND_GREEN }}>
-                {minting ? "" : "Call →"}
-              </span>
-            </button>
-          )}
-
-          {/* Monitor — "Join Zoom silently" banner (optional). The engineer
-              and customer see the supervisor in the participant list as an
-              attendee but get no chat notification of their arrival. */}
-          {onJoinSilently && (
-            <button
-              onClick={onJoinSilently}
-              className="flex w-full items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left transition-colors hover:opacity-90"
-              style={{ borderColor: BRAND_GREEN_BORDER, backgroundColor: BRAND_GREEN_SOFT }}
-            >
-              <div className="flex items-center gap-3">
-                <span
-                  className="flex h-8 w-8 items-center justify-center rounded-full"
-                  style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
-                >
-                  <Eye size={14} />
-                </span>
-                <div className="flex flex-col">
-                  <span className="text-sm font-medium" style={{ color: "var(--text)" }}>
-                    Join the Zoom silently
-                  </span>
-                  <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-                    Observer role — engineer / customer won&apos;t be notified
-                  </span>
-                </div>
-              </div>
-              <span className="text-xs font-medium" style={{ color: BRAND_GREEN }}>
-                Join →
-              </span>
-            </button>
-          )}
-
           {/* Composer — hidden entirely in monitor (read-only) mode */}
           {!readOnly ? (
-            <div
-              className="relative rounded-2xl border shadow-sm transition-all focus-within:ring-2"
-              style={{
-                borderColor: "var(--border)",
-                backgroundColor: "var(--surface)",
-                ["--tw-ring-color" as string]: BRAND_GREEN_BORDER,
-                opacity: isReadOnly ? 0.55 : 1,
-              }}
-            >
-              <input
-                type="text"
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void onSend(); }
-                }}
+            <div className="flex flex-col gap-2">
+              {showStartMeetingButton && (
+                <button
+                  type="button"
+                  onClick={() => void handleStartMeeting()}
+                  disabled={isReadOnly || minting}
+                  title={session.zoom_meeting_id ? "Start a new Zoom meeting" : "Start a Zoom meeting"}
+                  className="inline-flex items-center justify-center gap-1.5 self-start rounded-full border px-3 py-1.5 text-[12px] font-medium transition-colors disabled:opacity-50"
+                  style={{
+                    borderColor: BRAND_GREEN_BORDER,
+                    backgroundColor: BRAND_GREEN_SOFT,
+                    color: BRAND_GREEN,
+                  }}
+                >
+                  {minting ? <Loader2 size={12} className="animate-spin" /> : <Video size={12} />}
+                  {session.zoom_meeting_id ? "Start a new Zoom meeting" : "Start Zoom meeting"}
+                </button>
+              )}
+              <ChatComposer
                 disabled={isReadOnly}
                 placeholder={isReadOnly ? "Session ended" : `Message ${session.guest_name}…`}
-                className="h-12 w-full rounded-2xl bg-transparent pl-4 pr-12 text-sm outline-none disabled:cursor-not-allowed"
-                style={{ color: "var(--text)" }}
+                onSend={async ({ text, files }) => {
+                  await state.sendBundle({ text, files });
+                }}
               />
-              <button
-                onClick={() => void onSend()}
-                disabled={isReadOnly || !draft.trim()}
-                className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-xl disabled:opacity-40"
-                style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
-              >
-                <Send size={14} />
-              </button>
             </div>
           ) : (
             <div
@@ -999,20 +1004,23 @@ function Message({ message }: { message: GuestMessage }) {
     );
   }
   const mine = message.sender_kind === "engineer";
+  const hasAttachments = !!message.attachments && message.attachments.length > 0;
+  const hasText = !!message.body && message.body.length > 0;
   return (
     <div className={`flex flex-col ${mine ? "items-end" : "items-start"}`}>
       <div className="mb-0.5 px-1 text-[10px]" style={{ color: "var(--text-muted)" }}>
         {message.sender_name ?? (mine ? "You" : "Customer")}
       </div>
       <div
-        className="max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm whitespace-pre-wrap"
+        className="flex max-w-[85%] flex-col gap-2 rounded-2xl px-3.5 py-2.5 text-sm whitespace-pre-wrap"
         style={
           mine
             ? { backgroundColor: BRAND_GREEN, color: "#fff", borderBottomRightRadius: 4 }
             : { backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)", color: "var(--text)", borderBottomLeftRadius: 4 }
         }
       >
-        {message.body}
+        {hasAttachments && <MessageAttachments attachments={message.attachments} />}
+        {hasText && <div>{message.body}</div>}
       </div>
     </div>
   );
