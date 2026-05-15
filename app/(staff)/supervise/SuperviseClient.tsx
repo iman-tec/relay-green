@@ -266,10 +266,7 @@ export function SuperviseClient() {
 
 function HealthLegend() {
   return (
-    <div
-      className="flex flex-wrap items-center gap-x-6 gap-y-2"
-      title="Session health — green healthy, amber neutral, red danger"
-    >
+    <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
       <LegendChip color={BRAND_GREEN}  label="Healthy" />
       <LegendChip color={URGENT_AMBER} label="Neutral" />
       <LegendChip color={CRIT_RED}     label="Danger" />
@@ -278,8 +275,13 @@ function HealthLegend() {
 }
 
 function LegendChip({ color, label }: { color: string; label: string }) {
+  const tooltip = `Call Sentiment - ${label}`;
   return (
-    <div className="inline-flex items-center gap-2">
+    <div
+      className="inline-flex items-center gap-2"
+      title={tooltip}
+      aria-label={tooltip}
+    >
       <span
         aria-hidden
         className="inline-block h-2.5 w-2.5 rounded-full"
