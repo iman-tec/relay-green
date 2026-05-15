@@ -12,16 +12,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { Activity, AlertTriangle, Clock, Eye, Loader2, ArrowUpRight } from "lucide-react";
+import {
+  Activity, AlertTriangle, Clock, Eye, Loader2, ArrowUpRight, Search,
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import type { GuestCall } from "@/lib/supabase/types";
 
 const BRAND_GREEN = "#3f5c2e";
 const BRAND_GREEN_SOFT = "rgba(63, 92, 46, 0.12)";
-const URGENT_AMBER = "#c66645";
-const URGENT_AMBER_SOFT = "rgba(198, 102, 69, 0.14)";
-const CRIT_RED = "#c8553d";
-const CRIT_RED_SOFT = "rgba(200, 85, 61, 0.18)";
+const URGENT_AMBER = "#d4a017";
+const URGENT_AMBER_SOFT = "rgba(212, 160, 23, 0.14)";
+const CRIT_RED = "#8b1a1a";
+const CRIT_RED_SOFT = "rgba(139, 26, 26, 0.18)";
 
 const ACTIVE_STATES  = ["queued", "assigned", "joining", "live", "grace"];
 const LIVE_STATES    = new Set(["live", "joining", "grace"]);
@@ -73,7 +76,7 @@ export function SuperviseClient() {
       sb.from("guest_calls").select("*")
         .in("status", PAST_STATES)
         .order("ended_at", { ascending: false, nullsFirst: false })
-        .limit(24),
+        .limit(200),
     ]);
     const rows     = (liveRes.data as GuestCall[]) ?? [];
     const pastRows = (pastRes.data as GuestCall[]) ?? [];
@@ -118,20 +121,31 @@ export function SuperviseClient() {
   // flip, agent claimed, etc.) AND on any new session_health row (the
   // per-minute AI score landing). Falls back to a 30s poll in case
   // Realtime drops, so the supervisor view never goes stale.
+  //
+  // Bursts of postgres_changes events can fire ~10 times per second during
+  // a busy minute (every recall, every assignment, every status flip). We
+  // debounce them to one refetch per 600 ms so we don't spam the DB and
+  // keep the UI smooth.
   useEffect(() => {
     const sb = supabaseRef.current;
+    let pending: ReturnType<typeof setTimeout> | null = null;
+    const queueRefresh = () => {
+      if (pending) return;
+      pending = setTimeout(() => { pending = null; void refresh(); }, 600);
+    };
     const ch = sb
       .channel("relay-supervise")
       .on("postgres_changes",
         { event: "*", schema: "public", table: "guest_calls" },
-        () => { void refresh(); })
+        queueRefresh)
       .on("postgres_changes",
         { event: "INSERT", schema: "public", table: "session_health" },
-        () => { void refresh(); })
+        queueRefresh)
       .subscribe();
     channelRef.current = ch;
     const fallback = setInterval(() => { void refresh(); }, 30_000);
     return () => {
+      if (pending) clearTimeout(pending);
       sb.removeChannel(ch);
       channelRef.current = null;
       clearInterval(fallback);
@@ -458,25 +472,271 @@ function TabPanel({
   pastSessions: SessionWithHealth[];
 }) {
   if (tab === "past") {
-    if (pastSessions.length === 0) {
-      return <EmptyState title="No history yet" body="Once a session ends, it'll appear here." />;
-    }
     return (
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-        {pastSessions.map((s) => <PastSessionTile key={s.id} session={s} />)}
-      </div>
+      <PastPanel sessions={pastSessions} />
     );
   }
-  const list = tab === "live" ? liveSessions : waitingSessions;
-  if (list.length === 0) {
-    return tab === "live"
-      ? <EmptyState title="All quiet" body="No active sessions right now. New activity appears here in real time." />
-      : <EmptyState title="Nothing waiting" body="No customers waiting to be picked up." />;
-  }
   return (
-    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-      {list.map((s) => <SessionTile key={s.id} session={s} />)}
+    <ActivePanel
+      tab={tab}
+      sessions={tab === "live" ? liveSessions : waitingSessions}
+    />
+  );
+}
+
+// ── Active (live + waiting) panel — search + sort, no pager (lists short) ──
+function ActivePanel({ tab, sessions }: { tab: "live" | "waiting"; sessions: SessionWithHealth[] }) {
+  const [q, setQ] = useState("");
+  const [sortKey, setSortKey] = useState<"recent" | "wait" | "customer" | "engineer">(
+    tab === "waiting" ? "wait" : "recent",
+  );
+
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    let arr = sessions;
+    if (needle) {
+      arr = arr.filter((s) =>
+        (s.guest_name ?? "").toLowerCase().includes(needle) ||
+        (s.guest_email ?? "").toLowerCase().includes(needle) ||
+        (s.agent_name ?? "").toLowerCase().includes(needle) ||
+        (s.project_name ?? "").toLowerCase().includes(needle),
+      );
+    }
+    const sorted = [...arr];
+    sorted.sort((a, b) => {
+      switch (sortKey) {
+        case "wait": {
+          const aw = Date.now() - new Date(a.created_at).getTime();
+          const bw = Date.now() - new Date(b.created_at).getTime();
+          return bw - aw; // longest wait first
+        }
+        case "customer": return (a.guest_name ?? "").localeCompare(b.guest_name ?? "");
+        case "engineer": return (a.agent_name ?? "").localeCompare(b.agent_name ?? "");
+        case "recent":
+        default:
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      }
+    });
+    return sorted;
+  }, [sessions, q, sortKey]);
+
+  return (
+    <div className="flex flex-col gap-3">
+      <SuperviseToolbar
+        q={q} setQ={setQ}
+        sortKey={sortKey} setSortKey={setSortKey as (s: string) => void}
+        sortOptions={[
+          { value: "recent",   label: "Newest first" },
+          { value: "wait",     label: "Longest wait" },
+          { value: "customer", label: "Customer name" },
+          { value: "engineer", label: "Engineer name" },
+        ]}
+        total={filtered.length}
+        searchPlaceholder={tab === "live" ? "Search live sessions…" : "Search waiting…"}
+      />
+      {filtered.length === 0 ? (
+        tab === "live"
+          ? <EmptyState title="All quiet" body={q ? `No live sessions match "${q}".` : "No active sessions right now."} />
+          : <EmptyState title="Nothing waiting" body={q ? `No waiting sessions match "${q}".` : "No customers waiting to be picked up."} />
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          {filtered.map((s) => <SessionTile key={s.id} session={s} />)}
+        </div>
+      )}
     </div>
+  );
+}
+
+// ── Past panel — search + sort + pager (longer list) ──────────────────────
+function PastPanel({ sessions }: { sessions: SessionWithHealth[] }) {
+  const PAGE_SIZE = 8;
+  const [q, setQ] = useState("");
+  const [sortKey, setSortKey] = useState<"ended" | "duration" | "sentiment" | "customer">("ended");
+  const [page, setPage] = useState(1);
+
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    let arr = sessions;
+    if (needle) {
+      arr = arr.filter((s) =>
+        (s.guest_name ?? "").toLowerCase().includes(needle) ||
+        (s.guest_email ?? "").toLowerCase().includes(needle) ||
+        (s.agent_name ?? "").toLowerCase().includes(needle) ||
+        (s.project_name ?? "").toLowerCase().includes(needle),
+      );
+    }
+    const sorted = [...arr];
+    sorted.sort((a, b) => {
+      switch (sortKey) {
+        case "duration":  return (Number(b.duration_minutes ?? 0)) - (Number(a.duration_minutes ?? 0));
+        case "sentiment": return (b.health?.score ?? 0) - (a.health?.score ?? 0);
+        case "customer":  return (a.guest_name ?? "").localeCompare(b.guest_name ?? "");
+        case "ended":
+        default: {
+          const at = a.ended_at ? new Date(a.ended_at).getTime() : 0;
+          const bt = b.ended_at ? new Date(b.ended_at).getTime() : 0;
+          return bt - at;
+        }
+      }
+    });
+    return sorted;
+  }, [sessions, q, sortKey]);
+
+  // Reset page if filters shrink the list past the current page.
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  useEffect(() => {
+    if (page > pageCount) setPage(1);
+  }, [page, pageCount]);
+
+  const start = (page - 1) * PAGE_SIZE;
+  const slice = filtered.slice(start, start + PAGE_SIZE);
+
+  return (
+    <div className="flex flex-col gap-3">
+      <SuperviseToolbar
+        q={q} setQ={(v) => { setQ(v); setPage(1); }}
+        sortKey={sortKey} setSortKey={(s) => { setSortKey(s as typeof sortKey); setPage(1); }}
+        sortOptions={[
+          { value: "ended",     label: "Newest ended" },
+          { value: "duration",  label: "Longest duration" },
+          { value: "sentiment", label: "Best sentiment" },
+          { value: "customer",  label: "Customer name" },
+        ]}
+        total={filtered.length}
+        searchPlaceholder="Search past sessions…"
+      />
+
+      {filtered.length === 0 ? (
+        <EmptyState
+          title={sessions.length === 0 ? "No history yet" : "No matches"}
+          body={sessions.length === 0
+            ? "Once a session ends, it'll appear here."
+            : `No past sessions match "${q}".`}
+        />
+      ) : (
+        <>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            {slice.map((s) => <PastSessionTile key={s.id} session={s} />)}
+          </div>
+          <PagerStrip
+            showingFrom={start + 1}
+            showingTo={start + slice.length}
+            total={filtered.length}
+            page={page}
+            pageCount={pageCount}
+            setPage={setPage}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Shared toolbar: search + sort + count ──────────────────────────────────
+function SuperviseToolbar({
+  q, setQ, sortKey, setSortKey, sortOptions, total, searchPlaceholder,
+}: {
+  q: string;
+  setQ: (v: string) => void;
+  sortKey: string;
+  setSortKey: (k: string) => void;
+  sortOptions: ReadonlyArray<{ value: string; label: string }>;
+  total: number;
+  searchPlaceholder: string;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="relative">
+        <Search
+          size={12}
+          className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2"
+          style={{ color: "var(--text-muted)" }}
+        />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder={searchPlaceholder}
+          className="rounded-md border py-1.5 pl-7 pr-2 text-xs outline-none"
+          style={{
+            borderColor: "var(--border)",
+            backgroundColor: "var(--background)",
+            color: "var(--text)",
+            width: 260,
+          }}
+        />
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={sortKey}
+          onChange={(e) => setSortKey(e.target.value)}
+          className="rounded-md border px-2 py-1.5 text-xs outline-none"
+          style={{
+            borderColor: "var(--border)",
+            backgroundColor: "var(--background)",
+            color: "var(--text)",
+          }}
+        >
+          {sortOptions.map((o) => (
+            <option key={o.value} value={o.value}>Sort: {o.label}</option>
+          ))}
+        </select>
+        <span className="text-[11px] tabular-nums" style={{ color: "var(--text-muted)" }}>
+          {total} {total === 1 ? "result" : "results"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ── Pager strip (used by Past tab) ─────────────────────────────────────────
+function PagerStrip({
+  showingFrom, showingTo, total, page, pageCount, setPage,
+}: {
+  showingFrom: number;
+  showingTo:   number;
+  total:       number;
+  page:        number;
+  pageCount:   number;
+  setPage:     (p: number) => void;
+}) {
+  return (
+    <div
+      className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2"
+      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+    >
+      <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+        Showing {showingFrom}–{showingTo} of {total}
+      </span>
+      <div className="flex items-center gap-1">
+        <PagerBtn onClick={() => setPage(1)}              disabled={page <= 1}><ChevronsLeft  size={12} /></PagerBtn>
+        <PagerBtn onClick={() => setPage(page - 1)}       disabled={page <= 1}><ChevronLeft   size={12} /></PagerBtn>
+        <span className="px-2 text-[11px] tabular-nums" style={{ color: "var(--text-muted)" }}>
+          {page} / {pageCount}
+        </span>
+        <PagerBtn onClick={() => setPage(page + 1)}       disabled={page >= pageCount}><ChevronRight  size={12} /></PagerBtn>
+        <PagerBtn onClick={() => setPage(pageCount)}      disabled={page >= pageCount}><ChevronsRight size={12} /></PagerBtn>
+      </div>
+    </div>
+  );
+}
+
+function PagerBtn({
+  onClick, disabled, children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="flex h-6 w-6 items-center justify-center rounded-md border transition-colors hover:bg-black/5 disabled:opacity-30 dark:hover:bg-white/5"
+      style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+    >
+      {children}
+    </button>
   );
 }
 

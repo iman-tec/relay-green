@@ -22,10 +22,10 @@ import type { GuestCall } from "@/lib/supabase/types";
 
 const BRAND_GREEN       = "#3f5c2e";
 const BRAND_GREEN_SOFT  = "rgba(63, 92, 46, 0.12)";
-const URGENT_AMBER_SOFT = "rgba(198, 102, 69, 0.14)";
-const URGENT_AMBER      = "#c66645";
-const CRIT_RED_SOFT     = "rgba(200, 85, 61, 0.18)";
-const CRIT_RED          = "#c8553d";
+const URGENT_AMBER_SOFT = "rgba(212, 160, 23, 0.14)";
+const URGENT_AMBER      = "#d4a017";
+const CRIT_RED_SOFT     = "rgba(139, 26, 26, 0.18)";
+const CRIT_RED          = "#8b1a1a";
 
 export function EngineerIncomingRequest() {
   const router = useRouter();

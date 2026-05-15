@@ -7,8 +7,8 @@
  *     - currentCustomer: name of the guest on their active call (or null)
  *     - lastCallAt + lastCustomer: most recent completed session
  *
- * Gated to pod_lead. super_admin gets the same view scoped to a pod they
- * lead if any (otherwise empty).
+ * Gated to pod_lead only. Super admins see other surfaces; the
+ * supervisor's personal team roster doesn't apply to them.
  */
 
 import { NextResponse } from "next/server";
@@ -30,8 +30,11 @@ export async function GET() {
     .select("role")
     .eq("user_id", user.id);
   const roles = (roleRows ?? []).map((r: { role: string }) => r.role);
-  const allowed = roles.includes("pod_lead") || roles.includes("super_admin");
-  if (!allowed) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  // Supervisor-only — super_admin is explicitly excluded, even if they
+  // also hold pod_lead from testing.
+  if (roles.includes("super_admin") || !roles.includes("pod_lead")) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;

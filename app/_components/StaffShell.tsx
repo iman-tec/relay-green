@@ -23,9 +23,9 @@ import Link from "next/link";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Bell, Loader2, LogOut, ChevronDown, AlertTriangle, X,
+  Loader2, LogOut, ChevronDown, AlertTriangle, X,
   PanelLeftClose, PanelLeftOpen, LayoutDashboard,
-  Eye, Users as UsersIcon, Wallet as WalletIcon, Table as TableIcon,
+  Eye, Users as UsersIcon, Wallet as WalletIcon, Table as TableIcon, Inbox as InboxIcon,
 } from "lucide-react";
 import { Wordmark } from "./Wordmark";
 import { useStaffGuard } from "@/lib/relay/useStaffGuard";
@@ -36,10 +36,10 @@ import type { GuestCall } from "@/lib/supabase/types";
 
 const BRAND_GREEN       = "#3f5c2e";
 const BRAND_GREEN_SOFT  = "rgba(63, 92, 46, 0.12)";
-const URGENT_AMBER      = "#c66645";
-const URGENT_AMBER_SOFT = "rgba(198, 102, 69, 0.14)";
-const CRIT_RED          = "#c8553d";
-const CRIT_RED_SOFT     = "rgba(200, 85, 61, 0.18)";
+const URGENT_AMBER      = "#d4a017";
+const URGENT_AMBER_SOFT = "rgba(212, 160, 23, 0.14)";
+const CRIT_RED          = "#8b1a1a";
+const CRIT_RED_SOFT     = "rgba(139, 26, 26, 0.18)";
 
 const SIDEBAR_OPEN_W = 240;
 const SIDEBAR_CLOSED_W = 60;
@@ -52,18 +52,17 @@ type Nav = {
   roles: string[];
 };
 
-// /triage, /inbox, and /settings deliberately removed from the staff
-// sidebar. /triage was redundant once /dashboard grew Take-next + queue.
-// /inbox stays as a route but isn't in nav — it's the post-call landing
-// destination only. /settings will return when account-settings land.
+// /triage and /settings deliberately omitted from the sidebar.
+// /triage was redundant once /dashboard grew Take-next + queue.
+// /settings will return when account-settings land.
 const NAV: Nav[] = [
   { href: "/dashboard",            label: "Dashboard", icon: LayoutDashboard, roles: ["engineer"] },
+  // Engineer-only. People + per-customer session history + call log.
+  { href: "/inbox",                label: "Inbox",     icon: InboxIcon,       roles: ["engineer"] },
   // /supervise renders the platform-wide grid for staff, and the
   // org-scoped grid for enterprise_admin — see app/(staff)/supervise/page.tsx.
   { href: "/supervise",            label: "Supervise", icon: Eye,             roles: ["pod_lead", "ops_manager", "admin", "super_admin", "enterprise_admin"] },
   { href: "/admin/users",          label: "Users",     icon: UsersIcon,       roles: ["super_admin"] },
-  // Super-admin only — assign engineers to a supervisor's pod.
-  { href: "/admin/assignments",    label: "Assignments", icon: TableIcon,     roles: ["super_admin"] },
   // enterprise_admin's home is /enterprise; the Supervise link above is shared with platform staff.
   { href: "/enterprise",           label: "Dashboard", icon: LayoutDashboard, roles: ["enterprise_admin"] },
   // /finance is the money + feedback console for org admins (Internal Admin
@@ -191,9 +190,15 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   // Without this filter, Eric Enterprise — who also holds the legacy
   // 'admin' role from the seed — would see /admin/users in his sidebar.
   const ENT_ADMIN_ALLOW = new Set(["/enterprise", "/supervise"]);
+  // Routes that super_admin should never see even when they hold the
+  // underlying role for testing (e.g. dev.soni also has pod_lead so she
+  // can join real sessions, but /operations is a supervisor surface).
+  const SUPER_ADMIN_HIDDEN = new Set(["/operations"]);
+  const isSuperAdmin = roles.includes("super_admin");
   const navItems = NAV
     .filter((n) => n.roles.some((r) => roles.includes(r)))
-    .filter((n) => !isEnterpriseAdmin || ENT_ADMIN_ALLOW.has(n.href));
+    .filter((n) => !isEnterpriseAdmin || ENT_ADMIN_ALLOW.has(n.href))
+    .filter((n) => !isSuperAdmin || !SUPER_ADMIN_HIDDEN.has(n.href));
 
   return (
     <div className="flex min-h-screen" style={{ backgroundColor: "var(--background)" }}>
@@ -277,17 +282,6 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
           className="border-t px-2 py-2"
           style={{ borderColor: "var(--border)" }}
         >
-          <div
-            className="flex items-center"
-            style={{ justifyContent: collapsed ? "center" : "space-between" }}
-          >
-            <NotificationBell roles={roles} collapsed={collapsed} />
-            {!collapsed && (
-              <div className="flex-1 px-2">
-                <ProfileChipInline email={guard.kind === "staff" ? "" : ""} />
-              </div>
-            )}
-          </div>
           <ProfileButton
             email={guardEmail(guard)}
             roles={roles}
@@ -332,17 +326,6 @@ function DotOnly() {
         backgroundColor: BRAND_GREEN,
       }}
     />
-  );
-}
-
-function ProfileChipInline({ email }: { email: string }) {
-  // Kept as a stub for future use (e.g. truncated email in the sidebar).
-  // Profile actions live in ProfileButton below.
-  if (!email) return null;
-  return (
-    <span className="truncate text-[12px]" style={{ color: "var(--text-muted)" }}>
-      {email}
-    </span>
   );
 }
 
@@ -491,86 +474,6 @@ function ProfileButton({
         </div>
       )}
     </div>
-  );
-}
-
-/* ──────── Notification bell — count of pending sessions ──────── */
-
-function NotificationBell({
-  roles,
-  collapsed,
-}: {
-  roles: string[];
-  collapsed: boolean;
-}) {
-  void collapsed;
-  const router = useRouter();
-  const [count, setCount] = useState(0);
-  const supabaseRef = useRef(createClient());
-
-  // Org admins (enterprise_admin, ops_manager) don't claim sessions, so a
-  // pending-work counter just creates phantom badges. We still show the
-  // bell so they can jump to /supervise — just without the number.
-  const isOrgAdminOnly =
-    (roles.includes("enterprise_admin") || roles.includes("ops_manager")) &&
-    !isEngineer(roles) &&
-    !roles.includes("pod_lead") &&
-    !roles.includes("admin") &&
-    !roles.includes("super_admin");
-
-  const target = isEngineer(roles) ? "/dashboard" : "/supervise";
-  const onClick = () => router.push(target);
-
-  useEffect(() => {
-    if (isOrgAdminOnly) { setCount(0); return; }
-    const sb = supabaseRef.current;
-    let cancelled = false;
-
-    const fetchCount = async () => {
-      const target = isEngineer(roles)
-        ? ["queued"]
-        : ["queued", "assigned", "joining", "live", "grace"];
-      const urgencyFilter = isEngineer(roles) ? undefined : ["urgent", "critical"];
-      let q = sb.from("guest_calls").select("id", { count: "exact", head: true })
-        .in("status", target);
-      if (urgencyFilter) q = q.in("urgency", urgencyFilter);
-      const { count } = await q;
-      if (!cancelled) setCount(count ?? 0);
-    };
-    void fetchCount();
-
-    const ch = sb
-      .channel("staff-shell-bell")
-      .on("postgres_changes",
-        { event: "*", schema: "public", table: "guest_calls" },
-        () => { void fetchCount(); },
-      )
-      .subscribe();
-    return () => {
-      cancelled = true;
-      sb.removeChannel(ch);
-    };
-  }, [roles, isOrgAdminOnly]);
-
-  return (
-    <button
-      type="button"
-      aria-label="Notifications"
-      onClick={onClick}
-      className="relative rounded-md p-2 transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
-      style={{ color: "var(--text-muted)" }}
-      title={`${count} pending — open ${target}`}
-    >
-      <Bell size={16} />
-      {count > 0 && (
-        <span
-          className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold"
-          style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
-        >
-          {count > 99 ? "99+" : count}
-        </span>
-      )}
-    </button>
   );
 }
 

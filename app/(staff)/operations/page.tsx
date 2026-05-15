@@ -20,8 +20,12 @@ export default async function OperationsPage() {
     .eq("user_id", user.id);
   const roles = (roleRows ?? []).map((r: { role: string }) => r.role);
 
-  const allowed = roles.includes("pod_lead") || roles.includes("super_admin");
-  if (!allowed) redirect("/supervise");
+  // Supervisor-only surface. Super admins (even when they also hold
+  // pod_lead for testing) get redirected — /operations is the
+  // supervisor's personal team roster, not a platform-wide view.
+  if (roles.includes("super_admin") || !roles.includes("pod_lead")) {
+    redirect("/supervise");
+  }
 
   return <OperationsClient />;
 }

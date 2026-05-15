@@ -18,8 +18,8 @@ import { formatEur } from "@/lib/billing/plans";
 
 const BRAND_GREEN      = "#3f5c2e";
 const BRAND_GREEN_SOFT = "rgba(63, 92, 46, 0.10)";
-const URGENT_AMBER     = "#c66645";
-const CRIT_RED         = "#c8553d";
+const URGENT_AMBER     = "#d4a017";
+const CRIT_RED         = "#8b1a1a";
 
 type BillingResponse = {
   currency: string;

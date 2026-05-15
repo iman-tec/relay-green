@@ -1,18 +1,25 @@
 "use client";
 
 /*
- * Enterprise tab — list of Orgs, each expandable to show its members.
+ * Enterprise tab — master-detail layout matching the Pods tab.
  *
- * - "+ Add organization" creates an Org and its first Enterprise Admin in
- *   one form; the admin's plaintext code is revealed once.
- * - Inside each Org, "+ Add member" creates a customer user (role 'builder')
- *   in that Org; their code is revealed once.
- * - Member-row actions (regenerate, deactivate, delete) reuse the Staff-tab
- *   endpoints since they operate on the same auth users.
+ *   left pane   right pane
+ *   ──────────  ──────────────────────────────────
+ *   • Acme       Acme Inc · acme.com
+ *   • Beta Co    ─────────────────────────────────
+ *   • …          ADMINS (1)      [+ Add admin]
+ *                  Jane Doe  jane@acme.com  ✕
+ *                ENGINEERS / CUSTOMERS (3) [+ Add member]
+ *                  ...
+ *
+ * Org-create modal-style row inside the left pane (same pattern as
+ * PodList's create-pod inline form). Member adds use a small inline
+ * form that pre-fills nothing and posts to
+ * /api/admin/orgs/:orgId/members.
  */
 
-import { useEffect, useState } from "react";
-import { ChevronRight, Plus, Mail, Power, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Loader2, Plus, Mail, Power, Trash2, X, Search } from "lucide-react";
 import { formatRole } from "@/lib/relay/role-labels";
 
 type Member = {
@@ -37,28 +44,21 @@ type Org = {
 const BRAND_GREEN = "#3f5c2e";
 
 export function EnterpriseTab() {
-  const [orgs, setOrgs] = useState<Org[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [reveal, setReveal] = useState<{ label: string; action: "invited" | "resent" } | null>(null);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [addingOrg, setAddingOrg] = useState(false);
-  const [memberDraftOrgId, setMemberDraftOrgId] = useState<string | null>(null);
+  const [orgs, setOrgs]               = useState<Org[]>([]);
+  const [selectedId, setSelectedId]   = useState<string | null>(null);
+  const [loading, setLoading]         = useState(true);
+  const [error, setError]             = useState<string | null>(null);
+  const [reveal, setReveal]           = useState<{ label: string; action: "invited" | "resent" } | null>(null);
 
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
       const res = await fetch("/api/admin/orgs", { cache: "no-store" });
-      const body = (await res.json().catch(() => ({}))) as {
-        orgs?: Org[];
-        error?: string;
-      };
-      if (!res.ok) {
-        setError(body.error ?? "Couldn't load orgs.");
-        return;
-      }
+      const body = (await res.json().catch(() => ({}))) as { orgs?: Org[]; error?: string };
+      if (!res.ok) { setError(body.error ?? "Couldn't load orgs."); return; }
       setOrgs(body.orgs ?? []);
+      setSelectedId((curr) => curr ?? (body.orgs?.[0]?.id ?? null));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't load orgs.");
     } finally {
@@ -66,71 +66,44 @@ export function EnterpriseTab() {
     }
   };
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void load();
-  }, []);
-
-  const toggleExpanded = (id: string) => {
-    const next = new Set(expanded);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setExpanded(next);
-  };
+  useEffect(() => { void load(); }, []);
 
   const createOrg = async (input: {
-    name: string;
-    primaryDomain: string;
-    adminEmail: string;
-    adminDisplayName: string;
+    name: string; primaryDomain: string; adminEmail: string; adminDisplayName: string;
   }) => {
-    setError(null);
     const res = await fetch("/api/admin/orgs", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
       body:    JSON.stringify(input),
     });
-    const body = (await res.json().catch(() => ({}))) as {
-      org?: Org;
-      invited?: boolean;
-      error?: string;
-    };
-    if (!res.ok) {
-      setError(body.error ?? "Couldn't create org.");
-      return;
-    }
+    const body = (await res.json().catch(() => ({}))) as { org?: Org; error?: string };
+    if (!res.ok) return { ok: false as const, error: body.error ?? "Couldn't create org." };
     setReveal({ label: `${input.adminEmail} (admin of ${input.name})`, action: "invited" });
-    setAddingOrg(false);
     await load();
+    if (body.org?.id) setSelectedId(body.org.id);
+    return { ok: true as const };
   };
 
   const addMember = async (
     orgId: string,
     input: { email: string; displayName: string; role: "admin" | "builder" },
   ) => {
-    setError(null);
     const res = await fetch(`/api/admin/orgs/${orgId}/members`, {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
       body:    JSON.stringify(input),
     });
-    const body = (await res.json().catch(() => ({}))) as {
-      invited?: boolean;
-      error?: string;
-    };
-    if (!res.ok) {
-      setError(body.error ?? "Couldn't add member.");
-      return;
-    }
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) return { ok: false as const, error: body.error ?? "Couldn't add member." };
     setReveal({ label: input.email, action: "invited" });
-    setMemberDraftOrgId(null);
     await load();
+    return { ok: true as const };
   };
 
   const regenerate = async (m: Member) => {
     if (!confirm(`Re-send sign-in email to ${m.email}?`)) return;
     const res = await fetch(`/api/admin/users/${m.id}/resend-invite`, { method: "POST" });
-    const body = (await res.json().catch(() => ({}))) as { resent?: boolean; error?: string };
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
     if (!res.ok) { setError(body.error ?? "Resend failed."); return; }
     setReveal({ label: m.email, action: "resent" });
     await load();
@@ -156,356 +129,516 @@ export function EnterpriseTab() {
     await load();
   };
 
+  const selected = orgs.find((o) => o.id === selectedId) ?? null;
+
   return (
     <div className="flex flex-col gap-3">
       {reveal && <Reveal reveal={reveal} dismiss={() => setReveal(null)} />}
       {error && <ErrorLine message={error} dismiss={() => setError(null)} />}
 
-      <div
-        className="overflow-hidden rounded-lg border"
-        style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
-      >
-        <div
-          className="flex items-center justify-between border-b px-3 py-2"
-          style={{ borderColor: "var(--border)" }}
-        >
-          <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-            {orgs.length} organization{orgs.length === 1 ? "" : "s"}
-          </p>
-          <button
-            type="button"
-            onClick={() => setAddingOrg(true)}
-            disabled={addingOrg}
-            className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-opacity disabled:opacity-50"
-            style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
-          >
-            <Plus size={12} /> Add organization
-          </button>
+      <div className="grid grid-cols-[300px_1fr] gap-4">
+        <OrgList
+          orgs={orgs}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          loading={loading}
+          createOrg={createOrg}
+        />
+
+        <div>
+          {!selected ? (
+            <EmptyDetail />
+          ) : (
+            <OrgDetail
+              org={selected}
+              addMember={(input) => addMember(selected.id, input)}
+              regenerate={regenerate}
+              toggleStatus={toggleStatus}
+              remove={removeMember}
+            />
+          )}
         </div>
-
-        {addingOrg && (
-          <OrgDraftRow
-            cancel={() => setAddingOrg(false)}
-            submit={createOrg}
-          />
-        )}
-
-        {loading && !orgs.length && (
-          <p
-            className="px-3 py-8 text-center text-sm"
-            style={{ color: "var(--text-muted)" }}
-          >
-            Loading…
-          </p>
-        )}
-
-        {!loading && !orgs.length && !addingOrg && (
-          <p
-            className="px-3 py-8 text-center text-sm"
-            style={{ color: "var(--text-muted)" }}
-          >
-            No organizations yet. Click <strong>Add organization</strong> to create one.
-          </p>
-        )}
-
-        {orgs.map((org) => (
-          <OrgRow
-            key={org.id}
-            org={org}
-            expanded={expanded.has(org.id)}
-            toggleExpanded={() => toggleExpanded(org.id)}
-            memberDrafting={memberDraftOrgId === org.id}
-            startMemberDraft={() => {
-              setMemberDraftOrgId(org.id);
-              setExpanded(new Set([...expanded, org.id]));
-            }}
-            cancelMemberDraft={() => setMemberDraftOrgId(null)}
-            addMember={(input) => addMember(org.id, input)}
-            regenerate={regenerate}
-            toggleStatus={toggleStatus}
-            remove={removeMember}
-          />
-        ))}
       </div>
     </div>
   );
 }
 
-/* ────────────────────────────────────────────────────────────────────────── */
+/* ──────── Left pane: org list + create ──────── */
 
-function OrgRow({
-  org,
-  expanded,
-  toggleExpanded,
-  memberDrafting,
-  startMemberDraft,
-  cancelMemberDraft,
-  addMember,
-  regenerate,
-  toggleStatus,
-  remove,
+function OrgList({
+  orgs, selectedId, onSelect, loading, createOrg,
 }: {
-  org: Org;
-  expanded: boolean;
-  toggleExpanded: () => void;
-  memberDrafting: boolean;
-  startMemberDraft: () => void;
-  cancelMemberDraft: () => void;
-  addMember: (input: { email: string; displayName: string; role: "admin" | "builder" }) => Promise<void>;
-  regenerate: (m: Member) => void;
-  toggleStatus: (m: Member) => void;
-  remove: (m: Member) => void;
+  orgs: Org[];
+  selectedId: string | null;
+  onSelect: (id: string | null) => void;
+  loading: boolean;
+  createOrg: (input: {
+    name: string; primaryDomain: string; adminEmail: string; adminDisplayName: string;
+  }) => Promise<{ ok: true } | { ok: false; error: string }>;
 }) {
+  const [creating, setCreating] = useState(false);
+  const [query, setQuery] = useState("");
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return orgs;
+    return orgs.filter(
+      (o) =>
+        o.name.toLowerCase().includes(q) ||
+        (o.primaryDomain ?? "").toLowerCase().includes(q),
+    );
+  }, [orgs, query]);
+
   return (
-    <div style={{ borderTop: "1px solid var(--border)" }}>
-      <button
-        type="button"
-        onClick={toggleExpanded}
-        className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
+    <aside
+      className="overflow-hidden rounded-xl border"
+      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+    >
+      <div
+        className="flex items-center justify-between gap-2 border-b px-4 py-3"
+        style={{ borderColor: "var(--border)" }}
       >
-        <span
-          className="transition-transform"
-          style={{
-            transform: expanded ? "rotate(90deg)" : "none",
-            color: "var(--text-muted)",
-          }}
+        <h3 className="text-sm font-semibold" style={{ color: "var(--text)" }}>
+          Organizations ({orgs.length})
+        </h3>
+        <button
+          onClick={() => setCreating(true)}
+          className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition-opacity hover:opacity-80"
+          style={{ borderColor: "var(--border)", color: "var(--text)" }}
         >
-          <ChevronRight size={16} />
-        </span>
-        <div className="flex flex-1 items-baseline gap-3">
-          <span
-            className="text-sm font-medium"
-            style={{ color: "var(--text)" }}
-          >
-            {org.name}
-          </span>
-          {org.primaryDomain && (
-            <span
-              className="text-xs"
-              style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}
-            >
-              {org.primaryDomain}
-            </span>
-          )}
-        </div>
-        <span
-          className="text-xs"
-          style={{ color: "var(--text-muted)" }}
-        >
-          {org.members.length} member{org.members.length === 1 ? "" : "s"}
-        </span>
-      </button>
+          <Plus size={11} />
+          New
+        </button>
+      </div>
 
-      {expanded && (
+      {creating && (
+        <OrgCreateInline
+          submit={async (input) => {
+            const r = await createOrg(input);
+            if (r.ok) setCreating(false);
+            return r;
+          }}
+          cancel={() => setCreating(false)}
+        />
+      )}
+
+      {!loading && orgs.length > 0 && (
         <div
-          className="border-t px-3 py-3"
-          style={{
-            borderColor: "var(--border)",
-            backgroundColor: "color-mix(in srgb, var(--text) 1.5%, var(--surface))",
-          }}
+          className="relative border-b px-3 py-2"
+          style={{ borderColor: "var(--border)" }}
         >
-          <div className="mb-2 flex items-center justify-between">
-            <p className="text-[11px] font-semibold tracking-[0.06em] uppercase" style={{ color: "var(--text-muted)" }}>
-              Members
-            </p>
+          <Search
+            size={12}
+            className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2"
+            style={{ color: "var(--text-muted)" }}
+          />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); }}
+            placeholder="Search organizations…"
+            className="w-full rounded-md border py-1.5 pl-7 pr-7 text-xs outline-none"
+            style={{
+              borderColor: "var(--border)",
+              backgroundColor: "var(--background)",
+              color: "var(--text)",
+            }}
+          />
+          {query && (
             <button
-              type="button"
-              onClick={startMemberDraft}
-              disabled={memberDrafting}
-              className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-opacity disabled:opacity-50"
-              style={{
-                borderColor: BRAND_GREEN,
-                color: BRAND_GREEN,
-                backgroundColor: "transparent",
-              }}
+              onClick={() => setQuery("")}
+              className="absolute right-5 top-1/2 -translate-y-1/2 rounded-md p-0.5"
+              style={{ color: "var(--text-muted)" }}
+              title="Clear search"
             >
-              <Plus size={11} /> Add member
+              <X size={11} />
             </button>
-          </div>
-
-          {memberDrafting && (
-            <MemberDraft
-              cancel={cancelMemberDraft}
-              submit={addMember}
-            />
           )}
-
-          {!org.members.length && !memberDrafting && (
-            <p className="py-3 text-center text-xs" style={{ color: "var(--text-muted)" }}>
-              No members yet.
-            </p>
-          )}
-
-          <table className="w-full border-collapse text-sm">
-            <tbody>
-              {org.members.map((m) => (
-                <tr
-                  key={m.id}
-                  style={{ borderTop: "1px solid var(--border)" }}
-                >
-                  <td className="px-2 py-1.5" style={{ color: "var(--text)" }}>
-                    {m.displayName || "—"}
-                  </td>
-                  <td
-                    className="px-2 py-1.5"
-                    style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}
-                  >
-                    {m.email}
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <RoleChipInline role={m.primaryRole ?? m.roles[0] ?? "—"} />
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <StatusChipInline status={m.status} awaitingFirstSignIn={m.awaitingFirstSignIn} />
-                  </td>
-                  <td className="px-2 py-1.5 text-right">
-                    <div className="inline-flex items-center gap-1">
-                      <IconBtn onClick={() => regenerate(m)}    title="Resend invitation email" icon={<Mail size={12} />} />
-                      <IconBtn onClick={() => toggleStatus(m)}  title={m.status === "ACTIVE" ? "Deactivate" : "Reactivate"} icon={<Power size={12} />} />
-                      <IconBtn onClick={() => remove(m)}        title="Delete" icon={<Trash2 size={12} />} danger />
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
       )}
+
+      {loading ? (
+        <div className="flex justify-center py-10">
+          <Loader2 size={16} className="animate-spin" style={{ color: BRAND_GREEN }} />
+        </div>
+      ) : orgs.length === 0 ? (
+        <p className="px-4 py-10 text-center text-xs" style={{ color: "var(--text-muted)" }}>
+          No organizations yet. Create your first one to start adding admins and customers.
+        </p>
+      ) : filtered.length === 0 ? (
+        <p className="px-4 py-10 text-center text-xs" style={{ color: "var(--text-muted)" }}>
+          No organizations match “{query}”.
+        </p>
+      ) : (
+        <div className="max-h-[600px] overflow-y-auto">
+          {filtered.map((o) => {
+            const active = o.id === selectedId;
+            const admins  = o.members.filter((m) => isAdmin(m)).length;
+            const members = o.members.length - admins;
+            return (
+              <button
+                key={o.id}
+                onClick={() => onSelect(o.id)}
+                className="relative block w-full border-b px-4 py-3 text-left transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
+                style={{
+                  borderColor: "var(--border)",
+                  backgroundColor: active ? "color-mix(in srgb, var(--text) 4%, transparent)" : "transparent",
+                }}
+              >
+                {active && (
+                  <span
+                    aria-hidden
+                    className="absolute inset-y-2 left-0 w-[2px] rounded-r-sm"
+                    style={{ backgroundColor: BRAND_GREEN }}
+                  />
+                )}
+                <div className="text-sm font-medium" style={{ color: "var(--text)" }}>{o.name}</div>
+                <div className="mt-0.5 text-[11px]" style={{ color: "var(--text-muted)" }}>
+                  {admins} admin{admins === 1 ? "" : "s"} · {members} member{members === 1 ? "" : "s"}
+                  {o.primaryDomain && <> · <span style={{ fontFamily: "var(--font-mono)" }}>{o.primaryDomain}</span></>}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </aside>
+  );
+}
+
+function EmptyDetail() {
+  return (
+    <div
+      className="flex h-[400px] items-center justify-center rounded-xl border"
+      style={{ borderColor: "var(--border)" }}
+    >
+      <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+        Select an organization on the left, or create a new one.
+      </p>
     </div>
   );
 }
 
-/* ────────────────────────────────────────────────────────────────────────── */
-
-function OrgDraftRow({
-  cancel,
-  submit,
+function OrgCreateInline({
+  submit, cancel,
 }: {
-  cancel: () => void;
   submit: (input: {
-    name: string;
-    primaryDomain: string;
-    adminEmail: string;
-    adminDisplayName: string;
-  }) => Promise<void>;
+    name: string; primaryDomain: string; adminEmail: string; adminDisplayName: string;
+  }) => Promise<{ ok: true } | { ok: false; error: string }>;
+  cancel: () => void;
 }) {
   const [name, setName] = useState("");
   const [primaryDomain, setPrimaryDomain] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
   const [adminDisplayName, setAdminDisplayName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr]   = useState<string | null>(null);
+
+  const onSubmit = async () => {
+    if (!name.trim() || !adminEmail.trim() || !adminDisplayName.trim()) {
+      setErr("Org name, admin name and admin email are required.");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    const r = await submit({
+      name:             name.trim(),
+      primaryDomain:    primaryDomain.trim(),
+      adminEmail:       adminEmail.trim(),
+      adminDisplayName: adminDisplayName.trim(),
+    });
+    if (!r.ok) setErr(r.error);
+    setBusy(false);
+  };
 
   return (
     <div
-      className="grid grid-cols-2 gap-3 border-b p-3"
+      className="border-b p-3"
       style={{
         borderColor: "var(--border)",
-        backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 4%, var(--surface))",
+        backgroundColor: "color-mix(in srgb, var(--text) 3%, transparent)",
       }}
     >
-      <Field label="Organization name" value={name} onChange={setName} placeholder="Acme Inc" autoFocus />
-      <Field label="Primary domain (optional)" value={primaryDomain} onChange={setPrimaryDomain} placeholder="acme.com" />
-      <Field label="First admin — name" value={adminDisplayName} onChange={setAdminDisplayName} placeholder="Jane Doe" />
-      <Field label="First admin — email" value={adminEmail} onChange={setAdminEmail} placeholder="jane@acme.com" type="email" />
-      <div className="col-span-2 flex justify-end gap-2">
+      <div className="grid grid-cols-1 gap-2">
+        <Field label="Organization name" value={name} onChange={setName} placeholder="Acme Inc" autoFocus />
+        <Field label="Primary domain (optional)" value={primaryDomain} onChange={setPrimaryDomain} placeholder="acme.com" />
+        <Field label="First admin — name" value={adminDisplayName} onChange={setAdminDisplayName} placeholder="Jane Doe" />
+        <Field label="First admin — email" value={adminEmail} onChange={setAdminEmail} placeholder="jane@acme.com" type="email" />
+      </div>
+      {err && <p className="mt-1 text-[11px]" style={{ color: "var(--accent-red)" }}>{err}</p>}
+      <div className="mt-2 flex justify-end gap-2">
         <button
           type="button"
           onClick={cancel}
-          className="rounded-md px-3 py-1.5 text-xs"
+          disabled={busy}
+          className="rounded-md px-2 py-1 text-xs"
           style={{ color: "var(--text-muted)" }}
         >
           Cancel
         </button>
         <button
           type="button"
-          onClick={() => {
-            if (!name.trim() || !adminEmail.trim() || !adminDisplayName.trim()) return;
-            void submit({
-              name:             name.trim(),
-              primaryDomain:    primaryDomain.trim(),
-              adminEmail:       adminEmail.trim(),
-              adminDisplayName: adminDisplayName.trim(),
-            });
-          }}
-          className="rounded-md px-3 py-1.5 text-xs font-medium"
+          onClick={() => void onSubmit()}
+          disabled={busy}
+          className="inline-flex items-center gap-1 rounded-md px-3 py-1 text-xs font-medium disabled:opacity-50"
           style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
         >
-          Create org + admin
+          {busy ? <Loader2 size={11} className="animate-spin" /> : null}
+          {busy ? "Creating…" : "Create org + admin"}
         </button>
       </div>
     </div>
+  );
+}
+
+/* ──────── Right pane: org detail ──────── */
+
+function OrgDetail({
+  org, addMember, regenerate, toggleStatus, remove,
+}: {
+  org: Org;
+  addMember: (input: { email: string; displayName: string; role: "admin" | "builder" }) => Promise<{ ok: true } | { ok: false; error: string }>;
+  regenerate: (m: Member) => void;
+  toggleStatus: (m: Member) => void;
+  remove: (m: Member) => void;
+}) {
+  const admins  = org.members.filter(isAdmin);
+  const members = org.members.filter((m) => !isAdmin(m));
+
+  return (
+    <div
+      className="overflow-hidden rounded-xl border"
+      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+    >
+      <div
+        className="flex items-center justify-between gap-3 border-b px-5 py-3"
+        style={{ borderColor: "var(--border)" }}
+      >
+        <div className="min-w-0">
+          <div className="text-sm font-semibold" style={{ color: "var(--text)" }}>
+            {org.name}
+          </div>
+          {org.primaryDomain && (
+            <div
+              className="mt-0.5 text-[11px]"
+              style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}
+            >
+              {org.primaryDomain}
+            </div>
+          )}
+        </div>
+        <span
+          className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
+          style={{
+            backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
+            color: BRAND_GREEN,
+          }}
+        >
+          {org.status}
+        </span>
+      </div>
+
+      <MemberSection
+        title="Admins"
+        addLabel="Add admin"
+        addRole="admin"
+        members={admins}
+        addMember={addMember}
+        regenerate={regenerate}
+        toggleStatus={toggleStatus}
+        remove={remove}
+      />
+      <MemberSection
+        title="Members"
+        addLabel="Add member"
+        addRole="builder"
+        members={members}
+        addMember={addMember}
+        regenerate={regenerate}
+        toggleStatus={toggleStatus}
+        remove={remove}
+      />
+    </div>
+  );
+}
+
+function MemberSection({
+  title, addLabel, addRole, members, addMember, regenerate, toggleStatus, remove,
+}: {
+  title: string;
+  addLabel: string;
+  addRole: "admin" | "builder";
+  members: Member[];
+  addMember: (input: { email: string; displayName: string; role: "admin" | "builder" }) => Promise<{ ok: true } | { ok: false; error: string }>;
+  regenerate: (m: Member) => void;
+  toggleStatus: (m: Member) => void;
+  remove: (m: Member) => void;
+}) {
+  const [drafting, setDrafting] = useState(false);
+
+  return (
+    <section className="border-b" style={{ borderColor: "var(--border)" }}>
+      <div className="flex items-center justify-between gap-2 px-5 py-3">
+        <h3 className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--text-muted)" }}>
+          {title} ({members.length})
+        </h3>
+        <button
+          onClick={() => setDrafting(true)}
+          disabled={drafting}
+          className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition-opacity hover:opacity-80 disabled:opacity-50"
+          style={{ borderColor: "var(--border)", color: "var(--text)" }}
+        >
+          <Plus size={10} />
+          {addLabel}
+        </button>
+      </div>
+
+      {drafting && (
+        <MemberDraft
+          role={addRole}
+          cancel={() => setDrafting(false)}
+          submit={async (input) => {
+            const r = await addMember(input);
+            if (r.ok) setDrafting(false);
+            return r;
+          }}
+        />
+      )}
+
+      {members.length === 0 && !drafting ? (
+        <p className="px-5 pb-4 text-xs" style={{ color: "var(--text-muted)" }}>
+          No {title.toLowerCase()} yet.
+        </p>
+      ) : (
+        <ul className="pb-2">
+          {members.map((m) => (
+            <li
+              key={m.id}
+              className="flex items-center gap-3 border-t px-5 py-2.5"
+              style={{ borderColor: "var(--border)" }}
+            >
+              <span
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold uppercase"
+                style={{
+                  backgroundColor: "color-mix(in srgb, var(--text-muted) 14%, transparent)",
+                  color: "var(--text-muted)",
+                }}
+              >
+                {(m.displayName || m.email || "?")[0]}
+              </span>
+              <div className="min-w-0 flex-1 leading-tight">
+                <div className="truncate text-sm" style={{ color: "var(--text)" }}>
+                  {m.displayName || m.email}
+                </div>
+                {m.displayName && m.email && (
+                  <div className="truncate text-[11px]" style={{ color: "var(--text-muted)" }}>
+                    {m.email}
+                  </div>
+                )}
+              </div>
+              <RoleChipInline role={m.primaryRole ?? m.roles[0] ?? "—"} />
+              <StatusChipInline status={m.status} awaitingFirstSignIn={m.awaitingFirstSignIn} />
+              <div className="inline-flex items-center gap-1">
+                <IconBtn onClick={() => regenerate(m)}    title="Resend invitation email" icon={<Mail size={12} />} />
+                <IconBtn onClick={() => toggleStatus(m)}  title={m.status === "ACTIVE" ? "Deactivate" : "Reactivate"} icon={<Power size={12} />} />
+                <IconBtn onClick={() => remove(m)}        title="Delete" icon={<Trash2 size={12} />} danger />
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
 function MemberDraft({
-  cancel,
-  submit,
+  role, cancel, submit,
 }: {
+  role: "admin" | "builder";
   cancel: () => void;
-  submit: (input: { email: string; displayName: string; role: "admin" | "builder" }) => Promise<void>;
+  submit: (input: { email: string; displayName: string; role: "admin" | "builder" }) => Promise<{ ok: true } | { ok: false; error: string }>;
 }) {
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<"admin" | "builder">("builder");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr]   = useState<string | null>(null);
+
+  const onSubmit = async () => {
+    if (!email.trim() || !displayName.trim()) {
+      setErr("Name and email are required.");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    const r = await submit({ email: email.trim(), displayName: displayName.trim(), role });
+    if (!r.ok) setErr(r.error);
+    setBusy(false);
+  };
+
   return (
     <div
-      className="mb-2 grid grid-cols-3 gap-2 rounded-md border p-2"
+      className="border-t px-5 py-3"
       style={{
         borderColor: "var(--border)",
-        backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 4%, var(--surface))",
+        backgroundColor: "color-mix(in srgb, var(--text) 3%, transparent)",
       }}
     >
-      <Field label="Name" value={displayName} onChange={setDisplayName} placeholder="Full name" autoFocus />
-      <Field label="Email" value={email} onChange={setEmail} placeholder="user@company.com" type="email" />
-      <div className="flex flex-col gap-1">
-        <label className="text-[11px] font-medium" style={{ color: "var(--text-muted)" }}>
-          Role
-        </label>
-        <select
-          value={role}
-          onChange={(e) => setRole(e.target.value as "admin" | "builder")}
-          className="rounded-md border px-2.5 py-1.5 text-sm outline-none"
-          style={{
-            borderColor: "var(--border)",
-            backgroundColor: "var(--surface)",
-            color: "var(--text)",
-          }}
-        >
-          <option value="builder">Customer</option>
-          <option value="admin">Enterprise Admin</option>
-        </select>
+      <div className="mb-2 flex items-center gap-2">
+        <input
+          autoFocus
+          value={displayName}
+          onChange={(e) => setDisplayName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") void onSubmit(); if (e.key === "Escape") cancel(); }}
+          placeholder="Full name"
+          className="flex-1 rounded-md border px-2 py-1.5 text-xs outline-none"
+          style={{ borderColor: "var(--border)", backgroundColor: "var(--background)", color: "var(--text)" }}
+          disabled={busy}
+        />
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") void onSubmit(); if (e.key === "Escape") cancel(); }}
+          placeholder="email@company.com"
+          className="flex-1 rounded-md border px-2 py-1.5 text-xs outline-none"
+          style={{ borderColor: "var(--border)", backgroundColor: "var(--background)", color: "var(--text)" }}
+          disabled={busy}
+        />
       </div>
-      <div className="col-span-3 flex justify-end gap-2">
+      {err && <p className="mb-2 text-[11px]" style={{ color: "var(--accent-red)" }}>{err}</p>}
+      <div className="flex items-center justify-end gap-1.5">
         <button
-          type="button"
           onClick={cancel}
-          className="rounded-md px-3 py-1 text-xs"
+          disabled={busy}
+          className="rounded-md px-2 py-1 text-[11px]"
           style={{ color: "var(--text-muted)" }}
         >
           Cancel
         </button>
         <button
-          type="button"
-          onClick={() => {
-            if (!email.trim() || !displayName.trim()) return;
-            void submit({ email: email.trim(), displayName: displayName.trim(), role });
-          }}
-          className="rounded-md px-3 py-1 text-xs font-medium"
-          style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+          onClick={() => void onSubmit()}
+          disabled={busy || !email.trim() || !displayName.trim()}
+          className="inline-flex items-center gap-1 rounded-md px-3 py-1 text-[11px] font-semibold text-white disabled:opacity-50"
+          style={{ backgroundColor: BRAND_GREEN }}
         >
-          Invite
+          {busy ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />}
+          {busy ? "Sending…" : "Send invite"}
         </button>
       </div>
     </div>
   );
 }
 
+/* ──────── Small helpers ──────── */
+
+function isAdmin(m: Member): boolean {
+  return (m.primaryRole === "enterprise_admin" || m.primaryRole === "admin")
+    || m.roles.includes("enterprise_admin")
+    || m.roles.includes("admin");
+}
+
 function Field({
-  label,
-  value,
-  onChange,
-  placeholder,
-  type = "text",
-  autoFocus,
+  label, value, onChange, placeholder, type = "text", autoFocus,
 }: {
   label: string;
   value: string;
@@ -528,7 +661,7 @@ function Field({
         className="rounded-md border px-2.5 py-1.5 text-sm outline-none"
         style={{
           borderColor: "var(--border)",
-          backgroundColor: "var(--surface)",
+          backgroundColor: "var(--background)",
           color: "var(--text)",
         }}
       />
@@ -539,7 +672,7 @@ function Field({
 function RoleChipInline({ role }: { role: string }) {
   return (
     <span
-      className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium"
+      className="inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium"
       style={{
         backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
         color: BRAND_GREEN,
@@ -552,40 +685,26 @@ function RoleChipInline({ role }: { role: string }) {
 
 function StatusChipInline({
   status,
-  awaitingFirstSignIn,
 }: {
   status: "ACTIVE" | "DEACTIVATED";
-  awaitingFirstSignIn: boolean;
+  awaitingFirstSignIn?: boolean;
 }) {
   if (status === "DEACTIVATED") {
     return (
       <span
-        className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium"
+        className="inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium"
         style={{
           backgroundColor: "color-mix(in srgb, var(--text-muted) 14%, transparent)",
           color: "var(--text-muted)",
         }}
       >
-        Off
-      </span>
-    );
-  }
-  if (awaitingFirstSignIn) {
-    return (
-      <span
-        className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium"
-        style={{
-          backgroundColor: "color-mix(in srgb, var(--accent-red) 10%, transparent)",
-          color: "var(--accent-red)",
-        }}
-      >
-        Pending
+        Deactivated
       </span>
     );
   }
   return (
     <span
-      className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium"
+      className="inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium"
       style={{
         backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
         color: BRAND_GREEN,
@@ -597,10 +716,7 @@ function StatusChipInline({
 }
 
 function IconBtn({
-  onClick,
-  title,
-  icon,
-  danger,
+  onClick, title, icon, danger,
 }: {
   onClick: () => void;
   title: string;
@@ -613,7 +729,7 @@ function IconBtn({
       title={title}
       aria-label={title}
       onClick={onClick}
-      className="rounded-md p-1 transition-colors hover:bg-black/[0.06] dark:hover:bg-white/[0.06]"
+      className="rounded-md p-1 transition-colors hover:bg-black/[0.05] dark:hover:bg-white/[0.05]"
       style={{ color: danger ? "var(--accent-red)" : "var(--text-muted)" }}
     >
       {icon}
@@ -622,8 +738,7 @@ function IconBtn({
 }
 
 function Reveal({
-  reveal,
-  dismiss,
+  reveal, dismiss,
 }: {
   reveal: { label: string; action: "invited" | "resent" };
   dismiss: () => void;
@@ -636,33 +751,28 @@ function Reveal({
         backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 6%, transparent)",
       }}
     >
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-2 text-sm" style={{ color: "var(--text)" }}>
-          <Mail size={14} style={{ color: BRAND_GREEN }} />
-          <span>
-            {reveal.action === "invited" ? "Invitation sent" : "New sign-in link sent"} to{" "}
-            <strong>{reveal.label}</strong>. They&apos;ll click the magic link to sign in.
-          </span>
-        </div>
+      <div className="flex items-center gap-2 text-sm" style={{ color: "var(--text)" }}>
+        <Mail size={14} style={{ color: BRAND_GREEN }} />
+        <span>
+          {reveal.action === "invited" ? "Invitation sent" : "New sign-in link sent"} to{" "}
+          <strong>{reveal.label}</strong>.
+        </span>
       </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <button
-          type="button"
-          onClick={dismiss}
-          className="rounded-md p-1.5 text-xs"
-          style={{ color: "var(--text-muted)" }}
-          aria-label="Dismiss"
-        >
-          <X size={14} />
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={dismiss}
+        className="rounded-md p-1.5"
+        style={{ color: "var(--text-muted)" }}
+        aria-label="Dismiss"
+      >
+        <X size={14} />
+      </button>
     </div>
   );
 }
 
 function ErrorLine({
-  message,
-  dismiss,
+  message, dismiss,
 }: {
   message: string;
   dismiss: () => void;

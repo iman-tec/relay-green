@@ -4,6 +4,8 @@ import "./globals.css";
 import { JsonLd } from "./_marketing/JsonLd";
 import { AnalyticsGate } from "./_marketing/AnalyticsGate";
 import { CookieConsent } from "./_marketing/CookieConsent";
+import { RouteProgress } from "./_components/RouteProgress";
+import { AosProvider } from "./_components/AosProvider";
 import { organizationSchema, websiteSchema } from "../lib/seo/schema";
 
 /*
@@ -139,6 +141,8 @@ export default function RootLayout({
     >
       <body className="flex min-h-full flex-col" suppressHydrationWarning>
         <JsonLd data={[organizationSchema(), websiteSchema()]} />
+        <RouteProgress />
+        <AosProvider />
         {children}
         <CookieConsent />
         <AnalyticsGate />

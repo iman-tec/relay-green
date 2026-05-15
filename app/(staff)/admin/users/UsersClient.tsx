@@ -1,26 +1,23 @@
 "use client";
 
 /*
- * Super Admin user management — Excel-style inline CRUD.
+ * Super Admin user management.
  *
- * The Staff tab lists everyone with an internal role (engineer, pod_lead,
- * ops_manager, admin, super_admin). The Enterprise tab lives in
- * EnterpriseTab.tsx.
+ * Staff tab — paginated, searchable, sortable, role-filterable. Backed by
+ * /api/admin/users with the standard list-query contract; renders via the
+ * shared <DataTable>. Per-row actions: resend invite, deactivate/reactivate,
+ * delete. "Add user" opens a tight inline form above the table.
  *
- * Row interactions:
- *   - "+ Add user" appends an empty edit row at the top. On save, Supabase
- *     sends a magic-link invitation email; the user clicks it to confirm
- *     and signs in to their role's landing.
- *   - Click a cell (name or role) on an existing row to edit. Enter saves,
- *     Esc cancels. Tab moves between fields within the same row.
- *   - Right-hand actions: resend invite, deactivate/reactivate, delete.
+ * Enterprise + Pods tabs live in their own files.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Mail, Trash2, Power, Plus, X } from "lucide-react";
 import { EnterpriseTab } from "./EnterpriseTab";
 import { PodsTab } from "./PodsTab";
 import { formatRole } from "@/lib/relay/role-labels";
+import { DataTable, type Column } from "@/app/_components/DataTable";
+import { useListQuery } from "@/lib/hooks/useListQuery";
 
 type UserRow = {
   id:                  string;
@@ -33,7 +30,7 @@ type UserRow = {
   createdAt:           string;
 };
 
-type Tab = "staff" | "enterprise" | "pods";
+type Tab = "staff" | "users" | "enterprise" | "pods";
 
 type RoleKey = "engineer" | "pod_lead" | "ops_manager" | "admin";
 
@@ -44,162 +41,19 @@ const CREATABLE_ROLES: { value: RoleKey; label: string }[] = [
   { value: "admin",       label: formatRole("admin") },
 ];
 
+const ALL_FILTERABLE_ROLES = [
+  { value: "engineer",    label: formatRole("engineer") },
+  { value: "pod_lead",    label: formatRole("pod_lead") },
+  { value: "ops_manager", label: formatRole("ops_manager") },
+  { value: "admin",       label: formatRole("admin") },
+  { value: "super_admin", label: formatRole("super_admin") },
+];
+
 const BRAND_GREEN = "#3f5c2e";
+const NEW_POD_KEY = "__new_pod__";
 
 export function UsersClient({ meEmail }: { meEmail: string }) {
   const [tab, setTab] = useState<Tab>("staff");
-  const [users, setUsers] = useState<UserRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [reveal, setReveal] = useState<{ email: string; action: "invited" | "resent" } | null>(
-    null,
-  );
-  const [draft, setDraft] = useState<{
-    email: string;
-    displayName: string;
-    role: RoleKey;
-  } | null>(null);
-
-  // Track which cell is being edited: { id, field }. null = none.
-  const [editing, setEditing] = useState<{
-    id: string;
-    field: "displayName" | "role";
-  } | null>(null);
-
-  const loadUsers = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/admin/users?scope=staff`, {
-        cache: "no-store",
-      });
-      const body = (await res.json().catch(() => ({}))) as {
-        users?: UserRow[];
-        error?: string;
-      };
-      if (!res.ok) {
-        setError(body.error ?? "Couldn't load users.");
-        return;
-      }
-      setUsers(body.users ?? []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't load users.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void loadUsers();
-  }, []);
-
-  const startAdd = () => {
-    setDraft({ email: "", displayName: "", role: "engineer" });
-  };
-
-  const cancelAdd = () => setDraft(null);
-
-  const submitAdd = async () => {
-    if (!draft) return;
-    const email = draft.email.trim().toLowerCase();
-    const displayName = draft.displayName.trim();
-    if (!email || !displayName) {
-      setError("Email and name are required.");
-      return;
-    }
-    setError(null);
-    try {
-      const res = await fetch("/api/admin/users", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ email, displayName, role: draft.role }),
-      });
-      const body = (await res.json().catch(() => ({}))) as {
-        invited?: boolean;
-        error?: string;
-      };
-      if (!res.ok) {
-        setError(body.error ?? "Couldn't create user.");
-        return;
-      }
-      setReveal({ email, action: "invited" });
-      setDraft(null);
-      await loadUsers();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't create user.");
-    }
-  };
-
-  const patchRow = async (id: string, patch: Partial<UserRow>) => {
-    const apiPatch: Record<string, unknown> = {};
-    if (patch.displayName !== undefined) apiPatch.displayName = patch.displayName;
-    if (patch.primaryRole !== undefined) apiPatch.role = patch.primaryRole;
-    if (patch.status !== undefined) apiPatch.status = patch.status;
-    if (!Object.keys(apiPatch).length) return;
-    try {
-      const res = await fetch(`/api/admin/users/${id}`, {
-        method:  "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify(apiPatch),
-      });
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        setError(body.error ?? "Update failed.");
-        return;
-      }
-      await loadUsers();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Update failed.");
-    }
-  };
-
-  const resendInvite = async (row: UserRow) => {
-    if (!confirm(`Send a fresh sign-in email to ${row.email}?`)) return;
-    try {
-      const res = await fetch(`/api/admin/users/${row.id}/resend-invite`, {
-        method: "POST",
-      });
-      const body = (await res.json().catch(() => ({}))) as {
-        resent?: boolean;
-        error?: string;
-      };
-      if (!res.ok) {
-        setError(body.error ?? "Resend failed.");
-        return;
-      }
-      setReveal({ email: row.email, action: "resent" });
-      await loadUsers();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Resend failed.");
-    }
-  };
-
-  const toggleStatus = (row: UserRow) =>
-    patchRow(row.id, {
-      status: row.status === "ACTIVE" ? "DEACTIVATED" : "ACTIVE",
-    });
-
-  const deleteRow = async (row: UserRow) => {
-    if (
-      !confirm(
-        `Permanently delete ${row.email}? Their auth record, profile, and roles will be removed.`,
-      )
-    ) return;
-    try {
-      const res = await fetch(`/api/admin/users/${row.id}`, {
-        method: "DELETE",
-      });
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        setError(body.error ?? "Delete failed.");
-        return;
-      }
-      await loadUsers();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Delete failed.");
-    }
-  };
 
   return (
     <main
@@ -209,16 +63,8 @@ export function UsersClient({ meEmail }: { meEmail: string }) {
       <div className="mx-auto max-w-6xl">
         <header className="mb-6 flex items-baseline justify-between gap-4">
           <div>
-            <h1
-              className="text-2xl font-semibold"
-              style={{ color: "var(--text)" }}
-            >
-              Users
-            </h1>
-            <p
-              className="mt-0.5 text-sm"
-              style={{ color: "var(--text-muted)" }}
-            >
+            <h1 className="text-2xl font-semibold" style={{ color: "var(--text)" }}>Users</h1>
+            <p className="mt-0.5 text-sm" style={{ color: "var(--text-muted)" }}>
               Signed in as <span style={{ color: "var(--text)" }}>{meEmail}</span>
             </p>
           </div>
@@ -226,31 +72,10 @@ export function UsersClient({ meEmail }: { meEmail: string }) {
 
         <Tabs tab={tab} setTab={setTab} />
 
-        {reveal && <RevealBanner reveal={reveal} dismiss={() => setReveal(null)} />}
-        {error && <ErrorBanner message={error} dismiss={() => setError(null)} />}
-
-        {tab === "staff" && (
-          <StaffTable
-            users={users}
-            loading={loading}
-            draft={draft}
-            setDraft={setDraft}
-            startAdd={startAdd}
-            cancelAdd={cancelAdd}
-            submitAdd={submitAdd}
-            editing={editing}
-            setEditing={setEditing}
-            patchRow={patchRow}
-            resendInvite={resendInvite}
-            toggleStatus={toggleStatus}
-            deleteRow={deleteRow}
-            meEmail={meEmail}
-          />
-        )}
-
+        {tab === "staff"      && <StaffTab meEmail={meEmail} />}
+        {tab === "users"      && <CustomerTab />}
         {tab === "enterprise" && <EnterpriseTab />}
-
-        {tab === "pods" && <PodsTab />}
+        {tab === "pods"       && <PodsTab />}
       </div>
     </main>
   );
@@ -261,6 +86,7 @@ export function UsersClient({ meEmail }: { meEmail: string }) {
 function Tabs({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
   const items: { id: Tab; label: string }[] = [
     { id: "staff",      label: "Internal staff" },
+    { id: "users",      label: "Users" },
     { id: "enterprise", label: "Enterprise customers" },
     { id: "pods",       label: "Pods" },
   ];
@@ -288,122 +114,251 @@ function Tabs({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
   );
 }
 
-function RevealBanner({
-  reveal,
-  dismiss,
-}: {
-  reveal: { email: string; action: "invited" | "resent" };
-  dismiss: () => void;
-}) {
-  return (
-    <div
-      className="mb-4 flex items-start justify-between gap-3 rounded-lg border p-3"
-      style={{
-        borderColor: "color-mix(in srgb, " + BRAND_GREEN + " 35%, transparent)",
-        backgroundColor:
-          "color-mix(in srgb, " + BRAND_GREEN + " 6%, transparent)",
-      }}
-    >
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-2 text-sm" style={{ color: "var(--text)" }}>
-          <Mail size={14} style={{ color: BRAND_GREEN }} />
-          <span>
-            {reveal.action === "invited" ? "Invitation sent" : "New sign-in link sent"} to{" "}
-            <strong>{reveal.email}</strong>. They&apos;ll click the magic link to sign in.
-          </span>
-        </div>
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <button
-          type="button"
-          onClick={dismiss}
-          className="rounded-md p-1.5 text-xs"
-          style={{ color: "var(--text-muted)" }}
-          aria-label="Dismiss"
-        >
-          <X size={14} />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function ErrorBanner({
-  message,
-  dismiss,
-}: {
-  message: string;
-  dismiss: () => void;
-}) {
-  return (
-    <div
-      className="mb-4 flex items-center justify-between rounded-md border px-3 py-2 text-sm"
-      style={{
-        backgroundColor:
-          "color-mix(in srgb, var(--accent-red) 8%, transparent)",
-        color: "var(--accent-red)",
-        borderColor:
-          "color-mix(in srgb, var(--accent-red) 25%, transparent)",
-      }}
-    >
-      <span>{message}</span>
-      <button
-        type="button"
-        onClick={dismiss}
-        aria-label="Dismiss"
-        className="rounded-md p-1"
-      >
-        <X size={14} />
-      </button>
-    </div>
-  );
-}
-
 /* ────────────────────────────────────────────────────────────────────────── */
 
-function StaffTable({
-  users,
-  loading,
-  draft,
-  setDraft,
-  startAdd,
-  cancelAdd,
-  submitAdd,
-  editing,
-  setEditing,
-  patchRow,
-  resendInvite,
-  toggleStatus,
-  deleteRow,
-  meEmail,
-}: {
-  users: UserRow[];
-  loading: boolean;
-  draft: { email: string; displayName: string; role: RoleKey } | null;
-  setDraft: (d: { email: string; displayName: string; role: RoleKey } | null) => void;
-  startAdd: () => void;
-  cancelAdd: () => void;
-  submitAdd: () => void;
-  editing: { id: string; field: "displayName" | "role" } | null;
-  setEditing: (e: { id: string; field: "displayName" | "role" } | null) => void;
-  patchRow: (id: string, patch: Partial<UserRow>) => Promise<void>;
-  resendInvite: (row: UserRow) => void;
-  toggleStatus:   (row: UserRow) => void;
-  deleteRow:      (row: UserRow) => void;
-  meEmail: string;
-}) {
+function StaffTab({ meEmail }: { meEmail: string }) {
+  const list = useListQuery<UserRow>("/api/admin/users", {
+    pageSize: 10,
+    sort:     { column: "displayName", dir: "asc" },
+    filters:  ["role"],
+    fixedParams: { scope: "staff" },
+  });
+
+  /** When podId is set, the new user gets auto-assigned to that pod after
+   *  invite. When podId === NEW_POD_KEY, we create a pod named `newPodName`
+   *  first, then assign the user to it. */
+  const [draft, setDraft] = useState<{
+    email: string;
+    displayName: string;
+    role: RoleKey;
+    podId: string | null;       // null = no pod; uuid = existing; NEW_POD_KEY = create new
+    newPodName: string;
+  } | null>(null);
+  const [pods, setPods] = useState<{ id: string; name: string }[]>([]);
+  const [podsLoaded, setPodsLoaded] = useState(false);
+  const [reveal, setReveal] = useState<{ email: string; action: "invited" | "resent" } | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  /** When set, the user with this id has their Role cell swapped to a dropdown. */
+  const [editingRoleFor, setEditingRoleFor] = useState<string | null>(null);
+  const [roleSaving, setRoleSaving] = useState(false);
+
+  const saveRole = async (id: string, role: RoleKey) => {
+    setRoleSaving(true);
+    try {
+      const res = await fetch(`/api/admin/users/${id}`, {
+        method:  "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ role }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) { setActionError(body.error ?? "Role update failed."); return; }
+      setEditingRoleFor(null);
+      await list.refresh();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Role update failed.");
+    } finally {
+      setRoleSaving(false);
+    }
+  };
+
+  const ensurePodsLoaded = async () => {
+    if (podsLoaded) return;
+    try {
+      const res = await fetch("/api/admin/pods", { cache: "no-store" });
+      const body = (await res.json().catch(() => ({}))) as { pods?: { id: string; name: string }[] };
+      setPods(body.pods ?? []);
+    } catch { /* silent — pod field falls back to "None" */ } finally {
+      setPodsLoaded(true);
+    }
+  };
+
+  const startAdd  = () => {
+    void ensurePodsLoaded();
+    setDraft({ email: "", displayName: "", role: "engineer", podId: null, newPodName: "" });
+  };
+  const cancelAdd = () => setDraft(null);
+
+  const submitAdd = async () => {
+    if (!draft) return;
+    const email       = draft.email.trim().toLowerCase();
+    const displayName = draft.displayName.trim();
+    if (!email || !displayName) {
+      setActionError("Email and name are required.");
+      return;
+    }
+    setActionError(null);
+    try {
+      // 1. (optional) Create a new pod if the user chose "Create new pod".
+      let podId: string | null = draft.podId;
+      if (podId === NEW_POD_KEY) {
+        const name = draft.newPodName.trim();
+        if (!name) {
+          setActionError("New pod needs a name.");
+          return;
+        }
+        const podRes = await fetch("/api/admin/pods", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ name }),
+        });
+        const podBody = (await podRes.json().catch(() => ({}))) as { pod?: { id: string; name: string }; error?: string };
+        if (!podRes.ok || !podBody.pod?.id) {
+          setActionError(podBody.error ?? "Couldn't create pod.");
+          return;
+        }
+        podId = podBody.pod.id;
+        setPods((prev) => [...prev, podBody.pod!]);
+      }
+
+      // 2. Invite the user.
+      const res = await fetch("/api/admin/users", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ email, displayName, role: draft.role }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        user?:    { id: string };
+        error?:   string;
+      };
+      if (!res.ok || !body.user?.id) {
+        setActionError(body.error ?? "Couldn't create user.");
+        return;
+      }
+      const userId = body.user.id;
+
+      // 3. Assign to the pod (only engineer + pod_lead are pod-eligible).
+      const podRoleFor = draft.role === "engineer" ? "engineer" : draft.role === "pod_lead" ? "supervisor" : null;
+      if (podId && podRoleFor) {
+        const assignRes = await fetch(`/api/admin/pods/${podId}/members`, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ userId, podRole: podRoleFor }),
+        });
+        const assignBody = (await assignRes.json().catch(() => ({}))) as { error?: string };
+        if (!assignRes.ok) {
+          setActionError(`User invited, but pod assignment failed: ${assignBody.error ?? "unknown error"}`);
+          // Still count the invite as a success — show the reveal + refresh.
+        }
+      }
+
+      setReveal({ email, action: "invited" });
+      setDraft(null);
+      await list.refresh();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Couldn't create user.");
+    }
+  };
+
+  const resendInvite = async (row: UserRow) => {
+    if (!confirm(`Send a fresh sign-in email to ${row.email}?`)) return;
+    try {
+      const res = await fetch(`/api/admin/users/${row.id}/resend-invite`, { method: "POST" });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) { setActionError(body.error ?? "Resend failed."); return; }
+      setReveal({ email: row.email, action: "resent" });
+      await list.refresh();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Resend failed.");
+    }
+  };
+
+  const toggleStatus = async (row: UserRow) => {
+    try {
+      const res = await fetch(`/api/admin/users/${row.id}`, {
+        method:  "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ status: row.status === "ACTIVE" ? "DEACTIVATED" : "ACTIVE" }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) { setActionError(body.error ?? "Update failed."); return; }
+      await list.refresh();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Update failed.");
+    }
+  };
+
+  const deleteRow = async (row: UserRow) => {
+    if (!confirm(`Permanently delete ${row.email}? Their auth record, profile, and roles will be removed.`)) return;
+    try {
+      const res = await fetch(`/api/admin/users/${row.id}`, { method: "DELETE" });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) { setActionError(body.error ?? "Delete failed."); return; }
+      await list.refresh();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Delete failed.");
+    }
+  };
+
+  const columns: Column<UserRow>[] = [
+    {
+      key: "displayName", header: "Name", sortable: true,
+      render: (r) => (
+        <span style={{ color: "var(--text)" }}>{r.displayName || "—"}</span>
+      ),
+    },
+    {
+      key: "email", header: "Email",
+      render: (r) => (
+        <span style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>{r.email}</span>
+      ),
+    },
+    {
+      key: "primaryRole", header: "Role", sortable: true,
+      render: (r) => {
+        const isSelf = r.email.toLowerCase() === meEmail.toLowerCase();
+        const isSuper = (r.primaryRole ?? r.roles[0]) === "super_admin";
+        const editable = !isSelf && !isSuper;
+        if (editingRoleFor === r.id) {
+          return (
+            <RoleSelect
+              initial={(r.primaryRole as RoleKey) ?? "engineer"}
+              disabled={roleSaving}
+              onCommit={(next) => { void saveRole(r.id, next); }}
+              onCancel={() => setEditingRoleFor(null)}
+            />
+          );
+        }
+        return (
+          <button
+            type="button"
+            onClick={() => editable && setEditingRoleFor(r.id)}
+            disabled={!editable}
+            className="cursor-pointer rounded-md transition-opacity hover:opacity-80 disabled:cursor-default disabled:hover:opacity-100"
+            title={editable ? "Click to change role" : undefined}
+          >
+            <RoleChip role={r.primaryRole ?? r.roles[0] ?? "—"} />
+          </button>
+        );
+      },
+    },
+    {
+      key: "status", header: "Status",
+      render: (r) => (
+        <StatusChip status={r.status} awaitingFirstSignIn={r.awaitingFirstSignIn} />
+      ),
+    },
+    {
+      key: "actions", header: "Actions", align: "right",
+      render: (r) => {
+        const isSelf = r.email.toLowerCase() === meEmail.toLowerCase();
+        if (isSelf) return <span className="text-xs" style={{ color: "var(--text-muted)" }}>(you)</span>;
+        return (
+          <div className="inline-flex items-center gap-1">
+            <IconAction onClick={() => void resendInvite(r)} title="Resend invitation email" icon={<Mail size={14} />} />
+            <IconAction onClick={() => void toggleStatus(r)} title={r.status === "ACTIVE" ? "Deactivate" : "Reactivate"} icon={<Power size={14} />} />
+            <IconAction onClick={() => void deleteRow(r)}    title="Delete"                                              icon={<Trash2 size={14} />} danger />
+          </div>
+        );
+      },
+    },
+  ];
+
   return (
-    <div
-      className="overflow-hidden rounded-lg border"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
-    >
-      <div
-        className="flex items-center justify-between border-b px-3 py-2"
-        style={{ borderColor: "var(--border)" }}
-      >
-        <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-          {users.length} staff member{users.length === 1 ? "" : "s"}
-        </p>
+    <div className="flex flex-col gap-3">
+      {reveal && <RevealBanner reveal={reveal} dismiss={() => setReveal(null)} />}
+      {actionError && <ErrorBanner message={actionError} dismiss={() => setActionError(null)} />}
+
+      <div className="flex justify-end">
         <button
           type="button"
           onClick={startAdd}
@@ -415,391 +370,369 @@ function StaffTable({
         </button>
       </div>
 
-      <table className="w-full border-collapse text-sm">
-        <thead>
-          <tr style={{ color: "var(--text-muted)" }}>
-            <Th>Name</Th>
-            <Th>Email</Th>
-            <Th>Role</Th>
-            <Th>Status</Th>
-            <Th className="text-right">Actions</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {draft && (
-            <DraftRow
-              draft={draft}
-              setDraft={setDraft}
-              cancel={cancelAdd}
-              submit={submitAdd}
-            />
-          )}
+      {draft && (
+        <DraftForm
+          draft={draft}
+          setDraft={setDraft}
+          pods={pods}
+          cancel={cancelAdd}
+          submit={submitAdd}
+        />
+      )}
 
-          {loading && !users.length && (
-            <tr>
-              <td
-                colSpan={5}
-                className="px-3 py-8 text-center text-sm"
-                style={{ color: "var(--text-muted)" }}
-              >
-                Loading…
-              </td>
-            </tr>
-          )}
-
-          {!loading && !users.length && !draft && (
-            <tr>
-              <td
-                colSpan={5}
-                className="px-3 py-8 text-center text-sm"
-                style={{ color: "var(--text-muted)" }}
-              >
-                No staff yet. Click <strong>Add user</strong> to create one.
-              </td>
-            </tr>
-          )}
-
-          {users.map((u) => (
-            <BodyRow
-              key={u.id}
-              row={u}
-              editing={editing}
-              setEditing={setEditing}
-              save={patchRow}
-              regenerate={resendInvite}
-              toggle={toggleStatus}
-              remove={deleteRow}
-              isSelf={u.email.toLowerCase() === meEmail.toLowerCase()}
-            />
-          ))}
-        </tbody>
-      </table>
+      <DataTable
+        list={list}
+        columns={columns}
+        getRowKey={(r) => r.id}
+        searchPlaceholder="Search staff by name…"
+        filters={[
+          {
+            key: "role",
+            label: "All roles",
+            options: ALL_FILTERABLE_ROLES,
+          },
+        ]}
+        emptyText="No staff yet. Click Add user to invite someone."
+        lockPageSize
+      />
     </div>
   );
 }
 
-function Th({
-  children,
-  className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
+/* ────────────────────────────────────────────────────────────────────────── */
+
+// ── Users tab: signed-up customers (anyone without a staff role) ──────────
+function CustomerTab() {
+  const list = useListQuery<UserRow>("/api/admin/users", {
+    pageSize: 10,
+    sort:     { column: "createdAt", dir: "desc" },
+    fixedParams: { scope: "customer" },
+  });
+
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const toggleStatus = async (row: UserRow) => {
+    try {
+      const res = await fetch(`/api/admin/users/${row.id}`, {
+        method:  "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ status: row.status === "ACTIVE" ? "DEACTIVATED" : "ACTIVE" }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) { setActionError(body.error ?? "Update failed."); return; }
+      await list.refresh();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Update failed.");
+    }
+  };
+
+  const deleteRow = async (row: UserRow) => {
+    if (!confirm(`Permanently delete ${row.email}? Their auth record, profile, and any sessions will be removed.`)) return;
+    try {
+      const res = await fetch(`/api/admin/users/${row.id}`, { method: "DELETE" });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) { setActionError(body.error ?? "Delete failed."); return; }
+      await list.refresh();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Delete failed.");
+    }
+  };
+
+  const columns: Column<UserRow>[] = [
+    {
+      key: "displayName", header: "Name", sortable: true,
+      render: (r) => <span style={{ color: "var(--text)" }}>{r.displayName || "—"}</span>,
+    },
+    {
+      key: "email", header: "Email",
+      render: (r) => (
+        <span style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>{r.email || "—"}</span>
+      ),
+    },
+    {
+      key: "createdAt", header: "Signed up", sortable: true,
+      render: (r) => (
+        <span style={{ color: "var(--text-muted)" }}>
+          {r.createdAt
+            ? new Date(r.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+            : "—"}
+        </span>
+      ),
+    },
+    {
+      key: "status", header: "Status",
+      render: (r) => <StatusChip status={r.status} />,
+    },
+    {
+      key: "actions", header: "Actions", align: "right",
+      render: (r) => (
+        <div className="inline-flex items-center gap-1">
+          <IconAction
+            onClick={() => void toggleStatus(r)}
+            title={r.status === "ACTIVE" ? "Deactivate" : "Reactivate"}
+            icon={<Power size={14} />}
+          />
+          <IconAction
+            onClick={() => void deleteRow(r)}
+            title="Delete"
+            icon={<Trash2 size={14} />}
+            danger
+          />
+        </div>
+      ),
+    },
+  ];
+
   return (
-    <th
-      className={`border-b px-3 py-2 text-left text-[11px] font-semibold tracking-[0.06em] uppercase ${className}`}
-      style={{ borderColor: "var(--border)" }}
-    >
-      {children}
-    </th>
+    <div className="flex flex-col gap-3">
+      {actionError && <ErrorBanner message={actionError} dismiss={() => setActionError(null)} />}
+
+      <DataTable
+        list={list}
+        columns={columns}
+        getRowKey={(r) => r.id}
+        searchPlaceholder="Search users by name…"
+        emptyText="No customer signups yet."
+        lockPageSize
+      />
+    </div>
   );
 }
 
-function DraftRow({
-  draft,
-  setDraft,
-  cancel,
-  submit,
+/* ────────────────────────────────────────────────────────────────────────── */
+
+function DraftForm({
+  draft, setDraft, pods, cancel, submit,
 }: {
-  draft: { email: string; displayName: string; role: RoleKey };
-  setDraft: (d: { email: string; displayName: string; role: RoleKey }) => void;
+  draft: { email: string; displayName: string; role: RoleKey; podId: string | null; newPodName: string };
+  setDraft: (d: { email: string; displayName: string; role: RoleKey; podId: string | null; newPodName: string }) => void;
+  pods: { id: string; name: string }[];
   cancel: () => void;
   submit: () => void;
 }) {
-  const nameRef = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    nameRef.current?.focus();
-  }, []);
   const onKey = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      submit();
-    } else if (e.key === "Escape") {
-      cancel();
-    }
+    if (e.key === "Enter") { e.preventDefault(); submit(); }
+    else if (e.key === "Escape") cancel();
   };
+  // Pod is only meaningful for pod-eligible roles. For admin / ops_manager
+  // the dropdown disables itself; assignments to those roles never write
+  // to pod_members.
+  const podEligible = draft.role === "engineer" || draft.role === "pod_lead";
+  const podSelectValue = draft.podId ?? "";
+  const showNewPodInput = draft.podId === NEW_POD_KEY;
+
   return (
-    <tr
+    <div
+      className="flex flex-col gap-2 rounded-lg border p-3"
       style={{
-        backgroundColor:
-          "color-mix(in srgb, " + BRAND_GREEN + " 4%, var(--surface))",
+        borderColor: "color-mix(in srgb, " + BRAND_GREEN + " 35%, transparent)",
+        backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 4%, var(--surface))",
       }}
     >
-      <Td>
+      <div className="grid gap-2 md:grid-cols-[1.4fr_1.4fr_1fr_1fr]">
         <input
-          ref={nameRef}
+          autoFocus
           type="text"
           placeholder="Full name"
           value={draft.displayName}
           onChange={(e) => setDraft({ ...draft, displayName: e.target.value })}
           onKeyDown={onKey}
-          className="w-full bg-transparent text-sm outline-none"
-          style={{ color: "var(--text)" }}
+          className="rounded-md border bg-transparent px-2 py-1.5 text-sm outline-none"
+          style={{ borderColor: "var(--border)", color: "var(--text)" }}
         />
-      </Td>
-      <Td>
         <input
           type="email"
           placeholder="email@company.com"
           value={draft.email}
           onChange={(e) => setDraft({ ...draft, email: e.target.value })}
           onKeyDown={onKey}
-          className="w-full bg-transparent text-sm outline-none"
-          style={{ color: "var(--text)" }}
+          className="rounded-md border bg-transparent px-2 py-1.5 text-sm outline-none"
+          style={{ borderColor: "var(--border)", color: "var(--text)" }}
         />
-      </Td>
-      <Td>
         <select
           value={draft.role}
-          onChange={(e) =>
-            setDraft({ ...draft, role: e.target.value as RoleKey })
-          }
+          onChange={(e) => {
+            const next = e.target.value as RoleKey;
+            // Reset pod selection when role becomes pod-ineligible.
+            const clearPod = next !== "engineer" && next !== "pod_lead";
+            setDraft({
+              ...draft,
+              role: next,
+              podId: clearPod ? null : draft.podId,
+              newPodName: clearPod ? "" : draft.newPodName,
+            });
+          }}
           onKeyDown={onKey}
-          className="w-full text-sm outline-none"
-          // Explicit dark surface so the native options popup matches the
-          // rest of the admin UI; bg-transparent let the OS pick a default
-          // (usually white) on Chrome/Linux.
+          className="rounded-md border px-2 py-1.5 text-sm outline-none"
           style={{
-            color: "var(--text)",
+            borderColor: "var(--border)",
             backgroundColor: "var(--surface)",
+            color: "var(--text)",
           }}
         >
           {CREATABLE_ROLES.map((r) => (
-            <option
-              key={r.value}
-              value={r.value}
-              style={{ backgroundColor: "var(--surface)", color: "var(--text)" }}
-            >
+            <option key={r.value} value={r.value} style={{ backgroundColor: "var(--surface)", color: "var(--text)" }}>
               {r.label}
             </option>
           ))}
         </select>
-      </Td>
-      <Td>
-        <span
-          className="text-xs"
+        <select
+          value={podSelectValue}
+          disabled={!podEligible}
+          onChange={(e) => {
+            const v = e.target.value;
+            setDraft({
+              ...draft,
+              podId: v === "" ? null : v,
+              newPodName: v === NEW_POD_KEY ? draft.newPodName : "",
+            });
+          }}
+          onKeyDown={onKey}
+          className="rounded-md border px-2 py-1.5 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-50"
+          style={{
+            borderColor: "var(--border)",
+            backgroundColor: "var(--surface)",
+            color: "var(--text)",
+          }}
+          title={podEligible ? "Assign to a pod" : "Pods only apply to engineers and supervisors"}
+        >
+          <option value="">{podEligible ? "No pod" : "—"}</option>
+          {pods.map((p) => (
+            <option key={p.id} value={p.id} style={{ backgroundColor: "var(--surface)", color: "var(--text)" }}>
+              {p.name}
+            </option>
+          ))}
+          {podEligible && (
+            <option value={NEW_POD_KEY} style={{ backgroundColor: "var(--surface)", color: BRAND_GREEN }}>
+              + Create new pod…
+            </option>
+          )}
+        </select>
+      </div>
+
+      {showNewPodInput && podEligible && (
+        <input
+          autoFocus
+          type="text"
+          placeholder="New pod name (e.g. Pod Gamma)"
+          value={draft.newPodName}
+          onChange={(e) => setDraft({ ...draft, newPodName: e.target.value })}
+          onKeyDown={onKey}
+          className="rounded-md border bg-transparent px-2 py-1.5 text-sm outline-none"
+          style={{ borderColor: BRAND_GREEN, color: "var(--text)" }}
+        />
+      )}
+
+      <div className="flex items-center justify-end gap-1.5">
+        <button
+          type="button"
+          onClick={submit}
+          className="rounded-md px-3 py-1.5 text-xs font-medium"
+          style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+        >
+          Save
+        </button>
+        <button
+          type="button"
+          onClick={cancel}
+          className="rounded-md px-2.5 py-1.5 text-xs"
           style={{ color: "var(--text-muted)" }}
         >
-          (will be active)
-        </span>
-      </Td>
-      <Td className="text-right">
-        <div className="inline-flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={submit}
-            className="rounded-md px-2.5 py-1 text-xs font-medium"
-            style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
-          >
-            Save
-          </button>
-          <button
-            type="button"
-            onClick={cancel}
-            className="rounded-md px-2.5 py-1 text-xs"
-            style={{ color: "var(--text-muted)" }}
-          >
-            Cancel
-          </button>
-        </div>
-      </Td>
-    </tr>
+          Cancel
+        </button>
+      </div>
+    </div>
   );
 }
 
-function BodyRow({
-  row,
-  editing,
-  setEditing,
-  save,
-  regenerate,
-  toggle,
-  remove,
-  isSelf,
+function RevealBanner({
+  reveal, dismiss,
 }: {
-  row: UserRow;
-  editing: { id: string; field: "displayName" | "role" } | null;
-  setEditing: (e: { id: string; field: "displayName" | "role" } | null) => void;
-  save: (id: string, patch: Partial<UserRow>) => Promise<void>;
-  regenerate: (row: UserRow) => void;
-  toggle:     (row: UserRow) => void;
-  remove:     (row: UserRow) => void;
-  isSelf: boolean;
-}) {
-  const editingName = editing?.id === row.id && editing.field === "displayName";
-  const editingRole = editing?.id === row.id && editing.field === "role";
-
-  return (
-    <tr
-      className="transition-colors"
-      style={{ borderTop: "1px solid var(--border)" }}
-    >
-      <Td onClick={() => !isSelf && setEditing({ id: row.id, field: "displayName" })}>
-        {editingName ? (
-          <CellInput
-            initial={row.displayName}
-            onCommit={async (v) => {
-              setEditing(null);
-              if (v !== row.displayName) await save(row.id, { displayName: v });
-            }}
-            onCancel={() => setEditing(null)}
-          />
-        ) : (
-          <span style={{ color: "var(--text)" }}>{row.displayName || "—"}</span>
-        )}
-      </Td>
-      <Td>
-        <span style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-          {row.email}
-        </span>
-      </Td>
-      <Td
-        onClick={() =>
-          !isSelf &&
-          row.primaryRole !== "super_admin" &&
-          setEditing({ id: row.id, field: "role" })
-        }
-      >
-        {editingRole ? (
-          <CellSelect
-            initial={(row.primaryRole as RoleKey) ?? "engineer"}
-            options={CREATABLE_ROLES}
-            onCommit={async (v) => {
-              setEditing(null);
-              if (v !== row.primaryRole) await save(row.id, { primaryRole: v });
-            }}
-            onCancel={() => setEditing(null)}
-          />
-        ) : (
-          <RoleChip role={row.primaryRole ?? row.roles[0] ?? "—"} />
-        )}
-      </Td>
-      <Td>
-        <StatusChip status={row.status} awaitingFirstSignIn={row.awaitingFirstSignIn} />
-      </Td>
-      <Td className="text-right">
-        {isSelf ? (
-          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-            (you)
-          </span>
-        ) : (
-          <div className="inline-flex items-center gap-1">
-            <IconAction
-              onClick={() => regenerate(row)}
-              title="Resend invitation email"
-              icon={<Mail size={14} />}
-            />
-            <IconAction
-              onClick={() => toggle(row)}
-              title={row.status === "ACTIVE" ? "Deactivate" : "Reactivate"}
-              icon={<Power size={14} />}
-            />
-            <IconAction
-              onClick={() => remove(row)}
-              title="Delete"
-              icon={<Trash2 size={14} />}
-              danger
-            />
-          </div>
-        )}
-      </Td>
-    </tr>
-  );
-}
-
-function Td({
-  children,
-  onClick,
-  className = "",
-}: {
-  children: React.ReactNode;
-  onClick?: () => void;
-  className?: string;
+  reveal: { email: string; action: "invited" | "resent" };
+  dismiss: () => void;
 }) {
   return (
-    <td
-      onClick={onClick}
-      className={`px-3 py-2 align-middle ${onClick ? "cursor-text" : ""} ${className}`}
-    >
-      {children}
-    </td>
-  );
-}
-
-function CellInput({
-  initial,
-  onCommit,
-  onCancel,
-}: {
-  initial: string;
-  onCommit: (v: string) => void;
-  onCancel: () => void;
-}) {
-  const [value, setValue] = useState(initial);
-  const ref = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    ref.current?.focus();
-    ref.current?.select();
-  }, []);
-  return (
-    <input
-      ref={ref}
-      type="text"
-      value={value}
-      onChange={(e) => setValue(e.target.value)}
-      onBlur={() => onCommit(value.trim())}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") onCommit(value.trim());
-        else if (e.key === "Escape") onCancel();
-      }}
-      className="w-full bg-transparent text-sm outline-none"
+    <div
+      className="flex items-start justify-between gap-3 rounded-lg border p-3"
       style={{
-        color: "var(--text)",
-        borderBottom: `1px dashed ${BRAND_GREEN}`,
+        borderColor: "color-mix(in srgb, " + BRAND_GREEN + " 35%, transparent)",
+        backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 6%, transparent)",
       }}
-    />
+    >
+      <div className="flex items-center gap-2 text-sm" style={{ color: "var(--text)" }}>
+        <Mail size={14} style={{ color: BRAND_GREEN }} />
+        <span>
+          {reveal.action === "invited" ? "Invitation sent" : "New sign-in link sent"} to{" "}
+          <strong>{reveal.email}</strong>. They&apos;ll click the magic link to sign in.
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={dismiss}
+        className="rounded-md p-1.5"
+        style={{ color: "var(--text-muted)" }}
+        aria-label="Dismiss"
+      >
+        <X size={14} />
+      </button>
+    </div>
   );
 }
 
-function CellSelect({
-  initial,
-  options,
-  onCommit,
-  onCancel,
+function ErrorBanner({ message, dismiss }: { message: string; dismiss: () => void }) {
+  return (
+    <div
+      className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
+      style={{
+        backgroundColor: "color-mix(in srgb, var(--accent-red) 8%, transparent)",
+        color: "var(--accent-red)",
+        borderColor: "color-mix(in srgb, var(--accent-red) 25%, transparent)",
+      }}
+    >
+      <span>{message}</span>
+      <button type="button" onClick={dismiss} aria-label="Dismiss" className="rounded-md p-1">
+        <X size={14} />
+      </button>
+    </div>
+  );
+}
+
+function RoleSelect({
+  initial, disabled, onCommit, onCancel,
 }: {
   initial: RoleKey;
-  options: { value: RoleKey; label: string }[];
-  onCommit: (v: RoleKey) => void;
+  disabled?: boolean;
+  onCommit: (role: RoleKey) => void;
   onCancel: () => void;
 }) {
   const [value, setValue] = useState<RoleKey>(initial);
-  const ref = useRef<HTMLSelectElement>(null);
-  useEffect(() => {
-    ref.current?.focus();
-  }, []);
   return (
     <select
-      ref={ref}
+      autoFocus
+      disabled={disabled}
       value={value}
-      onChange={(e) => setValue(e.target.value as RoleKey)}
-      onBlur={() => onCommit(value)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") onCommit(value);
-        else if (e.key === "Escape") onCancel();
+      onChange={(e) => {
+        const next = e.target.value as RoleKey;
+        setValue(next);
+        if (next !== initial) onCommit(next);
       }}
-      className="w-full text-sm outline-none"
+      onBlur={() => {
+        // Cancel if user opened the dropdown without picking anything new.
+        if (value === initial) onCancel();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onCancel();
+      }}
+      className="rounded-md border px-2 py-1 text-xs outline-none"
       style={{
+        borderColor: BRAND_GREEN,
+        backgroundColor: "var(--background)",
         color: "var(--text)",
-        backgroundColor: "var(--surface)",
       }}
     >
-      {options.map((o) => (
-        <option
-          key={o.value}
-          value={o.value}
-          style={{ backgroundColor: "var(--surface)", color: "var(--text)" }}
-        >
-          {o.label}
+      {CREATABLE_ROLES.map((r) => (
+        <option key={r.value} value={r.value} style={{ backgroundColor: "var(--surface)", color: "var(--text)" }}>
+          {r.label}
         </option>
       ))}
     </select>
@@ -811,8 +744,7 @@ function RoleChip({ role }: { role: string }) {
     <span
       className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium"
       style={{
-        backgroundColor:
-          "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
+        backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
         color: BRAND_GREEN,
       }}
     >
@@ -823,18 +755,16 @@ function RoleChip({ role }: { role: string }) {
 
 function StatusChip({
   status,
-  awaitingFirstSignIn,
 }: {
   status: "ACTIVE" | "DEACTIVATED";
-  awaitingFirstSignIn: boolean;
+  awaitingFirstSignIn?: boolean;
 }) {
   if (status === "DEACTIVATED") {
     return (
       <span
         className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium"
         style={{
-          backgroundColor:
-            "color-mix(in srgb, var(--text-muted) 14%, transparent)",
+          backgroundColor: "color-mix(in srgb, var(--text-muted) 14%, transparent)",
           color: "var(--text-muted)",
         }}
       >
@@ -842,26 +772,11 @@ function StatusChip({
       </span>
     );
   }
-  if (awaitingFirstSignIn) {
-    return (
-      <span
-        className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium"
-        style={{
-          backgroundColor:
-            "color-mix(in srgb, var(--accent-red) 10%, transparent)",
-          color: "var(--accent-red)",
-        }}
-      >
-        Awaiting first sign-in
-      </span>
-    );
-  }
   return (
     <span
       className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium"
       style={{
-        backgroundColor:
-          "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
+        backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
         color: BRAND_GREEN,
       }}
     >
@@ -871,10 +786,7 @@ function StatusChip({
 }
 
 function IconAction({
-  onClick,
-  title,
-  icon,
-  danger,
+  onClick, title, icon, danger,
 }: {
   onClick: () => void;
   title: string;
@@ -894,4 +806,3 @@ function IconAction({
     </button>
   );
 }
-
