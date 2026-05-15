@@ -72,7 +72,7 @@ export default async function StaffLoginPage() {
           style={{ borderColor: "var(--border)" }}
         />
 
-        <div className="flex flex-col items-center gap-1.5 text-center">
+        {/* <div className="flex flex-col items-center gap-1.5 text-center">
           <p className="text-xs" style={{ color: "var(--text-muted)" }}>
             Are you a customer?{" "}
             <Link
@@ -93,7 +93,7 @@ export default async function StaffLoginPage() {
               support@relay.green
             </a>
           </p>
-        </div>
+        </div> */}
       </div>
     </main>
   );

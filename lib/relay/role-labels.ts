@@ -81,10 +81,10 @@ function titleCase(s: string): string {
  * drift on where each role lives.
  */
 export function landingForRoles(roles: readonly string[]): string {
-  if (roles.includes("super_admin"))      return "/admin";
+  if (roles.includes("super_admin"))      return "/admin/users";
   if (roles.includes("enterprise_admin")) return "/enterprise";
-  if (roles.includes("admin"))            return "/admin";
-  if (roles.includes("ops_manager"))      return "/admin";
+  if (roles.includes("admin"))            return "/supervise";
+  if (roles.includes("ops_manager"))      return "/supervise";
   if (roles.includes("pod_lead"))         return "/supervise";
   if (roles.includes("engineer"))         return "/dashboard";
   return "/room";
