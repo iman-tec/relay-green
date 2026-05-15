@@ -9,11 +9,12 @@
  * Updates every second + on any guest_calls change via Realtime.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import {
-  Activity, AlertTriangle, Clock, Eye, Loader2, ArrowUpRight, Search,
+  AlertTriangle, Eye, Loader2, ArrowUpRight, Search,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
@@ -23,8 +24,11 @@ const BRAND_GREEN = "#3f5c2e";
 const BRAND_GREEN_SOFT = "rgba(63, 92, 46, 0.12)";
 const URGENT_AMBER = "#d4a017";
 const URGENT_AMBER_SOFT = "rgba(212, 160, 23, 0.14)";
-const CRIT_RED = "#8b1a1a";
-const CRIT_RED_SOFT = "rgba(139, 26, 26, 0.18)";
+// "Critical" colour used to be a deep red (#8b1a1a) but read as too loud on
+// dark backgrounds. Swapped to a deep orange so the green → amber → danger
+// gradient still has clear separation without the alarm-bell feel.
+const CRIT_RED = "#c2410c";
+const CRIT_RED_SOFT = "rgba(194, 65, 12, 0.18)";
 
 const ACTIVE_STATES  = ["queued", "assigned", "joining", "live", "grace"];
 const LIVE_STATES    = new Set(["live", "joining", "grace"]);
@@ -47,13 +51,46 @@ type SessionWithHealth = GuestCall & { health?: HealthSnapshot };
 // (most conversations happen on Zoom voice, not chat).
 const MIN_MESSAGES_FOR_AI = 2;
 
-type Tab = "live" | "waiting" | "past";
+type Tab = "all" | "waiting" | "live" | "past";
+
+// Per-page selector — shared by all three panels (All, Active, Past). Lifted
+// to the parent so changing "20 / page" once stays applied as you tab around.
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
+type PageSize = (typeof PAGE_SIZE_OPTIONS)[number];
+const DEFAULT_PAGE_SIZE: PageSize = 20;
+
+// Pager slot — each panel renders its PagerStrip into the right-hand side
+// of the sticky footer via this portal target. Lets the panels keep owning
+// their pagination state while visually sharing the footer with HealthLegend.
+const PagerSlotContext = createContext<HTMLElement | null>(null);
+
+// Pulsing-glow animation for sessions currently in a waiting state
+// (queued / assigned). The card grows a fading halo and the status chip
+// breathes with the same colour cue so the supervisor's eye is drawn to
+// customers who still need to be picked up. Color is driven by the
+// `--glow` CSS variable, which cascades from the card down to the chip.
+const WAITING_GLOW_CSS = `
+  @keyframes relay-pulse-glow {
+    0%, 100% { box-shadow: 0 0 0 0 transparent; }
+    50%      { box-shadow: 0 0 14px 2px var(--glow, transparent); }
+  }
+  @keyframes relay-pulse-glow-soft {
+    0%, 100% { box-shadow: 0 0 0 0 transparent; }
+    50%      { box-shadow: 0 0 8px 1px var(--glow, transparent); }
+  }
+  .relay-card-glow { animation: relay-pulse-glow      1.8s ease-in-out infinite; }
+  .relay-chip-glow { animation: relay-pulse-glow-soft 1.8s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce) {
+    .relay-card-glow, .relay-chip-glow { animation: none; }
+  }
+`;
 
 export function SuperviseClient() {
   const [sessions, setSessions] = useState<SessionWithHealth[]>([]);
   const [pastSessions, setPastSessions] = useState<SessionWithHealth[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<Tab>("live");
+  const [tab, setTab] = useState<Tab>("all");
+  const [perPage, setPerPage] = useState<PageSize>(DEFAULT_PAGE_SIZE);
   const [, setTick] = useState(0);
   const supabaseRef = useRef(createClient());
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -152,114 +189,111 @@ export function SuperviseClient() {
     };
   }, []);
 
-  const metrics = useMemo(() => {
-    const active = sessions.length;
-    const urgent = sessions.filter((s) => s.urgency !== "normal").length;
-    const live = sessions.filter((s) => s.status === "live").length;
-    const queued = sessions.filter((s) => s.status === "queued");
-    const avgWait = queued.length === 0 ? 0 : Math.floor(
-      queued.reduce((sum, s) => sum + (Date.now() - new Date(s.created_at).getTime()) / 1000, 0) / queued.length,
-    );
-    const longestWait = queued.length === 0 ? 0 : Math.max(
-      ...queued.map((s) => Math.floor((Date.now() - new Date(s.created_at).getTime()) / 1000)),
-    );
-    return { active, urgent, live, avgWait, longestWait };
-  }, [sessions]);
+  const liveSessions    = useMemo(() => sessions.filter((s) => LIVE_STATES.has(s.status)),    [sessions]);
+  const waitingSessions = useMemo(() => sessions.filter((s) => WAITING_STATES.has(s.status)), [sessions]);
+
+  // Portal target for each panel's PagerStrip — lives on the right side of
+  // the sticky footer. State (not ref) so children re-portal once it mounts.
+  const [pagerSlot, setPagerSlot] = useState<HTMLDivElement | null>(null);
 
   return (
-    <div className="mx-auto max-w-screen-2xl space-y-6 px-6 py-8">
-      <div>
-        <h1 className="text-xl font-semibold" style={{ color: "var(--text)" }}>
-          Live operations
-        </h1>
-        <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
-          Every active session, live. The colored bar is the session&apos;s
-          current health — green is healthy, amber is shaky, red is at risk.
-          Use Join to drop into a session.
-        </p>
+    // Flex column at full viewport height. Sticky footer (below) is in normal
+    // flow inside <main>, so it respects the staff sidebar inset instead of
+    // bleeding behind it the way a `position: fixed` element would. The
+    // flex-1 content area pushes the legend to viewport-bottom even on an
+    // empty/loading state, and `sticky bottom-0` keeps it pinned while
+    // scrolling through long lists.
+    <PagerSlotContext.Provider value={pagerSlot}>
+    <div className="flex min-h-screen flex-col">
+      <style>{WAITING_GLOW_CSS}</style>
+      <div className="mx-auto w-full max-w-screen-2xl flex-1 space-y-6 px-6 pt-8 pb-6">
+        <div>
+          <h1 className="text-xl font-semibold" style={{ color: "var(--text)" }}>
+            Live operations
+          </h1>
+          <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
+            Every active session, live. The colored bar is the session&apos;s
+            current health — green is healthy, amber is shaky, red is at risk.
+            Use Join to drop into a session.
+          </p>
+        </div>
+
+        {/* Tabs: All · Waiting · Live · Past */}
+        <Tabs tab={tab} setTab={setTab} counts={{
+          all:     liveSessions.length + waitingSessions.length + pastSessions.length,
+          waiting: waitingSessions.length,
+          live:    liveSessions.length,
+          past:    pastSessions.length,
+        }} />
+
+        {loading ? (
+          <div className="flex justify-center py-16">
+            <Loader2 size={20} className="animate-spin" style={{ color: BRAND_GREEN }} />
+          </div>
+        ) : (
+          <TabPanel
+            tab={tab}
+            liveSessions={liveSessions}
+            waitingSessions={waitingSessions}
+            pastSessions={pastSessions}
+            perPage={perPage}
+            setPerPage={setPerPage}
+          />
+        )}
       </div>
 
-      {/* Metrics */}
-      <div className="grid grid-cols-2 items-start gap-3 md:grid-cols-5">
-        <Metric icon={Activity} label="Active sessions" value={metrics.active} accent={BRAND_GREEN} bg={BRAND_GREEN_SOFT} />
-        <Metric icon={Activity} label="Live now"        value={metrics.live}   accent={BRAND_GREEN} bg={BRAND_GREEN_SOFT} />
-        <Metric icon={AlertTriangle} label="Urgent"     value={metrics.urgent} accent={URGENT_AMBER} bg={URGENT_AMBER_SOFT} />
-        <Metric icon={Clock} label="Avg wait"           value={fmtSecs(metrics.avgWait)} accent="#0284c7" bg="rgba(2, 132, 199, 0.12)" />
-        <div className="flex flex-col">
-          <Metric icon={Clock} label="Longest wait"     value={fmtSecs(metrics.longestWait)} accent="#7c3aed" bg="rgba(124, 58, 237, 0.12)" />
+      {/* Sticky footer — session-health legend (left) + pager slot (right).
+          Stays at viewport-bottom on short pages (via parent flex-col +
+          flex-1 above) and pinned during scroll on long pages. Scoped to
+          <main>, so it doesn't overlap the staff sidebar. */}
+      <div
+        className="sticky bottom-0 z-30 border-t backdrop-blur"
+        style={{
+          borderColor: "var(--border)",
+          backgroundColor: "color-mix(in srgb, var(--background) 92%, transparent)",
+        }}
+      >
+        <div className="mx-auto flex w-full max-w-screen-2xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-6 py-3">
           <HealthLegend />
+          {/* Right-side portal target — each panel's PagerStrip renders here */}
+          <div ref={setPagerSlot} className="flex items-center" />
         </div>
       </div>
-
-      {/* Tabs: Live · Waiting · Past */}
-      <Tabs tab={tab} setTab={setTab} counts={{
-        live:    sessions.filter((s) => LIVE_STATES.has(s.status)).length,
-        waiting: sessions.filter((s) => WAITING_STATES.has(s.status)).length,
-        past:    pastSessions.length,
-      }} />
-
-      {loading ? (
-        <div className="flex justify-center py-16">
-          <Loader2 size={20} className="animate-spin" style={{ color: BRAND_GREEN }} />
-        </div>
-      ) : (
-        <TabPanel
-          tab={tab}
-          liveSessions={sessions.filter((s) => LIVE_STATES.has(s.status))}
-          waitingSessions={sessions.filter((s) => WAITING_STATES.has(s.status))}
-          pastSessions={pastSessions}
-        />
-      )}
     </div>
+    </PagerSlotContext.Provider>
   );
 }
 
 function HealthLegend() {
   return (
-    <div className="px-1 pb-1 pt-3" title="Session health — green healthy, amber neutral, red danger">
-      <div
-        className="h-2 w-full rounded-full"
-        style={{
-          background: `linear-gradient(to right, ${BRAND_GREEN} 0%, ${URGENT_AMBER} 50%, ${CRIT_RED} 100%)`,
-        }}
-      />
-      <div className="mt-1.5 flex justify-between text-[9px] font-medium uppercase tracking-wider">
-        <span style={{ color: BRAND_GREEN }}>Healthy</span>
-        <span style={{ color: URGENT_AMBER }}>Neutral</span>
-        <span style={{ color: CRIT_RED }}>Danger</span>
-      </div>
+    <div
+      className="flex flex-wrap items-center gap-x-6 gap-y-2"
+      title="Session health — green healthy, amber neutral, red danger"
+    >
+      <LegendChip color={BRAND_GREEN}  label="Healthy" />
+      <LegendChip color={URGENT_AMBER} label="Neutral" />
+      <LegendChip color={CRIT_RED}     label="Danger" />
     </div>
   );
 }
 
-function Metric({
-  icon: Icon, label, value, accent, bg,
-}: {
-  icon: React.ElementType;
-  label: string;
-  value: string | number;
-  accent: string;
-  bg: string;
-}) {
+function LegendChip({ color, label }: { color: string; label: string }) {
   return (
-    <div
-      className="flex items-center gap-3 rounded-xl border p-4"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
-    >
-      <div
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
-        style={{ backgroundColor: bg, color: accent }}
+    <div className="inline-flex items-center gap-2">
+      <span
+        aria-hidden
+        className="inline-block h-2.5 w-2.5 rounded-full"
+        style={{
+          backgroundColor: color,
+          boxShadow: `0 0 0 3px color-mix(in srgb, ${color} 18%, transparent)`,
+        }}
+      />
+      <span
+        className="text-[11px] font-semibold uppercase tracking-wider"
+        style={{ color }}
       >
-        <Icon size={16} />
-      </div>
-      <div>
-        <div className="text-xl font-bold tabular-nums" style={{ color: "var(--text)" }}>
-          {value}
-        </div>
-        <div className="text-[10px]" style={{ color: "var(--text-muted)" }}>
-          {label}
-        </div>
-      </div>
+        {label}
+      </span>
     </div>
   );
 }
@@ -326,6 +360,14 @@ function SessionTile({ session }: { session: SessionWithHealth }) {
 
   const join = () => router.push(`/staff/session/${session.id}`);
 
+  // Waiting sessions (queued / assigned) breathe a coloured halo so they
+  // catch the supervisor's eye until they're picked up. `--glow` cascades
+  // from the card to the status chip so both pulse the same colour.
+  const isWaiting = WAITING_STATES.has(session.status);
+  const glowVar = isWaiting
+    ? ({ "--glow": tok.bar } as React.CSSProperties)
+    : {};
+
   return (
     <div
       // Whole card is still clickable (preserves the existing "click to
@@ -334,10 +376,11 @@ function SessionTile({ session }: { session: SessionWithHealth }) {
       role="button"
       tabIndex={0}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); join(); } }}
-      className="group relative cursor-pointer overflow-hidden rounded-xl border p-4 transition-colors hover:border-[var(--text-muted)]/40"
+      className={`group relative cursor-pointer overflow-hidden rounded-xl border p-4 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:scale-[1.025] hover:border-[var(--text-muted)]/40 hover:shadow-lg motion-reduce:transform-none motion-reduce:transition-none${isWaiting ? " relay-card-glow" : ""}`}
       style={{
         borderColor: "var(--border)",
         backgroundColor: "var(--surface)",
+        ...glowVar,
       }}
     >
       {/* Left accent bar — at-a-glance health indicator */}
@@ -349,7 +392,7 @@ function SessionTile({ session }: { session: SessionWithHealth }) {
 
       <div className="mb-3 flex items-center justify-between gap-2">
         <span
-          className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide${isWaiting ? " relay-chip-glow" : ""}`}
           style={{ backgroundColor: tok.pill_bg, color: tok.pill_fg }}
         >
           {session.status}
@@ -422,7 +465,7 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-// ── Tabs (Live · Waiting · Past) ───────────────────────────────────────────
+// ── Tabs (All · Waiting · Live · Past) ─────────────────────────────────────
 function Tabs({
   tab, setTab, counts,
 }: {
@@ -432,7 +475,7 @@ function Tabs({
 }) {
   return (
     <div className="flex items-center gap-1 border-b" style={{ borderColor: "var(--border)" }}>
-      {(["live", "waiting", "past"] as const).map((t) => {
+      {(["all", "waiting", "live", "past"] as const).map((t) => {
         const active = t === tab;
         return (
           <button
@@ -464,32 +507,196 @@ function Tabs({
 
 // ── Tab panel — chooses the right grid for the active tab ─────────────────
 function TabPanel({
-  tab, liveSessions, waitingSessions, pastSessions,
+  tab, liveSessions, waitingSessions, pastSessions, perPage, setPerPage,
 }: {
   tab: Tab;
   liveSessions: SessionWithHealth[];
   waitingSessions: SessionWithHealth[];
   pastSessions: SessionWithHealth[];
+  perPage: PageSize;
+  setPerPage: (n: PageSize) => void;
 }) {
+  if (tab === "all") {
+    return (
+      <AllPanel
+        liveSessions={liveSessions}
+        waitingSessions={waitingSessions}
+        pastSessions={pastSessions}
+        perPage={perPage}
+        setPerPage={setPerPage}
+      />
+    );
+  }
   if (tab === "past") {
     return (
-      <PastPanel sessions={pastSessions} />
+      <PastPanel sessions={pastSessions} perPage={perPage} setPerPage={setPerPage} />
     );
   }
   return (
     <ActivePanel
       tab={tab}
       sessions={tab === "live" ? liveSessions : waitingSessions}
+      perPage={perPage}
+      setPerPage={setPerPage}
     />
   );
 }
 
-// ── Active (live + waiting) panel — search + sort, no pager (lists short) ──
-function ActivePanel({ tab, sessions }: { tab: "live" | "waiting"; sessions: SessionWithHealth[] }) {
+// ── All panel — every session in one grid: live → waiting → past ──────────
+// Renders the right tile type per status so the supervisor still sees the
+// live "Join session" CTA on actives and the post-completion sentiment on
+// past sessions. Search filters across all three groups; sort is fixed at
+// "live first, waiting second, past last, each newest-within-group" so a
+// glance always surfaces what needs attention. The visible slice is then
+// regrouped into Live/Waiting/Past section headers so structure is
+// preserved across page boundaries.
+function AllPanel({
+  liveSessions, waitingSessions, pastSessions, perPage, setPerPage,
+}: {
+  liveSessions: SessionWithHealth[];
+  waitingSessions: SessionWithHealth[];
+  pastSessions: SessionWithHealth[];
+  perPage: PageSize;
+  setPerPage: (n: PageSize) => void;
+}) {
+  const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
+
+  const matchesQ = (s: SessionWithHealth, needle: string) =>
+    !needle ||
+    (s.guest_name   ?? "").toLowerCase().includes(needle) ||
+    (s.guest_email  ?? "").toLowerCase().includes(needle) ||
+    (s.agent_name   ?? "").toLowerCase().includes(needle) ||
+    (s.project_name ?? "").toLowerCase().includes(needle);
+
+  // Flat ordered list — live > waiting > past, newest-within-group — used
+  // for pagination math. The grouped view below is derived from the slice.
+  const ordered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    const byCreatedDesc = (a: SessionWithHealth, b: SessionWithHealth) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    const byEndedDesc = (a: SessionWithHealth, b: SessionWithHealth) => {
+      const at = a.ended_at ? new Date(a.ended_at).getTime() : 0;
+      const bt = b.ended_at ? new Date(b.ended_at).getTime() : 0;
+      return bt - at;
+    };
+    return [
+      ...liveSessions   .filter((s) => matchesQ(s, needle)).sort(byCreatedDesc),
+      ...waitingSessions.filter((s) => matchesQ(s, needle)).sort(byCreatedDesc),
+      ...pastSessions   .filter((s) => matchesQ(s, needle)).sort(byEndedDesc),
+    ];
+  }, [liveSessions, waitingSessions, pastSessions, q]);
+
+  const total = ordered.length;
+  const pageCount = Math.max(1, Math.ceil(total / perPage));
+  useEffect(() => { if (page > pageCount) setPage(1); }, [page, pageCount]);
+  const start = (page - 1) * perPage;
+  const slice = ordered.slice(start, start + perPage);
+
+  // Re-group the visible slice for sectioned rendering.
+  const sliceLive    = slice.filter((s) => LIVE_STATES.has(s.status));
+  const sliceWaiting = slice.filter((s) => WAITING_STATES.has(s.status));
+  const sliceLW      = new Set([...sliceLive, ...sliceWaiting].map((s) => s.id));
+  const slicePast    = slice.filter((s) => !sliceLW.has(s.id));
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative">
+          <Search
+            size={12}
+            className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2"
+            style={{ color: "var(--text-muted)" }}
+          />
+          <input
+            value={q}
+            onChange={(e) => { setQ(e.target.value); setPage(1); }}
+            placeholder="Search all sessions…"
+            className="rounded-md border py-1.5 pl-7 pr-2 text-xs outline-none"
+            style={{
+              borderColor: "var(--border)",
+              backgroundColor: "var(--background)",
+              color: "var(--text)",
+              width: 260,
+            }}
+          />
+        </div>
+      </div>
+
+      {total === 0 ? (
+        <EmptyState
+          title="Nothing here yet"
+          body={q ? `No sessions match "${q}".` : "No sessions to show."}
+        />
+      ) : (
+        <>
+          <div className="flex flex-col gap-6">
+            {sliceLive.length > 0 && (
+              <Section title="Live" count={sliceLive.length}>
+                {sliceLive.map((s) => <SessionTile key={s.id} session={s} />)}
+              </Section>
+            )}
+            {sliceWaiting.length > 0 && (
+              <Section title="Waiting" count={sliceWaiting.length}>
+                {sliceWaiting.map((s) => <SessionTile key={s.id} session={s} />)}
+              </Section>
+            )}
+            {slicePast.length > 0 && (
+              <Section title="Past" count={slicePast.length}>
+                {slicePast.map((s) => <PastSessionTile key={s.id} session={s} />)}
+              </Section>
+            )}
+          </div>
+          <PagerStrip
+            showingFrom={start + 1}
+            showingTo={start + slice.length}
+            total={total}
+            page={page}
+            pageCount={pageCount}
+            setPage={setPage}
+            perPage={perPage}
+            setPerPage={setPerPage}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+function Section({
+  title, count, children,
+}: { title: string; count: number; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-baseline gap-2">
+        <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+          {title}
+        </h2>
+        <span className="text-[11px] tabular-nums" style={{ color: "var(--text-muted)" }}>
+          ({count})
+        </span>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ── Active (live + waiting) panel — search + sort + per-page pagination ───
+function ActivePanel({
+  tab, sessions, perPage, setPerPage,
+}: {
+  tab: "live" | "waiting";
+  sessions: SessionWithHealth[];
+  perPage: PageSize;
+  setPerPage: (n: PageSize) => void;
+}) {
   const [q, setQ] = useState("");
   const [sortKey, setSortKey] = useState<"recent" | "wait" | "customer" | "engineer">(
     tab === "waiting" ? "wait" : "recent",
   );
+  const [page, setPage] = useState(1);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -520,18 +727,22 @@ function ActivePanel({ tab, sessions }: { tab: "live" | "waiting"; sessions: Ses
     return sorted;
   }, [sessions, q, sortKey]);
 
+  const pageCount = Math.max(1, Math.ceil(filtered.length / perPage));
+  useEffect(() => { if (page > pageCount) setPage(1); }, [page, pageCount]);
+  const start = (page - 1) * perPage;
+  const slice = filtered.slice(start, start + perPage);
+
   return (
     <div className="flex flex-col gap-3">
       <SuperviseToolbar
-        q={q} setQ={setQ}
-        sortKey={sortKey} setSortKey={setSortKey as (s: string) => void}
+        q={q} setQ={(v) => { setQ(v); setPage(1); }}
+        sortKey={sortKey} setSortKey={(s) => { setSortKey(s as typeof sortKey); setPage(1); }}
         sortOptions={[
           { value: "recent",   label: "Newest first" },
           { value: "wait",     label: "Longest wait" },
           { value: "customer", label: "Customer name" },
           { value: "engineer", label: "Engineer name" },
         ]}
-        total={filtered.length}
         searchPlaceholder={tab === "live" ? "Search live sessions…" : "Search waiting…"}
       />
       {filtered.length === 0 ? (
@@ -539,17 +750,34 @@ function ActivePanel({ tab, sessions }: { tab: "live" | "waiting"; sessions: Ses
           ? <EmptyState title="All quiet" body={q ? `No live sessions match "${q}".` : "No active sessions right now."} />
           : <EmptyState title="Nothing waiting" body={q ? `No waiting sessions match "${q}".` : "No customers waiting to be picked up."} />
       ) : (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-          {filtered.map((s) => <SessionTile key={s.id} session={s} />)}
-        </div>
+        <>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            {slice.map((s) => <SessionTile key={s.id} session={s} />)}
+          </div>
+          <PagerStrip
+            showingFrom={start + 1}
+            showingTo={start + slice.length}
+            total={filtered.length}
+            page={page}
+            pageCount={pageCount}
+            setPage={setPage}
+            perPage={perPage}
+            setPerPage={setPerPage}
+          />
+        </>
       )}
     </div>
   );
 }
 
 // ── Past panel — search + sort + pager (longer list) ──────────────────────
-function PastPanel({ sessions }: { sessions: SessionWithHealth[] }) {
-  const PAGE_SIZE = 8;
+function PastPanel({
+  sessions, perPage, setPerPage,
+}: {
+  sessions: SessionWithHealth[];
+  perPage: PageSize;
+  setPerPage: (n: PageSize) => void;
+}) {
   const [q, setQ] = useState("");
   const [sortKey, setSortKey] = useState<"ended" | "duration" | "sentiment" | "customer">("ended");
   const [page, setPage] = useState(1);
@@ -583,13 +811,13 @@ function PastPanel({ sessions }: { sessions: SessionWithHealth[] }) {
   }, [sessions, q, sortKey]);
 
   // Reset page if filters shrink the list past the current page.
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(filtered.length / perPage));
   useEffect(() => {
     if (page > pageCount) setPage(1);
   }, [page, pageCount]);
 
-  const start = (page - 1) * PAGE_SIZE;
-  const slice = filtered.slice(start, start + PAGE_SIZE);
+  const start = (page - 1) * perPage;
+  const slice = filtered.slice(start, start + perPage);
 
   return (
     <div className="flex flex-col gap-3">
@@ -602,7 +830,6 @@ function PastPanel({ sessions }: { sessions: SessionWithHealth[] }) {
           { value: "sentiment", label: "Best sentiment" },
           { value: "customer",  label: "Customer name" },
         ]}
-        total={filtered.length}
         searchPlaceholder="Search past sessions…"
       />
 
@@ -625,6 +852,8 @@ function PastPanel({ sessions }: { sessions: SessionWithHealth[] }) {
             page={page}
             pageCount={pageCount}
             setPage={setPage}
+            perPage={perPage}
+            setPerPage={setPerPage}
           />
         </>
       )}
@@ -632,16 +861,18 @@ function PastPanel({ sessions }: { sessions: SessionWithHealth[] }) {
   );
 }
 
-// ── Shared toolbar: search + sort + count ──────────────────────────────────
+// ── Shared toolbar: search + sort ─────────────────────────────────────────
+// Per-page selector and result count live with the pager at the bottom of
+// the panel — see PagerStrip — so the top stays clean and the controls that
+// govern pagination cluster together.
 function SuperviseToolbar({
-  q, setQ, sortKey, setSortKey, sortOptions, total, searchPlaceholder,
+  q, setQ, sortKey, setSortKey, sortOptions, searchPlaceholder,
 }: {
   q: string;
   setQ: (v: string) => void;
   sortKey: string;
   setSortKey: (k: string) => void;
   sortOptions: ReadonlyArray<{ value: string; label: string }>;
-  total: number;
   searchPlaceholder: string;
 }) {
   return (
@@ -665,32 +896,57 @@ function SuperviseToolbar({
           }}
         />
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <select
-          value={sortKey}
-          onChange={(e) => setSortKey(e.target.value)}
-          className="rounded-md border px-2 py-1.5 text-xs outline-none"
-          style={{
-            borderColor: "var(--border)",
-            backgroundColor: "var(--background)",
-            color: "var(--text)",
-          }}
-        >
-          {sortOptions.map((o) => (
-            <option key={o.value} value={o.value}>Sort: {o.label}</option>
-          ))}
-        </select>
-        <span className="text-[11px] tabular-nums" style={{ color: "var(--text-muted)" }}>
-          {total} {total === 1 ? "result" : "results"}
-        </span>
-      </div>
+      <select
+        value={sortKey}
+        onChange={(e) => setSortKey(e.target.value)}
+        className="rounded-md border px-2 py-1.5 text-xs outline-none"
+        style={{
+          borderColor: "var(--border)",
+          backgroundColor: "var(--background)",
+          color: "var(--text)",
+        }}
+      >
+        {sortOptions.map((o) => (
+          <option key={o.value} value={o.value}>Sort: {o.label}</option>
+        ))}
+      </select>
     </div>
   );
 }
 
-// ── Pager strip (used by Past tab) ─────────────────────────────────────────
+// ── Per-page dropdown ──────────────────────────────────────────────────────
+function PerPageSelect({
+  value, onChange,
+}: {
+  value: PageSize;
+  onChange: (n: PageSize) => void;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(Number(e.target.value) as PageSize)}
+      aria-label="Items per page"
+      className="rounded-md border px-2 py-1.5 text-xs outline-none"
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--background)",
+        color: "var(--text)",
+      }}
+    >
+      {PAGE_SIZE_OPTIONS.map((n) => (
+        <option key={n} value={n}>{n} / page</option>
+      ))}
+    </select>
+  );
+}
+
+// ── Pager strip — portals into the sticky footer's right-hand slot ────────
+// Each panel renders one of these; the content lands in the bottom-right
+// of the page (next to HealthLegend) via React portal. No inline rendering,
+// so the footer's design stays untouched.
 function PagerStrip({
   showingFrom, showingTo, total, page, pageCount, setPage,
+  perPage, setPerPage,
 }: {
   showingFrom: number;
   showingTo:   number;
@@ -698,25 +954,31 @@ function PagerStrip({
   page:        number;
   pageCount:   number;
   setPage:     (p: number) => void;
+  perPage:     PageSize;
+  setPerPage:  (n: PageSize) => void;
 }) {
-  return (
-    <div
-      className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
-    >
-      <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+  const slot = useContext(PagerSlotContext);
+  if (!slot) return null;
+  return createPortal(
+    <div className="flex flex-wrap items-center gap-3">
+      <PerPageSelect
+        value={perPage}
+        onChange={(n) => { setPerPage(n); setPage(1); }}
+      />
+      <span className="text-[11px] tabular-nums" style={{ color: "var(--text-muted)" }}>
         Showing {showingFrom}–{showingTo} of {total}
       </span>
       <div className="flex items-center gap-1">
-        <PagerBtn onClick={() => setPage(1)}              disabled={page <= 1}><ChevronsLeft  size={12} /></PagerBtn>
-        <PagerBtn onClick={() => setPage(page - 1)}       disabled={page <= 1}><ChevronLeft   size={12} /></PagerBtn>
-        <span className="px-2 text-[11px] tabular-nums" style={{ color: "var(--text-muted)" }}>
+        <PagerBtn onClick={() => setPage(1)}        disabled={page <= 1}><ChevronsLeft  size={12} /></PagerBtn>
+        <PagerBtn onClick={() => setPage(page - 1)} disabled={page <= 1}><ChevronLeft   size={12} /></PagerBtn>
+        <span className="px-1 text-[11px] tabular-nums" style={{ color: "var(--text-muted)" }}>
           {page} / {pageCount}
         </span>
-        <PagerBtn onClick={() => setPage(page + 1)}       disabled={page >= pageCount}><ChevronRight  size={12} /></PagerBtn>
-        <PagerBtn onClick={() => setPage(pageCount)}      disabled={page >= pageCount}><ChevronsRight size={12} /></PagerBtn>
+        <PagerBtn onClick={() => setPage(page + 1)}  disabled={page >= pageCount}><ChevronRight  size={12} /></PagerBtn>
+        <PagerBtn onClick={() => setPage(pageCount)} disabled={page >= pageCount}><ChevronsRight size={12} /></PagerBtn>
       </div>
-    </div>
+    </div>,
+    slot,
   );
 }
 
@@ -790,7 +1052,7 @@ function PastSessionTile({ session }: { session: SessionWithHealth }) {
       role="button"
       tabIndex={0}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } }}
-      className="group relative cursor-pointer overflow-hidden rounded-xl border p-4 transition-colors hover:border-[var(--text-muted)]/40"
+      className="group relative cursor-pointer overflow-hidden rounded-xl border p-4 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:scale-[1.025] hover:border-[var(--text-muted)]/40 hover:shadow-lg motion-reduce:transform-none motion-reduce:transition-none"
       style={{
         borderColor: "var(--border)",
         backgroundColor: "var(--surface)",

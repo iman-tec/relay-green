@@ -24,7 +24,7 @@
   --primary: #d97757; /* Claude coral — primary CTA only */
   --primary-hover: #c66645;
   --green-dot: #3dcb7e; /* the brand green dot — launcher only */
-  --accent-red: #c8553d; /* supervisor red-card alerts only */
+  --accent-red: #c87c3d; /* supervisor red-card alerts only */
 
   /* Force the browser's native form controls (Stripe iframe, date pickers,
    * scrollbars, etc.) to render in dark mode regardless of OS preference. */

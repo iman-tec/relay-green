@@ -22,8 +22,10 @@ const BRAND_GREEN       = "#3f5c2e";
 const BRAND_GREEN_SOFT  = "rgba(63, 92, 46, 0.12)";
 const URGENT_AMBER      = "#d4a017";
 const URGENT_AMBER_SOFT = "rgba(212, 160, 23, 0.14)";
-const CRIT_RED          = "#8b1a1a";
-const CRIT_RED_SOFT     = "rgba(139, 26, 26, 0.18)";
+// Danger colour — was #8b1a1a (deep red), softened to a deep orange so the
+// dark-theme palette stops shouting while keeping clear separation from amber.
+const CRIT_RED          = "#c2410c";
+const CRIT_RED_SOFT     = "rgba(194, 65, 12, 0.18)";
 
 type Session = {
   id: string;
