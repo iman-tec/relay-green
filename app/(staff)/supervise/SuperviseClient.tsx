@@ -799,7 +799,20 @@ function PastPanel({
     sorted.sort((a, b) => {
       switch (sortKey) {
         case "duration":  return (Number(b.duration_minutes ?? 0)) - (Number(a.duration_minutes ?? 0));
-        case "sentiment": return (b.health?.score ?? 0) - (a.health?.score ?? 0);
+        case "sentiment": {
+          // Unscored sessions go to the bottom — otherwise the `?? 0`
+          // fallback would slot them at "neutral" and they'd outrank any
+          // session with a negative score (which is wrong for "Best
+          // sentiment" — they have no sentiment at all).
+          const aScore = a.health?.score;
+          const bScore = b.health?.score;
+          const aHas = typeof aScore === "number" && Number.isFinite(aScore);
+          const bHas = typeof bScore === "number" && Number.isFinite(bScore);
+          if (aHas && !bHas) return -1;
+          if (!aHas && bHas) return 1;
+          if (!aHas && !bHas) return 0;
+          return (bScore as number) - (aScore as number);
+        }
         case "customer":  return (a.guest_name ?? "").localeCompare(b.guest_name ?? "");
         case "ended":
         default: {
