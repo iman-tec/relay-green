@@ -20,6 +20,7 @@
 import { NextResponse } from "next/server";
 import { requireSuperAdmin } from "@/lib/admin-auth";
 import { applySearch, listResponse, parseListQuery } from "@/lib/api/list-query";
+import { sendInvitationEmail } from "@/lib/admin-invite";
 
 export const dynamic = "force-dynamic";
 export const runtime  = "nodejs";
@@ -34,7 +35,7 @@ const STAFF_ROLES = new Set([
 const CREATABLE_ROLES = new Set([
   "engineer",
   "pod_lead",
-  "ops_manager",
+  "super_admin",
   "admin",
 ]);
 
@@ -180,7 +181,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          "Need email, displayName, and role ∈ {engineer, pod_lead, ops_manager, admin}.",
+          "Need email, displayName, and role ∈ {engineer, pod_lead, super_admin, admin}.",
       },
       { status: 400 },
     );
@@ -188,99 +189,60 @@ export async function POST(request: Request) {
 
   const trimmedEmail = email.trim().toLowerCase();
   const trimmedName  = displayName.trim();
-  const appUrl       = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3001";
 
-  // If the email already has an auth user, skip the invite and grant the
-  // requested role to that user. Lets super_admin make themselves an
-  // engineer for testing, etc. without needing a brand-new inbox.
-  const { data: existingPage } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-  const existingUser = existingPage?.users?.find(
-    (u) => u.email?.toLowerCase() === trimmedEmail,
-  );
-
-  let userId: string;
-  let mode: "invited" | "attached_existing";
-
-  if (existingUser) {
-    userId = existingUser.id;
-    mode   = "attached_existing";
-
-    // Keep prior primary_role if set; refresh display name only if blank.
-    const { data: currentProfile } = await admin
-      .from("profiles")
-      .select("full_name, primary_role")
-      .eq("id", userId)
-      .maybeSingle();
-    const cp = currentProfile as { full_name: string | null; primary_role: string | null } | null;
-
-    const { error: profileErr } = await admin
-      .from("profiles")
-      .upsert(
-        {
-          id:           userId,
-          full_name:    cp?.full_name?.trim() ? cp.full_name : trimmedName,
-          primary_role: cp?.primary_role ?? role,
-          is_onboarded: true,
-        },
-        { onConflict: "id" },
-      );
-    if (profileErr) {
-      return NextResponse.json({ error: profileErr.message }, { status: 500 });
-    }
-
-    await admin.auth.admin.updateUserById(userId, {
-      user_metadata: {
-        ...(existingUser.user_metadata ?? {}),
-        display_name: cp?.full_name?.trim() || trimmedName,
-        role_label:   role,
-      },
-    }).catch(() => {});
-
-    const { error: linkErr } = await admin.auth.admin.generateLink({
-      type:  "magiclink",
-      email: trimmedEmail,
-      options: { redirectTo: `${appUrl}/auth/callback?next=/auth/post-signin` },
-    });
-    if (linkErr) {
-      console.warn(`[admin/users] magic-link send failed for ${trimmedEmail}: ${linkErr.message}`);
-    }
-  } else {
-    const { data: createRes, error: createErr } =
-      await admin.auth.admin.inviteUserByEmail(trimmedEmail, {
-        data: {
-          display_name: trimmedName,
-          role_label:   role,
-          created_by:   actor.id,
-        },
-        redirectTo: `${appUrl}/auth/callback?next=/auth/post-signin`,
-      });
-    if (createErr || !createRes.user) {
-      return NextResponse.json(
-        { error: createErr?.message ?? "inviteUserByEmail failed" },
-        { status: 400 },
-      );
-    }
-    userId = createRes.user.id;
-    mode   = "invited";
-
-    const { error: profileErr } = await admin
-      .from("profiles")
-      .upsert(
-        {
-          id:           userId,
-          full_name:    trimmedName,
-          primary_role: role,
-          is_onboarded: true,
-        },
-        { onConflict: "id" },
-      );
-    if (profileErr) {
-      // Roll back the auth user — we don't want orphans. Only safe for
-      // freshly-invited users; never delete existing ones.
-      await admin.auth.admin.deleteUser(userId).catch(() => {});
-      return NextResponse.json({ error: profileErr.message }, { status: 500 });
-    }
+  // Unified invite — always tries inviteUserByEmail first, falls back to
+  // a public-client signInWithOtp magic-link for confirmed existing
+  // users. Either way, an actual email goes out (or we return an error).
+  const invite = await sendInvitationEmail(admin, {
+    email:       trimmedEmail,
+    displayName: trimmedName,
+    metadata:    { role_label: role, created_by: actor.id },
+  });
+  if (!invite.ok) {
+    return NextResponse.json({ error: invite.error }, { status: 400 });
   }
+
+  // Resolve the auth user. inviteUserByEmail returns user.id directly;
+  // signInWithOtp doesn't, so we look it up by email via auth.admin.
+  let userId = invite.userId ?? null;
+  if (!userId) {
+    const lookup = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    userId = lookup.data?.users?.find(
+      (u) => u.email?.toLowerCase() === trimmedEmail,
+    )?.id ?? null;
+  }
+  if (!userId) {
+    return NextResponse.json(
+      { error: "User invited but auth row not yet visible — try again in a moment." },
+      { status: 500 },
+    );
+  }
+
+  // Upsert profile. For brand-new accounts this writes name/role; for
+  // existing accounts we only overwrite full_name when previously blank.
+  const { data: currentProfile } = await admin
+    .from("profiles")
+    .select("full_name, primary_role")
+    .eq("id", userId)
+    .maybeSingle();
+  const cp = currentProfile as { full_name: string | null; primary_role: string | null } | null;
+
+  const { error: profileErr } = await admin
+    .from("profiles")
+    .upsert(
+      {
+        id:           userId,
+        full_name:    cp?.full_name?.trim() ? cp.full_name : trimmedName,
+        primary_role: cp?.primary_role ?? role,
+        is_onboarded: true,
+      },
+      { onConflict: "id" },
+    );
+  if (profileErr) {
+    return NextResponse.json({ error: profileErr.message }, { status: 500 });
+  }
+
+  const mode = invite.mode === "invited" ? "invited" : "attached_existing";
 
   const { error: roleErr } = await admin
     .from("user_roles")

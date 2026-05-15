@@ -11,8 +11,9 @@
  * Enterprise + Pods tabs live in their own files.
  */
 
-import { useState } from "react";
-import { Mail, Trash2, Power, Plus, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Mail, Trash2, Power, PowerOff, Plus, X, CheckCircle2, Pencil } from "lucide-react";
+import { useConfirmDialog } from "@/app/_components/ConfirmDialog";
 import { EnterpriseTab } from "./EnterpriseTab";
 import { PodsTab } from "./PodsTab";
 import { formatRole } from "@/lib/relay/role-labels";
@@ -32,19 +33,18 @@ type UserRow = {
 
 type Tab = "staff" | "users" | "enterprise" | "pods";
 
-type RoleKey = "engineer" | "pod_lead" | "ops_manager" | "admin";
+type RoleKey = "engineer" | "pod_lead" | "super_admin" | "admin";
 
 const CREATABLE_ROLES: { value: RoleKey; label: string }[] = [
   { value: "engineer",    label: formatRole("engineer") },
   { value: "pod_lead",    label: formatRole("pod_lead") },
-  { value: "ops_manager", label: formatRole("ops_manager") },
+  { value: "super_admin", label: formatRole("super_admin") },
   { value: "admin",       label: formatRole("admin") },
 ];
 
 const ALL_FILTERABLE_ROLES = [
   { value: "engineer",    label: formatRole("engineer") },
   { value: "pod_lead",    label: formatRole("pod_lead") },
-  { value: "ops_manager", label: formatRole("ops_manager") },
   { value: "admin",       label: formatRole("admin") },
   { value: "super_admin", label: formatRole("super_admin") },
 ];
@@ -136,8 +136,17 @@ function StaffTab({ meEmail }: { meEmail: string }) {
   } | null>(null);
   const [pods, setPods] = useState<{ id: string; name: string }[]>([]);
   const [podsLoaded, setPodsLoaded] = useState(false);
-  const [reveal, setReveal] = useState<{ email: string; action: "invited" | "resent" } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionInfo,  setActionInfo]  = useState<string | null>(null);
+  const [submitting,  setSubmitting]  = useState(false);
+  const confirmDialog = useConfirmDialog();
+
+  // Auto-dismiss the green success toast after 3s.
+  useEffect(() => {
+    if (!actionInfo) return;
+    const t = setTimeout(() => setActionInfo(null), 3000);
+    return () => clearTimeout(t);
+  }, [actionInfo]);
   /** When set, the user with this id has their Role cell swapped to a dropdown. */
   const [editingRoleFor, setEditingRoleFor] = useState<string | null>(null);
   const [roleSaving, setRoleSaving] = useState(false);
@@ -179,7 +188,7 @@ function StaffTab({ meEmail }: { meEmail: string }) {
   const cancelAdd = () => setDraft(null);
 
   const submitAdd = async () => {
-    if (!draft) return;
+    if (!draft || submitting) return;
     const email       = draft.email.trim().toLowerCase();
     const displayName = draft.displayName.trim();
     if (!email || !displayName) {
@@ -187,6 +196,8 @@ function StaffTab({ meEmail }: { meEmail: string }) {
       return;
     }
     setActionError(null);
+    setActionInfo(null);
+    setSubmitting(true);
     try {
       // 1. (optional) Create a new pod if the user chose "Create new pod".
       let podId: string | null = draft.podId;
@@ -237,25 +248,32 @@ function StaffTab({ meEmail }: { meEmail: string }) {
         const assignBody = (await assignRes.json().catch(() => ({}))) as { error?: string };
         if (!assignRes.ok) {
           setActionError(`User invited, but pod assignment failed: ${assignBody.error ?? "unknown error"}`);
-          // Still count the invite as a success — show the reveal + refresh.
         }
       }
 
-      setReveal({ email, action: "invited" });
+      setActionInfo(`Invitation email sent to ${email}.`);
       setDraft(null);
       await list.refresh();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Couldn't create user.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const resendInvite = async (row: UserRow) => {
-    if (!confirm(`Send a fresh sign-in email to ${row.email}?`)) return;
+    const ok = await confirmDialog.ask({
+      title:        "Resend sign-in email?",
+      message:      `${row.email} will get a fresh magic-link email.`,
+      confirmLabel: "Send invite",
+      tone:         "neutral",
+    });
+    if (!ok) return;
     try {
       const res = await fetch(`/api/admin/users/${row.id}/resend-invite`, { method: "POST" });
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) { setActionError(body.error ?? "Resend failed."); return; }
-      setReveal({ email: row.email, action: "resent" });
+      setActionInfo(`Sign-in email resent to ${row.email}.`);
       await list.refresh();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Resend failed.");
@@ -278,11 +296,18 @@ function StaffTab({ meEmail }: { meEmail: string }) {
   };
 
   const deleteRow = async (row: UserRow) => {
-    if (!confirm(`Permanently delete ${row.email}? Their auth record, profile, and roles will be removed.`)) return;
+    const ok = await confirmDialog.ask({
+      title:        "Delete user?",
+      message:      `${row.email} will be permanently removed — auth record, profile, and roles included.`,
+      confirmLabel: "Delete",
+      tone:         "danger",
+    });
+    if (!ok) return;
     try {
       const res = await fetch(`/api/admin/users/${row.id}`, { method: "DELETE" });
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) { setActionError(body.error ?? "Delete failed."); return; }
+      setActionInfo(`Deleted ${row.email}.`);
       await list.refresh();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Delete failed.");
@@ -323,10 +348,17 @@ function StaffTab({ meEmail }: { meEmail: string }) {
             type="button"
             onClick={() => editable && setEditingRoleFor(r.id)}
             disabled={!editable}
-            className="cursor-pointer rounded-md transition-opacity hover:opacity-80 disabled:cursor-default disabled:hover:opacity-100"
+            className="group inline-flex cursor-pointer items-center gap-1.5 rounded-md transition-opacity hover:opacity-90 disabled:cursor-default disabled:hover:opacity-100"
             title={editable ? "Click to change role" : undefined}
           >
             <RoleChip role={r.primaryRole ?? r.roles[0] ?? "—"} />
+            {editable && (
+              <Pencil
+                size={11}
+                style={{ color: BRAND_GREEN }}
+                className="opacity-60 transition-opacity group-hover:opacity-100"
+              />
+            )}
           </button>
         );
       },
@@ -340,13 +372,24 @@ function StaffTab({ meEmail }: { meEmail: string }) {
     {
       key: "actions", header: "Actions", align: "right",
       render: (r) => {
-        const isSelf = r.email.toLowerCase() === meEmail.toLowerCase();
+        const isSelf  = r.email.toLowerCase() === meEmail.toLowerCase();
         if (isSelf) return <span className="text-xs" style={{ color: "var(--text-muted)" }}>(you)</span>;
+        const isSuper = (r.primaryRole ?? r.roles[0]) === "super_admin";
         return (
           <div className="inline-flex items-center gap-1">
             <IconAction onClick={() => void resendInvite(r)} title="Resend invitation email" icon={<Mail size={14} />} />
-            <IconAction onClick={() => void toggleStatus(r)} title={r.status === "ACTIVE" ? "Deactivate" : "Reactivate"} icon={<Power size={14} />} />
-            <IconAction onClick={() => void deleteRow(r)}    title="Delete"                                              icon={<Trash2 size={14} />} danger />
+            <IconAction
+              onClick={() => void toggleStatus(r)}
+              title={r.status === "ACTIVE" ? "Deactivate" : "Reactivate"}
+              icon={r.status === "ACTIVE" ? <Power size={14} /> : <PowerOff size={14} />}
+            />
+            <IconAction
+              onClick={() => { if (!isSuper) void deleteRow(r); }}
+              title={isSuper ? "Super Admins can't be deleted from here" : "Delete"}
+              icon={<Trash2 size={14} />}
+              danger
+              disabled={isSuper}
+            />
           </div>
         );
       },
@@ -355,8 +398,8 @@ function StaffTab({ meEmail }: { meEmail: string }) {
 
   return (
     <div className="flex flex-col gap-3">
-      {reveal && <RevealBanner reveal={reveal} dismiss={() => setReveal(null)} />}
       {actionError && <ErrorBanner message={actionError} dismiss={() => setActionError(null)} />}
+      {actionInfo  && <SuccessToast message={actionInfo} dismiss={() => setActionInfo(null)} />}
 
       <div className="flex justify-end">
         <button
@@ -377,6 +420,7 @@ function StaffTab({ meEmail }: { meEmail: string }) {
           pods={pods}
           cancel={cancelAdd}
           submit={submitAdd}
+          submitting={submitting}
         />
       )}
 
@@ -393,8 +437,8 @@ function StaffTab({ meEmail }: { meEmail: string }) {
           },
         ]}
         emptyText="No staff yet. Click Add user to invite someone."
-        lockPageSize
       />
+      {confirmDialog.element}
     </div>
   );
 }
@@ -410,6 +454,14 @@ function CustomerTab() {
   });
 
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionInfo,  setActionInfo]  = useState<string | null>(null);
+  const confirmDialog = useConfirmDialog();
+
+  useEffect(() => {
+    if (!actionInfo) return;
+    const t = setTimeout(() => setActionInfo(null), 3000);
+    return () => clearTimeout(t);
+  }, [actionInfo]);
 
   const toggleStatus = async (row: UserRow) => {
     try {
@@ -427,11 +479,18 @@ function CustomerTab() {
   };
 
   const deleteRow = async (row: UserRow) => {
-    if (!confirm(`Permanently delete ${row.email}? Their auth record, profile, and any sessions will be removed.`)) return;
+    const ok = await confirmDialog.ask({
+      title:        "Delete user?",
+      message:      `${row.email} will be permanently removed — auth record, profile, and any sessions included.`,
+      confirmLabel: "Delete",
+      tone:         "danger",
+    });
+    if (!ok) return;
     try {
       const res = await fetch(`/api/admin/users/${row.id}`, { method: "DELETE" });
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) { setActionError(body.error ?? "Delete failed."); return; }
+      setActionInfo(`Deleted ${row.email}.`);
       await list.refresh();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Delete failed.");
@@ -470,7 +529,7 @@ function CustomerTab() {
           <IconAction
             onClick={() => void toggleStatus(r)}
             title={r.status === "ACTIVE" ? "Deactivate" : "Reactivate"}
-            icon={<Power size={14} />}
+            icon={r.status === "ACTIVE" ? <Power size={14} /> : <PowerOff size={14} />}
           />
           <IconAction
             onClick={() => void deleteRow(r)}
@@ -486,6 +545,7 @@ function CustomerTab() {
   return (
     <div className="flex flex-col gap-3">
       {actionError && <ErrorBanner message={actionError} dismiss={() => setActionError(null)} />}
+      {actionInfo  && <SuccessToast message={actionInfo} dismiss={() => setActionInfo(null)} />}
 
       <DataTable
         list={list}
@@ -493,8 +553,8 @@ function CustomerTab() {
         getRowKey={(r) => r.id}
         searchPlaceholder="Search users by name…"
         emptyText="No customer signups yet."
-        lockPageSize
       />
+      {confirmDialog.element}
     </div>
   );
 }
@@ -502,15 +562,17 @@ function CustomerTab() {
 /* ────────────────────────────────────────────────────────────────────────── */
 
 function DraftForm({
-  draft, setDraft, pods, cancel, submit,
+  draft, setDraft, pods, cancel, submit, submitting,
 }: {
   draft: { email: string; displayName: string; role: RoleKey; podId: string | null; newPodName: string };
   setDraft: (d: { email: string; displayName: string; role: RoleKey; podId: string | null; newPodName: string }) => void;
   pods: { id: string; name: string }[];
   cancel: () => void;
   submit: () => void;
+  submitting: boolean;
 }) {
   const onKey = (e: React.KeyboardEvent) => {
+    if (submitting) return;
     if (e.key === "Enter") { e.preventDefault(); submit(); }
     else if (e.key === "Escape") cancel();
   };
@@ -627,15 +689,23 @@ function DraftForm({
         <button
           type="button"
           onClick={submit}
-          className="rounded-md px-3 py-1.5 text-xs font-medium"
+          disabled={submitting}
+          className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-opacity disabled:cursor-not-allowed disabled:opacity-60"
           style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
         >
-          Save
+          {submitting && (
+            <span
+              className="inline-block h-3 w-3 animate-spin rounded-full border-[1.5px] border-white/70 border-t-transparent"
+              aria-hidden
+            />
+          )}
+          {submitting ? "Sending invite…" : "Save"}
         </button>
         <button
           type="button"
           onClick={cancel}
-          className="rounded-md px-2.5 py-1.5 text-xs"
+          disabled={submitting}
+          className="rounded-md px-2.5 py-1.5 text-xs disabled:opacity-50"
           style={{ color: "var(--text-muted)" }}
         >
           Cancel
@@ -645,34 +715,22 @@ function DraftForm({
   );
 }
 
-function RevealBanner({
-  reveal, dismiss,
-}: {
-  reveal: { email: string; action: "invited" | "resent" };
-  dismiss: () => void;
-}) {
+function SuccessToast({ message, dismiss }: { message: string; dismiss: () => void }) {
   return (
     <div
-      className="flex items-start justify-between gap-3 rounded-lg border p-3"
+      className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
       style={{
-        borderColor: "color-mix(in srgb, " + BRAND_GREEN + " 35%, transparent)",
-        backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 6%, transparent)",
+        backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
+        color:           BRAND_GREEN,
+        borderColor:     "color-mix(in srgb, " + BRAND_GREEN + " 35%, transparent)",
+        animation:       "relay-toast-in 180ms ease-out",
       }}
     >
-      <div className="flex items-center gap-2 text-sm" style={{ color: "var(--text)" }}>
-        <Mail size={14} style={{ color: BRAND_GREEN }} />
-        <span>
-          {reveal.action === "invited" ? "Invitation sent" : "New sign-in link sent"} to{" "}
-          <strong>{reveal.email}</strong>. They&apos;ll click the magic link to sign in.
-        </span>
-      </div>
-      <button
-        type="button"
-        onClick={dismiss}
-        className="rounded-md p-1.5"
-        style={{ color: "var(--text-muted)" }}
-        aria-label="Dismiss"
-      >
+      <span className="inline-flex items-center gap-2">
+        <CheckCircle2 size={14} />
+        {message}
+      </span>
+      <button type="button" onClick={dismiss} aria-label="Dismiss" className="rounded-md p-1">
         <X size={14} />
       </button>
     </div>
@@ -786,12 +844,13 @@ function StatusChip({
 }
 
 function IconAction({
-  onClick, title, icon, danger,
+  onClick, title, icon, danger, disabled,
 }: {
   onClick: () => void;
   title: string;
   icon: React.ReactNode;
   danger?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <button
@@ -799,7 +858,8 @@ function IconAction({
       title={title}
       aria-label={title}
       onClick={onClick}
-      className="rounded-md p-1.5 transition-colors hover:bg-black/[0.05] dark:hover:bg-white/[0.05]"
+      disabled={disabled}
+      className="rounded-md p-1.5 transition-colors hover:bg-black/[0.05] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent dark:hover:bg-white/[0.05]"
       style={{ color: danger ? "var(--accent-red)" : "var(--text-muted)" }}
     >
       {icon}

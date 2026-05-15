@@ -19,7 +19,7 @@ export const runtime  = "nodejs";
 const CREATABLE_ROLES = new Set([
   "engineer",
   "pod_lead",
-  "ops_manager",
+  "super_admin",
   "admin",
 ]);
 
@@ -56,7 +56,7 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
   if (typeof role === "string") {
     if (!CREATABLE_ROLES.has(role)) {
       return NextResponse.json(
-        { error: "Role must be engineer, pod_lead, ops_manager, or admin." },
+        { error: "Role must be engineer, pod_lead, super_admin, or admin." },
         { status: 400 },
       );
     }
@@ -114,6 +114,21 @@ export async function DELETE(_request: Request, { params }: RouteCtx) {
     return NextResponse.json(
       { error: "You can't delete your own super-admin record." },
       { status: 400 },
+    );
+  }
+
+  // Super Admins are a protected tier — no one (not even another Super
+  // Admin) can delete them through the admin UI. Removal must go through
+  // the bootstrap script.
+  const { data: targetRoles } = await admin
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", id);
+  const isSuper = (targetRoles ?? []).some((r: { role: string }) => r.role === "super_admin");
+  if (isSuper) {
+    return NextResponse.json(
+      { error: "Super Admins can't be deleted from the admin UI." },
+      { status: 403 },
     );
   }
 

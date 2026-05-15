@@ -13,6 +13,7 @@
 
 import { NextResponse } from "next/server";
 import { requireSuperAdmin } from "@/lib/admin-auth";
+import { sendInvitationEmail } from "@/lib/admin-invite";
 
 export const dynamic = "force-dynamic";
 export const runtime  = "nodejs";
@@ -146,113 +147,71 @@ export async function POST(request: Request) {
 
   const trimmedEmail = adminEmail.trim().toLowerCase();
   const trimmedName  = adminDisplayName.trim();
-  const appUrl       = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3001";
 
   // If the email is already in Supabase Auth, skip the invite and attach
   // the existing user to the new org as enterprise_admin. This is the
   // "I can be a user of my own org too" case — super admin spinning up an
   // org for themselves, or attaching a previously-staff member.
-  const { data: existingPage } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-  const existingUser = existingPage?.users?.find(
-    (u) => u.email?.toLowerCase() === trimmedEmail,
-  );
-
-  let userId: string;
-  let mode: "invited" | "attached_existing";
-
-  if (existingUser) {
-    userId = existingUser.id;
-    mode   = "attached_existing";
-
-    // Don't clobber primary_role for existing users (a super_admin who
-    // creates an org for themselves should stay super_admin). Set the
-    // organization_id so the enterprise console scopes correctly; refresh
-    // full_name only if blank.
-    const { data: currentProfile } = await admin
-      .from("profiles")
-      .select("full_name, primary_role")
-      .eq("id", userId)
-      .maybeSingle();
-    const cp = currentProfile as { full_name: string | null; primary_role: string | null } | null;
-
-    await admin
-      .from("profiles")
-      .upsert(
-        {
-          id:              userId,
-          full_name:       cp?.full_name?.trim() ? cp.full_name : trimmedName,
-          primary_role:    cp?.primary_role ?? "enterprise_admin",
-          organization_id: org.id,
-          is_onboarded:    true,
-        },
-        { onConflict: "id" },
-      );
-
-    // Update user_metadata so the Magic Link email template can render
-    // the org context ("You've been added to <Org>").
-    await admin.auth.admin.updateUserById(userId, {
-      user_metadata: {
-        ...(existingUser.user_metadata ?? {}),
-        display_name:    cp?.full_name?.trim() || trimmedName,
-        role_label:      "enterprise_admin",
-        organization_id: org.id,
-        org_name:        org.name,
-        enterprise_code: org.enterprise_code,
-      },
-    }).catch((e) => {
-      console.warn(`[admin/orgs] couldn't refresh user_metadata: ${e instanceof Error ? e.message : e}`);
-    });
-
-    // Trigger the Magic Link email (which Supabase Auth sends via your
-    // configured SMTP) so the existing user gets a sign-in link with
-    // their fresh org binding ready to go.
-    const { error: linkErr } = await admin.auth.admin.generateLink({
-      type:  "magiclink",
-      email: trimmedEmail,
-      options: { redirectTo: `${appUrl}/auth/callback?next=/auth/post-signin` },
-    });
-    if (linkErr) {
-      console.warn(`[admin/orgs] magic-link send failed for ${trimmedEmail}: ${linkErr.message}`);
-    } else {
-      console.log(`[admin/orgs] magic-link sent to ${trimmedEmail} (existing user attached)`);
-    }
-  } else {
-    const { data: createRes, error: createErr } =
-      await admin.auth.admin.inviteUserByEmail(trimmedEmail, {
-        data: {
-          display_name:    trimmedName,
-          role_label:      "enterprise_admin",
-          organization_id: org.id,
-          org_name:        org.name,
-          enterprise_code: org.enterprise_code,
-          created_by:      actor.id,
-        },
-        redirectTo: `${appUrl}/auth/callback?next=/auth/post-signin`,
-      });
-    if (createErr || !createRes.user) {
-      // Roll back the org so we don't leave an admin-less stub.
-      await admin.from("organizations").delete().eq("id", org.id);
-      return NextResponse.json(
-        { error: createErr?.message ?? "Couldn't invite admin user." },
-        { status: 400 },
-      );
-    }
-    userId = createRes.user.id;
-    mode   = "invited";
-
-    await admin
-      .from("profiles")
-      .upsert(
-        {
-          id:              userId,
-          full_name:       trimmedName,
-          primary_role:    "enterprise_admin",
-          organization_id: org.id,
-          is_onboarded:    true,
-        },
-        { onConflict: "id" },
-      );
+  // Unified invite (inviteUserByEmail → signInWithOtp fallback). Picks
+  // up the org context via user_metadata so the email template can show
+  // "You've been added to <Org>".
+  const invite = await sendInvitationEmail(admin, {
+    email:       trimmedEmail,
+    displayName: trimmedName,
+    metadata: {
+      role_label:      "enterprise_admin",
+      organization_id: org.id,
+      org_name:        org.name,
+      enterprise_code: org.enterprise_code,
+      created_by:      actor.id,
+    },
+  });
+  if (!invite.ok) {
+    // Roll back the org so we don't leave an admin-less stub.
+    await admin.from("organizations").delete().eq("id", org.id);
+    return NextResponse.json({ error: invite.error }, { status: 400 });
   }
+
+  let userId = invite.userId ?? null;
+  if (!userId) {
+    const lookup = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    userId = lookup.data?.users?.find(
+      (u) => u.email?.toLowerCase() === trimmedEmail,
+    )?.id ?? null;
+  }
+  if (!userId) {
+    await admin.from("organizations").delete().eq("id", org.id);
+    return NextResponse.json(
+      { error: "Admin invited but auth row not yet visible — try again in a moment." },
+      { status: 500 },
+    );
+  }
+
+  // Don't clobber primary_role for existing users (a super_admin who
+  // creates an org should stay super_admin). Set organization_id so
+  // the enterprise console scopes correctly; refresh full_name only
+  // if previously blank.
+  const { data: currentProfile } = await admin
+    .from("profiles")
+    .select("full_name, primary_role")
+    .eq("id", userId)
+    .maybeSingle();
+  const cp = currentProfile as { full_name: string | null; primary_role: string | null } | null;
+
+  await admin
+    .from("profiles")
+    .upsert(
+      {
+        id:              userId,
+        full_name:       cp?.full_name?.trim() ? cp.full_name : trimmedName,
+        primary_role:    cp?.primary_role ?? "enterprise_admin",
+        organization_id: org.id,
+        is_onboarded:    true,
+      },
+      { onConflict: "id" },
+    );
+
+  const mode = invite.mode === "invited" ? "invited" : "attached_existing";
 
   // Grant the role in both code paths. Idempotent — keeps any prior roles
   // (e.g. super_admin) intact and just adds enterprise_admin on top.

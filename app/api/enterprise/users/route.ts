@@ -18,6 +18,7 @@
 
 import { NextResponse } from "next/server";
 import { requireEnterpriseAdmin } from "@/lib/enterprise-auth";
+import { sendInvitationEmail } from "@/lib/admin-invite";
 
 export const dynamic = "force-dynamic";
 export const runtime  = "nodejs";
@@ -127,114 +128,84 @@ export async function POST(request: Request) {
 
   const trimmedEmail = email.trim().toLowerCase();
   const trimmedName  = displayName.trim();
-  const appUrl       = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3001";
 
-  // Existing-user attach path — same shape as the super_admin org-create
-  // flow. Lets an Enterprise Admin pull in an email that's already in
-  // Supabase Auth without a "user already registered" error.
-  const { data: existingPage } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-  const existingUser = existingPage?.users?.find(
-    (u) => u.email?.toLowerCase() === trimmedEmail,
-  );
-
-  let userId: string;
-  let mode: "invited" | "attached_existing";
-
-  if (existingUser) {
-    userId = existingUser.id;
-    mode   = "attached_existing";
-
-    // Refuse cross-org pull-ins: an existing user already bound to a
-    // different organization_id must be released first (super_admin
-    // intervention). Prevents accidental hijack of someone else's user.
+  // Cross-org guard for existing users — must come BEFORE the invite so
+  // we don't send a misleading email if we're going to reject anyway.
+  const lookup0 = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  const existing0 = lookup0.data?.users?.find((u) => u.email?.toLowerCase() === trimmedEmail);
+  if (existing0) {
     const { data: prior } = await admin
       .from("profiles")
-      .select("organization_id, full_name, primary_role")
-      .eq("id", userId)
+      .select("organization_id")
+      .eq("id", existing0.id)
       .maybeSingle();
-    const p = prior as { organization_id: string | null; full_name: string | null; primary_role: string | null } | null;
-    if (p?.organization_id && p.organization_id !== orgId) {
+    const otherOrg = (prior as { organization_id: string | null } | null)?.organization_id;
+    if (otherOrg && otherOrg !== orgId) {
       return NextResponse.json(
         { error: "This user already belongs to another organization. Ask a super admin to release them first." },
         { status: 409 },
       );
     }
-
-    const { error: profileErr } = await admin
-      .from("profiles")
-      .upsert(
-        {
-          id:              userId,
-          full_name:       p?.full_name?.trim() ? p.full_name : trimmedName,
-          primary_role:    p?.primary_role ?? mappedRole,
-          organization_id: orgId,
-          is_onboarded:    true,
-        },
-        { onConflict: "id" },
-      );
-    if (profileErr) {
-      return NextResponse.json({ error: profileErr.message }, { status: 500 });
-    }
-
-    await admin.auth.admin.updateUserById(userId, {
-      user_metadata: {
-        ...(existingUser.user_metadata ?? {}),
-        display_name:    p?.full_name?.trim() || trimmedName,
-        role_label:      role,
-        organization_id: orgId,
-        org_name:        org?.name ?? "",
-        enterprise_code: org?.enterprise_code ?? "",
-      },
-    }).catch(() => {});
-
-    const { error: linkErr } = await admin.auth.admin.generateLink({
-      type:  "magiclink",
-      email: trimmedEmail,
-      options: { redirectTo: `${appUrl}/auth/callback?next=/auth/post-signin` },
-    });
-    if (linkErr) {
-      console.warn(`[enterprise/users] magic-link send failed for ${trimmedEmail}: ${linkErr.message}`);
-    }
-  } else {
-    const { data: createRes, error: createErr } =
-      await admin.auth.admin.inviteUserByEmail(trimmedEmail, {
-        data: {
-          display_name:    trimmedName,
-          role_label:      role,                  // ent-facing: manager/analyst/member
-          mapped_role:     mappedRole,            // backend role
-          organization_id: orgId,
-          org_name:        org?.name ?? "",
-          enterprise_code: org?.enterprise_code ?? "",
-          invited_by:      actor.id,
-        },
-        redirectTo: `${appUrl}/auth/callback?next=/auth/post-signin`,
-      });
-    if (createErr || !createRes.user) {
-      return NextResponse.json(
-        { error: createErr?.message ?? "inviteUserByEmail failed." },
-        { status: 400 },
-      );
-    }
-    userId = createRes.user.id;
-    mode   = "invited";
-
-    const { error: profileErr } = await admin
-      .from("profiles")
-      .upsert(
-        {
-          id:              userId,
-          full_name:       trimmedName,
-          primary_role:    mappedRole,
-          organization_id: orgId,
-          is_onboarded:    true,
-        },
-        { onConflict: "id" },
-      );
-    if (profileErr) {
-      await admin.auth.admin.deleteUser(userId).catch(() => {});
-      return NextResponse.json({ error: profileErr.message }, { status: 500 });
-    }
   }
+
+  // Unified invite (inviteUserByEmail → signInWithOtp fallback). Always
+  // sends an email (or returns an error).
+  const invite = await sendInvitationEmail(admin, {
+    email:       trimmedEmail,
+    displayName: trimmedName,
+    metadata: {
+      role_label:      role,        // ent-facing: manager/analyst/member
+      mapped_role:     mappedRole,  // backend role
+      organization_id: orgId,
+      org_name:        org?.name ?? "",
+      enterprise_code: org?.enterprise_code ?? "",
+      invited_by:      actor.id,
+    },
+  });
+  if (!invite.ok) {
+    return NextResponse.json({ error: invite.error }, { status: 400 });
+  }
+
+  let userId = invite.userId ?? existing0?.id ?? null;
+  if (!userId) {
+    const lookup = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    userId = lookup.data?.users?.find(
+      (u) => u.email?.toLowerCase() === trimmedEmail,
+    )?.id ?? null;
+  }
+  if (!userId) {
+    return NextResponse.json(
+      { error: "Member invited but auth row not yet visible — try again." },
+      { status: 500 },
+    );
+  }
+
+  // Profile upsert: bind to this org, preserve existing primary_role +
+  // name if already set.
+  const { data: prior2 } = await admin
+    .from("profiles")
+    .select("full_name, primary_role")
+    .eq("id", userId)
+    .maybeSingle();
+  const p = prior2 as { full_name: string | null; primary_role: string | null } | null;
+
+  const { error: profileErr } = await admin
+    .from("profiles")
+    .upsert(
+      {
+        id:              userId,
+        full_name:       p?.full_name?.trim() ? p.full_name : trimmedName,
+        primary_role:    p?.primary_role ?? mappedRole,
+        organization_id: orgId,
+        is_onboarded:    true,
+      },
+      { onConflict: "id" },
+    );
+  if (profileErr) {
+    return NextResponse.json({ error: profileErr.message }, { status: 500 });
+  }
+
+  const mode = invite.mode === "invited" ? "invited" : "attached_existing";
 
   const { error: roleErr } = await admin
     .from("user_roles")

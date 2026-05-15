@@ -14,7 +14,8 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, Plus, X, Archive, Edit2, Check, Save, Undo2, RotateCcw, Search, Mail, Power, Trash2 } from "lucide-react";
+import { Loader2, Plus, X, Edit2, Check, Save, Undo2, RotateCcw, Search, Mail, Power, Trash2, CheckCircle2 } from "lucide-react";
+import { useConfirmDialog } from "@/app/_components/ConfirmDialog";
 
 const BRAND_GREEN       = "#3f5c2e";
 const BRAND_GREEN_SOFT  = "rgba(63, 92, 46, 0.10)";
@@ -349,6 +350,14 @@ function PodDetail({
   const [nameDraft, setNameDraft] = useState(pod.name);
   const [busy, setBusy] = useState(false);
   const [bannerErr, setBannerErr] = useState<string | null>(null);
+  const [bannerInfo, setBannerInfo] = useState<string | null>(null);
+  const confirmDialog = useConfirmDialog();
+
+  useEffect(() => {
+    if (!bannerInfo) return;
+    const t = setTimeout(() => setBannerInfo(null), 3000);
+    return () => clearTimeout(t);
+  }, [bannerInfo]);
 
   // Staged member changes. Cleared on Save success or on Discard.
   const [pending, setPending] = useState<PendingChange[]>([]);
@@ -516,7 +525,14 @@ function PodDetail({
   };
 
   const archive = async () => {
-    if (!confirm(`Archive "${pod.name}"? Members will be unassigned and the pod removed from this list.`)) return;
+    const ok = await confirmDialog.ask({
+      title:        `Delete "${pod.name}"?`,
+      message:      "Members will be unassigned and the pod removed from this list.",
+      confirmLabel: "Delete pod",
+      tone:         "danger",
+    });
+    if (!ok) return;
+    const deletedName = pod.name;
     setBusy(true); setBannerErr(null);
     try {
       const res = await fetch(`/api/admin/pods/${pod.id}`, {
@@ -525,10 +541,11 @@ function PodDetail({
         body: JSON.stringify({ archived: true }),
       });
       const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? "Archive failed.");
+      if (!res.ok) throw new Error(body.error ?? "Delete failed.");
+      setBannerInfo(`Pod "${deletedName}" deleted.`);
       await onMutated();
     } catch (e) {
-      setBannerErr(e instanceof Error ? e.message : "Archive failed.");
+      setBannerErr(e instanceof Error ? e.message : "Delete failed.");
     } finally {
       setBusy(false);
     }
@@ -599,11 +616,11 @@ function PodDetail({
           onClick={() => void archive()}
           disabled={busy}
           className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs transition-opacity hover:opacity-80 disabled:opacity-50"
-          style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
-          title="Archive pod"
+          style={{ borderColor: "var(--border)", color: "var(--accent-red)" }}
+          title="Delete pod"
         >
-          <Archive size={11} />
-          Archive
+          <Trash2 size={11} />
+          Delete
         </button>
       </div>
 
@@ -617,6 +634,21 @@ function PodDetail({
           }}
         >
           {bannerErr}
+        </div>
+      )}
+
+      {bannerInfo && (
+        <div
+          className="flex items-center gap-2 border-b px-5 py-2 text-xs font-medium"
+          style={{
+            borderColor: "var(--border)",
+            backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
+            color: BRAND_GREEN,
+            animation: "relay-toast-in 180ms ease-out",
+          }}
+        >
+          <CheckCircle2 size={12} />
+          {bannerInfo}
         </div>
       )}
 
@@ -691,6 +723,7 @@ function PodDetail({
         onToggleStatus={toggleStatus}
         onDeleteUser={deleteUser}
       />
+      {confirmDialog.element}
     </div>
   );
 }

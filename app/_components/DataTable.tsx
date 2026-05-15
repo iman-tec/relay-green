@@ -170,7 +170,7 @@ export function DataTable<T>({
             </thead>
             <tbody>
               {list.loading && list.rows.length === 0 ? (
-                Array.from({ length: 6 }).map((_, i) => (
+                Array.from({ length: list.pageSize }).map((_, i) => (
                   <SkeletonRow key={`sk-${i}`} cols={columns.length} />
                 ))
               ) : list.rows.length === 0 ? (
@@ -186,30 +186,45 @@ export function DataTable<T>({
                   </td>
                 </tr>
               ) : (
-                list.rows.map((row, i) => {
-                  const key = getRowKey(row);
-                  return (
+                <>
+                  {list.rows.map((row, i) => {
+                    const key = getRowKey(row);
+                    return (
+                      <tr
+                        key={key}
+                        onClick={onRowClick ? () => onRowClick(row) : undefined}
+                        style={{
+                          borderTop: i === 0 ? undefined : "1px solid var(--border)",
+                          cursor: onRowClick ? "pointer" : undefined,
+                        }}
+                        className={onRowClick ? "transition-colors hover:bg-black/5 dark:hover:bg-white/5" : ""}
+                      >
+                        {columns.map((c) => (
+                          <td
+                            key={c.key}
+                            className="h-11 px-5 py-2.5 align-middle whitespace-nowrap"
+                            style={{ textAlign: c.align ?? "left" }}
+                          >
+                            {c.render(row)}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                  {/* Pad to pageSize so every page is the same height —
+                     keeps the footer anchored at the bottom of the card. */}
+                  {Array.from({ length: Math.max(0, list.pageSize - list.rows.length) }).map((_, i) => (
                     <tr
-                      key={key}
-                      onClick={onRowClick ? () => onRowClick(row) : undefined}
-                      style={{
-                        borderTop: i === 0 ? undefined : "1px solid var(--border)",
-                        cursor: onRowClick ? "pointer" : undefined,
-                      }}
-                      className={onRowClick ? "transition-colors hover:bg-black/5 dark:hover:bg-white/5" : ""}
+                      key={`filler-${i}`}
+                      aria-hidden
+                      style={{ borderTop: "1px solid var(--border)" }}
                     >
                       {columns.map((c) => (
-                        <td
-                          key={c.key}
-                          className="h-11 px-5 py-2.5 align-middle whitespace-nowrap"
-                          style={{ textAlign: c.align ?? "left" }}
-                        >
-                          {c.render(row)}
-                        </td>
+                        <td key={c.key} className="h-11 px-5 py-2.5" />
                       ))}
                     </tr>
-                  );
-                })
+                  ))}
+                </>
               )}
             </tbody>
           </table>
@@ -232,16 +247,26 @@ export function DataTable<T>({
             {!lockPageSize && (
               <>
                 <span className="opacity-50">·</span>
-                <label className="inline-flex items-center gap-1">
-                  Page size
+                <label className="inline-flex items-center gap-1.5">
+                  <span>Rows per page</span>
                   <select
                     value={list.pageSize}
                     onChange={(e) => list.setPageSize(parseInt(e.target.value, 10) || 25)}
-                    className="rounded-md border bg-transparent px-1 py-0.5 text-[11px] outline-none"
-                    style={{ borderColor: "var(--border)", color: "var(--text)" }}
+                    className="cursor-pointer rounded-md border px-2 py-0.5 text-[11px] font-medium outline-none transition-colors hover:border-[color:var(--text-muted)]"
+                    style={{
+                      borderColor:     "var(--border)",
+                      backgroundColor: "var(--background)",
+                      color:           "var(--text)",
+                    }}
                   >
                     {[10, 25, 50, 100].map((n) => (
-                      <option key={n} value={n}>{n}</option>
+                      <option
+                        key={n}
+                        value={n}
+                        style={{ backgroundColor: "var(--surface)", color: "var(--text)" }}
+                      >
+                        {n}
+                      </option>
                     ))}
                   </select>
                 </label>

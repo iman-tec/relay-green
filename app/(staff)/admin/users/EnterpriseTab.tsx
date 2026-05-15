@@ -19,8 +19,9 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, Mail, Power, Trash2, X, Search } from "lucide-react";
+import { Loader2, Plus, Mail, Power, Trash2, X, Search, CheckCircle2 } from "lucide-react";
 import { formatRole } from "@/lib/relay/role-labels";
+import { useConfirmDialog } from "@/app/_components/ConfirmDialog";
 
 type Member = {
   id:                  string;
@@ -48,7 +49,14 @@ export function EnterpriseTab() {
   const [selectedId, setSelectedId]   = useState<string | null>(null);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState<string | null>(null);
-  const [reveal, setReveal]           = useState<{ label: string; action: "invited" | "resent" } | null>(null);
+  const [info, setInfo]               = useState<string | null>(null);
+  const confirmDialog                 = useConfirmDialog();
+
+  useEffect(() => {
+    if (!info) return;
+    const t = setTimeout(() => setInfo(null), 3000);
+    return () => clearTimeout(t);
+  }, [info]);
 
   const load = async () => {
     setLoading(true);
@@ -78,7 +86,6 @@ export function EnterpriseTab() {
     });
     const body = (await res.json().catch(() => ({}))) as { org?: Org; error?: string };
     if (!res.ok) return { ok: false as const, error: body.error ?? "Couldn't create org." };
-    setReveal({ label: `${input.adminEmail} (admin of ${input.name})`, action: "invited" });
     await load();
     if (body.org?.id) setSelectedId(body.org.id);
     return { ok: true as const };
@@ -95,7 +102,6 @@ export function EnterpriseTab() {
     });
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     if (!res.ok) return { ok: false as const, error: body.error ?? "Couldn't add member." };
-    setReveal({ label: input.email, action: "invited" });
     await load();
     return { ok: true as const };
   };
@@ -105,7 +111,6 @@ export function EnterpriseTab() {
     const res = await fetch(`/api/admin/users/${m.id}/resend-invite`, { method: "POST" });
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     if (!res.ok) { setError(body.error ?? "Resend failed."); return; }
-    setReveal({ label: m.email, action: "resent" });
     await load();
   };
 
@@ -122,10 +127,33 @@ export function EnterpriseTab() {
   };
 
   const removeMember = async (m: Member) => {
-    if (!confirm(`Permanently delete ${m.email}?`)) return;
+    const ok = await confirmDialog.ask({
+      title:        "Delete member?",
+      message:      `${m.email} will be permanently removed — auth record, profile, and roles included.`,
+      confirmLabel: "Delete",
+      tone:         "danger",
+    });
+    if (!ok) return;
     const res = await fetch(`/api/admin/users/${m.id}`, { method: "DELETE" });
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     if (!res.ok) { setError(body.error ?? "Delete failed."); return; }
+    setInfo(`Deleted ${m.email}.`);
+    await load();
+  };
+
+  const deleteOrg = async (o: Org) => {
+    const ok = await confirmDialog.ask({
+      title:        `Delete "${o.name}"?`,
+      message:      "The organization will be removed and its members detached. Member accounts themselves are kept.",
+      confirmLabel: "Delete organization",
+      tone:         "danger",
+    });
+    if (!ok) return;
+    const res = await fetch(`/api/admin/orgs/${o.id}`, { method: "DELETE" });
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) { setError(body.error ?? "Delete failed."); return; }
+    setInfo(`Organization "${o.name}" deleted.`);
+    if (selectedId === o.id) setSelectedId(null);
     await load();
   };
 
@@ -133,8 +161,26 @@ export function EnterpriseTab() {
 
   return (
     <div className="flex flex-col gap-3">
-      {reveal && <Reveal reveal={reveal} dismiss={() => setReveal(null)} />}
       {error && <ErrorLine message={error} dismiss={() => setError(null)} />}
+      {info && (
+        <div
+          className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm font-medium"
+          style={{
+            backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
+            color:           BRAND_GREEN,
+            borderColor:     "color-mix(in srgb, " + BRAND_GREEN + " 35%, transparent)",
+            animation:       "relay-toast-in 180ms ease-out",
+          }}
+        >
+          <span className="inline-flex items-center gap-2">
+            <CheckCircle2 size={14} />
+            {info}
+          </span>
+          <button type="button" onClick={() => setInfo(null)} aria-label="Dismiss" className="rounded-md p-1">
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-[300px_1fr] gap-4">
         <OrgList
@@ -155,10 +201,12 @@ export function EnterpriseTab() {
               regenerate={regenerate}
               toggleStatus={toggleStatus}
               remove={removeMember}
+              deleteOrg={() => void deleteOrg(selected)}
             />
           )}
         </div>
       </div>
+      {confirmDialog.element}
     </div>
   );
 }
@@ -394,13 +442,14 @@ function OrgCreateInline({
 /* ──────── Right pane: org detail ──────── */
 
 function OrgDetail({
-  org, addMember, regenerate, toggleStatus, remove,
+  org, addMember, regenerate, toggleStatus, remove, deleteOrg,
 }: {
   org: Org;
   addMember: (input: { email: string; displayName: string; role: "admin" | "builder" }) => Promise<{ ok: true } | { ok: false; error: string }>;
   regenerate: (m: Member) => void;
   toggleStatus: (m: Member) => void;
   remove: (m: Member) => void;
+  deleteOrg: () => void;
 }) {
   const admins  = org.members.filter(isAdmin);
   const members = org.members.filter((m) => !isAdmin(m));
@@ -427,15 +476,26 @@ function OrgDetail({
             </div>
           )}
         </div>
-        <span
-          className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
-          style={{
-            backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
-            color: BRAND_GREEN,
-          }}
-        >
-          {org.status}
-        </span>
+        <div className="flex items-center gap-2">
+          <span
+            className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
+            style={{
+              backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
+              color: BRAND_GREEN,
+            }}
+          >
+            {org.status}
+          </span>
+          <button
+            onClick={deleteOrg}
+            className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs transition-opacity hover:opacity-80"
+            style={{ borderColor: "var(--border)", color: "var(--accent-red)" }}
+            title="Delete organization"
+          >
+            <Trash2 size={11} />
+            Delete
+          </button>
+        </div>
       </div>
 
       <MemberSection
@@ -734,40 +794,6 @@ function IconBtn({
     >
       {icon}
     </button>
-  );
-}
-
-function Reveal({
-  reveal, dismiss,
-}: {
-  reveal: { label: string; action: "invited" | "resent" };
-  dismiss: () => void;
-}) {
-  return (
-    <div
-      className="flex items-start justify-between gap-3 rounded-lg border p-3"
-      style={{
-        borderColor: "color-mix(in srgb, " + BRAND_GREEN + " 35%, transparent)",
-        backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 6%, transparent)",
-      }}
-    >
-      <div className="flex items-center gap-2 text-sm" style={{ color: "var(--text)" }}>
-        <Mail size={14} style={{ color: BRAND_GREEN }} />
-        <span>
-          {reveal.action === "invited" ? "Invitation sent" : "New sign-in link sent"} to{" "}
-          <strong>{reveal.label}</strong>.
-        </span>
-      </div>
-      <button
-        type="button"
-        onClick={dismiss}
-        className="rounded-md p-1.5"
-        style={{ color: "var(--text-muted)" }}
-        aria-label="Dismiss"
-      >
-        <X size={14} />
-      </button>
-    </div>
   );
 }
 

@@ -1,15 +1,17 @@
 /*
  * POST /api/admin/users/:id/resend-invite
  *
- * Re-issues the magic-link invitation email for an existing user — useful
- * when the original got lost. Uses generateLink rather than the invite
- * call since the user already exists.
+ * Re-issues the invite / magic-link email for an existing user. The
+ * heavy lifting is in lib/admin-invite — picks inviteUserByEmail for
+ * unconfirmed accounts, falls back to signInWithOtp (magic link) for
+ * confirmed ones, and surfaces SMTP / rate-limit errors back to the UI.
  *
  * Caller must hold super_admin.
  */
 
 import { NextResponse } from "next/server";
 import { requireSuperAdmin } from "@/lib/admin-auth";
+import { resendInvitationEmail } from "@/lib/admin-invite";
 
 export const dynamic = "force-dynamic";
 export const runtime  = "nodejs";
@@ -22,35 +24,14 @@ export async function POST(_request: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: gate.error }, { status: gate.status });
   }
   const { admin } = gate;
-
   const { id } = await params;
 
-  const { data: target, error: getErr } = await admin.auth.admin.getUserById(id);
-  if (getErr || !target.user?.email) {
-    return NextResponse.json(
-      { error: getErr?.message ?? "User not found" },
-      { status: 404 },
-    );
+  const r = await resendInvitationEmail(admin, id);
+  if (!r.ok) {
+    console.warn(`[admin/users] resend-invite (${id}): ${r.error}`);
+    return NextResponse.json({ error: r.error }, { status: 500 });
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3001";
-
-  // generateLink with type=invite re-fires the invite email for an
-  // existing-but-unconfirmed user. For confirmed users, type=magiclink
-  // sends an ad-hoc sign-in link.
-  const linkType = target.user.email_confirmed_at ? "magiclink" : "invite";
-  const { error } = await admin.auth.admin.generateLink({
-    type: linkType as "invite" | "magiclink",
-    email: target.user.email,
-    options: { redirectTo: `${appUrl}/auth/callback?next=/auth/post-signin` },
-  });
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  console.log(
-    `[admin/users] re-sent invite (${linkType}) to ${target.user.email}`,
-  );
-
+  console.log(`[admin/users] re-sent invite (${r.mode}) to user ${id}`);
   return NextResponse.json({ resent: true });
 }
