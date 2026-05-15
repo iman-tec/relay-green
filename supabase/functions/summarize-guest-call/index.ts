@@ -54,9 +54,22 @@ Deno.serve(async (req) => {
       .eq("guest_call_id", guest_call_id)
       .order("created_at", { ascending: true });
 
+    // Build the prompt corpus: human messages + per-call Zoom AI Companion
+    // summaries. Other system rows (Zoom started/ended chips, the
+    // supervisor-only recording link) are noise for the LLM and dropped.
+    // The AI Companion blocks are tagged inline so the model treats them as
+    // observations from the actual call, not as chat turns.
     const transcript = (msgs ?? [])
-      .filter((m: any) => m.sender_kind !== "system")
-      .map((m: any) => `${m.sender_name ?? m.sender_kind}: ${m.body}`)
+      .filter((m: any) => {
+        if (m.sender_kind !== "system") return true;
+        return typeof m.body === "string" && m.body.includes("AI Companion summary");
+      })
+      .map((m: any) => {
+        if (m.sender_kind === "system") {
+          return `[Zoom AI Companion summary from the call]\n${m.body}`;
+        }
+        return `${m.sender_name ?? m.sender_kind}: ${m.body}`;
+      })
       .join("\n");
 
     if (!transcript.trim()) {
@@ -81,11 +94,11 @@ Deno.serve(async (req) => {
     }
 
     // Session-level summary: one OpenAI call that returns structured JSON
-    // (title + overview + problem + tried + next_steps). The aggregate
-    // covers every per-call Zoom AI Companion summary in the chat plus
-    // the human messages — the transcript already includes both (the AI
-    // Companion summaries are stored as system messages, but those are
-    // filtered out above to keep the prompt focused on what humans said).
+    // (title + overview + problem + tried + next_steps). The transcript
+    // built above includes both the human chat messages and every per-call
+    // Zoom AI Companion summary tagged with [Zoom AI Companion summary from
+    // the call], so the model sees what was said in chat AND what happened
+    // on the video call.
     const apiKey = Deno.env.get("OPENAI_API_KEY");
     let summary = "";
     let aiTitle = "";
@@ -107,6 +120,7 @@ Deno.serve(async (req) => {
               role: "system",
               content:
                 "You summarize a short engineer↔builder support session. Respond with strict JSON only: {\"title\": string, \"overview\": string, \"problem\": string, \"tried\": string, \"next_steps\": string[]}. " +
+                "The transcript interleaves chat messages with one or more `[Zoom AI Companion summary from the call]` blocks — those describe what happened on the live video calls. Use both signals: chat tells you what was typed; the AI Companion blocks tell you what was discussed verbally. When a Companion block and chat disagree, prefer the more specific evidence. " +
                 "Rules for `title`: 3-5 words, NO period, problem-focused — name the *issue the builder was stuck on*, not the action taken. Examples of good titles: \"Auth redirect loop\", \"Stripe webhook silent fail\", \"Supabase RLS blocking inserts\", \"Vite hot reload broken\". Bad titles: \"Helped a user\", \"Quick chat\", \"Discussion about deploy\". " +
                 "`overview` = 2-3 sentence TL;DR covering the whole session (which may include multiple Zoom calls). `problem` = 1-2 sentences naming the root cause. `tried` = 1-2 sentences listing what was attempted. `next_steps` = 3-5 short imperative items. No extra prose outside the JSON.",
             },

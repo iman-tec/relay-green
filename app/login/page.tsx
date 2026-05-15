@@ -1,15 +1,33 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { SignInForm } from "./SignInForm";
 import { CookieConsent } from "@/app/_marketing/CookieConsent";
 import { Wordmark } from "@/app/_components/Wordmark";
+import { createClient } from "@/lib/supabase/server";
+import { landingForRoles } from "@/lib/relay/role-labels";
 
 export const metadata: Metadata = {
   title: "Sign in — Relay.green",
   description: "Sign in to Relay.green with a magic link. No password needed.",
 };
 
-export default function LoginPage() {
+// Server-side bounce: an already-signed-in user that lands on /login shouldn't
+// see the form again — send them to wherever their highest role lives.
+async function redirectIfSignedIn(): Promise<void> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  const { data: roleRows } = await supabase
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", user.id);
+  const roles = (roleRows ?? []).map((r: { role: string }) => r.role);
+  redirect(landingForRoles(roles));
+}
+
+export default async function LoginPage() {
+  await redirectIfSignedIn();
   return (
     <main
       className="flex min-h-screen flex-col items-center justify-center px-6 py-16"

@@ -280,9 +280,12 @@ function deriveHealthDeterministic(s: GuestCall): Health {
   if ((s.recall_count ?? 0) >= 2)   return "red";
   if ((s.recall_count ?? 0) >= 1)   return "amber";
   if (s.status === "queued" && s.created_at) {
+    // Queue timeout is 90s (abandon_stale_queued_sessions). Bracket the
+    // pill colors so red means "about to time out" rather than a value
+    // the session can never reach.
     const waitSecs = Math.floor((Date.now() - new Date(s.created_at).getTime()) / 1000);
-    if (waitSecs >= 180) return "red";
-    if (waitSecs >= 60)  return "amber";
+    if (waitSecs >= 60) return "red";
+    if (waitSecs >= 30) return "amber";
   }
   return "green";
 }

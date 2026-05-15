@@ -19,7 +19,8 @@
  * non-empty line of the remaining header as the title.
  */
 
-import { Sparkles } from "lucide-react";
+import { useState } from "react";
+import { Sparkles, Video, KeyRound, Copy, Check } from "lucide-react";
 
 const BRAND_GREEN        = "#3f5c2e";
 const BRAND_GREEN_SOFT   = "rgba(63, 92, 46, 0.12)";
@@ -69,8 +70,50 @@ function parseAiSummary(body: string): Parsed {
   return { title, overview, nextSteps };
 }
 
-export function MeetingSummaryEntry({ body }: { body: string }) {
+/**
+ * Pulls the recording URL + passcode out of the system-message body the
+ * zoom-webhook posts after a cloud recording lands. The body looks like:
+ *   🎥 Recording available: https://zoom.us/rec/...
+ *   Passcode: K^8^r0&C
+ * The passcode line is optional.
+ */
+function parseRecording(body: string): { url: string | null; passcode: string | null } {
+  const urlMatch = body.match(/Recording available:\s*(\S+)/i);
+  const passMatch = body.match(/Passcode:\s*(.+?)\s*$/im);
+  return {
+    url: urlMatch ? urlMatch[1] : null,
+    passcode: passMatch ? passMatch[1].trim() : null,
+  };
+}
+
+type CopyTarget = "url" | "passcode";
+
+export function MeetingSummaryEntry({ body, recordingBody }: { body: string; recordingBody?: string | null }) {
   const { title, overview, nextSteps } = parseAiSummary(body);
+  const recording = recordingBody ? parseRecording(recordingBody) : null;
+  // Tracks which value we most recently copied so each button gets its own
+  // ✓ confirmation independently — copying the URL shouldn't flash the
+  // passcode button's checkmark and vice versa.
+  const [copied, setCopied] = useState<CopyTarget | null>(null);
+
+  const copyText = async (text: string, which: CopyTarget) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Clipboard API can be unavailable (insecure context, locked-down
+      // Electron partition). Best-effort fallback: select via temp textarea.
+      const el = document.createElement("textarea");
+      el.value = text;
+      el.style.position = "fixed";
+      el.style.opacity = "0";
+      document.body.appendChild(el);
+      el.select();
+      try { document.execCommand("copy"); } catch { /* nothing more we can do */ }
+      el.remove();
+    }
+    setCopied(which);
+    setTimeout(() => setCopied((c) => (c === which ? null : c)), 1500);
+  };
 
   return (
     <div className="flex justify-center">
@@ -136,7 +179,81 @@ export function MeetingSummaryEntry({ body }: { body: string }) {
             </ul>
           </div>
         ) : null}
+
+        {recording && (recording.url || recording.passcode) ? (
+          <div
+            className="mt-4 border-t pt-3"
+            style={{ borderColor: BRAND_GREEN_BORDER }}
+          >
+            <div
+              className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider"
+              style={{ color: "var(--text-muted)" }}
+            >
+              Recording
+            </div>
+            {recording.url ? (
+              <div className="flex items-center gap-2 text-[12px] leading-relaxed">
+                <Video size={12} style={{ color: BRAND_GREEN }} />
+                <a
+                  href={recording.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="min-w-0 flex-1 truncate underline underline-offset-2"
+                  style={{ color: BRAND_GREEN }}
+                >
+                  {recording.url}
+                </a>
+                <CopyButton
+                  onClick={() => void copyText(recording.url!, "url")}
+                  done={copied === "url"}
+                  label="Copy link"
+                />
+              </div>
+            ) : null}
+            {recording.passcode ? (
+              <div
+                className="mt-1.5 flex items-center gap-2 text-[12px]"
+                style={{ color: "var(--text)" }}
+              >
+                <KeyRound size={12} style={{ color: "var(--text-muted)" }} />
+                <span style={{ color: "var(--text-muted)" }}>Passcode:</span>
+                <code
+                  className="rounded px-1.5 py-0.5 text-[11px]"
+                  style={{
+                    backgroundColor: "color-mix(in srgb, var(--text) 8%, transparent)",
+                    color: "var(--text)",
+                  }}
+                >
+                  {recording.passcode}
+                </code>
+                <CopyButton
+                  onClick={() => void copyText(recording.passcode!, "passcode")}
+                  done={copied === "passcode"}
+                  label="Copy passcode"
+                />
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
+  );
+}
+
+function CopyButton({ onClick, done, label }: { onClick: () => void; done: boolean; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={done ? "Copied" : label}
+      aria-label={done ? "Copied" : label}
+      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors"
+      style={{
+        color: done ? BRAND_GREEN : "var(--text-muted)",
+        backgroundColor: done ? "color-mix(in srgb, var(--text) 4%, transparent)" : "transparent",
+      }}
+    >
+      {done ? <Check size={12} /> : <Copy size={12} />}
+    </button>
   );
 }

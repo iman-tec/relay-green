@@ -12,6 +12,7 @@
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { landingForRoles } from "@/lib/relay/role-labels";
 
 export const dynamic = "force-dynamic";
 export const runtime  = "nodejs";
@@ -85,16 +86,4 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({ ok: true, next });
-}
-
-// Maps a user's role set to the page they should land on after sign-in.
-// Order is significant: admin > ops_manager > pod_lead > engineer > customer.
-function landingForRoles(roles: string[]): string {
-  if (roles.includes("super_admin"))      return "/admin";
-  if (roles.includes("enterprise_admin")) return "/enterprise";
-  if (roles.includes("admin"))            return "/admin";
-  if (roles.includes("ops_manager"))      return "/admin";
-  if (roles.includes("pod_lead"))         return "/supervise";
-  if (roles.includes("engineer"))         return "/dashboard";
-  return "/room";
 }

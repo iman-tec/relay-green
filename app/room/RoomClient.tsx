@@ -37,6 +37,7 @@ import { PaywallModal } from "@/app/_components/PaywallModal";
 import { ChatComposer } from "@/app/_components/ChatComposer";
 import { MessageAttachments } from "@/app/_components/MessageAttachments";
 import { useCustomerSession } from "@/lib/relay/useCustomerSession";
+import { useIsSupervisor, isSupervisorOnlyMessage } from "@/lib/relay/useIsSupervisor";
 import { useSessionTimer } from "@/lib/relay/useSessionTimer";
 import { createClient } from "@/lib/supabase/browser";
 import type { GuestCall, GuestMessage, SessionStatus, Urgency } from "@/lib/supabase/types";
@@ -1011,20 +1012,38 @@ function PastSessionReview({ sessionId, onClose }: { sessionId: string; onClose:
 // (with inline MeetingChatEntry cards) and shows a locked-state hint in
 // place of the composer.
 function ReadOnlyChatPane({ messages }: { messages: GuestMessage[] }) {
+  const isSupervisor = useIsSupervisor();
   const meetingEnded = new Map<string, GuestMessage>();
+  const meetingSummary = new Map<string, GuestMessage>();
+  const meetingRecording = new Map<string, GuestMessage>();
   const suppressedEndedIds = new Set<string>();
+  const suppressedSummaryIds = new Set<string>();
+  const suppressedRecordingIds = new Set<string>();
   {
     const queue: GuestMessage[] = [];
+    // Most recently ended meeting (its "started" id) still accepting trailing
+    // attachments. Stays alive across summary + recording arrivals (they can
+    // come in either order) and only resets on the next "started" so a
+    // stray attachment doesn't get pinned onto a finished cycle.
+    let lastEndedStartId: string | null = null;
     for (const m of messages) {
       if (m.sender_kind !== "system") continue;
       if ((m.body ?? "").includes("Zoom meeting started")) {
         queue.push(m);
+        lastEndedStartId = null;
       } else if ((m.body ?? "").includes("Zoom meeting ended")) {
         const start = queue.shift();
         if (start) {
           meetingEnded.set(start.id, m);
           suppressedEndedIds.add(m.id);
+          lastEndedStartId = start.id;
         }
+      } else if (m.body && isAiSummaryMessageBody(m.body) && lastEndedStartId) {
+        meetingSummary.set(lastEndedStartId, m);
+        suppressedSummaryIds.add(m.id);
+      } else if (m.body && m.body.includes("Recording available") && lastEndedStartId) {
+        meetingRecording.set(lastEndedStartId, m);
+        suppressedRecordingIds.add(m.id);
       }
     }
   }
@@ -1040,8 +1059,11 @@ function ReadOnlyChatPane({ messages }: { messages: GuestMessage[] }) {
           ) : (
             <div className="space-y-3">
               {messages.flatMap((m) => {
+                if (isSupervisorOnlyMessage(m) && !isSupervisor) return [];
                 if (m.sender_kind === "system" && (m.body ?? "").includes("Zoom meeting started")) {
                   const ended = meetingEnded.get(m.id) ?? null;
+                  const summary = meetingSummary.get(m.id) ?? null;
+                  const recording = meetingRecording.get(m.id) ?? null;
                   const durationSec = ended
                     ? Math.floor((new Date(ended.created_at).getTime() - new Date(m.created_at).getTime()) / 1000)
                     : undefined;
@@ -1052,10 +1074,18 @@ function ReadOnlyChatPane({ messages }: { messages: GuestMessage[] }) {
                       key={m.id}
                       active={false}
                       durationSec={durationSec}
+                      summaryBody={summary?.body ?? null}
+                      recordingBody={isSupervisor ? recording?.body ?? null : null}
                     />,
                   ];
                 }
                 if (m.sender_kind === "system" && suppressedEndedIds.has(m.id)) {
+                  return [];
+                }
+                if (m.sender_kind === "system" && suppressedSummaryIds.has(m.id)) {
+                  return [];
+                }
+                if (m.sender_kind === "system" && suppressedRecordingIds.has(m.id)) {
                   return [];
                 }
                 return [<Message key={m.id} message={m} />];
@@ -2346,6 +2376,7 @@ const ChatPane = memo(function ChatPane({
   void onNeedProject;
   const session = state.session;
   const isReadOnly = session?.status === "ended";
+  const isSupervisor = useIsSupervisor();
 
   const handleSend = async ({ text, files }: { text: string; files: File[] }) => {
     const wouldCreateNew = !session || ["cancelled", "abandoned", "ended"].includes(session.status);
@@ -2365,20 +2396,36 @@ const ChatPane = memo(function ChatPane({
   // the position it was started in the chat. Endeds that have a matching
   // started are suppressed below; orphan endeds (legacy chats without a
   // started counterpart) fall through to the normal system-chip render.
+  // The same pairing also attaches both the AI Companion summary AND the
+  // cloud-recording line that follow each ended message so the meeting
+  // card can reveal them on demand instead of crowding the timeline.
   const meetingEnded = new Map<string, GuestMessage>(); // started.id -> ended msg
+  const meetingSummary = new Map<string, GuestMessage>(); // started.id -> summary msg
+  const meetingRecording = new Map<string, GuestMessage>(); // started.id -> recording msg
   const suppressedEndedIds = new Set<string>();
+  const suppressedSummaryIds = new Set<string>();
+  const suppressedRecordingIds = new Set<string>();
   {
     const queue: GuestMessage[] = [];
+    let lastEndedStartId: string | null = null;
     for (const m of state.messages) {
       if (m.sender_kind !== "system") continue;
       if ((m.body ?? "").includes("Zoom meeting started")) {
         queue.push(m);
+        lastEndedStartId = null;
       } else if ((m.body ?? "").includes("Zoom meeting ended")) {
         const start = queue.shift();
         if (start) {
           meetingEnded.set(start.id, m);
           suppressedEndedIds.add(m.id);
+          lastEndedStartId = start.id;
         }
+      } else if (m.body && isAiSummaryMessageBody(m.body) && lastEndedStartId) {
+        meetingSummary.set(lastEndedStartId, m);
+        suppressedSummaryIds.add(m.id);
+      } else if (m.body && m.body.includes("Recording available") && lastEndedStartId) {
+        meetingRecording.set(lastEndedStartId, m);
+        suppressedRecordingIds.add(m.id);
       }
     }
   }
@@ -2405,8 +2452,11 @@ const ChatPane = memo(function ChatPane({
           ) : (
             <div className="space-y-3">
               {state.messages.flatMap((m) => {
+                if (isSupervisorOnlyMessage(m) && !isSupervisor) return [];
                 if (m.sender_kind === "system" && (m.body ?? "").includes("Zoom meeting started")) {
                   const ended = meetingEnded.get(m.id) ?? null;
+                  const summary = meetingSummary.get(m.id) ?? null;
+                  const recording = meetingRecording.get(m.id) ?? null;
                   const durationSec = ended
                     ? Math.floor((new Date(ended.created_at).getTime() - new Date(m.created_at).getTime()) / 1000)
                     : undefined;
@@ -2417,10 +2467,18 @@ const ChatPane = memo(function ChatPane({
                       durationSec={durationSec}
                       joinUrl={!ended ? session?.zoom_join_url ?? null : null}
                       onJoin={!ended ? () => void state.markJoined() : undefined}
+                      summaryBody={summary?.body ?? null}
+                      recordingBody={isSupervisor ? recording?.body ?? null : null}
                     />,
                   ];
                 }
                 if (m.sender_kind === "system" && suppressedEndedIds.has(m.id)) {
+                  return [];
+                }
+                if (m.sender_kind === "system" && suppressedSummaryIds.has(m.id)) {
+                  return [];
+                }
+                if (m.sender_kind === "system" && suppressedRecordingIds.has(m.id)) {
                   return [];
                 }
                 if (m.sender_kind === "system" && m.body && isAiSummaryMessageBody(m.body)) {
@@ -2852,9 +2910,10 @@ function ConnectingModal({
   projects: Project[];
   onProjectsChanged: () => void | Promise<void>;
 }) {
-  // Anchor the 3-min countdown to the most recent of created_at /
+  // Anchor the 90-second countdown to the most recent of created_at /
   // last_recall_at. That way clicking "Call again" naturally restarts the
   // window — no extra timer-reset state needed on the client.
+  const QUEUE_TIMEOUT_S = 90;
   const queuedAt     = new Date(session.created_at).getTime();
   const lastRecallAt = session.last_recall_at ? new Date(session.last_recall_at).getTime() : 0;
   const anchor       = Math.max(queuedAt, lastRecallAt);
@@ -2867,7 +2926,7 @@ function ConnectingModal({
   }, []);
 
   const elapsed   = Math.max(0, Math.floor((now - anchor) / 1000));
-  const remaining = Math.max(0, 180 - elapsed);
+  const remaining = Math.max(0, QUEUE_TIMEOUT_S - elapsed);
   const expired   = remaining === 0;
   const mins      = Math.floor(remaining / 60);
   const secs      = remaining % 60;
@@ -2881,7 +2940,7 @@ function ConnectingModal({
   const CENTER = SIZE / 2;
   const CIRC   = 2 * Math.PI * RADIUS;
   // Ring drains as time passes; sits at fully-empty when expired.
-  const dashOffset = CIRC * (1 - remaining / 180);
+  const dashOffset = CIRC * (1 - remaining / QUEUE_TIMEOUT_S);
 
   const ringColor = session.urgency === "critical" ? CRIT_RED
     : session.urgency === "urgent" ? URGENT_AMBER

@@ -81,6 +81,13 @@ export type GuestMessage = {
   /** Now nullable: an attachment-only message has no body. */
   body: string | null;
   created_at: string;
+  /**
+   * 'all' (default) renders for everyone who can read the chat.
+   * 'supervisor' renders only when the viewer holds a pod_lead / ops_manager
+   *  / admin / super_admin role — used for e.g. Zoom recording URLs that
+   *  should stay out of the customer/engineer-facing timeline.
+   */
+  visibility?: "all" | "supervisor";
   /** Populated by the join on guest_message_attachments. */
   attachments?: GuestMessageAttachment[];
 };

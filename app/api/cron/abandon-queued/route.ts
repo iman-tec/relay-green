@@ -1,5 +1,5 @@
 /*
- * Fallback cron — abandons sessions stuck in `queued` for >3 minutes.
+ * Fallback cron — abandons sessions stuck in `queued` for >90 seconds.
  *
  * Primary scheduling lives in Postgres (pg_cron) but Supabase Free tier
  * doesn't ship pg_cron. This Next.js route is the safety net: hit it from

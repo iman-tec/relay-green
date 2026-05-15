@@ -25,21 +25,44 @@ export function formatRole(role: string | null | undefined): string {
   return LABELS[role] ?? titleCase(role);
 }
 
-/** Picks the highest-rank role from a set and returns its label. */
+/**
+ * Hierarchy used by the staff sidebar profile chip:
+ *
+ *   super_admin
+ *   └─ enterprise_admin
+ *      └─ admin
+ *         └─ supervisor   (pod_lead, ops_manager collapsed into one tier)
+ *            └─ engineer
+ *               └─ customer / builder
+ *
+ * This is intentionally distinct from `formatRole()` — that one names the
+ * specific underlying role for role-assignment UIs. The hierarchy display
+ * collapses pod_lead + ops_manager into "Supervisor" so a viewer reading
+ * the chip sees their *level*, not which specific supervisory flavor they
+ * hold. Changing the labels here does NOT change the role-picker dropdowns
+ * in /admin/users.
+ */
 export function highestRoleLabel(roles: readonly string[]): string {
-  const order = [
-    "super_admin",
-    "admin",
-    "ops_manager",
-    "pod_lead",
-    "engineer",
-    "builder",
-    "customer",
-  ];
-  for (const r of order) {
-    if (roles.includes(r)) return formatRole(r);
-  }
+  if (roles.includes("super_admin"))      return "Super Admin";
+  if (roles.includes("enterprise_admin")) return "Enterprise Admin";
+  if (roles.includes("admin"))            return "Admin";
+  if (roles.includes("ops_manager"))      return "Supervisor";
+  if (roles.includes("pod_lead"))         return "Supervisor";
+  if (roles.includes("engineer"))         return "Engineer";
+  if (roles.includes("builder"))          return "Customer";
+  if (roles.includes("customer"))         return "Customer";
   return "Staff";
+}
+
+/**
+ * Same as highestRoleLabel, but appends a "+N" suffix when the user holds
+ * more than one role so the chip hints that there's more behind the top
+ * label. The full role list belongs on a tooltip — see the caller.
+ */
+export function highestRoleSummary(roles: readonly string[]): string {
+  const top = highestRoleLabel(roles);
+  if (roles.length <= 1) return top;
+  return `${top} +${roles.length - 1}`;
 }
 
 function titleCase(s: string): string {
@@ -47,4 +70,22 @@ function titleCase(s: string): string {
     .split(/[_-]/)
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
     .join(" ");
+}
+
+/**
+ * Maps a user's role set to the page they should land on after sign-in
+ * (and the page already-authed users should be bounced to if they revisit
+ * /login or /staff/login). Order is significant — first match wins.
+ *
+ * Shared between the OTP verifier and the login page guards so we don't
+ * drift on where each role lives.
+ */
+export function landingForRoles(roles: readonly string[]): string {
+  if (roles.includes("super_admin"))      return "/admin";
+  if (roles.includes("enterprise_admin")) return "/enterprise";
+  if (roles.includes("admin"))            return "/admin";
+  if (roles.includes("ops_manager"))      return "/admin";
+  if (roles.includes("pod_lead"))         return "/supervise";
+  if (roles.includes("engineer"))         return "/dashboard";
+  return "/room";
 }

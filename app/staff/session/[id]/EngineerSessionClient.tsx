@@ -21,7 +21,7 @@ import {
   PanelGroup, Panel, PanelResizeHandle,
 } from "react-resizable-panels";
 import {
-  Send, Video, PhoneOff, Loader2, ArrowLeft, RotateCw, Sparkles, Lock, MessageSquare, Eye, LogOut,
+  Send, Video, PhoneOff, Loader2, ArrowLeft, RotateCw, Sparkles, Lock, Eye, LogOut,
   PanelLeftOpen, PanelLeftClose,
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
@@ -31,6 +31,7 @@ import { ChatComposer } from "@/app/_components/ChatComposer";
 import { MessageAttachments } from "@/app/_components/MessageAttachments";
 import { createClient } from "@/lib/supabase/browser";
 import { useEngineerSession } from "@/lib/relay/useEngineerSession";
+import { useIsSupervisor, isSupervisorOnlyMessage } from "@/lib/relay/useIsSupervisor";
 import { useSessionTimer } from "@/lib/relay/useSessionTimer";
 import type { GuestCall, GuestMessage, SessionStatus, Urgency } from "@/lib/supabase/types";
 
@@ -780,6 +781,7 @@ function ChatPane({
 }) {
   const session = state.session!;
   const isReadOnly = readOnly || session.status === "ended";
+  const isSupervisor = useIsSupervisor();
   const maxW = fullWidth ? "max-w-3xl" : "max-w-none";
   const scrollRef = useRef<HTMLDivElement>(null);
   const [minting, setMinting] = useState(false);
@@ -859,20 +861,36 @@ function ChatPane({
 
   // Pair "started" / "ended" system messages in chronological order so each
   // meeting renders as one inline mini-card. Paired endeds are suppressed.
+  // The AI Companion summary AND the cloud-recording line that follow each
+  // ended are also attached to the started so the card can reveal them
+  // on demand instead of dropping separate items in the timeline.
   const meetingEnded = new Map<string, GuestMessage>();
+  const meetingSummary = new Map<string, GuestMessage>();
+  const meetingRecording = new Map<string, GuestMessage>();
   const suppressedEndedIds = new Set<string>();
+  const suppressedSummaryIds = new Set<string>();
+  const suppressedRecordingIds = new Set<string>();
   {
     const queue: GuestMessage[] = [];
+    let lastEndedStartId: string | null = null;
     for (const m of state.messages) {
       if (m.sender_kind !== "system") continue;
       if ((m.body ?? "").includes("Zoom meeting started")) {
         queue.push(m);
+        lastEndedStartId = null;
       } else if ((m.body ?? "").includes("Zoom meeting ended")) {
         const start = queue.shift();
         if (start) {
           meetingEnded.set(start.id, m);
           suppressedEndedIds.add(m.id);
+          lastEndedStartId = start.id;
         }
+      } else if (m.body && isAiSummaryMessageBody(m.body) && lastEndedStartId) {
+        meetingSummary.set(lastEndedStartId, m);
+        suppressedSummaryIds.add(m.id);
+      } else if (m.body && m.body.includes("Recording available") && lastEndedStartId) {
+        meetingRecording.set(lastEndedStartId, m);
+        suppressedRecordingIds.add(m.id);
       }
     }
   }
@@ -891,8 +909,11 @@ function ChatPane({
           ) : (
             <div className="space-y-3">
               {state.messages.flatMap((m) => {
+                if (isSupervisorOnlyMessage(m) && !isSupervisor) return [];
                 if (m.sender_kind === "system" && (m.body ?? "").includes("Zoom meeting started")) {
                   const ended = meetingEnded.get(m.id) ?? null;
+                  const summary = meetingSummary.get(m.id) ?? null;
+                  const recording = meetingRecording.get(m.id) ?? null;
                   const durationSec = ended
                     ? Math.floor((new Date(ended.created_at).getTime() - new Date(m.created_at).getTime()) / 1000)
                     : undefined;
@@ -904,10 +925,18 @@ function ChatPane({
                       joinUrl={!ended ? zoomCardUrl : null}
                       onJoin={!ended && !readOnly ? () => void state.markJoined() : undefined}
                       onCancel={!ended && !readOnly ? handleCancelMeeting : undefined}
+                      summaryBody={summary?.body ?? null}
+                      recordingBody={isSupervisor ? recording?.body ?? null : null}
                     />,
                   ];
                 }
                 if (m.sender_kind === "system" && suppressedEndedIds.has(m.id)) {
+                  return [];
+                }
+                if (m.sender_kind === "system" && suppressedSummaryIds.has(m.id)) {
+                  return [];
+                }
+                if (m.sender_kind === "system" && suppressedRecordingIds.has(m.id)) {
                   return [];
                 }
                 if (m.sender_kind === "system" && m.body && isAiSummaryMessageBody(m.body)) {
@@ -949,8 +978,29 @@ function ChatPane({
               )}
             </div>
           )}
-          {/* Composer — hidden entirely in monitor (read-only) mode */}
-          {!readOnly ? (
+          {/* Footer:
+             *  - ended       → unified "Session ended — read-only" pill
+             *                  (same as customer's RoomClient ReadOnlyChatPane)
+             *  - live + monitor → "Read-only · monitoring this session" pill
+             *  - live + engineer → composer + icon-only Start Zoom button
+             */}
+          {session.status === "ended" ? (
+            <div
+              className="flex items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-[11px] font-medium"
+              style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+            >
+              <Lock size={11} />
+              Session ended — read-only
+            </div>
+          ) : readOnly ? (
+            <div
+              className="flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-[11px] font-medium"
+              style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+            >
+              <Lock size={11} />
+              Read-only · monitoring this session
+            </div>
+          ) : (
             <div className="flex flex-col gap-2">
               {showStartMeetingButton && (
                 <button
@@ -958,32 +1008,20 @@ function ChatPane({
                   onClick={() => void handleStartMeeting()}
                   disabled={isReadOnly || minting}
                   title={session.zoom_meeting_id ? "Start a new Zoom meeting" : "Start a Zoom meeting"}
-                  className="inline-flex items-center justify-center gap-1.5 self-start rounded-full border px-3 py-1.5 text-[12px] font-medium transition-colors disabled:opacity-50"
-                  style={{
-                    borderColor: BRAND_GREEN_BORDER,
-                    backgroundColor: BRAND_GREEN_SOFT,
-                    color: BRAND_GREEN,
-                  }}
+                  aria-label={session.zoom_meeting_id ? "Start a new Zoom meeting" : "Start a Zoom meeting"}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center self-start rounded-full text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                  style={{ backgroundColor: BRAND_GREEN }}
                 >
-                  {minting ? <Loader2 size={12} className="animate-spin" /> : <Video size={12} />}
-                  {session.zoom_meeting_id ? "Start a new Zoom meeting" : "Start Zoom meeting"}
+                  {minting ? <Loader2 size={14} className="animate-spin" /> : <Video size={14} />}
                 </button>
               )}
               <ChatComposer
                 disabled={isReadOnly}
-                placeholder={isReadOnly ? "Session ended" : `Message ${session.guest_name}…`}
+                placeholder={`Message ${session.guest_name}…`}
                 onSend={async ({ text, files }) => {
                   await state.sendBundle({ text, files });
                 }}
               />
-            </div>
-          ) : (
-            <div
-              className="flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-[11px] font-medium"
-              style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
-            >
-              <Lock size={11} />
-              Read-only · monitoring this session
             </div>
           )}
         </div>
@@ -1026,50 +1064,24 @@ function Message({ message }: { message: GuestMessage }) {
   );
 }
 
-// ── Review panel (post-ended) ──────────────────────────────────────────────
-function ReviewPanel({ session, messages }: { session: GuestCall; messages: GuestMessage[] }) {
-  const [tab, setTab] = useState<"summary" | "chat">("summary");
-  const messageCount = messages.filter((m) => m.sender_kind !== "system").length;
+// ── Summary panel (post-ended) ─────────────────────────────────────────────
+// Matches the customer-side SummaryPanel in RoomClient — single SUMMARY
+// header + SummaryView. The Chat-history tab was dropped because the full
+// chat already lives in the main pane on the left.
+function ReviewPanel({ session }: { session: GuestCall; messages: GuestMessage[] }) {
   return (
     <section
       className="flex h-full flex-col border-l"
       style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
     >
       <div className="flex items-center gap-2 border-b px-4 py-3" style={{ borderColor: "var(--border)" }}>
-        <PillTab active={tab === "summary"} onClick={() => setTab("summary")}>
-          <Sparkles size={11} /> Summary
-        </PillTab>
-        <PillTab active={tab === "chat"} onClick={() => setTab("chat")}>
-          <MessageSquare size={11} /> Chat history
-          <span
-            className="ml-1 rounded-full px-1.5 py-0 text-[9px] font-semibold tabular-nums"
-            style={{
-              backgroundColor: tab === "chat" ? "rgba(255,255,255,0.18)" : "color-mix(in srgb, var(--text) 10%, transparent)",
-              color: tab === "chat" ? "#fff" : "var(--text-muted)",
-            }}
-          >
-            {messageCount}
-          </span>
-        </PillTab>
+        <Sparkles size={12} style={{ color: BRAND_GREEN }} />
+        <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text)" }}>
+          Summary
+        </span>
       </div>
-      {tab === "summary" ? <SummaryView session={session} /> : <ChatHistoryView messages={messages} />}
+      <SummaryView session={session} />
     </section>
-  );
-}
-
-function PillTab({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors"
-      style={
-        active
-          ? { backgroundColor: BRAND_GREEN, color: "#fff" }
-          : { backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)", color: "var(--text-muted)" }
-      }
-    >
-      {children}
-    </button>
   );
 }
 
@@ -1122,18 +1134,6 @@ function SummaryView({ session }: { session: GuestCall }) {
             </div>
           )}
         </div>
-      )}
-    </div>
-  );
-}
-
-function ChatHistoryView({ messages }: { messages: GuestMessage[] }) {
-  return (
-    <div className="flex-1 overflow-y-auto px-4 py-5 space-y-3">
-      {messages.length === 0 ? (
-        <p className="py-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>No messages exchanged.</p>
-      ) : (
-        messages.map((m) => <Message key={m.id} message={m} />)
       )}
     </div>
   );

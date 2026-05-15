@@ -55,9 +55,11 @@ function deriveHealth(s: Session): Health {
   if (s.recallCount >= 2)           return "red";
   if (s.recallCount >= 1)           return "amber";
   if (s.status === "queued" && s.createdAt) {
+    // Mirrors SuperviseClient — queue timeout is 90s, so red kicks in at
+    // 60s (about-to-time-out) and amber at 30s.
     const waitSecs = Math.floor((Date.now() - new Date(s.createdAt).getTime()) / 1000);
-    if (waitSecs >= 180) return "red";
-    if (waitSecs >= 60)  return "amber";
+    if (waitSecs >= 60) return "red";
+    if (waitSecs >= 30) return "amber";
   }
   return "green";
 }

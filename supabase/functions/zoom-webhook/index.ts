@@ -260,7 +260,11 @@ async function handleRecordingCompleted(payload: any) {
   const password: string | null = obj.password ?? obj.recording_play_passcode ?? null;
   const duration: number | null = Number.isFinite(obj.duration) ? Number(obj.duration) : null;
 
-  // Path A: anonymous guest sessions
+  // Path A: anonymous guest sessions. Recording URL / passcode / duration
+  // are persisted on guest_calls. We also post a supervisor-only system
+  // line into the chat so pod_leads / ops_managers / admins viewing the
+  // shared timeline see the artifact inline; the customer/engineer client
+  // filters visibility='supervisor' rows out so the link never reaches them.
   const { data: gc } = await admin()
     .from("guest_calls")
     .select("id")
@@ -278,12 +282,15 @@ async function handleRecordingCompleted(payload: any) {
         sender_kind: "system",
         sender_name: "Relay",
         body: `🎥 Recording available: ${playUrl}${passLine}`,
+        visibility: "supervisor",
       });
     }
     return;
   }
 
-  // Path B: logged-in request flow
+  // Path B: logged-in request flow. Persist to call_recordings (incl.
+  // builder_id / engineer_id from the matched session or the request) for
+  // the supervisor view. No chat side-effect — suppressed as above.
   const { data: msg } = await admin()
     .from("request_messages")
     .select("id, request_id")
@@ -295,9 +302,20 @@ async function handleRecordingCompleted(payload: any) {
   }
   const { data: session } = await admin()
     .from("call_sessions")
-    .select("id")
+    .select("id, builder_id, engineer_id")
     .eq("zoom_meeting_id", zoomId)
     .maybeSingle();
+  let builderId: string | null = session?.builder_id ?? null;
+  let engineerId: string | null = session?.engineer_id ?? null;
+  if (!builderId || !engineerId) {
+    const { data: reqRow } = await admin()
+      .from("requests")
+      .select("builder_id, assigned_engineer_id")
+      .eq("id", msg.request_id)
+      .maybeSingle();
+    builderId = builderId ?? reqRow?.builder_id ?? null;
+    engineerId = engineerId ?? reqRow?.assigned_engineer_id ?? null;
+  }
 
   await admin().from("call_recordings").upsert(
     {
@@ -309,19 +327,11 @@ async function handleRecordingCompleted(payload: any) {
       recording_password: password,
       duration_minutes: duration,
       recording_files: files,
+      builder_id: builderId,
+      engineer_id: engineerId,
     },
     { onConflict: "zoom_meeting_id" },
   );
-
-  if (playUrl) {
-    const passLine = password ? `\nPasscode: ${password}` : "";
-    await admin().from("request_messages").insert({
-      request_id: msg.request_id,
-      sender_id: null,
-      body: `🎥 Recording available: ${playUrl}${passLine}`,
-      message_type: "system",
-    });
-  }
 }
 
 async function handleSummaryCompleted(payload: any) {

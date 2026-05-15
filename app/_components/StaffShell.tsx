@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 import { Wordmark } from "./Wordmark";
 import { useStaffGuard } from "@/lib/relay/useStaffGuard";
-import { highestRoleLabel } from "@/lib/relay/role-labels";
+import { highestRoleLabel, highestRoleSummary, formatRole } from "@/lib/relay/role-labels";
 import { EngineerIncomingRequest } from "./EngineerIncomingRequest";
 import { createClient } from "@/lib/supabase/browser";
 import type { GuestCall } from "@/lib/supabase/types";
@@ -388,7 +388,13 @@ function ProfileButton({
 
   const userEmail = me?.email ?? "";
   const userInitials = initials(userEmail || "??");
-  const roleText = highestRoleLabel(roles);
+  // Chip shows the *top* role per the hierarchy with a "+N" hint when the
+  // user holds more than one. The full list lives on the hover tooltip
+  // (and inside the dropdown) so the chip stays compact.
+  const roleText = highestRoleSummary(roles);
+  const allRolesLabel = roles.length > 0
+    ? roles.map((r) => formatRole(r)).join(" · ")
+    : highestRoleLabel(roles);
 
   return (
     <div ref={ref} className="relative mt-1">
@@ -398,7 +404,9 @@ function ProfileButton({
         className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
         style={{ justifyContent: collapsed ? "center" : "flex-start" }}
         aria-label="Account menu"
-        title={collapsed ? `${userEmail} · ${roleText}` : undefined}
+        title={collapsed
+          ? `${userEmail}\n${allRolesLabel}`
+          : roles.length > 1 ? allRolesLabel : undefined}
       >
         <span
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
@@ -457,7 +465,7 @@ function ProfileButton({
               {userEmail || "—"}
             </div>
             <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-              {roleText}
+              {roles.length > 1 ? allRolesLabel : roleText}
             </div>
           </div>
           {roles.includes("enterprise_admin") && (

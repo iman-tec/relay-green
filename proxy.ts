@@ -16,7 +16,12 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PROTECTED_PREFIXES = [
+// Routes split by which login surface they belong to. Staff routes bounce
+// unauthed traffic to /staff/login (the 8-digit-code experience); customer
+// routes bounce to /login (the magic-link experience). Keeping them in two
+// lists means a customer hitting /room while signed out lands on the right
+// form instead of being asked for a staff OTP.
+const STAFF_PREFIXES = [
   "/dashboard",
   "/inbox",
   "/triage",
@@ -26,7 +31,16 @@ const PROTECTED_PREFIXES = [
   "/staff/session",
 ];
 
+const CUSTOMER_PREFIXES = [
+  "/room",
+];
+
 const STAFF_LOGIN = "/staff/login";
+const CUSTOMER_LOGIN = "/login";
+
+function matchesPrefix(pathname: string, prefixes: readonly string[]): boolean {
+  return prefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
 
 export async function proxy(req: NextRequest) {
   let res = NextResponse.next({ request: req });
@@ -53,12 +67,15 @@ export async function proxy(req: NextRequest) {
     await supabase.auth.getUser();
   }
 
-  // Route protection — redirect unauthenticated users on staff pages.
+  // Route protection — redirect unauthenticated users on protected pages.
+  // Staff routes bounce to /staff/login; customer routes (/room) bounce to
+  // /login so the right form renders. Anything not listed (homepage,
+  // marketing, /login itself) is left alone.
   const { pathname } = req.nextUrl;
-  const isProtected = PROTECTED_PREFIXES.some(
-    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
-  );
-  if (isProtected) {
+  const isStaff    = matchesPrefix(pathname, STAFF_PREFIXES);
+  const isCustomer = matchesPrefix(pathname, CUSTOMER_PREFIXES);
+
+  if (isStaff || isCustomer) {
     // After the getUser() call above, the cookie may have been refreshed.
     // Check for a valid Supabase auth cookie to decide redirect.
     const hasSession = req.cookies
@@ -67,7 +84,7 @@ export async function proxy(req: NextRequest) {
 
     if (!hasSession) {
       const url = req.nextUrl.clone();
-      url.pathname = STAFF_LOGIN;
+      url.pathname = isStaff ? STAFF_LOGIN : CUSTOMER_LOGIN;
       return NextResponse.redirect(url);
     }
   }

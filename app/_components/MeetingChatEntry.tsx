@@ -11,7 +11,8 @@
  */
 
 import { useState } from "react";
-import { Video, PhoneOff, ExternalLink, Loader2 } from "lucide-react";
+import { Video, PhoneOff, ExternalLink, Loader2, Sparkles } from "lucide-react";
+import { MeetingSummaryEntry } from "./MeetingSummaryEntry";
 
 const BRAND_GREEN        = "#3f5c2e";
 const BRAND_GREEN_SOFT   = "rgba(63, 92, 46, 0.12)";
@@ -30,6 +31,17 @@ type Props = {
   /** Engineer-only: hang up the Zoom call without joining it. Renders a
    *  small red "End" button next to Join on the active state. */
   onCancel?: () => void | Promise<void>;
+  /** Ended-state only: when an AI Companion summary exists for this call,
+   *  pass its raw body so the card can render a Sparkles toggle that
+   *  expands the parsed summary inline below. Hidden by default to keep
+   *  the chat timeline quiet. */
+  summaryBody?: string | null;
+  /** Ended-state only: the system-message body that carries the Zoom cloud
+   *  recording URL + passcode (e.g. "🎥 Recording available: <url>\n
+   *  Passcode: <pw>"). Threaded into the summary card so supervisors see
+   *  the recording inside the expanded summary instead of as a separate
+   *  chat chip. Pass null for non-supervisor viewers. */
+  recordingBody?: string | null;
 };
 
 function formatDuration(sec: number): string {
@@ -41,8 +53,15 @@ function formatDuration(sec: number): string {
   return `${m} min ${r} sec`;
 }
 
-export function MeetingChatEntry({ active, durationSec, joinUrl, onJoin, onCancel }: Props) {
+export function MeetingChatEntry({ active, durationSec, joinUrl, onJoin, onCancel, summaryBody, recordingBody }: Props) {
   const [cancelling, setCancelling] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  // The ✨ toggle appears whenever the card has *anything* worth surfacing —
+  // an AI summary or a recording. A recording-only meeting (no summary)
+  // still gets the toggle so supervisors can reach the URL + passcode.
+  const hasSummary = !active && !!summaryBody;
+  const hasRecording = !active && !!recordingBody;
+  const canExpand = hasSummary || hasRecording;
 
   const handleJoin = () => {
     if (!joinUrl) return;
@@ -58,7 +77,7 @@ export function MeetingChatEntry({ active, durationSec, joinUrl, onJoin, onCance
   };
 
   return (
-    <div className="flex justify-center">
+    <div className="flex flex-col items-center gap-2">
       <div
         className="inline-flex max-w-md items-center gap-2.5 rounded-xl border px-3 py-2"
         style={{
@@ -113,7 +132,29 @@ export function MeetingChatEntry({ active, durationSec, joinUrl, onJoin, onCance
             End
           </button>
         ) : null}
+        {canExpand ? (
+          <button
+            type="button"
+            onClick={() => setSummaryOpen((v) => !v)}
+            aria-pressed={summaryOpen}
+            title={summaryOpen ? "Hide call summary" : "Show call summary"}
+            className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition-colors"
+            style={{
+              backgroundColor: summaryOpen ? BRAND_GREEN : "transparent",
+              color: summaryOpen ? "#fff" : BRAND_GREEN,
+              border: `1px solid ${BRAND_GREEN_BORDER}`,
+            }}
+          >
+            <Sparkles size={12} />
+          </button>
+        ) : null}
       </div>
+      {canExpand && summaryOpen ? (
+        <MeetingSummaryEntry
+          body={summaryBody ?? "🤖 AI Companion summary"}
+          recordingBody={recordingBody ?? null}
+        />
+      ) : null}
     </div>
   );
 }

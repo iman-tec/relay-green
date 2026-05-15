@@ -1,15 +1,34 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
+import { redirect } from "next/navigation";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { StaffLoginForm } from "./StaffLoginForm";
+import { createClient } from "@/lib/supabase/server";
+import { landingForRoles } from "@/lib/relay/role-labels";
 
 export const metadata: Metadata = {
   title: "Staff sign in — Relay.green",
   description: "Sign in to Relay.green. Enter your work email — we'll send an 8-digit code.",
 };
 
-export default function StaffLoginPage() {
+// Server-side bounce: an already-signed-in staffer that lands on /staff/login
+// shouldn't see the form again — send them to wherever their highest role
+// lives (admin/enterprise/supervise/dashboard/room).
+async function redirectIfSignedIn(): Promise<void> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  const { data: roleRows } = await supabase
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", user.id);
+  const roles = (roleRows ?? []).map((r: { role: string }) => r.role);
+  redirect(landingForRoles(roles));
+}
+
+export default async function StaffLoginPage() {
+  await redirectIfSignedIn();
   const devMode = process.env.NODE_ENV === "development";
 
   return (
