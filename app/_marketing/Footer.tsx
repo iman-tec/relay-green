@@ -247,7 +247,7 @@ export function Footer() {
             <span>© 2026</span>
             <RelayLogo />
           </div>
-          <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "center" }}>
             <Link
               href="/legal/privacy-policy"
               style={{ color: "rgba(244,242,238,0.78)" }}
@@ -265,6 +265,22 @@ export function Footer() {
               style={{ color: "rgba(244,242,238,0.78)" }}
             >
               Cookies
+            </Link>
+            {/* Staff sign-in entry. Lives in the footer's bottom strip so
+                customers don't see a competing CTA, but engineers + admins
+                always know where to find their door. Pairs with the more
+                conventional /staff/login bookmark. */}
+            <Link
+              href="/staff/login"
+              rel="nofollow"
+              style={{
+                color: "rgba(244,242,238,0.78)",
+                opacity: 0.85,
+                borderLeft: "1px solid rgba(244,242,238,0.18)",
+                paddingLeft: 24,
+              }}
+            >
+              Sign in as developer
             </Link>
           </div>
         </div>

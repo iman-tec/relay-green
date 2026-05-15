@@ -396,7 +396,10 @@ export function MarketingHome() {
           className="r-wrap-narrow"
           style={{ maxWidth: 1320, padding: "0 24px" }}
         >
-          <div style={{ textAlign: "center", marginBottom: 40 }}>
+          <div
+            data-aos="fade-up"
+            style={{ textAlign: "center", marginBottom: 40 }}
+          >
             <h2
               style={{
                 fontFamily: "var(--font-display)",
@@ -437,13 +440,13 @@ export function MarketingHome() {
               so the audio swap-to-human-VO point is a single file
               (public/audio/relay-vo-v6.wav). Collapses to 1-col below 880px. */}
           <div className="r-explainer-2up" style={{ alignItems: "start" }}>
-            <figure style={{ margin: 0 }}>
+            <figure data-aos="fade-up" data-aos-delay="100" style={{ margin: 0 }}>
               <ExplainerMotionV6Lazy />
               <figcaption style={EXPLAINER_CAPTION}>
                 Motion graphic · 60s · in-browser
               </figcaption>
             </figure>
-            <figure style={{ margin: 0 }}>
+            <figure data-aos="fade-up" data-aos-delay="200" style={{ margin: 0 }}>
               <video
                 src="/relay-explainer-v6-cinematic.mp4"
                 poster="/relay-explainer-v6-poster.jpg"
@@ -534,8 +537,13 @@ export function MarketingHome() {
           </div>
 
           <div className="r-tiles r-tiles-trio">
-            {PHASES.map((p) => (
-              <div className="r-tile" key={p.num}>
+            {PHASES.map((p, i) => (
+              <div
+                className="r-tile"
+                key={p.num}
+                data-aos="fade-up"
+                data-aos-delay={i * 90}
+              >
                 <div className="r-tile-num">{p.num}</div>
                 <h3 className="r-tile-title">{p.label}</h3>
                 <p

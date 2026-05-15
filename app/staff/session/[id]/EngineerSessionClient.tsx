@@ -36,10 +36,10 @@ import type { GuestCall, GuestMessage, SessionStatus, Urgency } from "@/lib/supa
 const BRAND_GREEN        = "#3f5c2e";
 const BRAND_GREEN_SOFT   = "rgba(63, 92, 46, 0.12)";
 const BRAND_GREEN_BORDER = "rgba(63, 92, 46, 0.32)";
-const URGENT_AMBER       = "#c66645";
-const URGENT_AMBER_SOFT  = "rgba(198, 102, 69, 0.14)";
-const CRIT_RED           = "#c8553d";
-const CRIT_RED_SOFT      = "rgba(200, 85, 61, 0.18)";
+const URGENT_AMBER       = "#d4a017";
+const URGENT_AMBER_SOFT  = "rgba(212, 160, 23, 0.14)";
+const CRIT_RED           = "#8b1a1a";
+const CRIT_RED_SOFT      = "rgba(139, 26, 26, 0.18)";
 
 // ── Main entry ─────────────────────────────────────────────────────────────
 export function EngineerSessionClient({ sessionId }: { sessionId: string }) {

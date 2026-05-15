@@ -125,3 +125,100 @@ pre {
     transition: none;
   }
 }
+
+/* ──────── Smooth page transitions ──────────────────────────────────────
+   Subtle fade-in on every new route render. Combined with the route
+   progress bar + loading.tsx skeleton, this gives clicks a polished
+   "I acknowledged that" feel instead of a hard content swap.
+
+   Respects prefers-reduced-motion. */
+
+@keyframes relay-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+main, [data-route-fade] {
+  animation: relay-page-in 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  main, [data-route-fade] {
+    animation: none;
+  }
+}
+
+/* Hide native scrollbar while keeping scroll behavior. Used on Inbox
+   columns and other surfaces where the scrollbar is visual noise. */
+.hide-scrollbar {
+  scrollbar-width: none;          /* Firefox */
+  -ms-overflow-style: none;       /* old Edge */
+}
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+
+/* ──────── Interactive cursor + hover polish ─────────────────────────
+   Anything the user can click should look clickable. We default `<button>`,
+   role="button", role="link", role="tab", role="menuitem", role="option",
+   <summary>, and [data-clickable] to a pointer cursor. <a> already gets
+   pointer from the browser default.
+
+   Disabled inputs/buttons override back to default. */
+
+button,
+[role="button"],
+[role="link"],
+[role="tab"],
+[role="menuitem"],
+[role="option"],
+summary,
+label[for],
+[data-clickable] {
+  cursor: pointer;
+}
+
+button:disabled,
+[role="button"][aria-disabled="true"],
+[disabled] {
+  cursor: not-allowed;
+}
+
+/* Make every text input feel like text. */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="search"],
+input[type="tel"],
+input[type="url"],
+textarea {
+  cursor: text;
+}
+
+/* Smooth tiny hover lift on cards/links that opt in via [data-hover-lift].
+   Lightweight motion — translate, no shadow churn. */
+@keyframes _relay-noop { from {} to {} }
+
+[data-hover-lift] {
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+[data-hover-lift]:hover:not([disabled]) {
+  transform: translateY(-1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-hover-lift] {
+    transition: none;
+  }
+  [data-hover-lift]:hover:not([disabled]) {
+    transform: none;
+  }
+}

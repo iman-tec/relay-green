@@ -235,8 +235,8 @@ export function PaywallModal({
             <div
               className="mx-auto mb-4 max-w-md rounded-md border px-3 py-2 text-center text-xs"
               style={{
-                borderColor: "rgba(200, 85, 61, 0.4)",
-                backgroundColor: "rgba(200, 85, 61, 0.12)",
+                borderColor: "rgba(139, 26, 26, 0.4)",
+                backgroundColor: "rgba(139, 26, 26, 0.12)",
                 color: "#e88670",
               }}
             >
@@ -487,7 +487,7 @@ function PaymentForm({
       <div className="px-6 py-10 text-center" style={{ color: INK_SOFT }}>
         <div
           className="mx-auto mb-3 inline-flex h-9 w-9 items-center justify-center rounded-full"
-          style={{ backgroundColor: "rgba(200, 85, 61, 0.15)", color: "#e88670" }}
+          style={{ backgroundColor: "rgba(139, 26, 26, 0.15)", color: "#e88670" }}
         >
           <X size={16} />
         </div>
@@ -590,8 +590,8 @@ function PaymentFormInner({
         <div
           className="rounded-md border px-3 py-2 text-[12px]"
           style={{
-            borderColor: "rgba(200, 85, 61, 0.4)",
-            backgroundColor: "rgba(200, 85, 61, 0.10)",
+            borderColor: "rgba(139, 26, 26, 0.4)",
+            backgroundColor: "rgba(139, 26, 26, 0.10)",
             color: "#e88670",
           }}
         >

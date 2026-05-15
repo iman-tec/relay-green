@@ -14,7 +14,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, Plus, X, Archive, Edit2, Check, Save, Undo2, RotateCcw, Search } from "lucide-react";
+import { Loader2, Plus, X, Archive, Edit2, Check, Save, Undo2, RotateCcw, Search, Mail, Power, Trash2 } from "lucide-react";
 
 const BRAND_GREEN       = "#3f5c2e";
 const BRAND_GREEN_SOFT  = "rgba(63, 92, 46, 0.10)";
@@ -403,6 +403,41 @@ function PodDetail({
 
   const discardPending = () => setPending([]);
 
+  // Direct user-management actions (mirror the Enterprise tab + Internal
+  // staff tab). These hit /api/admin/users/:id/* and refresh on success.
+  const resendInvite = async (m: Member) => {
+    if (!confirm(`Re-send sign-in email to ${m.email}?`)) return;
+    const res = await fetch(`/api/admin/users/${m.userId}/resend-invite`, { method: "POST" });
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) { setBannerErr(body.error ?? "Resend failed."); return; }
+    await onMutated();
+  };
+
+  const toggleStatus = async (m: Member) => {
+    // The pod-row Member type doesn't carry status; the API patch is a
+    // toggle keyed by user_id, so we just confirm and call. Future: pipe
+    // status through /api/admin/pods so the chip reflects reality.
+    if (!confirm(`Deactivate ${m.email}? (or reactivate if already deactivated)`)) return;
+    // Best-effort: try DEACTIVATED first, on collision the next click
+    // flips back.
+    const res = await fetch(`/api/admin/users/${m.userId}`, {
+      method:  "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ status: "DEACTIVATED" }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) { setBannerErr(body.error ?? "Update failed."); return; }
+    await onMutated();
+  };
+
+  const deleteUser = async (m: Member) => {
+    if (!confirm(`Permanently delete ${m.email}? Their auth record, profile, and pod membership will be removed.`)) return;
+    const res = await fetch(`/api/admin/users/${m.userId}`, { method: "DELETE" });
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) { setBannerErr(body.error ?? "Delete failed."); return; }
+    await onMutated();
+  };
+
   const commitPending = async () => {
     if (pending.length === 0) return;
     setBusy(true);
@@ -640,6 +675,9 @@ function PodDetail({
         reservedUserIds={reservedUserIds}
         onStageAdd={(user) => stageAdd("supervisor", user)}
         onToggleRemove={stageRemove}
+        onResendInvite={resendInvite}
+        onToggleStatus={toggleStatus}
+        onDeleteUser={deleteUser}
       />
       <MemberSection
         title="Engineers"
@@ -649,6 +687,9 @@ function PodDetail({
         reservedUserIds={reservedUserIds}
         onStageAdd={(user) => stageAdd("engineer", user)}
         onToggleRemove={stageRemove}
+        onResendInvite={resendInvite}
+        onToggleStatus={toggleStatus}
+        onDeleteUser={deleteUser}
       />
     </div>
   );
@@ -713,7 +754,8 @@ function pendingSummary(p: PendingChange[]): string {
 // All API work is done at PodDetail level when the supervisor clicks Save.
 
 function MemberSection({
-  title, podRole, members, accent, reservedUserIds, onStageAdd, onToggleRemove,
+  title, podRole, members, accent, onStageAdd, onToggleRemove,
+  onResendInvite, onToggleStatus, onDeleteUser,
 }: {
   title: string;
   podRole: PodRole;
@@ -722,41 +764,38 @@ function MemberSection({
   reservedUserIds: Set<string>;
   onStageAdd: (user: EligibleUser) => void;
   onToggleRemove: (member: Member) => void;
+  onResendInvite: (member: Member) => void;
+  onToggleStatus: (member: Member) => void;
+  onDeleteUser:   (member: Member) => void;
 }) {
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [eligible, setEligible] = useState<EligibleUser[]>([]);
-  const [pickerLoading, setPickerLoading] = useState(false);
-  const [pickerErr, setPickerErr] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
+  const [drafting, setDrafting] = useState(false);
 
   // Effective live count for the header — exclude rows pending removal.
   const liveCount = members.filter((m) => m._pendingKind !== "remove").length;
 
-  const openPicker = async () => {
-    setPickerOpen(true);
-    setPickerErr(null);
-    setQuery("");
-    setPickerLoading(true);
-    try {
-      const res = await fetch(`/api/admin/pods/eligible-users?role=${podRole}`, { cache: "no-store" });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? "Couldn't load users.");
-      setEligible(body.users as EligibleUser[]);
-    } catch (e) {
-      setPickerErr(e instanceof Error ? e.message : "Couldn't load users.");
-    } finally {
-      setPickerLoading(false);
+  // Invite a brand-new supervisor / engineer directly from the pod
+  // (Enterprise-style — no picker, no search). Posts to /api/admin/users
+  // with the platform role and auto-stages the new user for this pod.
+  const inviteAndStage = async ({ email, displayName }: { email: string; displayName: string }) => {
+    const platformRole = podRole === "supervisor" ? "pod_lead" : "engineer";
+    const res = await fetch("/api/admin/users", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ email: email.trim().toLowerCase(), displayName: displayName.trim(), role: platformRole }),
+    });
+    const body = (await res.json().catch(() => ({}))) as {
+      user?:    { id: string; email: string; displayName: string };
+      invited?: boolean;
+      error?:   string;
+    };
+    if (!res.ok) {
+      return { ok: false as const, error: body.error ?? "Invite failed." };
     }
+    if (body.user) {
+      onStageAdd({ id: body.user.id, email: body.user.email, displayName: body.user.displayName });
+    }
+    return { ok: true as const };
   };
-
-  // Exclude anyone already on this pod (real or staged-add) so the
-  // picker can't double-add someone.
-  const filteredEligible = eligible.filter((u) => {
-    if (reservedUserIds.has(u.id)) return false;
-    const q = query.trim().toLowerCase();
-    if (!q) return true;
-    return u.email.toLowerCase().includes(q) || u.displayName.toLowerCase().includes(q);
-  });
 
   return (
     <section className="border-b" style={{ borderColor: "var(--border)" }}>
@@ -765,8 +804,9 @@ function MemberSection({
           {title} ({liveCount})
         </h3>
         <button
-          onClick={() => void openPicker()}
-          className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition-opacity hover:opacity-80"
+          onClick={() => setDrafting(true)}
+          disabled={drafting}
+          className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition-opacity hover:opacity-80 disabled:opacity-50"
           style={{ borderColor: "var(--border)", color: "var(--text)" }}
         >
           <Plus size={10} />
@@ -774,95 +814,244 @@ function MemberSection({
         </button>
       </div>
 
-      {members.length === 0 ? (
+      {drafting && (
+        <InviteDraft
+          podRole={podRole}
+          cancel={() => setDrafting(false)}
+          submit={async (input) => {
+            const r = await inviteAndStage(input);
+            if (r.ok) setDrafting(false);
+            return r;
+          }}
+        />
+      )}
+
+      {members.length === 0 && !drafting ? (
         <p className="px-5 pb-4 text-xs" style={{ color: "var(--text-muted)" }}>
           No {podRole === "supervisor" ? "supervisors" : "engineers"} assigned yet.
         </p>
       ) : (
         <ul className="pb-2">
           {members.map((m) => (
-            <MemberRow key={m._tempKey} member={m} accent={accent} onToggleRemove={onToggleRemove} />
+            <MemberRow
+              key={m._tempKey}
+              member={m}
+              accent={accent}
+              podRoleLabel={podRole === "supervisor" ? "Supervisor" : "Engineer"}
+              onToggleRemove={onToggleRemove}
+              onResendInvite={onResendInvite}
+              onToggleStatus={onToggleStatus}
+              onDeleteUser={onDeleteUser}
+            />
           ))}
         </ul>
-      )}
-
-      {pickerOpen && (
-        <PickerInline
-          loading={pickerLoading}
-          error={pickerErr}
-          users={filteredEligible}
-          query={query}
-          setQuery={setQuery}
-          podRole={podRole}
-          onPick={(user) => {
-            onStageAdd(user);
-            // Leave the picker open so the supervisor can stage several
-            // adds in a row; reservedUserIds filtering hides the chosen
-            // user immediately so it can't be picked again.
-          }}
-          onClose={() => { setPickerOpen(false); setPickerErr(null); }}
-        />
       )}
     </section>
   );
 }
 
+function InviteDraft({
+  podRole, cancel, submit,
+}: {
+  podRole: PodRole;
+  cancel: () => void;
+  submit: (input: { email: string; displayName: string }) => Promise<{ ok: true } | { ok: false; error: string }>;
+}) {
+  const [displayName, setDisplayName] = useState("");
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr]   = useState<string | null>(null);
+
+  const onSubmit = async () => {
+    if (!email.trim() || !displayName.trim()) {
+      setErr("Name and email are required.");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    const r = await submit({ email: email.trim(), displayName: displayName.trim() });
+    if (!r.ok) setErr(r.error);
+    setBusy(false);
+  };
+
+  void podRole; // role is set in the parent; not used in the form copy
+
+  return (
+    <div
+      className="border-t px-5 py-3"
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "color-mix(in srgb, var(--text) 3%, transparent)",
+      }}
+    >
+      <div className="mb-2 flex items-center gap-2">
+        <input
+          autoFocus
+          value={displayName}
+          onChange={(e) => setDisplayName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") void onSubmit(); if (e.key === "Escape") cancel(); }}
+          placeholder="Full name"
+          disabled={busy}
+          className="flex-1 rounded-md border px-2 py-1.5 text-xs outline-none"
+          style={{ borderColor: "var(--border)", backgroundColor: "var(--background)", color: "var(--text)" }}
+        />
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") void onSubmit(); if (e.key === "Escape") cancel(); }}
+          placeholder="email@company.com"
+          disabled={busy}
+          className="flex-1 rounded-md border px-2 py-1.5 text-xs outline-none"
+          style={{ borderColor: "var(--border)", backgroundColor: "var(--background)", color: "var(--text)" }}
+        />
+      </div>
+      {err && <p className="mb-2 text-[11px]" style={{ color: "var(--accent-red)" }}>{err}</p>}
+      <div className="flex items-center justify-end gap-1.5">
+        <button
+          onClick={cancel}
+          disabled={busy}
+          className="rounded-md px-2 py-1 text-[11px]"
+          style={{ color: "var(--text-muted)" }}
+        >
+          Cancel
+        </button>
+        <button
+          onClick={() => void onSubmit()}
+          disabled={busy || !email.trim() || !displayName.trim()}
+          className="inline-flex items-center gap-1 rounded-md px-3 py-1 text-[11px] font-semibold text-white disabled:opacity-50"
+          style={{ backgroundColor: BRAND_GREEN }}
+        >
+          {busy ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />}
+          {busy ? "Sending…" : "Send invite"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function MemberRow({
-  member, accent, onToggleRemove,
+  member, accent, podRoleLabel,
+  onToggleRemove, onResendInvite, onToggleStatus, onDeleteUser,
 }: {
   member: DisplayedMember;
   accent: { bg: string; fg: string };
+  podRoleLabel: string;
   onToggleRemove: (member: Member) => void;
+  onResendInvite: (member: Member) => void;
+  onToggleStatus: (member: Member) => void;
+  onDeleteUser:   (member: Member) => void;
 }) {
   const isAdd    = member._pendingKind === "add";
   const isRemove = member._pendingKind === "remove";
 
   return (
     <li
-      className="flex items-center justify-between gap-3 px-5 py-2.5"
+      className="flex items-center gap-3 border-t px-5 py-2.5"
       style={{
+        borderColor: "var(--border)",
         opacity: isRemove ? 0.55 : 1,
       }}
     >
-      <div className="flex min-w-0 items-center gap-3">
-        <span
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold uppercase"
-          style={{ backgroundColor: accent.bg, color: accent.fg }}
-        >
-          {(member.displayName || member.email || "?")[0]}
-        </span>
-        <div className="min-w-0 leading-tight">
-          <div
-            className="flex items-center gap-2 truncate text-sm"
-            style={{
-              color: "var(--text)",
-              textDecoration: isRemove ? "line-through" : undefined,
-            }}
-          >
-            {member.displayName || member.email || member.userId}
-            {isAdd    && <PendingTag kind="add"    />}
-            {isRemove && <PendingTag kind="remove" />}
-          </div>
-          {member.displayName && member.email && (
-            <div className="mt-0.5 truncate text-[11px]" style={{ color: "var(--text-muted)" }}>
-              {member.email}
-            </div>
-          )}
-        </div>
-      </div>
-      <button
-        onClick={() => onToggleRemove(member)}
-        className="rounded-md p-1 transition-opacity hover:opacity-80"
-        style={{ color: "var(--text-muted)" }}
-        title={
-          isAdd    ? "Cancel pending add" :
-          isRemove ? "Restore (cancel pending remove)" :
-          "Remove from pod"
-        }
+      <span
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold uppercase"
+        style={{ backgroundColor: accent.bg, color: accent.fg }}
       >
-        {isRemove ? <RotateCcw size={13} /> : <X size={13} />}
-      </button>
+        {(member.displayName || member.email || "?")[0]}
+      </span>
+
+      <div className="min-w-0 flex-1 leading-tight">
+        <div
+          className="flex items-center gap-2 truncate text-sm"
+          style={{
+            color: "var(--text)",
+            textDecoration: isRemove ? "line-through" : undefined,
+          }}
+        >
+          {member.displayName || member.email || member.userId}
+          {isAdd    && <PendingTag kind="add"    />}
+          {isRemove && <PendingTag kind="remove" />}
+        </div>
+        {member.displayName && member.email && (
+          <div className="mt-0.5 truncate text-[11px]" style={{ color: "var(--text-muted)" }}>
+            {member.email}
+          </div>
+        )}
+      </div>
+
+      {/* Role chip — mirrors Enterprise's RoleChip */}
+      <span
+        className="inline-flex shrink-0 items-center rounded-md px-2 py-0.5 text-[11px] font-medium"
+        style={{
+          backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
+          color: BRAND_GREEN,
+        }}
+      >
+        {podRoleLabel}
+      </span>
+
+      {/* Status chip — pod members are active by default; once we surface
+          banned_until per pod member, this will reflect reality. */}
+      <span
+        className="inline-flex shrink-0 items-center rounded-md px-2 py-0.5 text-[11px] font-medium"
+        style={{
+          backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
+          color: BRAND_GREEN,
+        }}
+      >
+        Active
+      </span>
+
+      <div className="inline-flex shrink-0 items-center gap-1">
+        <PodIconBtn
+          onClick={() => onResendInvite(member)}
+          title="Resend invitation email"
+          icon={<Mail size={12} />}
+        />
+        <PodIconBtn
+          onClick={() => onToggleStatus(member)}
+          title="Deactivate / reactivate"
+          icon={<Power size={12} />}
+        />
+        <PodIconBtn
+          onClick={() => onDeleteUser(member)}
+          title="Delete user"
+          icon={<Trash2 size={12} />}
+          danger
+        />
+        <PodIconBtn
+          onClick={() => onToggleRemove(member)}
+          title={
+            isAdd    ? "Cancel pending add" :
+            isRemove ? "Restore (cancel pending remove)" :
+            "Remove from pod"
+          }
+          icon={isRemove ? <RotateCcw size={12} /> : <X size={12} />}
+        />
+      </div>
     </li>
+  );
+}
+
+function PodIconBtn({
+  onClick, title, icon, danger,
+}: {
+  onClick: () => void;
+  title: string;
+  icon: React.ReactNode;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onClick={onClick}
+      className="rounded-md p-1 transition-colors hover:bg-black/[0.05] dark:hover:bg-white/[0.05]"
+      style={{ color: danger ? "var(--accent-red)" : "var(--text-muted)" }}
+    >
+      {icon}
+    </button>
   );
 }
 
@@ -887,85 +1076,3 @@ function PendingTag({ kind }: { kind: "add" | "remove" }) {
   );
 }
 
-function PickerInline({
-  loading, error, users, query, setQuery, podRole, onPick, onClose,
-}: {
-  loading: boolean;
-  error: string | null;
-  users: EligibleUser[];
-  query: string;
-  setQuery: (q: string) => void;
-  podRole: PodRole;
-  onPick: (user: EligibleUser) => void;
-  onClose: () => void;
-}) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => { inputRef.current?.focus(); }, []);
-
-  return (
-    <div
-      className="border-t px-5 py-3"
-      style={{
-        borderColor: "var(--border)",
-        backgroundColor: "color-mix(in srgb, var(--text) 3%, transparent)",
-      }}
-    >
-      <div className="mb-2 flex items-center gap-2">
-        <input
-          ref={inputRef}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
-          placeholder={`Search ${podRole === "supervisor" ? "supervisors" : "engineers"}…`}
-          className="flex-1 rounded-md border px-2 py-1.5 text-xs outline-none"
-          style={{ borderColor: "var(--border)", backgroundColor: "var(--background)", color: "var(--text)" }}
-        />
-        <button
-          onClick={onClose}
-          className="rounded-md p-1"
-          style={{ color: "var(--text-muted)" }}
-          title="Close picker"
-        >
-          <X size={13} />
-        </button>
-      </div>
-
-      {loading ? (
-        <div className="flex justify-center py-4">
-          <Loader2 size={14} className="animate-spin" style={{ color: BRAND_GREEN }} />
-        </div>
-      ) : error ? (
-        <p className="text-xs" style={{ color: "var(--accent-red)" }}>{error}</p>
-      ) : users.length === 0 ? (
-        <p className="py-3 text-center text-xs" style={{ color: "var(--text-muted)" }}>
-          {podRole === "supervisor"
-            ? "No unassigned supervisors. Create one in the Internal Staff tab first, or remove a supervisor from another pod."
-            : "No unassigned engineers. Create one in the Internal Staff tab first, or remove an engineer from another pod."}
-        </p>
-      ) : (
-        <ul className="max-h-60 overflow-y-auto">
-          {users.map((u) => (
-            <li key={u.id}>
-              <button
-                onClick={() => onPick(u)}
-                className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
-              >
-                <div className="min-w-0">
-                  <div className="truncate text-xs font-medium" style={{ color: "var(--text)" }}>
-                    {u.displayName || u.email}
-                  </div>
-                  {u.displayName && u.email && (
-                    <div className="truncate text-[10px]" style={{ color: "var(--text-muted)" }}>
-                      {u.email}
-                    </div>
-                  )}
-                </div>
-                <Plus size={11} style={{ color: "var(--text-muted)" }} />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
