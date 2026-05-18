@@ -84,7 +84,7 @@ Deno.serve(async (req) => {
     // Live sessions get their usage written every 30s by the engineer's
     // heartbeat in Room.tsx, so even an abandoned session contributes the
     // last-known minute count here.
-    const FREE_QUOTA = 15;
+    const FREE_QUOTA = 10;
     let threadUsed = 0;
     if (threadId) {
       const { data: prevCalls } = await admin
@@ -129,8 +129,10 @@ Deno.serve(async (req) => {
               join_before_host: true,
               waiting_room: false,
               approval_type: 2,
-              // Recording + AI Companion auto-on
-              auto_recording: "cloud",
+              // Force-disable cloud recording (overrides Zoom account-level
+              // auto-record default). Engineer can manually hit ⏺ Record in
+              // the meeting. AI Companion stays auto-on for the summary.
+              auto_recording: "none",
               auto_start_meeting_summary: true,
               auto_start_ai_companion_questions: true,
               meeting_summary: true,

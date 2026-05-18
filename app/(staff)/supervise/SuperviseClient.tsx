@@ -85,6 +85,25 @@ const WAITING_GLOW_CSS = `
   }
 `;
 
+// Only super_admin is org-wide / god view. Every other supervisor-tier role
+// (pod_lead, ops_manager, supervisor, admin) is identical — pod-scoped to
+// their single pod_members row.
+const UNSCOPED_ROLES = new Set(["super_admin"]);
+
+// Live-tab cap. Spec is "pod-scoped, every session belonging to engineers
+// on the viewer's team" — there is no artificial 10-cap. We still cap to
+// keep a runaway / unscoped super_admin query bounded; 200 mirrors past.
+const LIVE_LIMIT = 200;
+
+// Resolved scope for the signed-in viewer.
+//   { kind: "loading" }     — still fetching, render nothing yet
+//   { kind: "unscoped" }    — super_admin / admin → no pod filter
+//   { kind: "pod", podId }  — pod_lead / ops_manager → only their pod
+type Scope =
+  | { kind: "loading" }
+  | { kind: "unscoped" }
+  | { kind: "pod"; podId: string | null };
+
 export function SuperviseClient() {
   const [sessions, setSessions] = useState<SessionWithHealth[]>([]);
   const [pastSessions, setPastSessions] = useState<SessionWithHealth[]>([]);
@@ -92,29 +111,63 @@ export function SuperviseClient() {
   const [tab, setTab] = useState<Tab>("all");
   const [perPage, setPerPage] = useState<PageSize>(DEFAULT_PAGE_SIZE);
   const [, setTick] = useState(0);
+  const [scope, setScope] = useState<Scope>({ kind: "loading" });
   const supabaseRef = useRef(createClient());
   const channelRef = useRef<RealtimeChannel | null>(null);
 
+  // Resolve the viewer's role + pod once on mount. Until this lands we hold
+  // off on the data fetch — otherwise an unscoped flash would show every
+  // org session for a frame before snapping back to the pod-scoped slice.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const sb = supabaseRef.current;
+      const { data: u } = await sb.auth.getUser();
+      if (cancelled || !u.user) { setScope({ kind: "pod", podId: null }); return; }
+      const [rolesRes, podRes] = await Promise.all([
+        sb.from("user_roles").select("role").eq("user_id", u.user.id),
+        sb.from("pod_members").select("pod_id").eq("user_id", u.user.id).maybeSingle(),
+      ]);
+      if (cancelled) return;
+      const roles = (rolesRes.data ?? []).map((r: { role: string }) => r.role);
+      if (roles.some((r) => UNSCOPED_ROLES.has(r))) {
+        setScope({ kind: "unscoped" });
+      } else {
+        const podId = (podRes.data as { pod_id?: string } | null)?.pod_id ?? null;
+        setScope({ kind: "pod", podId });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const refresh = async () => {
     const sb = supabaseRef.current;
-    // Phase 1: every supervisor / admin sees ALL active calls org-wide.
-    // Phase 1.5 (future): scope to the caller's hierarchy —
-    //   pod_lead     → engineers in their pod
-    //   ops_manager  → engineers in their region/team
-    //   admin        → enterprise's engineers
-    //   super_admin  → everything (no filter)
-    // The hook for that filter lives right here: add a .eq("pod_id", …)
-    // or join-with-engineer_pods once that schema exists.
-    const [liveRes, pastRes] = await Promise.all([
-      sb.from("guest_calls").select("*")
-        .in("status", ACTIVE_STATES)
-        .order("created_at", { ascending: false })
-        .limit(100),
-      sb.from("guest_calls").select("*")
-        .in("status", PAST_STATES)
-        .order("ended_at", { ascending: false, nullsFirst: false })
-        .limit(200),
-    ]);
+    if (scope.kind === "loading") return;
+    // Pod-scoped viewers with no pod assignment get an empty grid — there's
+    // no organisational owner for any session yet. Skip the query entirely.
+    if (scope.kind === "pod" && !scope.podId) {
+      setSessions([]);
+      setPastSessions([]);
+      setLoading(false);
+      return;
+    }
+    // Bug #7: pod_lead / ops_manager are restricted to sessions whose
+    // pod_id matches their own pod. super_admin and admin see everything.
+    // pod_id is stamped on guest_calls at claim time (claim_session RPC) —
+    // see migration 20260519100000_guest_calls_pod_scope.sql.
+    let liveQ = sb.from("guest_calls").select("*")
+      .in("status", ACTIVE_STATES)
+      .order("created_at", { ascending: false })
+      .limit(LIVE_LIMIT);
+    let pastQ = sb.from("guest_calls").select("*")
+      .in("status", PAST_STATES)
+      .order("ended_at", { ascending: false, nullsFirst: false })
+      .limit(200);
+    if (scope.kind === "pod" && scope.podId) {
+      liveQ = liveQ.eq("pod_id", scope.podId);
+      pastQ = pastQ.eq("pod_id", scope.podId);
+    }
+    const [liveRes, pastRes] = await Promise.all([liveQ, pastQ]);
     const rows     = (liveRes.data as GuestCall[]) ?? [];
     const pastRows = (pastRes.data as GuestCall[]) ?? [];
 
@@ -146,7 +199,9 @@ export function SuperviseClient() {
     setLoading(false);
   };
 
-  useEffect(() => { void refresh(); }, []);
+  // Initial fetch runs once scope resolves. Re-runs if the viewer's pod
+  // assignment changes mid-session (rare, but cheap).
+  useEffect(() => { void refresh(); }, [scope]);
 
   // Tick every second so wait timers update live
   useEffect(() => {
@@ -163,7 +218,13 @@ export function SuperviseClient() {
   // a busy minute (every recall, every assignment, every status flip). We
   // debounce them to one refetch per 600 ms so we don't spam the DB and
   // keep the UI smooth.
+  //
+  // The realtime listener fires for every guest_calls row in the org —
+  // postgres_changes doesn't honour the .eq("pod_id") on the client query.
+  // refresh() re-applies the pod filter, so out-of-pod events just trigger
+  // a (cheap) refetch that returns nothing new.
   useEffect(() => {
+    if (scope.kind === "loading") return;
     const sb = supabaseRef.current;
     let pending: ReturnType<typeof setTimeout> | null = null;
     const queueRefresh = () => {
@@ -187,7 +248,7 @@ export function SuperviseClient() {
       channelRef.current = null;
       clearInterval(fallback);
     };
-  }, []);
+  }, [scope]);
 
   const liveSessions    = useMemo(() => sessions.filter((s) => LIVE_STATES.has(s.status)),    [sessions]);
   const waitingSessions = useMemo(() => sessions.filter((s) => WAITING_STATES.has(s.status)), [sessions]);

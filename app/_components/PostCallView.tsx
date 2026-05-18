@@ -14,8 +14,8 @@ import {
   Panel,
   PanelResizeHandle,
 } from "react-resizable-panels";
-import { Sparkles, ArrowLeft, RotateCw, Loader2, Lock } from "lucide-react";
-import type { GuestCall, GuestMessage } from "@/lib/supabase/types";
+import { Sparkles, ArrowLeft, RotateCw, Loader2, Lock, AlertTriangle } from "lucide-react";
+import type { GuestCall, GuestMessage, SummaryState } from "@/lib/supabase/types";
 
 const BRAND_GREEN = "#3f5c2e";
 const BRAND_GREEN_SOFT = "rgba(63, 92, 46, 0.12)";
@@ -33,8 +33,14 @@ export function PostCallView({
   onLeave?: () => void;
   onRegenerate?: () => void;
 }) {
-  const hasSummary = !!session.ai_summary_overview || !!session.summary;
-  const summaryGenerating = !hasSummary && session.status === "ended";
+  // Drive UI strictly off summary_state — the prior "spinner if no summary"
+  // check could hang forever when the AI Companion summary never landed.
+  // See migration 20260518200000_summary_state.sql for the lifecycle.
+  const summaryState = session.summary_state ?? "idle";
+  const summaryGenerating =
+    summaryState === "generating_session_summary" ||
+    summaryState === "generating_zoom_summary" ||
+    summaryState === "waiting_for_transcript";
 
   return (
     <div className="flex h-full flex-col" style={{ backgroundColor: "var(--background)" }}>
@@ -48,6 +54,7 @@ export function PostCallView({
           <Panel defaultSize={50} minSize={30} order={2}>
             <SummaryPanel
               session={session}
+              summaryState={summaryState}
               generating={summaryGenerating}
               onRegenerate={onRegenerate}
             />
@@ -156,10 +163,12 @@ function MessageBubble({ message, myKind }: { message: GuestMessage; myKind: "gu
 
 function SummaryPanel({
   session,
+  summaryState,
   generating,
   onRegenerate,
 }: {
   session: GuestCall;
+  summaryState: SummaryState;
   generating: boolean;
   onRegenerate?: () => void;
 }) {
@@ -168,6 +177,15 @@ function SummaryPanel({
   const nextSteps = Array.isArray(session.ai_next_steps as unknown)
     ? (session.ai_next_steps as unknown as Array<string | { text?: string; description?: string }>)
     : [];
+
+  // Per-state copy. Centralized here so the generating/failed/empty branches
+  // below stay short.
+  const generatingLabel =
+    summaryState === "waiting_for_transcript"
+      ? "Waiting for Zoom summary…"
+      : summaryState === "generating_zoom_summary"
+      ? "Reading Zoom transcript…"
+      : "Generating summary…";
 
   return (
     <section className="flex h-full flex-col" style={{ backgroundColor: "var(--background)" }}>
@@ -178,13 +196,13 @@ function SummaryPanel({
             AI summary
           </div>
         </div>
-        {onRegenerate && !generating && overview && (
+        {onRegenerate && !generating && (summaryState === "summary_ready" || summaryState === "summary_failed" || summaryState === "transcript_unavailable") && (
           <button
             onClick={onRegenerate}
             className="inline-flex items-center gap-1 text-xs underline-offset-4 hover:underline"
             style={{ color: "var(--text-muted)" }}
           >
-            <RotateCw size={11} /> Regenerate
+            <RotateCw size={11} /> {summaryState === "summary_failed" ? "Retry" : "Regenerate"}
           </button>
         )}
       </div>
@@ -194,10 +212,41 @@ function SummaryPanel({
           <div className="flex flex-col items-center gap-3 py-12 text-center">
             <Loader2 size={20} className="animate-spin" style={{ color: BRAND_GREEN }} />
             <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-              Generating summary…
+              {generatingLabel}
             </p>
             <p className="max-w-xs text-xs" style={{ color: "var(--text-muted)" }}>
-              Reading the transcript and drafting problems, fixes, decisions, and next steps.
+              {summaryState === "waiting_for_transcript"
+                ? "Zoom delivers the AI Companion summary 1-5 minutes after the call ends."
+                : "Reading the transcript and drafting problems, fixes, decisions, and next steps."}
+            </p>
+          </div>
+        ) : summaryState === "no_conversation" ? (
+          <div className="flex flex-col items-center gap-3 py-12 text-center">
+            <p className="text-sm font-medium" style={{ color: "var(--text)" }}>
+              No conversation happened during this session.
+            </p>
+            <p className="max-w-xs text-xs" style={{ color: "var(--text-muted)" }}>
+              Recording wasn&apos;t started and no chat messages were exchanged, so there&apos;s nothing to summarize.
+            </p>
+          </div>
+        ) : summaryState === "transcript_unavailable" && !overview ? (
+          <div className="flex flex-col items-center gap-3 py-12 text-center">
+            <AlertTriangle size={18} style={{ color: "var(--text-muted)" }} />
+            <p className="text-sm font-medium" style={{ color: "var(--text)" }}>
+              Zoom summary unavailable
+            </p>
+            <p className="max-w-xs text-xs" style={{ color: "var(--text-muted)" }}>
+              The Zoom AI Companion summary didn&apos;t land. If recording wasn&apos;t started in the meeting, no transcript is produced.
+            </p>
+          </div>
+        ) : summaryState === "summary_failed" && !overview ? (
+          <div className="flex flex-col items-center gap-3 py-12 text-center">
+            <AlertTriangle size={18} style={{ color: "var(--accent-red)" }} />
+            <p className="text-sm font-medium" style={{ color: "var(--text)" }}>
+              Couldn&apos;t generate the summary
+            </p>
+            <p className="max-w-xs text-xs" style={{ color: "var(--text-muted)" }}>
+              The AI service errored. Click Retry above to try again.
             </p>
           </div>
         ) : !overview ? (

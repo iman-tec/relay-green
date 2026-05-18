@@ -22,7 +22,7 @@ import {
 } from "react-resizable-panels";
 import {
   Send, Video, PhoneOff, Loader2, ArrowLeft, RotateCw, Sparkles, Lock, Eye, LogOut,
-  PanelLeftOpen, PanelLeftClose,
+  PanelLeftOpen, PanelLeftClose, AlertTriangle,
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { MeetingChatEntry } from "@/app/_components/MeetingChatEntry";
@@ -47,8 +47,19 @@ const CRIT_RED_SOFT      = "rgba(139, 26, 26, 0.18)";
 export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
   const router = useRouter();
   const state  = useEngineerSession(sessionId);
-  const timer  = useSessionTimer(state.session?.joined_at ?? null, state.session?.free_minutes ?? 10);
+  // Anchor the engineer's elapsed-time display on assigned_at — the moment
+  // they claimed the session. Chat starts immediately at claim, so the
+  // engineer needs to see the clock running before either party joins Zoom.
+  // (The customer-side useSessionTimer does the same and that's what enforces
+  // the 10-min free cap, so the two views stay in lock-step.)
+  const timer  = useSessionTimer(state.session?.assigned_at ?? state.session?.joined_at ?? null, state.session?.free_minutes ?? 10);
   const [meEmail, setMeEmail] = useState<string>("");
+  // Viewer role gate. Anyone with a supervisor-flavored role (pod_lead /
+  // ops_manager / admin / super_admin) is locked into read-only monitor
+  // chrome — they retain Supervisor permissions and never get engineer
+  // controls, even on sessions claimed by another engineer that they're
+  // inspecting.
+  const isSupervisor = useIsSupervisor();
 
   // Drives whether the Zoom embed is mounted. We auto-mount the embed as
   // soon as the engineer lands on the session room (status=assigned/joining)
@@ -75,6 +86,7 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
     const s = state.session;
     if (!s) return;
     if (!state.isAssignedEngineer) return;
+    if (isSupervisor) return;  // supervisors never auto-mint Zoom
     if (!["assigned", "joining", "grace"].includes(s.status)) return;
     if (started || autoMinting) return;
 
@@ -145,9 +157,13 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
 
   // Payment-buffer watchdog: if the customer hasn't paid within 10 min of
   // expired_free, auto-end. Idempotent (end_session is a no-op on terminal
-  // states), so customer-side firing the same call is harmless.
+  // states), so customer-side firing the same call is harmless. Skipped for
+  // supervisor monitors — end_session would 403 (not the assigned engineer
+  // / not the customer) and we don't want supervisors firing session-end
+  // calls from their tab regardless.
   const sess = state.session;
   useEffect(() => {
+    if (isSupervisor) return;
     if (sess?.status !== "expired_free" || !sess.free_expired_at) return;
     const elapsedMs = Date.now() - new Date(sess.free_expired_at).getTime();
     const remainingMs = 10 * 60_000 - elapsedMs;
@@ -157,7 +173,7 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
     }
     const t = setTimeout(() => void state.end("payment_buffer_expired"), remainingMs);
     return () => clearTimeout(t);
-  }, [sess?.status, sess?.free_expired_at, state]);
+  }, [sess?.status, sess?.free_expired_at, state, isSupervisor]);
 
   if (state.loading) {
     return (
@@ -187,17 +203,32 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
       className="flex h-screen w-screen overflow-hidden"
       style={{ backgroundColor: "var(--background)", color: "var(--text)" }}
     >
-      <Sidebar engineerEmail={meEmail} session={state.session} timer={timer} />
+      <Sidebar engineerEmail={meEmail} session={state.session} timer={timer} isSupervisor={isSupervisor} />
 
       <div className="relative flex min-w-0 flex-1 flex-col">
-        <FloatingStatus
-          state={state}
-          timer={timer}
-          started={started}
-          onStart={() => setStarted(true)}
-        />
+        {isSupervisor && (
+          <div
+            className="flex shrink-0 items-center justify-center gap-2 border-b px-4 py-1.5 text-[11px] font-medium uppercase tracking-wider"
+            style={{
+              backgroundColor: "color-mix(in srgb, var(--text) 4%, transparent)",
+              borderColor: "var(--border)",
+              color: "var(--text-muted)",
+            }}
+          >
+            <Eye size={11} />
+            Supervisor view · read-only
+          </div>
+        )}
+        {!isSupervisor && (
+          <FloatingStatus
+            state={state}
+            timer={timer}
+            started={started}
+            onStart={() => setStarted(true)}
+          />
+        )}
         <main className="min-h-0 flex-1">
-          <MainPane state={state} />
+          <MainPane state={state} isSupervisor={isSupervisor} />
         </main>
       </div>
 
@@ -223,13 +254,18 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
 
 // ── Layout decider ─────────────────────────────────────────────────────────
 function MainPane({
-  state,
+  state, isSupervisor,
 }: {
   state: ReturnType<typeof useEngineerSession>;
+  isSupervisor: boolean;
 }) {
   const session = state.session!;
   const isEnded = session.status === "ended";
-  const isEngineer = state.isAssignedEngineer;
+  // Supervisors are always read-only monitors — they retain Supervisor
+  // permissions and never get engineer-side controls, even if claimed_by
+  // happens to match (e.g. a pod_lead who claimed this session). The
+  // top-of-pane "Supervisor view · read-only" badge tells the viewer why.
+  const isEngineer = state.isAssignedEngineer && !isSupervisor;
 
   // Post-call review — chat (locked) on the left, AI summary on the right.
   if (isEnded) {
@@ -262,12 +298,14 @@ type PastSession = {
 };
 
 function Sidebar({
-  engineerEmail, session, timer,
+  engineerEmail, session, timer, isSupervisor,
 }: {
   engineerEmail: string;
   session: GuestCall;
   timer: ReturnType<typeof useSessionTimer>;
+  isSupervisor: boolean;
 }) {
+  const router = useRouter();
   const [past, setPast] = useState<PastSession[]>([]);
 
   useEffect(() => {
@@ -337,10 +375,10 @@ function Sidebar({
           {(session.guest_name || "?")[0]}
         </div>
 
-        {/* Live pulse */}
-        {session.status === "live" && (
+        {/* Active-session pulse — shows from claim onwards (chat counts) */}
+        {(["assigned","joining","live","grace","expired_free"] as SessionStatus[]).includes(session.status) && (
           <span
-            title={`Live · ${timer.format}`}
+            title={`Session · ${timer.format}`}
             className="mt-1 flex h-9 w-9 items-center justify-center"
           >
             <span className="relative flex h-2.5 w-2.5">
@@ -438,7 +476,9 @@ function Sidebar({
               {humanState(session.status)}
             </div>
             <div className="truncate text-[10px]" style={{ color: "var(--text-muted)" }}>
-              {session.status === "live" ? `Live · ${timer.format}` : "In session"}
+              {(["assigned","joining","live","grace","expired_free"] as SessionStatus[]).includes(session.status)
+                ? `${humanState(session.status)} · ${timer.format}`
+                : "In session"}
             </div>
           </div>
         </div>
@@ -459,26 +499,32 @@ function Sidebar({
               <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
                 {label}
               </div>
-              {items.map((s) => (
-                <button
-                  key={s.id}
-                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                >
-                  <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: "var(--text-muted)" }} />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13px]" style={{ color: "var(--text)" }}>{s.title}</div>
-                    <div className="truncate text-[10px]" style={{ color: "var(--text-muted)" }}>
-                      {s.agent ?? "Engineer"}{s.minutes != null ? ` · ${s.minutes}m` : ""}
+              {items.map((s) => {
+                const isCurrent = s.id === session.id;
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => { if (!isCurrent) router.push(`/staff/session/${s.id}`); }}
+                    aria-current={isCurrent ? "page" : undefined}
+                    className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left transition-colors ${isCurrent ? "bg-black/5 dark:bg-white/5" : "hover:bg-black/5 dark:hover:bg-white/5"}`}
+                  >
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: "var(--text-muted)" }} />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[13px]" style={{ color: "var(--text)" }}>{s.title}</div>
+                      <div className="truncate text-[10px]" style={{ color: "var(--text-muted)" }}>
+                        {s.agent ?? "Engineer"}{s.minutes != null ? ` · ${s.minutes}m` : ""}
+                      </div>
                     </div>
-                  </div>
-                </button>
-              ))}
+                  </button>
+                );
+              })}
             </div>
           ))
         )}
       </div>
 
-      {/* Engineer profile */}
+      {/* Viewer profile — engineer chrome or supervisor monitor chrome */}
       <div className="border-t p-2" style={{ borderColor: "var(--border)" }}>
         <div className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2">
           <div
@@ -489,10 +535,10 @@ function Sidebar({
           </div>
           <div className="min-w-0 flex-1 text-left">
             <div className="truncate text-[12px] font-medium" style={{ color: "var(--text)" }}>
-              {engineerEmail.split("@")[0] || "Engineer"}
+              {engineerEmail.split("@")[0] || (isSupervisor ? "Supervisor" : "Engineer")}
             </div>
             <div className="truncate text-[10px]" style={{ color: "var(--text-muted)" }}>
-              Engineer · on call
+              {isSupervisor ? "Supervisor · monitoring" : "Engineer · on call"}
             </div>
           </div>
         </div>
@@ -519,6 +565,9 @@ function FloatingStatus({
   const isLive    = session.status === "live";
   const isEnded   = session.status === "ended";
   const isExpiredFree = session.status === "expired_free";
+  // Timer-active = anything where the chat-inclusive 10-min clock is running.
+  // Wider than isLive so the engineer sees the count from claim onwards.
+  const isTimerActive = isPreLive || isLive || isExpiredFree;
   const hasMeeting = !!session.zoom_meeting_id;
   const inCall = started || isLive;
 
@@ -635,7 +684,7 @@ function FloatingStatus({
             Customer paying · {bufferRemainingLabel}
           </span>
         )}
-        {isLive && (
+        {isTimerActive && (
           <span
             className="inline-flex items-center gap-1.5 text-xs font-semibold tabular-nums"
             style={{
@@ -714,9 +763,12 @@ function StatusPill({ session }: { session: GuestCall }) {
 function pillConfig(status: SessionStatus, urgency: Urgency) {
   if (urgency === "critical")   return { label: "Critical",     bg: CRIT_RED_SOFT,    fg: CRIT_RED,     pulse: true };
   if (urgency === "urgent")     return { label: "Urgent",       bg: URGENT_AMBER_SOFT, fg: URGENT_AMBER, pulse: true };
-  if (status === "assigned")    return { label: "Connecting",   bg: BRAND_GREEN_SOFT,  fg: BRAND_GREEN,  pulse: true };
-  if (status === "joining")     return { label: "Joining",      bg: BRAND_GREEN_SOFT,  fg: BRAND_GREEN,  pulse: true };
-  if (status === "live")        return { label: "Live",         bg: BRAND_GREEN_SOFT,  fg: BRAND_GREEN,  pulse: true };
+  // Session is "Live" from the moment the engineer claims — chat works,
+  // 10-min cap is ticking. "Joining call" specifically means a Zoom meeting
+  // is being mounted. "On call" means both parties are in Zoom.
+  if (status === "assigned")    return { label: "Live",         bg: BRAND_GREEN_SOFT,  fg: BRAND_GREEN,  pulse: true };
+  if (status === "joining")     return { label: "Joining call", bg: BRAND_GREEN_SOFT,  fg: BRAND_GREEN,  pulse: true };
+  if (status === "live")        return { label: "On call",      bg: BRAND_GREEN_SOFT,  fg: BRAND_GREEN,  pulse: true };
   if (status === "grace")       return { label: "Reconnect…",   bg: URGENT_AMBER_SOFT, fg: URGENT_AMBER, pulse: true };
   if (status === "expired_free") return { label: "Free expired", bg: URGENT_AMBER_SOFT, fg: URGENT_AMBER, pulse: true };
   return { label: status, bg: BRAND_GREEN_SOFT, fg: BRAND_GREEN, pulse: false };
@@ -924,6 +976,7 @@ function ChatPane({
                       durationSec={durationSec}
                       joinUrl={!ended ? zoomCardUrl : null}
                       onJoin={!ended && !readOnly ? () => void state.markJoined() : undefined}
+                      selfJoined={!!session.engineer_joined_at}
                       onCancel={!ended && !readOnly ? handleCancelMeeting : undefined}
                       summaryBody={summary?.body ?? null}
                       recordingBody={isSupervisor ? recording?.body ?? null : null}
@@ -1068,7 +1121,7 @@ function Message({ message }: { message: GuestMessage }) {
 // Matches the customer-side SummaryPanel in RoomClient — single SUMMARY
 // header + SummaryView. The Chat-history tab was dropped because the full
 // chat already lives in the main pane on the left.
-function ReviewPanel({ session }: { session: GuestCall; messages: GuestMessage[] }) {
+function ReviewPanel({ session, messages }: { session: GuestCall; messages: GuestMessage[] }) {
   return (
     <section
       className="flex h-full flex-col border-l"
@@ -1080,19 +1133,43 @@ function ReviewPanel({ session }: { session: GuestCall; messages: GuestMessage[]
           Summary
         </span>
       </div>
-      <SummaryView session={session} />
+      <SummaryView session={session} messages={messages} />
     </section>
   );
 }
 
-function SummaryView({ session }: { session: GuestCall }) {
+function SummaryView({ session, messages }: { session: GuestCall; messages: GuestMessage[] }) {
   const title = session.ai_summary_title;
   const overview = session.ai_summary_overview ?? session.summary;
   const nextSteps = Array.isArray(session.ai_next_steps as unknown)
     ? (session.ai_next_steps as unknown as Array<string | { text?: string; description?: string }>)
     : [];
-  const generating = !overview && session.status === "ended";
   const dur = session.duration_minutes != null ? Math.round(Number(session.duration_minutes)) : 0;
+  // Per-call Zoom AI Companion summaries arrive as system chat messages
+  // (zoom-webhook.handleSummaryCompleted). Show them in the sidebar
+  // alongside the aggregated chat summary so both signals live together.
+  // Dedupe by body — Zoom sometimes redelivers the summary webhook (retry
+  // or the underscore/dot event-name pair), producing identical rows.
+  const seenCompanionBodies = new Set<string>();
+  const zoomCompanionMessages = messages.filter((m) => {
+    if (m.sender_kind !== "system" || !m.body || !isAiSummaryMessageBody(m.body)) return false;
+    const key = m.body.trim();
+    if (seenCompanionBodies.has(key)) return false;
+    seenCompanionBodies.add(key);
+    return true;
+  });
+  // Drive UI off the explicit state machine — see migration
+  // 20260518200000_summary_state.sql. The old `!overview && status==='ended'`
+  // check could hang forever when the AI Companion summary never landed.
+  const state = session.summary_state ?? "idle";
+  const generating =
+    state === "generating_session_summary" ||
+    state === "generating_zoom_summary" ||
+    state === "waiting_for_transcript";
+  const generatingLabel =
+    state === "waiting_for_transcript" ? "Waiting for Zoom summary…" :
+    state === "generating_zoom_summary" ? "Reading Zoom transcript…" :
+    "Generating summary…";
   return (
     <div className="flex-1 overflow-y-auto px-5 py-5">
       <div className="mb-4 flex items-center gap-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
@@ -1101,7 +1178,32 @@ function SummaryView({ session }: { session: GuestCall }) {
       {generating ? (
         <div className="flex flex-col items-center gap-3 py-12 text-center">
           <Loader2 size={20} className="animate-spin" style={{ color: BRAND_GREEN }} />
-          <p className="text-sm" style={{ color: "var(--text-muted)" }}>Generating summary…</p>
+          <p className="text-sm" style={{ color: "var(--text-muted)" }}>{generatingLabel}</p>
+        </div>
+      ) : state === "no_conversation" ? (
+        <div className="flex flex-col items-center gap-3 py-12 text-center">
+          <p className="text-sm font-medium" style={{ color: "var(--text)" }}>
+            No conversation happened during this session.
+          </p>
+          <p className="max-w-xs text-xs" style={{ color: "var(--text-muted)" }}>
+            Recording wasn&apos;t started and no chat messages were exchanged.
+          </p>
+        </div>
+      ) : state === "transcript_unavailable" && !overview ? (
+        <div className="flex flex-col items-center gap-3 py-12 text-center">
+          <AlertTriangle size={18} style={{ color: "var(--text-muted)" }} />
+          <p className="text-sm font-medium" style={{ color: "var(--text)" }}>Zoom summary unavailable</p>
+          <p className="max-w-xs text-xs" style={{ color: "var(--text-muted)" }}>
+            The Zoom AI Companion summary didn&apos;t land within the watchdog window.
+          </p>
+        </div>
+      ) : state === "summary_failed" && !overview ? (
+        <div className="flex flex-col items-center gap-3 py-12 text-center">
+          <AlertTriangle size={18} style={{ color: "var(--accent-red)" }} />
+          <p className="text-sm font-medium" style={{ color: "var(--text)" }}>Couldn&apos;t generate the summary</p>
+          <p className="max-w-xs text-xs" style={{ color: "var(--text-muted)" }}>
+            The AI service errored. The engineer can re-run summarize-guest-call manually.
+          </p>
         </div>
       ) : !overview ? (
         <p className="py-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>No summary available.</p>
@@ -1131,6 +1233,18 @@ function SummaryView({ session }: { session: GuestCall }) {
                   );
                 })}
               </ul>
+            </div>
+          )}
+          {zoomCompanionMessages.length > 0 && (
+            <div className="pt-2">
+              <h3 className="mb-3 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+                Zoom call summaries
+              </h3>
+              <div className="space-y-3">
+                {zoomCompanionMessages.map((m) => (
+                  <MeetingSummaryEntry key={m.id} body={m.body ?? ""} />
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -1169,9 +1283,9 @@ function ErrorToast({ message }: { message: string }) {
 function humanState(s: SessionStatus): string {
   switch (s) {
     case "queued":       return "Connecting customer…";
-    case "assigned":     return "Engineer joining";
-    case "joining":      return "Connecting call";
-    case "live":         return "Live now";
+    case "assigned":     return "Live";
+    case "joining":      return "Joining call";
+    case "live":         return "On call";
     case "grace":        return "Reconnecting";
     case "ending":       return "Wrapping up";
     case "ended":        return "Ended";

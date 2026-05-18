@@ -28,6 +28,10 @@ type Props = {
   joinUrl?: string | null;
   /** Fires alongside opening the Zoom URL — typically state.markJoined(). */
   onJoin?: () => void | Promise<void>;
+  /** True when *this* viewer has already joined the meeting (customer_joined_at
+   *  or engineer_joined_at is set). Replaces the live Join button with a
+   *  disabled "Joined" chip so the user can't double-click into Zoom. */
+  selfJoined?: boolean;
   /** Engineer-only: hang up the Zoom call without joining it. Renders a
    *  small red "End" button next to Join on the active state. */
   onCancel?: () => void | Promise<void>;
@@ -53,7 +57,7 @@ function formatDuration(sec: number): string {
   return `${m} min ${r} sec`;
 }
 
-export function MeetingChatEntry({ active, durationSec, joinUrl, onJoin, onCancel, summaryBody, recordingBody }: Props) {
+export function MeetingChatEntry({ active, durationSec, joinUrl, onJoin, selfJoined, onCancel, summaryBody, recordingBody }: Props) {
   const [cancelling, setCancelling] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   // The ✨ toggle appears whenever the card has *anything* worth surfacing —
@@ -108,7 +112,7 @@ export function MeetingChatEntry({ active, durationSec, joinUrl, onJoin, onCance
             </span>
           ) : null}
         </div>
-        {active && joinUrl ? (
+        {active && joinUrl && !selfJoined ? (
           <button
             type="button"
             onClick={handleJoin}
@@ -118,6 +122,20 @@ export function MeetingChatEntry({ active, durationSec, joinUrl, onJoin, onCance
             <ExternalLink size={11} />
             Join
           </button>
+        ) : null}
+        {active && selfJoined ? (
+          <span
+            aria-disabled="true"
+            className="ml-1 inline-flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-semibold opacity-70"
+            style={{
+              backgroundColor: BRAND_GREEN_SOFT,
+              color: BRAND_GREEN,
+              border: `1px solid ${BRAND_GREEN_BORDER}`,
+            }}
+          >
+            <Video size={11} />
+            Joined
+          </span>
         ) : null}
         {active && onCancel ? (
           <button

@@ -125,9 +125,12 @@ Deno.serve(async (req) => {
         join_before_host: true,
         waiting_room: false,
         approval_type: 2,
-        // Auto-record to Zoom Cloud so we can save and replay calls
-        auto_recording: "cloud",
-        // Enable Zoom AI Companion meeting summary (requires AI Companion on the account)
+        // Force auto_recording=none to override any Zoom account-level
+        // "Automatic recording" default. Recording is opt-in — the engineer
+        // hits Zoom's native ⏺ Record button inside the meeting if they
+        // want it. AI Companion stays auto-on so the per-call summary
+        // fires if/when recording is started.
+        auto_recording: "none",
         auto_start_meeting_summary: true,
         auto_start_ai_companion_questions: true,
         meeting_summary: true,

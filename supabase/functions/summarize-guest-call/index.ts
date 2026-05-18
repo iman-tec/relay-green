@@ -24,9 +24,33 @@ Deno.serve(async (req) => {
 
     const { data: call } = await supabase
       .from("guest_calls")
-      .select("guest_name, started_at, thread_id, project_id, customer_user_id")
+      .select("guest_name, started_at, thread_id, project_id, customer_user_id, status, engineer_joined_at, customer_joined_at, recording_play_url, summary_state")
       .eq("id", guest_call_id)
       .maybeSingle();
+
+    // If the session is already marked ended, this is a *re-run* — typically
+    // triggered by zoom-webhook when the Zoom AI Companion summary lands a
+    // few minutes after end-time. The first run already handled all the
+    // one-shot side effects (status flip, duration write, "Session ended"
+    // message, sentiment row), so re-runs only refresh the summary fields.
+    const wasAlreadyEnded = (call as { status?: string } | null)?.status === "ended";
+
+    // Helper: write summary_state with a fresh timestamp. The watchdog
+    // (tick_summary_watchdog pg_cron) reads summary_state_updated_at to
+    // detect stalls, so every transition stamps it.
+    const writeState = async (state: string, extra: Record<string, unknown> = {}) => {
+      await supabase.from("guest_calls").update({
+        summary_state: state,
+        summary_state_updated_at: new Date().toISOString(),
+        ...extra,
+      }).eq("id", guest_call_id);
+    };
+
+    // Mark "actively generating" so the UI shows a spinner with the right
+    // copy and the watchdog has a fresh timestamp to track stalls against.
+    // We do this BEFORE the OpenAI call so a crash mid-flight leaves a
+    // detectable state (the watchdog will flip it to summary_failed).
+    await writeState("generating_session_summary");
 
     let threadUsed = 0;
     if (call?.thread_id) {
@@ -73,22 +97,69 @@ Deno.serve(async (req) => {
       .join("\n");
 
     if (!transcript.trim()) {
-      const summary = "No conversation captured.";
-      await supabase
-        .from("guest_calls")
-        .update({
-          summary,
-          status: "ended",
-          ended_at: endedAtIso,
-          duration_minutes: sessionMinutes,
-          free_minutes_used: sessionMinutes,
-        })
-        .eq("id", guest_call_id);
-      if (call?.thread_id && sessionMinutes > 0) {
+      // Distinguish three "nothing to summarize" cases so the UI shows the
+      // right copy without waiting on the watchdog:
+      //   • Neither party joined Zoom AND no chat                → no_conversation
+      //   • Zoom was joined, recording_play_url IS set            → waiting_for_transcript
+      //     (the AI Companion summary is in flight)
+      //   • Zoom was joined, recording_play_url IS NULL, and the
+      //     "Zoom meeting ended" system message is > 60s old      → transcript_unavailable
+      //     (Zoom never delivered recording.completed, which means
+      //      recording was never started — no summary is coming.)
+      //   • Zoom was joined, recording_play_url IS NULL, meeting
+      //     ended <= 60s ago (or hasn't ended yet)                → waiting_for_transcript
+      //     (give Zoom a beat to deliver the recording webhook)
+      const engineerJoinedAt = (call as { engineer_joined_at?: string | null } | null)?.engineer_joined_at;
+      const customerJoinedAt = (call as { customer_joined_at?: string | null } | null)?.customer_joined_at;
+      const recordingPlayUrl = (call as { recording_play_url?: string | null } | null)?.recording_play_url;
+      const zoomTouched = !!engineerJoinedAt || !!customerJoinedAt || !!recordingPlayUrl;
+
+      let nextState: "no_conversation" | "waiting_for_transcript" | "transcript_unavailable";
+      if (!zoomTouched) {
+        nextState = "no_conversation";
+      } else if (recordingPlayUrl) {
+        nextState = "waiting_for_transcript";
+      } else {
+        // Zoom was joined but no recording artifact yet. Check whether the
+        // Zoom meeting has already ended (webhook posts the "📞 Zoom
+        // meeting ended" system message) and how long ago — if > 60s,
+        // Zoom would already have fired recording.completed if recording
+        // had been on, so we know it was off.
+        const { data: endedMsg } = await supabase
+          .from("guest_messages")
+          .select("created_at")
+          .eq("guest_call_id", guest_call_id)
+          .eq("sender_kind", "system")
+          .ilike("body", "%Zoom meeting ended%")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (endedMsg) {
+          const ageSec = (Date.now() - new Date((endedMsg as { created_at: string }).created_at).getTime()) / 1000;
+          nextState = ageSec > 60 ? "transcript_unavailable" : "waiting_for_transcript";
+        } else {
+          // Zoom still active OR meeting.ended webhook hasn't arrived yet.
+          // Either way, give it the watchdog window.
+          nextState = "waiting_for_transcript";
+        }
+      }
+
+      const update: Record<string, unknown> = {
+        summary_state: nextState,
+        summary_state_updated_at: new Date().toISOString(),
+      };
+      if (!wasAlreadyEnded) {
+        update.status = "ended";
+        update.ended_at = endedAtIso;
+        update.duration_minutes = sessionMinutes;
+        update.free_minutes_used = sessionMinutes;
+      }
+      await supabase.from("guest_calls").update(update).eq("id", guest_call_id);
+      if (!wasAlreadyEnded && call?.thread_id && sessionMinutes > 0) {
         const newTotal = threadUsed + sessionMinutes;
         await supabase.from("guest_threads").update({ free_minutes_used: newTotal }).eq("id", call.thread_id);
       }
-      return new Response(JSON.stringify({ summary }), {
+      return new Response(JSON.stringify({ summary: null, summary_state: nextState }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -163,22 +234,36 @@ Deno.serve(async (req) => {
       summary = transcript.slice(0, 800);
     }
 
-    await supabase
-      .from("guest_calls")
-      .update({
-        summary,
-        ai_summary_title: aiTitle || null,
-        ai_summary_overview: aiOverview || null,
-        ai_next_steps: aiNextSteps.length > 0 ? aiNextSteps : null,
-        status: "ended",
-        ended_at: endedAtIso,
-        duration_minutes: sessionMinutes,
-        free_minutes_used: sessionMinutes,
-      })
-      .eq("id", guest_call_id);
+    // Did the OpenAI call actually produce something we can show as a
+    // summary? Three failure shapes feed into summary_failed:
+    //   1. No API key + no transcript fallback
+    //   2. OpenAI non-2xx response (summary text starts with "Summary unavailable")
+    //   3. summary is empty/whitespace
+    const openAiFailed =
+      !summary || !summary.trim() || summary.startsWith("Summary unavailable (AI error");
 
-    // Increment cumulative free minutes used on the thread
-    if (call?.thread_id && sessionMinutes > 0) {
+    // Always refresh the summary fields. Duration / status / ended_at are
+    // one-shot at first end — re-runs (Zoom AI Companion arriving late) skip
+    // those so we don't overwrite the original end-time with a later
+    // timestamp or double-count free minutes.
+    const update: Record<string, unknown> = {
+      summary,
+      ai_summary_title: aiTitle || null,
+      ai_summary_overview: aiOverview || null,
+      ai_next_steps: aiNextSteps.length > 0 ? aiNextSteps : null,
+      summary_state: openAiFailed ? "summary_failed" : "summary_ready",
+      summary_state_updated_at: new Date().toISOString(),
+    };
+    if (!wasAlreadyEnded) {
+      update.status = "ended";
+      update.ended_at = endedAtIso;
+      update.duration_minutes = sessionMinutes;
+      update.free_minutes_used = sessionMinutes;
+    }
+    await supabase.from("guest_calls").update(update).eq("id", guest_call_id);
+
+    // Increment cumulative free minutes used on the thread — first run only.
+    if (!wasAlreadyEnded && call?.thread_id && sessionMinutes > 0) {
       const newTotal = threadUsed + sessionMinutes;
       await supabase
         .from("guest_threads")
@@ -186,24 +271,30 @@ Deno.serve(async (req) => {
         .eq("id", call.thread_id);
     }
 
-    await supabase.from("guest_messages").insert({
-      guest_call_id,
-      sender_kind: "system",
-      sender_name: "Relay",
-      body: "Session ended. Summary saved.",
-    });
+    // The "Session ended. Summary saved." chat chip is a one-shot signal —
+    // re-runs don't post a duplicate.
+    if (!wasAlreadyEnded) {
+      await supabase.from("guest_messages").insert({
+        guest_call_id,
+        sender_kind: "system",
+        sender_name: "Relay",
+        body: "Session ended. Summary saved.",
+      });
+    }
 
     // ── Post-session sentiment score ─────────────────────────────────────────
     // Feeds the colored health bar on the supervise pit and the feedback
-    // feed in /finance. Runs ONCE per session at end-time. The model is
-    // tuned to lean neutral (low false-positive rate) — only commits to a
-    // strong score when the summary has explicit evidence.
+    // feed in /finance. Runs ONCE per session at end-time — re-runs (Zoom
+    // AI Companion summary arriving late) reuse the original row instead
+    // of inserting a duplicate. The model is tuned to lean neutral (low
+    // false-positive rate) — only commits to a strong score when the
+    // summary has explicit evidence.
     //
     // Input priority: ai_summary_overview > full summary > transcript head.
     // If we have nothing usable (no API key, empty transcript), we write a
     // neutral 0 row so the UI doesn't fall back to the stale per-minute
     // score from earlier in the session.
-    try {
+    if (!wasAlreadyEnded) try {
       const sentimentInput =
         (aiOverview && aiOverview.trim()) ||
         (summary && summary.trim()) ||
@@ -329,6 +420,25 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
+    // Try to flip summary_state to summary_failed so the UI doesn't hang on
+    // "generating..." until the watchdog catches it. Best-effort — if the
+    // request never had a session id (the early 400 path) or the DB write
+    // itself fails, just return the original error.
+    try {
+      const { guest_call_id } = (await req.clone().json().catch(() => ({}))) as { guest_call_id?: string };
+      if (guest_call_id) {
+        const supabase = createClient(
+          Deno.env.get("SUPABASE_URL")!,
+          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+        );
+        await supabase.from("guest_calls").update({
+          summary_state: "summary_failed",
+          summary_state_updated_at: new Date().toISOString(),
+        }).eq("id", guest_call_id);
+      }
+    } catch (e2) {
+      console.error("[summarize-guest-call] state-failed write also failed:", e2);
+    }
     return new Response(JSON.stringify({ error: String(e) }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

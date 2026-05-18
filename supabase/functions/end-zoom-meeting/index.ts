@@ -76,10 +76,13 @@ Deno.serve(async (req) => {
 
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // Authorization: must be the assigned engineer for this session.
+    // Authorization: either the assigned engineer OR the customer who owns
+    // the session can end the Zoom meeting. Both are session participants
+    // and either ending the session should also hang up Zoom. Supervisors
+    // and other readers stay forbidden.
     const { data: session, error: sErr } = await admin
       .from("guest_calls")
-      .select("id, claimed_by, zoom_meeting_id")
+      .select("id, claimed_by, customer_user_id, zoom_meeting_id")
       .eq("id", sessionId)
       .maybeSingle();
     if (sErr || !session) {
@@ -88,15 +91,20 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    if (session.claimed_by !== u.user.id) {
-      return new Response(JSON.stringify({ error: "Not assigned to you" }), {
+    const isParticipant =
+      session.claimed_by === u.user.id || session.customer_user_id === u.user.id;
+    if (!isParticipant) {
+      return new Response(JSON.stringify({ error: "Not a session participant" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
     if (!session.zoom_meeting_id) {
-      return new Response(JSON.stringify({ error: "No Zoom meeting to end" }), {
-        status: 400,
+      // Nothing to hang up. Treat as success so callers don't have to know
+      // whether a Zoom was ever minted for this session — keeps the
+      // "end session → end zoom" wiring idempotent on the call site.
+      return new Response(JSON.stringify({ ok: true, noop: "no_meeting" }), {
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

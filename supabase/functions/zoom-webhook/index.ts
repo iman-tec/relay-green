@@ -223,6 +223,15 @@ Deno.serve(async (req) => {
   const valid = await verifyZoomSignature(req, body);
   if (!valid) return new Response("Invalid signature", { status: 401 });
 
+  // Diagnostic: log every incoming event name + the object keys so we can
+  // confirm whether meeting.summary_completed is arriving from Zoom and what
+  // shape it has. Search Supabase edge logs for "[zoom-webhook] event".
+  console.log(
+    "[zoom-webhook] event:", payload.event,
+    "objectKeys:", Object.keys(payload?.payload?.object ?? {}),
+    "meetingId:", payload?.payload?.object?.id ?? payload?.payload?.object?.meeting_id ?? null,
+  );
+
   try {
     if (payload.event === "meeting.started") {
       await handleMeetingStarted(payload.payload);
@@ -271,9 +280,27 @@ async function handleRecordingCompleted(payload: any) {
     .eq("zoom_meeting_id", zoomId)
     .maybeSingle();
   if (gc) {
+    // Cloud recording is now in place, but the AI Companion summary is a
+    // separate event that arrives 1-5 min later. If the session is sitting
+    // in waiting_for_transcript, advance it to generating_zoom_summary so
+    // the UI shows the "Zoom summary in progress" copy.
+    const { data: gcState } = await admin()
+      .from("guest_calls")
+      .select("summary_state")
+      .eq("id", gc.id)
+      .maybeSingle();
+    const update: Record<string, unknown> = {
+      recording_play_url: playUrl,
+      recording_password: password,
+      duration_minutes: duration,
+    };
+    if ((gcState as { summary_state?: string } | null)?.summary_state === "waiting_for_transcript") {
+      update.summary_state = "generating_zoom_summary";
+      update.summary_state_updated_at = new Date().toISOString();
+    }
     await admin()
       .from("guest_calls")
-      .update({ recording_play_url: playUrl, recording_password: password, duration_minutes: duration })
+      .update(update)
       .eq("id", gc.id);
     if (playUrl) {
       const passLine = password ? `\nPasscode: ${password}` : "";
@@ -354,7 +381,7 @@ async function handleSummaryCompleted(payload: any) {
   // on the session row.
   const { data: gc } = await admin()
     .from("guest_calls")
-    .select("id, thread_id")
+    .select("id, thread_id, status")
     .eq("zoom_meeting_id", zoomId)
     .maybeSingle();
   if (gc) {
@@ -368,11 +395,28 @@ async function handleSummaryCompleted(payload: any) {
         if (text) lines.push(`• ${text}`);
       }
     }
+    const summaryBody = lines.join("\n");
+    // Dedupe: Zoom retries the webhook on non-2xx / timeout, and sometimes
+    // fires both meeting.summary_completed and meeting_summary.completed for
+    // the same call. Without this check we end up with N identical AI
+    // Companion summary rows for the same meeting.
+    const { data: existingSummary } = await admin()
+      .from("guest_messages")
+      .select("id")
+      .eq("guest_call_id", gc.id)
+      .eq("sender_kind", "system")
+      .eq("body", summaryBody)
+      .limit(1)
+      .maybeSingle();
+    if (existingSummary) {
+      console.log("[meeting.summary_completed] duplicate body, skipping insert for gc", gc.id);
+      return;
+    }
     await admin().from("guest_messages").insert({
       guest_call_id: gc.id,
       sender_kind: "system",
       sender_name: "Relay",
-      body: lines.join("\n"),
+      body: summaryBody,
     });
 
     if (gc.thread_id) {
@@ -387,6 +431,28 @@ async function handleSummaryCompleted(payload: any) {
         });
       } catch (e) {
         console.error("brief refresh failed:", e);
+      }
+    }
+
+    // Re-summarize the session if it's already ended. The Zoom AI Companion
+    // typically lands 1-5 minutes after end-time, so the original
+    // summarize-guest-call run had nothing but chat (or nothing at all).
+    // Re-running now gives the model the call-side observations and
+    // produces a real summary. The receiving function detects status==='ended'
+    // and only refreshes the summary fields — no duplicate Session-ended
+    // chips, no double-counted minutes, no second sentiment row.
+    if (gc.status === "ended") {
+      try {
+        await fetch(`${SUPABASE_URL}/functions/v1/summarize-guest-call`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          },
+          body: JSON.stringify({ guest_call_id: gc.id }),
+        });
+      } catch (e) {
+        console.error("[meeting.summary_completed] refresh summarize-guest-call failed:", e);
       }
     }
     return;

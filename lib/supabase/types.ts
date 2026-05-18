@@ -54,12 +54,30 @@ export type GuestCall = {
   free_expired_at: string | null;
   ended_reason: string | null;
   organization_id: string | null;
+  // Pod ownership — stamped at claim time from the engineer's pod_members
+  // row. NULL until claimed (queued) or for engineers with no pod assignment.
+  // Drives /supervise scoping for pod_lead / ops_manager.
+  pod_id: string | null;
   // Phase 4: project grouping. Both nullable for legacy / "General" sessions.
   project_id: string | null;
   project_name: string | null;
+  // Summary state machine (replaces the "spinner if summary IS NULL" check).
+  // See migration 20260518200000_summary_state.sql for the lifecycle.
+  summary_state: SummaryState;
+  summary_state_updated_at: string | null;
   created_at: string;
   updated_at: string;
 };
+
+export type SummaryState =
+  | "idle"
+  | "generating_session_summary"
+  | "waiting_for_transcript"
+  | "generating_zoom_summary"
+  | "summary_ready"
+  | "summary_failed"
+  | "no_conversation"
+  | "transcript_unavailable";
 
 export type GuestMessageAttachment = {
   id:          string;

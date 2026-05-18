@@ -55,6 +55,11 @@ const CRIT_RED_SOFT     = "rgba(139, 26, 26, 0.18)";
 // and fires the corresponding RPCs. Kept OUT of RoomClient's body so the
 // per-second re-render scope is local to this hook — none of the sidebar /
 // chat / zoom tree re-renders just because the timer ticked.
+// Active states where the timer is ticking and the free 10-min cap is
+// counting. Includes pre-Zoom states because chat starts the moment the
+// engineer claims — chat + Zoom time both count toward the 10-min free cap.
+const ACTIVE_TIMER_STATES = ["assigned", "joining", "live", "grace", "expired_free"] as const;
+
 function useFreeSessionLifecycle(
   session: GuestCall | null,
   paidMinutesRemaining: number,
@@ -64,49 +69,55 @@ function useFreeSessionLifecycle(
   // lint rule disallows as it's impure for render).
   const [now, setNow] = useState<number>(() => Date.now());
   const status      = session?.status;
-  const joinedAt    = session?.joined_at;
+  // Anchor the free-cap clock on assigned_at — the moment the engineer
+  // claimed and chat became possible. Falls back to joined_at for any
+  // legacy row that doesn't have assigned_at populated.
+  const startedAt   = session?.assigned_at ?? session?.joined_at ?? null;
   const freeMinutes = session?.free_minutes ?? 10;
-  const freeExpiredAt    = session?.free_expired_at;
   const paidExtensionAt  = session?.paid_extension_at;
   const sessionId        = session?.id;
 
+  const isActive = !!status && (ACTIVE_TIMER_STATES as readonly string[]).includes(status);
+
   // Tick only while the session is in a state whose expiry we care about.
   useEffect(() => {
-    if (status !== "live" && status !== "expired_free") return;
+    if (!isActive) return;
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, [status]);
+  }, [isActive]);
 
   // Derived from `now` in state — pure with respect to render inputs.
+  // Once the customer is on paid time (paid_extension_at stamped), the
+  // 10-min free cap no longer applies — they're on metered paid time.
   const isFreeExpired =
-    status === "live" && !!joinedAt &&
-    now - new Date(joinedAt).getTime() >= freeMinutes * 60 * 1000;
+    isActive && !!startedAt && !paidExtensionAt &&
+    now - new Date(startedAt).getTime() >= freeMinutes * 60 * 1000;
 
   useEffect(() => {
     if (!sessionId) return;
+    if (!isFreeExpired) return;
     const sb = createClient();
 
-    if (status === "live" && isFreeExpired) {
-      if (paidMinutesRemaining > 0) {
-        if (!paidExtensionAt) {
-          void sb.from("guest_calls").update({ paid_extension_at: new Date().toISOString() }).eq("id", sessionId);
-        }
-        return;
+    // Customer has paid balance → silently pivot onto paid time. The timer
+    // mode flips from countdown to count-up on the next render.
+    if (paidMinutesRemaining > 0) {
+      if (!paidExtensionAt) {
+        void sb.from("guest_calls").update({ paid_extension_at: new Date().toISOString() }).eq("id", sessionId);
       }
-      void sb.rpc("expire_to_free", { _session_id: sessionId });
       return;
     }
 
-    if (status === "expired_free" && freeExpiredAt) {
-      const elapsedMs = now - new Date(freeExpiredAt).getTime();
-      if (elapsedMs >= 10 * 60_000) {
-        void (async () => {
-          await sb.rpc("end_session", { _session_id: sessionId, _reason: "payment_buffer_expired" });
-          void sb.functions.invoke("summarize-guest-call", { body: { guest_call_id: sessionId } });
-        })();
-      }
-    }
-  }, [sessionId, status, isFreeExpired, paidExtensionAt, freeExpiredAt, paidMinutesRemaining, now]);
+    // Zero balance → hard end per spec Q2. end_session is idempotent on
+    // terminal states, so duplicate firings (customer + engineer tabs both
+    // ticking) collapse safely. summarize-guest-call + end-zoom-meeting
+    // are fire-and-forget; the latter will 403 from the customer tab today
+    // (auth is still engineer-only — bug #8 will relax it).
+    void (async () => {
+      await sb.rpc("end_session", { _session_id: sessionId, _reason: "free_session_expired" });
+      void sb.functions.invoke("summarize-guest-call", { body: { guest_call_id: sessionId } });
+      void sb.functions.invoke("end-zoom-meeting", { body: { session_id: sessionId } });
+    })();
+  }, [sessionId, isFreeExpired, paidExtensionAt, paidMinutesRemaining]);
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────
@@ -221,16 +232,18 @@ export function RoomClient() {
     }
   }, [state.session?.id, state.session?.status]);
 
-  // Auto-join: as soon as the server stamps engineer_joined_at on the session,
-  // flip accepted + mark_joined so the customer is dropped straight into the
-  // call. Replaces the old click-to-answer IncomingCallModal step.
-  // mark_joined is idempotent — if Zoom's onJoined fires later it's a no-op.
+  // When the engineer joins Zoom, dismiss the EngineerAssignedModal so the
+  // customer can see the chat + inline Zoom card. We DELIBERATELY do not
+  // call state.markJoined() here — the customer must click the green Join
+  // button in the Zoom card themselves so their customer_joined_at only
+  // stamps once they've actually opened the meeting. Otherwise their chat
+  // card would flip to "Joined" the instant the engineer arrived, even if
+  // they never opened Zoom.
   useEffect(() => {
     if (accepted) return;
     if (!state.session) return;
     if (!shouldShowIncomingCall(state.session)) return;
     setAccepted(true);
-    void state.markJoined();
   }, [
     state.session?.id,
     state.session?.engineer_joined_at,
@@ -238,7 +251,6 @@ export function RoomClient() {
     state.session?.customer_joined_at,
     state.session?.status,
     accepted,
-    state.markJoined,
   ]);
 
   // Clear past-session preview as soon as the customer starts a new session
@@ -504,6 +516,7 @@ export function RoomClient() {
         {/* Floating status / timer chip + end-meeting button (top-right) */}
         <FloatingStatus
           session={state.session}
+          entitlement={state.entitlement}
           accepted={accepted}
           onEnd={state.end}
         />
@@ -643,7 +656,7 @@ const MainPane = memo(function MainPane({
         </Panel>
         <Resizer />
         <Panel defaultSize={40} minSize={28} order={2}>
-          <SummaryPanel session={session} />
+          <SummaryPanel session={session} messages={state.messages} />
         </Panel>
       </PanelGroup>
     );
@@ -1001,7 +1014,7 @@ function PastSessionReview({ sessionId, onClose }: { sessionId: string; onClose:
       </Panel>
       <Resizer />
       <Panel defaultSize={40} minSize={28} order={2}>
-        <SummaryPanel session={row} onClose={onClose} />
+        <SummaryPanel session={row} messages={msgs} onClose={onClose} />
       </Panel>
     </PanelGroup>
   );
@@ -1113,7 +1126,7 @@ function ReadOnlyChatPane({ messages }: { messages: GuestMessage[] }) {
 // Summary-only sidebar for past + just-ended sessions. Replaces the older
 // ReviewPanel that tabbed between Summary and Chat history — chat history
 // now lives in the main chat pane, so the sidebar focuses on the AI summary.
-function SummaryPanel({ session, onClose }: { session: GuestCall; onClose?: () => void }) {
+function SummaryPanel({ session, messages, onClose }: { session: GuestCall; messages: GuestMessage[]; onClose?: () => void }) {
   return (
     <section
       className="flex h-full flex-col border-l"
@@ -1136,7 +1149,7 @@ function SummaryPanel({ session, onClose }: { session: GuestCall; onClose?: () =
           </button>
         )}
       </div>
-      <SummaryView session={session} />
+      <SummaryView session={session} messages={messages} />
     </section>
   );
 }
@@ -1321,16 +1334,22 @@ function ProjectPickerPane({
 // Owns its own session timer so the 1-second tick stays local to this
 // subtree instead of cascading from RoomClient down to Sidebar/MainPane/etc.
 const FloatingStatus = memo(function FloatingStatus({
-  session, accepted, onEnd,
+  session, entitlement, accepted, onEnd,
 }: {
   session: GuestCall | null;
+  entitlement: { free_consumed_at: string | null; paid_minutes_remaining: number };
   accepted: boolean;
   onEnd: (reason?: string) => Promise<void>;
 }) {
   const [confirmEnd, setConfirmEnd] = useState(false);
 
-  // Hide entirely when there's nothing useful to show (idle, no session)
-  const showTimer  = session?.status === "live";
+  // Hide entirely when there's nothing useful to show (idle, no session).
+  // Timer shows from the moment the engineer claims (status='assigned') —
+  // chat starts then, and the 10-min free cap counts chat + Zoom combined.
+  const showTimer =
+    !!session &&
+    !!session.assigned_at &&
+    !["ended", "cancelled", "abandoned", "queued"].includes(session.status);
   const showStatus = !!session && !["ended","cancelled","abandoned"].includes(session.status);
   // End button: visible whenever the customer is in (or accepted) an active call
   const showEnd = !!session && (
@@ -1354,7 +1373,12 @@ const FloatingStatus = memo(function FloatingStatus({
         }}
       >
         {showTimer && (
-          <LiveTimer joinedAt={session!.joined_at ?? null} freeMinutes={session!.free_minutes ?? 10} />
+          <LiveTimer
+            joinedAt={session!.assigned_at ?? session!.joined_at ?? null}
+            freeMinutes={session!.free_minutes ?? 10}
+            isFreeSession={entitlement.free_consumed_at == null}
+            paidExtensionAt={session!.paid_extension_at ?? null}
+          />
         )}
 
         {showTimer && showStatus && (
@@ -1389,19 +1413,38 @@ const FloatingStatus = memo(function FloatingStatus({
   );
 });
 
-// Live timer text — bold mono digits + a "free / left / expired" suffix.
-// Colors track the remaining-time bucket (green / amber / red).
-function LiveTimer({ joinedAt, freeMinutes }: { joinedAt: string | null; freeMinutes: number }) {
-  const timer = useSessionTimer(joinedAt, freeMinutes);
-  const color = timer.isExpired ? CRIT_RED : timer.isWarning ? URGENT_AMBER : BRAND_GREEN;
-  const suffix = timer.isExpired ? "Expired" : timer.isWarning ? "left" : "free";
+// Live timer text — bold mono digits + a mode-appropriate suffix.
+//   free_countdown  10:00 → 00:00, "free" (green) / "left" (amber <90s) / "Expired" (red)
+//   paid_elapsed    00:00 → ∞, "paid" (green)
+// The free timer permanently disappears once the customer's free quota is
+// consumed OR a paid extension is stamped on this session — both cases
+// route to paid_elapsed.
+function LiveTimer({
+  joinedAt, freeMinutes, isFreeSession, paidExtensionAt,
+}: {
+  joinedAt: string | null;
+  freeMinutes: number;
+  isFreeSession: boolean;
+  paidExtensionAt: string | null;
+}) {
+  const timer = useSessionTimer({ joinedAt, freeMinutes, isFreeSession, paidExtensionAt });
+  if (timer.mode === "hidden") return null;
+
+  const isFree = timer.mode === "free_countdown";
+  const color = isFree
+    ? (timer.isExpired ? CRIT_RED : timer.isWarning ? URGENT_AMBER : BRAND_GREEN)
+    : BRAND_GREEN;
+  const suffix = isFree
+    ? (timer.isExpired ? "Expired" : timer.isWarning ? "left" : "free")
+    : "paid";
+
   return (
     <span className="inline-flex items-baseline gap-1.5 text-xs font-medium">
       <span
         className="font-semibold tabular-nums"
         style={{ fontFamily: "var(--font-inter)", color, fontSize: 13 }}
       >
-        {timer.formatRemaining}
+        {timer.display}
       </span>
       <span style={{ color: "var(--text-muted)" }}>{suffix}</span>
     </span>
@@ -1490,10 +1533,13 @@ function pillConfig(status: SessionStatus, urgency: Urgency) {
   }
   if (urgency === "critical") return { label: "Critical",        bg: CRIT_RED_SOFT,    fg: CRIT_RED,     pulse: true };
   if (urgency === "urgent")   return { label: "Urgent",          bg: URGENT_AMBER_SOFT, fg: URGENT_AMBER, pulse: true };
+  // "Connecting" = pre-claim queue wait. From assigned onwards the session
+  // is "Live" (chat works, timer ticking), then "Joining call" while Zoom
+  // is mounting, then "On call" once both are in the meeting.
   if (status === "queued")    return { label: "Connecting",      bg: BRAND_GREEN_SOFT,  fg: BRAND_GREEN,  pulse: true };
-  if (status === "assigned")  return { label: "Engineer joining", bg: BRAND_GREEN_SOFT, fg: BRAND_GREEN,  pulse: true };
-  if (status === "joining")   return { label: "Connecting call", bg: BRAND_GREEN_SOFT,  fg: BRAND_GREEN,  pulse: true };
-  if (status === "live")      return { label: "Live",            bg: BRAND_GREEN_SOFT,  fg: BRAND_GREEN,  pulse: true };
+  if (status === "assigned")  return { label: "Live",            bg: BRAND_GREEN_SOFT,  fg: BRAND_GREEN,  pulse: true };
+  if (status === "joining")   return { label: "Joining call",    bg: BRAND_GREEN_SOFT,  fg: BRAND_GREEN,  pulse: true };
+  if (status === "live")      return { label: "On call",         bg: BRAND_GREEN_SOFT,  fg: BRAND_GREEN,  pulse: true };
   if (status === "grace")     return { label: "Reconnecting",    bg: URGENT_AMBER_SOFT, fg: URGENT_AMBER, pulse: true };
   if (status === "ending")    return { label: "Wrapping up",     bg: BRAND_GREEN_SOFT,  fg: BRAND_GREEN,  pulse: true };
   return { label: status,                                          bg: BRAND_GREEN_SOFT,  fg: BRAND_GREEN,  pulse: false };
@@ -1970,12 +2016,19 @@ const WalletBalance = memo(function WalletBalance({
   session: GuestCall | null;
   entitlement: EntitlementShape;
 }) {
-  const isLive   = session?.status === "live";
-  const joinedAt = session?.joined_at ?? null;
-  const paidAt   = session?.paid_extension_at ?? null;
+  const paidAt       = session?.paid_extension_at ?? null;
   const freeConsumed = !!entitlement.free_consumed_at;
-  // Only tick when we'd actually be subtracting paid time from the balance.
-  const shouldTick = isLive && (!!paidAt || freeConsumed);
+  // Session starts when the engineer claims (assigned_at). Chat is part of
+  // the paid session — billing ticks from that point forward, regardless
+  // of whether Zoom has been joined yet.
+  const assignedAt   = session?.assigned_at ?? null;
+  const isEnded      = session?.status === "ended" || session?.status === "cancelled" || session?.status === "abandoned";
+
+  // Tick the visible balance whenever paid minutes are being burned:
+  // either paid_extension_at is stamped (first-timer who upgraded), or the
+  // customer is a returning paid user (free already consumed) and the
+  // engineer has claimed.
+  const shouldTick = !isEnded && !!assignedAt && (!!paidAt || freeConsumed);
 
   // Store the clock in state so the body stays pure for the lint rule.
   const [now, setNow] = useState<number>(() => Date.now());
@@ -1986,13 +2039,13 @@ const WalletBalance = memo(function WalletBalance({
   }, [shouldTick]);
 
   let live = entitlement;
-  if (shouldTick) {
-    let paidElapsedMin = 0;
-    if (paidAt) {
-      paidElapsedMin = Math.max(0, (now - new Date(paidAt).getTime()) / 60_000);
-    } else if (joinedAt) {
-      paidElapsedMin = Math.max(0, (now - new Date(joinedAt).getTime()) / 60_000);
-    }
+  if (shouldTick && assignedAt) {
+    // Anchor: paid_extension_at if first-timer upgraded mid-session,
+    // otherwise assigned_at for a returning paid user.
+    const anchorMs = paidAt
+      ? new Date(paidAt).getTime()
+      : new Date(assignedAt).getTime();
+    const paidElapsedMin = Math.max(0, (now - anchorMs) / 60_000);
     if (paidElapsedMin > 0) {
       live = {
         ...entitlement,
@@ -2135,9 +2188,9 @@ const UserMenu = memo(function UserMenu({
 function humanState(s: SessionStatus): string {
   switch (s) {
     case "queued":       return "Connecting…";
-    case "assigned":     return "Engineer joining";
-    case "joining":      return "Connecting call";
-    case "live":         return "Live now";
+    case "assigned":     return "Live";
+    case "joining":      return "Joining call";
+    case "live":         return "On call";
     case "grace":        return "Reconnecting";
     case "ending":       return "Wrapping up";
     case "ended":        return "Ended";
@@ -2467,6 +2520,7 @@ const ChatPane = memo(function ChatPane({
                       durationSec={durationSec}
                       joinUrl={!ended ? session?.zoom_join_url ?? null : null}
                       onJoin={!ended ? () => void state.markJoined() : undefined}
+                      selfJoined={!!session?.customer_joined_at}
                       summaryBody={summary?.body ?? null}
                       recordingBody={isSupervisor ? recording?.body ?? null : null}
                     />,
@@ -2589,7 +2643,7 @@ function ReviewPanel({
       </div>
 
       {tab === "summary" ? (
-        <SummaryView session={session} />
+        <SummaryView session={session} messages={messages} />
       ) : (
         <ChatHistoryView messages={messages} />
       )}
@@ -2619,14 +2673,38 @@ function PillTab({
   );
 }
 
-function SummaryView({ session }: { session: GuestCall }) {
+function SummaryView({ session, messages }: { session: GuestCall; messages: GuestMessage[] }) {
   const title = session.ai_summary_title;
   const overview = session.ai_summary_overview ?? session.summary;
   const nextSteps = Array.isArray(session.ai_next_steps as unknown)
     ? (session.ai_next_steps as unknown as Array<string | { text?: string; description?: string }>)
     : [];
-  const generating = !overview && session.status === "ended";
   const dur = session.duration_minutes != null ? Math.round(Number(session.duration_minutes)) : 0;
+  // Per-call Zoom AI Companion summaries arrive as system chat messages
+  // (see zoom-webhook.handleSummaryCompleted). Surface them in the sidebar
+  // alongside the aggregated chat summary so both signals live together.
+  // Dedupe by body — Zoom sometimes redelivers the summary webhook (retry
+  // or the underscore/dot event-name pair), producing identical rows.
+  const seenCompanionBodies = new Set<string>();
+  const zoomCompanionMessages = messages.filter((m) => {
+    if (m.sender_kind !== "system" || !m.body || !isAiSummaryMessageBody(m.body)) return false;
+    const key = m.body.trim();
+    if (seenCompanionBodies.has(key)) return false;
+    seenCompanionBodies.add(key);
+    return true;
+  });
+  // Drive UI off the explicit summary_state machine — see migration
+  // 20260518200000_summary_state.sql. Avoids the prior infinite-spinner
+  // bug when the Zoom AI Companion summary never lands.
+  const state = session.summary_state ?? "idle";
+  const generating =
+    state === "generating_session_summary" ||
+    state === "generating_zoom_summary" ||
+    state === "waiting_for_transcript";
+  const generatingLabel =
+    state === "waiting_for_transcript" ? "Waiting for Zoom summary…" :
+    state === "generating_zoom_summary" ? "Reading Zoom transcript…" :
+    "Generating summary…";
 
   return (
     <div className="flex-1 overflow-y-auto px-5 py-5">
@@ -2641,8 +2719,30 @@ function SummaryView({ session }: { session: GuestCall }) {
         <div className="flex flex-col items-center gap-3 py-12 text-center">
           <Loader2 size={20} className="animate-spin" style={{ color: BRAND_GREEN }} />
           <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-            Generating summary…
+            {generatingLabel}
           </p>
+        </div>
+      ) : state === "no_conversation" ? (
+        <div className="flex flex-col items-center gap-3 py-12 text-center">
+          <p className="text-sm font-medium" style={{ color: "var(--text)" }}>
+            No conversation happened during this session.
+          </p>
+          <p className="max-w-xs text-xs" style={{ color: "var(--text-muted)" }}>
+            Recording wasn&apos;t started and no chat messages were exchanged.
+          </p>
+        </div>
+      ) : state === "transcript_unavailable" && !overview ? (
+        <div className="flex flex-col items-center gap-3 py-12 text-center">
+          <AlertTriangle size={18} style={{ color: "var(--text-muted)" }} />
+          <p className="text-sm font-medium" style={{ color: "var(--text)" }}>Zoom summary unavailable</p>
+          <p className="max-w-xs text-xs" style={{ color: "var(--text-muted)" }}>
+            The Zoom AI Companion summary didn&apos;t arrive in time.
+          </p>
+        </div>
+      ) : state === "summary_failed" && !overview ? (
+        <div className="flex flex-col items-center gap-3 py-12 text-center">
+          <AlertTriangle size={18} style={{ color: "var(--accent-red)" }} />
+          <p className="text-sm font-medium" style={{ color: "var(--text)" }}>Couldn&apos;t generate the summary</p>
         </div>
       ) : !overview ? (
         <p className="py-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>
@@ -2677,6 +2777,18 @@ function SummaryView({ session }: { session: GuestCall }) {
                   );
                 })}
               </ul>
+            </div>
+          )}
+          {zoomCompanionMessages.length > 0 && (
+            <div className="pt-2">
+              <h3 className="mb-3 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+                Zoom call summaries
+              </h3>
+              <div className="space-y-3">
+                {zoomCompanionMessages.map((m) => (
+                  <MeetingSummaryEntry key={m.id} body={m.body ?? ""} />
+                ))}
+              </div>
             </div>
           )}
         </div>

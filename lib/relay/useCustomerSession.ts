@@ -370,7 +370,9 @@ export function useCustomerSession(): CustomerSessionState {
     const sb = supabaseRef.current;
     const { error: e } = await sb.rpc("end_session", { _session_id: session.id, _reason: reason });
     if (e) { setError(e.message); return; }
-    // Fire-and-forget the AI summary
+    // Fire-and-forget: hang up Zoom (idempotent — returns ok:noop if no
+    // meeting was ever minted) AND kick off the AI summary.
+    void sb.functions.invoke("end-zoom-meeting",   { body: { session_id: session.id } });
     void sb.functions.invoke("summarize-guest-call", { body: { guest_call_id: session.id } });
   }, [session]);
 

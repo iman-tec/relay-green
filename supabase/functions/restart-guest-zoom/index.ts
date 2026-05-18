@@ -101,7 +101,9 @@ Deno.serve(async (req) => {
           join_before_host: true,
           waiting_room: false,
           approval_type: 2,
-          auto_recording: "cloud",
+          // Force-disable cloud recording (overrides Zoom account default).
+          // Engineer can manually hit ⏺ Record in the meeting.
+          auto_recording: "none",
           auto_start_meeting_summary: true,
           auto_start_ai_companion_questions: true,
           meeting_summary: true,
