@@ -23,6 +23,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, Search, Sparkles } from "lucide-react";
 import { useEngineerWorkspace } from "@/lib/relay/useEngineerWorkspace";
+import { useRequireEngineerProfile } from "@/lib/relay/useRequireEngineerProfile";
 import type { GuestCall } from "@/lib/supabase/types";
 
 const BRAND_GREEN      = "#3f5c2e";
@@ -39,6 +40,7 @@ type Person = {
 
 export function InboxClient() {
   const router = useRouter();
+  useRequireEngineerProfile();
   const { queue, recent, myActive, loading, error } = useEngineerWorkspace();
 
   // ── People list (left rail) ───────────────────────────────────────────
@@ -46,7 +48,17 @@ export function InboxClient() {
   const [selectedKey, setSelectedKey]   = useState<string | null>(null);
 
   const peopleMap = useMemo(() => {
-    const all = [...queue, ...myActive, ...recent];
+    // queue/myActive/recent can overlap on the same session id (a live one
+    // appears in both myActive and recent during the assigned→ended window).
+    // Dedupe up front so each person's sessions list has unique ids — the
+    // <li key={s.id}> below otherwise warns "two children with the same key".
+    const seen = new Set<string>();
+    const all: GuestCall[] = [];
+    for (const c of [...queue, ...myActive, ...recent]) {
+      if (seen.has(c.id)) continue;
+      seen.add(c.id);
+      all.push(c);
+    }
     const map = new Map<string, Person>();
     for (const c of all) {
       const k = c.guest_email || c.guest_name || c.id;

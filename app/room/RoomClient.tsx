@@ -452,11 +452,11 @@ export function RoomClient() {
     }
     setViewingPastId(null);
     setPendingDraft(null);
-    // Start the session immediately with a project named after the
-    // customer. They rename it from inside the ConnectingModal while the
-    // engineer is being matched.
-    void startSessionInProject({ newName: "project" });
-  }, [freeConsumed, paidRemaining, startSessionInProject]);
+    // Every new project goes through the intake wizard — it collects the
+    // questionnaire that feeds engineer matching. The wizard then creates
+    // the guest_calls row itself and routes back here on accept.
+    router.push("/intake");
+  }, [freeConsumed, paidRemaining, router]);
 
   // Recharge / "see plans" handler. Always opens the paywall — even when
   // the user has credits — so the Recharge button in the profile menu is
@@ -2427,6 +2427,7 @@ const ChatPane = memo(function ChatPane({
   onNeedProject?: (draft: string) => void;
 }) {
   void onNeedProject;
+  const router = useRouter();
   const session = state.session;
   const isReadOnly = session?.status === "ended";
   const isSupervisor = useIsSupervisor();
@@ -2437,6 +2438,17 @@ const ChatPane = memo(function ChatPane({
     const hasPaidLeft = state.entitlement.paid_minutes_remaining > 0;
     if (wouldCreateNew && !hasFreeLeft && !hasPaidLeft && onNeedsCredits) {
       onNeedsCredits();
+      return;
+    }
+    // First message in a brand-new project flows through the intake
+    // wizard — that's where we collect the questionnaire that feeds
+    // engineer matching. The draft text is stashed so we can re-send it
+    // once the engineer accepts and we're back on /room.
+    if (wouldCreateNew) {
+      try {
+        if (text.trim()) sessionStorage.setItem("relay:intake:draft", text);
+      } catch { /* ignore quota / privacy mode */ }
+      router.push("/intake");
       return;
     }
     await state.sendBundle({ text, files });

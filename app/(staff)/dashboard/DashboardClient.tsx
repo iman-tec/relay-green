@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useEngineerWorkspace } from "@/lib/relay/useEngineerWorkspace";
+import { useRequireEngineerProfile } from "@/lib/relay/useRequireEngineerProfile";
 import {
   Activity,
   CheckCircle2,
@@ -23,6 +24,7 @@ const CRIT_RED_SOFT = "rgba(139, 26, 26, 0.18)";
 
 export function DashboardClient() {
   const router = useRouter();
+  useRequireEngineerProfile();
   const { myActive, queue, recent, loading, error, takeNext, claim } = useEngineerWorkspace();
 
   const liveCount = myActive.filter((s) => s.status === "live").length;

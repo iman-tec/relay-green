@@ -31,6 +31,7 @@ import { Wordmark } from "./Wordmark";
 import { useStaffGuard } from "@/lib/relay/useStaffGuard";
 import { highestRoleLabel, highestRoleSummary, formatRole } from "@/lib/relay/role-labels";
 import { EngineerIncomingRequest } from "./EngineerIncomingRequest";
+import { EngineerIncomingMatch } from "./EngineerIncomingMatch";
 import { createClient } from "@/lib/supabase/browser";
 import type { GuestCall } from "@/lib/supabase/types";
 
@@ -297,6 +298,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
        *  ops_manager, pod_lead) won't be paged here — they monitor calls
        *  via Inbox/Supervise instead. */}
       {isEngineerOnly(roles) && <EngineerIncomingRequest />}
+      {isEngineerOnly(roles) && <EngineerIncomingMatch />}
 
       {/* Supervisor-only: non-blocking urgent session alerts */}
       {!engineer && <SupervisorAlerts roles={roles} />}
