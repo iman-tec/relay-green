@@ -30,7 +30,10 @@ import {
 import { Wordmark } from "./Wordmark";
 import { useStaffGuard } from "@/lib/relay/useStaffGuard";
 import { highestRoleLabel, highestRoleSummary, formatRole } from "@/lib/relay/role-labels";
-import { EngineerIncomingRequest } from "./EngineerIncomingRequest";
+// TEMP 2026-05-18: legacy first-come-first-served ring disabled while
+// the push-ring path (EngineerIncomingMatch) is validated. Re-enable the
+// import + mount below to bring it back.
+// import { EngineerIncomingRequest } from "./EngineerIncomingRequest";
 import { EngineerIncomingMatch } from "./EngineerIncomingMatch";
 import { createClient } from "@/lib/supabase/browser";
 import type { GuestCall } from "@/lib/supabase/types";
@@ -296,8 +299,15 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
       {/* Engineer-PRIMARY only: full-screen incoming call popup. A user
        *  who also holds a supervisor/admin role (super_admin, admin,
        *  ops_manager, pod_lead) won't be paged here — they monitor calls
-       *  via Inbox/Supervise instead. */}
-      {isEngineerOnly(roles) && <EngineerIncomingRequest />}
+       *  via Inbox/Supervise instead.
+       *
+       *  TEMP 2026-05-18: legacy EngineerIncomingRequest mount disabled
+       *  while the push-ring (EngineerIncomingMatch) path is being
+       *  validated. Legacy queued sessions (anonymous /room users) can
+       *  still be picked up from /dashboard or /inbox; they just won't
+       *  auto-ring engineers. Re-enable by un-commenting the line below
+       *  and the matching import at the top of the file. */}
+      {/* {isEngineerOnly(roles) && <EngineerIncomingRequest />} */}
       {isEngineerOnly(roles) && <EngineerIncomingMatch />}
 
       {/* Supervisor-only: non-blocking urgent session alerts */}
