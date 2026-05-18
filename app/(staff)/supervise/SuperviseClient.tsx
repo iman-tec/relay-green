@@ -327,10 +327,7 @@ export function SuperviseClient() {
 
 function HealthLegend() {
   return (
-    <div
-      className="flex flex-wrap items-center gap-x-6 gap-y-2"
-      title="Session health — green healthy, amber neutral, red danger"
-    >
+    <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
       <LegendChip color={BRAND_GREEN}  label="Healthy" />
       <LegendChip color={URGENT_AMBER} label="Neutral" />
       <LegendChip color={CRIT_RED}     label="Danger" />
@@ -339,8 +336,13 @@ function HealthLegend() {
 }
 
 function LegendChip({ color, label }: { color: string; label: string }) {
+  const tooltip = `Call Sentiment - ${label}`;
   return (
-    <div className="inline-flex items-center gap-2">
+    <div
+      className="inline-flex items-center gap-2"
+      title={tooltip}
+      aria-label={tooltip}
+    >
       <span
         aria-hidden
         className="inline-block h-2.5 w-2.5 rounded-full"
@@ -858,7 +860,20 @@ function PastPanel({
     sorted.sort((a, b) => {
       switch (sortKey) {
         case "duration":  return (Number(b.duration_minutes ?? 0)) - (Number(a.duration_minutes ?? 0));
-        case "sentiment": return (b.health?.score ?? 0) - (a.health?.score ?? 0);
+        case "sentiment": {
+          // Unscored sessions go to the bottom — otherwise the `?? 0`
+          // fallback would slot them at "neutral" and they'd outrank any
+          // session with a negative score (which is wrong for "Best
+          // sentiment" — they have no sentiment at all).
+          const aScore = a.health?.score;
+          const bScore = b.health?.score;
+          const aHas = typeof aScore === "number" && Number.isFinite(aScore);
+          const bHas = typeof bScore === "number" && Number.isFinite(bScore);
+          if (aHas && !bHas) return -1;
+          if (!aHas && bHas) return 1;
+          if (!aHas && !bHas) return 0;
+          return (bScore as number) - (aScore as number);
+        }
         case "customer":  return (a.guest_name ?? "").localeCompare(b.guest_name ?? "");
         case "ended":
         default: {
