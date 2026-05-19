@@ -32,8 +32,12 @@ const CRIT_RED = "#c2410c";
 const CRIT_RED_SOFT = "rgba(194, 65, 12, 0.18)";
 
 const ACTIVE_STATES  = ["queued", "assigned", "joining", "live", "grace"];
-const LIVE_STATES    = new Set(["live", "joining", "grace"]);
-const WAITING_STATES = new Set(["queued", "assigned"]);
+// 'assigned' (engineer claimed, chat live, timer running) is shown as
+// "Live" in the card chip by humanState, so it belongs in the Live tab —
+// keeping it in WAITING was a tab/label mismatch. Only 'queued' (no
+// engineer yet) is truly waiting.
+const LIVE_STATES    = new Set(["assigned", "live", "joining", "grace"]);
+const WAITING_STATES = new Set(["queued"]);
 const PAST_STATES    = ["ended", "cancelled", "abandoned"];
 
 // Per-session AI health snapshot, merged onto GuestCall in the card grid.
@@ -481,7 +485,7 @@ function SessionTile({ session }: { session: SessionWithHealth }) {
       </div>
 
       <div className="mb-3 grid grid-cols-2 gap-2 border-t pt-3 text-xs" style={{ borderColor: "var(--border)" }}>
-        <Stat label={session.status === "live" ? "Live for" : "Waiting"} value={fmtSecs(elapsed)} />
+        <Stat label={LIVE_STATES.has(session.status) ? "Live for" : "Waiting"} value={fmtSecs(elapsed)} />
         <Stat label="Recalls" value={String(session.recall_count ?? 0)} />
         <Stat label="Engineer" value={session.agent_name ?? "—"} />
         <Stat label="Project" value={session.project_name ?? "—"} />

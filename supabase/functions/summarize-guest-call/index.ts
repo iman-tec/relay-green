@@ -284,18 +284,20 @@ Deno.serve(async (req) => {
 
     // ── Post-session sentiment score ─────────────────────────────────────────
     // Feeds the colored health bar on the supervise pit and the feedback
-    // feed in /finance. Runs ONCE per session at end-time — re-runs (Zoom
-    // AI Companion summary arriving late) reuse the original row instead
-    // of inserting a duplicate.
+    // feed in /finance.
     //
-    // Idempotency: we used to gate this on `wasAlreadyEnded`, but that
-    // misfired — end_session flips status='ended' BEFORE this function
-    // runs as a fire-and-forget invocation, so wasAlreadyEnded was always
-    // true on the first invocation too, and the sentiment row was never
-    // written. The supervisor's PastSessionTile then had nothing to show.
-    // We now key idempotency off the existence of a post-end row instead
-    // (window_start IS NULL is the marker — score-session-health always
-    // sets a non-null window_start).
+    // Lifecycle: this function runs at end-time (chat-only — Zoom AI
+    // Companion hasn't delivered yet) AND again when zoom-webhook posts
+    // the AI Companion summary 1-5 minutes later. We RE-COMPUTE sentiment
+    // on every run because the second run has a strictly richer
+    // aiOverview (the OpenAI summary call above sees chat + Zoom
+    // observations interleaved). Older builds gated this on
+    // "row already exists" → sentiment stayed frozen on the chat-only
+    // snapshot. Now we UPSERT keyed on the post-end marker
+    // (window_start IS NULL — score-session-health always sets a
+    // non-null window_start) and only persist when the model actually
+    // produced a score, so a transient OpenAI failure on the re-run
+    // doesn't overwrite a good earlier reading with neutral 0.
     const { data: existingSentiment } = await supabase
       .from("session_health")
       .select("id")
@@ -303,7 +305,13 @@ Deno.serve(async (req) => {
       .is("window_start", null)
       .limit(1)
       .maybeSingle();
-    if (!existingSentiment) try {
+    try {
+      // Input priority: aiOverview is the freshly-generated OpenAI summary
+      // built from chat + every "[Zoom AI Companion summary from the call]"
+      // block (see the transcript build at the top of the function). On the
+      // re-run triggered by zoom-webhook after Zoom delivers, aiOverview is
+      // strictly richer than on the original run. summary is the formatted
+      // multi-section version; transcript head is the last-resort fallback.
       const sentimentInput =
         (aiOverview && aiOverview.trim()) ||
         (summary && summary.trim()) ||
@@ -311,6 +319,9 @@ Deno.serve(async (req) => {
 
       let score = 0;
       let scoreBlurb = "Post-session sentiment.";
+      // Did the model actually return a usable score? If not we don't want
+      // to overwrite a previously-good reading with a default neutral.
+      let scored = false;
 
       if (apiKey && sentimentInput.length > 0) {
         const ai = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -329,6 +340,7 @@ Deno.serve(async (req) => {
                 role: "system",
                 content:
                   "You rate the sentiment of a completed customer-support session given its summary. " +
+                  "The summary may incorporate signals from both chat and the live video call's AI Companion observations — weigh both equally; do not assume chat-only context. " +
                   "Return STRICT JSON only: {\"score\": number, \"summary\": string}.\n" +
                   "score is a number in [-1.0, +1.0]:\n" +
                   "  +1.0  problem fully resolved AND customer expresses gratitude / clear satisfaction.\n" +
@@ -360,11 +372,13 @@ Deno.serve(async (req) => {
             const n = Number(parsed.score);
             if (Number.isFinite(n)) {
               score = Math.max(-1, Math.min(1, n));
+              scored = true;
             }
             const blurb = typeof parsed.summary === "string" ? parsed.summary.trim() : "";
             if (blurb) scoreBlurb = blurb.slice(0, 200);
           } catch {
-            // Malformed JSON from the model — keep score=0 neutral.
+            // Malformed JSON from the model — leave scored=false so we
+            // don't overwrite a previous good reading.
           }
         } else {
           console.error(
@@ -375,22 +389,39 @@ Deno.serve(async (req) => {
         }
       }
 
-      await supabase.from("session_health").insert({
-        session_id: guest_call_id,
-        score,
-        summary: scoreBlurb,
-        window_start: null,
-        window_end:   endedAtIso,
-        message_count: 0,
-      });
-      // Defensive copy onto the guest_calls row itself — guarantees the
-      // supervisor PastSessionTile can render sentiment even if the
-      // session_health view ever misses a row. Migration
-      // 20260520200000_bugs2_fixes adds these columns.
-      await supabase.from("guest_calls").update({
-        final_sentiment_score:   score,
-        final_sentiment_summary: scoreBlurb,
-      }).eq("id", guest_call_id);
+      // Persist. UPSERT semantics keyed off the post-end marker row
+      // (window_start IS NULL): UPDATE if one already exists, INSERT
+      // otherwise. We skip the overwrite when the model failed AND a
+      // prior reading exists, so a flaky OpenAI call on the Zoom-arrived
+      // re-run doesn't replace a real chat-only score with neutral 0.
+      const shouldOverwrite = scored || !existingSentiment;
+      if (shouldOverwrite) {
+        if (existingSentiment) {
+          await supabase.from("session_health").update({
+            score,
+            summary:      scoreBlurb,
+            computed_at:  new Date().toISOString(),
+            window_end:   endedAtIso,
+          }).eq("id", (existingSentiment as { id: string }).id);
+        } else {
+          await supabase.from("session_health").insert({
+            session_id:    guest_call_id,
+            score,
+            summary:       scoreBlurb,
+            window_start:  null,
+            window_end:    endedAtIso,
+            message_count: 0,
+          });
+        }
+        // Defensive copy onto the guest_calls row itself — guarantees the
+        // supervisor PastSessionTile can render sentiment even if the
+        // session_health view ever misses a row. Migration
+        // 20260520200000_bugs2_fixes adds these columns.
+        await supabase.from("guest_calls").update({
+          final_sentiment_score:   score,
+          final_sentiment_summary: scoreBlurb,
+        }).eq("id", guest_call_id);
+      }
     } catch (e) {
       console.error("[summarize-guest-call] sentiment scoring failed:", e);
     }
