@@ -1,17 +1,15 @@
-import type { Metadata } from "next";
-import { MatchingClient } from "./MatchingClient";
-
-export const metadata: Metadata = {
-  title: "Finding your engineer — Relay.green",
-};
+import { redirect } from "next/navigation";
 
 type Params = { id: string };
 
+// Matching now happens as an overlay modal inside /room. Old links to
+// /intake/matching/[id] (saved tabs, navigations from older builds) are
+// redirected to /room?matching=<id> so the modal pops automatically.
 export default async function MatchingPage({
   params,
 }: {
   params: Promise<Params>;
 }) {
   const { id } = await params;
-  return <MatchingClient intakeId={id} />;
+  redirect(`/room?matching=${id}`);
 }

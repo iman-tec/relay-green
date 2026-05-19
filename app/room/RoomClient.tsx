@@ -34,6 +34,7 @@ import { Wordmark } from "@/app/_components/Wordmark";
 import { MeetingChatEntry } from "@/app/_components/MeetingChatEntry";
 import { MeetingSummaryEntry, isAiSummaryMessageBody } from "@/app/_components/MeetingSummaryEntry";
 import { PaywallModal } from "@/app/_components/PaywallModal";
+import { MatchingModal } from "@/app/_components/MatchingModal";
 import { ChatComposer } from "@/app/_components/ChatComposer";
 import { MessageAttachments } from "@/app/_components/MessageAttachments";
 import { useCustomerSession } from "@/lib/relay/useCustomerSession";
@@ -159,6 +160,23 @@ export function RoomClient() {
   // mints directly in that project. Cleared once a session is created
   // (the new session inherits the project, so the context is satisfied).
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+
+  // Active matching session being tracked by the MatchingModal overlay.
+  // Set by handleStartInProject (clicking "+" on a project) and by the
+  // ?matching=<intake_id> URL hop that /intake redirects to after the
+  // wizard completes. Null = no modal shown.
+  const [matchingIntakeId, setMatchingIntakeId] = useState<string | null>(null);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const q = new URLSearchParams(window.location.search);
+    const id = q.get("matching");
+    if (id) {
+      setMatchingIntakeId(id);
+      const url = new URL(window.location.href);
+      url.searchParams.delete("matching");
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, []);
 
   // Old localStorage flags from the removed useConnectingModalGate are
   // wiped on mount so existing customers don't carry forward suppression
@@ -495,7 +513,8 @@ export function RoomClient() {
       .eq("id", intake.id);
 
     await sb.rpc("match_engineer", { _intake_id: intake.id });
-    router.push(`/intake/matching/${intake.id}`);
+    // Show the matching overlay in-place instead of navigating away.
+    setMatchingIntakeId(intake.id);
   }, [state.entitlement, state.auth, router]);
 
   // Toggle a project as the current "context" for the no-session landing.
@@ -640,6 +659,17 @@ export function RoomClient() {
         reason={paywallOpen ?? "manual"}
         onClose={() => setPaywallOpen(null)}
       />
+
+      {matchingIntakeId && (
+        <MatchingModal
+          intakeId={matchingIntakeId}
+          onClose={() => setMatchingIntakeId(null)}
+          onAccepted={() => {
+            setMatchingIntakeId(null);
+            void state.refresh();
+          }}
+        />
+      )}
     </div>
   );
 }

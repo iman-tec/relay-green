@@ -86,7 +86,7 @@ export function IntakeClient() {
               .update({ guest_call_id: session.id, declined_by: [] })
               .eq("id", existing.id);
             await sb.rpc("match_engineer", { _intake_id: existing.id });
-            router.replace(`/intake/matching/${existing.id}`);
+            router.replace(`/room?matching=${existing.id}`);
             return;
           }
         }
@@ -178,8 +178,9 @@ export function IntakeClient() {
       // 5. Match.
       await sb.rpc("match_engineer", { _intake_id: intakeId });
 
-      // 6. Off to the waiting screen.
-      router.replace(`/intake/matching/${intakeId}`);
+      // 6. Back to /room — the MatchingModal there picks the intake up
+      //    from the ?matching query param and pops in-place.
+      router.replace(`/room?matching=${intakeId}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not start matching");
       setBusy(false);
