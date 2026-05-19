@@ -1,23 +1,22 @@
 "use client";
 
 /*
- * Engineer widget — runs the incoming-call listener inside the Relay desktop
- * shell. Mounted by the Electron shell into a hidden BrowserWindow so the
- * engineer receives ring + (Day 4) tray flash + native notification even when
- * the main app window is closed.
+ * Engineer widget — hidden BrowserWindow that the Relay desktop shell keeps
+ * alive while the engineer is signed in. Its job is to surface incoming
+ * customer calls as OS-level desktop notifications (tray flash + native
+ * Accept/Decline popup) even when the main app window is closed or hidden.
  *
- * Reuses `EngineerIncomingRequest` which:
- *   - subscribes to guest_calls realtime
- *   - plays a 660 Hz ring tone while a queue head exists
- *   - exposes Accept (claim_session RPC + navigate to /staff/session/[id])
- *     and Decline (local dismiss)
+ * Single listener: MatchOfferBridge. It subscribes to engineer_match_offers
+ * in realtime and drives the `window.relay.*` IPC bridge — no in-window UI,
+ * no changes to the match RPCs, no duplicate ringing.
  *
- * In v1 this page is intentionally invisible. The orb is the user-facing
- * surface; this just hosts the listener.
+ * The in-app modal (EngineerIncomingMatch, mounted in StaffShell) handles
+ * the user-visible card when the engineer is on /dashboard etc. Both
+ * consume the same underlying offer row independently.
  */
 
-import { EngineerIncomingRequest } from "@/app/_components/EngineerIncomingRequest";
+import { MatchOfferBridge } from "./MatchOfferBridge";
 
 export function EngineerWidgetClient() {
-  return <EngineerIncomingRequest />;
+  return <MatchOfferBridge />;
 }
