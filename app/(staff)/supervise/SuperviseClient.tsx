@@ -246,7 +246,13 @@ export function SuperviseClient() {
         queueRefresh)
       .subscribe();
     channelRef.current = ch;
-    const fallback = setInterval(() => { void refresh(); }, 30_000);
+    // Aggressive polling fallback. Realtime usually delivers in under
+    // a second via the debounced channel above, but if Supabase drops a
+    // postgres_changes event (cert blip, partition cookie reset, etc.)
+    // the supervisor view shouldn't sit on stale data — 5s gives the
+    // grid a guaranteed refresh tempo without hammering the DB. Burst-
+    // protection still lives in the 600ms debouncer.
+    const fallback = setInterval(() => { void refresh(); }, 5_000);
     return () => {
       if (pending) clearTimeout(pending);
       sb.removeChannel(ch);
