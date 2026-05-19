@@ -171,7 +171,14 @@ export async function POST(request: Request) {
   }
   const { admin, user: actor } = gate;
 
-  const { email, displayName, role } = await request.json().catch(() => ({}));
+  const body = (await request.json().catch(() => ({}))) as {
+    email?:      string;
+    displayName?: string;
+    role?:       string;
+    podName?:    string;
+    podRole?:    "supervisor" | "engineer" | null;
+  };
+  const { email, displayName, role, podName, podRole } = body;
 
   if (
     typeof email !== "string" || !email.trim() ||
@@ -190,13 +197,24 @@ export async function POST(request: Request) {
   const trimmedEmail = email.trim().toLowerCase();
   const trimmedName  = displayName.trim();
 
-  // Unified invite — always tries inviteUserByEmail first, falls back to
-  // a public-client signInWithOtp magic-link for confirmed existing
-  // users. Either way, an actual email goes out (or we return an error).
+  // Invite-only mode (bugs2.txt #1) — admin-driven pod additions must
+  // send a proper "Invite User" email (so the recipient sees role + pod
+  // context + a setup CTA), never the magic-link/OTP fallback. For
+  // already-confirmed users we silently attach them; they already have
+  // an account and don't need an authentication email.
+  //
+  // Pod context is forwarded into user_metadata so the Supabase invite
+  // template can reference {{ .Data.invited_role }} / {{ .Data.pod_name }}.
   const invite = await sendInvitationEmail(admin, {
     email:       trimmedEmail,
     displayName: trimmedName,
-    metadata:    { role_label: role, created_by: actor.id },
+    inviteOnly:  true,
+    metadata:    {
+      role_label:    role,
+      created_by:    actor.id,
+      ...(podName ? { pod_name: podName } : {}),
+      ...(podRole ? { pod_role: podRole } : {}),
+    },
   });
   if (!invite.ok) {
     return NextResponse.json({ error: invite.error }, { status: 400 });

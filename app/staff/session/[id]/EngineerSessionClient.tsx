@@ -33,6 +33,7 @@ import { createClient } from "@/lib/supabase/browser";
 import { useEngineerSession } from "@/lib/relay/useEngineerSession";
 import { useIsSupervisor, isSupervisorOnlyMessage } from "@/lib/relay/useIsSupervisor";
 import { useSessionTimer } from "@/lib/relay/useSessionTimer";
+import { humanState } from "@/lib/relay/session-status";
 import type { GuestCall, GuestMessage, SessionStatus, Urgency } from "@/lib/supabase/types";
 
 const BRAND_GREEN        = "#3f5c2e";
@@ -1280,20 +1281,8 @@ function ErrorToast({ message }: { message: string }) {
   );
 }
 
-function humanState(s: SessionStatus): string {
-  switch (s) {
-    case "queued":       return "Connecting customer…";
-    case "assigned":     return "Live";
-    case "joining":      return "Joining call";
-    case "live":         return "On call";
-    case "grace":        return "Reconnecting";
-    case "ending":       return "Wrapping up";
-    case "ended":        return "Ended";
-    case "abandoned":    return "Abandoned";
-    case "cancelled":    return "Cancelled";
-    case "expired_free": return "Free expired";
-  }
-}
+// humanState moved to lib/relay/session-status.ts so SuperviseClient renders
+// identical status labels (bugs2.txt #2).
 
 function groupByDate(past: PastSession[]): Array<[string, PastSession[]]> {
   const today = new Date(); today.setHours(0,0,0,0);

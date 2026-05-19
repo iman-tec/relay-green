@@ -286,15 +286,24 @@ Deno.serve(async (req) => {
     // Feeds the colored health bar on the supervise pit and the feedback
     // feed in /finance. Runs ONCE per session at end-time — re-runs (Zoom
     // AI Companion summary arriving late) reuse the original row instead
-    // of inserting a duplicate. The model is tuned to lean neutral (low
-    // false-positive rate) — only commits to a strong score when the
-    // summary has explicit evidence.
+    // of inserting a duplicate.
     //
-    // Input priority: ai_summary_overview > full summary > transcript head.
-    // If we have nothing usable (no API key, empty transcript), we write a
-    // neutral 0 row so the UI doesn't fall back to the stale per-minute
-    // score from earlier in the session.
-    if (!wasAlreadyEnded) try {
+    // Idempotency: we used to gate this on `wasAlreadyEnded`, but that
+    // misfired — end_session flips status='ended' BEFORE this function
+    // runs as a fire-and-forget invocation, so wasAlreadyEnded was always
+    // true on the first invocation too, and the sentiment row was never
+    // written. The supervisor's PastSessionTile then had nothing to show.
+    // We now key idempotency off the existence of a post-end row instead
+    // (window_start IS NULL is the marker — score-session-health always
+    // sets a non-null window_start).
+    const { data: existingSentiment } = await supabase
+      .from("session_health")
+      .select("id")
+      .eq("session_id", guest_call_id)
+      .is("window_start", null)
+      .limit(1)
+      .maybeSingle();
+    if (!existingSentiment) try {
       const sentimentInput =
         (aiOverview && aiOverview.trim()) ||
         (summary && summary.trim()) ||
@@ -374,6 +383,14 @@ Deno.serve(async (req) => {
         window_end:   endedAtIso,
         message_count: 0,
       });
+      // Defensive copy onto the guest_calls row itself — guarantees the
+      // supervisor PastSessionTile can render sentiment even if the
+      // session_health view ever misses a row. Migration
+      // 20260520200000_bugs2_fixes adds these columns.
+      await supabase.from("guest_calls").update({
+        final_sentiment_score:   score,
+        final_sentiment_summary: scoreBlurb,
+      }).eq("id", guest_call_id);
     } catch (e) {
       console.error("[summarize-guest-call] sentiment scoring failed:", e);
     }

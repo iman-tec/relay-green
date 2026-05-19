@@ -65,6 +65,11 @@ export type GuestCall = {
   // See migration 20260518200000_summary_state.sql for the lifecycle.
   summary_state: SummaryState;
   summary_state_updated_at: string | null;
+  // Defensive copy of the post-end sentiment (bugs2.txt #3). Authoritative
+  // source remains session_health/latest_session_health; this row-level copy
+  // lets PastSessionTile render even if the view ever misses.
+  final_sentiment_score:   number | null;
+  final_sentiment_summary: string | null;
   created_at: string;
   updated_at: string;
 };

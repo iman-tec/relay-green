@@ -31,10 +31,21 @@ export type InvitePayload = {
   displayName?: string;
   /** Free-form metadata merged into user_metadata (org_id, role_label, …). */
   metadata?:    Record<string, unknown>;
+  /**
+   * Invite-only mode (bugs2.txt #1). When true, skip the signInWithOtp
+   * magic-link fallback that triggers an OTP-looking email for existing
+   * confirmed users. Existing-confirmed users return mode: "already_active"
+   * so the caller can silently attach them (e.g. to a pod) without
+   * mailing them a code they don't need.
+   *
+   * Default (false) keeps the legacy behaviour for places like
+   * "resend-invite" where re-mailing a confirmed user IS the point.
+   */
+  inviteOnly?:  boolean;
 };
 
 export type InviteResult =
-  | { ok: true;  mode: "invited" | "magic_link"; userId?: string }
+  | { ok: true;  mode: "invited" | "magic_link" | "already_active"; userId?: string }
   | { ok: false; error: string };
 
 const APP_URL =
@@ -81,6 +92,17 @@ export async function sendInvitationEmail(
     msg.includes("exists");
 
   if (alreadyExists) {
+    // Invite-only path (bugs2.txt #1) — the caller wants a real invite or
+    // nothing. The user is already on the platform; resolve their auth row
+    // so we can return userId and skip mailing them a magic-link OTP.
+    if (payload.inviteOnly) {
+      const lookup = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+      const existing = lookup.data?.users?.find(
+        (u) => u.email?.toLowerCase() === email,
+      );
+      return { ok: true, mode: "already_active", userId: existing?.id };
+    }
+
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const anonKey     = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     if (!supabaseUrl || !anonKey) {

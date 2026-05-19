@@ -221,15 +221,31 @@ function StaffTab({ meEmail }: { meEmail: string }) {
         setPods((prev) => [...prev, podBody.pod!]);
       }
 
-      // 2. Invite the user.
+      // 2. Invite the user. Pod context (name + pod_role) goes through as
+      //    user_metadata so the Supabase invite template can mention which
+      //    pod and role they were invited as (bugs2.txt #1).
+      const podRoleFor: "engineer" | "supervisor" | null =
+        draft.role === "engineer"  ? "engineer" :
+        draft.role === "pod_lead"  ? "supervisor" : null;
+      const podName = podId
+        ? (pods.find((p) => p.id === podId)?.name ?? null)
+        : null;
       const res = await fetch("/api/admin/users", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ email, displayName, role: draft.role }),
+        body:    JSON.stringify({
+          email,
+          displayName,
+          role: draft.role,
+          podName,
+          podRole: podRoleFor,
+        }),
       });
       const body = (await res.json().catch(() => ({}))) as {
-        user?:    { id: string };
-        error?:   string;
+        user?:             { id: string };
+        invited?:          boolean;
+        attachedExisting?: boolean;
+        error?:            string;
       };
       if (!res.ok || !body.user?.id) {
         setActionError(body.error ?? "Couldn't create user.");
@@ -238,7 +254,6 @@ function StaffTab({ meEmail }: { meEmail: string }) {
       const userId = body.user.id;
 
       // 3. Assign to the pod (only engineer + pod_lead are pod-eligible).
-      const podRoleFor = draft.role === "engineer" ? "engineer" : draft.role === "pod_lead" ? "supervisor" : null;
       if (podId && podRoleFor) {
         const assignRes = await fetch(`/api/admin/pods/${podId}/members`, {
           method:  "POST",
@@ -251,7 +266,15 @@ function StaffTab({ meEmail }: { meEmail: string }) {
         }
       }
 
-      setActionInfo(`Invitation email sent to ${email}.`);
+      // Tailor the toast to whether we actually mailed someone (new user)
+      // vs. silently attached an existing user (bugs2.txt #1 — no more
+      // OTP-looking emails for already-active accounts).
+      const podSuffix = podName ? ` to ${podName}` : "";
+      setActionInfo(
+        body.attachedExisting
+          ? `${email} already had an account — attached${podSuffix}.`
+          : `Invitation email sent to ${email}${podSuffix}.`,
+      );
       setDraft(null);
       await list.refresh();
     } catch (err) {

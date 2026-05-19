@@ -18,6 +18,7 @@ import {
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
+import { humanState } from "@/lib/relay/session-status";
 import type { GuestCall } from "@/lib/supabase/types";
 
 const BRAND_GREEN = "#3f5c2e";
@@ -458,7 +459,7 @@ function SessionTile({ session }: { session: SessionWithHealth }) {
           className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide${isWaiting ? " relay-chip-glow" : ""}`}
           style={{ backgroundColor: tok.pill_bg, color: tok.pill_fg }}
         >
-          {session.status}
+          {humanState(session.status)}
         </span>
         <span
           className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
@@ -1097,7 +1098,18 @@ function EmptyState({ title, body }: { title: string; body: string }) {
 // session ended before summary), we render a neutral grey bar.
 function PastSessionTile({ session }: { session: SessionWithHealth }) {
   const router = useRouter();
-  const score  = session.health?.score;
+  // Sentiment source priority (bugs2.txt #3):
+  //  1. session.health   — the latest_session_health view (preferred)
+  //  2. guest_calls row  — defensive copy written by summarize-guest-call
+  //                        if for any reason the view doesn't surface a row.
+  // Either source carries the post-end overall sentiment.
+  const score =
+    session.health?.score ??
+    (typeof session.final_sentiment_score === "number" ? session.final_sentiment_score : undefined);
+  const summaryText =
+    session.health?.summary ??
+    session.final_sentiment_summary ??
+    null;
   const hasScore = typeof score === "number" && Number.isFinite(score);
   // Post-completion thresholds match the live thresholds (±0.3) so the
   // colour mapping stays consistent across the two grids.
@@ -1149,7 +1161,7 @@ function PastSessionTile({ session }: { session: SessionWithHealth }) {
             color: "var(--text-muted)",
           }}
         >
-          {session.status}
+          {humanState(session.status)}
         </span>
         {hasScore && (
           <span
@@ -1197,9 +1209,9 @@ function PastSessionTile({ session }: { session: SessionWithHealth }) {
       >
         <span className="font-semibold uppercase tracking-wide opacity-80">
           Post-completion · {sentimentLabel}
-          {session.health?.summary ? " — " : ""}
+          {summaryText ? " — " : ""}
         </span>
-        {session.health?.summary ?? (hasScore ? "" : "no summary available")}
+        {summaryText ?? (hasScore ? "" : "no summary available")}
       </div>
     </div>
   );
