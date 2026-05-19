@@ -3,19 +3,21 @@
 /*
  * Client intake wizard.
  *
- * Runs for every new project per spec — `app/_components/wizard/*` chips
- * collect 3-4 answers (Step 4 is conditional on Step 1). The Find Engineer
- * CTA mints:
- *   1. a guest_calls row via get_or_create_active_customer_session
- *   2. a client_intakes row referencing it
- *   3. an engineer_match_offers row via match_engineer(intake_id)
+ * Two modes:
+ *   • no ?projectId — wizard creates a brand-new project, writes the intake
+ *     against that project_id, mints the first session, and fires
+ *     match_engineer.
+ *   • ?projectId=X  — wizard fills the intake for an EXISTING project that
+ *     doesn't have one yet (legacy projects that pre-date intake-per-project).
+ *     Same final steps: session + match_engineer + redirect to matching.
  *
- * Then routes to /intake/matching/[intake_id] which owns the waiting +
- * accept/decline retry flow.
+ * The intake row is the canonical "answers about this project". Sessions in
+ * the same project reuse the intake (with declined_by cleared between
+ * sessions) so engineer-matching uses consistent answers every time.
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { WizardShell } from "@/app/_components/wizard/WizardShell";
 import { ChipGroup } from "@/app/_components/wizard/ChipGroup";
 import { createClient } from "@/lib/supabase/browser";
@@ -29,8 +31,14 @@ const TECHNOLOGIES = [
   "MySQL", "PostgreSQL", "MongoDB", "Linux", "iOS", "Android", "Firebase",
 ] as const;
 
+const ACTIVE_SESSION_STATES = [
+  "queued", "assigned", "joining", "live", "grace", "ending", "expired_free",
+] as const;
+
 export function IntakeClient() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const projectIdParam = searchParams.get("projectId");
 
   const [authLoading, setAuthLoading] = useState(true);
   const [step, setStep] = useState(1);
@@ -54,9 +62,38 @@ export function IntakeClient() {
         router.replace("/login?next=/intake");
         return;
       }
+      // Short-circuit: if we were handed a project that already has an
+      // intake, skip the wizard entirely and fire match_engineer with
+      // the stored answers. This makes "Start in this old project"
+      // resolve to the same push-ring matching UX as "Create new project".
+      if (projectIdParam) {
+        const { data: existing } = await sb
+          .from("client_intakes")
+          .select("id")
+          .eq("project_id", projectIdParam)
+          .eq("customer_user_id", data.user.id)
+          .maybeSingle();
+        if (existing?.id) {
+          // Mint a fresh session, point the intake at it, clear the
+          // declined_by set so prior decliners can be re-rung, then match.
+          const { data: callData } = await sb.rpc(
+            "get_or_create_active_customer_session",
+            { _project_id: projectIdParam },
+          );
+          const session = (Array.isArray(callData) ? callData[0] : callData) as { id: string } | null;
+          if (session?.id) {
+            await sb.from("client_intakes")
+              .update({ guest_call_id: session.id, declined_by: [] })
+              .eq("id", existing.id);
+            await sb.rpc("match_engineer", { _intake_id: existing.id });
+            router.replace(`/intake/matching/${existing.id}`);
+            return;
+          }
+        }
+      }
       setAuthLoading(false);
     })();
-  }, [router]);
+  }, [router, projectIdParam]);
 
   const canAdvance =
     (step === 1 && familiarity.length === 1) ||
@@ -72,8 +109,40 @@ export function IntakeClient() {
       const { data: u } = await sb.auth.getUser();
       if (!u.user) throw new Error("Not signed in");
 
+      // 1. Resolve the project. Either we were handed one (legacy-project
+      //    fill-in mode), or we create a new one.
+      let projectId = projectIdParam;
+      if (!projectId) {
+        const { data: created, error: projErr } = await sb.rpc(
+          "create_project",
+          { _name: "Project" },
+        );
+        if (projErr) throw projErr;
+        const row = Array.isArray(created)
+          ? (created[0] as { id?: string } | null)
+          : (created as { id?: string } | null);
+        projectId = row?.id ?? null;
+        if (!projectId) throw new Error("Could not create project");
+      }
+
+      // 2. Cancel any lingering active session that belongs to a different
+      //    project — otherwise get_or_create returns the old session.
+      const { data: activeSessions } = await sb
+        .from("guest_calls")
+        .select("id, project_id")
+        .eq("customer_user_id", u.user.id)
+        .in("status", ACTIVE_SESSION_STATES as unknown as string[])
+        .order("created_at", { ascending: false })
+        .limit(1);
+      const lingering = (activeSessions ?? [])[0] as { id: string; project_id: string | null } | undefined;
+      if (lingering && lingering.project_id !== projectId) {
+        await sb.rpc("cancel_customer_session", { _session_id: lingering.id });
+      }
+
+      // 3. Mint the session for this project.
       const { data: callData, error: rpcErr } = await sb.rpc(
         "get_or_create_active_customer_session",
+        { _project_id: projectId },
       );
       if (rpcErr) {
         if ((rpcErr.message ?? "").includes("NO_ENTITLEMENT")) {
@@ -85,28 +154,37 @@ export function IntakeClient() {
       const session = (Array.isArray(callData) ? callData[0] : callData) as { id: string };
       if (!session?.id) throw new Error("Could not create session");
 
+      // 4. Upsert the intake row keyed on (project_id, customer_user_id).
+      //    declined_by is cleared so a fresh session can re-try engineers
+      //    that declined in a previous session for this project.
+      const intakePayload = {
+        guest_call_id: session.id,
+        customer_user_id: u.user.id,
+        project_id: projectId,
+        familiarity: familiarity[0],
+        ai_tools_used: aiTools[0],
+        developing: developing[0],
+        technologies: wantsTechStep ? technologies : [],
+        declined_by: [] as string[],
+      };
       const { data: intakeData, error: intakeErr } = await sb
         .from("client_intakes")
-        .insert({
-          guest_call_id: session.id,
-          customer_user_id: u.user.id,
-          familiarity: familiarity[0],
-          ai_tools_used: aiTools[0],
-          developing: developing[0],
-          technologies: wantsTechStep ? technologies : [],
-        })
+        .upsert(intakePayload, { onConflict: "project_id,customer_user_id" })
         .select()
         .single();
       if (intakeErr) throw intakeErr;
-
       const intakeId = intakeData.id as string;
+
+      // 5. Match.
       await sb.rpc("match_engineer", { _intake_id: intakeId });
+
+      // 6. Off to the waiting screen.
       router.replace(`/intake/matching/${intakeId}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not start matching");
       setBusy(false);
     }
-  }, [router, familiarity, aiTools, developing, technologies, wantsTechStep]);
+  }, [router, projectIdParam, familiarity, aiTools, developing, technologies, wantsTechStep]);
 
   const onNext = useCallback(() => {
     if (!canAdvance) return;

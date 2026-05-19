@@ -95,6 +95,11 @@ export function EngineerIncomingMatch() {
     // chaining .on() onto that throws "cannot add postgres_changes after
     // subscribe()". The Date.now() suffix gives each mount its own channel.
     let channel: ReturnType<typeof sb.channel> | null = null;
+    // Polling fallback. Realtime INSERT events on engineer_match_offers
+    // should fire reliably with the simple direct-equality RLS, but a
+    // 2-second poll guarantees a missed event doesn't strand the engineer
+    // without a ring.
+    let poll: ReturnType<typeof setInterval> | null = null;
     void (async () => {
       const { data: u } = await sb.auth.getUser();
       if (cancelled || !u.user) return;
@@ -114,10 +119,12 @@ export function EngineerIncomingMatch() {
           () => { void fetchOffer(); },
         )
         .subscribe();
+      poll = setInterval(() => { void fetchOffer(); }, 2000);
     })();
     return () => {
       cancelled = true;
       if (channel) void sb.removeChannel(channel);
+      if (poll) clearInterval(poll);
     };
   }, [fetchOffer]);
 

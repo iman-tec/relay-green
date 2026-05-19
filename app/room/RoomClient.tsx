@@ -396,14 +396,32 @@ export function RoomClient() {
     void refetchProjects();
   }, [pendingDraft, state, refetchProjects]);
 
-  // Existing call signature kept for the picker pane.
-  const handleProjectConfirmNew  = useCallback((name: string) => startSessionInProject({ newName: name }),  [startSessionInProject]);
-  const handleProjectConfirmPick = useCallback((id: string)   => startSessionInProject({ existingId: id }), [startSessionInProject]);
+  // Picker-pane handlers — both funnel into /intake. The wizard at
+  // /intake?projectId=X detects an existing intake (returning user picking
+  // an old project) and short-circuits straight into match_engineer +
+  // matching screen; otherwise it collects answers.
+  const handleProjectConfirmNew  = useCallback(async (_name: string) => {
+    setProjectFormOpen(false);
+    router.push("/intake");
+  }, [router]);
+  const handleProjectConfirmPick = useCallback(async (id: string) => {
+    setProjectFormOpen(false);
+    router.push(`/intake?projectId=${id}`);
+  }, [router]);
 
   // Called from sidebar's "+ inside project" affordance AND from the
-  // branded landing's CTA when a project is selected: skips the picker
-  // entirely and starts a session directly in that project.
-  const handleStartInProject = useCallback((projectId: string | null) => {
+  // branded landing's CTA when a project is selected. Both new and
+  // existing projects now go through the same push-ring matching flow:
+  //
+  //   no project        → /intake (wizard creates project + intake + match)
+  //   project, intake?  → look up the project's intake. If present, mint a
+  //                        session, point the intake at it (clearing
+  //                        declined_by so engineers can re-ring), and fire
+  //                        match_engineer. Redirect to the matching screen.
+  //                        If absent, route to /intake?projectId=X so the
+  //                        customer can fill the answers once (legacy
+  //                        projects predate per-project intake).
+  const handleStartInProject = useCallback(async (projectId: string | null) => {
     // Entitlement check before we do anything else.
     const hasFreeLeft = !state.entitlement.free_consumed_at;
     const hasPaidLeft = state.entitlement.paid_minutes_remaining > 0;
@@ -414,15 +432,71 @@ export function RoomClient() {
     setViewingPastId(null);
     setPendingDraft(null);
     setSelectedProjectId(null);
-    if (projectId) {
-      void startSessionInProject({ existingId: projectId });
-    } else {
-      // Skip the picker — start a session in a default "project" right
-      // away. The customer renames it from inside the ConnectingModal
-      // while the timer is running.
-      void startSessionInProject({ newName: "project" });
+
+    if (!projectId) {
+      // Fresh project → wizard. It creates the project, writes the intake,
+      // mints the session, fires match_engineer, and redirects to /intake/matching.
+      router.push("/intake");
+      return;
     }
-  }, [state.entitlement, startSessionInProject]);
+
+    const sb = createClient();
+    const userId = state.auth.kind === "authed" ? state.auth.userId : null;
+    if (!userId) {
+      router.push("/login?next=/room");
+      return;
+    }
+
+    // Does this project already have an intake?
+    const { data: intake } = await sb
+      .from("client_intakes")
+      .select("id")
+      .eq("project_id", projectId)
+      .eq("customer_user_id", userId)
+      .maybeSingle();
+    if (!intake) {
+      router.push(`/intake?projectId=${projectId}`);
+      return;
+    }
+
+    // Existing intake → start session + match, then off to the waiting screen.
+    // Cancel any lingering active session in a different project first.
+    const { data: activeSessions } = await sb
+      .from("guest_calls")
+      .select("id, project_id")
+      .eq("customer_user_id", userId)
+      .in("status", ["queued","assigned","joining","live","grace","ending","expired_free"])
+      .order("created_at", { ascending: false })
+      .limit(1);
+    const lingering = (activeSessions ?? [])[0] as { id: string; project_id: string | null } | undefined;
+    if (lingering && lingering.project_id !== projectId) {
+      await sb.rpc("cancel_customer_session", { _session_id: lingering.id });
+    }
+
+    const { data: callData, error: callErr } = await sb.rpc(
+      "get_or_create_active_customer_session",
+      { _project_id: projectId },
+    );
+    if (callErr) {
+      if ((callErr.message ?? "").includes("NO_ENTITLEMENT")) {
+        setPaywallOpen("no_credits");
+        return;
+      }
+      console.warn("[handleStartInProject] session mint failed:", callErr.message);
+      return;
+    }
+    const session = (Array.isArray(callData) ? callData[0] : callData) as { id: string } | null;
+    if (!session?.id) return;
+
+    // Point the intake at the new session and clear declined_by so we can
+    // re-ring engineers who said no last time.
+    await sb.from("client_intakes")
+      .update({ guest_call_id: session.id, declined_by: [] })
+      .eq("id", intake.id);
+
+    await sb.rpc("match_engineer", { _intake_id: intake.id });
+    router.push(`/intake/matching/${intake.id}`);
+  }, [state.entitlement, state.auth, router]);
 
   // Toggle a project as the current "context" for the no-session landing.
   // Passing the same id again clears it. General has no real id, so it
@@ -1351,11 +1425,15 @@ const FloatingStatus = memo(function FloatingStatus({
     !!session.assigned_at &&
     !["ended", "cancelled", "abandoned", "queued"].includes(session.status);
   const showStatus = !!session && !["ended","cancelled","abandoned"].includes(session.status);
-  // End button: visible whenever the customer is in (or accepted) an active call
-  const showEnd = !!session && (
-    session.status === "live" ||
-    (accepted && ["joining", "live"].includes(session.status))
-  );
+  // End button: visible from the moment the engineer claims the session.
+  // Chat is live from 'assigned' onward (the timer's anchor too — see
+  // useFreeSessionLifecycle), so the customer should be able to end at
+  // any point during an active session — they don't have to first click
+  // Join in the Zoom card.
+  const showEnd = !!session && [
+    "assigned", "joining", "live", "grace", "ending", "expired_free",
+  ].includes(session.status);
+  void accepted; // no longer gates End; kept for future re-use if needed
   if (!showTimer && !showStatus && !showEnd) return null;
 
   return (
