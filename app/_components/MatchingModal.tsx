@@ -172,13 +172,24 @@ export function MatchingModal({
     return () => clearTimeout(t);
   }, [phase, onAccepted]);
 
+  // Sequential mode: skip the current ringing engineer and advance to the
+  // next-best one. skip_current_offer expires the current pending offer;
+  // the advance_match_on_offer_close trigger then calls match_engineer
+  // for the next candidate. If the candidate pool is exhausted, no new
+  // offer is created and the UI flips to no_engineer on the next poll.
+  // If there's no pending offer at all yet (initial mount race / fully
+  // exhausted pool), fall back to a direct match_engineer call.
   const findAnother = useCallback(async () => {
     setRetrying(true);
     const sb = supabaseRef.current;
-    await sb.rpc("match_engineer", { _intake_id: intakeId });
+    if (phase.kind === "ringing" && phase.livePending) {
+      await sb.rpc("skip_current_offer", { _intake_id: intakeId });
+    } else {
+      await sb.rpc("match_engineer", { _intake_id: intakeId });
+    }
     setRetrying(false);
     void fetchLatest();
-  }, [intakeId, fetchLatest]);
+  }, [intakeId, fetchLatest, phase]);
 
   const skip = useCallback(async () => {
     const sb = supabaseRef.current;
