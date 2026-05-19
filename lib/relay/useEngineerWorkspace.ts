@@ -66,6 +66,13 @@ export function useEngineerWorkspace(): WorkspaceState {
 
       // Three parallel queries. We catch each separately so one failure
       // doesn't tank the whole refresh.
+      //
+      // `recent` is scoped via engineer_recent_sessions RPC: an engineer
+      // sees a session only if they personally claimed it, OR if it
+      // shares a (customer_user_id, project_id) tuple with any session
+      // they've claimed in the past. A brand-new engineer gets an empty
+      // recent list until they take their first call. See migration
+      // 20260521000000_engineer_recent_scope.sql.
       const [activeRes, queueRes, recentRes] = await Promise.all([
         sb.from("guest_calls").select("*")
           .eq("claimed_by", u.user.id)
@@ -74,9 +81,7 @@ export function useEngineerWorkspace(): WorkspaceState {
           .then((r) => r, (e) => ({ data: null, error: e })),
         sb.rpc("list_queue")
           .then((r) => r, (e) => ({ data: null, error: e })),
-        sb.from("guest_calls").select("*")
-          .order("created_at", { ascending: false })
-          .limit(40)
+        sb.rpc("engineer_recent_sessions", { _engineer_id: u.user.id, _limit: 40 })
           .then((r) => r, (e) => ({ data: null, error: e })),
       ]);
 

@@ -41,32 +41,27 @@ type Build = {
   accentGlow: string;
 };
 
-const WINDOWS_BUILDS: Build[] = [
-  {
-    audience: "Customer",
-    title: "Relay",
-    description:
-      "For builders who want a Relay engineer on tap. One click summons the next available engineer to your project.",
-    href: "/downloads/Relay-Setup.exe",
-    filename: "Relay-Setup.exe",
-    sizeMb: 78,
-    accentText: "var(--clay)",
-    accentBg:   "var(--ink)",
-    accentGlow: "var(--clay-soft)",
-  },
-  {
-    audience: "Engineer",
-    title: "Relay Staff",
-    description:
-      "For Relay engineering staff. Lives in the system tray and rings you when a matched customer call comes in — even when the main window is closed.",
-    href: "/downloads/Relay-Staff-Setup.exe",
-    filename: "Relay-Staff-Setup.exe",
-    sizeMb: 78,
-    accentText: "var(--green)",
-    accentBg:   "var(--green-deep)",
-    accentGlow: "var(--green-tint)",
-  },
-];
+// Customer build is the only one promoted in the main Windows grid.
+// The staff build is intentionally tucked into the footer as a small
+// utility link — engineers know what they're looking for.
+const CUSTOMER_BUILD: Build = {
+  audience: "Customer",
+  title: "Relay",
+  description:
+    "For builders who want a Relay engineer on tap. One click summons the next available engineer to your project.",
+  href: "/downloads/Relay-Setup.exe",
+  filename: "Relay-Setup.exe",
+  sizeMb: 78,
+  accentText: "var(--clay)",
+  accentBg:   "var(--ink)",
+  accentGlow: "var(--clay-soft)",
+};
+
+const STAFF_DOWNLOAD = {
+  href: "/downloads/Relay-Staff-Setup.exe",
+  filename: "Relay-Staff-Setup.exe",
+  sizeMb: 78,
+};
 
 export default function DownloadPage() {
   return (
@@ -111,10 +106,8 @@ export default function DownloadPage() {
           title="Windows"
           subtitle="64-bit · v0.1.0 · Unsigned installer (SmartScreen will warn — click More info → Run anyway)."
         >
-          <div className="grid gap-5 sm:grid-cols-2">
-            {WINDOWS_BUILDS.map((b) => (
-              <BuildCard key={b.filename} build={b} />
-            ))}
+          <div className="mx-auto max-w-xl">
+            <BuildCard build={CUSTOMER_BUILD} />
           </div>
         </PlatformSection>
 
@@ -260,6 +253,31 @@ export default function DownloadPage() {
             />
           </ul>
         </section>
+
+        {/* ── Staff utility link (footer-style) ─────────────────────── */}
+        <div
+          className="mt-16 border-t pt-6 text-center text-[13px]"
+          style={{
+            borderColor: "var(--rule)",
+            color: "var(--ink-soft)",
+          }}
+        >
+          Relay engineering staff?{" "}
+          <a
+            href={STAFF_DOWNLOAD.href}
+            download={STAFF_DOWNLOAD.filename}
+            className="underline underline-offset-2 transition-colors hover:no-underline"
+            style={{ color: "var(--green-deep)" }}
+          >
+            Download the staff build
+          </a>
+          <span className="mx-1.5" style={{ color: "var(--ink-mute)" }}>
+            ·
+          </span>
+          <span style={{ color: "var(--ink-mute)" }}>
+            Windows · {STAFF_DOWNLOAD.sizeMb} MB · {STAFF_DOWNLOAD.filename}
+          </span>
+        </div>
       </main>
     </Shell>
   );

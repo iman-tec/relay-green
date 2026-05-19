@@ -267,7 +267,7 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
               <Countdown expiresAt={phase.livePending.expires_at} nowMs={now} />
             ) : null}
             <div className="flex gap-3 pt-4">
-              <button
+              {/* <button
                 type="button"
                 onClick={findAnother}
                 disabled={retrying}
@@ -276,7 +276,7 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
               >
                 {retrying ? <Loader2 className="size-4 animate-spin" /> : <RotateCcw className="size-4" />}
                 Ring again
-              </button>
+              </button> */}
               <button
                 type="button"
                 onClick={skip}

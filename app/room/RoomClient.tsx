@@ -326,28 +326,13 @@ export function RoomClient() {
     }
   }, [state.loading, state.auth.kind]);
 
-  // First-time customer: auto-open the project name form once when the
-  // room mounts with no active session AND zero past sessions. Idempotent —
-  // we only ever check once per page load.
-  const firstTimeCheckedRef = useRef(false);
-  useEffect(() => {
-    if (firstTimeCheckedRef.current) return;
-    if (!initialLoadDone) return;
-    if (state.auth.kind !== "authed") return;
-    if (state.session) return;             // already has (or had) an active session
-    firstTimeCheckedRef.current = true;
-    void (async () => {
-      const sb = createClient();
-      const { count } = await sb
-        .from("guest_calls")
-        .select("id", { count: "exact", head: true })
-        .eq("customer_user_id", state.auth.kind === "authed" ? state.auth.userId : "")
-        .limit(1);
-      if ((count ?? 0) === 0) {
-        setProjectFormOpen(true);
-      }
-    })();
-  }, [initialLoadDone, state.auth, state.session]);
+  // First-time customers used to auto-open the project-name form here so
+  // they'd be funneled straight into creating a session. That gave them a
+  // different first-render UX than returning customers (who see the
+  // branded landing with the "Start a session" CTA). Per product call:
+  // both audiences should land on the same branded screen, so the
+  // auto-open is disabled — the CTA on the landing handles the new-session
+  // funnel uniformly.
 
   // Used by the picker pane: either pick an existing project (existingId)
   // or create a new one with a given name. Either way, start a session
