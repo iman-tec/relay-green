@@ -205,7 +205,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   //   /supervise   (org-scoped view, branches server-side on role)
   // Without this filter, an enterprise_admin who also happens to hold
   // platform-side roles for testing would see /admin/users in the sidebar.
-  const ENT_ADMIN_ALLOW = new Set(["/enterprise", "/supervise"]);
+  const ENT_ADMIN_ALLOW = new Set(["/enterprise", "/enterprise/departments"]);
   // Routes that super_admin should never see even when they hold the
   // underlying role for testing (e.g. dev.soni also has supervisor so she
   // can join real sessions, but /operations is a supervisor surface).
