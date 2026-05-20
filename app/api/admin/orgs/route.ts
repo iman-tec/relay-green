@@ -2,12 +2,15 @@
  * Organizations API — list + create.
  *
  * GET  /api/admin/orgs
- *   Returns all organizations with their members (admin + customer users
- *   under each org). Caller must hold super_admin.
+ *   Returns all organizations with their enterprise_admin members and their
+ *   departments. Caller must hold super_admin. The departments list reflects
+ *   what the org's enterprise_admin manages at /enterprise/departments —
+ *   surfaced here so the super_admin can see the org's structure at a glance
+ *   without leaving the /admin/users console.
  *
  * POST /api/admin/orgs
  *   Creates an Org and its first Enterprise Admin in one shot.
- *   Body: { name, primaryDomain?, adminEmail, adminDisplayName }
+ *   Body: { name, primaryDomain?, adminEmail, adminDisplayName, allocatedMinutes? }
  *   Returns the new org + plaintext one-time code for the admin.
  */
 
@@ -26,12 +29,35 @@ export async function GET() {
 
   const { data: orgs, error: orgErr } = await admin
     .from("organizations")
-    .select("id, name, primary_domain, status, enterprise_code, created_at")
+    .select("id, name, primary_domain, status, enterprise_code, enterprise_type, reseller_id, created_at")
     .order("created_at", { ascending: false });
   if (orgErr) return NextResponse.json({ error: orgErr.message }, { status: 500 });
 
   if (!orgs || !orgs.length) {
     return NextResponse.json({ orgs: [] });
+  }
+
+  // Resolve the reseller names for inorganic orgs so the UI can show
+  // "via Reseller Name" instead of just the raw id. Skip when no inorganic
+  // orgs exist.
+  type OrgRow = {
+    id: string; name: string; primary_domain: string | null; status: string;
+    enterprise_code: string; enterprise_type: string;
+    reseller_id: string | null; created_at: string;
+  };
+  const orgRows = orgs as OrgRow[];
+  const resellerIds = Array.from(new Set(
+    orgRows.map((o) => o.reseller_id).filter((id): id is string => !!id),
+  ));
+  const resellerNameById = new Map<string, string>();
+  if (resellerIds.length > 0) {
+    const { data: resellers } = await admin
+      .from("resellers")
+      .select("id, name")
+      .in("id", resellerIds);
+    for (const r of (resellers ?? []) as { id: string; name: string }[]) {
+      resellerNameById.set(r.id, r.name);
+    }
   }
 
   const orgIds = orgs.map((o) => o.id);
@@ -77,14 +103,63 @@ export async function GET() {
     membersByOrg.set(p.organization_id, list);
   }
 
+  // Departments per org. We fetch all of them in one query, then count
+  // clients (client_type='employee') per department in a second pass.
+  const { data: deptRows } = await admin
+    .from("departments")
+    .select(
+      "id, enterprise_id, name, department_code, admin_user_id, status, allocated_minutes, used_minutes, remaining_minutes, created_at",
+    )
+    .in("enterprise_id", orgIds)
+    .order("created_at", { ascending: false });
+
+  type DeptRow = {
+    id: string;
+    enterprise_id: string;
+    name: string;
+    department_code: string;
+    admin_user_id: string | null;
+    status: string;
+    allocated_minutes: number;
+    used_minutes: number;
+    remaining_minutes: number;
+    created_at: string;
+  };
+  const depts = (deptRows ?? []) as DeptRow[];
+
+  // Member count per department (only employees, not admins).
+  const deptIds = depts.map((d) => d.id);
+  const memberCountByDept = new Map<string, number>();
+  if (deptIds.length > 0) {
+    const { data: empRows } = await admin
+      .from("profiles")
+      .select("department_id")
+      .in("department_id", deptIds)
+      .eq("client_type", "employee");
+    for (const e of (empRows ?? []) as { department_id: string }[]) {
+      memberCountByDept.set(e.department_id, (memberCountByDept.get(e.department_id) ?? 0) + 1);
+    }
+  }
+
+  const departmentsByOrg = new Map<string, ReturnType<typeof formatDepartment>[]>();
+  for (const d of depts) {
+    const list = departmentsByOrg.get(d.enterprise_id) ?? [];
+    list.push(formatDepartment(d, memberCountByDept.get(d.id) ?? 0));
+    departmentsByOrg.set(d.enterprise_id, list);
+  }
+
   return NextResponse.json({
-    orgs: orgs.map((o) => ({
-      id:            o.id,
-      name:          o.name,
-      primaryDomain: o.primary_domain,
-      status:        o.status,
-      createdAt:     o.created_at,
-      members:       membersByOrg.get(o.id) ?? [],
+    orgs: orgRows.map((o) => ({
+      id:             o.id,
+      name:           o.name,
+      primaryDomain:  o.primary_domain,
+      status:         o.status,
+      enterpriseType: o.enterprise_type,                   // 'organic' | 'inorganic'
+      resellerId:     o.reseller_id,                       // non-null when inorganic
+      resellerName:   o.reseller_id ? (resellerNameById.get(o.reseller_id) ?? null) : null,
+      createdAt:      o.created_at,
+      members:        membersByOrg.get(o.id) ?? [],
+      departments:    departmentsByOrg.get(o.id) ?? [],
     })),
   });
 }
@@ -324,5 +399,32 @@ function formatMember(
     primaryRole:         p.primary_role,
     status:              (a?.banned ? "DEACTIVATED" : "ACTIVE") as "DEACTIVATED" | "ACTIVE",
     awaitingFirstSignIn: a?.awaitingFirstSignIn ?? false,
+  };
+}
+
+type DeptDbRow = {
+  id: string;
+  name: string;
+  department_code: string;
+  admin_user_id: string | null;
+  status: string;
+  allocated_minutes: number;
+  used_minutes: number;
+  remaining_minutes: number;
+  created_at: string;
+};
+
+function formatDepartment(d: DeptDbRow, memberCount: number) {
+  return {
+    id:                d.id,
+    name:              d.name,
+    departmentCode:    d.department_code,
+    adminUserId:       d.admin_user_id,
+    status:            d.status,
+    allocatedMinutes:  Number(d.allocated_minutes ?? 0),
+    usedMinutes:       Number(d.used_minutes ?? 0),
+    remainingMinutes:  Number(d.remaining_minutes ?? 0),
+    memberCount,
+    createdAt:         d.created_at,
   };
 }

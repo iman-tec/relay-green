@@ -54,7 +54,16 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
   const [resending, setResending] = useState(false);
   const [error, setError]         = useState<string | null>(null);
   const [info, setInfo]           = useState<string | null>(null);
+  // Second-factor code state for the spec's parent-tier code matrix:
+  //   inorganic enterprise_admin → reseller_code  (RLC-…)
+  //   department_admin           → enterprise_code (slug-…)
+  //   employee                   → department_code (DLC-…)
+  // codeKind is set once the server replies `requires_code: true`; we then
+  // surface a second input under the password and resubmit.
+  const [codeKind, setCodeKind] = useState<null | "reseller" | "enterprise" | "department">(null);
+  const [loginCode, setLoginCode] = useState("");
   const codeRef     = useRef<HTMLInputElement>(null);
+  const loginCodeRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
 
   const purposeCopy = {
@@ -117,6 +126,11 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
   };
 
   // ── Password sign-in ───────────────────────────────────────────────
+  // Two-step: first submit posts email + password. If the user is subject
+  // to the spec's parent-tier code matrix (inorganic ent admin / dept
+  // admin / employee), the server replies { requires_code: true,
+  // code_kind } and we surface a code input. Second submit posts
+  // email + password + code and the server verifies + finalises.
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const em = email.trim().toLowerCase();
@@ -128,11 +142,34 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
       const res = await fetch("/api/auth/signin-password", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ email: em, password, mode: "staff" }),
+        body:    JSON.stringify({
+          email: em,
+          password,
+          mode:  "staff",
+          // Only include code on resubmits — keeps the first probe clean.
+          ...(codeKind && loginCode.trim() ? { code: loginCode.trim() } : {}),
+        }),
       });
       const body = (await res.json().catch(() => ({}))) as {
-        ok?: boolean; next?: string; error?: string;
+        ok?:            boolean;
+        next?:          string;
+        error?:         string;
+        requires_code?: boolean;
+        code_kind?:     "reseller" | "enterprise" | "department";
       };
+
+      // Code needed (or wrong) — server signed back out; show the input.
+      if (body.requires_code === true) {
+        setCodeKind(body.code_kind ?? "enterprise");
+        if (body.error === "invalid_code") {
+          setError("That code didn't match. Check the code your admin shared and try again.");
+        } else {
+          setError(null);
+        }
+        setTimeout(() => loginCodeRef.current?.focus(), 50);
+        return;
+      }
+
       if (!res.ok || !body.ok) {
         setError(body.error ?? "Couldn't sign in.");
         return;
@@ -382,15 +419,62 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
           />
         </div>
 
+        {/* Second-factor code field — revealed by the server when
+            login_required_code(user_id) returns a row. The label adapts
+            to which parent tier the user belongs to. */}
+        {codeKind && (
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="login-code" className="text-sm font-medium" style={{ color: "var(--text)" }}>
+              {codeKind === "reseller"   ? "Reseller code"
+              : codeKind === "department" ? "Department code"
+              :                              "Enterprise code"}
+            </label>
+            <input
+              id="login-code"
+              ref={loginCodeRef}
+              type="text"
+              required
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              placeholder={codeKind === "reseller" ? "RLC-AB12CD" : codeKind === "department" ? "DLC-AB12CD" : "ORG-XXXX-XXXX"}
+              value={loginCode}
+              onChange={(e) => setLoginCode(e.target.value.toUpperCase())}
+              disabled={loading}
+              className="w-full rounded-md border px-3.5 py-2.5 text-sm uppercase tracking-[0.15em] outline-none transition-colors"
+              style={{
+                borderColor:     "var(--border)",
+                backgroundColor: "var(--surface)",
+                color:           "var(--text)",
+                fontFamily:      "var(--font-mono)",
+              }}
+              onFocus={(e) => (e.target.style.borderColor = BRAND_GREEN)}
+              onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
+            />
+            <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+              {codeKind === "reseller"
+                ? "First-login code your reseller shared with you."
+                : codeKind === "department"
+                ? "Your department code — ask your enterprise admin if you don't have it."
+                : "Your enterprise code — ask your department admin if you don't have it."}
+            </p>
+          </div>
+        )}
+
         {error && <ErrorBanner message={error} />}
 
         <button
           type="submit"
-          disabled={loading || !email.trim() || !password}
+          disabled={
+            loading
+            || !email.trim()
+            || !password
+            || (codeKind !== null && !loginCode.trim())
+          }
           className="w-full rounded-md py-2.5 text-sm font-medium transition-opacity disabled:opacity-50"
           style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
         >
-          {loading ? "Signing in…" : "Sign in"}
+          {loading ? "Signing in…" : codeKind ? "Verify & sign in" : "Sign in"}
         </button>
       </form>
 

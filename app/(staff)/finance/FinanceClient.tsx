@@ -60,7 +60,11 @@ export function FinanceClient() {
         </p>
       </div>
       <RevenueSection />
-      <SalariesSection />
+      {/* Salaries section deliberately disabled — not in scope for the
+          current product slice. Re-enable by uncommenting; the
+          SalariesSection component + /api/internal/compensation route
+          are still wired and ready. */}
+      {/* <SalariesSection /> */}
       <FeedbackSection />
     </div>
   );

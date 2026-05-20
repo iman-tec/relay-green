@@ -77,8 +77,10 @@ const NAV: Nav[] = [
   { href: "/reseller",             label: "Reseller",  icon: LayoutDashboard, roles: [ROLE.reseller] },
   // department admin home — dashboard + employees module.
   { href: "/department",           label: "Department", icon: LayoutDashboard, roles: [ROLE.department_admin] },
-  // /finance is the money + feedback console for enterprise + department admins.
-  { href: "/finance",              label: "Finance",   icon: WalletIcon,      roles: [ROLE.enterprise_admin, ROLE.department_admin] },
+  // /finance is the org-level money + feedback console — enterprise_admin
+  // only. Department admins don't see it; their finance scope is the
+  // dept-only view at /department.
+  { href: "/finance",              label: "Finance",   icon: WalletIcon,      roles: [ROLE.enterprise_admin] },
   // /operations is the supervisor's pod roster — engineers under them with
   // current customer + last call.
   { href: "/operations",           label: "Operations", icon: TableIcon,       roles: [ROLE.supervisor] },

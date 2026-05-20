@@ -123,9 +123,44 @@ function useFreeSessionLifecycle(
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────
+// Hoisted so the top-level RoomClient employment fetch can reference it.
+// The EmployeeInfoBlock component further down also uses this shape.
+type EmployeeInfo =
+  | { isEmployee: false }
+  | {
+      isEmployee:       true;
+      enterpriseName:   string;
+      departmentName:   string | null;
+      allocatedMinutes: number;
+      usedMinutes:      number;
+      remainingMinutes: number;
+    };
+
 export function RoomClient() {
   const router = useRouter();
   const state  = useCustomerSession();
+
+  // Employment probe — used to switch the plan chip into "Enterprise plan"
+  // / "Out of credits" and to suppress the buy-a-plan paywall for employees
+  // (their minutes come from the dept pool, not a self-served Stripe plan).
+  // Fetched once at mount; the result drives multiple downstream effects so
+  // it lives here at the top rather than inside the user menu.
+  const [employment, setEmployment] = useState<EmployeeInfo | null>(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/customer/me-employment", { cache: "no-store" });
+        if (!res.ok) return;
+        const body = (await res.json()) as EmployeeInfo;
+        if (alive) setEmployment(body);
+      } catch {
+        /* silent — fall back to non-employee behaviour */
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+  const isEmployee = employment?.isEmployee === true;
 
   // Free-cap + buffer watchdog. Self-contained — does its own 1s ticking
   // only when status is "live"/"expired_free", so the whole tree no longer
@@ -199,9 +234,14 @@ export function RoomClient() {
   //   - session is in expired_free state (live cap hit, buffer ticking)
   //   - session ended for free_session_expired with no paid credit
   //   - composer attempts a new session but no entitlement (manual trigger)
+  // Employees never see the buy-a-plan paywall — their minutes come from
+  // the dept pool, not a self-served Stripe plan. When they run out the
+  // plan chip flips to "Out of credits"; topping up is their dept admin's
+  // job, not theirs.
   const [paywallOpen, setPaywallOpen] = useState<null | "free_expired" | "no_credits" | "manual">(null);
   const [paidToast, setPaidToast] = useState<string | null>(null);
   useEffect(() => {
+    if (isEmployee) return;
     if (state.session?.status === "expired_free") {
       setPaywallOpen("free_expired");
       return;
@@ -213,14 +253,15 @@ export function RoomClient() {
     ) {
       setPaywallOpen("free_expired");
     }
-  }, [state.session?.status, state.session?.ended_reason, state.entitlement.paid_minutes_remaining]);
+  }, [state.session?.status, state.session?.ended_reason, state.entitlement.paid_minutes_remaining, isEmployee]);
 
-  // If the RPC returned NO_ENTITLEMENT, pop paywall.
+  // If the RPC returned NO_ENTITLEMENT, pop paywall — but skip for employees.
   useEffect(() => {
+    if (isEmployee) return;
     if (state.error === "NO_ENTITLEMENT") {
       setPaywallOpen("no_credits");
     }
-  }, [state.error]);
+  }, [state.error, isEmployee]);
 
   // Stripe success handshake: when the user lands back from Checkout with
   // ?relay_paid=base|pro|max in the URL, refetch entitlements so the new
@@ -426,12 +467,16 @@ export function RoomClient() {
   //                        customer can fill the answers once (legacy
   //                        projects predate per-project intake).
   const handleStartInProject = useCallback(async (projectId: string | null) => {
-    // Entitlement check before we do anything else.
-    const hasFreeLeft = !state.entitlement.free_consumed_at;
-    const hasPaidLeft = state.entitlement.paid_minutes_remaining > 0;
-    if (!hasFreeLeft && !hasPaidLeft) {
-      setPaywallOpen("no_credits");
-      return;
+    // Entitlement check before we do anything else. Employees route
+    // around it — their minutes come from the dept allocation, not the
+    // personal entitlement, and the paywall doesn't apply to them.
+    if (!isEmployee) {
+      const hasFreeLeft = !state.entitlement.free_consumed_at;
+      const hasPaidLeft = state.entitlement.paid_minutes_remaining > 0;
+      if (!hasFreeLeft && !hasPaidLeft) {
+        setPaywallOpen("no_credits");
+        return;
+      }
     }
     setViewingPastId(null);
     setPendingDraft(null);
@@ -483,7 +528,11 @@ export function RoomClient() {
     );
     if (callErr) {
       if ((callErr.message ?? "").includes("NO_ENTITLEMENT")) {
-        setPaywallOpen("no_credits");
+        // Same rule as the pre-check: only open the paywall for
+        // non-employees. Employees get a silent log; the dept admin is
+        // the right escalation path.
+        if (!isEmployee) setPaywallOpen("no_credits");
+        else console.warn("[handleStartInProject] employee hit NO_ENTITLEMENT — dept pool likely exhausted");
         return;
       }
       console.warn("[handleStartInProject] session mint failed:", callErr.message);
@@ -501,7 +550,7 @@ export function RoomClient() {
     await sb.rpc("match_engineer", { _intake_id: intake.id });
     // Show the matching overlay in-place instead of navigating away.
     setMatchingIntakeId(intake.id);
-  }, [state.entitlement, state.auth, router]);
+  }, [state.entitlement, state.auth, router, isEmployee]);
 
   // Toggle a project as the current "context" for the no-session landing.
   // Passing the same id again clears it. General has no real id, so it
@@ -525,7 +574,9 @@ export function RoomClient() {
   }, []);
 
   const handleNewSession = useCallback(() => {
-    if (freeConsumed && paidRemaining <= 0) {
+    // Employees bypass the credits gate (dept pool, not personal
+    // entitlement). Non-employees see the paywall when both buckets dry.
+    if (!isEmployee && freeConsumed && paidRemaining <= 0) {
       setPaywallOpen("no_credits");
       return;
     }
@@ -535,7 +586,7 @@ export function RoomClient() {
     // questionnaire that feeds engineer matching. The wizard then creates
     // the guest_calls row itself and routes back here on accept.
     router.push("/intake");
-  }, [freeConsumed, paidRemaining, router]);
+  }, [freeConsumed, paidRemaining, router, isEmployee]);
 
   // Recharge / "see plans" handler. Always opens the paywall — even when
   // the user has credits — so the Recharge button in the profile menu is
@@ -580,6 +631,7 @@ export function RoomClient() {
         customerUserId={sidebarCustomerUserId}
         session={state.session}
         entitlement={state.entitlement}
+        employment={employment}
         viewingPastId={viewingPastId}
         projects={projects}
         selectedProjectId={selectedProjectId}
@@ -604,6 +656,7 @@ export function RoomClient() {
           <MainPane
             state={state}
             accepted={accepted}
+            employment={employment}
             viewingPastId={viewingPastId}
             onCloseViewPast={handleCloseViewPast}
             onNeedsCredits={handleNeedsCredits}
@@ -686,13 +739,14 @@ function shouldShowEngineerAssigned(s: GuestCall): boolean {
 
 // ── Main pane (state-driven) ───────────────────────────────────────────────
 const MainPane = memo(function MainPane({
-  state, accepted, viewingPastId, onCloseViewPast, onNeedsCredits,
+  state, accepted, employment, viewingPastId, onCloseViewPast, onNeedsCredits,
   projectFormOpen, pendingDraft, projects,
   onProjectConfirmNew, onProjectConfirmPick, onProjectCancel, onNeedProject,
   onNewSession, selectedProjectId, onSelectProject, onStartInProject,
 }: {
   state: ReturnType<typeof useCustomerSession>;
   accepted: boolean;
+  employment: EmployeeInfo | null;
   viewingPastId: string | null;
   onCloseViewPast: () => void;
   onNeedsCredits: () => void;
@@ -742,7 +796,7 @@ const MainPane = memo(function MainPane({
     return (
       <PanelGroup direction="horizontal" autoSaveId="relay-room-review" className="h-full">
         <Panel defaultSize={60} minSize={40} order={1}>
-          <ChatPane state={state} fullWidth onNeedsCredits={onNeedsCredits} />
+          <ChatPane state={state} fullWidth employment={employment} onNeedsCredits={onNeedsCredits} />
         </Panel>
         <Resizer />
         <Panel defaultSize={40} minSize={28} order={2}>
@@ -779,7 +833,7 @@ const MainPane = memo(function MainPane({
 
   // Active session — show the chat (composer also handles new-session
   // creation as a fallback path via onNeedProject).
-  return <ChatPane state={state} fullWidth onNeedsCredits={onNeedsCredits} onNeedProject={onNeedProject} />;
+  return <ChatPane state={state} fullWidth employment={employment} onNeedsCredits={onNeedsCredits} onNeedProject={onNeedProject} />;
 });
 
 // Branded "empty" landing shown when no session is active. Wordmark +
@@ -1674,13 +1728,14 @@ type ProjectGroup = {
 };
 
 const Sidebar = memo(function Sidebar({
-  email, customerUserId, session, entitlement, viewingPastId, projects,
+  email, customerUserId, session, entitlement, employment, viewingPastId, projects,
   selectedProjectId, onViewPast, onNewSession, onStartInProject, onRenameProject, onSelectProject, onWalletClick,
 }: {
   email: string;
   customerUserId: string | null;
   session: GuestCall | null;
   entitlement: { free_consumed_at: string | null; free_minutes_used: number; paid_minutes_remaining: number };
+  employment: EmployeeInfo | null;
   viewingPastId: string | null;
   projects: Project[];
   /** Currently-selected project (or null). Highlighted in the sidebar
@@ -1922,6 +1977,7 @@ const Sidebar = memo(function Sidebar({
               email={email}
               session={session}
               entitlement={entitlement}
+              employment={employment}
               onRecharge={() => { setUserMenuOpen(false); onWalletClick(); }}
               onClose={() => setUserMenuOpen(false)}
               collapsed
@@ -2071,7 +2127,7 @@ const Sidebar = memo(function Sidebar({
               {email.split("@")[0]}
             </div>
             <div className="truncate text-[10px]" style={{ color: "var(--text-muted)" }}>
-              <WalletBalance session={session} entitlement={entitlement} />
+              <WalletBalance session={session} entitlement={entitlement} employment={employment} />
             </div>
           </div>
           <ChevronDown size={12} style={{ color: "var(--text-muted)" }} />
@@ -2081,6 +2137,7 @@ const Sidebar = memo(function Sidebar({
             email={email}
             session={session}
             entitlement={entitlement}
+            employment={employment}
             onRecharge={() => { setUserMenuOpen(false); onWalletClick(); }}
             onClose={() => setUserMenuOpen(false)}
           />
@@ -2105,11 +2162,23 @@ function formatEntitlement(e: EntitlementShape): string {
 // the whole sidebar tree to re-render. Owns its own 1s interval, scoped to
 // this leaf component only — render scope is one <span>.
 const WalletBalance = memo(function WalletBalance({
-  session, entitlement,
+  session, entitlement, employment,
 }: {
   session: GuestCall | null;
   entitlement: EntitlementShape;
+  employment?: EmployeeInfo | null;
 }) {
+  // Employees draw from the dept allocation — surface the dept counter
+  // here instead of the personal free/paid entitlement. Out → "Out of
+  // credits" so the closed profile chip doesn't claim "Free used · upgrade
+  // to continue" (the upgrade path doesn't apply to enterprise accounts).
+  if (employment?.isEmployee === true) {
+    const fmt = (n: number) => Math.round(n).toLocaleString();
+    return employment.remainingMinutes > 0
+      ? <>{`${fmt(employment.remainingMinutes)} min available`}</>
+      : <>Out of credits</>;
+  }
+
   const paidAt       = session?.paid_extension_at ?? null;
   const freeConsumed = !!entitlement.free_consumed_at;
   // Session starts when the engineer claims (assigned_at). Chat is part of
@@ -2150,7 +2219,16 @@ const WalletBalance = memo(function WalletBalance({
   return <>{formatEntitlement(live)}</>;
 });
 
-function planLabel(e: { free_consumed_at: string | null; paid_minutes_remaining: number }): string {
+function planLabel(
+  e: { free_consumed_at: string | null; paid_minutes_remaining: number },
+  employment: EmployeeInfo | null,
+): string {
+  // Employees draw from their dept allocation — show "Enterprise plan" when
+  // they still have minutes, "Out of credits" once the dept pool runs dry.
+  // The personal entitlement (free/paid) is irrelevant for these accounts.
+  if (employment?.isEmployee === true) {
+    return employment.remainingMinutes > 0 ? "Enterprise plan" : "Out of credits";
+  }
   if (e.paid_minutes_remaining > 0) return "Paid plan";
   return "Free plan";
 }
@@ -2159,36 +2237,9 @@ function planLabel(e: { free_consumed_at: string | null; paid_minutes_remaining:
 // customers (the fetch returns isEmployee:false); for employees it shows
 // the enterprise + department names and the per-employee allocation. Per
 // spec we deliberately don't reveal whether the enterprise is organic or
-// inorganic.
-type EmployeeInfo =
-  | { isEmployee: false }
-  | {
-      isEmployee:       true;
-      enterpriseName:   string;
-      departmentName:   string | null;
-      allocatedMinutes: number;
-      usedMinutes:      number;
-      remainingMinutes: number;
-    };
-
-const EmployeeInfoBlock = memo(function EmployeeInfoBlock() {
-  const [info, setInfo] = useState<EmployeeInfo | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const res = await fetch("/api/customer/me-employment", { cache: "no-store" });
-        if (!res.ok) return;
-        const body = (await res.json()) as EmployeeInfo;
-        if (alive) setInfo(body);
-      } catch {
-        /* silent — block just stays hidden */
-      }
-    })();
-    return () => { alive = false; };
-  }, []);
-
+// inorganic. Type is hoisted to the top of the file (search for the other
+// `type EmployeeInfo` to see the canonical declaration).
+const EmployeeInfoBlock = memo(function EmployeeInfoBlock({ info }: { info: EmployeeInfo | null }) {
   if (!info || info.isEmployee !== true) return null;
   const fmt = (n: number) =>
     new Intl.NumberFormat(undefined).format(Math.round(n));
@@ -2255,16 +2306,18 @@ const EmployeeInfoBlock = memo(function EmployeeInfoBlock() {
 
 // ── User menu dropdown (Claude-style) ─────────────────────────────────────
 const UserMenu = memo(function UserMenu({
-  email, session, entitlement, onRecharge, onClose, collapsed = false,
+  email, session, entitlement, employment, onRecharge, onClose, collapsed = false,
 }: {
   email: string;
   session: GuestCall | null;
   entitlement: EntitlementShape;
+  employment: EmployeeInfo | null;
   onRecharge: () => void;
   onClose: () => void;
   collapsed?: boolean;
 }) {
   const router = useRouter();
+  const isEmployee = employment?.isEmployee === true;
 
   const handleLogout = async () => {
     const sb = createClient();
@@ -2324,44 +2377,49 @@ const UserMenu = memo(function UserMenu({
                   {email.split("@")[0]}
                 </div>
                 <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-                  {planLabel(entitlement)}
+                  {planLabel(entitlement, employment)}
                 </div>
               </div>
             </div>
             <Check size={14} style={{ color: BRAND_GREEN }} />
           </div>
 
-          {/* Wallet balance row */}
-          <div
-            className="mt-1 flex items-center justify-between rounded-lg px-2 py-2"
-            style={{ backgroundColor: BRAND_GREEN_SOFT }}
-          >
-            <div className="flex items-center gap-2">
-              <Wallet size={14} style={{ color: BRAND_GREEN }} />
-              <div>
-                <div className="text-[12px] font-medium" style={{ color: "var(--text)" }}>
-                  Wallet
-                </div>
-                <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-                  <WalletBalance session={session} entitlement={entitlement} />
+          {/* Wallet + Recharge — only for ordinary customers. Employees
+              draw from their dept allocation (rendered below); showing
+              both widgets would be confusing and the Recharge button
+              wouldn't make sense for an employee account. */}
+          {!isEmployee && (
+            <div
+              className="mt-1 flex items-center justify-between rounded-lg px-2 py-2"
+              style={{ backgroundColor: BRAND_GREEN_SOFT }}
+            >
+              <div className="flex items-center gap-2">
+                <Wallet size={14} style={{ color: BRAND_GREEN }} />
+                <div>
+                  <div className="text-[12px] font-medium" style={{ color: "var(--text)" }}>
+                    Wallet
+                  </div>
+                  <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                    <WalletBalance session={session} entitlement={entitlement} />
+                  </div>
                 </div>
               </div>
+              <button
+                onClick={onRecharge}
+                className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium transition-opacity hover:opacity-80"
+                style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+              >
+                <RefreshCw size={10} />
+                Recharge
+              </button>
             </div>
-            <button
-              onClick={onRecharge}
-              className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium transition-opacity hover:opacity-80"
-              style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
-            >
-              <RefreshCw size={10} />
-              Recharge
-            </button>
-          </div>
+          )}
 
           {/* Employee info block — only visible when the signed-in user is
               an employee (profile.client_type='employee'). Shows the
               enterprise + department name and the per-employee minute
               allocation; never reveals organic vs inorganic. */}
-          <EmployeeInfoBlock />
+          <EmployeeInfoBlock info={employment} />
         </div>
 
         {/* Menu items */}
@@ -2614,10 +2672,14 @@ const ProjectAccordion = memo(function ProjectAccordion({
 
 // ── Chat pane ──────────────────────────────────────────────────────────────
 const ChatPane = memo(function ChatPane({
-  state, fullWidth = false, onNeedsCredits, onNeedProject,
+  state, fullWidth = false, employment, onNeedsCredits, onNeedProject,
 }: {
   state: ReturnType<typeof useCustomerSession>;
   fullWidth?: boolean;
+  /** Employment snapshot — when the viewer is an employee
+   *  (client_type='employee'), the credits guard below is bypassed because
+   *  their minutes come from the dept pool, not the personal entitlement. */
+  employment?: EmployeeInfo | null;
   onNeedsCredits?: () => void;
   /** Retained for back-compat with the project-picker path; the current
    *  flow auto-starts sessions in a default "project" project so this is
@@ -2630,6 +2692,7 @@ const ChatPane = memo(function ChatPane({
   const isReadOnly = session?.status === "ended";
   const isSupervisor = useIsSupervisor();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const isEmployee = employment?.isEmployee === true;
 
   // Auto-scroll to the latest message when the message list changes (new
   // chat lines, system entries, meeting-card transitions). Smooth scroll
@@ -2644,11 +2707,17 @@ const ChatPane = memo(function ChatPane({
 
   const handleSend = async ({ text, files }: { text: string; files: File[] }) => {
     const wouldCreateNew = !session || ["cancelled", "abandoned", "ended"].includes(session.status);
-    const hasFreeLeft = !state.entitlement.free_consumed_at;
-    const hasPaidLeft = state.entitlement.paid_minutes_remaining > 0;
-    if (wouldCreateNew && !hasFreeLeft && !hasPaidLeft && onNeedsCredits) {
-      onNeedsCredits();
-      return;
+    // Employees route around the credits guard: their minutes come from
+    // the dept allocation, not the personal entitlement. The "out of
+    // credits" surface for them is the dept-managed plan chip, not the
+    // paywall.
+    if (!isEmployee) {
+      const hasFreeLeft = !state.entitlement.free_consumed_at;
+      const hasPaidLeft = state.entitlement.paid_minutes_remaining > 0;
+      if (wouldCreateNew && !hasFreeLeft && !hasPaidLeft && onNeedsCredits) {
+        onNeedsCredits();
+        return;
+      }
     }
     // First message in a brand-new project flows through the intake
     // wizard — that's where we collect the questionnaire that feeds

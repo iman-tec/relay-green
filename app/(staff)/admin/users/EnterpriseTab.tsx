@@ -19,7 +19,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, Mail, Power, Trash2, X, Search, CheckCircle2 } from "lucide-react";
+import { Loader2, Plus, Mail, Power, Trash2, X, Search, CheckCircle2, Building2, Users } from "lucide-react";
 import { formatRole } from "@/lib/relay/role-labels";
 import { useConfirmDialog } from "@/app/_components/ConfirmDialog";
 
@@ -33,13 +33,32 @@ type Member = {
   awaitingFirstSignIn: boolean;
 };
 
+type Department = {
+  id:               string;
+  name:             string;
+  departmentCode:   string;
+  adminUserId:      string | null;
+  status:           string;
+  allocatedMinutes: number;
+  usedMinutes:      number;
+  remainingMinutes: number;
+  memberCount:      number;
+  createdAt:        string;
+};
+
 type Org = {
-  id:            string;
-  name:          string;
-  primaryDomain: string | null;
-  status:        string;
-  createdAt:     string;
-  members:       Member[];
+  id:             string;
+  name:           string;
+  primaryDomain:  string | null;
+  status:         string;
+  /** 'organic' = created by super_admin directly. 'inorganic' = minted
+   *  by a reseller. Drives the "via reseller" badge in the UI. */
+  enterpriseType: "organic" | "inorganic";
+  resellerId:     string | null;
+  resellerName:   string | null;
+  createdAt:      string;
+  members:        Member[];
+  departments:    Department[];
 };
 
 const BRAND_GREEN = "#3f5c2e";
@@ -321,8 +340,9 @@ function OrgList({
         <div className="max-h-[600px] overflow-y-auto">
           {filtered.map((o) => {
             const active = o.id === selectedId;
-            const admins  = o.members.filter((m) => isAdmin(m)).length;
-            const members = o.members.length - admins;
+            const admins = o.members.filter((m) => isAdmin(m)).length;
+            const depts  = o.departments?.length ?? 0;
+            const viaReseller = o.enterpriseType === "inorganic";
             return (
               <button
                 key={o.id}
@@ -340,9 +360,23 @@ function OrgList({
                     style={{ backgroundColor: BRAND_GREEN }}
                   />
                 )}
-                <div className="text-sm font-medium" style={{ color: "var(--text)" }}>{o.name}</div>
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-sm font-medium" style={{ color: "var(--text)" }}>{o.name}</span>
+                  {viaReseller && (
+                    <span
+                      className="shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider"
+                      style={{
+                        backgroundColor: "color-mix(in srgb, var(--text-muted) 14%, transparent)",
+                        color: "var(--text-muted)",
+                      }}
+                      title={o.resellerName ? `Created via ${o.resellerName}` : "Created via a reseller"}
+                    >
+                      via reseller
+                    </span>
+                  )}
+                </div>
                 <div className="mt-0.5 text-[11px]" style={{ color: "var(--text-muted)" }}>
-                  {admins} admin{admins === 1 ? "" : "s"} · {members} member{members === 1 ? "" : "s"}
+                  {admins} admin{admins === 1 ? "" : "s"} · {depts} department{depts === 1 ? "" : "s"}
                   {o.primaryDomain && <> · <span style={{ fontFamily: "var(--font-mono)" }}>{o.primaryDomain}</span></>}
                 </div>
               </button>
@@ -459,8 +493,8 @@ function OrgDetail({
   remove: (m: Member) => void;
   deleteOrg: () => void;
 }) {
-  const admins  = org.members.filter(isAdmin);
-  const members = org.members.filter((m) => !isAdmin(m));
+  const admins      = org.members.filter(isAdmin);
+  const departments = org.departments ?? [];
 
   return (
     <div
@@ -472,8 +506,22 @@ function OrgDetail({
         style={{ borderColor: "var(--border)" }}
       >
         <div className="min-w-0">
-          <div className="text-sm font-semibold" style={{ color: "var(--text)" }}>
-            {org.name}
+          <div className="flex items-center gap-2">
+            <span className="truncate text-sm font-semibold" style={{ color: "var(--text)" }}>
+              {org.name}
+            </span>
+            {org.enterpriseType === "inorganic" && (
+              <span
+                className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
+                style={{
+                  backgroundColor: "color-mix(in srgb, var(--text-muted) 14%, transparent)",
+                  color: "var(--text-muted)",
+                }}
+                title={org.resellerName ? `Minted by reseller "${org.resellerName}"` : "Minted by a reseller"}
+              >
+                via {org.resellerName ?? "reseller"}
+              </span>
+            )}
           </div>
           {org.primaryDomain && (
             <div
@@ -516,17 +564,80 @@ function OrgDetail({
         toggleStatus={toggleStatus}
         remove={remove}
       />
-      <MemberSection
-        title="Members"
-        addLabel="Add member"
-        addRole="client"
-        members={members}
-        addMember={addMember}
-        regenerate={regenerate}
-        toggleStatus={toggleStatus}
-        remove={remove}
-      />
+      <DepartmentSection departments={departments} />
     </div>
+  );
+}
+
+/* ──────── Departments (read-only — managed by the enterprise admin) ──────── */
+
+function DepartmentSection({ departments }: { departments: Department[] }) {
+  return (
+    <section className="border-b" style={{ borderColor: "var(--border)" }}>
+      <div className="flex items-center justify-between gap-2 px-5 py-3">
+        <h3 className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--text-muted)" }}>
+          Departments ({departments.length})
+        </h3>
+        <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+          Managed by the enterprise admin
+        </span>
+      </div>
+
+      {departments.length === 0 ? (
+        <p className="px-5 pb-4 text-xs" style={{ color: "var(--text-muted)" }}>
+          No departments yet. The enterprise admin can create departments from <span style={{ fontFamily: "var(--font-mono)" }}>/enterprise/departments</span>.
+        </p>
+      ) : (
+        <ul className="pb-2">
+          {departments.map((d) => (
+            <li
+              key={d.id}
+              className="flex items-center gap-3 border-t px-5 py-2.5"
+              style={{ borderColor: "var(--border)" }}
+            >
+              <span
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+                style={{
+                  backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
+                  color: BRAND_GREEN,
+                }}
+              >
+                <Building2 size={14} />
+              </span>
+              <div className="min-w-0 flex-1 leading-tight">
+                <div className="truncate text-sm" style={{ color: "var(--text)" }}>
+                  {d.name}
+                </div>
+                <div
+                  className="mt-0.5 truncate text-[11px]"
+                  style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}
+                >
+                  {d.departmentCode}
+                </div>
+              </div>
+              <div
+                className="inline-flex items-center gap-1 text-[11px]"
+                style={{ color: "var(--text-muted)" }}
+                title={`${d.memberCount} member${d.memberCount === 1 ? "" : "s"}`}
+              >
+                <Users size={11} />
+                {d.memberCount}
+              </div>
+              <span
+                className="text-[11px] tabular-nums"
+                style={{ color: "var(--text-muted)" }}
+                title={`Allocated ${d.allocatedMinutes}, used ${d.usedMinutes}, remaining ${d.remainingMinutes}`}
+              >
+                {Math.round(d.remainingMinutes)} / {Math.round(d.allocatedMinutes)} min
+              </span>
+              <StatusChipInline
+                status={d.status === "active" ? "ACTIVE" : "DEACTIVATED"}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

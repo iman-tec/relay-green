@@ -31,7 +31,14 @@ export function SignInForm() {
   const [code, setCode]       = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
+  // Second-factor login code — surfaced once the server replies
+  // requires_code: true. Employees enter their department code here;
+  // department admins the enterprise code; inorganic ent admins the
+  // reseller code.
+  const [codeKind, setCodeKind] = useState<null | "reseller" | "enterprise" | "department">(null);
+  const [loginCode, setLoginCode] = useState("");
   const codeRef     = useRef<HTMLInputElement>(null);
+  const loginCodeRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
 
   const purposeCopy = {
@@ -64,6 +71,9 @@ export function SignInForm() {
   }
 
   // ── Password sign-in ────────────────────────────────────────────────
+  // Two-step when the user has a parent-tier code (employees primarily).
+  // Server returns { requires_code: true, code_kind } after the password
+  // probe; we surface a code input and resubmit with email+password+code.
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const em = email.trim().toLowerCase();
@@ -74,11 +84,32 @@ export function SignInForm() {
       const res = await fetch("/api/auth/signin-password", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ email: em, password, mode: "customer" }),
+        body:    JSON.stringify({
+          email: em,
+          password,
+          mode:  "customer",
+          ...(codeKind && loginCode.trim() ? { code: loginCode.trim() } : {}),
+        }),
       });
       const body = (await res.json().catch(() => ({}))) as {
-        ok?: boolean; next?: string; error?: string;
+        ok?:            boolean;
+        next?:          string;
+        error?:         string;
+        requires_code?: boolean;
+        code_kind?:     "reseller" | "enterprise" | "department";
       };
+
+      if (body.requires_code === true) {
+        setCodeKind(body.code_kind ?? "department");
+        if (body.error === "invalid_code") {
+          setError("That code didn't match. Check the code your admin shared and try again.");
+        } else {
+          setError(null);
+        }
+        setTimeout(() => loginCodeRef.current?.focus(), 50);
+        return;
+      }
+
       if (!res.ok || !body.ok) {
         setError(friendlyError(body.error ?? "Couldn't sign in."));
         return;
@@ -185,9 +216,55 @@ export function SignInForm() {
           disabled={loading}
         />
 
+        {/* Second-factor code — revealed when the server replies
+            requires_code: true after the password probe. Most customer
+            sign-ins skip this entirely; employees see a Department code
+            field, dept admins an Enterprise code, inorganic ent admins
+            a Reseller code. */}
+        {codeKind && (
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="login-code" className="text-sm font-medium" style={{ color: "var(--text)" }}>
+              {codeKind === "reseller"   ? "Reseller code"
+              : codeKind === "department" ? "Department code"
+              :                              "Enterprise code"}
+            </label>
+            <input
+              id="login-code"
+              ref={loginCodeRef}
+              type="text"
+              required
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              placeholder={codeKind === "reseller" ? "RLC-AB12CD" : codeKind === "department" ? "DLC-AB12CD" : "ORG-XXXX-XXXX"}
+              value={loginCode}
+              onChange={(e) => setLoginCode(e.target.value.toUpperCase())}
+              disabled={loading}
+              className="w-full rounded-md border px-3.5 py-2.5 text-sm uppercase tracking-[0.15em] outline-none"
+              style={{
+                borderColor:     "var(--border)",
+                backgroundColor: "var(--surface)",
+                color:           "var(--text)",
+                fontFamily:      "var(--font-mono)",
+              }}
+            />
+            <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+              {codeKind === "reseller"
+                ? "First-login code your reseller shared with you."
+                : codeKind === "department"
+                ? "Your department code — ask your enterprise admin if you don't have it."
+                : "Your enterprise code — ask your department admin if you don't have it."}
+            </p>
+          </div>
+        )}
+
         {error ? <ErrorBanner message={error} /> : null}
 
-        <GreenButton loading={loading} label="Sign in" loadingLabel="Signing in…" />
+        <GreenButton
+          loading={loading}
+          label={codeKind ? "Verify & sign in" : "Sign in"}
+          loadingLabel="Signing in…"
+        />
 
         <div className="flex items-center justify-between gap-3 text-xs">
           <button

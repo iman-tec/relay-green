@@ -28,10 +28,23 @@ import {
   Copy as CopyIcon,
   Coins,
   Pencil,
+  Building2,
 } from "lucide-react";
 import { useConfirmDialog } from "@/app/_components/ConfirmDialog";
 
 const BRAND_GREEN = "#3f5c2e";
+
+type Enterprise = {
+  id:                string;
+  name:              string;
+  primaryDomain:     string | null;
+  status:            string;
+  enterpriseCode:    string;
+  allocatedMinutes:  number;
+  usedMinutes:       number;
+  remainingMinutes:  number;
+  createdAt:         string;
+};
 
 type Reseller = {
   id:                string;
@@ -46,6 +59,7 @@ type Reseller = {
   ownerUserId:       string | null;
   totalEnterprises:  number;
   activeEnterprises: number;
+  enterprises:       Enterprise[];
   createdAt:         string;
 };
 
@@ -557,6 +571,12 @@ function ResellerDetail({
         <KpiCell label="Commission"         value={`${reseller.commission}%`} />
       </div>
 
+      {/* Enterprises minted by this reseller — read-only list. Day-to-day
+          enterprise management still lives on the Enterprise customers tab;
+          this is just the visibility cross-link "what did Acme Reselling
+          sign up?". */}
+      <EnterprisesSection enterprises={reseller.enterprises ?? []} />
+
       {/* Footer meta */}
       <div className="px-5 py-3 text-[11px]" style={{ color: "var(--text-muted)" }}>
         Created {new Date(reseller.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
@@ -607,6 +627,72 @@ function KpiCell({ label, value, accent }: { label: string; value: string; accen
         {value}
       </span>
     </div>
+  );
+}
+
+/* ──────── Enterprises minted by this reseller ──────── */
+
+function EnterprisesSection({ enterprises }: { enterprises: Enterprise[] }) {
+  return (
+    <section className="border-t" style={{ borderColor: "var(--border)" }}>
+      <div className="flex items-center justify-between gap-2 px-5 py-3">
+        <h3
+          className="text-[10px] font-semibold uppercase tracking-[0.12em]"
+          style={{ color: "var(--text-muted)" }}
+        >
+          Enterprises ({enterprises.length})
+        </h3>
+        <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+          Created via this reseller
+        </span>
+      </div>
+
+      {enterprises.length === 0 ? (
+        <p className="px-5 pb-4 text-xs" style={{ color: "var(--text-muted)" }}>
+          No enterprises yet. They appear here as the reseller signs them up.
+        </p>
+      ) : (
+        <ul className="pb-2">
+          {enterprises.map((e) => (
+            <li
+              key={e.id}
+              className="flex items-center gap-3 border-t px-5 py-2.5"
+              style={{ borderColor: "var(--border)" }}
+            >
+              <span
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+                style={{
+                  backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
+                  color: BRAND_GREEN,
+                }}
+              >
+                <Building2 size={14} />
+              </span>
+              <div className="min-w-0 flex-1 leading-tight">
+                <div className="truncate text-sm" style={{ color: "var(--text)" }}>
+                  {e.name}
+                </div>
+                <div
+                  className="mt-0.5 truncate text-[11px]"
+                  style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}
+                >
+                  {e.enterpriseCode}
+                  {e.primaryDomain && <> · {e.primaryDomain}</>}
+                </div>
+              </div>
+              <span
+                className="text-[11px] tabular-nums"
+                style={{ color: "var(--text-muted)" }}
+                title={`Allocated ${e.allocatedMinutes}, used ${e.usedMinutes}, remaining ${e.remainingMinutes}`}
+              >
+                {Math.round(e.remainingMinutes)} / {Math.round(e.allocatedMinutes)} min
+              </span>
+              <StatusChip status={e.status === "active" ? "active" : "suspended"} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
