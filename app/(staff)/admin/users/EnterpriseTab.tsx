@@ -77,7 +77,7 @@ export function EnterpriseTab() {
   useEffect(() => { void load(); }, []);
 
   const createOrg = async (input: {
-    name: string; primaryDomain: string; adminEmail: string; adminDisplayName: string;
+    name: string; primaryDomain: string; adminEmail: string; adminDisplayName: string; allocatedMinutes: number;
   }) => {
     const res = await fetch("/api/admin/orgs", {
       method:  "POST",
@@ -221,7 +221,7 @@ function OrgList({
   onSelect: (id: string | null) => void;
   loading: boolean;
   createOrg: (input: {
-    name: string; primaryDomain: string; adminEmail: string; adminDisplayName: string;
+    name: string; primaryDomain: string; adminEmail: string; adminDisplayName: string; allocatedMinutes: number;
   }) => Promise<{ ok: true } | { ok: false; error: string }>;
 }) {
   const [creating, setCreating] = useState(false);
@@ -371,7 +371,7 @@ function OrgCreateInline({
   submit, cancel,
 }: {
   submit: (input: {
-    name: string; primaryDomain: string; adminEmail: string; adminDisplayName: string;
+    name: string; primaryDomain: string; adminEmail: string; adminDisplayName: string; allocatedMinutes: number;
   }) => Promise<{ ok: true } | { ok: false; error: string }>;
   cancel: () => void;
 }) {
@@ -379,12 +379,18 @@ function OrgCreateInline({
   const [primaryDomain, setPrimaryDomain] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
   const [adminDisplayName, setAdminDisplayName] = useState("");
+  const [allocatedMinutes, setAllocatedMinutes] = useState("0");
   const [busy, setBusy] = useState(false);
   const [err, setErr]   = useState<string | null>(null);
 
   const onSubmit = async () => {
     if (!name.trim() || !adminEmail.trim() || !adminDisplayName.trim()) {
       setErr("Org name, admin name and admin email are required.");
+      return;
+    }
+    const alloc = Number(allocatedMinutes);
+    if (Number.isNaN(alloc) || alloc < 0) {
+      setErr("Minutes allocation must be a non-negative number.");
       return;
     }
     setBusy(true);
@@ -394,6 +400,7 @@ function OrgCreateInline({
       primaryDomain:    primaryDomain.trim(),
       adminEmail:       adminEmail.trim(),
       adminDisplayName: adminDisplayName.trim(),
+      allocatedMinutes: alloc,
     });
     if (!r.ok) setErr(r.error);
     setBusy(false);
@@ -412,6 +419,7 @@ function OrgCreateInline({
         <Field label="Primary domain (optional)" value={primaryDomain} onChange={setPrimaryDomain} placeholder="acme.com" />
         <Field label="First admin — name" value={adminDisplayName} onChange={setAdminDisplayName} placeholder="Jane Doe" />
         <Field label="First admin — email" value={adminEmail} onChange={setAdminEmail} placeholder="jane@acme.com" type="email" />
+        <Field label="Minutes allocation" value={allocatedMinutes} onChange={setAllocatedMinutes} placeholder="0" type="number" />
       </div>
       {err && <p className="mt-1 text-[11px]" style={{ color: "var(--accent-red)" }}>{err}</p>}
       <div className="mt-2 flex justify-end gap-2">

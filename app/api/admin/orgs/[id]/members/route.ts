@@ -50,7 +50,7 @@ export async function POST(request: Request, { params }: RouteCtx) {
 
   const { data: org, error: orgErr } = await admin
     .from("organizations")
-    .select("id, name")
+    .select("id, name, enterprise_code")
     .eq("id", orgId)
     .single();
   if (orgErr || !org) {
@@ -61,6 +61,8 @@ export async function POST(request: Request, { params }: RouteCtx) {
 
   // Unified invite — picks inviteUserByEmail or signInWithOtp under the
   // hood. Either way, an actual email is delivered, or we return an error.
+  // Enterprise admins get the enterprise_code so the new template can
+  // show it; clients don't need a code.
   const invite = await sendInvitationEmail(admin, {
     email:       trimmedEmail,
     displayName,
@@ -68,6 +70,9 @@ export async function POST(request: Request, { params }: RouteCtx) {
       role_label:      role,
       organization_id: orgId,
       org_name:        org.name,
+      ...(role === ROLE.enterprise_admin
+        ? { enterprise_code: (org as { enterprise_code: string }).enterprise_code }
+        : {}),
       created_by:      actor.id,
     },
   });

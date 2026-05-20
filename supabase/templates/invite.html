@@ -1,0 +1,107 @@
+<!--
+  Supabase invitation email template — Relay.green.
+
+  This file is the source of truth for the invite-email markup. Supabase
+  itself reads its template from the project dashboard (Auth → Email
+  Templates → "Invite user"), not from disk — so after editing here,
+  paste the contents into the dashboard for the change to take effect.
+
+  Metadata keys this template understands (sent via user_metadata when
+  the inviter calls sendInvitationEmail in lib/admin-invite.ts):
+
+    role_label          one of:
+                          engineer, supervisor, super_admin,
+                          enterprise_admin, department_admin,
+                          reseller, employee, client
+                        (also tolerates legacy: pod_lead, ops_manager, admin)
+    display_name        recipient's full name
+    reseller_code       RLC-… shown when the user must enter it at first
+                        login (inorganic enterprise admin) or when the
+                        invitee IS the reseller themselves
+    enterprise_code     {slug}-… shown to enterprise admins (their org)
+                        and to department admins (parent enterprise)
+    department_code     DLC-… shown to department admins (their dept)
+                        and to employees (their parent department)
+    allocated_minutes   initial minutes allocation, when applicable
+-->
+<!doctype html>
+<html>
+  <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f6f7f5;padding:32px 16px;color:#1a1a1a;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:12px;padding:32px;">
+      <tr><td>
+        <h1 style="margin:0 0 8px;font-size:20px;color:#3f5c2e;">Welcome to Relay.green</h1>
+        <p style="margin:0 0 16px;color:#444;">Hi {{ .Data.display_name }},</p>
+
+        {{/* ── Per-role welcome blurb ───────────────────────────────── */}}
+        {{ if eq .Data.role_label "engineer" }}
+          <p>You've been added as an <strong>Engineer</strong>. You'll handle live customer calls — taking queued sessions, resolving issues, and closing them out from the Engineer dashboard.</p>
+        {{ else if or (eq .Data.role_label "supervisor") (eq .Data.role_label "pod_lead") }}
+          <p>You've been added as a <strong>Supervisor</strong>. You'll oversee your pod's engineers, monitor live sessions from the Supervise pit, and coach your team.</p>
+        {{ else if eq .Data.role_label "ops_manager" }}
+          <p>You've been added as an <strong>Operations Manager</strong>. You'll have org-wide visibility — KPIs, transactions, escalations across every pod.</p>
+        {{ else if or (eq .Data.role_label "super_admin") (eq .Data.role_label "admin") }}
+          <p>You've been added as an <strong>Administrator</strong>. You can manage staff, pods, resellers, enterprises, and billing across the platform.</p>
+        {{ else if eq .Data.role_label "reseller" }}
+          <p>You've been added as a <strong>Reseller</strong>. From your reseller dashboard you can onboard your own enterprise customers, allocate minutes from your pool, and track usage and commission.</p>
+        {{ else if eq .Data.role_label "enterprise_admin" }}
+          <p>You've been added as an <strong>Enterprise Admin</strong>. You can manage your organization's departments, allocate minutes from your enterprise pool, and oversee usage.</p>
+        {{ else if eq .Data.role_label "department_admin" }}
+          <p>You've been added as a <strong>Department Admin</strong>. You can manage your department's employees and allocate minutes from the enterprise pool.</p>
+        {{ else if eq .Data.role_label "employee" }}
+          <p>You've been added as an <strong>Employee</strong>. You can connect with our experts for live support sessions, with minutes drawn from your department's allocation.</p>
+        {{ else if eq .Data.role_label "client" }}
+          <p>You've been added to <strong>Relay.green</strong>. Connect with our experts for live support sessions.</p>
+        {{ else }}
+          <p>Your account is ready to set up.</p>
+        {{ end }}
+
+        {{/* ── Onboarding details box: code(s) + allocated minutes ──── */}}
+        {{ if or .Data.reseller_code (or .Data.enterprise_code (or .Data.department_code .Data.allocated_minutes)) }}
+          <div style="background:#f6f7f5;border:1px solid #e6e9e2;border-radius:8px;padding:16px;margin:20px 0;">
+            <p style="margin:0 0 8px;font-weight:600;color:#3f5c2e;">Your onboarding details</p>
+            {{ if .Data.allocated_minutes }}
+              <p style="margin:4px 0;color:#444;">
+                Allocated minutes: <strong>{{ .Data.allocated_minutes }}</strong>
+              </p>
+            {{ end }}
+            {{ if .Data.reseller_code }}
+              <p style="margin:4px 0;color:#444;">
+                {{ if eq .Data.role_label "enterprise_admin" }}Reseller code (enter on first sign-in):{{ else }}Reseller code:{{ end }}
+                <code style="background:#fff;padding:2px 6px;border-radius:4px;font-size:13px;">{{ .Data.reseller_code }}</code>
+              </p>
+            {{ end }}
+            {{ if .Data.enterprise_code }}
+              <p style="margin:4px 0;color:#444;">
+                {{ if eq .Data.role_label "department_admin" }}Enterprise code (enter on first sign-in):{{ else }}Enterprise code:{{ end }}
+                <code style="background:#fff;padding:2px 6px;border-radius:4px;font-size:13px;">{{ .Data.enterprise_code }}</code>
+              </p>
+            {{ end }}
+            {{ if .Data.department_code }}
+              <p style="margin:4px 0;color:#444;">
+                {{ if eq .Data.role_label "employee" }}Department code (enter on first sign-in):{{ else }}Department code:{{ end }}
+                <code style="background:#fff;padding:2px 6px;border-radius:4px;font-size:13px;">{{ .Data.department_code }}</code>
+              </p>
+            {{ end }}
+          </div>
+        {{ end }}
+
+        {{/* ── Ongoing-login URL (role-aware) ────────────────────────── */}}
+        {{ if or (eq .Data.role_label "employee") (eq .Data.role_label "client") }}
+          <p style="margin:24px 0;">Click below to confirm your email and finish setting up your account. This is a one-time link — afterwards, you'll sign in at <a href="{{ .SiteURL }}/login" style="color:#3f5c2e;">{{ .SiteURL }}/login</a>.</p>
+        {{ else }}
+          <p style="margin:24px 0;">Click below to confirm your email and finish setting up your account. This is a one-time link — afterwards, you'll sign in at <a href="{{ .SiteURL }}/staff/login" style="color:#3f5c2e;">{{ .SiteURL }}/staff/login</a>.</p>
+        {{ end }}
+
+        <p style="margin:24px 0;text-align:center;">
+          <a href="{{ .ConfirmationURL }}"
+             style="display:inline-block;background:#3f5c2e;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;">
+            Set up my account
+          </a>
+        </p>
+
+        <p style="margin:24px 0 0;font-size:12px;color:#888;">If you weren't expecting this invite, you can safely ignore this email.</p>
+      </td></tr>
+    </table>
+    <p style="text-align:center;font-size:11px;color:#999;margin-top:16px;">Sent from noreply@thegatewaycorp · Relay.green</p>
+  </body>
+</html>
