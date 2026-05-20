@@ -68,7 +68,27 @@ export async function POST(request: Request) {
   const existing = data?.users?.find((u) => u.email?.toLowerCase() === email.toLowerCase());
 
   if (intent === "first-time" && existing) {
-    return NextResponse.json({ error: "email_exists" }, { status: 409 });
+    // Admin-invited users already exist in auth.users (the invite pre-created
+    // them with email_confirm=true and no password). They genuinely are
+    // first-timing from their own perspective, so let them through the
+    // first-time flow as long as they don't yet have a password.
+    // Self-signup users who already finished setup (and have a password) get
+    // bounced — they should use "Forgot password?" instead.
+    const { data: hasPw, error: hasPwErr } = await admin.rpc(
+      "user_has_password",
+      { _user_id: existing.id },
+    );
+    if (hasPwErr) {
+      // RPC failure shouldn't trap a legitimate first-time user — log and
+      // fall back to the legacy "reject" semantics (safer than letting an
+      // already-set-up account reset itself).
+      console.warn("[prepare] user_has_password RPC error:", hasPwErr.message);
+      return NextResponse.json({ error: "email_exists" }, { status: 409 });
+    }
+    if (hasPw === true) {
+      return NextResponse.json({ error: "email_exists" }, { status: 409 });
+    }
+    // Else fall through — existing user, no password yet, treat as first-time.
   }
   if (intent === "forgot" && !existing) {
     return NextResponse.json({ error: "email_not_found" }, { status: 404 });

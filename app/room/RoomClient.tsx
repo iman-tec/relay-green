@@ -2524,6 +2524,18 @@ const ChatPane = memo(function ChatPane({
   const session = state.session;
   const isReadOnly = session?.status === "ended";
   const isSupervisor = useIsSupervisor();
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to the latest message when the message list changes (new
+  // chat lines, system entries, meeting-card transitions). Smooth scroll
+  // for the natural "follow the conversation" feel, same pattern the
+  // engineer side uses in EngineerSessionClient → ChatPane.
+  useEffect(() => {
+    scrollRef.current?.scrollTo({
+      top: scrollRef.current.scrollHeight,
+      behavior: "smooth",
+    });
+  }, [state.messages.length]);
 
   const handleSend = async ({ text, files }: { text: string; files: File[] }) => {
     const wouldCreateNew = !session || ["cancelled", "abandoned", "ended"].includes(session.status);
@@ -2590,7 +2602,7 @@ const ChatPane = memo(function ChatPane({
 
   return (
     <section className="flex h-full flex-col" style={{ backgroundColor: "var(--surface)" }}>
-      <div className="flex-1 overflow-y-auto px-4 py-6">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6">
         <div className={`mx-auto w-full ${maxWidth}`}>
           {state.messages.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center px-2 py-20 text-center">
