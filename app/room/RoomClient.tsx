@@ -29,6 +29,7 @@ import {
   Plus, Send, Sparkles, Phone, X, PhoneOff, MessageSquare, Lock,
   AlertTriangle, Loader2, ChevronDown, ChevronRight, Search, PanelLeftClose, PanelLeftOpen,
   Wallet, RefreshCw, Settings, LogOut, Check, Folder, Pencil, PanelRightOpen, PanelRightClose,
+  Building2,
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { MeetingChatEntry } from "@/app/_components/MeetingChatEntry";
@@ -2154,6 +2155,104 @@ function planLabel(e: { free_consumed_at: string | null; paid_minutes_remaining:
   return "Free plan";
 }
 
+// Employee info strip inside the user menu. Renders nothing for ordinary
+// customers (the fetch returns isEmployee:false); for employees it shows
+// the enterprise + department names and the per-employee allocation. Per
+// spec we deliberately don't reveal whether the enterprise is organic or
+// inorganic.
+type EmployeeInfo =
+  | { isEmployee: false }
+  | {
+      isEmployee:       true;
+      enterpriseName:   string;
+      departmentName:   string | null;
+      allocatedMinutes: number;
+      usedMinutes:      number;
+      remainingMinutes: number;
+    };
+
+const EmployeeInfoBlock = memo(function EmployeeInfoBlock() {
+  const [info, setInfo] = useState<EmployeeInfo | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/customer/me-employment", { cache: "no-store" });
+        if (!res.ok) return;
+        const body = (await res.json()) as EmployeeInfo;
+        if (alive) setInfo(body);
+      } catch {
+        /* silent — block just stays hidden */
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  if (!info || info.isEmployee !== true) return null;
+  const fmt = (n: number) =>
+    new Intl.NumberFormat(undefined).format(Math.round(n));
+
+  return (
+    <div
+      className="mt-1 rounded-lg px-2 py-2"
+      style={{ backgroundColor: BRAND_GREEN_SOFT }}
+    >
+      <div className="flex items-center gap-2">
+        <Building2 size={14} style={{ color: BRAND_GREEN }} />
+        <div className="min-w-0 flex-1 leading-tight">
+          <div
+            className="truncate text-[12px] font-medium"
+            style={{ color: "var(--text)" }}
+          >
+            {info.enterpriseName || "Enterprise"}
+          </div>
+          {info.departmentName && (
+            <div
+              className="truncate text-[11px]"
+              style={{ color: "var(--text-muted)" }}
+            >
+              {info.departmentName}
+            </div>
+          )}
+        </div>
+      </div>
+      <div
+        className="mt-2 grid grid-cols-3 gap-2 text-[10px]"
+        style={{ color: "var(--text-muted)" }}
+      >
+        <div className="flex flex-col">
+          <span>Allocated</span>
+          <span
+            className="text-[12px] font-medium tabular-nums"
+            style={{ color: "var(--text)" }}
+          >
+            {fmt(info.allocatedMinutes)}
+          </span>
+        </div>
+        <div className="flex flex-col">
+          <span>Used</span>
+          <span
+            className="text-[12px] font-medium tabular-nums"
+            style={{ color: "var(--text)" }}
+          >
+            {fmt(info.usedMinutes)}
+          </span>
+        </div>
+        <div className="flex flex-col">
+          <span>Remaining</span>
+          <span
+            className="text-[12px] font-medium tabular-nums"
+            style={{ color: BRAND_GREEN }}
+          >
+            {fmt(info.remainingMinutes)}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+});
+
 // ── User menu dropdown (Claude-style) ─────────────────────────────────────
 const UserMenu = memo(function UserMenu({
   email, session, entitlement, onRecharge, onClose, collapsed = false,
@@ -2257,6 +2356,12 @@ const UserMenu = memo(function UserMenu({
               Recharge
             </button>
           </div>
+
+          {/* Employee info block — only visible when the signed-in user is
+              an employee (profile.client_type='employee'). Shows the
+              enterprise + department name and the per-employee minute
+              allocation; never reveals organic vs inorganic. */}
+          <EmployeeInfoBlock />
         </div>
 
         {/* Menu items */}

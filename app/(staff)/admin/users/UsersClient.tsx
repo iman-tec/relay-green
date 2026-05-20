@@ -16,6 +16,7 @@ import { Mail, Trash2, Power, PowerOff, Plus, X, CheckCircle2, Pencil } from "lu
 import { useConfirmDialog } from "@/app/_components/ConfirmDialog";
 import { EnterpriseTab } from "./EnterpriseTab";
 import { PodsTab } from "./PodsTab";
+import { ResellersTab } from "./ResellersTab";
 import { formatRole } from "@/lib/relay/role-labels";
 import { ROLE } from "@/lib/relay/roles";
 import { DataTable, type Column } from "@/app/_components/DataTable";
@@ -32,7 +33,7 @@ type UserRow = {
   createdAt:           string;
 };
 
-type Tab = "staff" | "users" | "enterprise" | "pods";
+type Tab = "staff" | "users" | "enterprise" | "pods" | "resellers";
 
 // Roles super_admin can create/assign from the user-admin console.
 // Mirrors CREATABLE_ROLES in app/api/admin/users/route.ts — enterprise-side
@@ -79,6 +80,7 @@ export function UsersClient({ meEmail }: { meEmail: string }) {
         {tab === "users"      && <CustomerTab />}
         {tab === "enterprise" && <EnterpriseTab />}
         {tab === "pods"       && <PodsTab />}
+        {tab === "resellers"  && <ResellersTab />}
       </div>
     </main>
   );
@@ -92,6 +94,7 @@ function Tabs({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
     { id: "users",      label: "Users" },
     { id: "enterprise", label: "Enterprise customers" },
     { id: "pods",       label: "Pods" },
+    { id: "resellers",  label: "Resellers" },
   ];
   return (
     <div className="mb-4 flex gap-1 border-b" style={{ borderColor: "var(--border)" }}>

@@ -28,6 +28,8 @@ const STAFF_PREFIXES = [
   "/supervise",
   "/admin",
   "/enterprise",
+  "/reseller",
+  "/department",
   "/staff/session",
 ];
 

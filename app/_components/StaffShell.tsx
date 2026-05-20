@@ -26,6 +26,7 @@ import {
   Loader2, LogOut, ChevronDown, AlertTriangle, X,
   PanelLeftClose, PanelLeftOpen, LayoutDashboard,
   Eye, Users as UsersIcon, Wallet as WalletIcon, Table as TableIcon, Inbox as InboxIcon,
+  Building2,
 } from "lucide-react";
 import { Wordmark } from "./Wordmark";
 import { useStaffGuard } from "@/lib/relay/useStaffGuard";
@@ -71,6 +72,11 @@ const NAV: Nav[] = [
   { href: "/admin/users",          label: "Users",     icon: UsersIcon,       roles: [ROLE.super_admin] },
   // enterprise_admin's home is /enterprise; the Supervise link above is shared with platform staff.
   { href: "/enterprise",           label: "Dashboard", icon: LayoutDashboard, roles: [ROLE.enterprise_admin] },
+  { href: "/enterprise/departments", label: "Departments", icon: Building2,   roles: [ROLE.enterprise_admin] },
+  // reseller-owner console — single screen with KPIs + the inorganic enterprises they own.
+  { href: "/reseller",             label: "Reseller",  icon: LayoutDashboard, roles: [ROLE.reseller] },
+  // department admin home — dashboard + employees module.
+  { href: "/department",           label: "Department", icon: LayoutDashboard, roles: [ROLE.department_admin] },
   // /finance is the money + feedback console for enterprise + department admins.
   { href: "/finance",              label: "Finance",   icon: WalletIcon,      roles: [ROLE.enterprise_admin, ROLE.department_admin] },
   // /operations is the supervisor's pod roster — engineers under them with

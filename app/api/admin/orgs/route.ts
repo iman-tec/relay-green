@@ -94,12 +94,13 @@ export async function POST(request: Request) {
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin, user: actor } = gate;
 
-  const { name, primaryDomain, adminEmail, adminDisplayName } =
+  const { name, primaryDomain, adminEmail, adminDisplayName, allocatedMinutes } =
     (await request.json().catch(() => ({}))) as {
       name?: string;
       primaryDomain?: string;
       adminEmail?: string;
       adminDisplayName?: string;
+      allocatedMinutes?: number | string;
     };
 
   if (
@@ -111,6 +112,14 @@ export async function POST(request: Request) {
       { error: "Need name, adminEmail, and adminDisplayName." },
       { status: 400 },
     );
+  }
+
+  // Optional initial minutes allocation. Per spec, the organic enterprise
+  // creation form includes a "Minutes Allocation" field; default to 0
+  // when the caller omits it (e.g. legacy clients that don't yet send it).
+  const allocNum = Number(allocatedMinutes ?? 0);
+  if (Number.isNaN(allocNum) || allocNum < 0) {
+    return NextResponse.json({ error: "Allocation must be non-negative." }, { status: 400 });
   }
 
   // Generate a unique enterprise_code. Retry on unique-violation; max 5
@@ -160,11 +169,12 @@ export async function POST(request: Request) {
     email:       trimmedEmail,
     displayName: trimmedName,
     metadata: {
-      role_label:      "enterprise_admin",
-      organization_id: org.id,
-      org_name:        org.name,
-      enterprise_code: org.enterprise_code,
-      created_by:      actor.id,
+      role_label:        "enterprise_admin",
+      organization_id:   org.id,
+      org_name:          org.name,
+      enterprise_code:   org.enterprise_code,
+      allocated_minutes: allocNum,
+      created_by:        actor.id,
     },
   });
   if (!invite.ok) {
@@ -234,6 +244,20 @@ export async function POST(request: Request) {
       { user_id: userId, role_id: enterpriseAdminRoleId },
       { onConflict: "user_id,role_id", ignoreDuplicates: true },
     );
+
+  // Initial minutes allocation. Organic enterprises (reseller_id=NULL)
+  // route through the same RPC; the function detects organic and skips
+  // any parent-debit step. Soft-warn on failure so we don't roll back
+  // a successfully invited admin over a fixable minutes problem.
+  if (allocNum > 0) {
+    const { error: tErr } = await admin.rpc("transfer_to_organization", {
+      _org_id: org.id,
+      _amount: allocNum,
+    });
+    if (tErr) {
+      console.warn("[admin/orgs] initial transfer_to_organization failed:", tErr.message);
+    }
+  }
 
   console.log(
     `[admin/orgs] created org "${name}" (code=${org.enterprise_code}) — ${mode} ${trimmedEmail}`,

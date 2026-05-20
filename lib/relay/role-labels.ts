@@ -66,7 +66,7 @@ export function landingForRoles(roles: readonly string[]): string {
   if (roles.includes(ROLE.super_admin))      return "/admin/users";
   if (roles.includes(ROLE.reseller))         return "/reseller";
   if (roles.includes(ROLE.enterprise_admin)) return "/enterprise";
-  if (roles.includes(ROLE.department_admin)) return "/enterprise/departments";
+  if (roles.includes(ROLE.department_admin)) return "/department";
   if (roles.includes(ROLE.supervisor))       return "/supervise";
   if (roles.includes(ROLE.engineer))         return "/dashboard";
   return "/room";
