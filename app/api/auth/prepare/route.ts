@@ -39,10 +39,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "rate_limited" }, { status: 429 });
   }
 
-  const { email } = await request.json().catch(() => ({}));
+  const { email, purpose } = await request.json().catch(() => ({}));
   if (!email || typeof email !== "string" || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     return NextResponse.json({ error: "invalid_email" }, { status: 400 });
   }
+
+  // `purpose` lets the caller pick which existence-check semantics apply:
+  //   "first-time" → email MUST NOT exist; we create the user.
+  //   "forgot"     → email MUST exist; we don't create.
+  //   undefined    → legacy "ensure-exists" behavior (sign-in via OTP).
+  // Anything else is treated as undefined.
+  const intent: "first-time" | "forgot" | "any" =
+    purpose === "first-time" ? "first-time" :
+    purpose === "forgot"     ? "forgot"     :
+                               "any";
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -57,6 +67,13 @@ export async function POST(request: Request) {
   const { data } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 });
   const existing = data?.users?.find((u) => u.email?.toLowerCase() === email.toLowerCase());
 
+  if (intent === "first-time" && existing) {
+    return NextResponse.json({ error: "email_exists" }, { status: 409 });
+  }
+  if (intent === "forgot" && !existing) {
+    return NextResponse.json({ error: "email_not_found" }, { status: 404 });
+  }
+
   if (existing) {
     // Already exists — Supabase will use the Magic Link template on the next OTP call.
     return NextResponse.json({ ok: true, status: "exists" });
@@ -69,8 +86,12 @@ export async function POST(request: Request) {
     email_confirm: true,
   });
   if (error) {
-    // If it failed with "already registered" race, treat as success.
+    // If it failed with "already registered" race, treat as success
+    // (unless the caller specifically wanted a brand-new email).
     if (error.message.toLowerCase().includes("already")) {
+      if (intent === "first-time") {
+        return NextResponse.json({ error: "email_exists" }, { status: 409 });
+      }
       return NextResponse.json({ ok: true, status: "race_resolved" });
     }
     return NextResponse.json({ error: error.message }, { status: 500 });

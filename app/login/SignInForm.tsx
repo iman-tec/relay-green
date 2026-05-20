@@ -1,25 +1,54 @@
 "use client";
 
-import { useState, useRef } from "react";
+/*
+ * Customer sign-in — email + password as the default, with two distinct
+ * OTP-based side-flows behind separate CTAs:
+ *
+ *   purpose === "first-time" → for users who've never signed in. The
+ *     prepare endpoint REJECTS the request if the email already exists,
+ *     so the user can't accidentally clobber an existing account.
+ *   purpose === "forgot"     → for users who lost their password. The
+ *     prepare endpoint REJECTS the request if the email is unknown
+ *     (so we don't silently create a new account). verify-otp then
+ *     ALWAYS diverts to /set-password regardless of the password_set
+ *     flag, since the point is to replace the existing password.
+ *
+ * The plain password sign-in path is unchanged. Why server-side fetches
+ * everywhere: corporate networks / extensions sometimes block
+ * browser→Supabase — the Node API routes always have connectivity.
+ */
 
-// Note: this component talks to our own Next.js API routes for OTP send +
-// verify (not Supabase directly from the browser). Some networks /
-// extensions block the browser-to-Supabase fetch, so we proxy everything
-// through the dev server, which always has connectivity to Supabase.
+import { useRef, useState } from "react";
 
-type Step = "email" | "code" | "done";
+type Mode    = "password" | "otp-email" | "otp-code";
+type Purpose = "first-time" | "forgot";
 
 export function SignInForm() {
-  const [step, setStep] = useState<Step>("email");
-  const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
+  const [mode, setMode]       = useState<Mode>("password");
+  const [purpose, setPurpose] = useState<Purpose>("first-time");
+  const [email, setEmail]     = useState("");
+  const [password, setPwd]    = useState("");
+  const [code, setCode]       = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const codeRef = useRef<HTMLInputElement>(null);
+  const [error, setError]     = useState<string | null>(null);
+  const codeRef     = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
 
-  // Converts raw errors into friendly one-liners shown in the UI.
-  // Covers: missing env-config, "Failed to fetch" network blips, and
-  // Supabase error objects.
+  const purposeCopy = {
+    "first-time": {
+      title:    "First-time sign-up",
+      blurb:    "Enter your email and we'll send you an 8-digit code. After verifying you'll choose a password.",
+      cta:      "Send sign-up code",
+      ctaSent:  "Sending…",
+    },
+    "forgot": {
+      title:    "Reset your password",
+      blurb:    "Enter the email on your account and we'll send you an 8-digit code. After verifying you can choose a new password.",
+      cta:      "Send reset code",
+      ctaSent:  "Sending…",
+    },
+  } as const;
+
   function friendlyError(err: unknown): string {
     if (!err) return "Something went wrong. Try again.";
     const msg = err instanceof Error ? err.message : String(err);
@@ -34,81 +63,26 @@ export function SignInForm() {
     return msg || "Something went wrong. Try again.";
   }
 
-  // Step 1 — send OTP code to email
-  const handleSendCode = async (e: React.FormEvent) => {
+  // ── Password sign-in ────────────────────────────────────────────────
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmed = email.trim();
-    if (!trimmed) return;
+    const em = email.trim().toLowerCase();
+    if (!em || !password) return;
     setLoading(true);
     setError(null);
-
     try {
-      // Pre-create the user server-side so Supabase treats this as a
-      // sign-in (Magic Link template = OTP code) instead of a sign-up
-      // (Confirm Signup template = magic link URL).
-      const prepareRes = await fetch("/api/auth/prepare", {
-        method: "POST",
+      const res = await fetch("/api/auth/signin-password", {
+        method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: trimmed }),
+        body:    JSON.stringify({ email: em, password, mode: "customer" }),
       });
-      if (!prepareRes.ok) {
-        const body = await prepareRes.json().catch(() => ({})) as Record<string, unknown>;
-        if (body.error === "rate_limited") {
-          setError("Too many attempts — wait a minute before trying again.");
-          return;
-        }
-        // Other prepare errors are non-fatal: fall through and let
-        // signInWithOtp decide (worst case the wrong email template fires).
-      }
-
-      // Send the OTP server-side. Avoids the browser-to-Supabase fetch which
-      // fails on some networks ("TypeError: Failed to fetch").
-      const sendRes = await fetch("/api/auth/send-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: trimmed }),
-      });
-      if (!sendRes.ok) {
-        const body = await sendRes.json().catch(() => ({})) as { error?: string };
-        setError(friendlyError(body.error ?? "Could not send code."));
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean; next?: string; error?: string;
+      };
+      if (!res.ok || !body.ok) {
+        setError(friendlyError(body.error ?? "Couldn't sign in."));
         return;
       }
-      setStep("code");
-      setTimeout(() => codeRef.current?.focus(), 80);
-    } catch (err) {
-      // Catches: network failures hitting our own API.
-      setError(friendlyError(err));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Step 2 — verify the 8-digit code (server-side, so the browser never
-  // touches Supabase directly).
-  const handleVerifyCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = code.trim();
-    if (trimmed.length !== 8) return;
-    setLoading(true);
-    setError(null);
-
-    try {
-      const verifyRes = await fetch("/api/auth/verify-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // mode: "customer" → server skips role-based routing so users who
-        // also hold a staff role still land on /room when signing in here.
-        body: JSON.stringify({ email, code: trimmed, mode: "customer" }),
-      });
-      const body = await verifyRes.json().catch(() => ({})) as { error?: string; next?: string };
-      if (!verifyRes.ok) {
-        setError(friendlyError(body.error ?? "Couldn't verify code."));
-        return;
-      }
-      // Server set the auth cookies — a full navigation picks them up
-      // cleanly (router.push can race the cookie flush in some setups).
-      // The /next path is role-aware: staff land on their dashboard,
-      // customers on /room.
       window.location.assign(body.next ?? "/room");
     } catch (err) {
       setError(friendlyError(err));
@@ -117,66 +91,186 @@ export function SignInForm() {
     }
   };
 
-  // ── Step 1: Email ─────────────────────────────────────────────────────────
-  if (step === "email") {
+  // ── OTP send ────────────────────────────────────────────────────────
+  const handleSendCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const em = email.trim().toLowerCase();
+    if (!em) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const prepareRes = await fetch("/api/auth/prepare", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ email: em, purpose }),
+      });
+      if (!prepareRes.ok) {
+        const body = (await prepareRes.json().catch(() => ({}))) as Record<string, unknown>;
+        if (body.error === "rate_limited") {
+          setError("Too many attempts — wait a minute before trying again.");
+          return;
+        }
+        if (body.error === "email_exists") {
+          setError("That email is already registered. Use \"Forgot password?\" instead.");
+          return;
+        }
+        if (body.error === "email_not_found") {
+          setError("No account found for that email. Use \"First time signing in?\" instead.");
+          return;
+        }
+        setError(typeof body.error === "string" ? body.error : "Could not start sign-in.");
+        return;
+      }
+      const sendRes = await fetch("/api/auth/send-otp", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ email: em }),
+      });
+      if (!sendRes.ok) {
+        const body = (await sendRes.json().catch(() => ({}))) as { error?: string };
+        setError(friendlyError(body.error ?? "Could not send code."));
+        return;
+      }
+      setMode("otp-code");
+      setTimeout(() => codeRef.current?.focus(), 80);
+    } catch (err) {
+      setError(friendlyError(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── OTP verify ──────────────────────────────────────────────────────
+  const handleVerifyCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = code.trim();
+    if (trimmed.length !== 8) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/auth/verify-otp", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ email, code: trimmed, mode: "customer", purpose }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean; next?: string; error?: string;
+      };
+      if (!res.ok || !body.ok) {
+        setError(friendlyError(body.error ?? "Couldn't verify code."));
+        return;
+      }
+      window.location.assign(body.next ?? "/room");
+    } catch (err) {
+      setError(friendlyError(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Password mode UI ───────────────────────────────────────────────
+  if (mode === "password") {
+    return (
+      <form onSubmit={handlePasswordSubmit} className="flex flex-col gap-4">
+        <FieldEmail
+          email={email}
+          onChange={setEmail}
+          disabled={loading}
+          autoFocus
+        />
+        <FieldPassword
+          inputRef={passwordRef}
+          value={password}
+          onChange={setPwd}
+          disabled={loading}
+        />
+
+        {error ? <ErrorBanner message={error} /> : null}
+
+        <GreenButton loading={loading} label="Sign in" loadingLabel="Signing in…" />
+
+        <div className="flex items-center justify-between gap-3 text-xs">
+          <button
+            type="button"
+            onClick={() => {
+              setError(null);
+              setPwd("");
+              setPurpose("first-time");
+              setMode("otp-email");
+            }}
+            className="underline-offset-4 hover:underline"
+            style={{ color: "var(--text-muted)" }}
+          >
+            First time signing in?
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setError(null);
+              setPwd("");
+              setPurpose("forgot");
+              setMode("otp-email");
+            }}
+            className="underline-offset-4 hover:underline"
+            style={{ color: "var(--text-muted)" }}
+          >
+            Forgot password?
+          </button>
+        </div>
+      </form>
+    );
+  }
+
+  // ── OTP email mode ─────────────────────────────────────────────────
+  if (mode === "otp-email") {
+    const copy = purposeCopy[purpose];
     return (
       <form onSubmit={handleSendCode} className="flex flex-col gap-4">
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="email" className="text-sm font-medium" style={{ color: "var(--text)" }}>
-            Email address
-          </label>
-          <input
-            id="email"
-            type="email"
-            required
-            autoFocus
-            placeholder="you@company.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            disabled={loading}
-            className="w-full rounded-md border px-3.5 py-2.5 text-sm outline-none transition-colors"
-            style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)", color: "var(--text)" }}
-            onFocus={(e) => (e.target.style.borderColor = "#3f5c2e")}
-            onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
-          />
+        <div>
+          <h2 className="text-sm font-semibold" style={{ color: "var(--text)" }}>
+            {copy.title}
+          </h2>
+          <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>
+            {copy.blurb}
+          </p>
         </div>
 
-        {error && <ErrorBanner message={error} />}
+        <FieldEmail
+          email={email}
+          onChange={setEmail}
+          disabled={loading}
+          autoFocus
+        />
 
-        <GreenButton loading={loading} label="Send code" loadingLabel="Sending…" />
+        {error ? <ErrorBanner message={error} /> : null}
 
-        <p className="text-center text-xs" style={{ color: "var(--text-muted)" }}>
-          we&apos;ll send you a code. No password needed.
-        </p>
+        <GreenButton loading={loading} label={copy.cta} loadingLabel={copy.ctaSent} />
 
         <button
           type="button"
           onClick={() => {
-            const trimmed = email.trim();
-            if (!trimmed) {
-              setError("Enter your email first.");
-              return;
-            }
             setError(null);
-            setStep("code");
-            setTimeout(() => codeRef.current?.focus(), 80);
+            setMode("password");
+            setTimeout(() => passwordRef.current?.focus(), 80);
           }}
           className="text-center text-xs underline-offset-4 hover:underline"
           style={{ color: "var(--text-muted)" }}
         >
-          Already have a code?
+          ← Back to password sign in
         </button>
       </form>
     );
   }
 
-  // ── Step 2: OTP Code ──────────────────────────────────────────────────────
+  // ── OTP code mode ──────────────────────────────────────────────────
   return (
     <div className="flex flex-col gap-5">
-      {/* Sent confirmation */}
       <div
         className="flex items-start gap-3 rounded-md border px-4 py-3"
-        style={{ borderColor: "color-mix(in srgb, #3f5c2e 30%, transparent)", backgroundColor: "color-mix(in srgb, #3f5c2e 7%, transparent)" }}
+        style={{
+          borderColor: "color-mix(in srgb, #3f5c2e 30%, transparent)",
+          backgroundColor: "color-mix(in srgb, #3f5c2e 7%, transparent)",
+        }}
       >
         <span style={{ color: "#3f5c2e", marginTop: 1 }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -206,24 +300,126 @@ export function SignInForm() {
             onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 8))}
             disabled={loading}
             className="w-full rounded-md border px-3.5 py-3 text-center text-xl tracking-[0.3em] outline-none transition-colors"
-            style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)", color: "var(--text)", fontFamily: "var(--font-mono)" }}
+            style={{
+              borderColor: "var(--border)",
+              backgroundColor: "var(--surface)",
+              color: "var(--text)",
+              fontFamily: "var(--font-mono)",
+            }}
             onFocus={(e) => (e.target.style.borderColor = "#3f5c2e")}
             onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
           />
         </div>
 
-        {error && <ErrorBanner message={error} />}
+        {error ? <ErrorBanner message={error} /> : null}
 
-        <GreenButton loading={loading} label="Sign in" loadingLabel="Verifying…" disabled={code.length !== 8} />
+        <GreenButton
+          loading={loading}
+          label="Verify"
+          loadingLabel="Verifying…"
+          disabled={code.length !== 8}
+        />
       </form>
 
       <button
-        onClick={() => { setStep("email"); setCode(""); setError(null); }}
+        onClick={() => {
+          setMode("otp-email");
+          setCode("");
+          setError(null);
+        }}
         className="text-center text-sm underline-offset-4 hover:underline"
         style={{ color: "var(--text-muted)" }}
       >
         Use a different email
       </button>
+    </div>
+  );
+}
+
+/* ── Field components (reused across modes) ─────────────────────────── */
+
+function FieldEmail({
+  email,
+  onChange,
+  disabled,
+  autoFocus,
+}: {
+  email:     string;
+  onChange:  (next: string) => void;
+  disabled?: boolean;
+  autoFocus?: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label
+        htmlFor="email"
+        className="text-sm font-medium"
+        style={{ color: "var(--text)" }}
+      >
+        Email address
+      </label>
+      <input
+        id="email"
+        type="email"
+        required
+        autoFocus={autoFocus}
+        autoComplete="email"
+        placeholder="you@company.com"
+        value={email}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        className="w-full rounded-md border px-3.5 py-2.5 text-sm outline-none transition-colors"
+        style={{
+          borderColor: "var(--border)",
+          backgroundColor: "var(--surface)",
+          color: "var(--text)",
+        }}
+        onFocus={(e) => (e.target.style.borderColor = "#3f5c2e")}
+        onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
+      />
+    </div>
+  );
+}
+
+function FieldPassword({
+  inputRef,
+  value,
+  onChange,
+  disabled,
+}: {
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  value:    string;
+  onChange: (next: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label
+        htmlFor="password"
+        className="text-sm font-medium"
+        style={{ color: "var(--text)" }}
+      >
+        Password
+      </label>
+      <input
+        id="password"
+        ref={inputRef}
+        type="password"
+        required
+        autoComplete="current-password"
+        placeholder="Your password"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        className="w-full rounded-md border px-3.5 py-2.5 text-sm outline-none transition-colors"
+        style={{
+          borderColor: "var(--border)",
+          backgroundColor: "var(--surface)",
+          color: "var(--text)",
+        }}
+        onFocus={(e) => (e.target.style.borderColor = "#3f5c2e")}
+        onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
+      />
     </div>
   );
 }
@@ -234,10 +430,10 @@ function GreenButton({
   loadingLabel,
   disabled,
 }: {
-  loading: boolean;
-  label: string;
+  loading:      boolean;
+  label:        string;
   loadingLabel: string;
-  disabled?: boolean;
+  disabled?:    boolean;
 }) {
   return (
     <button

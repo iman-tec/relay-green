@@ -1,32 +1,35 @@
 "use client";
 
 /*
- * Staff sign-in — Email + one-time code via email.
+ * Staff sign-in — email + password as the default, 8-digit OTP code as
+ * the universal fallback for first-time signups OR forgotten passwords.
  *
- * Two-step OTP flow (same as customer /login, just with mode="staff" so
- * the server routes the user to their role's landing):
- *   1. Enter email → server sends an 8-digit code via Supabase Auth.
- *   2. Enter the code → server verifies + sets session → forward.
+ * Flow:
+ *   mode === "password"  → email + password fields; submit hits
+ *                           /api/auth/signin-password (mode=staff).
+ *   mode === "otp-email" → email field; submit hits /api/auth/prepare
+ *                           + /api/auth/send-otp; advances to "otp-code".
+ *   mode === "otp-code"  → 8-digit code; submit hits /api/auth/verify-otp
+ *                           (mode=staff). The server `next` routes the
+ *                           user to /set-password (no password yet) OR
+ *                           their role's landing.
  *
- * On the first sign-in after admin invites a user, they typically arrive
- * via the magic-link in the invitation email (handled by /auth/callback)
- * and never see this form. They only land here for subsequent sign-ins.
- *
- * Dev quick-pick (NODE_ENV=development only) keeps a one-click route to
- * each seeded demo account.
+ * Dev mode shortcuts (NODE_ENV=development only) stay unchanged — they
+ * bypass auth entirely and sign in as seeded demo accounts.
  */
 
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Briefcase, Eye, ShieldCheck, Building2 } from "lucide-react";
 
-type Step = "email" | "code";
+type Mode    = "password" | "otp-email" | "otp-code";
+type Purpose = "first-time" | "forgot";
 
 type DevRole = {
-  label: string;
-  devRole: string;
-  icon: React.ComponentType<{ size?: number }>;
-  hint: string;
+  label:    string;
+  devRole:  string;
+  icon:     React.ComponentType<{ size?: number }>;
+  hint:     string;
 };
 
 const BRAND_GREEN = "#3f5c2e";
@@ -42,25 +45,68 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
   const search = useSearchParams();
   const initialEmail = search?.get("email") ?? "";
 
-  const [step, setStep] = useState<Step>("email");
-  const [email, setEmail] = useState(initialEmail);
-  const [code, setCode] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [mode, setMode]           = useState<Mode>("password");
+  const [purpose, setPurpose]     = useState<Purpose>("first-time");
+  const [email, setEmail]         = useState(initialEmail);
+  const [password, setPwd]        = useState("");
+  const [code, setCode]           = useState("");
+  const [loading, setLoading]     = useState(false);
   const [resending, setResending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
-  const codeRef = useRef<HTMLInputElement>(null);
+  const [error, setError]         = useState<string | null>(null);
+  const [info, setInfo]           = useState<string | null>(null);
+  const codeRef     = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
 
+  const purposeCopy = {
+    "first-time": {
+      title:  "First-time sign-in",
+      blurb:  "Enter the work email your supervisor invited. We'll send you an 8-digit code, then ask you to choose a password.",
+      cta:    "Email me a sign-up code",
+    },
+    "forgot": {
+      title:  "Reset your password",
+      blurb:  "Enter your work email and we'll send you an 8-digit code. After verifying you can choose a new password.",
+      cta:    "Email me a reset code",
+    },
+  } as const;
+
+  // Focus password input when mounting in password mode so the form is
+  // immediately keyboard-actionable for returning staff.
+  useEffect(() => {
+    if (mode === "password" && initialEmail) {
+      passwordRef.current?.focus();
+    }
+  }, [mode, initialEmail]);
+
+  // ── Helpers ────────────────────────────────────────────────────────
   const sendCode = async (target: string): Promise<boolean> => {
-    await fetch("/api/auth/prepare", {
-      method: "POST",
+    const prepRes = await fetch("/api/auth/prepare", {
+      method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: target }),
+      body:    JSON.stringify({ email: target, purpose }),
     });
+    if (!prepRes.ok) {
+      const body = (await prepRes.json().catch(() => ({}))) as { error?: string };
+      if (body.error === "email_exists") {
+        setError("That email is already registered. Use \"Forgot password?\" instead.");
+        return false;
+      }
+      if (body.error === "email_not_found") {
+        setError("No account found for that email. Use \"First time signing in?\" instead.");
+        return false;
+      }
+      if (body.error === "rate_limited") {
+        setError("Too many attempts — wait a minute before trying again.");
+        return false;
+      }
+      // Other prepare errors are non-fatal historically — just log and
+      // try to send the OTP anyway. Most "we already had this user"
+      // cases come back ok=true already.
+    }
     const sendRes = await fetch("/api/auth/send-otp", {
-      method: "POST",
+      method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: target }),
+      body:    JSON.stringify({ email: target }),
     });
     if (!sendRes.ok) {
       const body = (await sendRes.json().catch(() => ({}))) as { error?: string };
@@ -70,17 +116,47 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
     return true;
   };
 
-  const handleSendCode = async (e: React.FormEvent) => {
+  // ── Password sign-in ───────────────────────────────────────────────
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmed = email.trim();
-    if (!trimmed) return;
+    const em = email.trim().toLowerCase();
+    if (!em || !password) return;
     setLoading(true);
     setError(null);
     setInfo(null);
     try {
-      const ok = await sendCode(trimmed);
+      const res = await fetch("/api/auth/signin-password", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ email: em, password, mode: "staff" }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean; next?: string; error?: string;
+      };
+      if (!res.ok || !body.ok) {
+        setError(body.error ?? "Couldn't sign in.");
+        return;
+      }
+      window.location.assign(body.next ?? "/dashboard");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't sign in.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── OTP send ───────────────────────────────────────────────────────
+  const handleSendCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const em = email.trim().toLowerCase();
+    if (!em) return;
+    setLoading(true);
+    setError(null);
+    setInfo(null);
+    try {
+      const ok = await sendCode(em);
       if (!ok) return;
-      setStep("code");
+      setMode("otp-code");
       setTimeout(() => codeRef.current?.focus(), 80);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not send code.");
@@ -90,13 +166,13 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
   };
 
   const handleResend = async () => {
-    const trimmed = email.trim();
-    if (!trimmed) return;
+    const em = email.trim().toLowerCase();
+    if (!em) return;
     setResending(true);
     setError(null);
     setInfo(null);
     try {
-      const ok = await sendCode(trimmed);
+      const ok = await sendCode(em);
       if (ok) setInfo("New code sent. Check your inbox.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not resend code.");
@@ -105,6 +181,7 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
     }
   };
 
+  // ── OTP verify ─────────────────────────────────────────────────────
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = code.trim();
@@ -114,14 +191,12 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
     setInfo(null);
     try {
       const res = await fetch("/api/auth/verify-otp", {
-        method: "POST",
+        method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, code: trimmed, mode: "staff" }),
+        body:    JSON.stringify({ email, code: trimmed, mode: "staff", purpose }),
       });
       const body = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        next?: string;
-        error?: string;
+        ok?: boolean; next?: string; error?: string;
       };
       if (!res.ok) {
         setError(body.error ?? "Couldn't verify code.");
@@ -135,7 +210,8 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
     }
   };
 
-  if (step === "code") {
+  // ── OTP code mode UI ───────────────────────────────────────────────
+  if (mode === "otp-code") {
     return (
       <div className="flex flex-col gap-4">
         <div
@@ -146,31 +222,21 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
           }}
         >
           <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke={BRAND_GREEN}
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-            style={{ marginTop: 2 }}
+            width="16" height="16" viewBox="0 0 24 24" fill="none"
+            stroke={BRAND_GREEN} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+            aria-hidden="true" style={{ marginTop: 2 }}
           >
             <polyline points="20 6 9 17 4 12" />
           </svg>
           <p className="text-sm leading-relaxed" style={{ color: "var(--text)" }}>
-            We sent an 8-digit code to <span style={{ fontWeight: 500 }}>{email}</span>
+            We sent an 8-digit code to{" "}
+            <span style={{ fontWeight: 500 }}>{email}</span>
           </p>
         </div>
 
         <form onSubmit={handleVerify} className="flex flex-col gap-3">
           <div className="flex flex-col gap-1.5">
-            <label
-              htmlFor="code"
-              className="text-sm font-medium"
-              style={{ color: "var(--text)" }}
-            >
+            <label htmlFor="code" className="text-sm font-medium" style={{ color: "var(--text)" }}>
               8-digit code
             </label>
             <input
@@ -183,9 +249,7 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
               required
               placeholder="••••••••"
               value={code}
-              onChange={(e) =>
-                setCode(e.target.value.replace(/\D/g, "").slice(0, 8))
-              }
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 8))}
               disabled={loading}
               className="w-full rounded-md border px-3.5 py-3 text-center text-xl tracking-[0.4em] outline-none transition-colors"
               style={{
@@ -200,7 +264,7 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
           </div>
 
           {error && <ErrorBanner message={error} />}
-          {info && <InfoBanner message={info} />}
+          {info  && <InfoBanner  message={info}  />}
 
           <button
             type="submit"
@@ -225,7 +289,7 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
           <button
             type="button"
             onClick={() => {
-              setStep("email");
+              setMode("password");
               setCode("");
               setError(null);
               setInfo(null);
@@ -233,32 +297,79 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
             className="underline-offset-4 hover:underline"
             style={{ color: "var(--text-muted)" }}
           >
-            Use a different email
+            ← Use password instead
           </button>
         </div>
       </div>
     );
   }
 
+  // ── OTP email mode UI ──────────────────────────────────────────────
+  if (mode === "otp-email") {
+    const copy = purposeCopy[purpose];
+    return (
+      <div className="flex flex-col gap-4">
+        <div>
+          <h2 className="text-sm font-semibold" style={{ color: "var(--text)" }}>
+            {copy.title}
+          </h2>
+          <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>
+            {copy.blurb}
+          </p>
+        </div>
+
+        <form onSubmit={handleSendCode} className="flex flex-col gap-3">
+          <FieldEmail email={email} onChange={setEmail} disabled={loading} autoFocus />
+
+          {error && <ErrorBanner message={error} />}
+
+          <button
+            type="submit"
+            disabled={loading || !email.trim()}
+            className="w-full rounded-md py-2.5 text-sm font-medium transition-opacity disabled:opacity-50"
+            style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+          >
+            {loading ? "Sending code…" : copy.cta}
+          </button>
+        </form>
+
+        <button
+          type="button"
+          onClick={() => {
+            setError(null);
+            setMode("password");
+            setTimeout(() => passwordRef.current?.focus(), 80);
+          }}
+          className="text-center text-xs underline-offset-4 hover:underline"
+          style={{ color: "var(--text-muted)" }}
+        >
+          ← Back to password sign in
+        </button>
+
+        {devMode && <DevModePanel />}
+      </div>
+    );
+  }
+
+  // ── Password mode UI (default) ─────────────────────────────────────
   return (
     <div className="flex flex-col gap-4">
-      <form onSubmit={handleSendCode} className="flex flex-col gap-3">
+      <form onSubmit={handlePasswordSubmit} className="flex flex-col gap-3">
+        <FieldEmail email={email} onChange={setEmail} disabled={loading} autoFocus={!initialEmail} />
+
         <div className="flex flex-col gap-1.5">
-          <label
-            htmlFor="email"
-            className="text-sm font-medium"
-            style={{ color: "var(--text)" }}
-          >
-            Work email
+          <label htmlFor="password" className="text-sm font-medium" style={{ color: "var(--text)" }}>
+            Password
           </label>
           <input
-            id="email"
-            type="email"
+            id="password"
+            ref={passwordRef}
+            type="password"
             required
-            autoFocus
-            placeholder="you@relay.green"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="current-password"
+            placeholder="Your password"
+            value={password}
+            onChange={(e) => setPwd(e.target.value)}
             disabled={loading}
             className="w-full rounded-md border px-3.5 py-2.5 text-sm outline-none transition-colors"
             style={{
@@ -275,95 +386,148 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
 
         <button
           type="submit"
-          disabled={loading || !email.trim()}
+          disabled={loading || !email.trim() || !password}
           className="w-full rounded-md py-2.5 text-sm font-medium transition-opacity disabled:opacity-50"
           style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
         >
-          {loading ? "Sending code…" : "Email me a sign-in code"}
+          {loading ? "Signing in…" : "Sign in"}
         </button>
-
-        <p
-          className="text-center text-xs"
-          style={{ color: "var(--text-muted)" }}
-        >
-          We&apos;ll email you an 8-digit code. No password.
-        </p>
       </form>
 
-      {devMode && (
-        <details
-          className="group mt-2 rounded-md border"
-          style={{ borderColor: "var(--border)" }}
+      <div className="flex items-center justify-between gap-3 text-xs">
+        <button
+          type="button"
+          onClick={() => {
+            setError(null);
+            setPwd("");
+            setPurpose("first-time");
+            setMode("otp-email");
+          }}
+          className="underline-offset-4 hover:underline"
+          style={{ color: "var(--text-muted)" }}
         >
-          <summary
-            className="flex cursor-pointer items-center justify-between gap-2 px-3.5 py-2.5 text-[11px] font-semibold tracking-[0.12em] uppercase select-none"
-            style={{ color: "var(--text-muted)" }}
-          >
-            <span>Developer shortcuts</span>
-            <span
-              className="transition-transform group-open:rotate-90"
-              aria-hidden="true"
-            >
-              ›
-            </span>
-          </summary>
-          <div className="border-t p-3" style={{ borderColor: "var(--border)" }}>
-            <p
-              className="mb-2.5 text-[11px] leading-relaxed"
-              style={{ color: "var(--text-muted)" }}
-            >
-              Skips OTP. Signs in as a seeded demo account. Dev only.
-            </p>
-            <div className="grid gap-1.5">
-              {DEV_ROLES.map((r) => {
-                const Icon = r.icon;
-                return (
-                  <button
-                    key={r.devRole}
-                    type="button"
-                    onClick={() => {
-                      window.location.href = `/api/dev/sign-in-as?role=${r.devRole}`;
-                    }}
-                    className="flex items-center gap-3 rounded-md border px-3 py-2 text-left transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
-                    style={{
-                      borderColor: "var(--border)",
-                      backgroundColor:
-                        "color-mix(in srgb, var(--text) 2%, transparent)",
-                    }}
-                  >
-                    <span
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md"
-                      style={{
-                        backgroundColor:
-                          "color-mix(in srgb, " + BRAND_GREEN + " 12%, transparent)",
-                        color: BRAND_GREEN,
-                      }}
-                    >
-                      <Icon size={13} />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div
-                        className="text-[13px] font-medium"
-                        style={{ color: "var(--text)" }}
-                      >
-                        {r.label}
-                      </div>
-                      <div
-                        className="text-[11px]"
-                        style={{ color: "var(--text-muted)" }}
-                      >
-                        {r.hint}
-                      </div>
-                    </div>
-                    <span style={{ color: "var(--text-muted)" }}>→</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </details>
-      )}
+          First time signing in?
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setError(null);
+            setPwd("");
+            setPurpose("forgot");
+            setMode("otp-email");
+          }}
+          className="underline-offset-4 hover:underline"
+          style={{ color: "var(--text-muted)" }}
+        >
+          Forgot password?
+        </button>
+      </div>
+
+      {devMode && <DevModePanel />}
     </div>
+  );
+}
+
+/* ── Subcomponents ───────────────────────────────────────────────── */
+
+function FieldEmail({
+  email,
+  onChange,
+  disabled,
+  autoFocus,
+}: {
+  email:     string;
+  onChange:  (next: string) => void;
+  disabled?: boolean;
+  autoFocus?: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor="email" className="text-sm font-medium" style={{ color: "var(--text)" }}>
+        Work email
+      </label>
+      <input
+        id="email"
+        type="email"
+        required
+        autoFocus={autoFocus}
+        autoComplete="email"
+        placeholder="you@relay.green"
+        value={email}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        className="w-full rounded-md border px-3.5 py-2.5 text-sm outline-none transition-colors"
+        style={{
+          borderColor: "var(--border)",
+          backgroundColor: "var(--surface)",
+          color: "var(--text)",
+        }}
+        onFocus={(e) => (e.target.style.borderColor = BRAND_GREEN)}
+        onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
+      />
+    </div>
+  );
+}
+
+function DevModePanel() {
+  return (
+    <details
+      className="group mt-2 rounded-md border"
+      style={{ borderColor: "var(--border)" }}
+    >
+      <summary
+        className="flex cursor-pointer items-center justify-between gap-2 px-3.5 py-2.5 text-[11px] font-semibold tracking-[0.12em] uppercase select-none"
+        style={{ color: "var(--text-muted)" }}
+      >
+        <span>Developer shortcuts</span>
+        <span className="transition-transform group-open:rotate-90" aria-hidden="true">
+          ›
+        </span>
+      </summary>
+      <div className="border-t p-3" style={{ borderColor: "var(--border)" }}>
+        <p className="mb-2.5 text-[11px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
+          Skips auth. Signs in as a seeded demo account. Dev only.
+        </p>
+        <div className="grid gap-1.5">
+          {DEV_ROLES.map((r) => {
+            const Icon = r.icon;
+            return (
+              <button
+                key={r.devRole}
+                type="button"
+                onClick={() => {
+                  window.location.href = `/api/dev/sign-in-as?role=${r.devRole}`;
+                }}
+                className="flex items-center gap-3 rounded-md border px-3 py-2 text-left transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
+                style={{
+                  borderColor: "var(--border)",
+                  backgroundColor: "color-mix(in srgb, var(--text) 2%, transparent)",
+                }}
+              >
+                <span
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md"
+                  style={{
+                    backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 12%, transparent)",
+                    color: BRAND_GREEN,
+                  }}
+                >
+                  <Icon size={13} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[13px] font-medium" style={{ color: "var(--text)" }}>
+                    {r.label}
+                  </div>
+                  <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                    {r.hint}
+                  </div>
+                </div>
+                <span style={{ color: "var(--text-muted)" }}>→</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </details>
   );
 }
 
@@ -372,11 +536,9 @@ function ErrorBanner({ message }: { message: string }) {
     <p
       className="rounded-md px-3 py-2 text-sm"
       style={{
-        backgroundColor:
-          "color-mix(in srgb, var(--accent-red) 8%, transparent)",
+        backgroundColor: "color-mix(in srgb, var(--accent-red) 8%, transparent)",
         color: "var(--accent-red)",
-        border:
-          "1px solid color-mix(in srgb, var(--accent-red) 20%, transparent)",
+        border: "1px solid color-mix(in srgb, var(--accent-red) 20%, transparent)",
       }}
     >
       {message}
@@ -389,11 +551,9 @@ function InfoBanner({ message }: { message: string }) {
     <p
       className="rounded-md px-3 py-2 text-sm"
       style={{
-        backgroundColor:
-          "color-mix(in srgb, " + BRAND_GREEN + " 8%, transparent)",
+        backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 8%, transparent)",
         color: BRAND_GREEN,
-        border:
-          "1px solid color-mix(in srgb, " + BRAND_GREEN + " 25%, transparent)",
+        border: "1px solid color-mix(in srgb, " + BRAND_GREEN + " 25%, transparent)",
       }}
     >
       {message}
