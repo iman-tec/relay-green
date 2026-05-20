@@ -13,14 +13,15 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/browser";
+import { STAFF_ROLES, toRoles, type Role } from "@/lib/relay/roles";
 
 export type StaffGuardState =
   | { kind: "loading" }
   | { kind: "anonymous" }
   | { kind: "not-staff" }
-  | { kind: "staff"; userId: string; roles: string[] };
+  | { kind: "staff"; userId: string; roles: Role[] };
 
-const STAFF_ROLES = ["engineer", "pod_lead", "ops_manager", "admin", "super_admin", "enterprise_admin"];
+const STAFF_ROLE_SET: ReadonlySet<Role> = new Set(STAFF_ROLES);
 
 export function useStaffGuard(): StaffGuardState {
   const [state, setState] = useState<StaffGuardState>({ kind: "loading" });
@@ -48,7 +49,7 @@ export function useStaffGuard(): StaffGuardState {
           return;
         }
         const { data: rolesData, error: rolesErr } = await sb
-          .from("user_roles")
+          .from("user_role_names")
           .select("role")
           .eq("user_id", u.user.id);
         if (cancelled) return;
@@ -58,8 +59,8 @@ export function useStaffGuard(): StaffGuardState {
           setState({ kind: "not-staff" });
           return;
         }
-        const roles = (rolesData ?? []).map((r) => r.role as string);
-        const isStaff = roles.some((r) => STAFF_ROLES.includes(r));
+        const roles = toRoles((rolesData ?? []).map((r: { role: string }) => r.role));
+        const isStaff = roles.some((r) => STAFF_ROLE_SET.has(r));
         if (!isStaff) {
           setState({ kind: "not-staff" });
           return;

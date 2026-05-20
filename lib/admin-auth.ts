@@ -13,6 +13,7 @@
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
+import { ROLE } from "@/lib/relay/roles";
 
 export type RequireResult =
   | { ok: false; status: 401 | 403; error: string }
@@ -31,11 +32,11 @@ export async function requireSuperAdmin(): Promise<RequireResult> {
   if (!user) return { ok: false, status: 401, error: "not_signed_in" };
 
   const { data: roles } = await supabase
-    .from("user_roles")
+    .from("user_role_names")
     .select("role")
     .eq("user_id", user.id);
   const isSuperAdmin = (roles ?? []).some(
-    (r: { role: string }) => r.role === "super_admin",
+    (r: { role: string }) => r.role === ROLE.super_admin,
   );
   if (!isSuperAdmin) {
     return { ok: false, status: 403, error: "forbidden" };

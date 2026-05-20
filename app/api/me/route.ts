@@ -7,11 +7,12 @@
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { STAFF_ROLES } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const STAFF_ROLES = ["engineer", "pod_lead", "ops_manager", "admin"];
+const STAFF_ROLE_SET: ReadonlySet<string> = new Set(STAFF_ROLES);
 
 export async function GET() {
   const sb = await createClient();
@@ -21,12 +22,12 @@ export async function GET() {
   }
 
   const { data: rolesData } = await sb
-    .from("user_roles")
+    .from("user_role_names")
     .select("role")
     .eq("user_id", u.user.id);
 
-  const roles = (rolesData ?? []).map((r) => r.role as string);
-  const isStaff = roles.some((r) => STAFF_ROLES.includes(r));
+  const roles = (rolesData ?? []).map((r: { role: string }) => r.role);
+  const isStaff = roles.some((r) => STAFF_ROLE_SET.has(r));
 
   return NextResponse.json({
     userId: u.user.id,

@@ -810,7 +810,7 @@ function MemberSection({
   // (Enterprise-style — no picker, no search). Posts to /api/admin/users
   // with the platform role and auto-stages the new user for this pod.
   const inviteAndStage = async ({ email, displayName }: { email: string; displayName: string }) => {
-    const platformRole = podRole === "supervisor" ? "pod_lead" : "engineer";
+    const platformRole = podRole === "supervisor" ? "supervisor" : "engineer";
     const res = await fetch("/api/admin/users", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },

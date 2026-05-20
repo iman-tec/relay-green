@@ -80,6 +80,17 @@ async function main() {
   console.log(`→ Ensuring "${DEMO_ORG_NAME}" organization…`);
   const org = await ensureOrg(admin);
 
+  // Resolve enterprise_admin role_id once.
+  const { data: roleRow } = await admin
+    .from("roles")
+    .select("id")
+    .eq("name", "enterprise_admin")
+    .maybeSingle();
+  const enterpriseAdminRoleId = (roleRow as { id: string } | null)?.id;
+  if (!enterpriseAdminRoleId) {
+    throw new Error("enterprise_admin role not seeded — did you apply 20260521120000_roles_lookup_fk.sql?");
+  }
+
   console.log(`→ Binding Eric to org…`);
   const { error: profileErr } = await admin
     .from("profiles")
@@ -87,7 +98,7 @@ async function main() {
       {
         id:              user.id,
         full_name:       "Eric Enterprise",
-        primary_role:    "enterprise_admin",
+        primary_role_id: enterpriseAdminRoleId,
         organization_id: org.id,
         is_onboarded:    true,
       },
@@ -100,8 +111,8 @@ async function main() {
   const { error: roleErr } = await admin
     .from("user_roles")
     .upsert(
-      { user_id: user.id, role: "enterprise_admin" },
-      { onConflict: "user_id,role", ignoreDuplicates: true },
+      { user_id: user.id, role_id: enterpriseAdminRoleId },
+      { onConflict: "user_id,role_id", ignoreDuplicates: true },
     );
   if (roleErr) throw new Error(`Role grant failed: ${roleErr.message}`);
   console.log(`  ✓ enterprise_admin granted`);

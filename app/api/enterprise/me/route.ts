@@ -12,9 +12,12 @@
 
 import { NextResponse } from "next/server";
 import { requireEnterpriseAdmin } from "@/lib/enterprise-auth";
+import { STAFF_ROLES as ALL_STAFF_ROLES } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
 export const runtime  = "nodejs";
+
+const STAFF_ROLE_SET: ReadonlySet<string> = new Set(ALL_STAFF_ROLES);
 
 export async function GET() {
   const gate = await requireEnterpriseAdmin();
@@ -31,28 +34,24 @@ export async function GET() {
   }
 
   // Users + staff in this org. profiles.organization_id is the bind.
-  // Role split: anyone with role IN (engineer, pod_lead, ops_manager,
-  // admin, enterprise_admin, super_admin) = "staff" — everyone else =
-  // "users" (builder/customer/null).
+  // Role split: anyone holding a staff role (everything except `client`) is
+  // counted as staff; everyone else is a "user".
   const { data: profiles } = await admin
     .from("profiles")
     .select("id")
     .eq("organization_id", orgId);
   const profileIds = (profiles ?? []).map((p) => p.id as string);
 
-  const STAFF_ROLES = new Set([
-    "engineer", "pod_lead", "ops_manager", "admin", "enterprise_admin", "super_admin",
-  ]);
   let staffCount = 0;
   let userCount  = profileIds.length;
   if (profileIds.length > 0) {
     const { data: roleRows } = await admin
-      .from("user_roles")
+      .from("user_role_names")
       .select("user_id, role")
       .in("user_id", profileIds);
     const staffSet = new Set<string>();
     for (const r of (roleRows ?? []) as { user_id: string; role: string }[]) {
-      if (STAFF_ROLES.has(r.role)) staffSet.add(r.user_id);
+      if (STAFF_ROLE_SET.has(r.role)) staffSet.add(r.user_id);
     }
     staffCount = staffSet.size;
     userCount  = profileIds.length - staffCount;

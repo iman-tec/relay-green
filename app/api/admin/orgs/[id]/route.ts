@@ -5,13 +5,15 @@
  *   Removes the organization row. Members are NOT deleted (they keep
  *   their auth + profile rows) — only the org link on their profile is
  *   cleared, mirroring "leave organization" semantics. The org's
- *   enterprise admins are demoted to plain builders.
+ *   enterprise_admin role grants are dropped (the role is meaningless
+ *   without an org); the user's other roles are left alone.
  *
  *   Caller must hold super_admin.
  */
 
 import { NextResponse } from "next/server";
 import { requireSuperAdmin } from "@/lib/admin-auth";
+import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
 export const runtime  = "nodejs";
@@ -47,11 +49,19 @@ export async function DELETE(_request: Request, { params }: RouteCtx) {
     }
     // Drop the enterprise_admin role from the org's admins — without an
     // org, that role doesn't mean anything.
-    await admin
-      .from("user_roles")
-      .delete()
-      .in("user_id", memberIds)
-      .eq("role", "enterprise_admin");
+    const { data: roleRow } = await admin
+      .from("roles")
+      .select("id")
+      .eq("name", ROLE.enterprise_admin)
+      .maybeSingle();
+    const enterpriseAdminRoleId = (roleRow as { id: string } | null)?.id;
+    if (enterpriseAdminRoleId) {
+      await admin
+        .from("user_roles")
+        .delete()
+        .in("user_id", memberIds)
+        .eq("role_id", enterpriseAdminRoleId);
+    }
   }
 
   const { error: orgErr } = await admin

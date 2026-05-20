@@ -55,9 +55,24 @@ export async function createTestUser(role: "customer" | "engineer" = "customer")
   const { data: sign, error: signErr } = await sb.auth.signInWithPassword({ email, password: PASSWORD });
   if (signErr || !sign.session) throw signErr ?? new Error("sign in failed");
 
-  // For engineer role: grant via the dev RPC (auth context is the engineer)
+  // For engineer role: grant via the service-role admin client.
+  // dev_grant_my_role was retired in 20260521120000_roles_lookup_fk.sql;
+  // the replacement grant_role RPC requires an admin/super_admin caller,
+  // so test bootstrap uses a direct user_roles insert (role_id resolved
+  // from the roles lookup).
   if (role === "engineer") {
-    const { error: e } = await sb.rpc("dev_grant_my_role", { _role: "engineer" });
+    const { data: roleRow } = await admin
+      .from("roles").select("id").eq("name", "engineer").maybeSingle();
+    const engineerRoleId = (roleRow as { id: string } | null)?.id;
+    if (!engineerRoleId) {
+      throw new Error("engineer role not seeded — did you apply 20260521120000_roles_lookup_fk.sql?");
+    }
+    const { error: e } = await admin
+      .from("user_roles")
+      .upsert(
+        { user_id: data.user.id, role_id: engineerRoleId },
+        { onConflict: "user_id,role_id", ignoreDuplicates: true },
+      );
     if (e) throw e;
   }
 

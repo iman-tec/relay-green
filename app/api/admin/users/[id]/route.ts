@@ -12,15 +12,26 @@
 
 import { NextResponse } from "next/server";
 import { requireSuperAdmin } from "@/lib/admin-auth";
+import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
 export const runtime  = "nodejs";
 
-const CREATABLE_ROLES = new Set([
-  "engineer",
-  "pod_lead",
-  "super_admin",
-  "admin",
+// Platform-side roles super_admin can assign via the user-admin console.
+// Enterprise-side roles (enterprise_admin, department_admin) are managed
+// elsewhere (/api/admin/orgs and the enterprise console).
+const CREATABLE_ROLES: ReadonlySet<string> = new Set([
+  ROLE.engineer,
+  ROLE.supervisor,
+  ROLE.super_admin,
+]);
+
+// Roles cleared when the caller patches a user to a new platform role.
+// Mirrors CREATABLE_ROLES minus super_admin (so a super_admin can't lose
+// their super_admin via a role-switch patch).
+const CLEARABLE_ROLES: ReadonlySet<string> = new Set([
+  ROLE.engineer,
+  ROLE.supervisor,
 ]);
 
 type RouteCtx = { params: Promise<{ id: string }> };
@@ -56,26 +67,42 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
   if (typeof role === "string") {
     if (!CREATABLE_ROLES.has(role)) {
       return NextResponse.json(
-        { error: "Role must be engineer, pod_lead, super_admin, or admin." },
+        { error: "Role must be engineer, supervisor, or super_admin." },
         { status: 400 },
       );
     }
-    // Single staff role per user: clear the staff roles, then re-insert.
-    // We don't touch builder/customer rows here.
-    await admin
-      .from("user_roles")
-      .delete()
-      .eq("user_id", id)
-      .in("role", ["engineer", "pod_lead", "ops_manager", "admin"]);
+
+    // Resolve role_ids: the target role we're assigning, plus the set of
+    // platform-side roles we clear before re-inserting (so a single staff
+    // role per user is enforced for platform-side roles — enterprise roles
+    // are untouched here).
+    const { data: roleLookup } = await admin
+      .from("roles")
+      .select("id, name")
+      .in("name", [role, ...Array.from(CLEARABLE_ROLES)]);
+    const roles = (roleLookup ?? []) as { id: string; name: string }[];
+    const targetRoleId   = roles.find((r) => r.name === role)?.id;
+    const clearableIds   = roles.filter((r) => CLEARABLE_ROLES.has(r.name)).map((r) => r.id);
+    if (!targetRoleId) {
+      return NextResponse.json({ error: `Unknown role: ${role}` }, { status: 500 });
+    }
+
+    if (clearableIds.length > 0) {
+      await admin
+        .from("user_roles")
+        .delete()
+        .eq("user_id", id)
+        .in("role_id", clearableIds);
+    }
     const { error: insertErr } = await admin
       .from("user_roles")
-      .insert({ user_id: id, role });
+      .insert({ user_id: id, role_id: targetRoleId });
     if (insertErr) {
       return NextResponse.json({ error: insertErr.message }, { status: 500 });
     }
     await admin
       .from("profiles")
-      .update({ primary_role: role })
+      .update({ primary_role_id: targetRoleId })
       .eq("id", id);
   }
 
@@ -121,10 +148,10 @@ export async function DELETE(_request: Request, { params }: RouteCtx) {
   // Admin) can delete them through the admin UI. Removal must go through
   // the bootstrap script.
   const { data: targetRoles } = await admin
-    .from("user_roles")
+    .from("user_role_names")
     .select("role")
     .eq("user_id", id);
-  const isSuper = (targetRoles ?? []).some((r: { role: string }) => r.role === "super_admin");
+  const isSuper = (targetRoles ?? []).some((r: { role: string }) => r.role === ROLE.super_admin);
   if (isSuper) {
     return NextResponse.json(
       { error: "Super Admins can't be deleted from the admin UI." },

@@ -32,14 +32,22 @@ type SeedUser = { email: string; name: string; role: string; primaryRole: string
 
 const NEW_USERS: SeedUser[] = [
   // Supervisor for Pod Beta (Sam already exists for Pod Alpha)
-  { email: "supervisor.beta@relay.test",  name: "Beth Supervisor", role: "pod_lead", primaryRole: "pod_lead" },
+  { email: "supervisor.beta@relay.test",  name: "Beth Supervisor", role: "supervisor", primaryRole: "supervisor" },
   // Pod Alpha engineers
-  { email: "engineer.alpha1@relay.test",  name: "Alex Alpha One",  role: "engineer", primaryRole: "engineer" },
-  { email: "engineer.alpha2@relay.test",  name: "Aria Alpha Two",  role: "engineer", primaryRole: "engineer" },
+  { email: "engineer.alpha1@relay.test",  name: "Alex Alpha One",  role: "engineer",   primaryRole: "engineer"   },
+  { email: "engineer.alpha2@relay.test",  name: "Aria Alpha Two",  role: "engineer",   primaryRole: "engineer"   },
   // Pod Beta engineers
-  { email: "engineer.beta1@relay.test",   name: "Ben Beta One",    role: "engineer", primaryRole: "engineer" },
-  { email: "engineer.beta2@relay.test",   name: "Bree Beta Two",   role: "engineer", primaryRole: "engineer" },
+  { email: "engineer.beta1@relay.test",   name: "Ben Beta One",    role: "engineer",   primaryRole: "engineer"   },
+  { email: "engineer.beta2@relay.test",   name: "Bree Beta Two",   role: "engineer",   primaryRole: "engineer"   },
 ];
+
+async function loadRoleIds(admin: AdminClient): Promise<Map<string, string>> {
+  const { data, error } = await admin.from("roles").select("id, name");
+  if (error) throw new Error(`Couldn't load roles lookup: ${error.message}`);
+  const map = new Map<string, string>();
+  for (const r of (data ?? []) as { id: string; name: string }[]) map.set(r.name, r.id);
+  return map;
+}
 
 type PodSpec = {
   name: string;
@@ -88,7 +96,17 @@ async function bindUserToOrg(admin: AdminClient, userId: string, orgId: string, 
   if (error) throw new Error(`org bind failed for ${label}: ${error.message}`);
 }
 
-async function ensureUser(admin: AdminClient, u: SeedUser, orgId: string | null): Promise<string> {
+async function ensureUser(
+  admin: AdminClient,
+  u: SeedUser,
+  orgId: string | null,
+  roleIds: Map<string, string>,
+): Promise<string> {
+  const primaryRoleId = roleIds.get(u.primaryRole);
+  const roleId        = roleIds.get(u.role);
+  if (!primaryRoleId) throw new Error(`Unknown primary role: ${u.primaryRole}`);
+  if (!roleId)        throw new Error(`Unknown role: ${u.role}`);
+
   let userId = await findUserByEmail(admin, u.email);
   if (userId) {
     console.log(`  → ${u.email} exists (${userId})`);
@@ -113,7 +131,7 @@ async function ensureUser(admin: AdminClient, u: SeedUser, orgId: string | null)
       {
         id:              userId,
         full_name:       u.name,
-        primary_role:    u.primaryRole,
+        primary_role_id: primaryRoleId,
         is_onboarded:    true,
         ...(orgId ? { organization_id: orgId } : {}),
       },
@@ -125,8 +143,8 @@ async function ensureUser(admin: AdminClient, u: SeedUser, orgId: string | null)
   const { error: roleErr } = await admin
     .from("user_roles")
     .upsert(
-      { user_id: userId, role: u.role },
-      { onConflict: "user_id,role", ignoreDuplicates: true },
+      { user_id: userId, role_id: roleId },
+      { onConflict: "user_id,role_id", ignoreDuplicates: true },
     );
   if (roleErr) throw new Error(`role grant failed for ${u.email}: ${roleErr.message}`);
 
@@ -199,11 +217,15 @@ async function main() {
     console.warn("  ⚠ admin.demo@relay.test not found — Internal Admin will be missing.");
   }
 
+  // 0b. Roles lookup (used by ensureUser).
+  console.log("→ Loading roles lookup…");
+  const roleIds = await loadRoleIds(admin);
+
   // 1. Create the new staff users (Beth + 4 engineers).
   console.log("→ Ensuring staff users…");
   const userIds = new Map<string, string>();
   for (const u of NEW_USERS) {
-    userIds.set(u.email, await ensureUser(admin, u, orgId));
+    userIds.set(u.email, await ensureUser(admin, u, orgId, roleIds));
   }
 
   // 2. Resolve the pre-existing Sam by lookup and reseat his org_id too.

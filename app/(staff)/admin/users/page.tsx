@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { ROLE } from "@/lib/relay/roles";
 import { UsersClient } from "./UsersClient";
 
 export const metadata: Metadata = {
@@ -15,11 +16,11 @@ export default async function AdminUsersPage() {
   if (!user) redirect("/staff/login");
 
   const { data: roleRows } = await supabase
-    .from("user_roles")
+    .from("user_role_names")
     .select("role")
     .eq("user_id", user.id);
   const roles = (roleRows ?? []).map((r: { role: string }) => r.role);
-  if (!roles.includes("super_admin")) redirect("/admin");
+  if (!roles.includes(ROLE.super_admin)) redirect("/admin");
 
   return <UsersClient meEmail={user.email ?? ""} />;
 }

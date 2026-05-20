@@ -9,6 +9,7 @@
 
 import { NextResponse } from "next/server";
 import { requireEnterpriseAdmin } from "@/lib/enterprise-auth";
+import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
 export const runtime  = "nodejs";
@@ -36,11 +37,11 @@ export async function DELETE(
   }
 
   const { data: targetRoles } = await admin
-    .from("user_roles")
+    .from("user_role_names")
     .select("role")
     .eq("user_id", targetId);
   const isEntAdmin = (targetRoles ?? []).some(
-    (r: { role: string }) => r.role === "enterprise_admin",
+    (r: { role: string }) => r.role === ROLE.enterprise_admin,
   );
   if (isEntAdmin) {
     return NextResponse.json(

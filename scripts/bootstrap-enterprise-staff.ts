@@ -2,8 +2,8 @@
  * Seeds 4 staff members under Demo Enterprise Co so Eric (the
  * enterprise_admin) has people to manage:
  *
- *   Sienna Sup    enterprise.sup1@demoent.test  (pod_lead)
- *   Steve Sup     enterprise.sup2@demoent.test  (pod_lead)
+ *   Sienna Sup    enterprise.sup1@demoent.test  (supervisor)
+ *   Steve Sup     enterprise.sup2@demoent.test  (supervisor)
  *   Ed Engineer   enterprise.eng1@demoent.test  (engineer)
  *   Erin Engineer enterprise.eng2@demoent.test  (engineer)
  *
@@ -27,11 +27,19 @@ const DEMO_PASSWORD = "RelayDev123!";
 const ORG_NAME = "Demo Enterprise Co";
 
 const ENT_STAFF = [
-  { email: "enterprise.sup1@demoent.test", name: "Sienna Supervisor", role: "pod_lead", primaryRole: "pod_lead" },
-  { email: "enterprise.sup2@demoent.test", name: "Steve Supervisor",  role: "pod_lead", primaryRole: "pod_lead" },
-  { email: "enterprise.eng1@demoent.test", name: "Ed Engineer",       role: "engineer", primaryRole: "engineer" },
-  { email: "enterprise.eng2@demoent.test", name: "Erin Engineer",     role: "engineer", primaryRole: "engineer" },
+  { email: "enterprise.sup1@demoent.test", name: "Sienna Supervisor", role: "supervisor", primaryRole: "supervisor" },
+  { email: "enterprise.sup2@demoent.test", name: "Steve Supervisor",  role: "supervisor", primaryRole: "supervisor" },
+  { email: "enterprise.eng1@demoent.test", name: "Ed Engineer",       role: "engineer",   primaryRole: "engineer"   },
+  { email: "enterprise.eng2@demoent.test", name: "Erin Engineer",     role: "engineer",   primaryRole: "engineer"   },
 ];
+
+async function loadRoleIds(admin: AdminClient): Promise<Map<string, string>> {
+  const { data, error } = await admin.from("roles").select("id, name");
+  if (error) throw new Error(`Couldn't load roles lookup: ${error.message}`);
+  const map = new Map<string, string>();
+  for (const r of (data ?? []) as { id: string; name: string }[]) map.set(r.name, r.id);
+  return map;
+}
 
 async function findUserByEmail(admin: AdminClient, email: string): Promise<string | null> {
   const { data } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
@@ -45,7 +53,13 @@ async function ensureStaff(
   role: string,
   primaryRole: string,
   orgId: string,
+  roleIds: Map<string, string>,
 ): Promise<void> {
+  const primaryRoleId = roleIds.get(primaryRole);
+  const roleId        = roleIds.get(role);
+  if (!primaryRoleId) throw new Error(`Unknown primary role: ${primaryRole}`);
+  if (!roleId)        throw new Error(`Unknown role: ${role}`);
+
   let userId = await findUserByEmail(admin, email);
   if (userId) {
     console.log(`  → ${email} exists (${userId})`);
@@ -67,7 +81,7 @@ async function ensureStaff(
       {
         id:              userId,
         full_name:       name,
-        primary_role:    primaryRole,
+        primary_role_id: primaryRoleId,
         organization_id: orgId,
         is_onboarded:    true,
       },
@@ -78,8 +92,8 @@ async function ensureStaff(
   const { error: roleErr } = await admin
     .from("user_roles")
     .upsert(
-      { user_id: userId, role },
-      { onConflict: "user_id,role", ignoreDuplicates: true },
+      { user_id: userId, role_id: roleId },
+      { onConflict: "user_id,role_id", ignoreDuplicates: true },
     );
   if (roleErr) throw new Error(`role grant failed for ${email}: ${roleErr.message}`);
 }
@@ -101,17 +115,20 @@ async function main() {
   const orgId = (org as { id: string }).id;
   console.log(`  ✓ org ${orgId}`);
 
+  console.log("→ Loading roles lookup…");
+  const roleIds = await loadRoleIds(admin);
+
   console.log("→ Ensuring enterprise staff…");
   for (const s of ENT_STAFF) {
-    await ensureStaff(admin, s.email, s.name, s.role, s.primaryRole, orgId);
+    await ensureStaff(admin, s.email, s.name, s.role, s.primaryRole, orgId, roleIds);
   }
 
   console.log("");
   console.log(`✓ Demo Enterprise Co staff complete (5 total).`);
   console.log("");
   console.log("  Eric Enterprise          enterprise.demo@relay.test         (enterprise_admin)");
-  console.log("  Sienna Supervisor        enterprise.sup1@demoent.test       (pod_lead)");
-  console.log("  Steve Supervisor         enterprise.sup2@demoent.test       (pod_lead)");
+  console.log("  Sienna Supervisor        enterprise.sup1@demoent.test       (supervisor)");
+  console.log("  Steve Supervisor         enterprise.sup2@demoent.test       (supervisor)");
   console.log("  Ed Engineer              enterprise.eng1@demoent.test       (engineer)");
   console.log("  Erin Engineer            enterprise.eng2@demoent.test       (engineer)");
   console.log(`  Shared password: ${DEMO_PASSWORD}`);

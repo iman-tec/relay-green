@@ -57,7 +57,7 @@ export async function POST(request: Request) {
   let next = "/room";
   if (signInMode === "staff" && userId) {
     const { data: roleRows } = await supabase
-      .from("user_roles")
+      .from("user_role_names")
       .select("role")
       .eq("user_id", userId);
     const roles = (roleRows ?? []).map((r: { role: string }) => r.role);

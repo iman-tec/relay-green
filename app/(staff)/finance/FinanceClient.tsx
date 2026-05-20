@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, Wallet, Pencil, Check, X, MessageSquare } from "lucide-react";
 import { formatEur } from "@/lib/billing/plans";
+import { formatRole } from "@/lib/relay/role-labels";
 
 const BRAND_GREEN      = "#3f5c2e";
 const BRAND_GREEN_SOFT = "rgba(63, 92, 46, 0.10)";
@@ -247,7 +248,7 @@ function SalariesSection() {
                 <div className="min-w-0 flex-1 leading-tight">
                   <div className="truncate text-sm" style={{ color: "var(--text)" }}>{s.displayName}</div>
                   <div className="mt-0.5 truncate text-[11px]" style={{ color: "var(--text-muted)" }}>
-                    {s.email || "—"} · {prettyRole(s.role)}
+                    {s.email || "—"} · {formatRole(s.role)}
                   </div>
                 </div>
                 {isEditing ? (
@@ -317,17 +318,6 @@ function SalariesSection() {
       )}
     </div>
   );
-}
-
-function prettyRole(role: string): string {
-  switch (role) {
-    case "enterprise_admin": return "Enterprise Admin";
-    case "ops_manager":      return "Internal Admin";
-    case "admin":            return "Manager";
-    case "pod_lead":         return "Supervisor";
-    case "engineer":         return "Engineer";
-    default:                 return role || "—";
-  }
 }
 
 /* ──────── Feedback ──────── */

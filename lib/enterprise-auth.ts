@@ -2,8 +2,8 @@
  * Org-admin auth helper.
  *
  * Gate for /api/enterprise/* and /api/internal/* routes. Asserts the
- * caller holds either enterprise_admin OR ops_manager (Internal Admin)
- * AND has an organization_id on their profile, then returns:
+ * caller holds either enterprise_admin OR department_admin AND has an
+ * organization_id on their profile, then returns:
  *   - user, supabase (cookie scope), admin (service role)
  *   - orgId resolved from their profile (so route handlers never have to
  *     re-fetch it or trust client-supplied org ids)
@@ -15,6 +15,7 @@
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
+import { ROLE } from "@/lib/relay/roles";
 
 export type EnterpriseGate =
   | { ok: false; status: 401 | 403; error: string }
@@ -31,15 +32,15 @@ export async function requireEnterpriseAdmin(): Promise<EnterpriseGate> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { ok: false, status: 401, error: "not_signed_in" };
 
-  // Caller must hold enterprise_admin OR ops_manager AND have an org.
+  // Caller must hold enterprise_admin OR department_admin AND have an org.
   // Super_admin is NOT accepted here — they have their own console at /admin.
   const [{ data: roles }, { data: profile }] = await Promise.all([
-    supabase.from("user_roles").select("role").eq("user_id", user.id),
+    supabase.from("user_role_names").select("role").eq("user_id", user.id),
     supabase.from("profiles").select("organization_id").eq("id", user.id).maybeSingle(),
   ]);
 
   const isOrgAdmin = (roles ?? []).some(
-    (r: { role: string }) => r.role === "enterprise_admin" || r.role === "ops_manager",
+    (r: { role: string }) => r.role === ROLE.enterprise_admin || r.role === ROLE.department_admin,
   );
   if (!isOrgAdmin) return { ok: false, status: 403, error: "forbidden" };
 

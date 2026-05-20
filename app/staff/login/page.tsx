@@ -20,7 +20,7 @@ async function redirectIfSignedIn(): Promise<void> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return;
   const { data: roleRows } = await supabase
-    .from("user_roles")
+    .from("user_role_names")
     .select("role")
     .eq("user_id", user.id);
   const roles = (roleRows ?? []).map((r: { role: string }) => r.role);

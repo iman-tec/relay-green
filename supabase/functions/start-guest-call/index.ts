@@ -181,7 +181,7 @@ Deno.serve(async (req) => {
     });
 
     // Notify any engineers who exist
-    const { data: engs } = await admin.from("user_roles").select("user_id").eq("role", "engineer");
+    const { data: engs } = await admin.from("user_role_names").select("user_id").eq("role", "engineer");
     for (const row of (engs ?? []) as { user_id: string }[]) {
       await admin.rpc("create_notification", {
         _user_id: row.user_id,

@@ -2,8 +2,9 @@
  * One-time bootstrap: creates the first Super Admin in Supabase.
  *
  * Prerequisites:
- *   1. The SQL migration `20260513120000_super_admin_role.sql` is applied
- *      (adds 'super_admin' to user_roles check constraint).
+ *   1. Migrations through 20260521120000_roles_lookup_fk.sql are applied
+ *      (creates public.roles, the FK on user_roles, and the
+ *      bootstrap_super_admin RPC used below).
  *   2. .env (or .env.local) contains NEXT_PUBLIC_SUPABASE_URL and
  *      SUPABASE_SERVICE_ROLE_KEY.
  *
@@ -36,7 +37,8 @@ type SuperAdmin = { email: string; name: string };
 // separately by highestRoleLabel() wherever it's surfaced in the UI.
 // Earlier entries had "(Super Admin)" appended which double-displayed.
 const SUPER_ADMINS: SuperAdmin[] = [
-  { email: "madhav.anadkat@thegatewaycorp.com", name: "Madhav Anadkat" },
+  { email: "madhav.lehru@thegatewaycorp.co.in", name: "Madhav Lehru"    },
+  { email: "madhav.anadkat@thegatewaycorp.com", name: "Madhav Anadkat"  },
   { email: "dev.soni@thegatewaycorp.co.in",     name: "Dev Soni"        },
 ];
 
@@ -84,16 +86,27 @@ async function bootstrapOne(admin: AdminClient, entry: SuperAdmin): Promise<void
     console.log(`  → created (${userId})`);
   }
 
+  // Look up the super_admin role id so we can set profiles.primary_role_id.
+  const { data: roleRow, error: roleLookupErr } = await admin
+    .from("roles").select("id").eq("name", "super_admin").maybeSingle();
+  if (roleLookupErr || !roleRow) {
+    throw new Error(
+      `Could not locate roles.id for super_admin: ${roleLookupErr?.message ?? "no row"}\n` +
+      `Did you apply 20260521120000_roles_lookup_fk.sql?`,
+    );
+  }
+  const superAdminRoleId = roleRow.id;
+
   // Upsert profile so the admin console shows the right name (the
   // handle_new_user trigger derives full_name from email; we override).
   const { error: profileErr } = await admin
     .from("profiles")
     .upsert(
       {
-        id:           userId,
-        full_name:    entry.name,
-        primary_role: "super_admin",
-        is_onboarded: true,
+        id:              userId,
+        full_name:       entry.name,
+        primary_role_id: superAdminRoleId,
+        is_onboarded:    true,
       },
       { onConflict: "id" },
     );
@@ -101,19 +114,32 @@ async function bootstrapOne(admin: AdminClient, entry: SuperAdmin): Promise<void
     throw new Error(`Upserting profile failed for ${entry.email}: ${profileErr.message}`);
   }
 
-  // Grant super_admin. Idempotent via unique(user_id, role).
-  const { error: roleErr } = await admin
-    .from("user_roles")
-    .upsert(
-      { user_id: userId, role: "super_admin" },
-      { onConflict: "user_id,role", ignoreDuplicates: true },
-    );
-  if (roleErr) {
-    throw new Error(
-      `Granting super_admin failed for ${entry.email}: ${roleErr.message}\n` +
-      `Did you apply supabase/migrations/20260513120000_super_admin_role.sql? ` +
-      `The check constraint must include 'super_admin'.`,
-    );
+  // Grant super_admin via the bootstrap RPC. It only succeeds while
+  // zero super_admins exist, so it's safe to expose to service-role and
+  // protects us from accidental re-grants once one is in place. For
+  // additional super_admins after the first, call grant_role as an
+  // existing super_admin via the admin UI (or hand-run SQL).
+  const { error: rpcErr } = await admin.rpc("bootstrap_super_admin", { _user_id: userId });
+  if (rpcErr) {
+    if (rpcErr.message.includes("SUPER_ADMIN_ALREADY_EXISTS")) {
+      // A super_admin is already minted — fall back to a direct insert
+      // using the role id we already looked up above. Idempotent via
+      // unique(user_id, role_id).
+      const { error: insertErr } = await admin
+        .from("user_roles")
+        .upsert(
+          { user_id: userId, role_id: superAdminRoleId },
+          { onConflict: "user_id,role_id", ignoreDuplicates: true },
+        );
+      if (insertErr) {
+        throw new Error(`Granting super_admin failed for ${entry.email}: ${insertErr.message}`);
+      }
+    } else {
+      throw new Error(
+        `bootstrap_super_admin failed for ${entry.email}: ${rpcErr.message}\n` +
+        `Did you apply supabase/migrations/20260521120000_roles_lookup_fk.sql?`,
+      );
+    }
   }
 
   console.log(`  ✓ ${entry.email} is super_admin`);

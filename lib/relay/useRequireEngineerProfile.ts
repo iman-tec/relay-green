@@ -7,8 +7,9 @@
  * If the row is missing, this hook redirects to `/staff/onboarding` so they
  * can complete the wizard before continuing.
  *
- * Pure supervisors (pod_lead / ops_manager / admin / super_admin without the
- * `engineer` role) are exempt — they monitor, they don't claim.
+ * Non-engineer roles (supervisor / super_admin / enterprise_admin /
+ * department_admin / reseller / client without the `engineer` role) are
+ * exempt — they don't claim sessions.
  *
  * Defence-in-depth: server side `match_engineer` skips engineers without a
  * profile anyway (the `is_available` JOIN comes back empty). The redirect is
@@ -18,6 +19,7 @@
 import { useEffect, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/browser";
+import { ROLE } from "@/lib/relay/roles";
 
 export function useRequireEngineerProfile() {
   const router = useRouter();
@@ -34,9 +36,9 @@ export function useRequireEngineerProfile() {
       if (cancelled || !u.user) return;
 
       const { data: rolesData } = await sb
-        .from("user_roles").select("role").eq("user_id", u.user.id);
-      const roles = (rolesData ?? []).map((r) => r.role as string);
-      const isEngineer = roles.includes("engineer");
+        .from("user_role_names").select("role").eq("user_id", u.user.id);
+      const roles = (rolesData ?? []).map((r: { role: string }) => r.role);
+      const isEngineer = roles.includes(ROLE.engineer);
       if (!isEngineer) return;
 
       const { data: profile } = await sb

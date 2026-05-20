@@ -34,12 +34,19 @@ async function main() {
   if (!userId) throw new Error(`${TARGET_EMAIL} not found.`);
   console.log(`→ ${TARGET_EMAIL} (${userId})`);
 
-  // 1. Grant engineer role (additive — keeps super_admin etc).
+  // 1. Resolve engineer role id, then grant (additive — keeps super_admin etc).
+  const { data: roleRow } = await admin
+    .from("roles").select("id").eq("name", "engineer").maybeSingle();
+  const engineerRoleId = (roleRow as { id: string } | null)?.id;
+  if (!engineerRoleId) {
+    throw new Error("engineer role not seeded — did you apply 20260521120000_roles_lookup_fk.sql?");
+  }
+
   const { error: rErr } = await admin
     .from("user_roles")
     .upsert(
-      { user_id: userId, role: "engineer" },
-      { onConflict: "user_id,role", ignoreDuplicates: true },
+      { user_id: userId, role_id: engineerRoleId },
+      { onConflict: "user_id,role_id", ignoreDuplicates: true },
     );
   if (rErr) throw new Error(`role grant failed: ${rErr.message}`);
   console.log("  ✓ engineer role granted");

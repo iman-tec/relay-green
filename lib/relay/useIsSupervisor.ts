@@ -3,11 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/browser";
 import type { GuestMessage } from "@/lib/supabase/types";
+import { ROLE, type Role } from "@/lib/relay/roles";
 
 // Roles allowed to see supervisor-tagged chat lines (e.g. Zoom recording
 // URL + passcode). Mirrors the gate in zoom-webhook handleRecordingCompleted
 // and the visibility CHECK on guest_messages.visibility.
-const SUPERVISOR_ROLES = new Set(["pod_lead", "ops_manager", "admin", "super_admin"]);
+const SUPERVISOR_ROLES: ReadonlySet<Role> = new Set([ROLE.supervisor, ROLE.super_admin]);
 
 /**
  * True when this message should only render for supervisor viewers — either
@@ -38,12 +39,12 @@ export function useIsSupervisor(): boolean {
       const { data: u } = await sb.auth.getUser();
       if (cancelled || !u.user) return;
       const { data } = await sb
-        .from("user_roles")
+        .from("user_role_names")
         .select("role")
         .eq("user_id", u.user.id);
       if (cancelled) return;
       const roles = (data ?? []).map((r: { role: string }) => r.role);
-      setIsSupervisor(roles.some((r) => SUPERVISOR_ROLES.has(r)));
+      setIsSupervisor(roles.some((r) => (SUPERVISOR_ROLES as ReadonlySet<string>).has(r)));
     })();
     return () => { cancelled = true; };
   }, []);

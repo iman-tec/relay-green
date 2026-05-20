@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { ROLE } from "@/lib/relay/roles";
 import { OperationsClient } from "./OperationsClient";
 
 export const metadata: Metadata = {
@@ -15,15 +16,15 @@ export default async function OperationsPage() {
   if (!user) redirect("/staff/login");
 
   const { data: roleRows } = await supabase
-    .from("user_roles")
+    .from("user_role_names")
     .select("role")
     .eq("user_id", user.id);
   const roles = (roleRows ?? []).map((r: { role: string }) => r.role);
 
   // Supervisor-only surface. Super admins (even when they also hold
-  // pod_lead for testing) get redirected — /operations is the
+  // supervisor for testing) get redirected — /operations is the
   // supervisor's personal team roster, not a platform-wide view.
-  if (roles.includes("super_admin") || !roles.includes("pod_lead")) {
+  if (roles.includes(ROLE.super_admin) || !roles.includes(ROLE.supervisor)) {
     redirect("/supervise");
   }
 

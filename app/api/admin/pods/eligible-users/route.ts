@@ -3,26 +3,26 @@
  *
  * GET /api/admin/pods/eligible-users?role=engineer
  *   Returns users who:
- *     • hold the given role in user_roles (engineer or pod_lead), AND
+ *     • hold the given role in user_roles (engineer or supervisor), AND
  *     • are NOT already in any pod.
  *
  * The pod_role query param is the front-end's "pod role" enum
- * ('supervisor' | 'engineer'), which maps to the user_roles enum:
- *     supervisor → pod_lead
- *     engineer   → engineer
+ * ('supervisor' | 'engineer'), which now maps 1:1 onto the same user_role
+ * names — the historic split between pod_lead and supervisor is gone.
  *
  * Caller must hold super_admin.
  */
 
 import { NextResponse } from "next/server";
 import { requireSuperAdmin } from "@/lib/admin-auth";
+import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
 export const runtime  = "nodejs";
 
 const POD_ROLE_TO_USER_ROLE: Record<string, string> = {
-  supervisor: "pod_lead",
-  engineer:   "engineer",
+  supervisor: ROLE.supervisor,
+  engineer:   ROLE.engineer,
 };
 
 export async function GET(request: Request) {
@@ -42,7 +42,7 @@ export async function GET(request: Request) {
 
   // 1. Users holding the target role
   const { data: roleRows, error: roleErr } = await admin
-    .from("user_roles")
+    .from("user_role_names")
     .select("user_id")
     .eq("role", userRole);
   if (roleErr) return NextResponse.json({ error: roleErr.message }, { status: 500 });

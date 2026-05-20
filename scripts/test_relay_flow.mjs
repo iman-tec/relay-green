@@ -118,16 +118,30 @@ if (afterRecalls.urgency !== "urgent")
 log(`  ${PASS} urgency escalated to '${afterRecalls.urgency}' (recall_count=${afterRecalls.recall_count})`);
 
 // ── Test 3: engineer auth + role grant ──────────────────────────────────
-log(`\n${STEP} Phase 3: engineer grants self role`);
+log(`\n${STEP} Phase 3: granting engineer role via service role`);
 
-await engineerClient.rpc("dev_grant_my_role", { _role: "engineer" });
-log(`  ${PASS} dev_grant_my_role('engineer') called`);
+// dev_grant_my_role was retired in 20260521120000_roles_lookup_fk.sql.
+// The replacement grant_role RPC requires an admin/super_admin caller, so
+// the test-bootstrap path is now a direct service-role insert against
+// user_roles (with the role_id from the roles lookup).
+const { data: engineerRole } = await admin
+  .from("roles").select("id").eq("name", "engineer").maybeSingle();
+if (!engineerRole?.id) fatal("engineer role not seeded — did you apply 20260521120000_roles_lookup_fk.sql?");
+
+const { error: grantErr } = await admin
+  .from("user_roles")
+  .upsert(
+    { user_id: eu.user.id, role_id: engineerRole.id },
+    { onConflict: "user_id,role_id", ignoreDuplicates: true },
+  );
+if (grantErr) fatal("granting engineer role", grantErr);
+log(`  ${PASS} engineer role granted to test user`);
 
 const { data: roles } = await engineerClient
-  .from("user_roles").select("role").eq("user_id", eu.user.id);
+  .from("user_role_names").select("role").eq("user_id", eu.user.id);
 if (!roles.find((r) => r.role === "engineer"))
-  fatal("engineer role not granted", roles);
-log(`  ${PASS} engineer role present in user_roles`);
+  fatal("engineer role not visible in user_role_names", roles);
+log(`  ${PASS} engineer role present in user_role_names view`);
 
 // ── Test 4: engineer sees queue ─────────────────────────────────────────
 log(`\n${STEP} Phase 4: engineer sees queue`);

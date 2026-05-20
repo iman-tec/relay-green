@@ -55,11 +55,11 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
   // the 10-min free cap, so the two views stay in lock-step.)
   const timer  = useSessionTimer(state.session?.assigned_at ?? state.session?.joined_at ?? null, state.session?.free_minutes ?? 10);
   const [meEmail, setMeEmail] = useState<string>("");
-  // Viewer role gate. Anyone with a supervisor-flavored role (pod_lead /
-  // ops_manager / admin / super_admin) is locked into read-only monitor
-  // chrome — they retain Supervisor permissions and never get engineer
-  // controls, even on sessions claimed by another engineer that they're
-  // inspecting.
+  // Viewer role gate. Anyone the useIsSupervisor hook recognises as a
+  // supervisor-tier viewer (supervisor / super_admin per the new taxonomy)
+  // is locked into read-only monitor chrome — they retain Supervisor
+  // permissions and never get engineer controls, even on sessions claimed
+  // by another engineer that they're inspecting.
   const isSupervisor = useIsSupervisor();
 
   // Drives whether the Zoom embed is mounted. We auto-mount the embed as
@@ -264,7 +264,7 @@ function MainPane({
   const isEnded = session.status === "ended";
   // Supervisors are always read-only monitors — they retain Supervisor
   // permissions and never get engineer-side controls, even if claimed_by
-  // happens to match (e.g. a pod_lead who claimed this session). The
+  // happens to match (e.g. a supervisor who claimed this session). The
   // top-of-pane "Supervisor view · read-only" badge tells the viewer why.
   const isEngineer = state.isAssignedEngineer && !isSupervisor;
 

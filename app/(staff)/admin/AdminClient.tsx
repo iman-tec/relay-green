@@ -55,8 +55,8 @@ export function AdminClient() {
     setError(null);
     const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
     const [p, r, s, a] = await Promise.all([
-      sb.from("profiles").select("id, full_name, primary_role").limit(200),
-      sb.from("user_roles").select("user_id, role").limit(500),
+      sb.from("profiles_with_role").select("id, full_name, primary_role").limit(200),
+      sb.from("user_role_names").select("user_id, role").limit(500),
       sb.from("guest_calls").select("id, created_at").gte("created_at", since).order("created_at", { ascending: false }).limit(500),
       sb.from("session_audit_log").select("*").order("created_at", { ascending: false }).limit(40),
     ]);

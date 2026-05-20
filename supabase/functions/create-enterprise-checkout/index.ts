@@ -61,7 +61,7 @@ Deno.serve(async (req) => {
     // queries the caller can't see; here we just check the caller is an
     // enterprise_admin with a profile org binding.
     const [{ data: roles }, { data: profile }] = await Promise.all([
-      sb.from("user_roles").select("role").eq("user_id", u.user.id),
+      sb.from("user_role_names").select("role").eq("user_id", u.user.id),
       sb.from("profiles").select("organization_id").eq("id", u.user.id).maybeSingle(),
     ]);
     const isEntAdmin = (roles ?? []).some((r: { role: string }) => r.role === "enterprise_admin");

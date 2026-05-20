@@ -459,7 +459,7 @@ function PeopleSection({
           {query
             ? `No ${scope} match “${query}”.`
             : scope === "staff"
-              ? "No staff yet. Use the Invite button to add managers or analysts."
+              ? "No staff yet. Use the Invite button to add managers."
               : "No users yet. Use the Invite button to add team members."}
         </p>
       ) : (
@@ -523,12 +523,11 @@ function MemberRow({ member, onRemove }: { member: Member; onRemove: () => void 
 
 function prettyRole(role: string): string {
   switch (role) {
-    case "admin":            return "Manager";
-    case "ops_manager":      return "Analyst";
-    case "builder":          return "Member";
-    case "enterprise_admin": return "Enterprise admin";
+    case "enterprise_admin": return "Manager";
+    case "client":           return "Member";
+    case "department_admin": return "Department Admin";
     case "engineer":         return "Engineer";
-    case "pod_lead":         return "Supervisor";
+    case "supervisor":       return "Supervisor";
     case "super_admin":      return "Super admin";
     default:                 return role || "—";
   }
@@ -545,7 +544,7 @@ function InvitePopover({
 }) {
   const [email, setEmail]       = useState("");
   const [name, setName]         = useState("");
-  const [role, setRole]         = useState<"manager" | "analyst" | "member">("member");
+  const [role, setRole]         = useState<"manager" | "member">("member");
   const [busy, setBusy]         = useState(false);
   const [err, setErr]           = useState<string | null>(null);
   const popRef = useRef<HTMLDivElement>(null);
@@ -614,8 +613,8 @@ function InvitePopover({
           />
         </Field>
         <Field label="Role">
-          <div className="grid grid-cols-3 gap-1">
-            {(["manager", "analyst", "member"] as const).map((r) => {
+          <div className="grid grid-cols-2 gap-1">
+            {(["manager", "member"] as const).map((r) => {
               const active = r === role;
               return (
                 <button
@@ -636,7 +635,6 @@ function InvitePopover({
           </div>
           <p className="mt-1 text-[10px]" style={{ color: "var(--text-muted)" }}>
             {role === "manager" && "Can manage other members in this org."}
-            {role === "analyst" && "Read-only access to org analytics."}
             {role === "member"  && "Regular end-user — can start sessions."}
           </p>
         </Field>

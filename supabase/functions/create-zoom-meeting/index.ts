@@ -82,17 +82,14 @@ Deno.serve(async (req) => {
     // Service role client to check permissions and insert message bypassing missing RLS UPDATE
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // Permission: must be staff (engineer/pod_lead/ops_manager/admin)
+    // Permission: must be platform-side staff who runs sessions
+    // (engineer or supervisor). Enterprise-side roles don't schedule Zooms.
     const { data: roles } = await admin
-      .from("user_roles")
+      .from("user_role_names")
       .select("role")
       .eq("user_id", userId);
     const roleSet = new Set((roles ?? []).map((r: { role: string }) => r.role));
-    const isStaff =
-      roleSet.has("engineer") ||
-      roleSet.has("pod_lead") ||
-      roleSet.has("ops_manager") ||
-      roleSet.has("admin");
+    const isStaff = roleSet.has("engineer") || roleSet.has("supervisor");
     if (!isStaff) {
       return new Response(JSON.stringify({ error: "Only staff can schedule Zoom meetings" }), {
         status: 403,

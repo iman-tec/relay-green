@@ -90,9 +90,8 @@ const WAITING_GLOW_CSS = `
   }
 `;
 
-// Only super_admin is org-wide / god view. Every other supervisor-tier role
-// (pod_lead, ops_manager, supervisor, admin) is identical — pod-scoped to
-// their single pod_members row.
+// Only super_admin is org-wide / god view. Every other supervisor-tier
+// role (supervisor) is pod-scoped to their single pod_members row.
 const UNSCOPED_ROLES = new Set(["super_admin"]);
 
 // Live-tab cap. Spec is "pod-scoped, every session belonging to engineers
@@ -102,8 +101,8 @@ const LIVE_LIMIT = 200;
 
 // Resolved scope for the signed-in viewer.
 //   { kind: "loading" }     — still fetching, render nothing yet
-//   { kind: "unscoped" }    — super_admin / admin → no pod filter
-//   { kind: "pod", podId }  — pod_lead / ops_manager → only their pod
+//   { kind: "unscoped" }    — super_admin → no pod filter
+//   { kind: "pod", podId }  — supervisor → only their pod
 type Scope =
   | { kind: "loading" }
   | { kind: "unscoped" }
@@ -130,7 +129,7 @@ export function SuperviseClient() {
       const { data: u } = await sb.auth.getUser();
       if (cancelled || !u.user) { setScope({ kind: "pod", podId: null }); return; }
       const [rolesRes, podRes] = await Promise.all([
-        sb.from("user_roles").select("role").eq("user_id", u.user.id),
+        sb.from("user_role_names").select("role").eq("user_id", u.user.id),
         sb.from("pod_members").select("pod_id").eq("user_id", u.user.id).maybeSingle(),
       ]);
       if (cancelled) return;
@@ -156,8 +155,8 @@ export function SuperviseClient() {
       setLoading(false);
       return;
     }
-    // Bug #7: pod_lead / ops_manager are restricted to sessions whose
-    // pod_id matches their own pod. super_admin and admin see everything.
+    // Bug #7: supervisors are restricted to sessions whose pod_id matches
+    // their own pod. super_admin sees everything.
     // pod_id is stamped on guest_calls at claim time (claim_session RPC) —
     // see migration 20260519100000_guest_calls_pod_scope.sql.
     let liveQ = sb.from("guest_calls").select("*")

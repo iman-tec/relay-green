@@ -271,9 +271,10 @@ async function handleRecordingCompleted(payload: any) {
 
   // Path A: anonymous guest sessions. Recording URL / passcode / duration
   // are persisted on guest_calls. We also post a supervisor-only system
-  // line into the chat so pod_leads / ops_managers / admins viewing the
-  // shared timeline see the artifact inline; the customer/engineer client
-  // filters visibility='supervisor' rows out so the link never reaches them.
+  // line into the chat so supervisor / super_admin viewers (gated by
+  // useIsSupervisor on the client) see the artifact inline; the
+  // customer/engineer client filters visibility='supervisor' rows out so
+  // the link never reaches them.
   const { data: gc } = await admin()
     .from("guest_calls")
     .select("id")

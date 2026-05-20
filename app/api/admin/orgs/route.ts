@@ -14,6 +14,7 @@
 import { NextResponse } from "next/server";
 import { requireSuperAdmin } from "@/lib/admin-auth";
 import { sendInvitationEmail } from "@/lib/admin-invite";
+import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
 export const runtime  = "nodejs";
@@ -35,14 +36,14 @@ export async function GET() {
 
   const orgIds = orgs.map((o) => o.id);
   const { data: profiles } = await admin
-    .from("profiles")
+    .from("profiles_with_role")
     .select("id, full_name, organization_id, primary_role")
     .in("organization_id", orgIds);
 
   const profileIds = (profiles ?? []).map((p) => p.id);
   const { data: roleRows } = profileIds.length
     ? await admin
-        .from("user_roles")
+        .from("user_role_names")
         .select("user_id, role")
         .in("user_id", profileIds)
     : { data: [] as { user_id: string; role: string }[] };
@@ -187,16 +188,28 @@ export async function POST(request: Request) {
     );
   }
 
+  // Resolve enterprise_admin role_id once for both writes below.
+  const { data: roleRow } = await admin
+    .from("roles")
+    .select("id")
+    .eq("name", ROLE.enterprise_admin)
+    .maybeSingle();
+  const enterpriseAdminRoleId = (roleRow as { id: string } | null)?.id;
+  if (!enterpriseAdminRoleId) {
+    await admin.from("organizations").delete().eq("id", org.id);
+    return NextResponse.json({ error: "enterprise_admin role not seeded" }, { status: 500 });
+  }
+
   // Don't clobber primary_role for existing users (a super_admin who
   // creates an org should stay super_admin). Set organization_id so
   // the enterprise console scopes correctly; refresh full_name only
   // if previously blank.
   const { data: currentProfile } = await admin
-    .from("profiles")
-    .select("full_name, primary_role")
+    .from("profiles_with_role")
+    .select("full_name, primary_role_id")
     .eq("id", userId)
     .maybeSingle();
-  const cp = currentProfile as { full_name: string | null; primary_role: string | null } | null;
+  const cp = currentProfile as { full_name: string | null; primary_role_id: string | null } | null;
 
   await admin
     .from("profiles")
@@ -204,7 +217,7 @@ export async function POST(request: Request) {
       {
         id:              userId,
         full_name:       cp?.full_name?.trim() ? cp.full_name : trimmedName,
-        primary_role:    cp?.primary_role ?? "enterprise_admin",
+        primary_role_id: cp?.primary_role_id ?? enterpriseAdminRoleId,
         organization_id: org.id,
         is_onboarded:    true,
       },
@@ -218,8 +231,8 @@ export async function POST(request: Request) {
   await admin
     .from("user_roles")
     .upsert(
-      { user_id: userId, role: "enterprise_admin" },
-      { onConflict: "user_id,role", ignoreDuplicates: true },
+      { user_id: userId, role_id: enterpriseAdminRoleId },
+      { onConflict: "user_id,role_id", ignoreDuplicates: true },
     );
 
   console.log(

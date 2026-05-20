@@ -10,9 +10,9 @@
  *    Email                                Password         Role
  *   ─────────────────────────────────────────────────────────────
  *    dev.soni@thegatewaycorp.co.in        RelayDev123!     engineer
- *    supervisor.demo@relay.test           RelayDev123!     pod_lead
- *    admin.demo@relay.test                RelayDev123!     ops_manager
- *    enterprise.demo@relay.test           RelayDev123!     admin
+ *    supervisor.demo@relay.test           RelayDev123!     supervisor
+ *    admin.demo@relay.test                RelayDev123!     department_admin
+ *    enterprise.demo@relay.test           RelayDev123!     enterprise_admin
  *   ─────────────────────────────────────────────────────────────
  *
  * (No customer demo account — customer sign-in goes through real OTP.)
@@ -47,9 +47,9 @@ const sb = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_
 export const DEMO_PASSWORD = "RelayDev123!";
 
 const DEMO_USERS = [
-  { role: "engineer",   email: "dev.soni@thegatewaycorp.co.in", full_name: "Dev Soni",          primary_role: "engineer",    userRole: "engineer"   },
-  { role: "supervisor", email: "supervisor.demo@relay.test",    full_name: "Sam Supervisor",    primary_role: "pod_lead",    userRole: "pod_lead"   },
-  { role: "internal",   email: "admin.demo@relay.test",         full_name: "Iris Internal",     primary_role: "ops_manager", userRole: "ops_manager"},
+  { role: "engineer",   email: "dev.soni@thegatewaycorp.co.in", full_name: "Dev Soni",          primary_role: "engineer",         userRole: "engineer"         },
+  { role: "supervisor", email: "supervisor.demo@relay.test",    full_name: "Sam Supervisor",    primary_role: "supervisor",       userRole: "supervisor"       },
+  { role: "internal",   email: "admin.demo@relay.test",         full_name: "Iris Internal",     primary_role: "department_admin", userRole: "department_admin" },
   { role: "enterprise", email: "enterprise.demo@relay.test",    full_name: "Eric Enterprise",   primary_role: "enterprise_admin", userRole: "enterprise_admin" },
 ];
 const KEEP_EMAILS = DEMO_USERS.map((u) => u.email);
@@ -102,8 +102,18 @@ async function main() {
   }
   log(`    ${removed} removed`);
 
-  // ── 3. Ensure all demo users exist + have password + role ──────────
-  log(`\n${STEP} Provisioning 5 demo accounts…`);
+  // ── 3. Load roles lookup so we can write role_id / primary_role_id ─
+  log(`\n${STEP} Loading roles lookup…`);
+  const { data: roleRows, error: rolesErr } = await sb.from("roles").select("id, name");
+  if (rolesErr) {
+    log(`    ${WARN} couldn't load roles lookup: ${rolesErr.message}`);
+    log(`    ${WARN} did you apply 20260521120000_roles_lookup_fk.sql?`);
+    process.exit(1);
+  }
+  const roleIds = new Map((roleRows ?? []).map((r) => [r.name, r.id]));
+
+  // ── 4. Ensure all demo users exist + have password + role ──────────
+  log(`\n${STEP} Provisioning ${DEMO_USERS.length} demo accounts…`);
   for (const u of DEMO_USERS) {
     const { data } = await sb.auth.admin.listUsers({ page: 1, perPage: 200 });
     const existing = data?.users?.find((x) => x.email === u.email);
@@ -134,28 +144,38 @@ async function main() {
     }
 
     // Profile
+    const primaryRoleId = roleIds.get(u.primary_role);
+    if (!primaryRoleId) {
+      log(`    ${WARN} unknown primary role "${u.primary_role}" for ${u.email}, skipping profile upsert`);
+      continue;
+    }
     await sb.from("profiles").upsert({
       id: userId,
       full_name: u.full_name,
-      primary_role: u.primary_role,
+      primary_role_id: primaryRoleId,
       is_onboarded: true,
     });
 
     // Role (skip for customer)
     if (u.userRole) {
+      const roleId = roleIds.get(u.userRole);
+      if (!roleId) {
+        log(`    ${WARN} unknown role "${u.userRole}" for ${u.email}, skipping role grant`);
+        continue;
+      }
       await sb.from("user_roles").upsert(
-        { user_id: userId, role: u.userRole },
-        { onConflict: "user_id,role" },
+        { user_id: userId, role_id: roleId },
+        { onConflict: "user_id,role_id" },
       );
     }
   }
 
-  // ── 4. Final state ──────────────────────────────────────────────────
+  // ── 5. Final state ──────────────────────────────────────────────────
   log(`\n${STEP} Final state:`);
   const { data: users } = await sb.auth.admin.listUsers({ page: 1, perPage: 200 });
   log(`  Auth users: ${users?.users?.length ?? 0}`);
   for (const u of (users?.users ?? [])) log(`    · ${u.email}`);
-  const { data: roles } = await sb.from("user_roles").select("role, user_id");
+  const { data: roles } = await sb.from("user_role_names").select("role, user_id");
   log(`  user_roles: ${roles?.length ?? 0}`);
   for (const r of (roles ?? [])) log(`    · ${r.role} → ${r.user_id.slice(0, 8)}…`);
 

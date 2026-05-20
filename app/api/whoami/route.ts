@@ -21,8 +21,12 @@ export async function GET() {
     return NextResponse.json({ ok: false, error: "not_signed_in" }, { status: 401 });
   }
   const [{ data: roleRows }, { data: profile }] = await Promise.all([
-    supabase.from("user_roles").select("role").eq("user_id", user.id),
-    supabase.from("profiles").select("organization_id, primary_role, full_name").eq("id", user.id).maybeSingle(),
+    supabase.from("user_role_names").select("role").eq("user_id", user.id),
+    supabase
+      .from("profiles_with_role")
+      .select("organization_id, primary_role, full_name")
+      .eq("id", user.id)
+      .maybeSingle(),
   ]);
   return NextResponse.json({
     ok: true,

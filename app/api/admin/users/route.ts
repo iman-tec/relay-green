@@ -2,17 +2,16 @@
  * Admin users API — list + create.
  *
  * GET  /api/admin/users?scope=staff
- *   Lists internal staff users (engineers, supervisors, internal admins,
- *   super admins). Scope=customer is not yet implemented.
+ *   Lists internal staff users (engineers, supervisors, super admins, plus
+ *   enterprise + department admins + resellers). Scope=customer flips the
+ *   filter to "everyone but staff" (i.e. clients).
  *
  * POST /api/admin/users
- *   Creates a Supabase auth user, assigns a role in user_roles, generates
- *   an 8-digit sign-in code (the user's Supabase password), and returns
- *   the plaintext code ONCE so the admin UI can show it to the operator.
- *
- *   Body: { email, displayName, role }
- *     role ∈ { engineer, pod_lead, ops_manager, admin }
- *     (super_admin can only be granted via the bootstrap script.)
+ *   Creates a Supabase auth user, assigns a role, and triggers an invite
+ *   email. Body: { email, displayName, role }.
+ *   role ∈ { engineer, supervisor, super_admin } — platform-side roles
+ *   only. Enterprise-side roles (enterprise_admin, department_admin) are
+ *   created via /api/admin/orgs and the enterprise console respectively.
  *
  * Caller must hold super_admin role.
  */
@@ -21,22 +20,16 @@ import { NextResponse } from "next/server";
 import { requireSuperAdmin } from "@/lib/admin-auth";
 import { applySearch, listResponse, parseListQuery } from "@/lib/api/list-query";
 import { sendInvitationEmail } from "@/lib/admin-invite";
+import { ROLE, STAFF_ROLES as ALL_STAFF_ROLES } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
 export const runtime  = "nodejs";
 
-const STAFF_ROLES = new Set([
-  "engineer",
-  "pod_lead",
-  "ops_manager",
-  "admin",
-  "super_admin",
-]);
-const CREATABLE_ROLES = new Set([
-  "engineer",
-  "pod_lead",
-  "super_admin",
-  "admin",
+const STAFF_ROLE_SET: ReadonlySet<string> = new Set(ALL_STAFF_ROLES);
+const CREATABLE_ROLES: ReadonlySet<string> = new Set([
+  ROLE.engineer,
+  ROLE.supervisor,
+  ROLE.super_admin,
 ]);
 
 // Sortable columns map to actual `profiles` columns (the table we paginate
@@ -66,15 +59,15 @@ export async function GET(request: Request) {
     defaultPageSize: 25,
   });
 
-  // 1. Scope the universe via user_roles. Staff = anyone with a staff role
-  //    (or filtered to a specific staff role); non-staff = everyone else.
+  // 1. Scope the universe via user_role_names. Staff = anyone with a staff
+  //    role (or filtered to a specific staff role); non-staff = everyone else.
   let staffUserIds: string[] | null = null;
   if (scope === "staff" || list.filters.role) {
-    let rq = admin.from("user_roles").select("user_id");
+    let rq = admin.from("user_role_names").select("user_id");
     if (list.filters.role) {
       rq = rq.eq("role", list.filters.role);
     } else {
-      rq = rq.in("role", Array.from(STAFF_ROLES));
+      rq = rq.in("role", Array.from(STAFF_ROLE_SET));
     }
     const { data: roleScope, error: roleErr } = await rq;
     if (roleErr) {
@@ -85,7 +78,7 @@ export async function GET(request: Request) {
 
   // 2. Paginated profiles query — pulls just the page slice (≤ pageSize).
   let pq = admin
-    .from("profiles")
+    .from("profiles_with_role")
     .select("id, full_name, primary_role, created_at", { count: "exact" });
 
   if (scope === "staff" || list.filters.role) {
@@ -98,9 +91,9 @@ export async function GET(request: Request) {
     // run this exclusion (the earlier branch only populated staffUserIds
     // for the staff scope or when a role filter is set).
     const { data: staffOnly } = await admin
-      .from("user_roles")
+      .from("user_role_names")
       .select("user_id")
-      .in("role", Array.from(STAFF_ROLES));
+      .in("role", Array.from(STAFF_ROLE_SET));
     const excludeIds = Array.from(new Set((staffOnly ?? []).map((r: { user_id: string }) => r.user_id)));
     if (excludeIds.length > 0) {
       pq = pq.not("id", "in", `(${excludeIds.join(",")})`);
@@ -129,7 +122,7 @@ export async function GET(request: Request) {
   //    for JUST the page slice. user_meta_for_admin RPC joins auth.users
   //    by id — far cheaper than listUsers({ perPage: 1000 }).
   const [{ data: roleRows }, { data: metaRows }] = await Promise.all([
-    admin.from("user_roles").select("user_id, role").in("user_id", pageIds),
+    admin.from("user_role_names").select("user_id, role").in("user_id", pageIds),
     admin.rpc("user_meta_for_admin", { _ids: pageIds }),
   ]);
 
@@ -188,7 +181,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          "Need email, displayName, and role ∈ {engineer, pod_lead, super_admin, admin}.",
+          "Need email, displayName, and role ∈ {engineer, supervisor, super_admin}.",
       },
       { status: 400 },
     );
@@ -236,23 +229,35 @@ export async function POST(request: Request) {
     );
   }
 
+  // Resolve role_id once — both profile (primary_role_id) and user_roles
+  // (role_id) need it.
+  const { data: roleRow } = await admin
+    .from("roles")
+    .select("id")
+    .eq("name", role)
+    .maybeSingle();
+  const roleId = (roleRow as { id: string } | null)?.id;
+  if (!roleId) {
+    return NextResponse.json({ error: `Unknown role: ${role}` }, { status: 500 });
+  }
+
   // Upsert profile. For brand-new accounts this writes name/role; for
   // existing accounts we only overwrite full_name when previously blank.
   const { data: currentProfile } = await admin
-    .from("profiles")
-    .select("full_name, primary_role")
+    .from("profiles_with_role")
+    .select("full_name, primary_role_id")
     .eq("id", userId)
     .maybeSingle();
-  const cp = currentProfile as { full_name: string | null; primary_role: string | null } | null;
+  const cp = currentProfile as { full_name: string | null; primary_role_id: string | null } | null;
 
   const { error: profileErr } = await admin
     .from("profiles")
     .upsert(
       {
-        id:           userId,
-        full_name:    cp?.full_name?.trim() ? cp.full_name : trimmedName,
-        primary_role: cp?.primary_role ?? role,
-        is_onboarded: true,
+        id:              userId,
+        full_name:       cp?.full_name?.trim() ? cp.full_name : trimmedName,
+        primary_role_id: cp?.primary_role_id ?? roleId,
+        is_onboarded:    true,
       },
       { onConflict: "id" },
     );
@@ -265,8 +270,8 @@ export async function POST(request: Request) {
   const { error: roleErr } = await admin
     .from("user_roles")
     .upsert(
-      { user_id: userId, role },
-      { onConflict: "user_id,role", ignoreDuplicates: true },
+      { user_id: userId, role_id: roleId },
+      { onConflict: "user_id,role_id", ignoreDuplicates: true },
     );
   if (roleErr) {
     // Only delete the auth user if we just created them in this request.

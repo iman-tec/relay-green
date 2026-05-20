@@ -3,7 +3,7 @@
  * have something to render.
  *
  * Creates:
- *   - 3 customer (builder) users under the org
+ *   - 3 customer (client) users under the org
  *   - 1 live session
  *   - 1 queued session
  *   - 12 ended sessions spread over the last 30 days
@@ -71,6 +71,7 @@ async function ensureCustomer(
   email: string,
   name: string,
   orgId: string,
+  clientRoleId: string,
 ): Promise<string> {
   let userId = await findUserByEmail(admin, email);
   if (userId) {
@@ -93,7 +94,7 @@ async function ensureCustomer(
       {
         id:              userId,
         full_name:       name,
-        primary_role:    "builder",
+        primary_role_id: clientRoleId,
         organization_id: orgId,
         is_onboarded:    true,
       },
@@ -102,8 +103,8 @@ async function ensureCustomer(
   await admin
     .from("user_roles")
     .upsert(
-      { user_id: userId, role: "builder" },
-      { onConflict: "user_id,role", ignoreDuplicates: true },
+      { user_id: userId, role_id: clientRoleId },
+      { onConflict: "user_id,role_id", ignoreDuplicates: true },
     );
   return userId;
 }
@@ -136,10 +137,18 @@ async function main() {
   console.log(`  ✓ ${engineerIds.length} engineers`);
 
   // 3. Ensure customer users under the org
+  console.log("→ Looking up client role id…");
+  const { data: clientRoleRow } = await admin
+    .from("roles").select("id").eq("name", "client").maybeSingle();
+  const clientRoleId = (clientRoleRow as { id: string } | null)?.id;
+  if (!clientRoleId) {
+    throw new Error("client role not seeded — did you apply 20260521120000_roles_lookup_fk.sql?");
+  }
+
   console.log("→ Ensuring customer users…");
   const customerIds: { id: string; email: string; name: string }[] = [];
   for (const c of CUSTOMERS) {
-    const id = await ensureCustomer(admin, c.email, c.name, orgId);
+    const id = await ensureCustomer(admin, c.email, c.name, orgId, clientRoleId);
     customerIds.push({ id, email: c.email, name: c.name });
   }
 

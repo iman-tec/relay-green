@@ -14,23 +14,19 @@ import { NextResponse } from "next/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { landingForRoles } from "@/lib/relay/role-labels";
+import { toRoles } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
 export const runtime  = "nodejs";
 
-// Roles the staff login form can claim. Anything else is ignored.
-const CLAIMABLE_ROLES = new Set(["engineer", "pod_lead", "ops_manager", "admin"]);
-
 export async function POST(request: Request) {
-  const { email, code, role, mode, purpose } = await request.json().catch(() => ({}));
+  const { email, code, mode, purpose } = await request.json().catch(() => ({}));
   if (
     !email || typeof email !== "string" ||
     !code  || typeof code  !== "string"
   ) {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
-  const requestedRole =
-    typeof role === "string" && CLAIMABLE_ROLES.has(role) ? role : null;
   // `mode` lets the form tell us which experience the user is signing into.
   // The customer login is always for /room — even if the same email also
   // holds the engineer role. Without this, a power-user with both roles
@@ -68,29 +64,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
-  // If the caller asked to sign in *as* a specific staff role (e.g. someone
-  // signing in as an engineer for the first time), grant it now. The
-  // dev_grant_my_role RPC is SECURITY DEFINER and idempotent — it also
-  // bootstraps the profile row when missing.
-  if (requestedRole) {
-    const { error: grantErr } = await supabase.rpc("dev_grant_my_role", { _role: requestedRole });
-    if (grantErr) {
-      // Don't fail sign-in if the grant blew up — surface it so we can see
-      // it in the logs, but the user is still authed.
-      console.warn("[verify-otp] dev_grant_my_role failed:", grantErr.message);
-    }
-  }
-
   // Customer-mode sign-ins always go to /room. Staff-mode sign-ins resolve
-  // by the user's most-privileged role.
+  // by the user's most-privileged role. We read from the user_role_names
+  // view, which joins user_roles → roles and exposes the role NAME — so
+  // this route doesn't need to know anything about the FK shape.
   const userId = verified.user?.id;
   let next = "/room";
   if (signInMode === "staff" && userId) {
     const { data: roleRows } = await supabase
-      .from("user_roles")
+      .from("user_role_names")
       .select("role")
       .eq("user_id", userId);
-    const roles = (roleRows ?? []).map((r: { role: string }) => r.role);
+    const roles = toRoles((roleRows ?? []).map((r: { role: string }) => r.role));
     next = landingForRoles(roles);
   }
 

@@ -1,24 +1,28 @@
 /*
  * POST /api/admin/orgs/:id/members
  *   Invite a user under an existing org. The caller picks the role:
- *     - 'admin'   → another Enterprise Admin alongside the first one
- *     - 'builder' → a customer user under that org
+ *     - 'enterprise_admin' → another Enterprise Admin alongside the first one
+ *     - 'client'           → a customer user under that org
  *
  *   Super Admin uses this both for real onboarding and for end-to-end
  *   testing without depending on the actual enterprise contact.
  *
- *   Body: { email, displayName, role?: 'admin' | 'builder' }
- *         role defaults to 'builder' for backwards compat.
+ *   Body: { email, displayName, role?: 'enterprise_admin' | 'client' }
+ *         role defaults to 'client' for backwards compat.
  */
 
 import { NextResponse } from "next/server";
 import { requireSuperAdmin } from "@/lib/admin-auth";
 import { sendInvitationEmail } from "@/lib/admin-invite";
+import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
 export const runtime  = "nodejs";
 
-const ORG_MEMBER_ROLES = new Set(["admin", "builder"]);
+const ORG_MEMBER_ROLES: ReadonlySet<string> = new Set([
+  ROLE.enterprise_admin,
+  ROLE.client,
+]);
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
@@ -35,7 +39,7 @@ export async function POST(request: Request, { params }: RouteCtx) {
   };
   const email       = body.email?.trim();
   const displayName = body.displayName?.trim();
-  const role        = body.role && ORG_MEMBER_ROLES.has(body.role) ? body.role : "builder";
+  const role        = body.role && ORG_MEMBER_ROLES.has(body.role) ? body.role : ROLE.client;
 
   if (!email || !displayName) {
     return NextResponse.json(
@@ -85,15 +89,26 @@ export async function POST(request: Request, { params }: RouteCtx) {
     );
   }
 
+  // Resolve role_id for the target role once.
+  const { data: roleRow } = await admin
+    .from("roles")
+    .select("id")
+    .eq("name", role)
+    .maybeSingle();
+  const roleId = (roleRow as { id: string } | null)?.id;
+  if (!roleId) {
+    return NextResponse.json({ error: `Unknown role: ${role}` }, { status: 500 });
+  }
+
   // Don't clobber primary_role for existing users (e.g. a super_admin
   // attached to a test org should stay super_admin). Refresh full_name
   // only if it was blank.
   const { data: currentProfile } = await admin
-    .from("profiles")
-    .select("full_name, primary_role")
+    .from("profiles_with_role")
+    .select("full_name, primary_role_id")
     .eq("id", userId)
     .maybeSingle();
-  const cp = currentProfile as { full_name: string | null; primary_role: string | null } | null;
+  const cp = currentProfile as { full_name: string | null; primary_role_id: string | null } | null;
 
   await admin
     .from("profiles")
@@ -101,7 +116,7 @@ export async function POST(request: Request, { params }: RouteCtx) {
       {
         id:              userId,
         full_name:       cp?.full_name?.trim() ? cp.full_name : displayName,
-        primary_role:    cp?.primary_role ?? role,
+        primary_role_id: cp?.primary_role_id ?? roleId,
         organization_id: orgId,
         is_onboarded:    true,
       },
@@ -113,8 +128,8 @@ export async function POST(request: Request, { params }: RouteCtx) {
   await admin
     .from("user_roles")
     .upsert(
-      { user_id: userId, role },
-      { onConflict: "user_id,role", ignoreDuplicates: true },
+      { user_id: userId, role_id: roleId },
+      { onConflict: "user_id,role_id", ignoreDuplicates: true },
     );
 
   console.log(

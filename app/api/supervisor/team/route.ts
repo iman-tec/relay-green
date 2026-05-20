@@ -7,13 +7,14 @@
  *     - currentCustomer: name of the guest on their active call (or null)
  *     - lastCallAt + lastCustomer: most recent completed session
  *
- * Gated to pod_lead only. Super admins see other surfaces; the
+ * Gated to supervisors only. Super admins see other surfaces; the
  * supervisor's personal team roster doesn't apply to them.
  */
 
 import { NextResponse } from "next/server";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
+import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
 export const runtime  = "nodejs";
@@ -26,13 +27,13 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
 
   const { data: roleRows } = await supabase
-    .from("user_roles")
+    .from("user_role_names")
     .select("role")
     .eq("user_id", user.id);
   const roles = (roleRows ?? []).map((r: { role: string }) => r.role);
   // Supervisor-only — super_admin is explicitly excluded, even if they
-  // also hold pod_lead from testing.
-  if (roles.includes("super_admin") || !roles.includes("pod_lead")) {
+  // also hold supervisor from testing.
+  if (roles.includes(ROLE.super_admin) || !roles.includes(ROLE.supervisor)) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
@@ -72,7 +73,7 @@ export async function GET() {
 
   // 3. Profiles + emails (auth.users) in one shot.
   const [{ data: profiles }, { data: authList }] = await Promise.all([
-    admin.from("profiles").select("id, full_name, primary_role").in("id", engineerIds),
+    admin.from("profiles_with_role").select("id, full_name, primary_role").in("id", engineerIds),
     admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
   ]);
 
@@ -117,7 +118,7 @@ export async function GET() {
       userId:          p.id,
       displayName:     p.full_name ?? "Unnamed",
       email:           emailById.get(p.id) ?? "",
-      primaryRole:     p.primary_role ?? "engineer",
+      primaryRole:     p.primary_role ?? ROLE.engineer,
       currentCustomer: cur?.guest_name ?? null,
       lastCustomer:    last?.guest_name ?? null,
       lastCallAt:      last?.ended_at ?? null,

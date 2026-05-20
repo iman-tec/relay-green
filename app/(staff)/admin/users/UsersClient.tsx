@@ -17,6 +17,7 @@ import { useConfirmDialog } from "@/app/_components/ConfirmDialog";
 import { EnterpriseTab } from "./EnterpriseTab";
 import { PodsTab } from "./PodsTab";
 import { formatRole } from "@/lib/relay/role-labels";
+import { ROLE } from "@/lib/relay/roles";
 import { DataTable, type Column } from "@/app/_components/DataTable";
 import { useListQuery } from "@/lib/hooks/useListQuery";
 
@@ -33,20 +34,22 @@ type UserRow = {
 
 type Tab = "staff" | "users" | "enterprise" | "pods";
 
-type RoleKey = "engineer" | "pod_lead" | "super_admin" | "admin";
+// Roles super_admin can create/assign from the user-admin console.
+// Mirrors CREATABLE_ROLES in app/api/admin/users/route.ts — enterprise-side
+// roles (enterprise_admin, department_admin) are created elsewhere.
+type RoleKey = typeof ROLE.engineer | typeof ROLE.supervisor | typeof ROLE.super_admin;
 
 const CREATABLE_ROLES: { value: RoleKey; label: string }[] = [
-  { value: "engineer",    label: formatRole("engineer") },
-  { value: "pod_lead",    label: formatRole("pod_lead") },
-  { value: "super_admin", label: formatRole("super_admin") },
-  { value: "admin",       label: formatRole("admin") },
+  { value: ROLE.engineer,    label: formatRole(ROLE.engineer) },
+  { value: ROLE.supervisor,  label: formatRole(ROLE.supervisor) },
+  { value: ROLE.super_admin, label: formatRole(ROLE.super_admin) },
 ];
 
 const ALL_FILTERABLE_ROLES = [
-  { value: "engineer",    label: formatRole("engineer") },
-  { value: "pod_lead",    label: formatRole("pod_lead") },
-  { value: "admin",       label: formatRole("admin") },
-  { value: "super_admin", label: formatRole("super_admin") },
+  { value: ROLE.engineer,         label: formatRole(ROLE.engineer) },
+  { value: ROLE.supervisor,       label: formatRole(ROLE.supervisor) },
+  { value: ROLE.enterprise_admin, label: formatRole(ROLE.enterprise_admin) },
+  { value: ROLE.super_admin,      label: formatRole(ROLE.super_admin) },
 ];
 
 const BRAND_GREEN = "#3f5c2e";
@@ -183,7 +186,7 @@ function StaffTab({ meEmail }: { meEmail: string }) {
 
   const startAdd  = () => {
     void ensurePodsLoaded();
-    setDraft({ email: "", displayName: "", role: "engineer", podId: null, newPodName: "" });
+    setDraft({ email: "", displayName: "", role: ROLE.engineer, podId: null, newPodName: "" });
   };
   const cancelAdd = () => setDraft(null);
 
@@ -225,8 +228,8 @@ function StaffTab({ meEmail }: { meEmail: string }) {
       //    user_metadata so the Supabase invite template can mention which
       //    pod and role they were invited as (bugs2.txt #1).
       const podRoleFor: "engineer" | "supervisor" | null =
-        draft.role === "engineer"  ? "engineer" :
-        draft.role === "pod_lead"  ? "supervisor" : null;
+        draft.role === ROLE.engineer   ? "engineer"   :
+        draft.role === ROLE.supervisor ? "supervisor" : null;
       const podName = podId
         ? (pods.find((p) => p.id === podId)?.name ?? null)
         : null;
@@ -253,7 +256,7 @@ function StaffTab({ meEmail }: { meEmail: string }) {
       }
       const userId = body.user.id;
 
-      // 3. Assign to the pod (only engineer + pod_lead are pod-eligible).
+      // 3. Assign to the pod (only engineer + supervisor are pod-eligible).
       if (podId && podRoleFor) {
         const assignRes = await fetch(`/api/admin/pods/${podId}/members`, {
           method:  "POST",
@@ -354,12 +357,12 @@ function StaffTab({ meEmail }: { meEmail: string }) {
       key: "primaryRole", header: "Role", sortable: true,
       render: (r) => {
         const isSelf = r.email.toLowerCase() === meEmail.toLowerCase();
-        const isSuper = (r.primaryRole ?? r.roles[0]) === "super_admin";
+        const isSuper = (r.primaryRole ?? r.roles[0]) === ROLE.super_admin;
         const editable = !isSelf && !isSuper;
         if (editingRoleFor === r.id) {
           return (
             <RoleSelect
-              initial={(r.primaryRole as RoleKey) ?? "engineer"}
+              initial={(r.primaryRole as RoleKey) ?? ROLE.engineer}
               disabled={roleSaving}
               onCommit={(next) => { void saveRole(r.id, next); }}
               onCancel={() => setEditingRoleFor(null)}
@@ -397,7 +400,7 @@ function StaffTab({ meEmail }: { meEmail: string }) {
       render: (r) => {
         const isSelf  = r.email.toLowerCase() === meEmail.toLowerCase();
         if (isSelf) return <span className="text-xs" style={{ color: "var(--text-muted)" }}>(you)</span>;
-        const isSuper = (r.primaryRole ?? r.roles[0]) === "super_admin";
+        const isSuper = (r.primaryRole ?? r.roles[0]) === ROLE.super_admin;
         return (
           <div className="inline-flex items-center gap-1">
             <IconAction onClick={() => void resendInvite(r)} title="Resend invitation email" icon={<Mail size={14} />} />
@@ -599,10 +602,10 @@ function DraftForm({
     if (e.key === "Enter") { e.preventDefault(); submit(); }
     else if (e.key === "Escape") cancel();
   };
-  // Pod is only meaningful for pod-eligible roles. For admin / ops_manager
-  // the dropdown disables itself; assignments to those roles never write
-  // to pod_members.
-  const podEligible = draft.role === "engineer" || draft.role === "pod_lead";
+  // Pod is only meaningful for pod-eligible roles. For super_admin the
+  // dropdown disables itself; super_admin assignments never write to
+  // pod_members.
+  const podEligible = draft.role === ROLE.engineer || draft.role === ROLE.supervisor;
   const podSelectValue = draft.podId ?? "";
   const showNewPodInput = draft.podId === NEW_POD_KEY;
 
@@ -639,7 +642,7 @@ function DraftForm({
           onChange={(e) => {
             const next = e.target.value as RoleKey;
             // Reset pod selection when role becomes pod-ineligible.
-            const clearPod = next !== "engineer" && next !== "pod_lead";
+            const clearPod = next !== ROLE.engineer && next !== ROLE.supervisor;
             setDraft({
               ...draft,
               role: next,

@@ -4,34 +4,34 @@
  *
  * GET  /api/enterprise/users?scope=staff|users
  *   Lists profiles in the caller's org, split by role. Staff = anyone
- *   holding engineer/pod_lead/ops_manager/admin/enterprise_admin.
- *   Users = everyone else under the same org.
+ *   holding a staff role (anything except `client`); users = everyone
+ *   else under the same org.
  *
  * POST /api/enterprise/users
- *   Body: { email, displayName, role: 'manager' | 'analyst' | 'member' }
+ *   Body: { email, displayName, role: 'manager' | 'member' }
  *   Invites a new user, locking them to the caller's organization_id.
  *   role maps to:
- *     manager → admin       (org-internal admin within their org)
- *     analyst → ops_manager (read-only org analytics within their org)
- *     member  → builder     (regular end-user)
+ *     manager → enterprise_admin (peer admin inside the org)
+ *     member  → client           (regular end-user employee)
+ *
+ *   The previous 'analyst' tier (read-only org analytics) was retired in
+ *   the role taxonomy reshape — there's no clean equivalent yet.
  */
 
 import { NextResponse } from "next/server";
 import { requireEnterpriseAdmin } from "@/lib/enterprise-auth";
 import { sendInvitationEmail } from "@/lib/admin-invite";
+import { ROLE, STAFF_ROLES as ALL_STAFF_ROLES } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
 export const runtime  = "nodejs";
 
 const ENT_ROLE_TO_USER_ROLE: Record<string, string> = {
-  manager: "admin",
-  analyst: "ops_manager",
-  member:  "builder",
+  manager: ROLE.enterprise_admin,
+  member:  ROLE.client,
 };
 
-const STAFF_ROLES = new Set([
-  "engineer", "pod_lead", "ops_manager", "admin", "enterprise_admin", "super_admin",
-]);
+const STAFF_ROLE_SET: ReadonlySet<string> = new Set(ALL_STAFF_ROLES);
 
 export async function GET(request: Request) {
   const gate = await requireEnterpriseAdmin();
@@ -45,7 +45,7 @@ export async function GET(request: Request) {
   }
 
   const { data: profiles } = await admin
-    .from("profiles")
+    .from("profiles_with_role")
     .select("id, full_name, primary_role, is_onboarded, created_at")
     .eq("organization_id", orgId)
     .order("created_at", { ascending: false });
@@ -58,7 +58,7 @@ export async function GET(request: Request) {
 
   const profileIds = list.map((p) => p.id);
   const { data: roleRows } = await admin
-    .from("user_roles")
+    .from("user_role_names")
     .select("user_id, role")
     .in("user_id", profileIds);
   const rolesByUser = new Map<string, Set<string>>();
@@ -82,7 +82,7 @@ export async function GET(request: Request) {
   const members = list
     .map((p) => {
       const rolesForUser = rolesByUser.get(p.id) ?? new Set<string>();
-      const isStaff = Array.from(rolesForUser).some((r) => STAFF_ROLES.has(r));
+      const isStaff = Array.from(rolesForUser).some((r) => STAFF_ROLE_SET.has(r));
       const auth = authByUser.get(p.id);
       return {
         id:          p.id,
@@ -113,7 +113,7 @@ export async function POST(request: Request) {
 
   if (!email?.trim() || !displayName?.trim() || !role || !ENT_ROLE_TO_USER_ROLE[role]) {
     return NextResponse.json(
-      { error: "Need email, displayName, and role ∈ {manager, analyst, member}." },
+      { error: "Need email, displayName, and role ∈ {manager, member}." },
       { status: 400 },
     );
   }
@@ -180,14 +180,25 @@ export async function POST(request: Request) {
     );
   }
 
+  // Resolve role_id for the mapped role.
+  const { data: roleRow } = await admin
+    .from("roles")
+    .select("id")
+    .eq("name", mappedRole)
+    .maybeSingle();
+  const mappedRoleId = (roleRow as { id: string } | null)?.id;
+  if (!mappedRoleId) {
+    return NextResponse.json({ error: `Unknown role: ${mappedRole}` }, { status: 500 });
+  }
+
   // Profile upsert: bind to this org, preserve existing primary_role +
   // name if already set.
   const { data: prior2 } = await admin
-    .from("profiles")
-    .select("full_name, primary_role")
+    .from("profiles_with_role")
+    .select("full_name, primary_role_id")
     .eq("id", userId)
     .maybeSingle();
-  const p = prior2 as { full_name: string | null; primary_role: string | null } | null;
+  const p = prior2 as { full_name: string | null; primary_role_id: string | null } | null;
 
   const { error: profileErr } = await admin
     .from("profiles")
@@ -195,7 +206,7 @@ export async function POST(request: Request) {
       {
         id:              userId,
         full_name:       p?.full_name?.trim() ? p.full_name : trimmedName,
-        primary_role:    p?.primary_role ?? mappedRole,
+        primary_role_id: p?.primary_role_id ?? mappedRoleId,
         organization_id: orgId,
         is_onboarded:    true,
       },
@@ -210,8 +221,8 @@ export async function POST(request: Request) {
   const { error: roleErr } = await admin
     .from("user_roles")
     .upsert(
-      { user_id: userId, role: mappedRole },
-      { onConflict: "user_id,role", ignoreDuplicates: true },
+      { user_id: userId, role_id: mappedRoleId },
+      { onConflict: "user_id,role_id", ignoreDuplicates: true },
     );
   if (roleErr) {
     if (mode === "invited") {

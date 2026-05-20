@@ -93,7 +93,7 @@ export function EnterpriseTab() {
 
   const addMember = async (
     orgId: string,
-    input: { email: string; displayName: string; role: "admin" | "builder" },
+    input: { email: string; displayName: string; role: "enterprise_admin" | "client" },
   ) => {
     const res = await fetch(`/api/admin/orgs/${orgId}/members`, {
       method:  "POST",
@@ -445,7 +445,7 @@ function OrgDetail({
   org, addMember, regenerate, toggleStatus, remove, deleteOrg,
 }: {
   org: Org;
-  addMember: (input: { email: string; displayName: string; role: "admin" | "builder" }) => Promise<{ ok: true } | { ok: false; error: string }>;
+  addMember: (input: { email: string; displayName: string; role: "enterprise_admin" | "client" }) => Promise<{ ok: true } | { ok: false; error: string }>;
   regenerate: (m: Member) => void;
   toggleStatus: (m: Member) => void;
   remove: (m: Member) => void;
@@ -501,7 +501,7 @@ function OrgDetail({
       <MemberSection
         title="Admins"
         addLabel="Add admin"
-        addRole="admin"
+        addRole="enterprise_admin"
         members={admins}
         addMember={addMember}
         regenerate={regenerate}
@@ -511,7 +511,7 @@ function OrgDetail({
       <MemberSection
         title="Members"
         addLabel="Add member"
-        addRole="builder"
+        addRole="client"
         members={members}
         addMember={addMember}
         regenerate={regenerate}
@@ -527,9 +527,9 @@ function MemberSection({
 }: {
   title: string;
   addLabel: string;
-  addRole: "admin" | "builder";
+  addRole: "enterprise_admin" | "client";
   members: Member[];
-  addMember: (input: { email: string; displayName: string; role: "admin" | "builder" }) => Promise<{ ok: true } | { ok: false; error: string }>;
+  addMember: (input: { email: string; displayName: string; role: "enterprise_admin" | "client" }) => Promise<{ ok: true } | { ok: false; error: string }>;
   regenerate: (m: Member) => void;
   toggleStatus: (m: Member) => void;
   remove: (m: Member) => void;
@@ -614,9 +614,9 @@ function MemberSection({
 function MemberDraft({
   role, cancel, submit,
 }: {
-  role: "admin" | "builder";
+  role: "enterprise_admin" | "client";
   cancel: () => void;
-  submit: (input: { email: string; displayName: string; role: "admin" | "builder" }) => Promise<{ ok: true } | { ok: false; error: string }>;
+  submit: (input: { email: string; displayName: string; role: "enterprise_admin" | "client" }) => Promise<{ ok: true } | { ok: false; error: string }>;
 }) {
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
@@ -692,9 +692,8 @@ function MemberDraft({
 /* ──────── Small helpers ──────── */
 
 function isAdmin(m: Member): boolean {
-  return (m.primaryRole === "enterprise_admin" || m.primaryRole === "admin")
-    || m.roles.includes("enterprise_admin")
-    || m.roles.includes("admin");
+  return m.primaryRole === "enterprise_admin"
+    || m.roles.includes("enterprise_admin");
 }
 
 function Field({

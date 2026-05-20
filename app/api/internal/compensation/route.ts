@@ -1,7 +1,7 @@
 /*
- * Org compensation API for Internal Admin (ops_manager) and Enterprise
- * Admin. Lists staff in the caller's org alongside their monthly salary
- * and lets the caller upsert a salary.
+ * Org compensation API for enterprise + department admins. Lists staff in
+ * the caller's org alongside their monthly salary and lets the caller
+ * upsert a salary.
  *
  * GET  /api/internal/compensation
  *   Returns: { currency, staff: [{ userId, displayName, email, role, monthlyCents, updatedAt }] }
@@ -13,11 +13,20 @@
 
 import { NextResponse } from "next/server";
 import { requireEnterpriseAdmin } from "@/lib/enterprise-auth";
+import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
 export const runtime  = "nodejs";
 
-const PAYROLL_ROLES = ["engineer", "pod_lead", "ops_manager", "admin", "enterprise_admin"];
+// Roles whose members appear on the org's payroll roster. Mirrors the
+// pre-reshape set after the 1:1 role mapping (engineer, pod_lead → supervisor,
+// ops_manager → department_admin, admin + enterprise_admin → enterprise_admin).
+const PAYROLL_ROLES: readonly string[] = [
+  ROLE.engineer,
+  ROLE.supervisor,
+  ROLE.department_admin,
+  ROLE.enterprise_admin,
+];
 
 export async function GET() {
   const gate = await requireEnterpriseAdmin();
@@ -32,7 +41,7 @@ export async function GET() {
   const currency = (org as { billing_currency?: string } | null)?.billing_currency ?? "EUR";
 
   const { data: profiles } = await admin
-    .from("profiles")
+    .from("profiles_with_role")
     .select("id, full_name, primary_role")
     .eq("organization_id", orgId);
 
@@ -42,7 +51,7 @@ export async function GET() {
   }
 
   const [{ data: roles }, { data: comp }, { data: authUsers }] = await Promise.all([
-    admin.from("user_roles").select("user_id, role").in("user_id", userIds),
+    admin.from("user_role_names").select("user_id, role").in("user_id", userIds),
     admin.from("org_compensation").select("user_id, monthly_cents, updated_at").eq("organization_id", orgId),
     admin.auth.admin.listUsers({ perPage: 1000 }),
   ]);
@@ -81,9 +90,13 @@ export async function GET() {
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);
 
-  // Stable ordering: managers first, then engineers, then alphabetic.
+  // Stable ordering: enterprise-side admins first, then platform-side
+  // overseers, then engineers, then alphabetic.
   const roleRank: Record<string, number> = {
-    enterprise_admin: 0, ops_manager: 1, admin: 2, pod_lead: 3, engineer: 4,
+    [ROLE.enterprise_admin]: 0,
+    [ROLE.department_admin]: 1,
+    [ROLE.supervisor]:       2,
+    [ROLE.engineer]:         3,
   };
   staff.sort((a, b) => {
     const ra = roleRank[a.role] ?? 99;

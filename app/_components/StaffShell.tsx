@@ -30,6 +30,7 @@ import {
 import { Wordmark } from "./Wordmark";
 import { useStaffGuard } from "@/lib/relay/useStaffGuard";
 import { highestRoleLabel, highestRoleSummary, formatRole } from "@/lib/relay/role-labels";
+import { ROLE, type Role } from "@/lib/relay/roles";
 // TEMP 2026-05-18: legacy first-come-first-served ring disabled while
 // the push-ring path (EngineerIncomingMatch) is validated. Re-enable the
 // import + mount below to bring it back.
@@ -53,43 +54,48 @@ type Nav = {
   href: string;
   label: string;
   icon: React.ComponentType<{ size?: number }>;
-  roles: string[];
+  roles: Role[];
 };
 
 // /triage and /settings deliberately omitted from the sidebar.
 // /triage was redundant once /dashboard grew Take-next + queue.
 // /settings will return when account-settings land.
 const NAV: Nav[] = [
-  { href: "/dashboard",            label: "Dashboard", icon: LayoutDashboard, roles: ["engineer"] },
+  { href: "/dashboard",            label: "Dashboard", icon: LayoutDashboard, roles: [ROLE.engineer] },
   // Engineer-only. People + per-customer session history + call log.
-  { href: "/inbox",                label: "Inbox",     icon: InboxIcon,       roles: ["engineer"] },
-  // /supervise renders the platform-wide grid for staff, and the
-  // org-scoped grid for enterprise_admin — see app/(staff)/supervise/page.tsx.
-  { href: "/supervise",            label: "Supervise", icon: Eye,             roles: ["pod_lead", "ops_manager", "admin", "super_admin", "enterprise_admin"] },
-  { href: "/admin/users",          label: "Users",     icon: UsersIcon,       roles: ["super_admin"] },
+  { href: "/inbox",                label: "Inbox",     icon: InboxIcon,       roles: [ROLE.engineer] },
+  // /supervise renders the platform-wide grid for super_admin + supervisor,
+  // and the org-scoped grid for enterprise + department admins — see
+  // app/(staff)/supervise/page.tsx.
+  { href: "/supervise",            label: "Supervise", icon: Eye,             roles: [ROLE.supervisor, ROLE.department_admin, ROLE.enterprise_admin, ROLE.super_admin] },
+  { href: "/admin/users",          label: "Users",     icon: UsersIcon,       roles: [ROLE.super_admin] },
   // enterprise_admin's home is /enterprise; the Supervise link above is shared with platform staff.
-  { href: "/enterprise",           label: "Dashboard", icon: LayoutDashboard, roles: ["enterprise_admin"] },
-  // /finance is the money + feedback console for org admins (Internal Admin
-  // = ops_manager, plus Enterprise Admin who already has a richer view).
-  { href: "/finance",              label: "Finance",   icon: WalletIcon,      roles: ["ops_manager", "enterprise_admin"] },
+  { href: "/enterprise",           label: "Dashboard", icon: LayoutDashboard, roles: [ROLE.enterprise_admin] },
+  // /finance is the money + feedback console for enterprise + department admins.
+  { href: "/finance",              label: "Finance",   icon: WalletIcon,      roles: [ROLE.enterprise_admin, ROLE.department_admin] },
   // /operations is the supervisor's pod roster — engineers under them with
   // current customer + last call.
-  { href: "/operations",           label: "Operations", icon: TableIcon,       roles: ["pod_lead"] },
+  { href: "/operations",           label: "Operations", icon: TableIcon,       roles: [ROLE.supervisor] },
 ];
 
 const ENGINEER_ONLY_PATHS = ["/dashboard", "/inbox", "/staff/session"];
 
-function isEngineer(roles: string[]): boolean {
-  return roles.includes("engineer");
+function isEngineer(roles: readonly Role[]): boolean {
+  return roles.includes(ROLE.engineer);
 }
 
 // A user is "engineer-primary" when engineer is their HIGHEST role —
 // nothing supervisorial or admin-level above it. Used to gate the
 // full-screen incoming-call popup so super_admins / supervisors who
 // also happen to hold engineer don't get hijacked by ringtones.
-const SUPERVISORY_ROLES = ["pod_lead", "ops_manager", "admin", "super_admin"];
-function isEngineerOnly(roles: string[]): boolean {
-  return roles.includes("engineer") && !roles.some((r) => SUPERVISORY_ROLES.includes(r));
+const SUPERVISORY_ROLES: readonly Role[] = [
+  ROLE.supervisor,
+  ROLE.department_admin,
+  ROLE.enterprise_admin,
+  ROLE.super_admin,
+];
+function isEngineerOnly(roles: readonly Role[]): boolean {
+  return roles.includes(ROLE.engineer) && !roles.some((r) => SUPERVISORY_ROLES.includes(r));
 }
 
 function initials(email: string): string {
@@ -107,7 +113,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   const guard    = useStaffGuard();
   const roles    = guard.kind === "staff" ? guard.roles : [];
   const engineer = isEngineer(roles);
-  const isEnterpriseAdmin = roles.includes("enterprise_admin") && !roles.includes("super_admin");
+  const isEnterpriseAdmin = roles.includes(ROLE.enterprise_admin) && !roles.includes(ROLE.super_admin);
   const homeHref = isEnterpriseAdmin ? "/enterprise" : engineer ? "/dashboard" : "/supervise";
 
   const [collapsed, setCollapsed] = useState(false);
@@ -191,14 +197,14 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   // Enterprise admins should only see their two-tab console:
   //   /enterprise  (dashboard)
   //   /supervise   (org-scoped view, branches server-side on role)
-  // Without this filter, Eric Enterprise — who also holds the legacy
-  // 'admin' role from the seed — would see /admin/users in his sidebar.
+  // Without this filter, an enterprise_admin who also happens to hold
+  // platform-side roles for testing would see /admin/users in the sidebar.
   const ENT_ADMIN_ALLOW = new Set(["/enterprise", "/supervise"]);
   // Routes that super_admin should never see even when they hold the
-  // underlying role for testing (e.g. dev.soni also has pod_lead so she
+  // underlying role for testing (e.g. dev.soni also has supervisor so she
   // can join real sessions, but /operations is a supervisor surface).
   const SUPER_ADMIN_HIDDEN = new Set(["/operations"]);
-  const isSuperAdmin = roles.includes("super_admin");
+  const isSuperAdmin = roles.includes(ROLE.super_admin);
   const navItems = NAV
     .filter((n) => n.roles.some((r) => roles.includes(r)))
     .filter((n) => !isEnterpriseAdmin || ENT_ADMIN_ALLOW.has(n.href))
@@ -297,9 +303,9 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
       <main className="flex-1 min-w-0">{children}</main>
 
       {/* Engineer-PRIMARY only: full-screen incoming call popup. A user
-       *  who also holds a supervisor/admin role (super_admin, admin,
-       *  ops_manager, pod_lead) won't be paged here — they monitor calls
-       *  via Inbox/Supervise instead.
+       *  who also holds a supervisorial role (super_admin, enterprise_admin,
+       *  department_admin, supervisor) won't be paged here — they monitor
+       *  calls via Inbox/Supervise instead.
        *
        *  TEMP 2026-05-18: legacy EngineerIncomingRequest mount disabled
        *  while the push-ring (EngineerIncomingMatch) path is being
@@ -493,7 +499,7 @@ function ProfileButton({
 
 type AlertToast = { id: string; sessionId: string; name: string; urgency: string };
 
-function SupervisorAlerts({ roles }: { roles: string[] }) {
+function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
   const isSupervisor = !isEngineer(roles);
   const [alerts, setAlerts] = useState<AlertToast[]>([]);
   const seenRef = useRef<Set<string>>(new Set());
