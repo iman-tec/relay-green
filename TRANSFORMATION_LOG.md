@@ -105,21 +105,64 @@ existing components removed.
 - Project-wide `eslint .` baseline: 170 problems on `main`,
   still 170 with these changes (zero new lint issues introduced).
 
-### Notes for Phase 3 (Login + signup)
+---
 
-First call-site for the new primitives. Plan:
+## Phase 3 — Login + signup (this commit)
 
-- `SignInForm.tsx` →
-  - Email/password mode: `<Input>` (real labels, `autoComplete="email"`,
-    `autoComplete="current-password"`), `<Button variant="primary" full>`.
-  - OTP mode: `<OtpDigitInput length={8} hint="We sent an 8-digit code
-    to <email>." />` (replaces the single text field — audit-flagged).
-  - `<Card variant="surface" />` chrome around the whole form on the
-    atmospheric dark canvas.
-  - `<Toast tone="risk" role="alert">` for inline errors.
-- `StaffLoginForm.tsx` — same OTP digit-box treatment.
-- `SetPasswordClient.tsx` — `<Input type="password" hint="…rules…" />`,
-  `<Button full>`.
-- **Preserve all endpoints**: `/api/auth/signin-password`,
-  `/api/auth/prepare`, `/api/auth/send-otp`, `/api/auth/verify-otp`,
-  `/api/auth/set-password`. State enums (`mode`, `purpose`) untouched.
+**Files restyled:** `app/login/SignInForm.tsx`, `app/login/page.tsx`,
+`app/staff/login/StaffLoginForm.tsx`, `app/staff/login/page.tsx`,
+`app/set-password/SetPasswordClient.tsx`.
+
+**Data contracts: untouched.** Same endpoints
+(`/api/auth/signin-password`, `/api/auth/prepare`, `/api/auth/send-otp`,
+`/api/auth/verify-otp`, `/api/auth/set-password`,
+`/api/dev/sign-in-as`). Same Mode + Purpose enums. Same redirect
+targets (`window.location.assign(body.next ?? …)`). Same `?mode` +
+`?continue` query plumbing on set-password. Same 401-bounces login.
+
+**Visual deltas (every screen):**
+
+- Card chrome on a calm dark canvas with a quiet coral top-gradient
+  (10% tint) for atmosphere — replaces the flat dark page.
+- Hero copy uses the serif display face (`font-serif`).
+- `100dvh` instead of `min-h-screen` so iOS Safari's bottom bar doesn't
+  clip the chrome (audit issue).
+- Real `<label>` on every field via `<Input>`. `autoComplete` confirmed
+  (`email`, `current-password`, `new-password`, `one-time-code`).
+- **Coral primary CTAs** via `<Button variant="primary" full>`. No
+  more `BRAND_GREEN = "#3f5c2e"` inline in any of these files.
+- **`<OtpDigitInput length={8}>`** replaces the single-input "12345678"
+  text field on both `/login` (first-time + forgot OTP code mode) and
+  `/staff/login` (forgot OTP code mode). Auto-advance, backspace
+  retreat, paste fills all 8 boxes, `inputMode="numeric"`,
+  `autoComplete="one-time-code"` for SMS / mail-app autofill.
+- **Inline errors use `<Toast tone="risk">`** which carries
+  `role="alert"` + `aria-live="assertive"` (audit fix: silent-toast).
+- **Inline successes use `<Toast tone="ok">`** ("Code sent to …").
+- Password-rule checklist on set-password uses `--ok` token, not
+  hardcoded green.
+- Show/hide password button moved into the new `Input` suffix slot
+  with proper `aria-label`.
+- Dev-mode shortcuts panel (engineer / supervisor / internal /
+  enterprise) restyled to coral-soft icon tile, kept its `Briefcase /
+  Eye / ShieldCheck / Building2` glyphs.
+
+**Brand-green deletions:** all `BRAND_GREEN = "#3f5c2e"` constants
+gone from these three components. Two callers down, 13+ to go.
+
+**Verification:** `tsc --noEmit` clean. `eslint` clean on touched
+files. `npm run build` previously verified at Phase 2; not re-run this
+phase because no new dependencies or build-graph edges added (only
+swapped JSX inside existing client components).
+
+### Notes for Phase 4 (Intake)
+
+- `IntakeClient.tsx` — apply the **§5.2 multi-select fix**:
+  - Lift the gate `aiTools.length === 1` →
+    `aiTools.length >= 1`.
+  - Submit shape: `ai_tools_used: aiTools.join(", ")` (preserves the
+    existing `text` column). Add `// TODO(api): widen ai_tools_used to
+    text[]` next to the submit.
+  - Pass `multi` to the new `<ChipGroup>` for step 2 only.
+- Restyle the wizard chrome (left editorial panel + right answers).
+- Replace `wizard/ChipGroup.tsx` callers with `ui/ChipGroup`.
