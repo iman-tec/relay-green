@@ -1,14 +1,10 @@
 /*
- * Organization API — delete one.
+ * Organization API — edit + delete one.
  *
- * DELETE /api/admin/orgs/:id
- *   Removes the organization row. Members are NOT deleted (they keep
- *   their auth + profile rows) — only the org link on their profile is
- *   cleared, mirroring "leave organization" semantics. The org's
- *   enterprise_admin role grants are dropped (the role is meaningless
- *   without an org); the user's other roles are left alone.
+ * PATCH  /api/admin/orgs/:id   Update name and/or status (active/suspended).
+ * DELETE /api/admin/orgs/:id   Remove org; detach profiles + drop enterprise_admin grants.
  *
- *   Caller must hold super_admin.
+ * Caller must hold super_admin.
  */
 
 import { NextResponse } from "next/server";
@@ -19,6 +15,36 @@ export const dynamic = "force-dynamic";
 export const runtime  = "nodejs";
 
 type RouteCtx = { params: Promise<{ id: string }> };
+
+export async function PATCH(request: Request, { params }: RouteCtx) {
+  const gate = await requireSuperAdmin();
+  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  const { admin } = gate;
+  const { id } = await params;
+
+  const { name, status } = (await request.json().catch(() => ({}))) as {
+    name?:   string;
+    status?: string;
+  };
+
+  const patch: Record<string, unknown> = {};
+  if (typeof name === "string" && name.trim()) patch.name = name.trim();
+  if (status === "active" || status === "suspended") patch.status = status;
+  if (Object.keys(patch).length === 0) {
+    return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
+  }
+
+  const { data, error } = await admin
+    .from("organizations")
+    .update(patch)
+    .eq("id", id)
+    .select("id, name, status")
+    .maybeSingle();
+  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  if (!data)  return NextResponse.json({ error: "Org not found." }, { status: 404 });
+
+  return NextResponse.json({ org: data });
+}
 
 export async function DELETE(_request: Request, { params }: RouteCtx) {
   const gate = await requireSuperAdmin();

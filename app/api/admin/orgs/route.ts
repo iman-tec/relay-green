@@ -29,7 +29,7 @@ export async function GET() {
 
   const { data: orgs, error: orgErr } = await admin
     .from("organizations")
-    .select("id, name, primary_domain, status, enterprise_code, enterprise_type, reseller_id, created_at")
+    .select("id, name, primary_domain, status, enterprise_code, enterprise_type, reseller_id, allocated_minutes, used_minutes, remaining_minutes, created_at")
     .order("created_at", { ascending: false });
   if (orgErr) return NextResponse.json({ error: orgErr.message }, { status: 500 });
 
@@ -43,7 +43,9 @@ export async function GET() {
   type OrgRow = {
     id: string; name: string; primary_domain: string | null; status: string;
     enterprise_code: string; enterprise_type: string;
-    reseller_id: string | null; created_at: string;
+    reseller_id: string | null;
+    allocated_minutes: number; used_minutes: number; remaining_minutes: number;
+    created_at: string;
   };
   const orgRows = orgs as OrgRow[];
   const resellerIds = Array.from(new Set(
@@ -150,16 +152,19 @@ export async function GET() {
 
   return NextResponse.json({
     orgs: orgRows.map((o) => ({
-      id:             o.id,
-      name:           o.name,
-      primaryDomain:  o.primary_domain,
-      status:         o.status,
-      enterpriseType: o.enterprise_type,                   // 'organic' | 'inorganic'
-      resellerId:     o.reseller_id,                       // non-null when inorganic
-      resellerName:   o.reseller_id ? (resellerNameById.get(o.reseller_id) ?? null) : null,
-      createdAt:      o.created_at,
-      members:        membersByOrg.get(o.id) ?? [],
-      departments:    departmentsByOrg.get(o.id) ?? [],
+      id:                o.id,
+      name:              o.name,
+      primaryDomain:     o.primary_domain,
+      status:            o.status,
+      enterpriseType:    o.enterprise_type,                   // 'organic' | 'inorganic'
+      resellerId:        o.reseller_id,                       // non-null when inorganic
+      resellerName:      o.reseller_id ? (resellerNameById.get(o.reseller_id) ?? null) : null,
+      allocatedMinutes:  Number(o.allocated_minutes ?? 0),
+      usedMinutes:       Number(o.used_minutes ?? 0),
+      remainingMinutes:  Number(o.remaining_minutes ?? 0),
+      createdAt:         o.created_at,
+      members:           membersByOrg.get(o.id) ?? [],
+      departments:       departmentsByOrg.get(o.id) ?? [],
     })),
   });
 }
@@ -169,13 +174,17 @@ export async function POST(request: Request) {
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin, user: actor } = gate;
 
-  const { name, primaryDomain, adminEmail, adminDisplayName, allocatedMinutes } =
+  const { name, primaryDomain, adminEmail, adminDisplayName, allocatedMinutes, resellerId } =
     (await request.json().catch(() => ({}))) as {
       name?: string;
       primaryDomain?: string;
       adminEmail?: string;
       adminDisplayName?: string;
       allocatedMinutes?: number | string;
+      /** When set, creates an inorganic enterprise under that reseller
+       *  (org.reseller_id = resellerId). transfer_to_organization then
+       *  debits the reseller pool instead of minting unbacked minutes. */
+      resellerId?: string;
     };
 
   if (
@@ -187,6 +196,22 @@ export async function POST(request: Request) {
       { error: "Need name, adminEmail, and adminDisplayName." },
       { status: 400 },
     );
+  }
+
+  // Validate the resellerId (if supplied) — must exist + be active.
+  if (resellerId && typeof resellerId === "string") {
+    const { data: r } = await admin
+      .from("resellers")
+      .select("id, status")
+      .eq("id", resellerId)
+      .maybeSingle();
+    const rr = r as { id: string; status: string } | null;
+    if (!rr) {
+      return NextResponse.json({ error: "Reseller not found." }, { status: 404 });
+    }
+    if (rr.status !== "active") {
+      return NextResponse.json({ error: "Reseller is suspended." }, { status: 400 });
+    }
   }
 
   // Optional initial minutes allocation. Per spec, the organic enterprise
@@ -212,6 +237,14 @@ export async function POST(request: Request) {
       enterprise_code:    generateEnterpriseCode(name.trim()),
     };
     if (primaryDomain?.trim()) orgInsert.primary_domain = primaryDomain.trim();
+    if (resellerId) {
+      // The DB has a CHECK constraint pairing enterprise_type with reseller_id:
+      //   inorganic ↔ reseller_id NOT NULL
+      //   organic   ↔ reseller_id NULL
+      // Setting reseller_id without flipping enterprise_type would violate it.
+      orgInsert.reseller_id     = resellerId;
+      orgInsert.enterprise_type = "inorganic";
+    }
 
     const { data, error } = await admin
       .from("organizations")
