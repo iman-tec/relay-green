@@ -28,7 +28,7 @@ export function TabsHeader<T extends string>({
   /** Optional trailing element rendered after the tabs (profile chip, etc.). */
   rightSlot?: React.ReactNode;
   /** Muted text rendered next to the Relay wordmark (e.g. "Superadmin Panel"). Omit to render the wordmark alone. */
-  subtitle?: string;
+  subtitle?:  string;
 }) {
   const router       = useRouter();
   const pathname     = usePathname();
