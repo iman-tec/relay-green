@@ -7,10 +7,10 @@ import { highestRoleLabel } from "@/lib/relay/role-labels";
 import { PanelClient } from "./PanelClient";
 
 export const metadata: Metadata = {
-  title: "Superadmin Panel (v2) — Relay.green",
+  title: "Department (v2) — Relay.green",
 };
 
-export default async function AdminV2Page() {
+export default async function DepartmentV2Page() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/staff/login");
@@ -20,7 +20,13 @@ export default async function AdminV2Page() {
     .select("role")
     .eq("user_id", user.id);
   const roles = (roleRows ?? []).map((r: { role: string }) => r.role);
-  if (!roles.includes(ROLE.super_admin)) redirect("/admin");
+  // Allow super_admin + enterprise_admin to preview the dept console too
+  // (mirrors the legacy /department behavior).
+  const allowed =
+    roles.includes(ROLE.department_admin) ||
+    roles.includes(ROLE.enterprise_admin) ||
+    roles.includes(ROLE.super_admin);
+  if (!allowed) redirect("/dashboard");
 
   return (
     <Suspense fallback={null}>

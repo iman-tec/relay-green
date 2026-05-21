@@ -20,12 +20,15 @@ export function TabsHeader<T extends string>({
   active,
   onChange,
   rightSlot,
+  subtitle,
 }: {
   tabs:       readonly Tab<T>[];
   active:     T;
   onChange:   (next: T) => void;
   /** Optional trailing element rendered after the tabs (profile chip, etc.). */
   rightSlot?: React.ReactNode;
+  /** Muted text rendered next to the Relay wordmark (e.g. "Superadmin Panel"). Omit to render the wordmark alone. */
+  subtitle?: string;
 }) {
   const router       = useRouter();
   const pathname     = usePathname();
@@ -50,12 +53,14 @@ export function TabsHeader<T extends string>({
     >
       <div className="flex items-center gap-2.5">
         <Wordmark size="md" />
-        <span
-          className="hidden text-xs sm:inline"
-          style={{ color: "var(--text-muted)" }}
-        >
-          · Superadmin Panel
-        </span>
+        {subtitle && (
+          <span
+            className="hidden text-xs sm:inline"
+            style={{ color: "var(--text-muted)" }}
+          >
+            · {subtitle}
+          </span>
+        )}
       </div>
 
       <nav className="flex items-center gap-1">

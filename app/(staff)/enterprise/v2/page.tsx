@@ -7,10 +7,10 @@ import { highestRoleLabel } from "@/lib/relay/role-labels";
 import { PanelClient } from "./PanelClient";
 
 export const metadata: Metadata = {
-  title: "Superadmin Panel (v2) — Relay.green",
+  title: "Enterprise (v2) — Relay.green",
 };
 
-export default async function AdminV2Page() {
+export default async function EnterpriseV2Page() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/staff/login");
@@ -20,7 +20,11 @@ export default async function AdminV2Page() {
     .select("role")
     .eq("user_id", user.id);
   const roles = (roleRows ?? []).map((r: { role: string }) => r.role);
-  if (!roles.includes(ROLE.super_admin)) redirect("/admin");
+  // Allow super_admin to preview the enterprise console as well — same
+  // behavior as the legacy /enterprise routes.
+  if (!roles.includes(ROLE.enterprise_admin) && !roles.includes(ROLE.super_admin)) {
+    redirect("/dashboard");
+  }
 
   return (
     <Suspense fallback={null}>

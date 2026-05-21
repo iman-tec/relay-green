@@ -9,6 +9,8 @@
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { TabsHeader, type Tab } from "@/app/_components/admin-v2/TabsHeader";
+import { SignOutButton } from "@/app/_components/admin-v2/SignOutButton";
+import { UserChip } from "@/app/_components/admin-v2/UserChip";
 import { EnterpriseTab } from "./EnterpriseTab";
 import { ResellersTab } from "./ResellersTab";
 import { PodsTab } from "./PodsTab";
@@ -23,7 +25,11 @@ const TABS: readonly Tab<TabKey>[] = [
   { key: "internal",   label: "Internal Users" },
 ];
 
-export function PanelClient() {
+export function PanelClient({
+  me,
+}: {
+  me: { email: string; roleLabel: string };
+}) {
   const searchParams = useSearchParams();
   const initial = (searchParams?.get("tab") as TabKey) ?? "enterprise";
   const [tab, setTab] = useState<TabKey>(
@@ -32,7 +38,18 @@ export function PanelClient() {
 
   return (
     <div className="flex h-[calc(100vh-0px)] min-h-0 flex-col">
-      <TabsHeader tabs={TABS} active={tab} onChange={setTab} />
+      <TabsHeader
+        tabs={TABS}
+        active={tab}
+        onChange={setTab}
+        subtitle="Superadmin Panel"
+        rightSlot={
+          <div className="flex items-center gap-3">
+            <UserChip email={me.email} roleLabel={me.roleLabel} />
+            <SignOutButton />
+          </div>
+        }
+      />
       <div className="min-h-0 flex-1 overflow-hidden">
         {tab === "enterprise" && <EnterpriseTab />}
         {tab === "reseller"   && <ResellersTab />}

@@ -236,6 +236,15 @@ export function EnterpriseTab() {
       refresh();   // dept member-count + minutes may have shifted
     } else alert((await res.json().catch(() => ({}))).error ?? "Remove failed.");
   };
+  const removeEnterpriseAdmin = async (userId: string) => {
+    if (!selectedEntId) return;
+    if (!confirm("Remove this user as enterprise admin?")) return;
+    const res = await fetch(`/api/admin/orgs/${selectedEntId}/admins/${userId}`, {
+      method: "DELETE",
+    });
+    if (res.ok) refresh();
+    else alert((await res.json().catch(() => ({}))).error ?? "Remove failed.");
+  };
   const resendEmployeeInvite = async (empId: string) => {
     const res = await fetch(`/api/admin/users/${empId}/resend-invite`, { method: "POST" });
     if (res.ok) alert("Invite resent.");
@@ -425,12 +434,20 @@ export function EnterpriseTab() {
           />
         )}
         {selectedEnt && !selectedDept && (
-          <EnterpriseSummary
-            ent={selectedEnt}
-            summary={entSummaries.get(selectedEnt.id)}
-            onToggle={(s) => setOrgStatus(selectedEnt.id, s)}
-            onDelete={() => deleteOrg(selectedEnt.id)}
-          />
+          <div className="flex flex-col gap-6">
+            <EnterpriseSummary
+              ent={selectedEnt}
+              summary={entSummaries.get(selectedEnt.id)}
+              onToggle={(s) => setOrgStatus(selectedEnt.id, s)}
+              onDelete={() => deleteOrg(selectedEnt.id)}
+            />
+            <EnterpriseAdminsSection
+              admins={selectedEnt.members.filter((m) => m.roles.includes("enterprise_admin"))}
+              onResend={resendEmployeeInvite}
+              onToggleStatus={toggleEmployeeStatus}
+              onRemove={removeEnterpriseAdmin}
+            />
+          </div>
         )}
         {selectedEnt && selectedDept && (
           <div className="flex flex-col gap-6">
@@ -709,6 +726,105 @@ function DepartmentAdminCard({
       )}
     </section>
   );
+}
+
+function EnterpriseAdminsSection({
+  admins, onResend, onToggleStatus, onRemove,
+}: {
+  admins: Member[];
+  onResend: (id: string) => void;
+  onToggleStatus: (id: string, currentlyActive: boolean) => void;
+  onRemove: (id: string) => void;
+}) {
+  return (
+    <section
+      className="overflow-hidden rounded-lg border"
+      style={{ borderColor: "var(--border)", background: "var(--surface)" }}
+    >
+      <header className="border-b px-4 py-2.5 text-xs font-semibold tracking-wide uppercase"
+        style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
+        Enterprise admins ({admins.length})
+      </header>
+      {admins.length === 0 ? (
+        <p className="px-4 py-4 text-xs" style={{ color: "var(--text-muted)" }}>
+          No enterprise admin assigned. Add one via the org's invite flow at{" "}
+          <code>/admin/orgs/{`<id>`}/members</code>.
+        </p>
+      ) : (
+        <ul className="flex flex-col">
+          {admins.map((m) => {
+            const active = m.status === "ACTIVE";
+            return (
+              <li
+                key={m.id}
+                className="flex items-center gap-3 border-t px-4 py-3 first:border-t-0"
+                style={{ borderColor: "var(--border)" }}
+              >
+                <div
+                  className="flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
+                  style={{
+                    background: "color-mix(in srgb, var(--primary) 16%, transparent)",
+                    color:      "var(--primary)",
+                  }}
+                >
+                  {memberInitials(m)}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium" style={{ color: "var(--text)" }}>
+                    {m.displayName || "—"}
+                  </div>
+                  <div className="truncate text-xs" style={{ color: "var(--text-muted)" }}>
+                    {m.email}
+                  </div>
+                </div>
+                <span
+                  className="rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wider uppercase"
+                  style={{
+                    color:      "var(--primary)",
+                    background: "color-mix(in srgb, var(--primary) 14%, transparent)",
+                  }}
+                >
+                  Enterprise admin
+                </span>
+                <span
+                  className="rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wider uppercase"
+                  style={{
+                    color: active ? "#3dcb7e" : "var(--text-muted)",
+                    background: active
+                      ? "color-mix(in srgb, #3dcb7e 14%, transparent)"
+                      : "color-mix(in srgb, var(--text-muted) 14%, transparent)",
+                  }}
+                >
+                  {active ? "active" : "suspended"}
+                </span>
+                <div className="flex items-center gap-1">
+                  <RowIcon title="Resend invite email" onClick={() => onResend(m.id)}>
+                    <Mail className="size-3.5" />
+                  </RowIcon>
+                  <RowIcon
+                    title={active ? "Deactivate" : "Reactivate"}
+                    onClick={() => onToggleStatus(m.id, active)}
+                  >
+                    {active ? <PowerOff className="size-3.5" /> : <Power className="size-3.5" />}
+                  </RowIcon>
+                  <RowIcon title="Remove as enterprise admin" danger onClick={() => onRemove(m.id)}>
+                    <Trash2 className="size-3.5" />
+                  </RowIcon>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function memberInitials(m: Member): string {
+  const src = m.displayName || m.email;
+  const parts = src.split(/[\s._-]+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return (parts[0] ?? "?").slice(0, 2).toUpperCase();
 }
 
 function RowIcon({

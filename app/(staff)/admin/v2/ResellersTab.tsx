@@ -253,12 +253,11 @@ export function ResellersTab() {
   };
 
   // ─ Render ──────────────────────────────────────────────────────────
-  // Sidebar visibility — only ever show 2 at a time:
-  //   depth 0 (no selection):  Resellers
-  //   depth 1 (reseller sel):  Resellers + Enterprises
-  //   depth 2 (ent / dept sel): Enterprises + Departments  (Resellers hidden)
-  // Breadcrumb in the main area lets the user jump back to any level.
-  const showResellersSidebar   = selResellerId === null || selEntId === null;
+  // All three sidebars visible as you drill down — the spec's full
+  // three-level Reseller drill-down. Lower-level sidebars only render
+  // once their parent is selected. The breadcrumb in the main area is
+  // still the back-navigation.
+  const showResellersSidebar   = true;
   const showEnterprisesSidebar = selResellerId !== null;
   const showDepartmentsSidebar = selEntId !== null;
 
