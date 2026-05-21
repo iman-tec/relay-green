@@ -1,18 +1,15 @@
 "use client";
 
 /*
- * Staff sign-in — email + password as the default, 8-digit OTP code as
- * the universal fallback for first-time signups OR forgotten passwords.
+ * Staff sign-in — email + password is the only entry point. Staff are
+ * invite-only: a new user clicks the link in their invite email, which
+ * lands them on /set-password (via /auth/post-signin) to choose a
+ * password, then on their role's dashboard. From then on they sign in
+ * here with email + password.
  *
- * Flow:
- *   mode === "password"  → email + password fields; submit hits
- *                           /api/auth/signin-password (mode=staff).
- *   mode === "otp-email" → email field; submit hits /api/auth/prepare
- *                           + /api/auth/send-otp; advances to "otp-code".
- *   mode === "otp-code"  → 8-digit code; submit hits /api/auth/verify-otp
- *                           (mode=staff). The server `next` routes the
- *                           user to /set-password (no password yet) OR
- *                           their role's landing.
+ * Forgot password is the universal recovery — it sends an 8-digit OTP
+ * to the email; verify-otp then routes through /set-password so the
+ * user can pick a new password.
  *
  * Dev mode shortcuts (NODE_ENV=development only) stay unchanged — they
  * bypass auth entirely and sign in as seeded demo accounts.
@@ -22,8 +19,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Briefcase, Eye, ShieldCheck, Building2 } from "lucide-react";
 
-type Mode    = "password" | "otp-email" | "otp-code";
-type Purpose = "first-time" | "forgot";
+type Mode = "password" | "otp-email" | "otp-code";
 
 type DevRole = {
   label:    string;
@@ -46,7 +42,6 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
   const initialEmail = search?.get("email") ?? "";
 
   const [mode, setMode]           = useState<Mode>("password");
-  const [purpose, setPurpose]     = useState<Purpose>("first-time");
   const [email, setEmail]         = useState(initialEmail);
   const [password, setPwd]        = useState("");
   const [code, setCode]           = useState("");
@@ -54,29 +49,13 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
   const [resending, setResending] = useState(false);
   const [error, setError]         = useState<string | null>(null);
   const [info, setInfo]           = useState<string | null>(null);
-  // Second-factor code state for the spec's parent-tier code matrix:
-  //   inorganic enterprise_admin → reseller_code  (RLC-…)
-  //   department_admin           → enterprise_code (slug-…)
-  //   employee                   → department_code (DLC-…)
-  // codeKind is set once the server replies `requires_code: true`; we then
-  // surface a second input under the password and resubmit.
-  const [codeKind, setCodeKind] = useState<null | "reseller" | "enterprise" | "department">(null);
-  const [loginCode, setLoginCode] = useState("");
   const codeRef     = useRef<HTMLInputElement>(null);
-  const loginCodeRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
 
-  const purposeCopy = {
-    "first-time": {
-      title:  "First-time sign-in",
-      blurb:  "Enter the work email your supervisor invited. We'll send you an 8-digit code, then ask you to choose a password.",
-      cta:    "Email me a sign-up code",
-    },
-    "forgot": {
-      title:  "Reset your password",
-      blurb:  "Enter your work email and we'll send you an 8-digit code. After verifying you can choose a new password.",
-      cta:    "Email me a reset code",
-    },
+  const resetCopy = {
+    title:  "Reset your password",
+    blurb:  "Enter your work email and we'll send you an 8-digit code. After verifying you can choose a new password.",
+    cta:    "Email me a reset code",
   } as const;
 
   // Focus password input when mounting in password mode so the form is
@@ -88,29 +67,26 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
   }, [mode, initialEmail]);
 
   // ── Helpers ────────────────────────────────────────────────────────
+  // Staff "Forgot password?" is the only OTP path — purpose=forgot rejects
+  // unknown emails (so a typo doesn't silently create a self-signup row)
+  // and verify-otp diverts to /set-password unconditionally so the user
+  // can pick a new password.
   const sendCode = async (target: string): Promise<boolean> => {
     const prepRes = await fetch("/api/auth/prepare", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ email: target, purpose }),
+      body:    JSON.stringify({ email: target, purpose: "forgot" }),
     });
     if (!prepRes.ok) {
       const body = (await prepRes.json().catch(() => ({}))) as { error?: string };
-      if (body.error === "email_exists") {
-        setError("That email is already registered. Use \"Forgot password?\" instead.");
-        return false;
-      }
       if (body.error === "email_not_found") {
-        setError("No account found for that email. Use \"First time signing in?\" instead.");
+        setError("No account found for that email — ask your admin to invite you.");
         return false;
       }
       if (body.error === "rate_limited") {
         setError("Too many attempts — wait a minute before trying again.");
         return false;
       }
-      // Other prepare errors are non-fatal historically — just log and
-      // try to send the OTP anyway. Most "we already had this user"
-      // cases come back ok=true already.
     }
     const sendRes = await fetch("/api/auth/send-otp", {
       method:  "POST",
@@ -126,11 +102,6 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
   };
 
   // ── Password sign-in ───────────────────────────────────────────────
-  // Two-step: first submit posts email + password. If the user is subject
-  // to the spec's parent-tier code matrix (inorganic ent admin / dept
-  // admin / employee), the server replies { requires_code: true,
-  // code_kind } and we surface a code input. Second submit posts
-  // email + password + code and the server verifies + finalises.
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const em = email.trim().toLowerCase();
@@ -142,34 +113,13 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
       const res = await fetch("/api/auth/signin-password", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({
-          email: em,
-          password,
-          mode:  "staff",
-          // Only include code on resubmits — keeps the first probe clean.
-          ...(codeKind && loginCode.trim() ? { code: loginCode.trim() } : {}),
-        }),
+        body:    JSON.stringify({ email: em, password, mode: "staff" }),
       });
       const body = (await res.json().catch(() => ({}))) as {
-        ok?:            boolean;
-        next?:          string;
-        error?:         string;
-        requires_code?: boolean;
-        code_kind?:     "reseller" | "enterprise" | "department";
+        ok?:    boolean;
+        next?:  string;
+        error?: string;
       };
-
-      // Code needed (or wrong) — server signed back out; show the input.
-      if (body.requires_code === true) {
-        setCodeKind(body.code_kind ?? "enterprise");
-        if (body.error === "invalid_code") {
-          setError("That code didn't match. Check the code your admin shared and try again.");
-        } else {
-          setError(null);
-        }
-        setTimeout(() => loginCodeRef.current?.focus(), 50);
-        return;
-      }
-
       if (!res.ok || !body.ok) {
         setError(body.error ?? "Couldn't sign in.");
         return;
@@ -230,7 +180,7 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
       const res = await fetch("/api/auth/verify-otp", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ email, code: trimmed, mode: "staff", purpose }),
+        body:    JSON.stringify({ email, code: trimmed, mode: "staff", purpose: "forgot" }),
       });
       const body = (await res.json().catch(() => ({}))) as {
         ok?: boolean; next?: string; error?: string;
@@ -341,17 +291,16 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
     );
   }
 
-  // ── OTP email mode UI ──────────────────────────────────────────────
+  // ── OTP email mode UI (forgot-password only) ───────────────────────
   if (mode === "otp-email") {
-    const copy = purposeCopy[purpose];
     return (
       <div className="flex flex-col gap-4">
         <div>
           <h2 className="text-sm font-semibold" style={{ color: "var(--text)" }}>
-            {copy.title}
+            {resetCopy.title}
           </h2>
           <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>
-            {copy.blurb}
+            {resetCopy.blurb}
           </p>
         </div>
 
@@ -366,7 +315,7 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
             className="w-full rounded-md py-2.5 text-sm font-medium transition-opacity disabled:opacity-50"
             style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
           >
-            {loading ? "Sending code…" : copy.cta}
+            {loading ? "Sending code…" : resetCopy.cta}
           </button>
         </form>
 
@@ -419,85 +368,27 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
           />
         </div>
 
-        {/* Second-factor code field — revealed by the server when
-            login_required_code(user_id) returns a row. The label adapts
-            to which parent tier the user belongs to. */}
-        {codeKind && (
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="login-code" className="text-sm font-medium" style={{ color: "var(--text)" }}>
-              {codeKind === "reseller"   ? "Reseller code"
-              : codeKind === "department" ? "Department code"
-              :                              "Enterprise code"}
-            </label>
-            <input
-              id="login-code"
-              ref={loginCodeRef}
-              type="text"
-              required
-              autoComplete="off"
-              autoCapitalize="characters"
-              spellCheck={false}
-              placeholder={codeKind === "reseller" ? "RLC-AB12CD" : codeKind === "department" ? "DLC-AB12CD" : "ORG-XXXX-XXXX"}
-              value={loginCode}
-              onChange={(e) => setLoginCode(e.target.value.toUpperCase())}
-              disabled={loading}
-              className="w-full rounded-md border px-3.5 py-2.5 text-sm uppercase tracking-[0.15em] outline-none transition-colors"
-              style={{
-                borderColor:     "var(--border)",
-                backgroundColor: "var(--surface)",
-                color:           "var(--text)",
-                fontFamily:      "var(--font-mono)",
-              }}
-              onFocus={(e) => (e.target.style.borderColor = BRAND_GREEN)}
-              onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
-            />
-            <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-              {codeKind === "reseller"
-                ? "First-login code your reseller shared with you."
-                : codeKind === "department"
-                ? "Your department code — ask your enterprise admin if you don't have it."
-                : "Your enterprise code — ask your department admin if you don't have it."}
-            </p>
-          </div>
-        )}
-
         {error && <ErrorBanner message={error} />}
 
         <button
           type="submit"
-          disabled={
-            loading
-            || !email.trim()
-            || !password
-            || (codeKind !== null && !loginCode.trim())
-          }
+          disabled={loading || !email.trim() || !password}
           className="w-full rounded-md py-2.5 text-sm font-medium transition-opacity disabled:opacity-50"
           style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
         >
-          {loading ? "Signing in…" : codeKind ? "Verify & sign in" : "Sign in"}
+          {loading ? "Signing in…" : "Sign in"}
         </button>
       </form>
 
       <div className="flex items-center justify-between gap-3 text-xs">
+        <p style={{ color: "var(--text-muted)" }}>
+          New here? Check your invite email.
+        </p>
         <button
           type="button"
           onClick={() => {
             setError(null);
             setPwd("");
-            setPurpose("first-time");
-            setMode("otp-email");
-          }}
-          className="underline-offset-4 hover:underline"
-          style={{ color: "var(--text-muted)" }}
-        >
-          First time signing in?
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setError(null);
-            setPwd("");
-            setPurpose("forgot");
             setMode("otp-email");
           }}
           className="underline-offset-4 hover:underline"

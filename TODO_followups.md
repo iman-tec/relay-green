@@ -30,16 +30,15 @@ permits.
 
 - **`otp_codes` table is provisioned but unused.** Added in
   `20260521170000_enterprise_refill_and_minutes.sql` for a future hybrid
-  first-login flow. Currently `/api/auth/first-login/send-otp` (also
-  dormant) delegates to Supabase's `signInWithOtp` and doesn't touch
-  `otp_codes`. Either wire it up or drop the table.
+  first-login flow that we ended up not building. Either wire it up to
+  something or drop the table.
 
-- **Dormant `/api/auth/first-login/send-otp` route.** Code path exists +
-  the DB primitives exist (`login_required_code`, `verify_login_code`),
-  but no client UI calls this endpoint. The actual code-matrix enforcement
-  happens via `/api/auth/signin-password` after password validation, which
-  was the path we chose. Decide whether to delete the unused route or
-  rewire something to use it.
+- **Orphaned matrix-code DB primitives.** `login_required_code(uuid)`,
+  `verify_login_code(uuid, text)` and the spec-alignment migration
+  (`20260521180000_login_required_code_spec_alignment.sql`) are still in
+  the schema but no app code calls them. The whole second-factor code
+  prompt was removed in favour of "magic link → set password" for invited
+  users. Drop the RPCs and the migration in a follow-up cleanup pass.
 
 - **`requireEnterpriseAdmin` still accepts department_admin.** After
   `/finance` got tightened to enterprise_admin only, the underlying gate
