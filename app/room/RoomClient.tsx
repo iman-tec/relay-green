@@ -38,7 +38,7 @@ import { PaywallModal } from "@/app/_components/PaywallModal";
 import { MatchingModal } from "@/app/_components/MatchingModal";
 import { ChatComposer } from "@/app/_components/ChatComposer";
 import { MessageAttachments } from "@/app/_components/MessageAttachments";
-import { Button, EmptyState } from "@/app/_components/ui";
+import { Button, EmptyState, Modal } from "@/app/_components/ui";
 import { useCustomerSession } from "@/lib/relay/useCustomerSession";
 import { useIsSupervisor, isSupervisorOnlyMessage } from "@/lib/relay/useIsSupervisor";
 import { useSessionTimer } from "@/lib/relay/useSessionTimer";
@@ -1601,52 +1601,41 @@ function CompactStatus({ session }: { session: GuestCall }) {
 function ConfirmEndModal({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center px-6"
-      style={{ backgroundColor: "rgba(0, 0, 0, 0.55)", backdropFilter: "blur(4px)" }}
+    <Modal
+      open
+      onClose={busy ? () => {} : onCancel}
+      title="End this session?"
+      description="The video call will close and we'll generate a summary. You can't resume after ending."
+      size="sm"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onCancel} disabled={busy}>
+            Keep going
+          </Button>
+          <Button
+            variant="danger"
+            loading={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await onConfirm();
+              } finally {
+                setBusy(false);
+              }
+            }}
+            iconLeft={!busy ? <PhoneOff size={14} /> : null}
+          >
+            End session
+          </Button>
+        </>
+      }
     >
-      <div
-        className="relative w-full max-w-sm rounded-2xl border p-7 text-center shadow-xl"
-        style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}
-      >
-        <div
-          className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full"
-          style={{
-            backgroundColor: "color-mix(in srgb, var(--accent-red) 12%, transparent)",
-            color: "var(--accent-red)",
-          }}
-        >
+      <div className="flex justify-center">
+        <div className="inline-flex size-12 items-center justify-center rounded-full bg-[var(--risk-soft)] text-[var(--risk)]">
           <PhoneOff size={20} />
         </div>
-        <h2
-          className="mb-2 text-lg font-medium"
-          style={{ fontFamily: "var(--font-source-serif)", color: "var(--text)" }}
-        >
-          End this session?
-        </h2>
-        <p className="mb-6 text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
-          The video call will close and we&apos;ll generate a summary. You can&apos;t resume after ending.
-        </p>
-        <div className="flex gap-2">
-          <button
-            onClick={onCancel}
-            disabled={busy}
-            className="flex-1 rounded-full border py-2.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-            style={{ borderColor: "var(--border)", color: "var(--text)" }}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={async () => { setBusy(true); try { await onConfirm(); } finally { setBusy(false); } }}
-            disabled={busy}
-            className="flex-1 rounded-full py-2.5 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
-            style={{ backgroundColor: "var(--accent-red)", color: "#fff" }}
-          >
-            {busy ? <Loader2 size={14} className="animate-spin inline" /> : "End session"}
-          </button>
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 

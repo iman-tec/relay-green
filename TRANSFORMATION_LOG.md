@@ -320,20 +320,69 @@ intake assistant + a "Context for your engineer" summary card.
 
 **Verification:** `tsc --noEmit` clean. `eslint` clean on touched paths.
 
-### Notes for Phase 7 (Chat + call room)
+---
 
-- Restyle the live `/room` JSX in `RoomClient.tsx`:
-  - Promote the Zoom-call CTA (`MeetingChatEntry` Join button +
-    composer toolbar Phone button) to `<Button variant="launcher">`.
-  - Chat bubble styling (user vs engineer vs system vs assistant).
-  - Read-only/ended treatment in `PastSessionReview` calmer.
-  - Sidebar customer-side cleanup (without touching the 80-row
-    fetch — perf is a follow-up, not a UI phase task).
-  - Migrate the inline modals (ConfirmEndModal, ConnectingModal,
-    EngineerAssignedModal) to the new `ui/Modal` primitive — bundles
-    ESC + focus-trap + scrim-click for free.
-  - Also drop a second `IntakeAssistant` mount: in-room while a call
-    is connecting (brief §5.5).
-- Replace `MeetingChatEntry`'s `BRAND_GREEN` palette with tokens
-  (Join CTA uses `launcher`; ended state uses `ok` tone).
-- This phase will be **big** — commit per logical chunk if needed.
+## Phase 7 — Chat/call room (partial, this commit)
+
+**Scope cut:** `RoomClient.tsx` is ~3500 lines. This commit lands the
+two highest-leverage pieces from §5.5 + the audit:
+
+1. **`MeetingChatEntry` rewrite — the call CTA is now the star.**
+
+   Was: a tiny `text-[11px]` Join pill jammed inline with the meeting
+   metadata (28px tall — audit-flagged).
+
+   Now: when a Zoom call is **active**, the entry is a centred card
+   with a clearly-living "Zoom call · ongoing" eyebrow (`relay-pulse-ok`
+   dot), a prominent **`<Button variant="launcher" size="lg">`** for
+   "Join Zoom call" (green pulse halo, 48px tall, brief §5.5 requirement
+   solved), and a secondary `End call` button when the engineer can
+   hang up. The `selfJoined` "Joined" chip → "You're on the call" pill
+   in the `--ok` tone.
+
+   Ended state stays compact (small pill + duration + Sparkles toggle)
+   so the timeline doesn't bloat.
+
+   All `BRAND_GREEN` / `BRAND_GREEN_SOFT` / `BRAND_GREEN_BORDER` constants
+   deleted from this file. 1 more BRAND_GREEN-host file down.
+
+2. **`ConfirmEndModal` migrated to `ui/Modal`.**
+
+   - Bundles ESC close, focus-trap, scrim-click close, body-scroll
+     lock, focus-restore — **all six modal a11y bugs** the audit
+     flagged for this modal solved by the primitive.
+   - "Cancel" → "Keep going" (calmer voice).
+   - End-session button uses `<Button variant="danger" loading>`.
+
+**Data contracts: untouched.** Same `onJoin` / `onCancel` /
+`selfJoined` props on MeetingChatEntry, same `onCancel`/`onConfirm`
+signatures on ConfirmEndModal. Zoom URL flow, message-stream folding,
+and summary toggle behaviour all preserved.
+
+**Verification:** `tsc --noEmit` clean. `eslint` clean on touched
+files.
+
+### Still to-do under §5.5 (deferred to follow-up commits)
+
+- Chat bubble visual hierarchy (user vs engineer vs system vs
+  assistant) — currently inline in `RoomClient.ChatPane`.
+- `SummaryPanel` (`RoomClient.tsx:1252`): bold takeaway, checklist for
+  Next steps, collapsible "Zoom call summaries", `max-w-prose`.
+- `ConnectingModal` + `EngineerAssignedModal` migrations to `ui/Modal`.
+- Second `IntakeAssistant` mount in the live room while a call is
+  connecting (brief §5.5 "in-call AI intake assistant").
+- Read-only `PastSessionReview` calm treatment.
+- These are isolated chunks; each one is a separate small commit.
+
+### Notes for Phase 8 (Supervise board)
+
+- `app/(staff)/supervise/SuperviseClient.tsx`.
+- Tabs (All / Waiting / Live / Past) get count badges + clearer
+  hierarchy.
+- Each card uses the new `<HealthBar>` (label + icon + color) —
+  audit-fix for color-only health.
+- Card chrome via `<Card variant="surface" interactive>` so Join
+  visibly affords clicking.
+- Pulse on "Waiting" cards stays but routes through `data-relay-pulse`
+  (reduced-motion respected).
+- Pod-scoping logic and realtime channels untouched.
