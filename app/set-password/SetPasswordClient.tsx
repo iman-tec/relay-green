@@ -19,11 +19,11 @@
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2, Lock, Eye, EyeOff } from "lucide-react";
+import { Loader2, Lock, Eye, EyeOff, Check, X } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
+import { checkPassword, passwordIsValid, PASSWORD_MIN_LENGTH } from "@/lib/password-policy";
 
 const BRAND_GREEN = "#3f5c2e";
-const MIN_LENGTH  = 8;
 
 export function SetPasswordClient() {
   const router       = useRouter();
@@ -37,8 +37,9 @@ export function SetPasswordClient() {
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState<string | null>(null);
 
+  const checks = checkPassword(password);
   const canSubmit =
-    password.length >= MIN_LENGTH &&
+    passwordIsValid(password) &&
     password === confirm &&
     !loading;
 
@@ -122,12 +123,12 @@ export function SetPasswordClient() {
                 type={show ? "text" : "password"}
                 autoComplete="new-password"
                 autoFocus
-                minLength={MIN_LENGTH}
+                minLength={PASSWORD_MIN_LENGTH}
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={loading}
-                placeholder={`at least ${MIN_LENGTH} characters`}
+                placeholder={`at least ${PASSWORD_MIN_LENGTH} characters`}
                 className="w-full rounded-md border px-3.5 py-2.5 pr-10 text-sm outline-none transition-colors"
                 style={{
                   borderColor: "var(--border)",
@@ -148,6 +149,16 @@ export function SetPasswordClient() {
                 {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
               </button>
             </div>
+
+            {/* Live rule checklist. Each turns green + check as it passes. */}
+            {password.length > 0 && (
+              <ul className="mt-1 flex flex-col gap-1 text-xs">
+                <RuleRow ok={checks.length}    label={`At least ${PASSWORD_MIN_LENGTH} characters`} />
+                <RuleRow ok={checks.lowercase} label="One lowercase letter (a-z)" />
+                <RuleRow ok={checks.digit}     label="One number (0-9)" />
+                <RuleRow ok={checks.special}   label="One special character (!@#$%&...)" />
+              </ul>
+            )}
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -162,7 +173,7 @@ export function SetPasswordClient() {
               id="confirm"
               type={show ? "text" : "password"}
               autoComplete="new-password"
-              minLength={MIN_LENGTH}
+              minLength={PASSWORD_MIN_LENGTH}
               required
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
@@ -211,5 +222,14 @@ export function SetPasswordClient() {
         </form>
       </div>
     </div>
+  );
+}
+
+function RuleRow({ ok, label }: { ok: boolean; label: string }) {
+  return (
+    <li className="flex items-center gap-1.5" style={{ color: ok ? BRAND_GREEN : "var(--text-muted)" }}>
+      {ok ? <Check className="size-3.5" /> : <X className="size-3.5" style={{ opacity: 0.5 }} />}
+      <span>{label}</span>
+    </li>
   );
 }

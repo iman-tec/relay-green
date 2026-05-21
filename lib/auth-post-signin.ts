@@ -1,30 +1,23 @@
 /*
- * Post sign-in router.
- *
- * After a Supabase magic-link / invite redeem, the user lands on
- * /auth/callback which sets the session cookie then forwards here.
- *
- * Two things happen:
- *   1. Look up the user's roles and compute their role-aware landing.
- *   2. If the user hasn't set a password yet (typical for invited
- *      staff: the invite link is single-use, so we collect a password
- *      now so they can sign in normally next time), divert them to
- *      /set-password with the landing as ?continue=. Otherwise send
- *      them straight to the landing.
+ * Shared post-session routing for /auth/callback (PKCE ?code=…) and
+ * /auth/confirm (token_hash). Both routes verify the user, then call
+ * this helper to decide whether to send them to /set-password (no
+ * password yet) or to their role-aware landing.
  */
 
 import { NextResponse } from "next/server";
-import { createClient as createAdminClient } from "@supabase/supabase-js";
-import { createClient } from "@/lib/supabase/server";
+import { createClient as createAdminClient, type SupabaseClient } from "@supabase/supabase-js";
 import { landingForRoles } from "@/lib/relay/role-labels";
 
-export const dynamic = "force-dynamic";
+export async function routeAfterAuth(
+  supabase: SupabaseClient,
+  request: Request,
+): Promise<NextResponse> {
+  const { origin } = new URL(request.url);
 
-export async function GET(request: Request) {
-  const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
-    return NextResponse.redirect(new URL("/staff/login", request.url));
+    return NextResponse.redirect(`${origin}/login?error=auth_no_user`);
   }
 
   const { data: roleRows } = await supabase
@@ -33,9 +26,6 @@ export async function GET(request: Request) {
     .eq("user_id", user.id);
   const roles = (roleRows ?? []).map((r: { role: string }) => r.role);
   const landing = landingForRoles(roles);
-  // Customers landing here came in via an invite link (the /login OTP
-  // flow short-circuits to /set-password directly inside verify-otp);
-  // for them mode=customer keeps the eventual landing on /room.
   const isCustomerOnly = roles.length > 0 && roles.every((r) => r === "client");
   const mode = isCustomerOnly ? "customer" : "staff";
 
@@ -51,7 +41,7 @@ export async function GET(request: Request) {
         { _user_id: user.id },
       );
       if (error) {
-        console.warn("[post-signin] user_has_password RPC error:", error.message);
+        console.warn("[auth-post-signin] user_has_password RPC error:", error.message);
       } else if (hasPw === false) {
         const target = new URL("/set-password", request.url);
         target.searchParams.set("mode", mode);
@@ -60,12 +50,12 @@ export async function GET(request: Request) {
       }
     } catch (e) {
       console.warn(
-        "[post-signin] has-password admin check failed:",
+        "[auth-post-signin] has-password admin check failed:",
         e instanceof Error ? e.message : e,
       );
     }
   } else {
-    console.warn("[post-signin] supabase service-role env missing — skipping has-password check");
+    console.warn("[auth-post-signin] supabase service-role env missing — skipping has-password check");
   }
 
   return NextResponse.redirect(new URL(landing, request.url));

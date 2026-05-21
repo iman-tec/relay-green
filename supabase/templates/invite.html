@@ -85,19 +85,27 @@
           </div>
         {{ end }}
 
-        {{/* ── Ongoing-login URL (role-aware) ────────────────────────── */}}
+        {{/* ── Temp password + sign-in CTA (role-aware) ──────────────── */}}
+        {{ $loginUrl := printf "%s/staff/login" .SiteURL }}
         {{ if or (eq .Data.role_label "employee") (eq .Data.role_label "client") }}
-          <p style="margin:24px 0;">Click below to confirm your email and finish setting up your account. This is a one-time link — afterwards, you'll sign in at <a href="{{ .SiteURL }}/login" style="color:#3f5c2e;">{{ .SiteURL }}/login</a>.</p>
-        {{ else }}
-          <p style="margin:24px 0;">Click below to confirm your email and finish setting up your account. This is a one-time link — afterwards, you'll sign in at <a href="{{ .SiteURL }}/staff/login" style="color:#3f5c2e;">{{ .SiteURL }}/staff/login</a>.</p>
+          {{ $loginUrl = printf "%s/login" .SiteURL }}
         {{ end }}
 
+        <p style="margin:24px 0;">Sign in with the temporary password below. You'll be asked to choose your own password right after.</p>
+
+        <div style="background:#f6f7f5;border:1px solid #e6e9e2;border-radius:8px;padding:20px;margin:20px 0;text-align:center;">
+          <p style="margin:0 0 8px;font-size:12px;color:#888;text-transform:uppercase;letter-spacing:0.08em;">Temporary password</p>
+          <p style="margin:0;font-family:'SF Mono',Consolas,monospace;font-size:22px;font-weight:600;color:#3f5c2e;letter-spacing:0.04em;">{{ .Data.temp_password }}</p>
+        </div>
+
         <p style="margin:24px 0;text-align:center;">
-          <a href="{{ .ConfirmationURL }}"
+          <a href="{{ $loginUrl }}"
              style="display:inline-block;background:#3f5c2e;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;">
-            Set up my account
+            Sign in
           </a>
         </p>
+
+        <p style="margin:16px 0;font-size:13px;color:#666;">Or go to <a href="{{ $loginUrl }}" style="color:#3f5c2e;">{{ $loginUrl }}</a> and enter your email + the password above.</p>
 
         <p style="margin:24px 0 0;font-size:12px;color:#888;">If you weren't expecting this invite, you can safely ignore this email.</p>
       </td></tr>

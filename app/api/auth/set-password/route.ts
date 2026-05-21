@@ -17,27 +17,18 @@ import { NextResponse } from "next/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { landingForRoles } from "@/lib/relay/role-labels";
+import { passwordIsValid, PASSWORD_RULES_MESSAGE } from "@/lib/password-policy";
 
 export const dynamic = "force-dynamic";
 export const runtime  = "nodejs";
-
-// Same rule as Supabase's default for now: minimum 8 characters. No
-// complexity rules — modern guidance is length > complexity.
-const MIN_PASSWORD_LENGTH = 8;
 
 export async function POST(request: Request) {
   const { password, mode } = (await request.json().catch(() => ({}))) as {
     password?: string;
     mode?:     string;
   };
-  if (
-    !password || typeof password !== "string" ||
-    password.length < MIN_PASSWORD_LENGTH
-  ) {
-    return NextResponse.json(
-      { error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.` },
-      { status: 400 },
-    );
+  if (!password || typeof password !== "string" || !passwordIsValid(password)) {
+    return NextResponse.json({ error: PASSWORD_RULES_MESSAGE }, { status: 400 });
   }
 
   const supabase = await createClient();

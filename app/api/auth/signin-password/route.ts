@@ -1,7 +1,10 @@
 /*
  * POST /api/auth/signin-password
  *
- * Server-side password sign-in.
+ * Server-side password sign-in. Invited users sign in here with the
+ * temp password from their invite email; they'll be diverted to
+ * /set-password so they can pick their own. Returning users with
+ * password_set === true go straight to their landing.
  *
  * Input:  { email, password, mode?: "customer" | "staff" }
  * Output: { ok: true, next } | { error }
@@ -30,10 +33,6 @@ export async function POST(request: Request) {
     mode === "customer" ? "customer" : "staff";
 
   const supabase = await createClient();
-
-  // Clear any stale cookie session before the new sign-in (same defence
-  // the OTP path uses — keeps a previous-user's session from colliding
-  // with the new one if the staff dev-quick-pick or a logout was racy).
   await supabase.auth.signOut({ scope: "local" }).catch(() => {});
 
   const { data, error } = await supabase.auth.signInWithPassword({
@@ -44,22 +43,31 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
-  const userId = data.user?.id;
-  if (!userId) {
+  const user = data.user;
+  if (!user) {
     await supabase.auth.signOut({ scope: "local" }).catch(() => {});
     return NextResponse.json({ error: "sign_in_unexpected_state" }, { status: 500 });
   }
 
-  // Mirror verify-otp: customer mode always to /room; staff mode resolves
-  // by the user's highest role.
   let next = "/room";
   if (signInMode === "staff") {
     const { data: roleRows } = await supabase
       .from("user_role_names")
       .select("role")
-      .eq("user_id", userId);
+      .eq("user_id", user.id);
     const roles = (roleRows ?? []).map((r: { role: string }) => r.role);
     next = landingForRoles(roles);
+  }
+
+  // First-time sign-in with temp password — divert to /set-password so
+  // the user picks their own. The set-password endpoint will write
+  // app_metadata.password_set = true; subsequent sign-ins skip the
+  // divert and land directly on `next`.
+  const passwordSet =
+    (user.app_metadata as Record<string, unknown> | undefined)?.password_set === true;
+  if (!passwordSet) {
+    const params = new URLSearchParams({ mode: signInMode, continue: next });
+    return NextResponse.json({ ok: true, next: `/set-password?${params}` });
   }
 
   return NextResponse.json({ ok: true, next });

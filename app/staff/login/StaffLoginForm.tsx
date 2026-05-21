@@ -3,7 +3,7 @@
 /*
  * Staff sign-in — email + password is the only entry point. Staff are
  * invite-only: a new user clicks the link in their invite email, which
- * lands them on /set-password (via /auth/post-signin) to choose a
+ * lands them on /set-password (via /auth/callback) to choose a
  * password, then on their role's dashboard. From then on they sign in
  * here with email + password.
  *
