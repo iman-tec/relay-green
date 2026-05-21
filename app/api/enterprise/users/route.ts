@@ -8,14 +8,12 @@
  *   else under the same org.
  *
  * POST /api/enterprise/users
- *   Body: { email, displayName, role: 'manager' | 'member' }
+ *   Body: { email, displayName, role: 'enterprise_admin' | 'client',
+ *           departmentId? }
  *   Invites a new user, locking them to the caller's organization_id.
- *   role maps to:
- *     manager → enterprise_admin (peer admin inside the org)
- *     member  → client           (regular end-user employee)
- *
- *   The previous 'analyst' tier (read-only org analytics) was retired in
- *   the role taxonomy reshape — there's no clean equivalent yet.
+ *   When role='client' AND departmentId is set, the user is bound to
+ *   that dept and marked as client_type='employee' so dept-pool minutes
+ *   apply.
  */
 
 import { NextResponse } from "next/server";
@@ -26,10 +24,13 @@ import { ROLE, STAFF_ROLES as ALL_STAFF_ROLES } from "@/lib/relay/roles";
 export const dynamic = "force-dynamic";
 export const runtime  = "nodejs";
 
-const ENT_ROLE_TO_USER_ROLE: Record<string, string> = {
-  manager: ROLE.enterprise_admin,
-  member:  ROLE.client,
-};
+// Roles enterprise admins can invite directly: a peer enterprise_admin
+// (org-level admin) or a plain client (end-user, optionally bound to a
+// department to become an employee).
+const INVITABLE_ROLES: ReadonlySet<string> = new Set([
+  ROLE.enterprise_admin,
+  ROLE.client,
+]);
 
 const STAFF_ROLE_SET: ReadonlySet<string> = new Set(ALL_STAFF_ROLES);
 
@@ -106,18 +107,53 @@ export async function POST(request: Request) {
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin, orgId, user: actor } = gate;
 
-  const { email, displayName, role } =
+  const { email, displayName, role, departmentId } =
     (await request.json().catch(() => ({}))) as {
-      email?: string; displayName?: string; role?: string;
+      email?:        string;
+      displayName?:  string;
+      role?:         string;
+      /** Optional. When set on a client invite, the new user is bound to
+       *  this department and marked as client_type='employee'. Ignored for
+       *  enterprise_admin invites (admins aren't bound to a single dept). */
+      departmentId?: string;
     };
 
-  if (!email?.trim() || !displayName?.trim() || !role || !ENT_ROLE_TO_USER_ROLE[role]) {
+  if (!email?.trim() || !displayName?.trim() || !role || !INVITABLE_ROLES.has(role)) {
     return NextResponse.json(
-      { error: "Need email, displayName, and role ∈ {manager, member}." },
+      { error: "Need email, displayName, and role ∈ {enterprise_admin, client}." },
       { status: 400 },
     );
   }
-  const mappedRole = ENT_ROLE_TO_USER_ROLE[role];
+
+  // Validate department membership before any email goes out — must
+  // belong to the caller's org. Ignored for enterprise_admin invites
+  // (admins aren't bound to a single dept).
+  let resolvedDepartmentId: string | null = null;
+  let departmentCode: string | null = null;
+  let departmentName: string | null = null;
+  if (role === ROLE.client && typeof departmentId === "string" && departmentId.trim()) {
+    const { data: dept } = await admin
+      .from("departments")
+      .select("id, enterprise_id, status, name, department_code")
+      .eq("id", departmentId.trim())
+      .maybeSingle();
+    const d = dept as { id: string; enterprise_id: string; status: string; name: string; department_code: string } | null;
+    if (!d || d.enterprise_id !== orgId) {
+      return NextResponse.json(
+        { error: "Department doesn't belong to this organization." },
+        { status: 400 },
+      );
+    }
+    if (d.status !== "active") {
+      return NextResponse.json(
+        { error: "Department is suspended — reactivate it before adding members." },
+        { status: 400 },
+      );
+    }
+    resolvedDepartmentId = d.id;
+    departmentCode = d.department_code;
+    departmentName = d.name;
+  }
 
   // Fetch the org so we can include its name + code in the invite email.
   const { data: org } = await admin
@@ -150,16 +186,27 @@ export async function POST(request: Request) {
 
   // Unified invite (inviteUserByEmail → signInWithOtp fallback). Always
   // sends an email (or returns an error).
+  // role_label drives the per-role copy in the invite template; when we're
+  // binding the user to a department, flip it from "member" to "employee"
+  // so the template renders the dept-bound greeting + shows the dept code.
+  // role_label drives the per-role copy in the invite template. For a
+  // client bound to a department, flip to "employee" so the template
+  // renders the dept-bound greeting + shows the dept code.
+  const isEmployeeInvite = role === ROLE.client && resolvedDepartmentId !== null;
   const invite = await sendInvitationEmail(admin, {
     email:       trimmedEmail,
     displayName: trimmedName,
     metadata: {
-      role_label:      role,        // ent-facing: manager/analyst/member
-      mapped_role:     mappedRole,  // backend role
+      role_label:      isEmployeeInvite ? "employee" : role,
       organization_id: orgId,
       org_name:        org?.name ?? "",
       enterprise_code: org?.enterprise_code ?? "",
       invited_by:      actor.id,
+      ...(resolvedDepartmentId ? {
+        department_id:   resolvedDepartmentId,
+        department_code: departmentCode,
+        department_name: departmentName,
+      } : {}),
     },
   });
   if (!invite.ok) {
@@ -180,15 +227,15 @@ export async function POST(request: Request) {
     );
   }
 
-  // Resolve role_id for the mapped role.
+  // Resolve role_id for the assigned role.
   const { data: roleRow } = await admin
     .from("roles")
     .select("id")
-    .eq("name", mappedRole)
+    .eq("name", role)
     .maybeSingle();
-  const mappedRoleId = (roleRow as { id: string } | null)?.id;
-  if (!mappedRoleId) {
-    return NextResponse.json({ error: `Unknown role: ${mappedRole}` }, { status: 500 });
+  const assignedRoleId = (roleRow as { id: string } | null)?.id;
+  if (!assignedRoleId) {
+    return NextResponse.json({ error: `Unknown role: ${role}` }, { status: 500 });
   }
 
   // Profile upsert: bind to this org, preserve existing primary_role +
@@ -200,18 +247,25 @@ export async function POST(request: Request) {
     .maybeSingle();
   const p = prior2 as { full_name: string | null; primary_role_id: string | null } | null;
 
+  // Build the upsert payload. When the inviter selected a department,
+  // bind the user to it AND flip client_type to 'employee' so dept-pool
+  // billing kicks in on their first session. Otherwise keep the row at
+  // client_type='client' (the default).
+  const profileUpdate: Record<string, unknown> = {
+    id:              userId,
+    full_name:       p?.full_name?.trim() ? p.full_name : trimmedName,
+    primary_role_id: p?.primary_role_id ?? assignedRoleId,
+    organization_id: orgId,
+    is_onboarded:    true,
+  };
+  if (resolvedDepartmentId) {
+    profileUpdate.department_id = resolvedDepartmentId;
+    profileUpdate.client_type   = "employee";
+  }
+
   const { error: profileErr } = await admin
     .from("profiles")
-    .upsert(
-      {
-        id:              userId,
-        full_name:       p?.full_name?.trim() ? p.full_name : trimmedName,
-        primary_role_id: p?.primary_role_id ?? mappedRoleId,
-        organization_id: orgId,
-        is_onboarded:    true,
-      },
-      { onConflict: "id" },
-    );
+    .upsert(profileUpdate, { onConflict: "id" });
   if (profileErr) {
     return NextResponse.json({ error: profileErr.message }, { status: 500 });
   }
@@ -221,7 +275,7 @@ export async function POST(request: Request) {
   const { error: roleErr } = await admin
     .from("user_roles")
     .upsert(
-      { user_id: userId, role_id: mappedRoleId },
+      { user_id: userId, role_id: assignedRoleId },
       { onConflict: "user_id,role_id", ignoreDuplicates: true },
     );
   if (roleErr) {
@@ -232,16 +286,16 @@ export async function POST(request: Request) {
   }
 
   console.log(
-    `[enterprise/users] org=${orgId} ${mode} ${trimmedEmail} as ${role}/${mappedRole}`,
+    `[enterprise/users] org=${orgId} ${mode} ${trimmedEmail} as ${role}${resolvedDepartmentId ? ` (dept ${resolvedDepartmentId})` : ""}`,
   );
 
   return NextResponse.json({
     user: {
-      id:          userId,
-      email:       trimmedEmail,
-      displayName: trimmedName,
+      id:           userId,
+      email:        trimmedEmail,
+      displayName:  trimmedName,
       role,
-      mappedRole,
+      departmentId: resolvedDepartmentId,
     },
     invited:          mode === "invited",
     attachedExisting: mode === "attached_existing",

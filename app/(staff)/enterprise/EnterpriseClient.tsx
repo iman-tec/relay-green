@@ -324,6 +324,14 @@ function PeopleSection({
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [deptOpen, setDeptOpen] = useState(false);
+  const [deptToast, setDeptToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!deptToast) return;
+    const t = setTimeout(() => setDeptToast(null), 3000);
+    return () => clearTimeout(t);
+  }, [deptToast]);
 
   const loadMembers = useCallback(async (which: "staff" | "users") => {
     setLoading(true);
@@ -382,27 +390,61 @@ function PeopleSection({
       >
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold" style={{ color: "var(--text)" }}>People</h2>
-        </div>
-        <div className="relative">
-          <button
-            onClick={() => setInviteOpen((v) => !v)}
-            className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-semibold text-white"
-            style={{ backgroundColor: BRAND_GREEN }}
-          >
-            <Plus size={11} />
-            Invite
-          </button>
-          {inviteOpen && (
-            <InvitePopover
-              orgName={orgName}
-              onClose={() => setInviteOpen(false)}
-              onInvited={async () => {
-                setInviteOpen(false);
-                await onAfterInvite();
-                await loadMembers(scope);
-              }}
-            />
+          {deptToast && (
+            <span
+              className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+              style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
+            >
+              {deptToast}
+            </span>
           )}
+        </div>
+        <div className="flex items-center gap-2">
+          {/* Quick add-department — mirrors the dept-create form on
+              /enterprise/departments. POSTs to /api/enterprise/departments
+              which creates the dept AND invites the first dept admin. */}
+          <div className="relative">
+            <button
+              onClick={() => setDeptOpen((v) => !v)}
+              className="inline-flex items-center gap-1 rounded-md border px-3 py-1.5 text-xs font-medium"
+              style={{ borderColor: "var(--border)", color: "var(--text)", backgroundColor: "var(--surface)" }}
+            >
+              <Building2 size={11} />
+              Add department
+            </button>
+            {deptOpen && (
+              <AddDepartmentPopover
+                orgName={orgName}
+                onClose={() => setDeptOpen(false)}
+                onCreated={async (deptName) => {
+                  setDeptOpen(false);
+                  setDeptToast(`Department "${deptName}" created.`);
+                  await onAfterInvite();
+                }}
+              />
+            )}
+          </div>
+          <div className="relative">
+            <button
+              onClick={() => setInviteOpen((v) => !v)}
+              className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-semibold text-white"
+              style={{ backgroundColor: BRAND_GREEN }}
+            >
+              <Plus size={11} />
+              Invite
+            </button>
+            {inviteOpen && (
+              <InvitePopover
+                orgName={orgName}
+                onClose={() => setInviteOpen(false)}
+                onInvited={async () => {
+                  setInviteOpen(false);
+                  await onAfterInvite();
+                  await loadMembers(scope);
+                }}
+              />
+            )}
+          </div>
         </div>
       </div>
 
@@ -426,7 +468,7 @@ function PeopleSection({
                   backgroundColor: active ? "color-mix(in srgb, var(--text) 5%, transparent)" : "transparent",
                 }}
               >
-                {s === "staff" ? "Staff" : "Users"}
+                {s === "staff" ? "Admins" : "Employees"}
                 {count != null && <span className="ml-1.5 text-[10px]" style={{ color: "var(--text-muted)" }}>({count})</span>}
               </button>
             );
@@ -459,8 +501,8 @@ function PeopleSection({
           {query
             ? `No ${scope} match “${query}”.`
             : scope === "staff"
-              ? "No staff yet. Use the Invite button to add managers."
-              : "No users yet. Use the Invite button to add team members."}
+              ? "No admins yet. Use the Invite button to add one."
+              : "No employees yet. Use the Invite button to add one."}
         </p>
       ) : (
         <ul className="pb-2">
@@ -523,8 +565,8 @@ function MemberRow({ member, onRemove }: { member: Member; onRemove: () => void 
 
 function prettyRole(role: string): string {
   switch (role) {
-    case "enterprise_admin": return "Manager";
-    case "client":           return "Member";
+    case "enterprise_admin": return "Admin";
+    case "client":           return "Employee";
     case "department_admin": return "Department Admin";
     case "engineer":         return "Engineer";
     case "supervisor":       return "Supervisor";
@@ -542,11 +584,16 @@ function InvitePopover({
   onClose: () => void;
   onInvited: () => Promise<void>;
 }) {
-  const [email, setEmail]       = useState("");
-  const [name, setName]         = useState("");
-  const [role, setRole]         = useState<"manager" | "member">("member");
-  const [busy, setBusy]         = useState(false);
-  const [err, setErr]           = useState<string | null>(null);
+  const [email, setEmail]               = useState("");
+  const [name, setName]                 = useState("");
+  // Posts the real role identifier — matches the API body shape and the
+  // ROLE constants used everywhere else in the codebase.
+  const [role, setRole]                 = useState<"enterprise_admin" | "client">("client");
+  const [departmentId, setDeptId]       = useState<string>("");  // "" = no dept
+  const [departments, setDepts]         = useState<Array<{ id: string; name: string; departmentCode: string }>>([]);
+  const [deptsLoading, setDeptsLoading] = useState(true);
+  const [busy, setBusy]                 = useState(false);
+  const [err, setErr]                   = useState<string | null>(null);
   const popRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -556,6 +603,33 @@ function InvitePopover({
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
   }, [onClose]);
+
+  // Load departments for the picker. The endpoint is enterprise-admin
+  // scoped, so it returns only this org's depts — no extra filtering
+  // needed here. Falls back to an empty list on error.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/enterprise/departments", { cache: "no-store" });
+        const body = (await res.json().catch(() => ({}))) as {
+          departments?: Array<{ id: string; name: string; departmentCode: string }>;
+        };
+        if (alive) setDepts(body.departments ?? []);
+      } catch {
+        if (alive) setDepts([]);
+      } finally {
+        if (alive) setDeptsLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // Reset the dept selection when the inviter switches to an admin invite —
+  // enterprise_admins aren't bound to a single dept.
+  useEffect(() => {
+    if (role !== "client") setDeptId("");
+  }, [role]);
 
   const submit = async () => {
     if (!email.trim() || !name.trim()) {
@@ -567,7 +641,15 @@ function InvitePopover({
       const res = await fetch("/api/enterprise/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), displayName: name.trim(), role }),
+        body: JSON.stringify({
+          email: email.trim(),
+          displayName: name.trim(),
+          role,
+          // Only attach a department on client invites + only when one was
+          // actually picked. Server ignores it for enterprise_admin anyway,
+          // but omitting it here keeps the payload clean.
+          ...(role === "client" && departmentId ? { departmentId } : {}),
+        }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "Invite failed.");
@@ -614,13 +696,16 @@ function InvitePopover({
         </Field>
         <Field label="Role">
           <div className="grid grid-cols-2 gap-1">
-            {(["manager", "member"] as const).map((r) => {
-              const active = r === role;
+            {([
+              { value: "enterprise_admin" as const, label: "Admin" },
+              { value: "client"           as const, label: "Employee" },
+            ]).map((r) => {
+              const active = r.value === role;
               return (
                 <button
-                  key={r}
-                  onClick={() => setRole(r)}
-                  className="rounded-md border px-2 py-1 text-[11px] capitalize"
+                  key={r.value}
+                  onClick={() => setRole(r.value)}
+                  className="rounded-md border px-2 py-1 text-[11px]"
                   style={{
                     borderColor: active ? BRAND_GREEN : "var(--border)",
                     color: active ? BRAND_GREEN : "var(--text)",
@@ -628,16 +713,49 @@ function InvitePopover({
                     fontWeight: active ? 600 : 500,
                   }}
                 >
-                  {r}
+                  {r.label}
                 </button>
               );
             })}
           </div>
           <p className="mt-1 text-[10px]" style={{ color: "var(--text-muted)" }}>
-            {role === "manager" && "Can manage other members in this org."}
-            {role === "member"  && "Regular end-user — can start sessions."}
+            {role === "enterprise_admin" && "Peer admin — can manage employees + departments in this org."}
+            {role === "client"           && "Employee — can start support sessions on the org's behalf."}
           </p>
         </Field>
+
+        {/* Department picker — only meaningful for client invites. When set,
+            the new user is bound to that department (client_type='employee')
+            so dept-pool minutes apply. Optional: a client with no dept is
+            just an org-wide member. */}
+        {role === "client" && (
+          <Field label="Department (optional)">
+            <select
+              value={departmentId}
+              onChange={(e) => setDeptId(e.target.value)}
+              disabled={deptsLoading || departments.length === 0}
+              className="w-full rounded-md border px-2 py-1.5 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-50"
+              style={{ borderColor: "var(--border)", backgroundColor: "var(--background)", color: "var(--text)" }}
+            >
+              <option value="">
+                {deptsLoading
+                  ? "Loading departments…"
+                  : departments.length === 0
+                    ? "No departments — add one first"
+                    : "Not assigned"}
+              </option>
+              {departments.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name} · {d.departmentCode}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-[10px]" style={{ color: "var(--text-muted)" }}>
+              When set, the user becomes an employee of that department and
+              draws minutes from its allocation.
+            </p>
+          </Field>
+        )}
       </div>
       {err && <p className="mt-2 text-[11px]" style={{ color: "var(--accent-red)" }}>{err}</p>}
       <div className="mt-3 flex justify-end gap-2">
@@ -671,6 +789,148 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       </span>
       {children}
     </label>
+  );
+}
+
+/* ──────── Add-department popover ────────
+ * Mirrors InvitePopover. Creates a new department + invites the first
+ * dept admin in one POST against /api/enterprise/departments. Initial
+ * minutes are optional — the dept can be topped up later from
+ * /enterprise/departments.
+ */
+function AddDepartmentPopover({
+  orgName, onClose, onCreated,
+}: {
+  orgName: string;
+  onClose: () => void;
+  onCreated: (deptName: string) => Promise<void>;
+}) {
+  const [name, setName]                       = useState("");
+  const [adminEmail, setAdminEmail]           = useState("");
+  const [adminDisplayName, setAdminName]      = useState("");
+  const [allocatedMinutes, setAllocatedMinutes] = useState("0");
+  const [busy, setBusy]                       = useState(false);
+  const [err, setErr]                         = useState<string | null>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (popRef.current && !popRef.current.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [onClose]);
+
+  const submit = async () => {
+    if (!name.trim() || !adminEmail.trim() || !adminDisplayName.trim()) {
+      setErr("Department name, admin name, and admin email are required.");
+      return;
+    }
+    const alloc = Number(allocatedMinutes || "0");
+    if (Number.isNaN(alloc) || alloc < 0) {
+      setErr("Initial minutes must be a non-negative number.");
+      return;
+    }
+    setBusy(true); setErr(null);
+    try {
+      const res = await fetch("/api/enterprise/departments", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          name:              name.trim(),
+          adminEmail:        adminEmail.trim(),
+          adminDisplayName:  adminDisplayName.trim(),
+          allocatedMinutes:  alloc,
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? "Couldn't create department.");
+      await onCreated(name.trim());
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Couldn't create department.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      ref={popRef}
+      className="absolute right-0 top-full z-20 mt-2 w-[340px] rounded-xl border p-4 shadow-lg"
+      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+    >
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold" style={{ color: "var(--text)" }}>Add department to {orgName}</h3>
+        <button onClick={onClose} className="rounded-md p-0.5" style={{ color: "var(--text-muted)" }}>
+          <X size={13} />
+        </button>
+      </div>
+      <div className="mt-3 space-y-2.5">
+        <Field label="Department name">
+          <input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Engineering"
+            className="w-full rounded-md border px-2 py-1.5 text-sm outline-none"
+            style={{ borderColor: "var(--border)", backgroundColor: "var(--background)", color: "var(--text)" }}
+          />
+        </Field>
+        <Field label="Department admin name">
+          <input
+            value={adminDisplayName}
+            onChange={(e) => setAdminName(e.target.value)}
+            placeholder="Jane Doe"
+            className="w-full rounded-md border px-2 py-1.5 text-sm outline-none"
+            style={{ borderColor: "var(--border)", backgroundColor: "var(--background)", color: "var(--text)" }}
+          />
+        </Field>
+        <Field label="Department admin email">
+          <input
+            type="email"
+            value={adminEmail}
+            onChange={(e) => setAdminEmail(e.target.value)}
+            placeholder="jane@company.com"
+            className="w-full rounded-md border px-2 py-1.5 text-sm outline-none"
+            style={{ borderColor: "var(--border)", backgroundColor: "var(--background)", color: "var(--text)" }}
+          />
+        </Field>
+        <Field label="Initial minutes (optional)">
+          <input
+            type="number"
+            min="0"
+            value={allocatedMinutes}
+            onChange={(e) => setAllocatedMinutes(e.target.value)}
+            placeholder="0"
+            className="w-full rounded-md border px-2 py-1.5 text-sm outline-none"
+            style={{ borderColor: "var(--border)", backgroundColor: "var(--background)", color: "var(--text)" }}
+          />
+          <p className="mt-1 text-[10px]" style={{ color: "var(--text-muted)" }}>
+            Debits from your enterprise pool now. You can add more later from /enterprise/departments.
+          </p>
+        </Field>
+      </div>
+      {err && <p className="mt-2 text-[11px]" style={{ color: "var(--accent-red)" }}>{err}</p>}
+      <div className="mt-3 flex justify-end gap-2">
+        <button
+          onClick={onClose}
+          disabled={busy}
+          className="rounded-md px-2 py-1 text-xs"
+          style={{ color: "var(--text-muted)" }}
+        >
+          Cancel
+        </button>
+        <button
+          onClick={() => void submit()}
+          disabled={busy || !name.trim() || !adminEmail.trim() || !adminDisplayName.trim()}
+          className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+          style={{ backgroundColor: BRAND_GREEN }}
+        >
+          {busy ? <Loader2 size={11} className="animate-spin" /> : <Building2 size={11} />}
+          {busy ? "Creating…" : "Create department"}
+        </button>
+      </div>
+    </div>
   );
 }
 
