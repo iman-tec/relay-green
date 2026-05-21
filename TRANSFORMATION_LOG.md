@@ -374,15 +374,73 @@ files.
 - Read-only `PastSessionReview` calm treatment.
 - These are isolated chunks; each one is a separate small commit.
 
-### Notes for Phase 8 (Supervise board)
+---
 
-- `app/(staff)/supervise/SuperviseClient.tsx`.
-- Tabs (All / Waiting / Live / Past) get count badges + clearer
-  hierarchy.
-- Each card uses the new `<HealthBar>` (label + icon + color) —
-  audit-fix for color-only health.
-- Card chrome via `<Card variant="surface" interactive>` so Join
-  visibly affords clicking.
-- Pulse on "Waiting" cards stays but routes through `data-relay-pulse`
-  (reduced-motion respected).
-- Pod-scoping logic and realtime channels untouched.
+## Phase 8 — Supervise board restyle (this commit)
+
+**File:** `app/(staff)/supervise/SuperviseClient.tsx`.
+
+**Visual deltas:**
+
+- **Audit fix: color-only health → label + icon + color.** Live tile
+  health surfaces as a `<HealthBar>` (with text label "Healthy /
+  Shaky / At risk / No signal" + colored fill + `role="progressbar"`)
+  + a `<StatusBadge tone="ok|warn|risk">` carrying its built-in
+  glyph. Color-blind and SR users get the meaning without seeing
+  hue.
+- Page title now uses the serif display face. Subtitle copy slightly
+  warmer.
+- Tabs strip rewired: `role="tablist"` + `aria-selected`, count
+  badge pills inline (not parens), coral active underline (was
+  `BRAND_GREEN`), hover state on inactive labels.
+- `SessionTile` and `PastSessionTile` migrated to `<Card
+  variant="surface" interactive>` — proper hover lift via the
+  primitive's transition (no more inline `hover:scale` /
+  `hover:shadow-lg` rewrites). Click + Enter/Space still work.
+- The bottom Join CTA is now `<Button full size="sm" iconLeft iconRight>`
+  — visually consistent with the rest of the product (was a bespoke
+  rounded-md pill with `BRAND_GREEN` inline).
+- AI sentiment caption + post-completion sentiment caption switched
+  from `BRAND_GREEN_SOFT` / `URGENT_AMBER_SOFT` / `CRIT_RED_SOFT`
+  literals to `color-mix(in srgb, var(--ok|warn|risk) %, transparent)`.
+  Capped with `max-w-prose` (audit fix: 700+ char lines).
+- `HealthLegend` rewritten with three `<StatusBadge>`s — no more
+  hand-rolled coloured dots.
+- Local `EmptyState` now delegates to `ui/EmptyState` (wrapped in a
+  dashed `Card variant="hollow"` for the existing framing).
+- Loader2 spinner color detokenized.
+- Waiting-card chip-glow keyframe removed (was a separate pulse
+  rule); the card-glow alone carries the breathing motion. Less
+  visual noise, same eye-catch.
+
+**Deleted constants:** `BRAND_GREEN`, `BRAND_GREEN_SOFT`,
+`URGENT_AMBER`, `URGENT_AMBER_SOFT`, `CRIT_RED`, `CRIT_RED_SOFT`,
+`HEALTH_TOKENS`. Replaced by `HEALTH_TONE`, `HEALTH_LABEL`,
+`HEALTH_VAR` token-driven lookups.
+
+**Data contracts: untouched.** Same realtime channels (`guest_calls`,
+`session_health` INSERT), same 600ms debounce + 5s polling fallback,
+same `MIN_MESSAGES_FOR_AI = 2` threshold, same `LIVE_LIMIT = 200`,
+same pod-scoping logic, same scope resolution, same
+`deriveHealth` / `deriveHealthDeterministic` verdicts, same
+`scoreToHealthPct` math added inline (just the 0-100 lift for the
+HealthBar; doesn't replace the existing health verdict).
+
+**Verification:** `tsc --noEmit` clean. `eslint` on
+`app/(staff)/supervise/` shows the same 10 problems as the baseline
+on `main` — zero new lint issues introduced.
+
+### Notes for Phase 9 (Operations + pod-allocation seam)
+
+- New file: `lib/allocation/podAllocation.ts` with the SEAM markers
+  from §6 of the brief. Initial impl: identity / pass-through.
+- `OperationsClient.tsx` restyle:
+  - Real DataTable layout (header + zebra/hairline rows + sticky
+    header + working search).
+  - **New columns rendered from the allocation seam:** "Assigned
+    supervisor" + per-supervisor online/offline indicator + 1–10 /
+    11–15 capacity meter at the top.
+  - Online state derived from `lastCallAt` ≤ 5min (decision #6).
+  - Status pills via `<StatusBadge>` (Idle / On call).
+  - All BRAND_GREEN deletions.
+- No backend changes.
