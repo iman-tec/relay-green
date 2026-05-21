@@ -16,11 +16,12 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Trash2, Mail, Power, PowerOff } from "lucide-react";
+import { Plus, Trash2, Mail, Power, PowerOff, Pencil } from "lucide-react";
 import { Sidebar } from "@/app/_components/admin-v2/Sidebar";
 import { MinutesBar } from "@/app/_components/admin-v2/MinutesBar";
 import { DetailCard, type Badge } from "@/app/_components/admin-v2/DetailCard";
 import { Breadcrumb, type Crumb } from "@/app/_components/admin-v2/Breadcrumb";
+import { EditNameDrawer } from "@/app/_components/admin-v2/EditNameDrawer";
 import { AddEnterpriseDrawer } from "./_drawers/AddEnterpriseDrawer";
 import { AddDepartmentDrawer } from "./_drawers/AddDepartmentDrawer";
 import { AddEmployeeDrawer } from "./_drawers/AddEmployeeDrawer";
@@ -67,6 +68,8 @@ export function EnterpriseTab() {
   const [addEnt,  setAddEnt]  = useState(false);
   const [addDept, setAddDept] = useState(false);
   const [addEmp,  setAddEmp]  = useState(false);
+  const [editingEnt,  setEditingEnt]  = useState(false);
+  const [editingDept, setEditingDept] = useState(false);
 
   // ─ Employees + admin for the selected department (lazy load) ────────
   const [employees, setEmployees]       = useState<Employee[]>([]);
@@ -438,6 +441,7 @@ export function EnterpriseTab() {
             <EnterpriseSummary
               ent={selectedEnt}
               summary={entSummaries.get(selectedEnt.id)}
+              onEdit={() => setEditingEnt(true)}
               onToggle={(s) => setOrgStatus(selectedEnt.id, s)}
               onDelete={() => deleteOrg(selectedEnt.id)}
             />
@@ -461,17 +465,14 @@ export function EnterpriseTab() {
                 },
               ]}
               minutes={{
-                used:      employees.length ? employeeTotals.used      : selectedDept.usedMinutes,
-                allocated: employees.length ? employeeTotals.allocated : selectedDept.allocatedMinutes,
+                used:      selectedDept.usedMinutes,
+                allocated: selectedDept.allocatedMinutes,
               }}
-              rollupCaption={
-                employees.length
-                  ? `Sum of ${employees.length} employee${employees.length === 1 ? "" : "s"}`
-                  : "No employees yet — showing department-pool numbers"
-              }
+              rollupCaption={deptDistCaption(selectedDept, employeeTotals, employees.length)}
               actions={
                 <DetailActions
                   statusActive={selectedDept.status === "active"}
+                  onEdit={() => setEditingDept(true)}
                   onToggle={() => setDeptStatus(selectedDept.id, selectedDept.status === "active" ? "suspended" : "active")}
                   onDelete={() => deleteDept(selectedDept.id)}
                 />
@@ -526,6 +527,28 @@ export function EnterpriseTab() {
           refresh();
         }}
       />
+      {selectedEnt && (
+        <EditNameDrawer
+          open={editingEnt}
+          title="Edit enterprise"
+          label="Enterprise name"
+          currentName={selectedEnt.name}
+          endpoint={`/api/admin/orgs/${selectedEnt.id}`}
+          onClose={() => setEditingEnt(false)}
+          onSaved={() => { setEditingEnt(false); refresh(); }}
+        />
+      )}
+      {selectedEntId && selectedDept && (
+        <EditNameDrawer
+          open={editingDept}
+          title="Edit department"
+          label="Department name"
+          currentName={selectedDept.name}
+          endpoint={`/api/admin/orgs/${selectedEntId}/departments/${selectedDept.id}`}
+          onClose={() => setEditingDept(false)}
+          onSaved={() => { setEditingDept(false); refresh(); }}
+        />
+      )}
     </div>
   );
 }
@@ -548,7 +571,7 @@ function EmptyState({ title, blurb }: { title: string; blurb: string }) {
 }
 
 function EnterpriseSummary({
-  ent, summary, onToggle, onDelete,
+  ent, summary, onEdit, onToggle, onDelete,
 }: {
   ent: Enterprise;
   summary?: {
@@ -556,6 +579,7 @@ function EnterpriseSummary({
     distributed: { used: number; allocated: number };
     deptCount:   number;
   };
+  onEdit:   () => void;
   onToggle: (next: "active" | "suspended") => void;
   onDelete: () => void;
 }) {
@@ -570,16 +594,17 @@ function EnterpriseSummary({
   const pool        = summary?.pool        ?? { used: ent.usedMinutes, allocated: ent.allocatedMinutes };
   const distributed = summary?.distributed ?? { used: 0, allocated: 0 };
   const deptCount   = summary?.deptCount   ?? ent.departments.length;
-  const undistributed = Math.max(0, pool.allocated - distributed.allocated);
+  const remaining   = Math.max(0, pool.allocated - distributed.allocated);
 
-  // Caption describes how the org's pool has been distributed downward,
-  // so the user can see what's still sitting at the org level vs already
-  // pushed to departments.
+  // Caption shows all four numbers — allocated / distributed / remaining
+  // / used — per the user's spec.
   const caption =
     deptCount === 0
-      ? `${pool.allocated.toLocaleString()} min in pool · 0 departments yet`
-      : `${distributed.allocated.toLocaleString()} of ${pool.allocated.toLocaleString()} distributed to ${deptCount} department${deptCount === 1 ? "" : "s"}` +
-        (undistributed > 0 ? ` · ${undistributed.toLocaleString()} undistributed` : "");
+      ? `${pool.allocated.toLocaleString(undefined, { maximumFractionDigits: 2 })} min in pool · 0 departments yet · ${pool.used.toLocaleString(undefined, { maximumFractionDigits: 2 })} used`
+      : `${pool.allocated.toLocaleString(undefined, { maximumFractionDigits: 2 })} allocated · ` +
+        `${distributed.allocated.toLocaleString(undefined, { maximumFractionDigits: 2 })} distributed to ${deptCount} department${deptCount === 1 ? "" : "s"} · ` +
+        `${remaining.toLocaleString(undefined, { maximumFractionDigits: 2 })} remaining · ` +
+        `${pool.used.toLocaleString(undefined, { maximumFractionDigits: 2 })} used`;
 
   return (
     <DetailCard
@@ -592,6 +617,7 @@ function EnterpriseSummary({
       actions={
         <DetailActions
           statusActive={ent.status === "active"}
+          onEdit={onEdit}
           onToggle={() => onToggle(ent.status === "active" ? "suspended" : "active")}
           onDelete={onDelete}
         />
@@ -601,14 +627,25 @@ function EnterpriseSummary({
 }
 
 function DetailActions({
-  statusActive, onToggle, onDelete,
+  statusActive, onEdit, onToggle, onDelete,
 }: {
   statusActive: boolean;
+  onEdit?:   () => void;
   onToggle: () => void;
   onDelete: () => void;
 }) {
   return (
     <>
+      {onEdit && (
+        <button
+          type="button"
+          onClick={onEdit}
+          className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium"
+          style={{ borderColor: "var(--border)", color: "var(--text)" }}
+        >
+          <Pencil className="size-3" /> Edit
+        </button>
+      )}
       <button
         type="button"
         onClick={onToggle}
@@ -849,6 +886,34 @@ function RowIcon({
   );
 }
 
+/**
+ * Build the caption shown under a department detail card.
+ *
+ *   "500 allocated · 200 distributed to 1 employee · 300 remaining · 50 used"
+ *
+ * Surfaces all four numbers per the user's spec:
+ *   • allocated  = dept's own pool (set when transfer_to_department runs)
+ *   • distributed = sum of employee.allocated_minutes
+ *   • remaining   = allocated − distributed (what's still in the dept pool)
+ *   • used        = dept.used_minutes (rolled up from employee usage via end_session)
+ */
+function deptDistCaption(
+  dept: Department,
+  empTotals: { allocated: number; used: number },
+  empCount: number,
+): string {
+  if (empCount === 0) {
+    return `${dept.allocatedMinutes.toLocaleString(undefined, { maximumFractionDigits: 2 })} min in pool · 0 employees yet · ${dept.usedMinutes.toLocaleString(undefined, { maximumFractionDigits: 2 })} used`;
+  }
+  const remaining = Math.max(0, dept.allocatedMinutes - empTotals.allocated);
+  return (
+    `${dept.allocatedMinutes.toLocaleString(undefined, { maximumFractionDigits: 2 })} allocated · ` +
+    `${empTotals.allocated.toLocaleString(undefined, { maximumFractionDigits: 2 })} distributed to ${empCount} employee${empCount === 1 ? "" : "s"} · ` +
+    `${remaining.toLocaleString(undefined, { maximumFractionDigits: 2 })} remaining · ` +
+    `${dept.usedMinutes.toLocaleString(undefined, { maximumFractionDigits: 2 })} used`
+  );
+}
+
 function initialsFor(e: Employee): string {
   const src = e.displayName || e.email;
   const parts = src.split(/[\s._-]+/).filter(Boolean);
@@ -937,7 +1002,7 @@ function EmployeeTable({
                     {e.email}
                   </td>
                   <td className="px-4 py-2.5" style={{ color: "var(--text)" }}>
-                    {e.usedMinutes.toLocaleString()} / {e.allocatedMinutes.toLocaleString()}
+                    {e.usedMinutes.toLocaleString(undefined, { maximumFractionDigits: 2 })} / {e.allocatedMinutes.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                   </td>
                   <td className="px-4 py-2.5">
                     <span
@@ -984,7 +1049,7 @@ function EmployeeTable({
                   Total
                 </td>
                 <td className="px-4 py-2.5 text-sm font-medium" style={{ color: "var(--text)" }}>
-                  {totals.used.toLocaleString()} / {totals.allocated.toLocaleString()}
+                  {totals.used.toLocaleString(undefined, { maximumFractionDigits: 2 })} / {totals.allocated.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                 </td>
                 <td />
                 <td />

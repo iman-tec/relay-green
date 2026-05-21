@@ -19,11 +19,12 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Mail, Power, PowerOff, Trash2 } from "lucide-react";
+import { Plus, Mail, Power, PowerOff, Trash2, Pencil } from "lucide-react";
 import { Sidebar } from "@/app/_components/admin-v2/Sidebar";
 import { MinutesBar } from "@/app/_components/admin-v2/MinutesBar";
 import { DetailCard } from "@/app/_components/admin-v2/DetailCard";
 import { Breadcrumb, type Crumb } from "@/app/_components/admin-v2/Breadcrumb";
+import { EditNameDrawer } from "@/app/_components/admin-v2/EditNameDrawer";
 import { AddDepartmentDrawer } from "./_drawers/AddDepartmentDrawer";
 import { AddEmployeeDrawer } from "./_drawers/AddEmployeeDrawer";
 
@@ -71,6 +72,7 @@ export function DepartmentsTab() {
   const [selDeptId, setDeptId]            = useState<string | null>(null);
   const [addDept, setAddDept]             = useState(false);
   const [addEmp, setAddEmp]               = useState(false);
+  const [editDept, setEditDept]           = useState(false);
 
   const [employees, setEmployees]         = useState<Employee[]>([]);
   const [deptAdmin, setDeptAdmin]         = useState<Employee | null>(null);
@@ -264,14 +266,18 @@ export function DepartmentsTab() {
               tone:  ent.status === "active" ? "success" : "warning",
             }]}
             minutes={{ used: ent.usedMinutes, allocated: ent.allocatedMinutes }}
-            rollupCaption={
-              depts.length === 0
-                ? `${ent.allocatedMinutes.toLocaleString()} min in pool · 0 departments yet`
-                : `${distributed.toLocaleString()} of ${ent.allocatedMinutes.toLocaleString()} distributed to ${depts.length} department${depts.length === 1 ? "" : "s"}` +
-                  (ent.allocatedMinutes - distributed > 0
-                    ? ` · ${(ent.allocatedMinutes - distributed).toLocaleString()} undistributed`
-                    : "")
-            }
+            rollupCaption={(() => {
+              if (depts.length === 0) {
+                return `${ent.allocatedMinutes.toLocaleString()} min in pool · 0 departments yet · ${ent.usedMinutes.toLocaleString()} used`;
+              }
+              const remaining = Math.max(0, ent.allocatedMinutes - distributed);
+              return (
+                `${ent.allocatedMinutes.toLocaleString()} allocated · ` +
+                `${distributed.toLocaleString()} distributed to ${depts.length} department${depts.length === 1 ? "" : "s"} · ` +
+                `${remaining.toLocaleString()} remaining · ` +
+                `${ent.usedMinutes.toLocaleString()} used`
+              );
+            })()}
             footerHint="Pick a department on the left to manage its admin + employees."
           />
         )}
@@ -286,23 +292,40 @@ export function DepartmentsTab() {
                 tone:  selDept.status === "active" ? "success" : "warning",
               }]}
               minutes={{
-                used:      employees.length ? empTotals.used      : selDept.usedMinutes,
-                allocated: employees.length ? empTotals.allocated : selDept.allocatedMinutes,
+                used:      selDept.usedMinutes,
+                allocated: selDept.allocatedMinutes,
               }}
-              rollupCaption={
-                employees.length
-                  ? `Sum of ${employees.length} employee${employees.length === 1 ? "" : "s"}`
-                  : "No employees yet — showing department-pool numbers"
-              }
+              rollupCaption={(() => {
+                if (employees.length === 0) {
+                  return `${selDept.allocatedMinutes.toLocaleString()} min in pool · 0 employees yet · ${selDept.usedMinutes.toLocaleString()} used`;
+                }
+                const remaining = Math.max(0, selDept.allocatedMinutes - empTotals.allocated);
+                return (
+                  `${selDept.allocatedMinutes.toLocaleString()} allocated · ` +
+                  `${empTotals.allocated.toLocaleString()} distributed to ${employees.length} employee${employees.length === 1 ? "" : "s"} · ` +
+                  `${remaining.toLocaleString()} remaining · ` +
+                  `${selDept.usedMinutes.toLocaleString()} used`
+                );
+              })()}
               actions={
-                <button
-                  type="button"
-                  onClick={() => setDeptStatus(selDept.id, selDept.status === "active" ? "suspended" : "active")}
-                  className="rounded-md border px-2.5 py-1.5 text-xs font-medium"
-                  style={{ borderColor: "var(--border)", color: "var(--text)" }}
-                >
-                  {selDept.status === "active" ? "Deactivate" : "Activate"}
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setEditDept(true)}
+                    className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium"
+                    style={{ borderColor: "var(--border)", color: "var(--text)" }}
+                  >
+                    <Pencil className="size-3" /> Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeptStatus(selDept.id, selDept.status === "active" ? "suspended" : "active")}
+                    className="rounded-md border px-2.5 py-1.5 text-xs font-medium"
+                    style={{ borderColor: "var(--border)", color: "var(--text)" }}
+                  >
+                    {selDept.status === "active" ? "Deactivate" : "Activate"}
+                  </button>
+                </>
               }
               footerHint="Deactivating a department returns its remaining minutes to the enterprise pool."
             />
@@ -348,6 +371,17 @@ export function DepartmentsTab() {
           refresh();
         }}
       />
+      {selDept && (
+        <EditNameDrawer
+          open={editDept}
+          title="Edit department"
+          label="Department name"
+          currentName={selDept.name}
+          endpoint={`/api/enterprise/departments/${selDept.id}`}
+          onClose={() => setEditDept(false)}
+          onSaved={() => { setEditDept(false); refresh(); }}
+        />
+      )}
     </div>
   );
 }

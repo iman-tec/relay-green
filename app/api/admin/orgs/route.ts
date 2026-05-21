@@ -198,28 +198,37 @@ export async function POST(request: Request) {
     );
   }
 
-  // Validate the resellerId (if supplied) — must exist + be active.
-  if (resellerId && typeof resellerId === "string") {
-    const { data: r } = await admin
-      .from("resellers")
-      .select("id, status")
-      .eq("id", resellerId)
-      .maybeSingle();
-    const rr = r as { id: string; status: string } | null;
-    if (!rr) {
-      return NextResponse.json({ error: "Reseller not found." }, { status: 404 });
-    }
-    if (rr.status !== "active") {
-      return NextResponse.json({ error: "Reseller is suspended." }, { status: 400 });
-    }
-  }
-
   // Optional initial minutes allocation. Per spec, the organic enterprise
   // creation form includes a "Minutes Allocation" field; default to 0
   // when the caller omits it (e.g. legacy clients that don't yet send it).
   const allocNum = Number(allocatedMinutes ?? 0);
   if (Number.isNaN(allocNum) || allocNum < 0) {
     return NextResponse.json({ error: "Allocation must be non-negative." }, { status: 400 });
+  }
+
+  // Validate the resellerId (if supplied) — must exist, be active, AND
+  // have enough minutes to cover the allocation. We do this pre-flight
+  // so the error message is clear; transfer_to_organization revalidates
+  // inside the RPC, but its error text is less useful.
+  if (resellerId && typeof resellerId === "string") {
+    const { data: r } = await admin
+      .from("resellers")
+      .select("id, status, remaining_minutes")
+      .eq("id", resellerId)
+      .maybeSingle();
+    const rr = r as { id: string; status: string; remaining_minutes: number } | null;
+    if (!rr) {
+      return NextResponse.json({ error: "Reseller not found." }, { status: 404 });
+    }
+    if (rr.status !== "active") {
+      return NextResponse.json({ error: "Reseller is suspended." }, { status: 400 });
+    }
+    if (allocNum > 0 && allocNum > Number(rr.remaining_minutes ?? 0)) {
+      return NextResponse.json(
+        { error: `Allocation exceeds the reseller's remaining minutes (${rr.remaining_minutes}).` },
+        { status: 400 },
+      );
+    }
   }
 
   // Generate a unique enterprise_code. Retry on unique-violation; max 5

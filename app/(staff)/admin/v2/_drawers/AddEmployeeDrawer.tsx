@@ -101,7 +101,7 @@ export function AddEmployeeDrawer({
           <Input value={minutes} onChange={setMinutes} placeholder="0" inputMode="numeric" />
           {typeof deptRemainingMinutes === "number" && (
             <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-              Available in this department: {deptRemainingMinutes.toLocaleString()} min
+              Available in this department: {deptRemainingMinutes.toLocaleString(undefined, { maximumFractionDigits: 2 })} min
             </span>
           )}
         </Field>

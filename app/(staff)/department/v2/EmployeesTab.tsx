@@ -16,8 +16,9 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Power, PowerOff, Coins } from "lucide-react";
+import { Plus, Power, PowerOff, Coins, Pencil } from "lucide-react";
 import { DetailCard } from "@/app/_components/admin-v2/DetailCard";
+import { EditNameDrawer } from "@/app/_components/admin-v2/EditNameDrawer";
 import { AddEmployeeDrawer } from "./_drawers/AddEmployeeDrawer";
 import { RefillEmployeeDrawer } from "./_drawers/RefillEmployeeDrawer";
 
@@ -56,6 +57,7 @@ export function EmployeesTab() {
 
   const [addOpen, setAddOpen]         = useState(false);
   const [refillTarget, setRefillTarget] = useState<Employee | null>(null);
+  const [editTarget, setEditTarget]   = useState<Employee | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -130,16 +132,19 @@ export function EmployeesTab() {
             tone:  dept.status === "active" ? "success" : "warning",
           }]}
           minutes={{ used: dept.usedMinutes, allocated: dept.allocatedMinutes }}
-          rollupCaption={
-            employees.length === 0
-              ? `${dept.allocatedMinutes.toLocaleString()} min in pool · 0 employees yet`
-              : (() => {
-                  const dist  = empTotals.allocated;
-                  const undist = Math.max(0, dept.allocatedMinutes - dist);
-                  return `${dist.toLocaleString()} of ${dept.allocatedMinutes.toLocaleString()} distributed to ${employees.length} employee${employees.length === 1 ? "" : "s"}` +
-                    (undist > 0 ? ` · ${undist.toLocaleString()} undistributed` : "");
-                })()
-          }
+          rollupCaption={(() => {
+            if (employees.length === 0) {
+              return `${dept.allocatedMinutes.toLocaleString()} min in pool · 0 employees yet · ${dept.usedMinutes.toLocaleString()} used`;
+            }
+            const dist = empTotals.allocated;
+            const remaining = Math.max(0, dept.allocatedMinutes - dist);
+            return (
+              `${dept.allocatedMinutes.toLocaleString()} allocated · ` +
+              `${dist.toLocaleString()} distributed to ${employees.length} employee${employees.length === 1 ? "" : "s"} · ` +
+              `${remaining.toLocaleString()} remaining · ` +
+              `${dept.usedMinutes.toLocaleString()} used`
+            );
+          })()}
           footerHint="Deactivating an employee returns their remaining minutes to the department pool."
         />
 
@@ -147,6 +152,7 @@ export function EmployeesTab() {
           employees={employees}
           totals={empTotals}
           onAdd={() => setAddOpen(true)}
+          onEdit={(e) => setEditTarget(e)}
           onRefill={(e) => setRefillTarget(e)}
           onToggleStatus={toggleStatus}
         />
@@ -171,6 +177,17 @@ export function EmployeesTab() {
         onClose={() => setRefillTarget(null)}
         onRefilled={() => { setRefillTarget(null); refresh(); }}
       />
+      {editTarget && (
+        <EditNameDrawer
+          open={editTarget !== null}
+          title="Edit employee name"
+          label="Employee name"
+          currentName={editTarget.displayName}
+          endpoint={`/api/department/employees/${editTarget.id}`}
+          onClose={() => setEditTarget(null)}
+          onSaved={() => { setEditTarget(null); refresh(); }}
+        />
+      )}
     </div>
   );
 }
@@ -178,11 +195,12 @@ export function EmployeesTab() {
 // ── Subcomponents ─────────────────────────────────────────────────────
 
 function EmployeeTable({
-  employees, totals, onAdd, onRefill, onToggleStatus,
+  employees, totals, onAdd, onEdit, onRefill, onToggleStatus,
 }: {
   employees: Employee[];
   totals: { used: number; allocated: number };
   onAdd: () => void;
+  onEdit: (e: Employee) => void;
   onRefill: (e: Employee) => void;
   onToggleStatus: (id: string, currentlyActive: boolean) => void;
 }) {
@@ -243,6 +261,9 @@ function EmployeeTable({
                     </td>
                     <td className="px-4 py-2.5">
                       <div className="flex items-center justify-end gap-1">
+                        <RowIcon title="Edit name" onClick={() => onEdit(e)}>
+                          <Pencil className="size-3.5" />
+                        </RowIcon>
                         <RowIcon title="Refill minutes" onClick={() => onRefill(e)}>
                           <Coins className="size-3.5" />
                         </RowIcon>

@@ -15,7 +15,9 @@ const MUTED = "var(--text-muted)";
 
 function compact(n: number): string {
   if (n >= 1000) return `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k`;
-  return String(n);
+  // Cap at 2 decimal places so fractional minute counts (e.g. 2.34444…)
+  // render as "2.34" instead of bleeding into the layout.
+  return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
 export function MinutesBar({
@@ -49,7 +51,7 @@ export function MinutesBar({
           <span style={{ color: "var(--text)" }}>
             {size === "sm"
               ? `${compact(used)}/${compact(allocated)} min`
-              : `${used.toLocaleString()} / ${allocated.toLocaleString()} min`}
+              : `${used.toLocaleString(undefined, { maximumFractionDigits: 2 })} / ${allocated.toLocaleString(undefined, { maximumFractionDigits: 2 })} min`}
           </span>
           <span className="flex items-center gap-1.5" style={{ color: "var(--text-muted)" }}>
             {pct}%

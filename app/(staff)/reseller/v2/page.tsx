@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { ROLE } from "@/lib/relay/roles";
+import { highestRoleLabel, landingForRoles } from "@/lib/relay/role-labels";
 import { PanelClient } from "./PanelClient";
 
 export const metadata: Metadata = {
@@ -24,17 +25,14 @@ export default async function ResellerV2Page() {
   const roles = (roleRows ?? []).map((r: { role: string }) => r.role);
 
   if (!roles.includes(ROLE.reseller)) {
-    if (roles.includes(ROLE.super_admin))      redirect("/admin/users");
-    if (roles.includes(ROLE.enterprise_admin)) redirect("/enterprise");
-    if (roles.includes(ROLE.department_admin)) redirect("/department");
-    if (roles.includes(ROLE.supervisor))       redirect("/supervise");
-    if (roles.includes(ROLE.engineer))         redirect("/dashboard");
-    redirect("/room");
+    // Send them to whatever surface their actual role lands on. Centralised
+    // in landingForRoles so we don't need to re-encode the v2 cutover here.
+    redirect(landingForRoles(roles));
   }
 
   return (
     <Suspense fallback={null}>
-      <PanelClient />
+      <PanelClient me={{ email: user.email ?? "", roleLabel: highestRoleLabel(roles) }} />
     </Suspense>
   );
 }

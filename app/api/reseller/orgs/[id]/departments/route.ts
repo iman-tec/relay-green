@@ -35,8 +35,15 @@ export async function POST(request: Request, { params }: RouteCtx) {
       allocatedMinutes?: number | string;
     };
 
-  if (!name?.trim()) {
-    return NextResponse.json({ error: "Department name is required." }, { status: 400 });
+  if (!name?.trim() || !adminEmail?.trim() || !adminDisplayName?.trim()) {
+    return NextResponse.json(
+      { error: "Department name, admin name and admin email are required." },
+      { status: 400 },
+    );
+  }
+  const trimmedEmail = adminEmail.trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmedEmail)) {
+    return NextResponse.json({ error: "Invalid admin email." }, { status: 400 });
   }
   const allocNum = Number(allocatedMinutes ?? 0);
   if (Number.isNaN(allocNum) || allocNum < 0) {
@@ -82,69 +89,64 @@ export async function POST(request: Request, { params }: RouteCtx) {
   }
   const dept = deptRow as { id: string; name: string; department_code: string; status: string; created_at: string };
 
-  // Optional: invite a department_admin if both fields are supplied.
-  const inviteAdmin = adminEmail?.trim() && adminDisplayName?.trim();
-  let invitedAdminId: string | null = null;
-  if (inviteAdmin) {
-    const trimmedEmail = adminEmail!.trim().toLowerCase();
-    const invite = await sendInvitationEmail(admin, {
-      email:       trimmedEmail,
-      displayName: adminDisplayName!.trim(),
-      metadata: {
-        role_label:        "department_admin",
-        organization_id:   orgId,
-        org_name:          orgRow.name,
-        enterprise_code:   orgRow.enterprise_code,
-        department_id:     dept.id,
-        department_code:   dept.department_code,
-        allocated_minutes: allocNum,
-        created_by:        actor.id,
-      },
-    });
-    if (!invite.ok) {
-      await admin.from("departments").delete().eq("id", dept.id);
-      return NextResponse.json({ error: invite.error }, { status: 400 });
-    }
-    let userId = invite.userId ?? null;
-    if (!userId) {
-      const lookup = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-      userId = lookup.data?.users?.find((u) => u.email?.toLowerCase() === trimmedEmail)?.id ?? null;
-    }
-    if (!userId) {
-      await admin.from("departments").delete().eq("id", dept.id);
-      return NextResponse.json({ error: "Admin invited but auth row not visible." }, { status: 500 });
-    }
-
-    const { data: roleRow } = await admin
-      .from("roles").select("id").eq("name", ROLE.department_admin).maybeSingle();
-    const roleId = (roleRow as { id: string } | null)?.id;
-    if (!roleId) {
-      await admin.from("departments").delete().eq("id", dept.id);
-      return NextResponse.json({ error: "department_admin role not seeded" }, { status: 500 });
-    }
-
-    const { data: currentProfile } = await admin
-      .from("profiles").select("full_name, primary_role_id").eq("id", userId).maybeSingle();
-    const cp = currentProfile as { full_name: string | null; primary_role_id: string | null } | null;
-
-    await admin.from("profiles").upsert(
-      {
-        id:              userId,
-        full_name:       cp?.full_name?.trim() ? cp.full_name : adminDisplayName!.trim(),
-        primary_role_id: cp?.primary_role_id ?? roleId,
-        organization_id: orgId,
-        department_id:   dept.id,
-        is_onboarded:    true,
-      },
-      { onConflict: "id" },
-    );
-    await admin.from("user_roles").upsert(
-      { user_id: userId, role_id: roleId },
-      { onConflict: "user_id,role_id", ignoreDuplicates: true },
-    );
-    await admin.from("departments").update({ admin_user_id: userId }).eq("id", dept.id);
-    invitedAdminId = userId;
+  // Invite the department_admin — required.
+  const invite = await sendInvitationEmail(admin, {
+    email:       trimmedEmail,
+    displayName: adminDisplayName.trim(),
+    metadata: {
+      role_label:        "department_admin",
+      organization_id:   orgId,
+      org_name:          orgRow.name,
+      enterprise_code:   orgRow.enterprise_code,
+      department_id:     dept.id,
+      department_code:   dept.department_code,
+      allocated_minutes: allocNum,
+      created_by:        actor.id,
+    },
+  });
+  if (!invite.ok) {
+    await admin.from("departments").delete().eq("id", dept.id);
+    return NextResponse.json({ error: invite.error }, { status: 400 });
   }
+  let userId = invite.userId ?? null;
+  if (!userId) {
+    const lookup = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    userId = lookup.data?.users?.find((u) => u.email?.toLowerCase() === trimmedEmail)?.id ?? null;
+  }
+  if (!userId) {
+    await admin.from("departments").delete().eq("id", dept.id);
+    return NextResponse.json({ error: "Admin invited but auth row not visible." }, { status: 500 });
+  }
+
+  const { data: roleRow } = await admin
+    .from("roles").select("id").eq("name", ROLE.department_admin).maybeSingle();
+  const roleId = (roleRow as { id: string } | null)?.id;
+  if (!roleId) {
+    await admin.from("departments").delete().eq("id", dept.id);
+    return NextResponse.json({ error: "department_admin role not seeded" }, { status: 500 });
+  }
+
+  const { data: currentProfile } = await admin
+    .from("profiles").select("full_name, primary_role_id").eq("id", userId).maybeSingle();
+  const cp = currentProfile as { full_name: string | null; primary_role_id: string | null } | null;
+
+  await admin.from("profiles").upsert(
+    {
+      id:              userId,
+      full_name:       cp?.full_name?.trim() ? cp.full_name : adminDisplayName.trim(),
+      primary_role_id: cp?.primary_role_id ?? roleId,
+      organization_id: orgId,
+      department_id:   dept.id,
+      is_onboarded:    true,
+    },
+    { onConflict: "id" },
+  );
+  await admin.from("user_roles").upsert(
+    { user_id: userId, role_id: roleId },
+    { onConflict: "user_id,role_id", ignoreDuplicates: true },
+  );
+  await admin.from("departments").update({ admin_user_id: userId }).eq("id", dept.id);
+  const invitedAdminId: string = userId;
 
   if (allocNum > 0) {
     const { error: tErr } = await admin.rpc("transfer_to_department", {

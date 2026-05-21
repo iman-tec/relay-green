@@ -19,11 +19,12 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Mail, Power, PowerOff, Trash2 } from "lucide-react";
+import { Plus, Mail, Power, PowerOff, Trash2, Pencil } from "lucide-react";
 import { Sidebar } from "@/app/_components/admin-v2/Sidebar";
 import { MinutesBar } from "@/app/_components/admin-v2/MinutesBar";
 import { DetailCard, type Badge } from "@/app/_components/admin-v2/DetailCard";
 import { Breadcrumb, type Crumb } from "@/app/_components/admin-v2/Breadcrumb";
+import { EditNameDrawer } from "@/app/_components/admin-v2/EditNameDrawer";
 import { AddResellerDrawer } from "./_drawers/AddResellerDrawer";
 import { AddEnterpriseDrawer } from "./_drawers/AddEnterpriseDrawer";
 import { AddDepartmentDrawer } from "./_drawers/AddDepartmentDrawer";
@@ -78,6 +79,9 @@ export function ResellersTab() {
   const [addEnt,      setAddEnt]      = useState(false);
   const [addDept,     setAddDept]     = useState(false);
   const [addEmp,      setAddEmp]      = useState(false);
+  const [editReseller, setEditReseller] = useState(false);
+  const [editEnt,      setEditEnt]      = useState(false);
+  const [editDept,     setEditDept]     = useState(false);
 
   // Employees for the selected department
   const [employees, setEmployees]       = useState<Employee[]>([]);
@@ -478,6 +482,7 @@ export function ResellersTab() {
             reseller={selReseller}
             distributedAllocated={(orgsByReseller.get(selReseller.id) ?? [])
               .reduce((sum, o) => sum + o.departments.reduce((s, d) => s + d.allocatedMinutes, 0), 0)}
+            onEdit={() => setEditReseller(true)}
             onToggle={(s) => setResellerStatus(selReseller.id, s)}
           />
         )}
@@ -497,21 +502,25 @@ export function ResellersTab() {
               used:      enterpriseRow.usedMinutes,
               allocated: enterpriseRow.allocatedMinutes,
             }}
-            rollupCaption={
-              (selOrg?.departments.length ?? 0) === 0
-                ? `${enterpriseRow.allocatedMinutes.toLocaleString()} min in pool · 0 departments yet`
-                : (() => {
-                    const distAlloc = (selOrg?.departments ?? [])
-                      .reduce((s, d) => s + d.allocatedMinutes, 0);
-                    const undist = Math.max(0, enterpriseRow.allocatedMinutes - distAlloc);
-                    const n = selOrg?.departments.length ?? 0;
-                    return `${distAlloc.toLocaleString()} of ${enterpriseRow.allocatedMinutes.toLocaleString()} distributed to ${n} department${n === 1 ? "" : "s"}` +
-                      (undist > 0 ? ` · ${undist.toLocaleString()} undistributed` : "");
-                  })()
-            }
+            rollupCaption={(() => {
+              const n = selOrg?.departments.length ?? 0;
+              if (n === 0) {
+                return `${enterpriseRow.allocatedMinutes.toLocaleString(undefined, { maximumFractionDigits: 2 })} min in pool · 0 departments yet · ${enterpriseRow.usedMinutes.toLocaleString(undefined, { maximumFractionDigits: 2 })} used`;
+              }
+              const distAlloc = (selOrg?.departments ?? [])
+                .reduce((s, d) => s + d.allocatedMinutes, 0);
+              const remaining = Math.max(0, enterpriseRow.allocatedMinutes - distAlloc);
+              return (
+                `${enterpriseRow.allocatedMinutes.toLocaleString(undefined, { maximumFractionDigits: 2 })} allocated · ` +
+                `${distAlloc.toLocaleString(undefined, { maximumFractionDigits: 2 })} distributed to ${n} department${n === 1 ? "" : "s"} · ` +
+                `${remaining.toLocaleString(undefined, { maximumFractionDigits: 2 })} remaining · ` +
+                `${enterpriseRow.usedMinutes.toLocaleString(undefined, { maximumFractionDigits: 2 })} used`
+              );
+            })()}
             actions={
               <DetailActions
                 statusActive={enterpriseRow.status === "active"}
+                onEdit={() => setEditEnt(true)}
                 onToggle={() => setOrgStatus(enterpriseRow.id, enterpriseRow.status === "active" ? "suspended" : "active")}
                 onDelete={() => deleteOrg(enterpriseRow.id)}
               />
@@ -531,17 +540,25 @@ export function ResellersTab() {
                 },
               ]}
               minutes={{
-                used:      employees.length ? empTotals.used      : selDept.usedMinutes,
-                allocated: employees.length ? empTotals.allocated : selDept.allocatedMinutes,
+                used:      selDept.usedMinutes,
+                allocated: selDept.allocatedMinutes,
               }}
-              rollupCaption={
-                employees.length
-                  ? `Sum of ${employees.length} employee${employees.length === 1 ? "" : "s"}`
-                  : "No employees yet — showing department-pool numbers"
-              }
+              rollupCaption={(() => {
+                if (employees.length === 0) {
+                  return `${selDept.allocatedMinutes.toLocaleString(undefined, { maximumFractionDigits: 2 })} min in pool · 0 employees yet · ${selDept.usedMinutes.toLocaleString(undefined, { maximumFractionDigits: 2 })} used`;
+                }
+                const remaining = Math.max(0, selDept.allocatedMinutes - empTotals.allocated);
+                return (
+                  `${selDept.allocatedMinutes.toLocaleString(undefined, { maximumFractionDigits: 2 })} allocated · ` +
+                  `${empTotals.allocated.toLocaleString(undefined, { maximumFractionDigits: 2 })} distributed to ${employees.length} employee${employees.length === 1 ? "" : "s"} · ` +
+                  `${remaining.toLocaleString(undefined, { maximumFractionDigits: 2 })} remaining · ` +
+                  `${selDept.usedMinutes.toLocaleString(undefined, { maximumFractionDigits: 2 })} used`
+                );
+              })()}
               actions={
                 <DetailActions
                   statusActive={selDept.status === "active"}
+                  onEdit={() => setEditDept(true)}
                   onToggle={() => setDeptStatus(selOrg.id, selDept.id, selDept.status === "active" ? "suspended" : "active")}
                   onDelete={() => deleteDept(selOrg.id, selDept.id)}
                 />
@@ -606,6 +623,39 @@ export function ResellersTab() {
           refresh();
         }}
       />
+      {selReseller && (
+        <EditNameDrawer
+          open={editReseller}
+          title="Edit reseller"
+          label="Reseller name"
+          currentName={selReseller.name}
+          endpoint={`/api/admin/resellers/${selReseller.id}`}
+          onClose={() => setEditReseller(false)}
+          onSaved={() => { setEditReseller(false); refresh(); }}
+        />
+      )}
+      {enterpriseRow && (
+        <EditNameDrawer
+          open={editEnt}
+          title="Edit enterprise"
+          label="Enterprise name"
+          currentName={enterpriseRow.name}
+          endpoint={`/api/admin/orgs/${enterpriseRow.id}`}
+          onClose={() => setEditEnt(false)}
+          onSaved={() => { setEditEnt(false); refresh(); }}
+        />
+      )}
+      {selEntId && selDept && (
+        <EditNameDrawer
+          open={editDept}
+          title="Edit department"
+          label="Department name"
+          currentName={selDept.name}
+          endpoint={`/api/admin/orgs/${selEntId}/departments/${selDept.id}`}
+          onClose={() => setEditDept(false)}
+          onSaved={() => { setEditDept(false); refresh(); }}
+        />
+      )}
     </div>
   );
 }
@@ -622,10 +672,11 @@ function EmptyState({ title, blurb }: { title: string; blurb: string }) {
 }
 
 function ResellerSummary({
-  reseller, distributedAllocated, onToggle,
+  reseller, distributedAllocated, onEdit, onToggle,
 }: {
   reseller: Reseller;
   distributedAllocated: number;
+  onEdit:   () => void;
   onToggle: (next: "active" | "suspended") => void;
 }) {
   const badges: Badge[] = [
@@ -636,12 +687,14 @@ function ResellerSummary({
     { label: `${reseller.commission}% commission`, tone: "neutral" },
   ];
   const pool = { used: reseller.usedMinutes, allocated: reseller.allocatedMinutes };
-  const undistributed = Math.max(0, pool.allocated - distributedAllocated);
+  const remaining = Math.max(0, pool.allocated - distributedAllocated);
   const caption =
     reseller.totalEnterprises === 0
-      ? `${pool.allocated.toLocaleString()} min in pool · 0 enterprises yet`
-      : `${distributedAllocated.toLocaleString()} of ${pool.allocated.toLocaleString()} distributed to ${reseller.totalEnterprises} enterprise${reseller.totalEnterprises === 1 ? "" : "s"}` +
-        (undistributed > 0 ? ` · ${undistributed.toLocaleString()} undistributed` : "");
+      ? `${pool.allocated.toLocaleString(undefined, { maximumFractionDigits: 2 })} min in pool · 0 enterprises yet · ${pool.used.toLocaleString(undefined, { maximumFractionDigits: 2 })} used`
+      : `${pool.allocated.toLocaleString(undefined, { maximumFractionDigits: 2 })} allocated · ` +
+        `${distributedAllocated.toLocaleString(undefined, { maximumFractionDigits: 2 })} distributed to ${reseller.totalEnterprises} enterprise${reseller.totalEnterprises === 1 ? "" : "s"} · ` +
+        `${remaining.toLocaleString(undefined, { maximumFractionDigits: 2 })} remaining · ` +
+        `${pool.used.toLocaleString(undefined, { maximumFractionDigits: 2 })} used`;
   return (
     <DetailCard
       title={reseller.name}
@@ -651,14 +704,24 @@ function ResellerSummary({
       minutes={pool}
       rollupCaption={caption}
       actions={
-        <button
-          type="button"
-          onClick={() => onToggle(reseller.status === "active" ? "suspended" : "active")}
-          className="rounded-md border px-2.5 py-1.5 text-xs font-medium"
-          style={{ borderColor: "var(--border)", color: "var(--text)" }}
-        >
-          {reseller.status === "active" ? "Deactivate" : "Activate"}
-        </button>
+        <>
+          <button
+            type="button"
+            onClick={onEdit}
+            className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium"
+            style={{ borderColor: "var(--border)", color: "var(--text)" }}
+          >
+            <Pencil className="size-3" /> Edit
+          </button>
+          <button
+            type="button"
+            onClick={() => onToggle(reseller.status === "active" ? "suspended" : "active")}
+            className="rounded-md border px-2.5 py-1.5 text-xs font-medium"
+            style={{ borderColor: "var(--border)", color: "var(--text)" }}
+          >
+            {reseller.status === "active" ? "Deactivate" : "Activate"}
+          </button>
+        </>
       }
       footerHint="Resellers cannot be hard-deleted — only suspended. Cascades convert inorganic enterprises to organic."
     />
@@ -666,14 +729,25 @@ function ResellerSummary({
 }
 
 function DetailActions({
-  statusActive, onToggle, onDelete,
+  statusActive, onEdit, onToggle, onDelete,
 }: {
   statusActive: boolean;
+  onEdit?:  () => void;
   onToggle: () => void;
   onDelete: () => void;
 }) {
   return (
     <>
+      {onEdit && (
+        <button
+          type="button"
+          onClick={onEdit}
+          className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium"
+          style={{ borderColor: "var(--border)", color: "var(--text)" }}
+        >
+          <Pencil className="size-3" /> Edit
+        </button>
+      )}
       <button
         type="button"
         onClick={onToggle}
@@ -824,7 +898,7 @@ function EmployeeTable({
                   <td className="px-4 py-2.5" style={{ color: "var(--text)" }}>{e.displayName || "—"}</td>
                   <td className="px-4 py-2.5" style={{ color: "var(--text-muted)" }}>{e.email}</td>
                   <td className="px-4 py-2.5" style={{ color: "var(--text)" }}>
-                    {e.usedMinutes.toLocaleString()} / {e.allocatedMinutes.toLocaleString()}
+                    {e.usedMinutes.toLocaleString(undefined, { maximumFractionDigits: 2 })} / {e.allocatedMinutes.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                   </td>
                   <td className="px-4 py-2.5">
                     <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wider uppercase"
@@ -860,7 +934,7 @@ function EmployeeTable({
                   Total
                 </td>
                 <td className="px-4 py-2.5 text-sm font-medium" style={{ color: "var(--text)" }}>
-                  {totals.used.toLocaleString()} / {totals.allocated.toLocaleString()}
+                  {totals.used.toLocaleString(undefined, { maximumFractionDigits: 2 })} / {totals.allocated.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                 </td>
                 <td />
                 <td />

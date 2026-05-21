@@ -2,9 +2,8 @@
 
 /*
  * Add-department drawer. POSTs to /api/admin/orgs/:orgId/departments
- * (the new admin-side endpoint). Admin fields are optional — pass them
- * to invite the first department_admin alongside; omit to create an
- * empty department.
+ * (the new admin-side endpoint). Creates the dept + invites the first
+ * department admin in one shot — admin name + email are required.
  */
 
 import { useState } from "react";
@@ -34,7 +33,10 @@ export function AddDepartmentDrawer({
 
   const submit = async () => {
     if (!orgId) { setError("Pick an enterprise first."); return; }
-    if (!name.trim()) { setError("Department name is required."); return; }
+    if (!name.trim() || !adminEmail.trim() || !adminDisplayName.trim()) {
+      setError("Department name, admin name and admin email are required.");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -43,8 +45,8 @@ export function AddDepartmentDrawer({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name:             name.trim(),
-          adminEmail:       adminEmail.trim() || undefined,
-          adminDisplayName: adminDisplayName.trim() || undefined,
+          adminEmail:       adminEmail.trim(),
+          adminDisplayName: adminDisplayName.trim(),
           allocatedMinutes: allocatedMinutes.trim() ? Number(allocatedMinutes) : 0,
         }),
       });
@@ -80,19 +82,15 @@ export function AddDepartmentDrawer({
         <Field label="Department name">
           <Input value={name} onChange={setName} placeholder="Engineering" />
         </Field>
-        <Field label="Department admin email (optional)">
+        <Field label="Department admin email">
           <Input value={adminEmail} onChange={setEmail} placeholder="lead@acme.com" type="email" />
         </Field>
-        <Field label="Department admin name (optional)">
+        <Field label="Department admin name">
           <Input value={adminDisplayName} onChange={setDisp} placeholder="Chris Wong" />
         </Field>
         <Field label="Initial minutes from the enterprise pool">
           <Input value={allocatedMinutes} onChange={setMinutes} placeholder="0" inputMode="numeric" />
         </Field>
-        <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-          Leave admin fields blank to create an empty department; the org's
-          enterprise admin can add a department admin later.
-        </p>
         {error && <ErrorBanner message={error} />}
       </div>
     </Drawer>

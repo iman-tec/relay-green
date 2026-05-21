@@ -15,11 +15,12 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Coins, Power, PowerOff } from "lucide-react";
+import { Plus, Coins, Power, PowerOff, Pencil } from "lucide-react";
 import { Sidebar } from "@/app/_components/admin-v2/Sidebar";
 import { MinutesBar } from "@/app/_components/admin-v2/MinutesBar";
 import { DetailCard, type Badge } from "@/app/_components/admin-v2/DetailCard";
 import { Breadcrumb, type Crumb } from "@/app/_components/admin-v2/Breadcrumb";
+import { EditNameDrawer } from "@/app/_components/admin-v2/EditNameDrawer";
 import { useConfirmDialog } from "@/app/_components/ConfirmDialog";
 import { AddEnterpriseDrawer } from "./_drawers/AddEnterpriseDrawer";
 import { AddDepartmentDrawer } from "./_drawers/AddDepartmentDrawer";
@@ -66,6 +67,8 @@ export function EnterpriseTab() {
   const [addEnt,        setAddEnt]        = useState(false);
   const [addDept,       setAddDept]       = useState(false);
   const [refillTarget,  setRefillTarget]  = useState<Enterprise | null>(null);
+  const [editEnt,       setEditEnt]       = useState(false);
+  const [editDept,      setEditDept]      = useState(false);
 
   const [employees, setEmployees]       = useState<Employee[]>([]);
   const [deptAdmin, setDeptAdmin]       = useState<Employee | null>(null);
@@ -363,6 +366,7 @@ export function EnterpriseTab() {
           <EnterpriseSummary
             ent={selectedEnt}
             summary={entSummaries.get(selectedEnt.id)}
+            onEdit={() => setEditEnt(true)}
             onRefill={() => setRefillTarget(selectedEnt)}
             onToggle={() => toggleEntStatus(selectedEnt)}
           />
@@ -380,13 +384,30 @@ export function EnterpriseTab() {
                 },
               ]}
               minutes={{
-                used:      employees.length ? employeeTotals.used      : selectedDept.usedMinutes,
-                allocated: employees.length ? employeeTotals.allocated : selectedDept.allocatedMinutes,
+                used:      selectedDept.usedMinutes,
+                allocated: selectedDept.allocatedMinutes,
               }}
-              rollupCaption={
-                employees.length
-                  ? `Sum of ${employees.length} employee${employees.length === 1 ? "" : "s"}`
-                  : "No employees yet — showing department-pool numbers"
+              rollupCaption={(() => {
+                if (employees.length === 0) {
+                  return `${selectedDept.allocatedMinutes.toLocaleString()} min in pool · 0 employees yet · ${selectedDept.usedMinutes.toLocaleString()} used`;
+                }
+                const remaining = Math.max(0, selectedDept.allocatedMinutes - employeeTotals.allocated);
+                return (
+                  `${selectedDept.allocatedMinutes.toLocaleString()} allocated · ` +
+                  `${employeeTotals.allocated.toLocaleString()} distributed to ${employees.length} employee${employees.length === 1 ? "" : "s"} · ` +
+                  `${remaining.toLocaleString()} remaining · ` +
+                  `${selectedDept.usedMinutes.toLocaleString()} used`
+                );
+              })()}
+              actions={
+                <button
+                  type="button"
+                  onClick={() => setEditDept(true)}
+                  className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium"
+                  style={{ borderColor: "var(--border)", color: "var(--text)" }}
+                >
+                  <Pencil className="size-3" /> Edit
+                </button>
               }
             />
             <DepartmentAdminCard admin={deptAdmin} />
@@ -430,6 +451,28 @@ export function EnterpriseTab() {
           refresh();
         }}
       />
+      {selectedEnt && (
+        <EditNameDrawer
+          open={editEnt}
+          title="Edit enterprise"
+          label="Enterprise name"
+          currentName={selectedEnt.name}
+          endpoint={`/api/reseller/enterprises/${selectedEnt.id}`}
+          onClose={() => setEditEnt(false)}
+          onSaved={() => { setEditEnt(false); refresh(); }}
+        />
+      )}
+      {selectedEnt && selectedDept && (
+        <EditNameDrawer
+          open={editDept}
+          title="Edit department"
+          label="Department name"
+          currentName={selectedDept.name}
+          endpoint={`/api/reseller/orgs/${selectedEnt.id}/departments/${selectedDept.id}`}
+          onClose={() => setEditDept(false)}
+          onSaved={() => { setEditDept(false); refresh(); }}
+        />
+      )}
 
       {confirm.element}
     </div>
@@ -442,7 +485,8 @@ function ResellerOverview({
   reseller, enterprises,
 }: { reseller: ResellerSnapshot; enterprises: Enterprise[] }) {
   const total       = enterprises.length;
-  const activeCount = enterprises.filter((e) => e.status === "active").length;
+  const distributed = enterprises.reduce((s, e) => s + e.allocatedMinutes, 0);
+  const remaining   = Math.max(0, reseller.allocatedMinutes - distributed);
 
   return (
     <div className="flex flex-col gap-6">
@@ -458,14 +502,21 @@ function ResellerOverview({
         ]}
         description="Pick an enterprise on the left to view its departments and employees."
         minutes={{ used: reseller.usedMinutes, allocated: reseller.allocatedMinutes }}
-        rollupCaption={`${total} enterprise${total === 1 ? "" : "s"} · ${activeCount} active`}
+        rollupCaption={
+          total === 0
+            ? `${reseller.allocatedMinutes.toLocaleString()} min in pool · 0 enterprises yet · ${reseller.usedMinutes.toLocaleString()} used`
+            : `${reseller.allocatedMinutes.toLocaleString()} allocated · ` +
+              `${distributed.toLocaleString()} distributed to ${total} enterprise${total === 1 ? "" : "s"} · ` +
+              `${remaining.toLocaleString()} remaining · ` +
+              `${reseller.usedMinutes.toLocaleString()} used`
+        }
       />
     </div>
   );
 }
 
 function EnterpriseSummary({
-  ent, summary, onRefill, onToggle,
+  ent, summary, onEdit, onRefill, onToggle,
 }: {
   ent: Enterprise;
   summary?: {
@@ -473,6 +524,7 @@ function EnterpriseSummary({
     distributed: { used: number; allocated: number };
     deptCount:   number;
   };
+  onEdit:   () => void;
   onRefill: () => void;
   onToggle: () => void;
 }) {
@@ -486,13 +538,15 @@ function EnterpriseSummary({
   const pool        = summary?.pool        ?? { used: ent.usedMinutes, allocated: ent.allocatedMinutes };
   const distributed = summary?.distributed ?? { used: 0, allocated: 0 };
   const deptCount   = summary?.deptCount   ?? ent.departments.length;
-  const undistributed = Math.max(0, pool.allocated - distributed.allocated);
+  const remaining   = Math.max(0, pool.allocated - distributed.allocated);
 
   const caption =
     deptCount === 0
-      ? `${pool.allocated.toLocaleString()} min in pool · 0 departments yet`
-      : `${distributed.allocated.toLocaleString()} of ${pool.allocated.toLocaleString()} distributed to ${deptCount} department${deptCount === 1 ? "" : "s"}` +
-        (undistributed > 0 ? ` · ${undistributed.toLocaleString()} undistributed` : "");
+      ? `${pool.allocated.toLocaleString()} min in pool · 0 departments yet · ${pool.used.toLocaleString()} used`
+      : `${pool.allocated.toLocaleString()} allocated · ` +
+        `${distributed.allocated.toLocaleString()} distributed to ${deptCount} department${deptCount === 1 ? "" : "s"} · ` +
+        `${remaining.toLocaleString()} remaining · ` +
+        `${pool.used.toLocaleString()} used`;
 
   return (
     <DetailCard
@@ -504,6 +558,14 @@ function EnterpriseSummary({
       rollupCaption={caption}
       actions={
         <>
+          <button
+            type="button"
+            onClick={onEdit}
+            className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium"
+            style={{ borderColor: "var(--border)", color: "var(--text)" }}
+          >
+            <Pencil className="size-3" /> Edit
+          </button>
           <button
             type="button"
             onClick={onRefill}

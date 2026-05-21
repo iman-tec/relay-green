@@ -3,9 +3,8 @@
 /*
  * Add-department drawer for the reseller panel. POSTs to
  * /api/reseller/orgs/:orgId/departments (the reseller-scoped endpoint).
- * Admin fields are optional — supply them to invite the first
- * department_admin alongside; omit to create an empty department that
- * the enterprise admin can populate later.
+ * Department admin name + email are required — the reseller has to
+ * appoint someone to manage the dept up front.
  */
 
 import { useState } from "react";
@@ -37,7 +36,10 @@ export function AddDepartmentDrawer({
 
   const submit = async () => {
     if (!orgId) { setError("Pick an enterprise first."); return; }
-    if (!name.trim()) { setError("Department name is required."); return; }
+    if (!name.trim() || !adminEmail.trim() || !adminDisplayName.trim()) {
+      setError("Department name, admin name and admin email are required.");
+      return;
+    }
     const alloc = allocatedMinutes.trim() ? Number(allocatedMinutes) : 0;
     if (!Number.isFinite(alloc) || alloc < 0) {
       setError("Allocation must be ≥ 0.");
@@ -56,8 +58,8 @@ export function AddDepartmentDrawer({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name:             name.trim(),
-          adminEmail:       adminEmail.trim() || undefined,
-          adminDisplayName: adminDisplayName.trim() || undefined,
+          adminEmail:       adminEmail.trim(),
+          adminDisplayName: adminDisplayName.trim(),
           allocatedMinutes: alloc,
         }),
       });
@@ -102,10 +104,10 @@ export function AddDepartmentDrawer({
         <Field label="Department name">
           <Input value={name} onChange={setName} placeholder="Engineering" />
         </Field>
-        <Field label="Department admin email (optional)">
+        <Field label="Department admin email">
           <Input value={adminEmail} onChange={setEmail} placeholder="lead@acme.com" type="email" />
         </Field>
-        <Field label="Department admin name (optional)">
+        <Field label="Department admin name">
           <Input value={adminDisplayName} onChange={setDisp} placeholder="Chris Wong" />
         </Field>
         <Field label="Initial minutes from the enterprise pool">
