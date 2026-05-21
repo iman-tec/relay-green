@@ -209,15 +209,24 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
       <div className="relative flex min-w-0 flex-1 flex-col">
         {isSupervisor && (
           <div
-            className="flex shrink-0 items-center justify-center gap-2 border-b px-4 py-1.5 text-[11px] font-medium uppercase tracking-wider"
-            style={{
-              backgroundColor: "color-mix(in srgb, var(--text) 4%, transparent)",
-              borderColor: "var(--border)",
-              color: "var(--text-muted)",
-            }}
+            role="status"
+            aria-live="polite"
+            className="flex shrink-0 items-center justify-center gap-2 border-b border-[var(--border)] bg-[var(--surface-raised)] px-4 py-2"
           >
-            <Eye size={11} />
-            Supervisor view · read-only
+            <span
+              aria-hidden
+              className="inline-flex size-5 items-center justify-center rounded-full bg-[var(--primary-soft)] text-[var(--primary)]"
+            >
+              <Eye size={11} />
+            </span>
+            <span className="text-xs font-medium tracking-wide text-[var(--text)]">
+              Supervisor view
+            </span>
+            <span aria-hidden className="text-[var(--text-faint)]">·</span>
+            <span className="text-xs text-[var(--text-muted)]">
+              Read-only — controls are hidden so you can monitor without
+              interrupting.
+            </span>
           </div>
         )}
         {!isSupervisor && (

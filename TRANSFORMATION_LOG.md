@@ -516,17 +516,111 @@ place and reads from the seam module.
 - `tsc --noEmit` clean.
 - `eslint app/(staff)/operations lib/allocation` clean.
 
-### Notes for Phase 10 (Read-only supervisor session view)
+---
 
-- `EngineerSessionClient.tsx` supervisor branch — needs the calm
-  distinct read-only banner per brief §5.9. Reuse the room
-  layout + summary components.
-- Sidebar of "history with engineer" rows uses the new components.
+## Phase 10 + 11 — Read-only banner + settings (this commit)
 
-### Notes for Phase 11 (Profile / account / settings)
+Combined into one commit. Both touch small surfaces.
 
-- `/settings` page → use Card + Avatar + Input + Button.
-- Profile dropdown bug in StaffShell.tsx:277 (`<ProfileChipInline
-  email={guard.kind === "staff" ? "" : ""} />` — both branches pass
-  `""`) — fix in passing.
-- "X min free available" footer chunk needs a legible treatment.
+### `EngineerSessionClient.tsx` supervisor banner
+
+The "Supervisor view · read-only" strip was a small monochrome
+all-caps line. Now:
+
+- `role="status"` + `aria-live="polite"`.
+- Coral-soft Eye icon avatar (`bg-[var(--primary-soft)]
+  text-[var(--primary)]`) instead of a flat text glyph.
+- Two-line voice: **"Supervisor view"** (bold, brand-tone) ·
+  **"Read-only — controls are hidden so you can monitor without
+  interrupting."** Brief §5.9's "calm distinct read-only treatment"
+  satisfied without changing layout.
+
+### `/settings` page
+
+- Old: bare `h1 + p` header + inline `<button>` rows with a `→`
+  glyph.
+- New: `<SectionHeader>` (serif), `<Card>` chrome, lucide icons per
+  row (`User`, `Clock`, `Bell`, `CreditCard`, `ShieldCheck`),
+  `ChevronRight` instead of `→`, focus ring, hover surface tint via
+  tokens. Tabbable rows.
+
+### `StaffShell.tsx` profile bug
+
+Reviewed the audit's flagged ProfileChipInline issue. The actual code
+at `StaffShell.tsx:323-327` already reads `email={guardEmail(guard)}`
+where `guardEmail` returns `""` **by design** (per its own comment:
+"We don't store email in the guard yet; fetch lazily via supabase
+inside the profile button"). The audit's reference to
+`<ProfileChipInline email={guard.kind === "staff" ? "" : ""} />` is
+stale — that component does not currently exist in the file. **No
+code change required** in this commit.
+
+### Verification
+
+- `tsc --noEmit` clean.
+- `eslint` shows the same 8 pre-existing problems in
+  `EngineerSessionClient.tsx` (`react-hooks/purity` for `Date.now()`
+  in render scope + `no-unused-vars` for `startVideo`) — confirmed on
+  baseline `main`. Zero new lint problems introduced.
+
+---
+
+## Wrap-up — phases shipped, deferred work
+
+### Shipped on `feat/ui-transformation`
+
+| Phase | What landed |
+|---|---|
+| 1 | `UI_ANALYSIS.md` |
+| 2 | Tokens + 15 primitives + `DESIGN_SYSTEM.md` + `TRANSFORMATION_LOG.md` |
+| 3 | Login / staff-login / set-password (OTP digit boxes, real labels) |
+| 4 | Intake wizard + multi-select AI-tool fix (§5.2) |
+| 5 | Dashboard / empty state launcher CTA + summary panel |
+| 6 | Ringing screen with embedded IntakeAssistant + ContextCard (§5.4 + §7) |
+| 7 (partial) | MeetingChatEntry call CTA + ConfirmEndModal a11y |
+| 8 | Supervise board HealthBar + StatusBadge + tabs |
+| 9 | Operations + pod-allocation seam (§6) |
+| 10 + 11 | Read-only supervisor banner + settings |
+
+### Deferred / follow-up (not in this branch)
+
+These are isolated chunks that fit cleanly as follow-up PRs without
+blocking the rest of the transformation:
+
+- **§5.5 continued in `RoomClient.tsx`** —
+  - Migrate `ConnectingModal` + `EngineerAssignedModal` to `ui/Modal`
+    (same a11y pattern as Phase 7's `ConfirmEndModal`).
+  - In-room `IntakeAssistant` mount while a call is connecting.
+  - Chat-bubble dedicated component (user / engineer / system /
+    assistant) — currently inline.
+- **§5.6 (Summary panel)** — bold one-line takeaway, checklist for
+  Next steps, collapsible "Zoom call summaries" inside the right
+  rail. `SummaryPanel` (`RoomClient.tsx:1252`) restyle.
+- **`PastSessionReview` / read-only chat pane** — calmer archive
+  framing inside the customer-side past-session view.
+- **`PaywallModal` palette unification** — currently runs its own
+  `#5d8a44 / #0a0a0a / #141413`. Decision #4 says yes, do it.
+  Larger surgery — fits as its own commit.
+- **Sidebar perf follow-up** — the audit's "80 past-session rows
+  unvirtualized" finding. Brief is UI-only; this is a perf task, not
+  in scope.
+- **Customer left-nav restyle** — sidebar + profile chip + "X min
+  free available" footer block typography. Same shell as the existing
+  layout; was lower priority than the hero/CTA work.
+- **Test-string sweep** — Playwright specs may assert on CTA labels
+  that changed (e.g. "Start a new session" → "Get an engineer now"
+  on the dashboard, "Find Engineer" → "Find an engineer" in intake,
+  "Sign in" preserved). Decision #7 says fix in-place when
+  encountered; no upfront sweep done.
+- **Marketing site, legacy `/customer` `/engineer` `/supervisor`
+  routes** — explicitly out of scope per the brief.
+
+### Files no one else owns
+
+- `lib/intake/intakeAssistant.ts` — UI seam for the real Anthropic
+  transport. Tagged with `TODO(api):` blocks.
+- `lib/allocation/podAllocation.ts` — pass-through impl for the
+  10/15-threshold rule. Tagged with `SEAM:` + `TODO(allocation):`.
+
+When the backend conversations land, both files are single-file
+swaps with no UI changes.
