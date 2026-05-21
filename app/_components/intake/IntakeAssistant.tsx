@@ -49,16 +49,10 @@ export function IntakeAssistant({
   greeting,
   compact = false,
 }: IntakeAssistantProps) {
-  const [ctx, setCtx] = useState<IntakeContext>(emptyContext);
-  const [messages, setMessages] = useState<IntakeMessage[]>([]);
-  const [draft, setDraft] = useState("");
-  const [staged, setStaged] = useState<IntakeMessage["attachment"] | null>(null);
-  const [activePrompt, setActivePrompt] = useState<IntakePrompt | null>(null);
-  const threadRef = useRef<HTMLDivElement>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  // Bootstrap: emit the greeting + first prompt.
-  useEffect(() => {
+  // Bootstrap synchronously via lazy useState initializers (avoids the
+  // "setState in effect" cascade and gets us a first paint with the
+  // greeting + first prompt already on screen).
+  const [bootstrap] = useState(() => {
     const opener =
       greeting ??
       "Hi — I'm Relay's intake helper. I'll line up context for your engineer while we connect you.";
@@ -73,11 +67,17 @@ export function IntakeAssistant({
         body: first.body,
         createdAt: Date.now() + 1,
       });
-      setActivePrompt(first);
     }
-    setMessages(seeded);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return { seeded, first };
+  });
+
+  const [ctx, setCtx] = useState<IntakeContext>(emptyContext);
+  const [messages, setMessages] = useState<IntakeMessage[]>(bootstrap.seeded);
+  const [draft, setDraft] = useState("");
+  const [staged, setStaged] = useState<IntakeMessage["attachment"] | null>(null);
+  const [activePrompt, setActivePrompt] = useState<IntakePrompt | null>(bootstrap.first);
+  const threadRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   // Notify parent whenever the running context changes.
   useEffect(() => {
