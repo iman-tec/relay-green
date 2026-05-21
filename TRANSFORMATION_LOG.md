@@ -155,14 +155,73 @@ files. `npm run build` previously verified at Phase 2; not re-run this
 phase because no new dependencies or build-graph edges added (only
 swapped JSX inside existing client components).
 
-### Notes for Phase 4 (Intake)
+---
 
-- `IntakeClient.tsx` — apply the **§5.2 multi-select fix**:
-  - Lift the gate `aiTools.length === 1` →
-    `aiTools.length >= 1`.
-  - Submit shape: `ai_tools_used: aiTools.join(", ")` (preserves the
-    existing `text` column). Add `// TODO(api): widen ai_tools_used to
-    text[]` next to the submit.
-  - Pass `multi` to the new `<ChipGroup>` for step 2 only.
-- Restyle the wizard chrome (left editorial panel + right answers).
-- Replace `wizard/ChipGroup.tsx` callers with `ui/ChipGroup`.
+## Phase 4 — Intake wizard + multi-select fix (this commit)
+
+**Files restyled:** `app/intake/IntakeClient.tsx`,
+`app/_components/wizard/WizardShell.tsx`.
+
+**Brief §5.2 fix delivered: AI-tool step is now multi-select.**
+
+- Gate relaxed: `aiTools.length === 1` → `aiTools.length >= 1`
+  ([`IntakeClient.tsx:104`](app/intake/IntakeClient.tsx:104)).
+- Submit shape: `ai_tools_used: aiTools.join(", ")` (preserves the
+  existing `client_intakes.ai_tools_used` text column on Supabase)
+  ([`IntakeClient.tsx:172`](app/intake/IntakeClient.tsx:172)).
+- **Seam left for backend:** `// TODO(api): widen
+  client_intakes.ai_tools_used to text[]` immediately above the
+  submit. No UI changes needed at that point.
+- Step 2 passes `multi` to `<ChipGroup>`; the user toggles any
+  combination of Claude / ChatGPT (Codex) / Deep Seek / Lovable /
+  Replit / Some Other.
+- Step 4 (technologies) was already multi; left untouched.
+
+**Visual deltas:**
+
+- `WizardShell` left panel: was a flat green gradient
+  (`#2a3d1f → #3f5c2e`). Now: `--surface-raised` with a quiet coral
+  radial top-left + a faint green halo bottom-right. Editorial,
+  not loud. Matches the login canvas atmosphere.
+- Serif display title on left panel and mobile.
+- Progress bar uses tokens (`--text` filled, muted track) instead of
+  `#f5f4ee` literals.
+- Next button is the new `<Button size="lg">` (coral primary)
+  with `loading` state. Old hardcoded `BRAND_GREEN` CTA gone.
+- Inline error is now `<Toast tone="risk" role="alert">` (audit fix).
+- `IntakeClient` now imports `ChipGroup` from `@/app/_components/ui`,
+  not from `wizard/ChipGroup.tsx`. The wizard's ChipGroup is now
+  unused; kept on disk until Phase 12 cleanup.
+- "Find Engineer" label → "Find an engineer" (calmer voice).
+- Step 2 subtitle now says "Pick every tool that's in your stack —
+  we'll match the right engineer." — explicit cue that multi-select
+  is supported.
+- Loading state restyled (uses `100dvh` + tokens, not `min-h-screen`).
+
+**Data contracts: untouched.** Same Supabase RPCs
+(`create_project`, `get_or_create_active_customer_session`,
+`cancel_customer_session`, `match_engineer`). Same `client_intakes`
+upsert with `onConflict: "project_id,customer_user_id"`. Same
+post-submit redirect `router.replace(/room?matching=…)`. Same legacy
+project short-circuit. Same `ACTIVE_SESSION_STATES`. Same auth bounce
+to `/login?next=/intake`.
+
+**Verification:** `tsc --noEmit` clean. `eslint` clean on touched
+paths.
+
+### Notes for Phase 5 (Dashboard / empty state)
+
+- `RoomClient.tsx` no-session branch is **inside** the same client as
+  the live-session view. Need to locate the empty-state JSX block
+  cleanly (sidebar + hero + projects list + footer).
+- Replace the hero CTA with `<Button variant="launcher" size="xl">` —
+  green pulse halo, the single most obvious action on the screen.
+- Reassuring line under the CTA: "A real engineer joins your chat +
+  Zoom in ~90 seconds."
+- Empty Projects list → `<EmptyState>` with a "Start a session" link.
+- "No summary yet" pane → `<EmptyState compact>` with copy guidance.
+- Customer left sidebar — restyle but **do not** change the
+  past-sessions data fetch (audit flagged perf; that's a follow-up,
+  not part of UI restyle).
+- Footer block (avatar + name + "X min free available") restyled
+  via `<Avatar>` + readable typography.

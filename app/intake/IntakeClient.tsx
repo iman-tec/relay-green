@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { WizardShell } from "@/app/_components/wizard/WizardShell";
-import { ChipGroup } from "@/app/_components/wizard/ChipGroup";
+import { ChipGroup, Toast } from "@/app/_components/ui";
 import { createClient } from "@/lib/supabase/browser";
 
 const FAMILIARITY = ["Totally Unknown", "Semi-Technical", "Well Experienced"] as const;
@@ -95,9 +95,13 @@ export function IntakeClient() {
     })();
   }, [router, projectIdParam]);
 
+  // §5.2 fix: step 2 (AI tool) is now MULTI-SELECT. The user can pick
+  // any combination of Claude / ChatGPT (Codex) / Cursor / Replit /
+  // Lovable / etc — see submit() below for how the joined string flows
+  // into the existing `ai_tools_used` text column.
   const canAdvance =
     (step === 1 && familiarity.length === 1) ||
-    (step === 2 && aiTools.length === 1) ||
+    (step === 2 && aiTools.length >= 1) ||
     (step === 3 && developing.length === 1) ||
     (step === 4 && technologies.length > 0);
 
@@ -157,12 +161,18 @@ export function IntakeClient() {
       // 4. Upsert the intake row keyed on (project_id, customer_user_id).
       //    declined_by is cleared so a fresh session can re-try engineers
       //    that declined in a previous session for this project.
+      // Step 2 is now multi-select in the UI (§5.2). The intake column
+      // `ai_tools_used` is still a single `text` column on the DB side,
+      // so we join the selected tools with ", " and keep the existing
+      // submit shape. Engineer-matching reads the string as-is.
+      // TODO(api): widen `client_intakes.ai_tools_used` to `text[]` and
+      // pass `aiTools` directly here. No UI changes needed at that point.
       const intakePayload = {
         guest_call_id: session.id,
         customer_user_id: u.user.id,
         project_id: projectId,
         familiarity: familiarity[0],
-        ai_tools_used: aiTools[0],
+        ai_tools_used: aiTools.join(", "),
         developing: developing[0],
         technologies: wantsTechStep ? technologies : [],
         declined_by: [] as string[],
@@ -202,7 +212,7 @@ export function IntakeClient() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-sm" style={{ color: "var(--text-muted)" }}>
+      <div className="flex min-h-[100dvh] items-center justify-center bg-[var(--background)] text-sm text-[var(--text-muted)]">
         Loading…
       </div>
     );
@@ -217,26 +227,44 @@ export function IntakeClient() {
       canAdvance={canAdvance}
       isLast={step === totalSteps}
       busy={busy}
-      nextLabel={step === totalSteps ? "Find Engineer" : "Next"}
+      nextLabel={step === totalSteps ? "Find an engineer" : "Next"}
       onNext={onNext}
       onBack={onBack}
-      footer={
-        error ? (
-          <p className="text-sm" style={{ color: "var(--accent-red)" }}>{error}</p>
-        ) : null
-      }
+      footer={error ? <Toast tone="risk">{error}</Toast> : null}
     >
       {step === 1 && (
-        <ChipGroup options={FAMILIARITY} value={familiarity} onChange={setFamiliarity} />
+        <ChipGroup
+          options={FAMILIARITY}
+          value={familiarity}
+          onChange={setFamiliarity}
+          label="How familiar are you with development?"
+        />
       )}
       {step === 2 && (
-        <ChipGroup options={AI_TOOLS} value={aiTools} onChange={setAiTools} />
+        <ChipGroup
+          options={AI_TOOLS}
+          value={aiTools}
+          multi
+          onChange={setAiTools}
+          label="AI tools you've been using"
+        />
       )}
       {step === 3 && (
-        <ChipGroup options={DEVELOPING} value={developing} onChange={setDeveloping} />
+        <ChipGroup
+          options={DEVELOPING}
+          value={developing}
+          onChange={setDeveloping}
+          label="What you're building"
+        />
       )}
       {step === 4 && wantsTechStep && (
-        <ChipGroup options={TECHNOLOGIES} value={technologies} multi onChange={setTechnologies} />
+        <ChipGroup
+          options={TECHNOLOGIES}
+          value={technologies}
+          multi
+          onChange={setTechnologies}
+          label="Technologies you're working with"
+        />
       )}
     </WizardShell>
   );
@@ -245,7 +273,7 @@ export function IntakeClient() {
 function titleFor(step: number) {
   return [
     "How familiar are you with development?",
-    "Which AI tool have you been using?",
+    "Which AI tools are you using?",
     "What are you building?",
     "Which technologies are you working with?",
   ][step - 1];
@@ -253,7 +281,7 @@ function titleFor(step: number) {
 function subtitleFor(step: number) {
   return [
     "Helps us right-size the conversation.",
-    "We tailor the engineer match to your tooling.",
+    "Pick every tool that's in your stack — we'll match the right engineer.",
     "One option that fits best.",
     "Select all that apply.",
   ][step - 1];
