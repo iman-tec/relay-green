@@ -63,10 +63,13 @@ function titleCase(s: string): string {
  * somewhere safe (/dashboard) until the dedicated surfaces ship.
  */
 export function landingForRoles(roles: readonly string[]): string {
-  if (roles.includes(ROLE.super_admin))      return "/admin/users";
+  // super_admin / enterprise_admin / department_admin now land on their
+  // v2 panels. Legacy /admin/users, /enterprise, /department still work
+  // for direct navigation until those surfaces are retired.
+  if (roles.includes(ROLE.super_admin))      return "/admin/v2";
   if (roles.includes(ROLE.reseller))         return "/reseller";
-  if (roles.includes(ROLE.enterprise_admin)) return "/enterprise";
-  if (roles.includes(ROLE.department_admin)) return "/department";
+  if (roles.includes(ROLE.enterprise_admin)) return "/enterprise/v2";
+  if (roles.includes(ROLE.department_admin)) return "/department/v2";
   if (roles.includes(ROLE.supervisor))       return "/supervise";
   if (roles.includes(ROLE.engineer))         return "/dashboard";
   return "/room";

@@ -26,7 +26,6 @@ import {
   Loader2, LogOut, ChevronDown, AlertTriangle, X,
   PanelLeftClose, PanelLeftOpen, LayoutDashboard,
   Eye, Users as UsersIcon, Wallet as WalletIcon, Table as TableIcon, Inbox as InboxIcon,
-  Building2,
 } from "lucide-react";
 import { Wordmark } from "./Wordmark";
 import { useStaffGuard } from "@/lib/relay/useStaffGuard";
@@ -69,14 +68,15 @@ const NAV: Nav[] = [
   // and the org-scoped grid for enterprise + department admins — see
   // app/(staff)/supervise/page.tsx.
   { href: "/supervise",            label: "Supervise", icon: Eye,             roles: [ROLE.supervisor, ROLE.department_admin, ROLE.enterprise_admin, ROLE.super_admin] },
-  { href: "/admin/users",          label: "Users",     icon: UsersIcon,       roles: [ROLE.super_admin] },
-  // enterprise_admin's home is /enterprise; the Supervise link above is shared with platform staff.
-  { href: "/enterprise",           label: "Dashboard", icon: LayoutDashboard, roles: [ROLE.enterprise_admin] },
-  { href: "/enterprise/departments", label: "Departments", icon: Building2,   roles: [ROLE.enterprise_admin] },
+  // super_admin's primary surface — the redesigned 4-tab panel
+  // (Enterprise / Reseller / Pods / Internal Users).
+  { href: "/admin/v2",             label: "Users",     icon: UsersIcon,       roles: [ROLE.super_admin] },
+  // enterprise_admin's primary surface — the redesigned Departments panel.
+  { href: "/enterprise/v2",        label: "Dashboard", icon: LayoutDashboard, roles: [ROLE.enterprise_admin] },
   // reseller-owner console — single screen with KPIs + the inorganic enterprises they own.
   { href: "/reseller",             label: "Reseller",  icon: LayoutDashboard, roles: [ROLE.reseller] },
-  // department admin home — dashboard + employees module.
-  { href: "/department",           label: "Department", icon: LayoutDashboard, roles: [ROLE.department_admin] },
+  // department_admin's primary surface — the redesigned Employees panel.
+  { href: "/department/v2",        label: "Department", icon: LayoutDashboard, roles: [ROLE.department_admin] },
   // /finance is the org-level money + feedback console — enterprise_admin
   // only. Department admins don't see it; their finance scope is the
   // dept-only view at /department.
@@ -226,7 +226,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   //   /supervise   (org-scoped view, branches server-side on role)
   // Without this filter, an enterprise_admin who also happens to hold
   // platform-side roles for testing would see /admin/users in the sidebar.
-  const ENT_ADMIN_ALLOW = new Set(["/enterprise", "/enterprise/departments"]);
+  const ENT_ADMIN_ALLOW = new Set(["/enterprise/v2", "/enterprise", "/enterprise/departments"]);
   // Routes that super_admin should never see even when they hold the
   // underlying role for testing (e.g. dev.soni also has supervisor so she
   // can join real sessions, but /operations is a supervisor surface).
