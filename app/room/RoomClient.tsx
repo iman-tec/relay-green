@@ -38,6 +38,7 @@ import { PaywallModal } from "@/app/_components/PaywallModal";
 import { MatchingModal } from "@/app/_components/MatchingModal";
 import { ChatComposer } from "@/app/_components/ChatComposer";
 import { MessageAttachments } from "@/app/_components/MessageAttachments";
+import { Button, EmptyState } from "@/app/_components/ui";
 import { useCustomerSession } from "@/lib/relay/useCustomerSession";
 import { useIsSupervisor, isSupervisorOnlyMessage } from "@/lib/relay/useIsSupervisor";
 import { useSessionTimer } from "@/lib/relay/useSessionTimer";
@@ -917,51 +918,40 @@ function BrandedLanding({
   const showLoading = !hasProject && customerSummaryLoading && !customerSummary;
 
   return (
-    <div className="flex h-full w-full">
+    <div className="relative flex h-full w-full">
+      {/* Atmospheric top glow — quiet brand presence on the dashboard. */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-72"
+        style={{
+          background:
+            "radial-gradient(ellipse at top, color-mix(in srgb, var(--green-dot) 10%, transparent), transparent 70%)",
+        }}
+      />
+
       {/* Centre: branded hero */}
       <div className="relative flex flex-1 items-center justify-center px-6">
         <div className="flex max-w-md flex-col items-center text-center">
           <Wordmark size="lg" />
-          <h1
-            className="mt-6 text-2xl font-medium sm:text-3xl"
-            style={{
-              fontFamily: "var(--font-source-serif)",
-              color: "var(--text)",
-              letterSpacing: "-0.01em",
-              lineHeight: 1.2,
-            }}
-          >
+          <h1 className="mt-6 font-serif text-3xl font-medium leading-tight tracking-tight text-[var(--text)] sm:text-4xl">
             Real engineers, ninety seconds away.
           </h1>
-          <p className="mt-3 text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
-            Start a session and a qualified human jumps into a chat + Zoom call with you.
+          <p className="mt-3 text-[15px] leading-relaxed text-[var(--text-muted)]">
+            A qualified human joins your chat + Zoom call in ~90 seconds. Tap below to start.
           </p>
 
           {hasProject ? (
             <>
-              <div
-                className="mt-7 inline-flex items-center gap-3 rounded-2xl border px-4 py-3 shadow-sm"
-                style={{
-                  borderColor: BRAND_GREEN_BORDER,
-                  backgroundColor: BRAND_GREEN_SOFT,
-                }}
-              >
-                <div
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
-                  style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
-                >
+              <div className="mt-7 inline-flex items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] px-4 py-3 shadow-sm">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
                   <Folder size={16} />
                 </div>
                 <div className="flex min-w-0 flex-col items-start text-left">
-                  <span
-                    className="text-[10px] font-semibold uppercase tracking-wider"
-                    style={{ color: BRAND_GREEN, opacity: 0.85 }}
-                  >
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                     Working in
                   </span>
                   <span
-                    className="max-w-[220px] truncate text-base font-semibold leading-tight"
-                    style={{ color: "var(--text)" }}
+                    className="max-w-[220px] truncate text-base font-semibold leading-tight text-[var(--text)]"
                     title={selectedProject!.name}
                   >
                     {selectedProject!.name}
@@ -970,35 +960,38 @@ function BrandedLanding({
                 <button
                   type="button"
                   onClick={onClearSelectedProject}
-                  className="ml-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full opacity-70 transition-opacity hover:opacity-100"
-                  style={{ color: BRAND_GREEN, backgroundColor: "color-mix(in srgb, var(--text) 4%, transparent)" }}
+                  className="ml-1 inline-flex size-7 shrink-0 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[color-mix(in_srgb,var(--text)_6%,transparent)] hover:text-[var(--text)]"
                   aria-label="Clear selected project"
                   title="Clear project"
                 >
                   <X size={13} />
                 </button>
               </div>
-              <button
-                type="button"
+              <Button
+                variant="launcher"
+                size="xl"
                 onClick={onStartInProject}
-                className="mt-4 inline-flex items-center gap-1.5 rounded-full px-5 py-2.5 text-sm font-semibold transition-opacity hover:opacity-90"
-                style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+                iconLeft={<Plus size={16} />}
+                className="mt-5"
               >
-                <Plus size={14} />
                 Start session in {selectedProject!.name}
-              </button>
+              </Button>
             </>
           ) : (
-            <button
-              type="button"
+            <Button
+              variant="launcher"
+              size="xl"
               onClick={onStartNewSession}
-              className="mt-6 inline-flex items-center gap-1.5 rounded-full px-5 py-2.5 text-sm font-semibold transition-opacity hover:opacity-90"
-              style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+              iconLeft={<Plus size={16} />}
+              className="mt-7"
             >
-              <Plus size={14} />
-              Start a new session
-            </button>
+              Get an engineer now
+            </Button>
           )}
+
+          <p className="mt-4 text-xs text-[var(--text-faint)]">
+            Chat + Zoom. No installs. Pay only for time you use.
+          </p>
         </div>
       </div>
 
@@ -1047,49 +1040,38 @@ function BrandedLanding({
           <div className="flex-1 overflow-y-auto px-5 py-5">
             {showLoading ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
-                <Loader2 size={16} className="animate-spin" style={{ color: BRAND_GREEN }} />
-                <span className="mt-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
+                <Loader2 size={16} className="animate-spin text-[var(--text-muted)]" />
+                <span className="mt-2 text-[11px] text-[var(--text-muted)]">
                   Loading summary…
                 </span>
               </div>
             ) : panelSummaryOverview || panelSummaryTitle ? (
-              <div className="space-y-4">
+              <div className="space-y-4 max-w-prose">
                 {panelSummaryTitle ? (
-                  <h2
-                    className="text-lg font-medium leading-tight"
-                    style={{
-                      fontFamily: "var(--font-source-serif)",
-                      color: "var(--text)",
-                      letterSpacing: "-0.01em",
-                    }}
-                  >
+                  <h2 className="font-serif text-lg font-medium leading-tight tracking-tight text-[var(--text)]">
                     {panelSummaryTitle}
                   </h2>
                 ) : null}
                 {panelSummaryOverview ? (
-                  <p
-                    className="whitespace-pre-wrap text-[13px] leading-relaxed"
-                    style={{ color: "var(--text)" }}
-                  >
+                  <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-[var(--text)]">
                     {panelSummaryOverview}
                   </p>
                 ) : null}
                 {Array.isArray(panelNextSteps) && panelNextSteps.length > 0 ? (
                   <div>
-                    <h3
-                      className="mb-2 text-[10px] font-semibold uppercase tracking-wider"
-                      style={{ color: "var(--text-muted)" }}
-                    >
+                    <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                       Next steps
                     </h3>
-                    <ul className="space-y-1.5">
+                    <ul className="space-y-2">
                       {panelNextSteps.map((step, i) => (
                         <li
                           key={i}
-                          className="flex gap-2 text-[13px] leading-relaxed"
-                          style={{ color: "var(--text)" }}
+                          className="flex gap-2 text-[13px] leading-relaxed text-[var(--text)]"
                         >
-                          <span style={{ color: BRAND_GREEN }}>→</span>
+                          <ChevronRight
+                            size={14}
+                            className="mt-0.5 shrink-0 text-[var(--primary)]"
+                          />
                           <span>{step}</span>
                         </li>
                       ))}
@@ -1098,15 +1080,12 @@ function BrandedLanding({
                 ) : null}
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <Sparkles size={20} style={{ color: BRAND_GREEN }} className="mb-3" />
-                <p className="text-sm font-medium" style={{ color: "var(--text)" }}>
-                  No summary yet
-                </p>
-                <p className="mt-2 text-[11px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
-                  {panelEmptyHint}
-                </p>
-              </div>
+              <EmptyState
+                compact
+                icon={<Sparkles size={20} className="text-[var(--primary)]" />}
+                title="No summary yet"
+                body={panelEmptyHint}
+              />
             )}
           </div>
         )}

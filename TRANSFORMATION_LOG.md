@@ -209,19 +209,67 @@ to `/login?next=/intake`.
 **Verification:** `tsc --noEmit` clean. `eslint` clean on touched
 paths.
 
-### Notes for Phase 5 (Dashboard / empty state)
+---
 
-- `RoomClient.tsx` no-session branch is **inside** the same client as
-  the live-session view. Need to locate the empty-state JSX block
-  cleanly (sidebar + hero + projects list + footer).
-- Replace the hero CTA with `<Button variant="launcher" size="xl">` —
-  green pulse halo, the single most obvious action on the screen.
-- Reassuring line under the CTA: "A real engineer joins your chat +
-  Zoom in ~90 seconds."
-- Empty Projects list → `<EmptyState>` with a "Start a session" link.
-- "No summary yet" pane → `<EmptyState compact>` with copy guidance.
-- Customer left sidebar — restyle but **do not** change the
-  past-sessions data fetch (audit flagged perf; that's a follow-up,
-  not part of UI restyle).
-- Footer block (avatar + name + "X min free available") restyled
-  via `<Avatar>` + readable typography.
+## Phase 5 — Dashboard / empty state (this commit)
+
+**File touched:** `app/room/RoomClient.tsx` — only the `BrandedLanding`
+component (the empty-state landing) plus its summary right-rail. The
+~3500-line `RoomClient` is otherwise untouched in this phase; live
+chat + room come in Phase 7.
+
+**Visual deltas:**
+
+- Hero CTA promoted to **`<Button variant="launcher" size="xl">`** with
+  the green pulse halo — "Get an engineer now." This is the single
+  most obvious action on the screen, brief §5.3 satisfied.
+- Hero copy strengthened: subcopy now sets expectations ("A qualified
+  human joins your chat + Zoom call in ~90 seconds. Tap below to
+  start."). Tiny faint reassurance below the CTA: "Chat + Zoom. No
+  installs. Pay only for time you use."
+- Atmospheric green radial top-glow framing the dashboard — matches
+  the calm control-room mood. Subtle, not noisy.
+- Headline switched from inline `style={{ fontFamily, color,
+  letterSpacing, lineHeight }}` to `font-serif text-3xl … sm:text-4xl
+  tracking-tight` utilities. Tokens for color.
+- "Working in {project}" pill: BRAND_GREEN/SOFT/BORDER inline colors
+  replaced with `--surface-raised` chrome + `--primary-soft` icon
+  tile + `--primary` text + `--text-muted` eyebrow. Read more
+  consistently with the rest of the new design.
+- Project-scoped CTA also uses `launcher` variant.
+- **Right-rail summary panel** restyled:
+  - `Loader2` no longer hardcoded `BRAND_GREEN`.
+  - Title uses `font-serif` utility.
+  - Body wrapped in `max-w-prose` (audit-flagged readability — was
+    700+ char lines on wide splits).
+  - "Next steps" arrow upgraded from a plain `→` character to a
+    `ChevronRight` Lucide icon (audit fix: text glyph-as-icon).
+  - "No summary yet" → `<EmptyState compact>` (with passing through
+    the existing `panelEmptyHint`).
+
+**Data contracts: untouched.** Same `customer_summaries` query, same
+`useState<CustomerSummary>`, same right-rail collapse state, same
+`onStartNewSession` / `onStartInProject` / `onClearSelectedProject`
+props.
+
+**Brand-green deletions in BrandedLanding:** the JSX no longer
+references `BRAND_GREEN`, `BRAND_GREEN_SOFT`, `BRAND_GREEN_BORDER`.
+The constants remain at the top of `RoomClient.tsx` for the
+not-yet-restyled live-session JSX. They go in Phase 7.
+
+**Verification:** `tsc --noEmit` clean.
+
+### Notes for Phase 6 (Ringing + chat-while-ringing)
+
+- Touch `app/intake/matching/[id]/MatchingClient.tsx` and the
+  `MatchingModal` component.
+- Brief §5.4 required: chat ENABLED while ringing. Build the
+  net-new `IntakeAssistant` shell + `ContextCard` per §7.
+- New files:
+  - `lib/intake/intakeAssistant.ts` — scripted prompt sequence
+    + pure mapper to `IntakeContext`.
+  - `app/_components/intake/IntakeAssistant.tsx` — local-state UI shell.
+  - `app/_components/intake/ContextCard.tsx` — engineer-context summary.
+- Pulse + countdown on the ringing surface uses `launcher` pulse
+  halo. Cancel button via `<Button variant="secondary">`.
+- Backend untouched. All TODO(api) markers per §7 spec.
