@@ -1,41 +1,79 @@
 "use client";
 
 /*
- * Supervisor operations roster — compact, read-only table of every
- * engineer in the caller's pod. Columns: name, email, currently working
- * with, last call. Search by name or email.
+ * Supervisor operations roster — table of every engineer in the caller's
+ * pod. Columns: name + email, assigned supervisor (via the pod-allocation
+ * SEAM), currently working with, last call.
+ *
+ * Phase-9 restyle: visual + adds the §6 SEAM slots (assigned supervisor
+ * column, online dot, capacity meter). Logic comes from
+ * `lib/allocation/podAllocation.ts` — today's pass-through returns the
+ * first supervisor for every engineer, so the UI mirrors current
+ * behaviour while leaving room for the 10/15-threshold rule later.
+ *
+ * Data contracts untouched: same GET /api/supervisor/team, same Engineer
+ * shape. The "assigned supervisor" column derives from
+ * `body.supervisors` if the API surfaces it; otherwise it falls back to
+ * displaying nothing — the seam still exists in code, the UI just has
+ * no data to render until backend wires the list up.
+ *   TODO(api): /api/supervisor/team should return `supervisors[]` in
+ *   addition to `engineers[]` (and a `myUserId` so we know which one is
+ *   the viewer). UI shape below already accepts that.
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Search } from "lucide-react";
-
-const BRAND_GREEN      = "#3f5c2e";
-const BRAND_GREEN_SOFT = "rgba(63, 92, 46, 0.10)";
+import { Loader2, Search, Users } from "lucide-react";
+import {
+  Avatar,
+  Card,
+  EmptyState as UiEmptyState,
+  Input,
+  SectionHeader,
+  StatusBadge,
+  cn,
+} from "@/app/_components/ui";
+import {
+  getSupervisorForEngineer,
+  isOnlineFromLastSeen,
+  podCapacity,
+  POD_MAX_ENGINEERS,
+  POD_PRIMARY_SUPERVISOR_CAP,
+  type AllocationEngineer,
+  type AllocationSupervisor,
+  type Pod,
+} from "@/lib/allocation/podAllocation";
 
 type Engineer = {
-  userId:          string;
-  displayName:     string;
-  email:           string;
-  primaryRole:     string;
+  userId: string;
+  displayName: string;
+  email: string;
+  primaryRole: string;
   currentCustomer: string | null;
-  lastCustomer:    string | null;
-  lastCallAt:      string | null;
+  lastCustomer: string | null;
+  lastCallAt: string | null;
 };
 
-type Pod = { id: string; name: string } | null;
+type TeamResponse = {
+  pod?: Pod | null;
+  engineers?: Engineer[];
+  /** TODO(api): backend can populate this; UI ignores when missing. */
+  supervisors?: AllocationSupervisor[];
+};
 
 export function OperationsClient() {
-  const [pod, setPod]         = useState<Pod>(null);
-  const [rows, setRows]       = useState<Engineer[]>([]);
+  const [pod, setPod] = useState<Pod | null>(null);
+  const [rows, setRows] = useState<Engineer[]>([]);
+  const [supervisors, setSupervisors] = useState<AllocationSupervisor[]>([]);
   const [loading, setLoading] = useState(true);
-  const [query, setQuery]     = useState("");
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     void (async () => {
       const res = await fetch("/api/supervisor/team", { cache: "no-store" });
-      const body = await res.json().catch(() => ({ engineers: [] }));
-      setPod((body.pod ?? null) as Pod);
+      const body = (await res.json().catch(() => ({}))) as TeamResponse;
+      setPod((body.pod ?? null) as Pod | null);
       setRows((body.engineers ?? []) as Engineer[]);
+      setSupervisors((body.supervisors ?? []) as AllocationSupervisor[]);
       setLoading(false);
     })();
   }, []);
@@ -51,120 +89,305 @@ export function OperationsClient() {
     );
   }, [rows, query]);
 
-  return (
-    <div className="mx-auto max-w-screen-xl space-y-5 px-8 py-8">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold" style={{ color: "var(--text)" }}>Operations</h1>
-          <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
-            {pod ? `Pod ${pod.name} — engineers under your watch.` : "Engineers under your watch."}
-          </p>
-        </div>
-        <div className="relative">
-          <Search
-            size={12}
-            className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2"
-            style={{ color: "var(--text-muted)" }}
-          />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search engineers…"
-            className="rounded-md border py-1 pl-7 pr-2 text-xs outline-none"
-            style={{
-              borderColor: "var(--border)",
-              backgroundColor: "var(--background)",
-              color: "var(--text)",
-              width: 240,
-            }}
-          />
-        </div>
-      </div>
+  // Build the AllocationEngineer view-model for each row. positionInPod
+  // is 1-based and reflects the caller's row order (the threshold rule
+  // will replace this with a durable sort later).
+  const allocRows = useMemo<AllocationEngineer[]>(
+    () =>
+      rows.map((r, i) => ({
+        userId: r.userId,
+        positionInPod: i + 1,
+        lastCallAt: r.lastCallAt,
+        onLiveCall: !!r.currentCustomer,
+      })),
+    [rows],
+  );
 
-      <div
-        className="overflow-hidden rounded-xl border"
-        style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
-      >
+  const capacity = podCapacity(allocRows);
+
+  return (
+    <div className="mx-auto max-w-screen-xl space-y-6 px-8 py-8">
+      <SectionHeader
+        title={pod ? `Pod ${pod.name}` : "Operations"}
+        subtitle="Engineers under your watch. The capacity meter shows the 10-engineer threshold — engineers 1–10 belong to the first supervisor, 11–15 to the second."
+        right={
+          <div className="w-72 max-w-full">
+            <Input
+              srLabel="Search engineers"
+              prefix={<Search size={14} />}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search engineers…"
+              size="md"
+            />
+          </div>
+        }
+      />
+
+      {pod && allocRows.length > 0 && (
+        <CapacityMeter capacity={capacity} supervisors={supervisors} />
+      )}
+
+      <Card variant="surface">
         {loading ? (
           <div className="flex justify-center py-10">
-            <Loader2 size={16} className="animate-spin" style={{ color: BRAND_GREEN }} />
+            <Loader2 size={16} className="animate-spin text-[var(--text-muted)]" />
           </div>
         ) : filtered.length === 0 ? (
-          <p className="px-5 py-10 text-center text-xs" style={{ color: "var(--text-muted)" }}>
-            {rows.length === 0
-              ? "No engineers in your pod yet."
-              : `No engineers match “${query}”.`}
-          </p>
+          <UiEmptyState
+            compact
+            icon={<Users size={20} className="text-[var(--text-muted)]" />}
+            title={rows.length === 0 ? "No engineers in your pod yet" : "No matches"}
+            body={
+              rows.length === 0
+                ? "Once an engineer joins your pod they'll appear here."
+                : `No engineers match "${query}".`
+            }
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead>
-                <tr
-                  className="border-b"
-                  style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
-                >
-                  <Th>Name</Th>
-                  <Th>Email</Th>
-                  <Th>Currently working with</Th>
+              <thead className="bg-[var(--surface-raised)]">
+                <tr className="border-b border-[var(--border)]">
+                  <Th>Engineer</Th>
+                  <Th>Assigned supervisor</Th>
+                  <Th>Status</Th>
                   <Th>Last call</Th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((r, i) => (
-                  <tr
-                    key={r.userId}
-                    style={{
-                      borderTop: i === 0 ? undefined : "1px solid var(--border)",
-                    }}
-                  >
-                    <Td>
-                      <span style={{ color: "var(--text)", fontWeight: 500 }}>{r.displayName}</span>
-                    </Td>
-                    <Td>
-                      <span style={{ color: "var(--text-muted)" }}>{r.email || "—"}</span>
-                    </Td>
-                    <Td>
-                      {r.currentCustomer ? (
-                        <span className="inline-flex items-center gap-1.5">
-                          <span
-                            className="h-1.5 w-1.5 rounded-full"
-                            style={{ backgroundColor: BRAND_GREEN }}
+                {filtered.map((r) => {
+                  const alloc = allocRows.find((a) => a.userId === r.userId);
+                  const supervisor = alloc && pod
+                    ? getSupervisorForEngineer(alloc, pod, supervisors)
+                    : null;
+                  const engineerOnline = isOnlineFromLastSeen(r.lastCallAt, {
+                    onLiveCall: !!r.currentCustomer,
+                  });
+                  return (
+                    <tr
+                      key={r.userId}
+                      className="border-t border-[var(--border)] transition-colors hover:bg-[color-mix(in_srgb,var(--text)_3%,transparent)]"
+                    >
+                      <Td>
+                        <div className="flex items-center gap-3">
+                          <Avatar
+                            name={r.displayName}
+                            email={r.email}
+                            size="sm"
+                            tone={engineerOnline ? "ok" : "neutral"}
                           />
-                          <span style={{ color: "var(--text)" }}>{r.currentCustomer}</span>
+                          <div className="min-w-0">
+                            <div className="font-medium text-[var(--text)]">
+                              {r.displayName}
+                            </div>
+                            <div className="truncate text-xs text-[var(--text-muted)]">
+                              {r.email || "—"}
+                            </div>
+                          </div>
+                        </div>
+                      </Td>
+                      <Td>
+                        {supervisor ? (
+                          <div className="flex items-center gap-2">
+                            <span
+                              aria-hidden
+                              className={cn(
+                                "inline-block size-1.5 rounded-full",
+                                supervisor.online
+                                  ? "bg-[var(--ok)]"
+                                  : "bg-[var(--text-faint)]",
+                              )}
+                              title={supervisor.online ? "Online" : "Offline"}
+                            />
+                            <div className="min-w-0">
+                              <div className="text-sm text-[var(--text)]">
+                                {supervisor.displayName}
+                              </div>
+                              <div className="truncate text-xs text-[var(--text-muted)]">
+                                {supervisor.online ? "Online" : "Offline"}
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
                           <span
-                            className="ml-1 rounded-full px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider"
-                            style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
+                            className="text-xs text-[var(--text-faint)]"
+                            title="Allocation pending — waiting for backend to expose supervisors[]"
                           >
-                            Live
+                            —
                           </span>
-                        </span>
-                      ) : (
-                        <span style={{ color: "var(--text-muted)" }}>Idle</span>
-                      )}
-                    </Td>
-                    <Td>
-                      {r.lastCallAt ? (
-                        <span>
-                          <span style={{ color: "var(--text)" }}>{r.lastCustomer ?? "—"}</span>
-                          <span className="ml-2 text-[12px]" style={{ color: "var(--text-muted)" }}>
-                            {new Date(r.lastCallAt).toLocaleString(undefined, {
-                              month: "short",
-                              day: "numeric",
-                              hour: "numeric",
-                              minute: "2-digit",
-                            })}
+                        )}
+                      </Td>
+                      <Td>
+                        {r.currentCustomer ? (
+                          <span className="inline-flex items-center gap-2">
+                            <StatusBadge tone="ok" compact pulse>
+                              On call
+                            </StatusBadge>
+                            <span className="text-xs text-[var(--text)]">
+                              with {r.currentCustomer}
+                            </span>
                           </span>
-                        </span>
-                      ) : (
-                        <span style={{ color: "var(--text-muted)" }}>—</span>
-                      )}
-                    </Td>
-                  </tr>
-                ))}
+                        ) : (
+                          <StatusBadge tone="neutral" compact>
+                            Idle
+                          </StatusBadge>
+                        )}
+                      </Td>
+                      <Td>
+                        {r.lastCallAt ? (
+                          <span className="text-[var(--text)]">
+                            {r.lastCustomer ?? "—"}
+                            <span className="ml-2 text-[12px] text-[var(--text-muted)]">
+                              {new Date(r.lastCallAt).toLocaleString(undefined, {
+                                month: "short",
+                                day: "numeric",
+                                hour: "numeric",
+                                minute: "2-digit",
+                              })}
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="text-[var(--text-muted)]">—</span>
+                        )}
+                      </Td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
+      </Card>
+    </div>
+  );
+}
+
+/* ── Capacity meter (1–10 / 11–15 threshold visualisation) ───────── */
+
+function CapacityMeter({
+  capacity,
+  supervisors,
+}: {
+  capacity: ReturnType<typeof podCapacity>;
+  supervisors: AllocationSupervisor[];
+}) {
+  const sup1 = supervisors[0] ?? null;
+  const sup2 = supervisors[1] ?? null;
+
+  return (
+    <Card variant="raised">
+      <div className="px-5 py-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Users size={14} className="text-[var(--text-muted)]" />
+            <h3 className="text-sm font-semibold text-[var(--text)]">
+              Pod capacity
+            </h3>
+          </div>
+          <div className="flex items-center gap-3 text-xs">
+            <span className="tabular-nums text-[var(--text-muted)]">
+              {capacity.total} / {POD_MAX_ENGINEERS}
+            </span>
+            {capacity.overflow > 0 && (
+              <StatusBadge tone="risk" compact>
+                {capacity.overflow} over
+              </StatusBadge>
+            )}
+          </div>
+        </div>
+
+        <div
+          className="grid h-2 overflow-hidden rounded-full bg-[color-mix(in_srgb,var(--text)_8%,transparent)]"
+          style={{
+            gridTemplateColumns: `${POD_PRIMARY_SUPERVISOR_CAP}fr ${POD_MAX_ENGINEERS - POD_PRIMARY_SUPERVISOR_CAP}fr`,
+          }}
+        >
+          <div className="relative">
+            <div
+              className="h-full bg-[var(--primary)] transition-[width] duration-[var(--motion-med)]"
+              style={{ width: `${(capacity.primary / POD_PRIMARY_SUPERVISOR_CAP) * 100}%` }}
+            />
+          </div>
+          <div className="relative border-l-2 border-[var(--background)]">
+            <div
+              className="h-full bg-[var(--green-dot)] transition-[width] duration-[var(--motion-med)]"
+              style={{
+                width: `${
+                  ((capacity.secondary) /
+                    (POD_MAX_ENGINEERS - POD_PRIMARY_SUPERVISOR_CAP)) * 100
+                }%`,
+              }}
+            />
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-3 text-[11px]">
+          <SupervisorSlot
+            label="Engineers 1–10"
+            supervisor={sup1}
+            count={capacity.primary}
+            cap={POD_PRIMARY_SUPERVISOR_CAP}
+            accent="primary"
+          />
+          <SupervisorSlot
+            label="Engineers 11–15"
+            supervisor={sup2}
+            count={capacity.secondary}
+            cap={POD_MAX_ENGINEERS - POD_PRIMARY_SUPERVISOR_CAP}
+            accent="green"
+          />
+        </div>
+
+        <p className="mt-3 text-[11px] leading-relaxed text-[var(--text-faint)]">
+          {/* SEAM hint surfaced inline so admins know why allocation looks
+              flat today (pass-through impl). */}
+          Allocation rule (preview): the first 10 engineers belong to the
+          first supervisor; engineers 11–15 belong to the second once
+          they&apos;re online. Cleanup in progress — see
+          <code className="mx-1 rounded bg-[color-mix(in_srgb,var(--text)_8%,transparent)] px-1 py-0.5 font-mono text-[10px]">
+            lib/allocation/podAllocation.ts
+          </code>
+          for the seam.
+        </p>
+      </div>
+    </Card>
+  );
+}
+
+function SupervisorSlot({
+  label,
+  supervisor,
+  count,
+  cap,
+  accent,
+}: {
+  label: string;
+  supervisor: AllocationSupervisor | null;
+  count: number;
+  cap: number;
+  accent: "primary" | "green";
+}) {
+  const dot = accent === "primary" ? "var(--primary)" : "var(--green-dot)";
+  return (
+    <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="inline-flex items-center gap-2 font-medium text-[var(--text)]">
+          <span
+            aria-hidden
+            className="inline-block size-1.5 rounded-full"
+            style={{ background: dot }}
+          />
+          {label}
+        </span>
+        <span className="tabular-nums text-[var(--text-muted)]">
+          {count} / {cap}
+        </span>
+      </div>
+      <div className="mt-1 truncate text-[var(--text-muted)]">
+        {supervisor
+          ? `${supervisor.online ? "● Online · " : "○ Offline · "}${supervisor.displayName}`
+          : "Slot open"}
       </div>
     </div>
   );
@@ -172,12 +395,16 @@ export function OperationsClient() {
 
 function Th({ children }: { children: React.ReactNode }) {
   return (
-    <th className="px-5 py-2 text-left text-[12px] font-semibold uppercase tracking-[0.08em]">
+    <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
       {children}
     </th>
   );
 }
 
 function Td({ children }: { children: React.ReactNode }) {
-  return <td className="h-11 px-5 py-2.5 align-middle whitespace-nowrap">{children}</td>;
+  return (
+    <td className="h-14 px-5 py-2.5 align-middle whitespace-nowrap text-[var(--text)]">
+      {children}
+    </td>
+  );
 }

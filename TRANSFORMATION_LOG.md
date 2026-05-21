@@ -430,17 +430,103 @@ HealthBar; doesn't replace the existing health verdict).
 `app/(staff)/supervise/` shows the same 10 problems as the baseline
 on `main` — zero new lint issues introduced.
 
-### Notes for Phase 9 (Operations + pod-allocation seam)
+---
 
-- New file: `lib/allocation/podAllocation.ts` with the SEAM markers
-  from §6 of the brief. Initial impl: identity / pass-through.
-- `OperationsClient.tsx` restyle:
-  - Real DataTable layout (header + zebra/hairline rows + sticky
-    header + working search).
-  - **New columns rendered from the allocation seam:** "Assigned
-    supervisor" + per-supervisor online/offline indicator + 1–10 /
-    11–15 capacity meter at the top.
-  - Online state derived from `lastCallAt` ≤ 5min (decision #6).
-  - Status pills via `<StatusBadge>` (Idle / On call).
-  - All BRAND_GREEN deletions.
-- No backend changes.
+## Phase 9 — Operations + pod-allocation seam (this commit)
+
+**Brief §6 delivered.** The 10-engineer-threshold pod-allocation rule
+is **not implemented** (that's deferred to a future engineering
+conversation), but every layout slot the new rule needs is now in
+place and reads from the seam module.
+
+### New file: `lib/allocation/podAllocation.ts`
+
+- Pure / dependency-free. No fetch, no Supabase.
+- Exports:
+  - `AllocationEngineer`, `AllocationSupervisor`, `Pod`,
+    `PodAllocation` types.
+  - `POD_PRIMARY_SUPERVISOR_CAP = 10`, `POD_MAX_ENGINEERS = 15`.
+  - `getSupervisorForEngineer(engineer, pod, supervisors)` — today
+    a pass-through that returns the first supervisor; the future
+    impl will compare `engineer.positionInPod` against the cap.
+  - `groupEngineersByPod(pods, engineersByPodId, supervisorsByPodId)`.
+  - `podCapacity(engineers)` — returns `{ total, primary, secondary,
+    overflow, primaryCap, totalCap }` for the visual capacity meter.
+  - `isOnlineFromLastSeen(lastSeen, { onLiveCall, now })` —
+    derives the heuristic "online if active in the last 5 min OR on
+    a live call right now". `ONLINE_WINDOW_MS = 5 * 60 * 1000`.
+- Inline SEAM block at the top of the file holds the spec for the
+  upcoming threshold + preference rule, plus the explicit:
+  > UI must not hardcode allocation anywhere else — always call this
+  > module.
+- `TODO(api):` markers in two places: `isOnlineFromLastSeen` for the
+  real presence channel + the file-level comment for the threshold
+  algorithm.
+
+### `OperationsClient.tsx` restyle
+
+- **Section header** uses `<SectionHeader>` (serif display) instead
+  of the inline `h1` + `p` pair.
+- **Search input** migrated to `<Input>` with the `Search` icon prefix
+  — real label (sr-only), 44px tall, proper focus ring.
+- **Capacity meter card** added above the table:
+  - Two-segment progress bar (1–10 / 11–15) coloured coral + green.
+  - Per-supervisor slot card showing the assigned supervisor, their
+    online/offline dot, and the count vs cap. Empty supervisor slots
+    say "Slot open."
+  - Overflow `>15` engineers surfaces a loud `tone="risk"` "N over"
+    badge.
+  - Inline copy explains the allocation rule + points at the seam
+    file (visible to admins so they know why allocation looks flat
+    today).
+- **Table:**
+  - `<Card variant="surface">` chrome around it.
+  - Header `bg-[var(--surface-raised)]`, hairline rows on hover.
+  - **New "Assigned supervisor" column** — fed by
+    `getSupervisorForEngineer`. Today shows the first supervisor for
+    every engineer (matches existing scoping behaviour). When backend
+    surfaces `supervisors[]` from `/api/supervisor/team`, the column
+    starts rendering live; until then it shows `—` with a tooltip
+    explaining the seam.
+  - **Engineer cell** uses `<Avatar tone="ok|neutral">` — green halo
+    when the engineer is online (heuristic from `isOnlineFromLastSeen`).
+  - **Status cell** uses `<StatusBadge>` — `tone="ok" pulse` when on
+    a live call, `tone="neutral"` when idle. Replaces the inline
+    BRAND_GREEN/SOFT pill + text.
+  - All `BRAND_GREEN`, `BRAND_GREEN_SOFT` constants deleted from the
+    file.
+- Empty state uses `<EmptyState>` from `ui/` (with a Users icon),
+  not the inline centered `<p>`.
+- Spinner color detokenized.
+
+### Data contract
+
+- Same `GET /api/supervisor/team` call, same `cache: "no-store"`.
+- Same `Engineer` shape consumed.
+- **Optional new field handled:** if backend surfaces a top-level
+  `supervisors[]` (shape: `AllocationSupervisor[]`), the UI uses it.
+  If absent, the Assigned-supervisor column renders `—`. **Backend
+  did not change** — this is purely a forward-compatible read; the
+  fallback path is the default until backend adds the field.
+- Marked `TODO(api): /api/supervisor/team should return supervisors[]
+  …` so the contract change is unambiguous.
+
+### Verification
+
+- `tsc --noEmit` clean.
+- `eslint app/(staff)/operations lib/allocation` clean.
+
+### Notes for Phase 10 (Read-only supervisor session view)
+
+- `EngineerSessionClient.tsx` supervisor branch — needs the calm
+  distinct read-only banner per brief §5.9. Reuse the room
+  layout + summary components.
+- Sidebar of "history with engineer" rows uses the new components.
+
+### Notes for Phase 11 (Profile / account / settings)
+
+- `/settings` page → use Card + Avatar + Input + Button.
+- Profile dropdown bug in StaffShell.tsx:277 (`<ProfileChipInline
+  email={guard.kind === "staff" ? "" : ""} />` — both branches pass
+  `""`) — fix in passing.
+- "X min free available" footer chunk needs a legible treatment.
