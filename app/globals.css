@@ -14,17 +14,42 @@
   /* Surfaces */
   --background: #2c2a26; /* warm dark */
   --surface: #1f1e1b;
+  --surface-raised: #25241f; /* elevation above --surface (cards on top of cards) */
   --border: #3a3833;
+  --border-strong: #4a4842; /* hairline at higher contrast (focused inputs) */
 
   /* Text */
   --text: #f5f4ee;
-  --text-muted: #a6a29b;
+  --text-muted: #a6a29b; /* secondary metadata */
+  --text-faint: #777268; /* tertiary / disabled */
 
   /* Brand */
   --primary: #d97757; /* Claude coral — primary CTA only */
   --primary-hover: #c66645;
-  --green-dot: #3dcb7e; /* the brand green dot — launcher only */
-  --accent-red: #c87c3d; /* supervisor red-card alerts only */
+  --primary-soft: color-mix(in srgb, var(--primary) 14%, transparent);
+  --green-dot: #3dcb7e; /* the brand green dot — launcher + ok-status only */
+  --green-soft: color-mix(in srgb, var(--green-dot) 14%, transparent);
+  --accent-red: #c87c3d; /* legacy alias — kept for prior call-sites */
+
+  /* Semantic status (label + icon, not color-only) */
+  --ok: var(--green-dot);
+  --ok-soft: var(--green-soft);
+  --warn: #d4a017;
+  --warn-soft: color-mix(in srgb, #d4a017 16%, transparent);
+  --risk: #c84a3a;
+  --risk-soft: color-mix(in srgb, #c84a3a 16%, transparent);
+
+  /* Aliases per Phase-1 plan */
+  --accent: var(--primary);
+  --accent-strong: var(--primary-hover);
+
+  /* Overlays */
+  --scrim: rgba(0, 0, 0, 0.62);
+
+  /* Motion timings */
+  --motion-fast: 150ms;
+  --motion-med: 240ms;
+  --motion-slow: 320ms;
 
   /* Force the browser's native form controls (Stripe iframe, date pickers,
    * scrollbars, etc.) to render in dark mode regardless of OS preference. */
@@ -38,13 +63,26 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-text: var(--text);
   --color-text-muted: var(--text-muted);
+  --color-text-faint: var(--text-faint);
   --color-primary: var(--primary);
   --color-primary-hover: var(--primary-hover);
+  --color-primary-soft: var(--primary-soft);
   --color-green-dot: var(--green-dot);
+  --color-green-soft: var(--green-soft);
   --color-accent-red: var(--accent-red);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-risk: var(--risk);
+  --color-risk-soft: var(--risk-soft);
 
   --font-serif: var(--font-source-serif);
   --font-sans: var(--font-inter);
@@ -230,4 +268,41 @@ textarea {
 @keyframes relay-toast-in {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ──────── Status / launcher pulse ─────────────────────────────────────
+   `relay-pulse-ok` — gentle green halo for the launcher and ringing state.
+   Calming, slow (1.8s), respects reduced-motion. Used by Button variant
+   `launcher` and the ringing screen's living motion. */
+@keyframes relay-pulse-ok {
+  0%, 100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--green-dot) 55%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 10px color-mix(in srgb, var(--green-dot) 0%, transparent);
+  }
+}
+
+[data-relay-pulse] {
+  animation: relay-pulse-ok 1800ms ease-in-out infinite;
+}
+
+/* Reduced-motion: kill every keyframe animation introduced for the
+ * transformation. Existing `relay-page-in` and `[data-hover-lift]` already
+ * have their own guards above; the rules below cover the new ones and the
+ * legacy `ping` / `relay-pulse` / `engineer-ring` keyframes called out in
+ * the audit. */
+@media (prefers-reduced-motion: reduce) {
+  [data-relay-pulse],
+  .animate-ping,
+  [class*="animate-[relay-pulse"],
+  [class*="animate-[engineer-ring"] {
+    animation: none !important;
+  }
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
