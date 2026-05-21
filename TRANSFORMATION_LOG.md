@@ -259,17 +259,81 @@ not-yet-restyled live-session JSX. They go in Phase 7.
 
 **Verification:** `tsc --noEmit` clean.
 
-### Notes for Phase 6 (Ringing + chat-while-ringing)
+---
 
-- Touch `app/intake/matching/[id]/MatchingClient.tsx` and the
-  `MatchingModal` component.
-- Brief §5.4 required: chat ENABLED while ringing. Build the
-  net-new `IntakeAssistant` shell + `ContextCard` per §7.
-- New files:
-  - `lib/intake/intakeAssistant.ts` — scripted prompt sequence
-    + pure mapper to `IntakeContext`.
-  - `app/_components/intake/IntakeAssistant.tsx` — local-state UI shell.
-  - `app/_components/intake/ContextCard.tsx` — engineer-context summary.
-- Pulse + countdown on the ringing surface uses `launcher` pulse
-  halo. Cancel button via `<Button variant="secondary">`.
-- Backend untouched. All TODO(api) markers per §7 spec.
+## Phase 6 — Ringing + chat-while-ringing + IntakeAssistant (this commit)
+
+**Brief §5.4 + §7 delivered.** The "ringing engineers" screen is no
+longer a dead modal: it now hosts an enabled chat composer + an AI
+intake assistant + a "Context for your engineer" summary card.
+**All shells are local-state only. No backend changes.**
+
+### New files
+
+| Path | Purpose |
+|---|---|
+| `lib/intake/intakeAssistant.ts` | Pure script + types. `INTAKE_SCRIPT` (4 questions: building, problem, stack, AI tools + wrap-up), `askNext(ctx)`, `captureAnswer(ctx, prompt, answer, attachment)`, `emptyContext()`, `contextIsUseful(ctx)`. Stable interface so backend can swap to a real Anthropic transport later without touching the UI. |
+| `app/_components/intake/IntakeAssistant.tsx` | Chat-shell. Local-state messages + draft + staged file. Reads prompts from `INTAKE_SCRIPT`, captures answers into a running `IntakeContext`, emits the context up to the parent via `onContextChange`. Composer is a textarea + paperclip + ui/Button. Bubbles role-distinct (coral-soft for user, surface-raised for assistant). `role="log"` + `aria-live="polite"` on the thread. |
+| `app/_components/intake/ContextCard.tsx` | "Context for your engineer" summary. Reads the `IntakeContext` and renders a tidy field list + attachment thumbnails. Empty-state placeholder when nothing has been captured yet. |
+
+### `MatchingClient.tsx` restyle
+
+- Layout: single centered card → **two-column grid on `lg`** with the
+  pulse + context on the left, the chat on the right; **stacked on
+  mobile**.
+- `PulseDot` now uses `--green-dot` token (replaces `BRAND_GREEN`) +
+  the new `data-relay-pulse` halo selector on the inner dot for the
+  calm living motion.
+- "Cancel" button via `<Button variant="secondary">` (was a hand-rolled
+  bordered pill).
+- "Try again" button on `no_engineer` via `<Button loading>` — proper
+  loading state (was inline `Loader2` swap).
+- "Engineer joined — taking you in…" spinner uses `--ok` token.
+- Atmospheric green top-glow framing the canvas (matches dashboard).
+- Wrap chrome via `Card` + `CardBody` primitives. No more
+  `min-h-screen`; uses `100dvh`.
+- `ContextCard` mounts under the pulse — the customer SEES their
+  context building up as they answer. Reassuring.
+
+### Seams left
+
+- `lib/intake/intakeAssistant.ts` has a `TODO(api)` block at the
+  bottom with the suggested Anthropic wire-up. UI interface stays.
+- `IntakeAssistant.tsx` line in `handleFile`: `// TODO(api): upload
+  to storage.` (today's preview URL is a local `blob://` ref).
+- The pre-join transcript is intentionally NOT persisted to Supabase.
+  When the engineer joins, the customer redirects to `/room` which
+  has its own live chat. A future backend job ("persist intake
+  context to the session row") would flip the IntakeAssistant to
+  call out — UI is already shaped to accept that flip.
+
+### Data contracts: untouched
+
+- Same realtime channels (`engineer_match_offers`, `guest_calls`).
+- Same `POLL_MS = 1500` belt-and-braces.
+- Same phase machine (loading / ringing / no_engineer / cancelled
+  / accepted).
+- Same RPCs (`expire_stale_offers`, `match_engineer`,
+  `cancel_customer_session`).
+- Same `ACCEPTED_SESSION_STATES` + `TERMINAL_SESSION_STATES` sets.
+- Same redirect to `/room` on accepted.
+
+**Verification:** `tsc --noEmit` clean. `eslint` clean on touched paths.
+
+### Notes for Phase 7 (Chat + call room)
+
+- Restyle the live `/room` JSX in `RoomClient.tsx`:
+  - Promote the Zoom-call CTA (`MeetingChatEntry` Join button +
+    composer toolbar Phone button) to `<Button variant="launcher">`.
+  - Chat bubble styling (user vs engineer vs system vs assistant).
+  - Read-only/ended treatment in `PastSessionReview` calmer.
+  - Sidebar customer-side cleanup (without touching the 80-row
+    fetch — perf is a follow-up, not a UI phase task).
+  - Migrate the inline modals (ConfirmEndModal, ConnectingModal,
+    EngineerAssignedModal) to the new `ui/Modal` primitive — bundles
+    ESC + focus-trap + scrim-click for free.
+  - Also drop a second `IntakeAssistant` mount: in-room while a call
+    is connecting (brief §5.5).
+- Replace `MeetingChatEntry`'s `BRAND_GREEN` palette with tokens
+  (Join CTA uses `launcher`; ended state uses `ok` tone).
+- This phase will be **big** — commit per logical chunk if needed.
