@@ -203,9 +203,11 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   }
 
   // Bare mode — render children full-viewport with no shell chrome. Used
-  // by /admin/v2 where the panel owns its own navigation (4-tab header).
+  // by /admin/v2 and /reseller/v2 where the panel owns its own navigation.
   // The guard still runs above, so auth + role enforcement stays intact.
-  const isBare = pathname === "/admin/v2" || pathname.startsWith("/admin/v2/");
+  const isBare =
+    pathname === "/admin/v2"   || pathname.startsWith("/admin/v2/") ||
+    pathname === "/reseller/v2" || pathname.startsWith("/reseller/v2/");
   if (isBare) {
     return (
       <div

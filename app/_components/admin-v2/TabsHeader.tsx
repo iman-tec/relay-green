@@ -20,12 +20,15 @@ export function TabsHeader<T extends string>({
   active,
   onChange,
   rightSlot,
+  subtitle = "Superadmin Panel",
 }: {
   tabs:       readonly Tab<T>[];
   active:     T;
   onChange:   (next: T) => void;
   /** Optional trailing element rendered after the tabs (profile chip, etc.). */
   rightSlot?: React.ReactNode;
+  /** Caption shown next to the wordmark. Defaults to "Superadmin Panel". */
+  subtitle?:  string;
 }) {
   const router       = useRouter();
   const pathname     = usePathname();
@@ -54,7 +57,7 @@ export function TabsHeader<T extends string>({
           className="hidden text-xs sm:inline"
           style={{ color: "var(--text-muted)" }}
         >
-          · Superadmin Panel
+          · {subtitle}
         </span>
       </div>
 
