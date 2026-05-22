@@ -18,10 +18,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Activity, AlertTriangle, Clock, Loader2 } from "lucide-react";
 
-const BRAND_GREEN       = "#3f5c2e";
-const BRAND_GREEN_SOFT  = "rgba(63, 92, 46, 0.12)";
-const URGENT_AMBER      = "#d4a017";
-const URGENT_AMBER_SOFT = "rgba(212, 160, 23, 0.14)";
+const BRAND_GREEN = "var(--primary)";
+const BRAND_GREEN_SOFT = "var(--primary-soft)";
+const URGENT_AMBER = "var(--warn)";
+const URGENT_AMBER_SOFT = "var(--warn-soft)";
 // Danger colour — was #8b1a1a (deep red), softened to a deep orange so the
 // dark-theme palette stops shouting while keeping clear separation from amber.
 const CRIT_RED          = "#c2410c";

@@ -20,13 +20,12 @@ import { Phone, X, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import type { GuestCall } from "@/lib/supabase/types";
 
-const BRAND_GREEN       = "#3f5c2e";
-const BRAND_GREEN_SOFT  = "rgba(63, 92, 46, 0.12)";
-const URGENT_AMBER_SOFT = "rgba(212, 160, 23, 0.14)";
-const URGENT_AMBER      = "#d4a017";
-const CRIT_RED_SOFT     = "rgba(139, 26, 26, 0.18)";
-const CRIT_RED          = "#8b1a1a";
-
+const BRAND_GREEN = "var(--primary)";
+const BRAND_GREEN_SOFT = "var(--primary-soft)";
+const URGENT_AMBER_SOFT = "var(--warn-soft)";
+const URGENT_AMBER = "var(--warn)";
+const CRIT_RED_SOFT = "var(--risk-soft)";
+const CRIT_RED = "var(--risk)";
 export function EngineerIncomingRequest() {
   const router = useRouter();
   const pathname = usePathname();

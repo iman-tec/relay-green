@@ -26,11 +26,10 @@ import { useEngineerWorkspace } from "@/lib/relay/useEngineerWorkspace";
 import { useRequireEngineerProfile } from "@/lib/relay/useRequireEngineerProfile";
 import type { GuestCall } from "@/lib/supabase/types";
 
-const BRAND_GREEN      = "#3f5c2e";
-const BRAND_GREEN_SOFT = "rgba(63, 92, 46, 0.12)";
-const URGENT_AMBER_SOFT = "rgba(212, 160, 23, 0.14)";
-const URGENT_AMBER      = "#d4a017";
-
+const BRAND_GREEN = "var(--primary)";
+const BRAND_GREEN_SOFT = "var(--primary-soft)";
+const URGENT_AMBER_SOFT = "var(--warn-soft)";
+const URGENT_AMBER = "var(--warn)";
 type Person = {
   key:      string;
   email:    string;

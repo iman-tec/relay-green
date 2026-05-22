@@ -61,8 +61,7 @@ type Org = {
   departments:    Department[];
 };
 
-const BRAND_GREEN = "#3f5c2e";
-
+const BRAND_GREEN = "var(--primary)";
 export function EnterpriseTab() {
   const [orgs, setOrgs]               = useState<Org[]>([]);
   const [selectedId, setSelectedId]   = useState<string | null>(null);

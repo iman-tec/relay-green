@@ -55,6 +55,11 @@ export interface IntakePrompt {
   composerHint?: string;
   /** If set, the user's answer is captured as the named context field. */
   fieldFromAnswer: IntakeTextField | null;
+  /**
+   * Optional quick-reply chips shown under the prompt. Clicking a chip
+   * submits it as the user's answer (single-tap). UI-level affordance —
+   * doesn't change the captured-answer shape (just plain text). */
+  quickReplies?: string[];
 }
 
 /**
@@ -65,35 +70,36 @@ export const INTAKE_SCRIPT: ReadonlyArray<IntakePrompt> = [
   {
     id: "building",
     body:
-      "While we connect you to an engineer — what are you building? A line or two is plenty.",
+      "While we line up an engineer — tell me what you're building. A sentence or two is plenty: the kind of product, who it's for, and how far along you are.",
     composerHint: "e.g. a CRM dashboard for our sales team…",
     fieldFromAnswer: "building",
   },
   {
     id: "problem",
     body:
-      "What's going wrong, or what's the next step you can't quite get past? Paste an error if you have one.",
+      "What's going wrong, or what's the next step you can't quite get past? Paste the exact error or a screenshot if you have one — the more context I have, the faster your engineer can dive in.",
     composerHint: "Describe the error or what's blocked…",
     fieldFromAnswer: "problem",
   },
   {
     id: "stack",
     body:
-      "Which stack is involved? (e.g. Next.js + Supabase, Python + Postgres, Lovable + Vercel.)",
+      "Which stack is involved? Frameworks, services, anything you've tried so far. (e.g. Next.js + Supabase on Vercel, Python + Postgres, Lovable + Cloudflare.)",
     composerHint: "Languages, frameworks, services…",
     fieldFromAnswer: "stack",
   },
   {
     id: "aiTools",
     body:
-      "Which AI tools have you been using on this? (Claude, ChatGPT, Cursor, Replit, Lovable…)",
+      "Which AI tools have you been pairing with on this build? It helps me match you with someone who's shipped on the same toolchain.",
     composerHint: "Comma-separated is fine…",
     fieldFromAnswer: "aiTools",
+    quickReplies: ["Claude", "ChatGPT", "Cursor", "Replit", "Lovable", "Bolt"],
   },
   {
     id: "wrap_up",
     body:
-      "Thanks — your engineer will see all of this the moment they join. You can also paste a screenshot at any time.",
+      "Thanks — your engineer will see all of this the moment they join. Feel free to keep adding context or drop a screenshot any time; nothing here goes to waste.",
     fieldFromAnswer: null,
   },
 ];

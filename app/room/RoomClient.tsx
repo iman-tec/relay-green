@@ -21,7 +21,7 @@
  */
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   PanelGroup, Panel, PanelResizeHandle,
 } from "react-resizable-panels";
@@ -29,29 +29,33 @@ import {
   Plus, Send, Sparkles, Phone, X, PhoneOff, MessageSquare, Lock,
   AlertTriangle, Loader2, ChevronDown, ChevronRight, Search, PanelLeftClose, PanelLeftOpen,
   Wallet, RefreshCw, Settings, LogOut, Check, Folder, Pencil, PanelRightOpen, PanelRightClose,
-  Building2,
+  Building2, FileText, Clock, Video, MoreHorizontal, UserPlus,
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { MeetingChatEntry } from "@/app/_components/MeetingChatEntry";
 import { MeetingSummaryEntry, isAiSummaryMessageBody } from "@/app/_components/MeetingSummaryEntry";
 import { PaywallModal } from "@/app/_components/PaywallModal";
-import { MatchingModal } from "@/app/_components/MatchingModal";
 import { ChatComposer } from "@/app/_components/ChatComposer";
 import { MessageAttachments } from "@/app/_components/MessageAttachments";
-import { Button, EmptyState, Modal } from "@/app/_components/ui";
+import { Button, EmptyState, IconButton, Modal, cn } from "@/app/_components/ui";
 import { useCustomerSession } from "@/lib/relay/useCustomerSession";
 import { useIsSupervisor, isSupervisorOnlyMessage } from "@/lib/relay/useIsSupervisor";
 import { useSessionTimer } from "@/lib/relay/useSessionTimer";
 import { createClient } from "@/lib/supabase/browser";
+import { patchProfile, readProfile } from "@/lib/relay/profile";
+import { IntakeAssistant } from "@/app/_components/intake/IntakeAssistant";
 import type { GuestCall, GuestMessage, SessionStatus, Urgency } from "@/lib/supabase/types";
 
-const BRAND_GREEN       = "#3f5c2e";
-const BRAND_GREEN_SOFT  = "rgba(63, 92, 46, 0.12)";
-const BRAND_GREEN_BORDER = "rgba(63, 92, 46, 0.32)";
-const URGENT_AMBER      = "#d4a017";
-const URGENT_AMBER_SOFT = "rgba(212, 160, 23, 0.14)";
-const CRIT_RED          = "#8b1a1a";
-const CRIT_RED_SOFT     = "rgba(139, 26, 26, 0.18)";
+// Re-pointed to design-system CSS vars after the white-theme transformation.
+// Kept as named constants so existing call-sites (style={{ color: BRAND_GREEN }})
+// continue to work; the values themselves now resolve through globals.css.
+const BRAND_GREEN       = "var(--primary)";
+const BRAND_GREEN_SOFT  = "var(--primary-soft)";
+const BRAND_GREEN_BORDER = "color-mix(in srgb, var(--primary) 32%, transparent)";
+const URGENT_AMBER      = "var(--warn)";
+const URGENT_AMBER_SOFT = "var(--warn-soft)";
+const CRIT_RED          = "var(--risk)";
+const CRIT_RED_SOFT     = "var(--risk-soft)";
 
 // ── Free-session lifecycle hook ───────────────────────────────────────────
 // Owns the 1-second tick needed to detect free-cap expiry + buffer-expiry,
@@ -198,22 +202,39 @@ export function RoomClient() {
   // (the new session inherits the project, so the context is satisfied).
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
 
-  // Active matching session being tracked by the MatchingModal overlay.
-  // Set by handleStartInProject (clicking "+" on a project) and by the
-  // ?matching=<intake_id> URL hop that /intake redirects to after the
-  // wizard completes. Null = no modal shown.
-  const [matchingIntakeId, setMatchingIntakeId] = useState<string | null>(null);
+  // Legacy ?matching=<intake_id> URL hop: older intake builds (and saved
+  // tabs) push to /room?matching=X. Forward to the full-page matching
+  // screen so the chat-while-ringing UI mounts.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const q = new URLSearchParams(window.location.search);
     const id = q.get("matching");
-    if (id) {
-      setMatchingIntakeId(id);
-      const url = new URL(window.location.href);
-      url.searchParams.delete("matching");
-      window.history.replaceState({}, "", url.toString());
+    if (id) router.replace(`/intake/matching/${id}`);
+  }, [router]);
+
+  // Async chat mode — "New chat" lands here with ?newchat=1. Suppress
+  // the ConnectingModal even if a session goes queued in the background;
+  // render the inline AsyncChatPane instead. Uses useSearchParams so the
+  // effect fires when the user clicks "New chat" while already on /room
+  // (router.push to same route would not re-mount otherwise).
+  const searchParams = useSearchParams();
+  const newChatParam = searchParams.get("newchat");
+  const [asyncChatMode, setAsyncChatMode] = useState(false);
+  useEffect(() => {
+    if (newChatParam === "1") {
+      setAsyncChatMode(true);
+      if (typeof window !== "undefined") {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("newchat");
+        window.history.replaceState({}, "", url.toString());
+      }
     }
-  }, []);
+  }, [newChatParam]);
+
+  // (Continue / Start-follow-up resume is now handled inline in the
+  // ReadOnlyChatPane button onClick — see `resumeInProject`. The prior
+  // URL-roundtrip via ?continueSessionId was removed because the effect
+  // could silently fail and leave the user stuck on /room?continueSessionId.)
 
   // Old localStorage flags from the removed useConnectingModalGate are
   // wiped on mount so existing customers don't carry forward suppression
@@ -549,8 +570,9 @@ export function RoomClient() {
       .eq("id", intake.id);
 
     await sb.rpc("match_engineer", { _intake_id: intake.id });
-    // Show the matching overlay in-place instead of navigating away.
-    setMatchingIntakeId(intake.id);
+    // Hop to the full-page matching screen (chat-while-ringing + restyled
+    // chrome). On accept, MatchingClient redirects back to /room.
+    router.replace(`/intake/matching/${intake.id}`);
   }, [state.entitlement, state.auth, router, isEmployee]);
 
   // Toggle a project as the current "context" for the no-session landing.
@@ -583,11 +605,132 @@ export function RoomClient() {
     }
     setViewingPastId(null);
     setPendingDraft(null);
-    // Every new project goes through the intake wizard — it collects the
-    // questionnaire that feeds engineer matching. The wizard then creates
-    // the guest_calls row itself and routes back here on accept.
+    // "New session" — LIVE engineer path. Intake → ring → engineer joins
+    // in seconds. Same as before; this is the "I'm stuck, ring someone
+    // now" entry point.
     router.push("/intake");
   }, [freeConsumed, paidRemaining, router, isEmployee]);
+
+  // "New chat" — ASYNC support path. No ringing overlay on customer side,
+  // but the session MUST be visible to engineers (so they can claim it
+  // off-line). Same mint pipeline as a normal session — just skip the
+  // ConnectingModal client-side via ?newchat=1.
+  //
+  // // TODO(api): introduce a real `intake_mode` column on guest_calls so
+  // the backend can distinguish "ring now" vs "async queue" requests.
+  // Today we lean on the same match_engineer pipeline; the engineer's
+  // dashboard surfaces this exactly like a queued call. The customer
+  // sees the AsyncChatPane instead of the calling modal.
+  const handleNewChat = useCallback(async () => {
+    if (!isEmployee && freeConsumed && paidRemaining <= 0) {
+      setPaywallOpen("no_credits");
+      return;
+    }
+    setViewingPastId(null);
+    setPendingDraft(null);
+
+    const sb = createClient();
+    const userId = state.auth.kind === "authed" ? state.auth.userId : null;
+    if (!userId) {
+      router.push("/login?next=/room");
+      return;
+    }
+    try {
+      // 1. Pick a project — reuse profile.lastProjectId if present,
+      //    otherwise create a fresh "Chat" project.
+      const profile = readProfile();
+      let projectId = profile.lastProjectId ?? null;
+      let projectName = profile.lastProjectName ?? null;
+
+      if (!projectId) {
+        const { data: created, error: projErr } = await sb.rpc(
+          "create_project",
+          { _name: "Chat" },
+        );
+        if (projErr) throw projErr;
+        const row = Array.isArray(created)
+          ? (created[0] as { id?: string; name?: string } | null)
+          : (created as { id?: string; name?: string } | null);
+        projectId = row?.id ?? null;
+        projectName = row?.name ?? "Chat";
+        if (!projectId) throw new Error("Could not create chat project");
+      }
+
+      // 2. Cancel any lingering active session in a different project.
+      const { data: actives } = await sb
+        .from("guest_calls")
+        .select("id, project_id")
+        .eq("customer_user_id", userId)
+        .in("status", ["queued", "assigned", "joining", "live", "grace", "ending", "expired_free"])
+        .order("created_at", { ascending: false })
+        .limit(1);
+      const lingering = (actives ?? [])[0] as { id: string; project_id: string | null } | undefined;
+      if (lingering && lingering.project_id !== projectId) {
+        await sb.rpc("cancel_customer_session", { _session_id: lingering.id });
+      }
+
+      // 3. Mint / re-use the session.
+      const { data: callData, error: rpcErr } = await sb.rpc(
+        "get_or_create_active_customer_session",
+        { _project_id: projectId },
+      );
+      if (rpcErr) {
+        if ((rpcErr.message ?? "").includes("NO_ENTITLEMENT")) {
+          setPaywallOpen("no_credits");
+          return;
+        }
+        throw rpcErr;
+      }
+      const session = (Array.isArray(callData) ? callData[0] : callData) as { id?: string } | null;
+      if (!session?.id) throw new Error("Could not create session");
+
+      // 4. Upsert a minimal intake row (uses the profile snapshot if
+      //    present) so engineer-side queue + matching has the context
+      //    it needs. // TODO(api): widen ai_tools_used to text[].
+      const familiarity =
+        profile.techComfort === "well_experienced"
+          ? "Well Experienced"
+          : profile.techComfort === "semi_technical"
+            ? "Semi-Technical"
+            : "Totally Unknown";
+      const intakePayload = {
+        guest_call_id: session.id,
+        customer_user_id: userId,
+        project_id: projectId,
+        familiarity,
+        ai_tools_used: profile.stack.aiTools.join(", ") || "Other",
+        developing: "Website",
+        technologies: [
+          ...profile.stack.backend,
+          ...profile.stack.frontend,
+        ],
+        declined_by: [] as string[],
+      };
+      const { data: intakeRow, error: intakeErr } = await sb
+        .from("client_intakes")
+        .upsert(intakePayload, { onConflict: "project_id,customer_user_id" })
+        .select()
+        .single();
+      if (intakeErr) throw intakeErr;
+      const intakeId = intakeRow.id as string;
+
+      // 5. Fire match_engineer — this is what makes the engineer's
+      //    /inbox + /dashboard surface the new call. The customer's
+      //    ConnectingModal is suppressed by the ?newchat=1 flag, so
+      //    they see the bot chat instead of the ringing card. Engineer
+      //    side behavior is unchanged.
+      await sb.rpc("match_engineer", { _intake_id: intakeId });
+
+      patchProfile({
+        lastProjectId: projectId,
+        lastProjectName: projectName,
+      });
+    } catch (e) {
+      console.warn("[handleNewChat] failed:", e);
+    }
+
+    router.push("/room?newchat=1");
+  }, [router, isEmployee, freeConsumed, paidRemaining, state.auth]);
 
   // Recharge / "see plans" handler. Always opens the paywall — even when
   // the user has credits — so the Recharge button in the profile menu is
@@ -638,6 +781,7 @@ export function RoomClient() {
         selectedProjectId={selectedProjectId}
         onViewPast={handleViewPast}
         onNewSession={handleNewSession}
+        onNewChat={handleNewChat}
         onStartInProject={handleStartInProject}
         onRenameProject={handleRenameProject}
         onSelectProject={handleSelectProject}
@@ -654,6 +798,12 @@ export function RoomClient() {
         />
 
         <main className="min-h-0 flex-1">
+          {asyncChatMode ? (
+            <AsyncChatPane
+              onEscalateToCall={handleNewSession}
+              onCloseAsyncMode={() => setAsyncChatMode(false)}
+            />
+          ) : (
           <MainPane
             state={state}
             accepted={accepted}
@@ -673,14 +823,20 @@ export function RoomClient() {
             onSelectProject={handleSelectProject}
             onStartInProject={handleStartInProject}
           />
+          )}
         </main>
       </div>
 
+      {state.session && state.session.status !== "ended" && (
+        <SessionSummaryTray session={state.session} />
+      )}
+
       {/* Overlays */}
-      {state.session?.status === "queued" && (
+      {state.session?.status === "queued" && !asyncChatMode && (
         <ConnectingModal
           session={state.session}
           onRecall={state.recall}
+          onCancel={state.cancel}
           projects={projects}
           onProjectsChanged={refetchProjects}
         />
@@ -700,16 +856,6 @@ export function RoomClient() {
         onClose={() => setPaywallOpen(null)}
       />
 
-      {matchingIntakeId && (
-        <MatchingModal
-          intakeId={matchingIntakeId}
-          onClose={() => setMatchingIntakeId(null)}
-          onAccepted={() => {
-            setMatchingIntakeId(null);
-            void state.refresh();
-          }}
-        />
-      )}
     </div>
   );
 }
@@ -1133,7 +1279,7 @@ function PastSessionReview({ sessionId, onClose }: { sessionId: string; onClose:
   return (
     <PanelGroup direction="horizontal" autoSaveId="relay-room-past" className="h-full">
       <Panel defaultSize={60} minSize={40} order={1}>
-        <ReadOnlyChatPane messages={msgs} />
+        <ReadOnlyChatPane messages={msgs} session={row} />
       </Panel>
       <Resizer />
       <Panel defaultSize={40} minSize={28} order={2}>
@@ -1147,7 +1293,71 @@ function PastSessionReview({ sessionId, onClose }: { sessionId: string; onClose:
 // nothing to send. Renders messages the same way as the live ChatPane
 // (with inline MeetingChatEntry cards) and shows a locked-state hint in
 // place of the composer.
-function ReadOnlyChatPane({ messages }: { messages: GuestMessage[] }) {
+function ReadOnlyChatPane({
+  messages,
+  session,
+}: {
+  messages: GuestMessage[];
+  session: GuestCall;
+}) {
+  const router = useRouter();
+  const [resumeBusy, setResumeBusy] = useState<"continue" | "follow_up" | null>(null);
+  const [resumeError, setResumeError] = useState<string | null>(null);
+
+  const resumeInProject = useCallback(
+    async (mode: "continue" | "follow_up") => {
+      if (resumeBusy) return;
+      setResumeBusy(mode);
+      setResumeError(null);
+      try {
+        // Stash resume context so the in-chat AI assistant opens with a
+        // context-aware "Welcome back / what's changed?" prompt.
+        try {
+          if (typeof window !== "undefined") {
+            window.localStorage.setItem(
+              "relay-resume-context",
+              JSON.stringify({
+                mode,
+                fromSessionId: session.id,
+                projectId: session.project_id ?? null,
+                projectName: session.project_name ?? null,
+                aiSummaryTitle: session.ai_summary_title ?? null,
+                aiSummary: session.ai_summary_overview ?? null,
+                aiNextSteps: session.ai_next_steps ?? null,
+                savedAt: Date.now(),
+              }),
+            );
+          }
+        } catch { /* swallow quota / privacy mode */ }
+        if (session.project_id) {
+          patchProfile({
+            lastProjectId: session.project_id,
+            lastProjectName: session.project_name ?? null,
+          });
+        }
+
+        // UI-only restart — drop the user into async-chat mode for this
+        // project. NO new session is minted here; that costs an
+        // entitlement and the customer may have exhausted it on the
+        // ended session. The async chat surface keeps the prominent
+        // green call button at the top — when the customer wants a live
+        // engineer they tap it and the standard /intake → ring flow
+        // (which DOES gate on entitlement / paywall) takes over.
+        //
+        // // TODO(api): true in-place reopen of the ended session
+        // without re-minting / re-charging. Server contract: allow
+        // re-activating a same-project session within a grace window.
+        router.push(`/room?newchat=1`);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Something went wrong";
+        console.warn("[resumeInProject]", msg);
+        setResumeError(msg);
+        setResumeBusy(null);
+      }
+    },
+    [session, resumeBusy, router],
+  );
+
   const isSupervisor = useIsSupervisor();
   const meetingEnded = new Map<string, GuestMessage>();
   const meetingSummary = new Map<string, GuestMessage>();
@@ -1233,12 +1443,58 @@ function ReadOnlyChatPane({ messages }: { messages: GuestMessage[] }) {
 
       <div className="px-4 pb-6 pt-2">
         <div className="mx-auto w-full max-w-3xl">
-          <div
-            className="flex items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-[11px] font-medium"
-            style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
-          >
-            <Lock size={11} />
-            Session ended — read-only
+          {/* FIX 4 — replaces the bare read-only pill with a real action
+              bar so stale sessions are revivable. "Continue this session"
+              re-opens the same project for a fresh ring with the prior
+              context handed to the AI assistant. "Start a follow-up" mints
+              a new session pre-seeded with the same project. */}
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-sm">
+            <div className="mb-2 flex items-center gap-1.5">
+              <span className="inline-flex size-6 items-center justify-center rounded-full bg-[var(--surface-raised)] text-[var(--text-muted)]">
+                <Lock size={11} />
+              </span>
+              <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--text-muted)]">
+                Session ended
+              </span>
+            </div>
+            <h3 className="mb-1 font-serif text-lg text-[var(--text)]">
+              Pick up where you{" "}
+              <em className="not-italic italic text-[var(--primary)]">left off</em>
+              .
+            </h3>
+            <p className="mb-4 text-sm leading-relaxed text-[var(--text-muted)]">
+              We'll re-ring an engineer in this same project with the
+              context you've already given us.
+            </p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <Button
+                variant="primary"
+                size="lg"
+                full
+                loading={resumeBusy === "continue"}
+                disabled={resumeBusy !== null}
+                onClick={() => void resumeInProject("continue")}
+                iconLeft={<RefreshCw size={14} />}
+              >
+                Continue this session
+              </Button>
+              <Button
+                variant="secondary"
+                size="lg"
+                full
+                loading={resumeBusy === "follow_up"}
+                disabled={resumeBusy !== null}
+                onClick={() => void resumeInProject("follow_up")}
+                iconLeft={<Plus size={14} />}
+              >
+                Start a follow-up session
+              </Button>
+            </div>
+            {resumeError && (
+              <p className="mt-3 text-xs text-[var(--risk)]" role="alert">
+                {resumeError}
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -1493,12 +1749,20 @@ const FloatingStatus = memo(function FloatingStatus({
        *  by it. A subtle bottom border keeps it visually separate from the
        *  content without needing a backdrop blur. */}
       <div
-        className="flex shrink-0 items-center justify-end gap-3 border-b px-4 py-2"
+        className="flex shrink-0 items-center gap-3 border-b px-4 py-2"
         style={{
           backgroundColor: "var(--surface)",
           borderColor: "var(--border)",
         }}
       >
+        {/* Session title (left) — picks the AI-summary title or a friendly
+            fallback so the chat header always has a clear identity. */}
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <h2 className="truncate font-serif text-base font-medium text-[var(--text)]">
+            {session?.ai_summary_title || (session?.status === "queued" ? "Finding your engineer…" : "Session")}
+          </h2>
+        </div>
+
         {showTimer && (
           <LiveTimer
             joinedAt={session!.assigned_at ?? session!.joined_at ?? null}
@@ -1514,15 +1778,21 @@ const FloatingStatus = memo(function FloatingStatus({
 
         {showStatus && session && <CompactStatus session={session} />}
 
-        {(showTimer || showStatus) && showEnd && (
-          <span aria-hidden className="h-5 w-px" style={{ backgroundColor: "var(--border)" }} />
+        {/* Prominent green CALL button — required by the mock. Visible
+            whenever a session is active. Joins Zoom if the engineer has
+            minted the meeting; otherwise tooltipped as waiting. */}
+        {showStatus && session && (
+          <>
+            <span aria-hidden className="h-5 w-px" style={{ backgroundColor: "var(--border)" }} />
+            <CallHeaderActions session={session} />
+          </>
         )}
 
         {showEnd && (
           <button
             onClick={() => setConfirmEnd(true)}
             className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
-            style={{ backgroundColor: "var(--accent-red)" }}
+            style={{ backgroundColor: "var(--risk)" }}
           >
             <PhoneOff size={12} />
             End session
@@ -1539,6 +1809,62 @@ const FloatingStatus = memo(function FloatingStatus({
     </>
   );
 });
+
+// CallHeaderActions — the prominent green circular Call button + add-
+// participant + overflow icons in the chat header. Required by the
+// room-w.png mock as the most obvious header control. The call button is
+// enabled the moment the engineer mints a Zoom meeting; before that it's
+// tooltipped as waiting so the user knows what to expect.
+function CallHeaderActions({ session }: { session: GuestCall }) {
+  const hasZoom = !!session.zoom_meeting_id;
+  const isLiveish = ["assigned", "joining", "live", "grace"].includes(session.status);
+  const canJoin = hasZoom && isLiveish;
+  const tooltip = canJoin
+    ? "Join the call"
+    : isLiveish
+      ? "Waiting for your engineer to start the call"
+      : "Call starts once an engineer joins";
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <IconButton
+        aria-label={tooltip}
+        title={tooltip}
+        variant="primary"
+        size="md"
+        disabled={!canJoin}
+        onClick={() => {
+          // Customer-side "join" is implicit — markJoined is called via
+          // the existing ZoomJoinCard onJoin path inside ChatPane. Clicking
+          // this header button scrolls the user to that card.
+          const card = document.querySelector('[data-relay-zoom-card]');
+          if (card && card.scrollIntoView) {
+            card.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        }}
+      >
+        <Video size={16} />
+      </IconButton>
+      <IconButton
+        aria-label="Add participant"
+        title="Add participant (coming soon)"
+        variant="ghost"
+        size="md"
+        disabled
+      >
+        <UserPlus size={15} />
+      </IconButton>
+      <IconButton
+        aria-label="More actions"
+        title="More"
+        variant="ghost"
+        size="md"
+      >
+        <MoreHorizontal size={15} />
+      </IconButton>
+    </div>
+  );
+}
 
 // Live timer text — bold mono digits + a mode-appropriate suffix.
 //   free_countdown  10:00 → 00:00, "free" (green) / "left" (amber <90s) / "Expired" (red)
@@ -1697,7 +2023,7 @@ type ProjectGroup = {
 
 const Sidebar = memo(function Sidebar({
   email, customerUserId, session, entitlement, employment, viewingPastId, projects,
-  selectedProjectId, onViewPast, onNewSession, onStartInProject, onRenameProject, onSelectProject, onWalletClick,
+  selectedProjectId, onViewPast, onNewSession, onNewChat, onStartInProject, onRenameProject, onSelectProject, onWalletClick,
 }: {
   email: string;
   customerUserId: string | null;
@@ -1713,6 +2039,8 @@ const Sidebar = memo(function Sidebar({
   /** Top-level "+ New session" — opens picker that lets the user pick a
    *  project (existing or new) before the session is created. */
   onNewSession: () => void;
+  /** "New chat" — async support path. No ring, immediate bot greeting. */
+  onNewChat: () => void;
   /** Inline "+" inside a project row — starts a session bound to that
    *  exact project, skipping the picker. */
   onStartInProject: (projectId: string | null) => void;
@@ -1724,11 +2052,11 @@ const Sidebar = memo(function Sidebar({
   onSelectProject: (projectId: string | null) => void;
   onWalletClick: () => void;
 }) {
-  // Sidebar ALWAYS starts collapsed on a fresh /room landing — the user
-  // can expand it for the duration of this visit, but each page mount
-  // resets to collapsed. Intentional: prior persistence felt sticky and
-  // confused returning users who wanted a clean canvas.
-  const [collapsed, setCollapsed] = useState<boolean>(true);
+  // Sidebar starts EXPANDED by default (Order 1 of the Commander brief —
+  // Projects expanded, every action labelled, no mystery icons). User can
+  // still collapse for the visit. Persistence intentionally NOT kept so
+  // returning users see the full hierarchy on each fresh /room landing.
+  const [collapsed, setCollapsed] = useState<boolean>(false);
   const toggleCollapsed = (next: boolean) => setCollapsed(next);
 
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -1772,24 +2100,110 @@ const Sidebar = memo(function Sidebar({
         rows = (data ?? []) as Record<string, unknown>[];
       }
 
+      // Pull intake.intake_summary + first_user_message for each session
+      // so the auto-name can reach beyond ai_summary_title to derive a
+      // proper topic-based name. Best-effort: failures fall back to the
+      // existing priority list. // TODO(api): denormalise an intake_topic
+      // text column onto guest_calls so this extra query goes away.
+      const sessionIds = rows.map((r) => r.id as string);
+      const intakesByCall = new Map<string, { problem: string | null; summary: string | null }>();
+      if (sessionIds.length > 0) {
+        const { data: intakes } = await sb
+          .from("client_intakes")
+          .select("guest_call_id, intake_summary")
+          .in("guest_call_id", sessionIds);
+        for (const row of (intakes ?? []) as Array<{
+          guest_call_id: string | null;
+          intake_summary: string | null;
+        }>) {
+          if (row.guest_call_id) {
+            intakesByCall.set(row.guest_call_id, {
+              problem: null,
+              summary: row.intake_summary ?? null,
+            });
+          }
+        }
+        // First customer message per session — short topic fallback.
+        const { data: firstMsgs } = await sb
+          .from("guest_messages")
+          .select("guest_call_id, body, created_at, sender_kind")
+          .in("guest_call_id", sessionIds)
+          .eq("sender_kind", "guest")
+          .order("created_at", { ascending: true });
+        const seen = new Set<string>();
+        for (const m of (firstMsgs ?? []) as Array<{
+          guest_call_id: string;
+          body: string;
+        }>) {
+          if (seen.has(m.guest_call_id)) continue;
+          seen.add(m.guest_call_id);
+          const existing = intakesByCall.get(m.guest_call_id) ?? {
+            problem: null,
+            summary: null,
+          };
+          intakesByCall.set(m.guest_call_id, {
+            ...existing,
+            problem: m.body ?? null,
+          });
+        }
+      }
+
       setPast(rows.map((row) => {
         const status = row.status as SessionStatus;
         // Synthesise a label for sessions that don't have an AI summary yet
         // (active ones, or summary generation pending). The status hint
         // helps the customer find a specific session.
-        const fallbackLabel = status === "ended"     ? "Past session"
-                            : status === "cancelled" ? "Cancelled session"
-                            : status === "abandoned" ? "No engineer found"
-                            : "Active session";
+        // FIX 2 + follow-up — no session is named after its status.
+        // Topic priority for the auto-name:
+        //   1. ai_summary_title       (AI-generated post-call title)
+        //   2. intake_summary headline (LLM intake brief)
+        //   3. first user message (truncated, sentence-cased)
+        //   4. project_name + timestamp
+        //   5. "Session · {date}, {time}"
+        // // TODO(ai): improve via OpenAI against the full intake transcript
+        // when ai_summary_title is missing for short sessions.
+        const created = row.created_at as string;
+        const projectNameRaw = (row.project_name as string | null) ?? null;
+        const aiTitle = row.ai_summary_title as string | null;
+        const intakeBlob = intakesByCall.get(row.id as string);
+        const intakeHeadline =
+          intakeBlob?.summary
+            ? intakeBlob.summary.split("\n").map((s) => s.trim()).find(Boolean) ?? null
+            : null;
+        const firstMsgRaw = intakeBlob?.problem ?? null;
+        const friendlyDate = new Date(created).toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+        });
+        const friendlyTime = new Date(created).toLocaleTimeString(undefined, {
+          hour: "numeric",
+          minute: "2-digit",
+        });
+        const cleanLead = (raw: string | null, max = 60): string | null => {
+          if (!raw) return null;
+          const t = raw.replace(/\s+/g, " ").trim();
+          if (!t) return null;
+          // Take just the first sentence-ish chunk, no trailing punctuation.
+          const cut = t.split(/[.!?]\s|[\r\n]/)[0].trim();
+          const text = cut.length <= max ? cut : `${cut.slice(0, max).trim()}…`;
+          return text.charAt(0).toUpperCase() + text.slice(1);
+        };
+        const autoName =
+          aiTitle ||
+          cleanLead(intakeHeadline) ||
+          cleanLead(firstMsgRaw) ||
+          (projectNameRaw && projectNameRaw !== "Project"
+            ? `${projectNameRaw} · ${friendlyDate}, ${friendlyTime}`
+            : `Session · ${friendlyDate}, ${friendlyTime}`);
         return {
           id:          row.id as string,
-          title:       (row.ai_summary_title as string | null) ?? fallbackLabel,
+          title:       autoName,
           agent:       row.agent_name as string | null,
           minutes:     row.duration_minutes != null ? Math.round(Number(row.duration_minutes)) : null,
-          date:        row.created_at as string,
+          date:        created,
           status,
           projectId:   (row.project_id   as string | null) ?? null,
-          projectName: (row.project_name as string | null) ?? null,
+          projectName: projectNameRaw,
         };
       }));
     })();
@@ -1975,16 +2389,59 @@ const Sidebar = memo(function Sidebar({
         </button>
       </div>
 
-      {/* New session + Search */}
-      <div className="px-2 py-1">
-        <button
-          onClick={onNewSession}
-          className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[14px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-          style={{ color: "var(--text)" }}
+      {/* Online status pill — Order 1: the "Online" indicator the mock shows
+          just below the wordmark. Pulses while we have an active session,
+          calm dot otherwise. */}
+      <div className="px-3 pb-2">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--primary-tint)] px-2.5 py-1 text-[11px] font-medium text-[var(--primary-hover)]">
+          <span
+            aria-hidden
+            className="relative inline-flex size-1.5"
+          >
+            <span
+              className="absolute inset-0 inline-flex animate-ping rounded-full bg-[var(--primary)] opacity-60"
+            />
+            <span className="relative inline-flex size-1.5 rounded-full bg-[var(--primary)]" />
+          </span>
+          Online
+        </span>
+      </div>
+
+      {/* Primary CTA — loud green "New session" + secondary "New chat". The
+          plus icon stays, but the button itself is the most prominent
+          control in the sidebar. Order 1 of the Commander brief. */}
+      <div className="flex flex-col gap-2 px-2 py-1">
+        <div className="flex gap-1.5">
+          <Button
+            variant="primary"
+            size="md"
+            onClick={onNewSession}
+            className="flex-1 justify-center"
+            iconLeft={<Plus size={15} />}
+          >
+            New session
+          </Button>
+          <IconButton
+            aria-label="More session options"
+            title="More options"
+            variant="secondary"
+            size="md"
+            onClick={onNewSession}
+          >
+            <ChevronDown size={14} />
+          </IconButton>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onNewChat}
+          className="justify-start"
+          iconLeft={<MessageSquare size={13} />}
+          title="Start an async chat — no ringing, bot greets you immediately"
         >
-          <Plus size={16} style={{ color: BRAND_GREEN }} />
-          New session
-        </button>
+          New chat
+        </Button>
+
         {/* Search across all past sessions (title / engineer / project). */}
         <div
           className="mt-0.5 flex items-center gap-2 rounded-lg border px-2.5 py-1.5"
@@ -2040,17 +2497,18 @@ const Sidebar = memo(function Sidebar({
       {/* Projects (each is a folder containing sessions) */}
       <div className="flex-1 overflow-y-auto px-2 pb-2 pt-3">
         <div className="mb-1 flex items-center justify-between px-2.5 py-1">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text-muted)" }}>
+          <span className="text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--text-muted)" }}>
             Projects
           </span>
           <button
             onClick={onNewSession}
-            title="New project + session"
-            aria-label="New project"
-            className="flex h-5 w-5 items-center justify-center rounded-md transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-            style={{ color: "var(--text-muted)" }}
+            title="Start a new project"
+            aria-label="Start a new project"
+            className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium transition-colors hover:bg-[var(--surface-raised)]"
+            style={{ color: "var(--primary-hover)" }}
           >
-            <Plus size={12} />
+            <Plus size={11} />
+            New project
           </button>
         </div>
 
@@ -2547,27 +3005,34 @@ const ProjectAccordion = memo(function ProjectAccordion({
         </button>
         {!isGeneral && !renaming && (
           <>
+            {/* FIX 3 — LOUD FILLED GREEN CIRCLE call button. Larger than
+                the mock's thin glyph (~32px hit target), primary-feeling,
+                always visible. Confident "start a session in this
+                project" action. */}
+            <button
+              onClick={(e) => { e.stopPropagation(); onStartInProject(group.key); }}
+              title={`Start a session in ${group.name}`}
+              aria-label={`Start a session in ${group.name}`}
+              className="ml-1 inline-flex size-6 shrink-0 items-center justify-center rounded-full text-white shadow-sm transition-colors hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)]"
+              style={{ backgroundColor: BRAND_GREEN }}
+            >
+              <Phone size={11} strokeWidth={2.4} />
+            </button>
             <button
               onClick={(e) => {
                 e.stopPropagation();
+                // Lightweight overflow — for now this opens the rename
+                // affordance. Future: a popover menu with rename / new
+                // session / archive.
                 setDraftName(group.name);
                 setRenaming(true);
               }}
-              title={`Rename ${group.name}`}
-              aria-label={`Rename ${group.name}`}
-              className="ml-0.5 flex h-6 w-6 items-center justify-center rounded-md opacity-0 transition-opacity hover:bg-black/5 dark:hover:bg-white/5 group-hover/proj:opacity-100 focus:opacity-100"
+              title={`More actions for ${group.name}`}
+              aria-label={`More actions for ${group.name}`}
+              className="ml-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-raised)]"
               style={{ color: "var(--text-muted)" }}
             >
-              <Pencil size={11} />
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); onStartInProject(group.key); }}
-              title={`New session in ${group.name}`}
-              aria-label={`New session in ${group.name}`}
-              className="ml-0.5 flex h-6 w-6 items-center justify-center rounded-md opacity-0 transition-opacity hover:bg-black/5 dark:hover:bg-white/5 group-hover/proj:opacity-100 focus:opacity-100"
-              style={{ color: BRAND_GREEN }}
-            >
-              <Plus size={12} />
+              <MoreHorizontal size={14} />
             </button>
           </>
         )}
@@ -2595,38 +3060,98 @@ const ProjectAccordion = memo(function ProjectAccordion({
               <button
                 key={s.id}
                 onClick={() => onViewPast(isCurrent ? null : s.id)}
-                className="flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                style={selected ? { backgroundColor: BRAND_GREEN_SOFT } : undefined}
-              >
-                {isActive && (
-                  <span className="relative mt-1.5 flex h-2 w-2 shrink-0">
-                    <span className="absolute inset-0 rounded-full opacity-70"
-                      style={{ backgroundColor: BRAND_GREEN, animation: "ping 1.4s cubic-bezier(0,0,0.2,1) infinite" }} />
-                    <span className="relative h-2 w-2 rounded-full" style={{ backgroundColor: BRAND_GREEN }} />
-                  </span>
+                className={cn(
+                  "flex w-full items-start gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors",
+                  // FIX 3 — selected session card gets a real green border
+                  // + light-green tint (was just a faint fill before),
+                  // matching the room-w.png "CORS error issues" card.
+                  selected
+                    ? "border-[var(--primary)] bg-[var(--primary-tint)]"
+                    : isCurrent
+                      ? "border-[var(--primary)] bg-[var(--primary-tint)]/60"
+                      : "border-transparent hover:border-[var(--border)] hover:bg-[var(--surface-raised)]",
                 )}
+              >
+                <span
+                  className={cn(
+                    "relative mt-1.5 flex h-2 w-2 shrink-0 rounded-full",
+                    isActive
+                      ? "bg-[var(--primary)]"
+                      : s.status === "ended"
+                        ? "bg-[var(--text-faint)]"
+                        : s.status === "cancelled"
+                          ? "bg-[var(--text-faint)]"
+                          : "bg-[var(--text-faint)]",
+                  )}
+                  aria-hidden
+                >
+                  {isActive && (
+                    <span
+                      className="absolute inset-0 inline-flex animate-ping rounded-full opacity-70"
+                      style={{ backgroundColor: BRAND_GREEN }}
+                    />
+                  )}
+                </span>
                 <div className="min-w-0 flex-1">
-                  <div
-                    className="truncate text-[13px]"
-                    style={{ color: selected ? BRAND_GREEN : isActive ? BRAND_GREEN : "var(--text)" }}
-                  >
-                    {s.title}
+                  <div className="flex items-center gap-1.5">
+                    <div
+                      className={cn(
+                        "truncate text-[13px]",
+                        selected || isCurrent ? "font-medium" : "",
+                      )}
+                      style={{
+                        color:
+                          selected || isCurrent
+                            ? "var(--text)"
+                            : isActive
+                              ? "var(--text)"
+                              : "var(--text)",
+                      }}
+                    >
+                      {s.title}
+                    </div>
                   </div>
                   <div
                     className="mt-0.5 flex items-center gap-1 text-[10px]"
                     style={{ color: "var(--text-muted)" }}
                   >
-                    {isActive
-                      ? <span>{humanState(s.status)}</span>
-                      : <>
-                          {s.agent && <span>{s.agent}</span>}
-                          {s.agent && <span>·</span>}
-                          <span>{fmtRelDate(new Date(s.date))}</span>
-                          {s.minutes != null && s.minutes > 0 && (
-                            <><span>·</span><span>{s.minutes}m</span></>
+                    {/* FIX 2 — status flows as a small meta tag, never as
+                        the session's name. */}
+                    {!isActive && (
+                      <>
+                        <span
+                          className={cn(
+                            "inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider",
+                            s.status === "ended"
+                              ? "bg-[var(--surface-raised)] text-[var(--text-muted)]"
+                              : s.status === "cancelled"
+                                ? "bg-[var(--warn-soft)] text-[var(--warn)]"
+                                : "bg-[var(--risk-soft)] text-[var(--risk)]",
                           )}
-                        </>
-                    }
+                        >
+                          {s.status === "ended"
+                            ? "Ended"
+                            : s.status === "cancelled"
+                              ? "Cancelled"
+                              : "No engineer"}
+                        </span>
+                      </>
+                    )}
+                    {isActive ? (
+                      <span>{humanState(s.status)}</span>
+                    ) : (
+                      <>
+                        {s.agent && <span>{s.agent}</span>}
+                        {s.agent && <span>·</span>}
+                        <span>{fmtRelDate(new Date(s.date))}</span>
+                        {s.minutes != null && s.minutes > 0 && (
+                          <>
+                            <span>·</span>
+                            <span>{s.minutes}m</span>
+                          </>
+                        )}
+                      </>
+                    )}
                   </div>
                 </div>
               </button>
@@ -3274,13 +3799,30 @@ function ProjectNameEditor({
 
 // ── Connecting Modal ───────────────────────────────────────────────────────
 function ConnectingModal({
-  session, onRecall, projects, onProjectsChanged,
+  session, onRecall, onCancel, projects, onProjectsChanged,
 }: {
   session: GuestCall;
   onRecall: () => Promise<void>;
+  /** Explicit cancel — actually stops ringing. Distinct from × (minimize). */
+  onCancel: () => Promise<void>;
   projects: Project[];
   onProjectsChanged: () => void | Promise<void>;
 }) {
+  // FIX 1 — the modal is CLOSABLE via × / Esc / click-outside, but those
+  // MINIMIZE the card into a top-center pill rather than cancelling the
+  // search. The rest of the app stays usable while the engineer search
+  // continues in the background. Only the explicit "Cancel search" button
+  // inside the expanded card actually stops ringing.
+  const [minimized, setMinimized] = useState(false);
+  useEffect(() => {
+    if (minimized) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMinimized(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [minimized]);
+
   // Anchor the 90-second countdown to the most recent of created_at /
   // last_recall_at. That way clicking "Call again" naturally restarts the
   // window — no extra timer-reset state needed on the client.
@@ -3325,11 +3867,87 @@ function ConnectingModal({
     try { await onRecall(); } finally { setRecalling(false); }
   };
 
+  if (minimized) {
+    // Top-center floating "still ringing" pill — iOS Dynamic-Island style.
+    // Pulsing green dot + headline + live countdown, tap to re-expand.
+    return (
+      <div
+        className="fixed inset-x-0 top-4 z-40 flex justify-center px-4"
+        aria-live="polite"
+      >
+        <button
+          type="button"
+          onClick={() => setMinimized(false)}
+          className="pointer-events-auto flex items-center gap-3 rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2 shadow-lg backdrop-blur transition-transform hover:scale-[1.02]"
+          aria-label="Re-open the calling screen"
+        >
+          <span aria-hidden className="relative inline-flex size-2">
+            <span
+              className="absolute inset-0 inline-flex animate-ping rounded-full opacity-60"
+              style={{ background: ringColor }}
+            />
+            <span
+              className="relative inline-flex size-2 rounded-full"
+              style={{ background: ringColor }}
+            />
+          </span>
+          <span className="text-sm font-medium text-[var(--text)]">
+            Calling engineer
+          </span>
+          <span
+            className="font-mono text-xs tabular-nums"
+            style={{ color: expired ? "var(--text-muted)" : ringColor }}
+          >
+            {String(mins).padStart(2, "0")}:{String(secs).padStart(2, "0")}
+          </span>
+          <span
+            role="button"
+            aria-label="Cancel search"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation();
+              void onCancel();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                e.stopPropagation();
+                void onCancel();
+              }
+            }}
+            className="ml-1 inline-flex size-5 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[var(--risk-soft)] hover:text-[var(--risk)]"
+            title="Cancel search"
+          >
+            <PhoneOff size={11} />
+          </span>
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-6"
-      style={{ backgroundColor: "rgba(0, 0, 0, 0.55)", backdropFilter: "blur(4px)" }}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center px-6"
+      style={{ backgroundColor: "var(--scrim)", backdropFilter: "blur(4px)" }}
+      onClick={(e) => {
+        // Click-outside the card → minimize, do NOT cancel.
+        if (e.target === e.currentTarget) setMinimized(true);
+      }}
+    >
       <div className="relative w-full max-w-sm rounded-2xl border p-8 shadow-xl"
         style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
+
+        {/* Close (minimize) — top-right. Esc + click-outside do the same. */}
+        <button
+          type="button"
+          onClick={() => setMinimized(true)}
+          aria-label="Minimize — keep waiting"
+          title="Minimize — keep waiting (Esc)"
+          className="absolute right-3 top-3 inline-flex size-8 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-raised)] hover:text-[var(--text)]"
+        >
+          <X size={15} />
+        </button>
+
 
         {/* Project name editor — visible while the customer waits.
             Returning customers get a dropdown of their existing projects
@@ -3403,13 +4021,29 @@ function ConnectingModal({
           <button
             onClick={() => void handleCallAgain()}
             disabled={recalling}
-            className="flex w-full items-center justify-center gap-2 rounded-full py-2.5 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="mb-2 flex w-full items-center justify-center gap-2 rounded-full py-2.5 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
             style={{ backgroundColor: ringColor, color: "#fff" }}
           >
             {recalling ? <Loader2 size={14} className="animate-spin" /> : <Phone size={14} />}
             {recalling ? "Calling…" : "Call again"}
           </button>
         )}
+
+        {/* Explicit cancel — destructive-ghost, the ONLY control that stops
+            ringing. × / Esc / click-outside minimize; this one cancels. */}
+        <button
+          type="button"
+          onClick={() => void onCancel()}
+          className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-full border border-transparent px-3 py-2 text-xs font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--risk-soft)] hover:bg-[var(--risk-soft)] hover:text-[var(--risk)]"
+        >
+          <PhoneOff size={12} />
+          Cancel search
+        </button>
+
+        <p className="mt-3 text-center text-[10px] leading-relaxed text-[var(--text-faint)]">
+          Press <kbd className="rounded border border-[var(--border)] bg-[var(--surface-raised)] px-1 font-mono">Esc</kbd>{" "}
+          to minimize and keep waiting — the search continues in the background.
+        </p>
       </div>
     </div>
   );
@@ -3516,5 +4150,280 @@ function SuccessToast({ message }: { message: string }) {
       <span className="h-2 w-2 rounded-full" style={{ backgroundColor: BRAND_GREEN }} />
       {message}
     </div>
+  );
+}
+
+// ── Session summary tray (3-column shell, right rail) ──────────────────────
+// Always-visible right rail on /room for ACTIVE sessions. Mirrors room-w.png:
+//   - Header  : "Session summary" + status + collapse chevron
+//   - Topic   : session.summary_title || fallback
+//   - Steps   : intake-derived "Next steps" with green-check rows
+//                (reads client_intakes.intake_summary on the same guest_call)
+//   - AI      : intake_summary body
+//   - Details : engineer, started, duration, status pill
+// Read-only — engineer's tray on /staff/session does the same, this one is
+// the customer-side mirror. Collapse state persists per-tab.
+
+const ROOM_TRAY_KEY = "relay-room-summary-tray-open";
+
+type RoomTrayIntakeRow = {
+  intake_summary: string | null;
+  developing: string | null;
+  technologies: string[] | null;
+  ai_tools_used: string | null;
+};
+
+function SessionSummaryTray({ session }: { session: GuestCall }) {
+  const supabaseRef = useRef(createClient());
+  const [intake, setIntake] = useState<RoomTrayIntakeRow | null>(null);
+  const [open, setOpen] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    const v = window.localStorage.getItem(ROOM_TRAY_KEY);
+    return v === null ? true : v === "1";
+  });
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(ROOM_TRAY_KEY, open ? "1" : "0");
+    }
+  }, [open]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const sb = supabaseRef.current;
+    const fetchOne = async () => {
+      const { data } = await sb
+        .from("client_intakes")
+        .select("intake_summary, developing, technologies, ai_tools_used")
+        .eq("guest_call_id", session.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!cancelled) setIntake((data as RoomTrayIntakeRow | null) ?? null);
+    };
+    void fetchOne();
+    const channel = sb
+      .channel(`room-tray:${session.id}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "client_intakes" },
+        () => { void fetchOne(); },
+      )
+      .subscribe();
+    return () => {
+      cancelled = true;
+      void sb.removeChannel(channel);
+    };
+  }, [session.id]);
+
+  // Derive a Next-steps list from the intake summary body if the AI returned
+  // one (the edge fn writes a "Next steps:\n• …" block).
+  const nextSteps: string[] = (() => {
+    if (!intake?.intake_summary) return [];
+    const lines = intake.intake_summary.split("\n");
+    const startIdx = lines.findIndex((l) => /^next steps:?$/i.test(l.trim()));
+    if (startIdx < 0) return [];
+    const out: string[] = [];
+    for (let i = startIdx + 1; i < lines.length; i++) {
+      const t = lines[i].trim();
+      if (!t) break;
+      out.push(t.replace(/^[•\-*]\s*/, ""));
+    }
+    return out;
+  })();
+
+  const status = session.status;
+  const statusLabel =
+    status === "live"
+      ? "On call"
+      : status === "queued"
+        ? "Ringing"
+        : status === "joining"
+          ? "Joining"
+          : status === "assigned"
+            ? "Engineer assigned"
+            : status === "grace"
+              ? "Wrapping up"
+              : status;
+
+  return (
+    <aside
+      aria-label="Session summary"
+      className={cn(
+        "hidden lg:flex shrink-0 flex-col border-l border-[var(--border)] bg-[var(--surface)] transition-[width] duration-200 ease-out",
+        open ? "w-80" : "w-10",
+      )}
+    >
+      <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-label={open ? "Collapse summary" : "Expand summary"}
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--surface-raised)] hover:text-[var(--text)]"
+        >
+          {open ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
+        </button>
+        {open && (
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-[var(--text-muted)]">
+            <FileText size={12} /> Session summary
+          </span>
+        )}
+        {open && (
+          <span
+            className="inline-flex items-center gap-1 rounded-full bg-[var(--primary-tint)] px-2 py-0.5 text-[10px] font-medium text-[var(--primary-hover)]"
+            aria-live="polite"
+          >
+            <span aria-hidden className="inline-flex size-1.5 rounded-full bg-[var(--primary)]" />
+            {statusLabel}
+          </span>
+        )}
+      </div>
+
+      {open && (
+        <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-3 py-3">
+          <div>
+            <h3 className="font-serif text-base leading-snug text-[var(--text)]">
+              {session.ai_summary_title || "Live session"}
+            </h3>
+            {session.agent_name && (
+              <p className="mt-1 text-xs text-[var(--text-muted)]">
+                With {session.agent_name}
+              </p>
+            )}
+          </div>
+
+          {nextSteps.length > 0 && (
+            <div>
+              <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+                Next steps
+              </div>
+              <ul className="space-y-1.5">
+                {nextSteps.map((s, i) => (
+                  <li key={i} className="flex items-start gap-2 text-[13px] leading-snug text-[var(--text)]">
+                    <span className="mt-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-full bg-[var(--primary-tint)] text-[var(--primary-hover)]">
+                      <Check size={11} />
+                    </span>
+                    {s}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {intake?.intake_summary && (
+            <div>
+              <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+                AI summary
+              </div>
+              <div className="whitespace-pre-wrap rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] px-3 py-2 text-[13px] leading-relaxed text-[var(--text)]">
+                {intake.intake_summary}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+              Session details
+            </div>
+            <dl className="space-y-1.5 text-[12px]">
+              {session.agent_name && (
+                <DetailRow label="Engineer" value={session.agent_name} />
+              )}
+              {intake?.developing && (
+                <DetailRow label="Building" value={intake.developing} />
+              )}
+              {intake?.technologies?.length ? (
+                <DetailRow label="Stack" value={intake.technologies.join(", ")} />
+              ) : null}
+              {intake?.ai_tools_used && (
+                <DetailRow label="AI tools" value={intake.ai_tools_used} />
+              )}
+              {session.created_at && (
+                <DetailRow
+                  label="Started"
+                  value={new Date(session.created_at).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                />
+              )}
+            </dl>
+          </div>
+        </div>
+      )}
+    </aside>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start gap-2">
+      <dt className="w-20 shrink-0 text-[var(--text-muted)]">{label}</dt>
+      <dd className="flex-1 text-[var(--text)]">{value}</dd>
+    </div>
+  );
+}
+
+// ── Async chat pane ────────────────────────────────────────────────────────
+// Surface for the "New chat" entry point. No ringing — the customer drops
+// straight into a conversation with a context-aware bot greeting. A
+// prominent green call button at the top lets them escalate to a live
+// session ("New session" path) any time.
+//
+// // TODO(openai): the bot greeting + follow-up prompts should call an
+// OpenAI-backed server route seeded with the user's profile + the last
+// project's summary. Today the IntakeAssistant uses local heuristics; the
+// transport is the single seam to swap.
+function AsyncChatPane({
+  onEscalateToCall,
+  onCloseAsyncMode,
+}: {
+  onEscalateToCall: () => void;
+  onCloseAsyncMode: () => void;
+}) {
+  return (
+    <section className="flex h-full flex-col bg-[var(--background)]">
+      <div className="flex shrink-0 items-center gap-3 border-b border-[var(--border)] bg-[var(--surface)] px-4 py-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <span aria-hidden className="inline-flex size-7 items-center justify-center rounded-xl bg-[var(--primary-tint)] text-[var(--primary-hover)]">
+            <Sparkles size={14} />
+          </span>
+          <div className="leading-tight">
+            <div className="text-sm font-semibold text-[var(--text)]">
+              relay chat
+            </div>
+            <div className="text-[11px] text-[var(--text-muted)]">
+              No ring — describe it, an engineer picks it up
+            </div>
+          </div>
+        </div>
+        <IconButton
+          aria-label="Escalate to a live call"
+          title="Start a live call — engineer joins in seconds"
+          variant="primary"
+          size="md"
+          onClick={onEscalateToCall}
+        >
+          <Video size={16} />
+        </IconButton>
+        <IconButton
+          aria-label="Close async chat"
+          title="Close async chat"
+          variant="ghost"
+          size="md"
+          onClick={onCloseAsyncMode}
+        >
+          <X size={15} />
+        </IconButton>
+      </div>
+
+      <div className="flex flex-1 justify-center overflow-hidden p-4">
+        <div className="flex w-full max-w-2xl flex-1 min-h-0">
+          <IntakeAssistant
+            greeting="Hi! Describe what you need help with — drop a screenshot or paste an error if you have one. An engineer will pick this up; you can also tap the green call button up top to ring someone now."
+          />
+        </div>
+      </div>
+    </section>
   );
 }

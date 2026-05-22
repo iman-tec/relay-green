@@ -53,7 +53,7 @@ const ALL_FILTERABLE_ROLES = [
   { value: ROLE.super_admin,      label: formatRole(ROLE.super_admin) },
 ];
 
-const BRAND_GREEN = "#3f5c2e";
+const BRAND_GREEN = "var(--primary)";
 const NEW_POD_KEY = "__new_pod__";
 
 export function UsersClient({ meEmail }: { meEmail: string }) {

@@ -1,59 +1,68 @@
 @import "tailwindcss";
 
 /*
- * Relay.green Design System — claude.ai-aligned tokens.
- * See RelayGreen_Spec_Decisions_v1.md Section E (Design System) for source.
+ * Relay.green Design System — light tokens.
+ *
+ * Transformation (2026-05-22): swapped the cream/coral palette for a
+ * white + single-green system per the room-w.png / theeme-w.png mockups.
+ * Variable names are stable so every component picks up the new look
+ * without per-file edits.
+ *
+ *   --background    pure white app canvas
+ *   --surface       white cards / inputs (slight differentiation vs canvas)
+ *   --surface-raised soft gray rail / hover background
+ *   --primary       Relay green — the ONE accent. CTAs, sent bubbles, online.
+ *   --ok / --warn / --risk semantic status, light variants
  */
-
-/* Dark-only design tokens. The app is single-theme by product decision — we
- * don't render the same surfaces under any other context, so there's no
- * value in a light variant. Removed the previous prefers-color-scheme: dark
- * media query that flipped these on top of a light :root; the values below
- * are now the only source. */
 :root {
-  /* Surfaces */
-  --background: #2c2a26; /* warm dark */
-  --surface: #1f1e1b;
-  --surface-raised: #25241f; /* elevation above --surface (cards on top of cards) */
-  --border: #3a3833;
-  --border-strong: #4a4842; /* hairline at higher contrast (focused inputs) */
+  /* Surfaces — white app canvas, near-white card differentiation, soft rail */
+  --background: #f7f9f8;        /* app canvas */
+  --surface: #ffffff;            /* cards, sheets, composer */
+  --surface-raised: #f1f4f3;     /* hover bg, sidebar rail, bot bubble */
+  --border: #e6eae8;             /* hairline */
+  --border-strong: #d4dad7;      /* focused input, divider on white */
 
-  /* Text */
-  --text: #f5f4ee;
-  --text-muted: #a6a29b; /* secondary metadata */
-  --text-faint: #777268; /* tertiary / disabled */
+  /* Text — near-black headings, gray body */
+  --text: #14171a;
+  --text-muted: #5b6470;
+  --text-faint: #8a939d;
 
-  /* Brand */
-  --primary: #d97757; /* Claude coral — primary CTA only */
-  --primary-hover: #c66645;
-  --primary-soft: color-mix(in srgb, var(--primary) 14%, transparent);
-  --green-dot: #3dcb7e; /* the brand green dot — launcher + ok-status only */
-  --green-soft: color-mix(in srgb, var(--green-dot) 14%, transparent);
-  --accent-red: #c87c3d; /* legacy alias — kept for prior call-sites */
+  /* Brand — single Relay green */
+  --primary: #16a34a;
+  --primary-hover: #15803d;
+  --primary-soft: color-mix(in srgb, var(--primary) 12%, transparent);
+  --primary-tint: #e7f6ee;       /* selected card tint, sent-bubble fill */
 
-  /* Semantic status (label + icon, not color-only) */
-  --ok: var(--green-dot);
-  --ok-soft: var(--green-soft);
-  --warn: #d4a017;
-  --warn-soft: color-mix(in srgb, #d4a017 16%, transparent);
-  --risk: #c84a3a;
-  --risk-soft: color-mix(in srgb, #c84a3a 16%, transparent);
+  /* Green dot kept as an alias — many call-sites reference --green-dot.
+   * Aliasing to --primary keeps the brand consistent without a sweep. */
+  --green-dot: var(--primary);
+  --green-soft: var(--primary-soft);
 
-  /* Aliases per Phase-1 plan */
+  /* Legacy aliases — kept for prior call-sites (do NOT remove yet, audit
+   * later). Re-pointed to the new palette so nothing renders coral. */
+  --accent-red: #dc2626;
   --accent: var(--primary);
   --accent-strong: var(--primary-hover);
 
+  /* Semantic status (label + icon, not color-only). Health-bar meaning
+   * preserved: green = healthy, amber = neutral/shaky, red = danger. */
+  --ok: var(--primary);
+  --ok-soft: var(--primary-soft);
+  --warn: #d97706;
+  --warn-soft: color-mix(in srgb, #d97706 14%, transparent);
+  --risk: #dc2626;
+  --risk-soft: color-mix(in srgb, #dc2626 14%, transparent);
+
   /* Overlays */
-  --scrim: rgba(0, 0, 0, 0.62);
+  --scrim: rgba(20, 23, 26, 0.48);
 
-  /* Motion timings */
+  /* Motion timings (brief: 150-200ms micro-interactions) */
   --motion-fast: 150ms;
-  --motion-med: 240ms;
-  --motion-slow: 320ms;
+  --motion-med: 200ms;
+  --motion-slow: 280ms;
 
-  /* Force the browser's native form controls (Stripe iframe, date pickers,
-   * scrollbars, etc.) to render in dark mode regardless of OS preference. */
-  color-scheme: dark;
+  /* Native form controls render in light mode now. */
+  color-scheme: light;
 
   /* Aliases for compatibility with framework defaults */
   --foreground: var(--text);
@@ -72,6 +81,7 @@
   --color-primary: var(--primary);
   --color-primary-hover: var(--primary-hover);
   --color-primary-soft: var(--primary-soft);
+  --color-primary-tint: var(--primary-tint);
   --color-green-dot: var(--green-dot);
   --color-green-soft: var(--green-soft);
   --color-accent-red: var(--accent-red);

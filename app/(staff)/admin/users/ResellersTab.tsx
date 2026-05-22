@@ -32,8 +32,7 @@ import {
 } from "lucide-react";
 import { useConfirmDialog } from "@/app/_components/ConfirmDialog";
 
-const BRAND_GREEN = "#3f5c2e";
-
+const BRAND_GREEN = "var(--primary)";
 type Enterprise = {
   id:                string;
   name:              string;

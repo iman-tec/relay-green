@@ -65,7 +65,7 @@ const VARIANT_CLASS: Record<ButtonVariant, string> = {
   danger:
     "bg-[var(--risk)] text-white hover:bg-[color-mix(in_srgb,var(--risk)_85%,#000_15%)] border border-transparent",
   launcher:
-    "bg-[var(--green-dot)] text-[#0f1e16] hover:bg-[color-mix(in_srgb,var(--green-dot)_85%,#000_15%)] border border-transparent font-semibold",
+    "bg-[var(--green-dot)] text-white hover:bg-[var(--primary-hover)] border border-transparent font-semibold shadow-sm",
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(

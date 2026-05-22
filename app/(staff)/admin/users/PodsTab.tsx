@@ -17,7 +17,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Plus, X, Edit2, Check, Save, Undo2, RotateCcw, Search, Mail, Power, Trash2, CheckCircle2 } from "lucide-react";
 import { useConfirmDialog } from "@/app/_components/ConfirmDialog";
 
-const BRAND_GREEN       = "#3f5c2e";
+const BRAND_GREEN = "var(--primary)";
 const BRAND_GREEN_SOFT  = "rgba(63, 92, 46, 0.10)";
 // Neutral monogram tint — paired with text-muted so role accents don't
 // shout. Supervisor + engineer use the same calm chip; the section header

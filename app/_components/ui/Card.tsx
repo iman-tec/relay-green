@@ -30,7 +30,7 @@ export interface CardProps extends HTMLAttributes<HTMLDivElement> {
 }
 
 const VARIANT: Record<CardVariant, string> = {
-  surface: "bg-[var(--surface)] border border-[var(--border)]",
+  surface: "bg-[var(--surface)] border border-[var(--border)] shadow-sm",
   raised: "bg-[var(--surface-raised)] border border-[var(--border)]",
   hollow: "bg-transparent border border-[var(--border)]",
 };

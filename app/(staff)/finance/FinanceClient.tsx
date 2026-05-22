@@ -17,11 +17,10 @@ import { Loader2, Wallet, Pencil, Check, X, MessageSquare } from "lucide-react";
 import { formatEur } from "@/lib/billing/plans";
 import { formatRole } from "@/lib/relay/role-labels";
 
-const BRAND_GREEN      = "#3f5c2e";
+const BRAND_GREEN = "var(--primary)";
 const BRAND_GREEN_SOFT = "rgba(63, 92, 46, 0.10)";
-const URGENT_AMBER     = "#d4a017";
-const CRIT_RED         = "#8b1a1a";
-
+const URGENT_AMBER = "var(--warn)";
+const CRIT_RED = "var(--risk)";
 type BillingResponse = {
   currency: string;
   revenue: {

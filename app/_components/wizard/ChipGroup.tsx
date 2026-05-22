@@ -2,7 +2,7 @@
 
 import { useCallback } from "react";
 
-const BRAND_GREEN        = "#3f5c2e";
+const BRAND_GREEN = "var(--primary)";
 const BRAND_GREEN_SOFT   = "rgba(63, 92, 46, 0.18)";
 const BRAND_GREEN_BORDER = "rgba(63, 92, 46, 0.55)";
 

@@ -34,7 +34,7 @@ const stripePromise = STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY
 
 // Aligned with the rest of the app: same brand green as supervise/admin,
 // same surface/border/text tokens as ConnectingModal + the customer chat.
-const BRAND_GREEN = "#3f5c2e";
+const BRAND_GREEN = "var(--primary)";
 const SURFACE     = "var(--surface)";
 const CARD        = "var(--surface)";
 const CARD_EDGE   = "var(--border)";

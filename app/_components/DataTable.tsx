@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import type { useListQuery } from "@/lib/hooks/useListQuery";
 
-const BRAND_GREEN      = "#3f5c2e";
+const BRAND_GREEN = "var(--primary)";
 const BRAND_GREEN_SOFT = "rgba(63, 92, 46, 0.10)";
 
 export type Column<T> = {

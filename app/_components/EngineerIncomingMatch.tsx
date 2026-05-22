@@ -20,9 +20,8 @@ import { Phone, X, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import type { GuestCall } from "@/lib/supabase/types";
 
-const BRAND_GREEN = "#3f5c2e";
-const CRIT_RED    = "#8b1a1a";
-
+const BRAND_GREEN = "var(--primary)";
+const CRIT_RED = "var(--risk)";
 type Offer = {
   id: string;
   intake_id: string;

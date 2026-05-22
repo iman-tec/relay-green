@@ -7,37 +7,33 @@
  */
 
 .mk-root {
-  /* Cream / ink scale — the editorial backbone */
-  --cream: #f4f2ee;
-  --cream-2: #ece8df;
-  --cream-3: #e3ddd0;
-  --paper: #faf8f4;
-  --ink: #141413;
-  --ink-2: #2a2a27;
-  --ink-soft: #5b5b54;
-  --ink-mute: #8c8a82;
-  --rule: #d8d3c6;
-  --rule-soft: #e6e1d3;
+  /* White-theme transformation (2026-05-22): cream/ink palette replaced
+     with the bright white + saturated green system from the app design
+     system. Variable names kept stable so every marketing rule below
+     auto-picks the new look. */
+  --cream: #ffffff;        /* page canvas */
+  --cream-2: #f7f9f8;      /* alt-stripe band */
+  --cream-3: #f1f4f3;      /* hover/raised */
+  --paper: #ffffff;
+  --ink: #14171a;
+  --ink-2: #1f2328;
+  --ink-soft: #4b5563;
+  --ink-mute: #6b7280;
+  --rule: #e6eae8;
+  --rule-soft: #eef1ef;
 
-  /* Brand greens — Moss. Considered, alive, grounded.
-     One brand green: #4f6b3a (--green). Used for the dot on every
-     surface and for italic emphasis everywhere — including on the
-     dark --ink band — so dot, italic, and link all read as the same
-     green tone. Note: on ink the moss sits at ~3:1 contrast, which is
-     below WCAG AA for body text; we accept that trade-off because the
-     brand consistency outweighs the legibility hit on short emphasis
-     phrases. Body text stays in --cream / cream-with-alpha. */
-  --green-deep: #3f5c2e;
-  --green: #4f6b3a;
-  --green-bright: #4f6b3a;
-  --green-glow: rgba(79, 107, 58, 0.22);
-  --green-tint: #eaece0;
-  --green-wash: #f3f4ec;
+  /* One Relay green — saturated, AA-safe for headings/CTAs on white. */
+  --green-deep: #15803d;
+  --green: #16a34a;
+  --green-bright: #16a34a;
+  --green-glow: rgba(22, 163, 74, 0.18);
+  --green-tint: #e7f6ee;
+  --green-wash: #f0fbf5;
 
   /* Supporting accents */
-  --clay: #cc785c;
-  --clay-soft: #e8c8b8;
-  --slate: #2f3a3f;
+  --clay: #dc2626;         /* danger / end-call (was clay coral) */
+  --clay-soft: #fde2e2;
+  --slate: #1f2328;
 
   /* Type — bound to next/font CSS variables exposed by app/layout.tsx.
      Mirrors anthropic.com's manner: a calm transitional serif for

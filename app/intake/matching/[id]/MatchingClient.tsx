@@ -43,9 +43,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Home } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
-import { Button, Card, CardBody } from "@/app/_components/ui";
+import { Button, Card, CardBody, cn } from "@/app/_components/ui";
 import { IntakeAssistant } from "@/app/_components/intake/IntakeAssistant";
-import { ContextCard } from "@/app/_components/intake/ContextCard";
 import { emptyContext, type IntakeContext } from "@/lib/intake/intakeAssistant";
 import { createClient } from "@/lib/supabase/browser";
 
@@ -88,6 +87,18 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
   const [now, setNow] = useState(() => Date.now());
   const [intakeCtx, setIntakeCtx] = useState<IntakeContext>(emptyContext);
   const guestCallIdRef = useRef<string | null>(null);
+
+  // Two-step ringing layout. First ~2s the customer sees a centered
+  // "Ringing engineers…" hero (iOS-style incoming call). Then it slides
+  // up into a pill at the top and the chat fades in below, centered.
+  // Once flipped, never flips back — even if phase transitions and
+  // returns to ringing.
+  const [chatRevealed, setChatRevealed] = useState(false);
+  useEffect(() => {
+    if (phase.kind !== "ringing" || chatRevealed) return;
+    const t = setTimeout(() => setChatRevealed(true), 2000);
+    return () => clearTimeout(t);
+  }, [phase.kind, chatRevealed]);
 
   // 1Hz tick for the countdown badge.
   useEffect(() => {
@@ -208,10 +219,18 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
   }, [intakeId, fetchLatest]);
 
   useEffect(() => {
-    if (phase.kind === "accepted") {
-      router.replace("/room");
-    }
-  }, [phase, router]);
+    if (phase.kind !== "accepted") return;
+    // Best-effort: ask the edge fn to roll up the bot↔customer transcript
+    // into client_intakes.intake_summary so the engineer's tray has signal
+    // when they land on /staff/session. Never block redirect on this call;
+    // a failure here just leaves the tray showing the raw transcript.
+    void supabaseRef.current.functions
+      .invoke("summarize-intake", { body: { intake_id: intakeId } })
+      .catch((e: unknown) => {
+        console.warn("[matching] summarize-intake failed:", e);
+      });
+    router.replace("/room");
+  }, [phase, router, intakeId]);
 
   const findAnother = useCallback(async () => {
     setRetrying(true);
@@ -255,7 +274,7 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
 
   // ── Render ─────────────────────────────────────────────────────────
   return (
-    <main className="relative flex min-h-[100dvh] flex-col items-center bg-[var(--background)] px-4 py-8 sm:px-6 sm:py-10">
+    <main className="relative flex h-[100dvh] flex-col items-center overflow-hidden bg-[var(--background)] px-4 py-8 sm:px-6 sm:py-10">
       <span
         aria-hidden
         className="pointer-events-none absolute inset-x-0 top-0 h-72"
@@ -265,7 +284,7 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
         }}
       />
 
-      <div className="relative z-10 w-full max-w-5xl flex flex-col items-center gap-6">
+      <div className="relative z-10 flex w-full max-w-5xl flex-1 min-h-0 flex-col items-center gap-6">
         <Wordmark />
 
         {phase.kind === "loading" && (
@@ -280,22 +299,64 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
         )}
 
         {phase.kind === "ringing" && (
-          <div className="grid w-full gap-5 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-            {/* Left: status pulse + context */}
-            <div className="flex flex-col gap-5">
+          <>
+            {/* Compact top-pill — iOS/macOS incoming-call style. Visible only
+                after the 2s gate. Fixed to viewport top so it survives chat
+                scroll. */}
+            <div
+              aria-hidden={!chatRevealed}
+              className={cn(
+                "pointer-events-none fixed inset-x-0 top-4 z-40 flex justify-center px-4 transition-all duration-500 ease-out",
+                chatRevealed
+                  ? "translate-y-0 opacity-100"
+                  : "-translate-y-8 opacity-0",
+              )}
+            >
+              <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-[var(--border)] bg-[var(--surface)]/95 px-4 py-2 shadow-lg backdrop-blur">
+                <PulseDot compact />
+                <span className="text-sm font-medium text-[var(--text)]">
+                  Ringing engineers…
+                </span>
+                {phase.livePending && (
+                  <Countdown
+                    expiresAt={phase.livePending.expires_at}
+                    nowMs={now}
+                    compact
+                  />
+                )}
+                <Button variant="secondary" size="sm" onClick={skip}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+
+            {/* Hero card — visible only BEFORE the 2s gate. Fades+shrinks
+                out as the chat slides in below. We collapse max-h so it
+                doesn't leave a vertical gap once gone. */}
+            <div
+              className={cn(
+                "w-full max-w-md transition-all duration-500 ease-out",
+                chatRevealed
+                  ? "pointer-events-none max-h-0 -translate-y-2 scale-95 opacity-0 overflow-hidden"
+                  : "max-h-[560px] translate-y-0 scale-100 opacity-100",
+              )}
+            >
               <Card variant="surface">
-                <CardBody className="flex flex-col items-center gap-3 py-8 text-center">
+                <CardBody className="flex flex-col items-center gap-3 py-10 text-center">
                   <PulseDot />
                   <h1 className="font-serif text-2xl font-medium leading-tight text-[var(--text)]">
                     Ringing engineers…
                   </h1>
                   <p className="max-w-sm text-sm leading-relaxed text-[var(--text-muted)]">
                     {phase.livePending
-                      ? "We'll connect you the moment one picks up. Use the chat below to line up context."
-                      : "Still searching — your call is open to every available engineer. Keep typing; your engineer will see everything."}
+                      ? "Hang tight — we'll connect you the moment an engineer picks up."
+                      : "Your call is open to every available engineer."}
                   </p>
                   {phase.livePending && (
-                    <Countdown expiresAt={phase.livePending.expires_at} nowMs={now} />
+                    <Countdown
+                      expiresAt={phase.livePending.expires_at}
+                      nowMs={now}
+                    />
                   )}
                   <div className="flex flex-wrap gap-2 pt-2">
                     <Button variant="secondary" size="sm" onClick={skip}>
@@ -304,13 +365,26 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
                   </div>
                 </CardBody>
               </Card>
-
-              <ContextCard ctx={intakeCtx} />
             </div>
 
-            {/* Right: chat-while-ringing */}
-            <IntakeAssistant onContextChange={setIntakeCtx} />
-          </div>
+            {/* Centered chat — fades in after the 2s gate. Takes the
+                remaining viewport height so the composer stays PINNED at
+                the bottom and only the thread scrolls (no full-page
+                scroll, ChatGPT-style). */}
+            <div
+              className={cn(
+                "flex w-full max-w-2xl flex-1 min-h-0 transition-opacity duration-500 ease-out",
+                chatRevealed
+                  ? "opacity-100"
+                  : "pointer-events-none opacity-0",
+              )}
+            >
+              <IntakeAssistant
+                intakeId={intakeId}
+                onContextChange={setIntakeCtx}
+              />
+            </div>
+          </>
         )}
 
         {phase.kind === "no_engineer" && (
@@ -370,9 +444,11 @@ function BounceHome({ router }: { router: ReturnType<typeof useRouter> }) {
   return null;
 }
 
-function PulseDot() {
+function PulseDot({ compact = false }: { compact?: boolean }) {
+  const outer = compact ? "size-5" : "size-14";
+  const inner = compact ? "size-2.5" : "size-8";
   return (
-    <div className="relative inline-flex size-14 items-center justify-center">
+    <div className={cn("relative inline-flex items-center justify-center", outer)}>
       <span
         aria-hidden
         className="absolute inline-flex size-full rounded-full opacity-40 animate-ping"
@@ -380,7 +456,7 @@ function PulseDot() {
       />
       <span
         aria-hidden
-        className="relative inline-flex size-8 rounded-full"
+        className={cn("relative inline-flex rounded-full", inner)}
         style={{ background: "var(--green-dot)" }}
         data-relay-pulse
       />
@@ -388,17 +464,28 @@ function PulseDot() {
   );
 }
 
-function Countdown({ expiresAt, nowMs }: { expiresAt: string; nowMs: number }) {
+function Countdown({
+  expiresAt,
+  nowMs,
+  compact = false,
+}: {
+  expiresAt: string;
+  nowMs: number;
+  compact?: boolean;
+}) {
   const remaining = Math.max(
     0,
     Math.ceil((new Date(expiresAt).getTime() - nowMs) / 1000),
   );
   return (
     <p
-      className="font-mono text-xs tabular-nums text-[var(--text-muted)]"
+      className={cn(
+        "font-mono tabular-nums text-[var(--text-muted)]",
+        compact ? "text-[11px]" : "text-xs",
+      )}
       aria-live="polite"
     >
-      {remaining}s until next ring
+      {compact ? `${remaining}s` : `${remaining}s until next ring`}
     </p>
   );
 }

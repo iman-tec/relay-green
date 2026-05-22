@@ -13,10 +13,9 @@
 import { useState } from "react";
 import { Video, Copy, Check, ExternalLink, PhoneOff, Loader2, RotateCw } from "lucide-react";
 
-const BRAND_GREEN        = "#3f5c2e";
-const BRAND_GREEN_BORDER = "rgba(63, 92, 46, 0.32)";
-const BRAND_GREEN_SOFT   = "rgba(63, 92, 46, 0.12)";
-
+const BRAND_GREEN = "var(--primary)";
+const BRAND_GREEN_BORDER = "color-mix(in srgb, var(--primary) 32%, transparent)";
+const BRAND_GREEN_SOFT = "var(--primary-soft)";
 type Props = {
   meetingId: string;
   joinUrl: string | null;

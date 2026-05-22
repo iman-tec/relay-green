@@ -18,7 +18,11 @@ export interface AvatarProps {
   name?: string | null;
   email?: string | null;
   size?: AvatarSize;
-  tone?: "ok" | "neutral";
+  /** Visual tone:
+   *  - neutral: light-gray bg, text default (most chrome)
+   *  - ok:      green-bordered halo (online supervisor in Operations)
+   *  - brand:   green-tinted bg + primary text (target room-w.png look) */
+  tone?: "ok" | "neutral" | "brand";
   className?: string;
 }
 
@@ -50,9 +54,12 @@ export function Avatar({
   return (
     <span
       className={cn(
-        "inline-flex items-center justify-center rounded-full font-medium uppercase tracking-wide",
-        "bg-[var(--surface-raised)] text-[var(--text)] border",
-        tone === "ok" ? "border-[var(--ok)]" : "border-[var(--border)]",
+        "inline-flex items-center justify-center rounded-full font-medium uppercase tracking-wide overflow-hidden",
+        tone === "brand"
+          ? "bg-[var(--primary-tint)] text-[var(--primary-hover)] border border-[color-mix(in_srgb,var(--primary)_22%,transparent)]"
+          : "bg-[var(--surface-raised)] text-[var(--text)] border",
+        tone === "ok" && "border-[var(--ok)]",
+        tone === "neutral" && "border-[var(--border)]",
         SIZE[size],
         className,
       )}

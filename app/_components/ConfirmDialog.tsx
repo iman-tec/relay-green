@@ -24,8 +24,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, X } from "lucide-react";
 
-const BRAND_GREEN = "#3f5c2e";
-
+const BRAND_GREEN = "var(--primary)";
 type AskOptions = {
   title:         string;
   message?:      string;

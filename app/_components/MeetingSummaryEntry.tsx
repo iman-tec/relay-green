@@ -22,10 +22,9 @@
 import { useState } from "react";
 import { Sparkles, Video, KeyRound, Copy, Check } from "lucide-react";
 
-const BRAND_GREEN        = "#3f5c2e";
-const BRAND_GREEN_SOFT   = "rgba(63, 92, 46, 0.12)";
-const BRAND_GREEN_BORDER = "rgba(63, 92, 46, 0.32)";
-
+const BRAND_GREEN = "var(--primary)";
+const BRAND_GREEN_SOFT = "var(--primary-soft)";
+const BRAND_GREEN_BORDER = "color-mix(in srgb, var(--primary) 32%, transparent)";
 /** Detect whether a system message body is an AI Companion summary. */
 export function isAiSummaryMessageBody(body: string): boolean {
   return body.includes("AI Companion summary");

@@ -15,9 +15,8 @@ import { createClient } from "@/lib/supabase/browser";
 import type { GuestCall } from "@/lib/supabase/types";
 import { formatRole } from "@/lib/relay/role-labels";
 
-const BRAND_GREEN = "#3f5c2e";
-const BRAND_GREEN_SOFT = "rgba(63, 92, 46, 0.12)";
-
+const BRAND_GREEN = "var(--primary)";
+const BRAND_GREEN_SOFT = "var(--primary-soft)";
 type Profile = {
   id: string;
   full_name: string | null;
