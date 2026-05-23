@@ -6,13 +6,12 @@
  * footer. The Spline hero is the only client-side island.
  */
 
-import Link from "next/link";
 import { Shell } from "./Shell";
 import { SplineHero } from "./SplineHero";
-import { TryRelayButton } from "./TryRelayButton";
 import { RelayLogo } from "./RelayLogo";
-import { CtaBanner } from "./CtaBanner";
-import { ExplainerMotionV6Lazy } from "./ExplainerMotionV6Lazy";
+import { EnterpriseCta } from "./EnterpriseCta";
+import { PhaseCards, type PhaseCard } from "./PhaseCards";
+import { PressTheDot } from "./PressTheDot";
 
 const TRACKS = [
   {
@@ -65,24 +64,25 @@ const TRACKS = [
   },
 ];
 
-// A broad, deliberately interleaved sample of the production stack the
-// bench has shipped to. Mixed order (payments / db / hosting / comms /
-// analytics / etc.) so the scrolling marquee shows breadth rather than
-// reading like a category list.
+// Curated top production stack names for the homepage strip. Mixed order
+// (payments / db / hosting / comms / analytics / etc.) so the scrolling
+// marquee shows breadth rather than reading like a category list.
 const INTEGRATIONS = [
   "Stripe",
+  "Adyen",
+  "PayPal",
+  "Razorpay",
+  "Paddle",
   "Neon",
   "Supabase",
   "Postgres",
   "MongoDB",
   "Redis",
-  "PlanetScale",
   "DynamoDB",
   "MySQL",
   "BigQuery",
   "Snowflake",
   "Firestore",
-  "FaunaDB",
   "Vercel",
   "Netlify",
   "Cloudflare",
@@ -92,135 +92,32 @@ const INTEGRATIONS = [
   "Render",
   "Fly.io",
   "Railway",
-  "Heroku",
   "DigitalOcean",
-  "Hetzner",
   "SendGrid",
   "Postmark",
   "Resend",
-  "Mailgun",
-  "Loops",
-  "Brevo",
   "Twilio",
-  "Vonage",
-  "MessageBird",
   "Auth0",
   "Clerk",
   "WorkOS",
   "Okta",
-  "Stytch",
   "Firebase Auth",
   "Cognito",
-  "Plaid",
-  "Persona",
-  "Stripe Identity",
-  "Onfido",
-  "Veriff",
-  "Paddle",
-  "Lemon Squeezy",
-  "Razorpay",
-  "Square",
-  "PayPal",
-  "Adyen",
-  "Mercury",
-  "Brex",
   "Segment",
   "PostHog",
   "Mixpanel",
-  "Amplitude",
-  "Plausible",
-  "Heap",
-  "FullStory",
-  "LogRocket",
-  "Hotjar",
-  "Statsig",
   "Datadog",
   "Sentry",
-  "OpenTelemetry",
-  "New Relic",
-  "Honeycomb",
-  "Grafana",
-  "Prometheus",
-  "BetterStack",
-  "Logtail",
-  "App Store",
-  "Play Store",
-  "TestFlight",
-  "Expo",
-  "Algolia",
-  "Meilisearch",
-  "Typesense",
-  "Elasticsearch",
-  "S3",
-  "R2",
-  "Cloudinary",
-  "Mux",
-  "Bunny",
-  "ImageKit",
-  "Uploadcare",
-  "Vimeo",
-  "HubSpot",
-  "Salesforce",
-  "Customer.io",
-  "Klaviyo",
-  "Mailchimp",
-  "Marketo",
-  "ActiveCampaign",
-  "Pipedrive",
-  "Intercom",
-  "Zendesk",
-  "Freshworks",
-  "Front",
-  "Slack",
-  "Discord",
-  "WhatsApp Business",
-  "Microsoft Teams",
-  "Zoom",
   "GitHub",
   "GitLab",
-  "Bitbucket",
   "Linear",
-  "Jira",
-  "Notion",
-  "Asana",
   "Figma",
-  "Sanity",
-  "Contentful",
-  "Webflow",
-  "Storyblok",
-  "Prismic",
-  "Strapi",
-  "Builder.io",
-  "WordPress",
-  "Shopify",
-  "Ghost",
-  "Mapbox",
-  "Google Maps",
-  "HERE",
-  "Pinecone",
-  "Weaviate",
-  "Qdrant",
-  "Chroma",
+  "Slack",
+  "Salesforce",
+  "HubSpot",
   "OpenAI",
   "Anthropic",
-  "Replicate",
-  "Mistral",
-  "Cohere",
-  "Hugging Face",
-  "ElevenLabs",
-  "Zapier",
-  "n8n",
-  "Inngest",
-  "Temporal",
-  "Trigger.dev",
-  "Airbyte",
-  "Hasura",
-  "Apollo",
-  "Prisma",
-  "Drizzle",
-  "tRPC",
-  "Akamai",
-  "Fastly",
+  "Pinecone",
 ];
 
 const PHASES = [
@@ -244,34 +141,20 @@ const PHASES = [
   },
 ];
 
-type PhasePlanTier = { name: string; detail: string; price: string };
-
-type PhasePlan = {
-  num: string;
-  title: string;
-  role: string;
-  intro: string;
-  tiers: PhasePlanTier[];
-  footnotes: string[];
-  ctaSubject: string;
-  contactTopic: "build" | "launch" | "maintain";
-};
-
-const HOW_WE_RELAY: PhasePlan[] = [
+/*
+ * Phase-card metadata. Tier rows + prices now live in app/_marketing/plans.ts
+ * so the homepage and /payment share one source of truth. PhaseCards reads
+ * the tier data via plansForPhase(phase).
+ */
+const HOW_WE_RELAY: PhaseCard[] = [
   {
     num: "Phase 01",
     title: "Build Phase",
     role: "You build. We support.",
     intro:
       "On-demand sessions while your AI takes a build from concept to MVP.",
-    tiers: [
-      { name: "First session", detail: "10 min on us", price: "Free" },
-      { name: "Base plan", detail: "100 min of support", price: "€50" },
-      { name: "Pro plan", detail: "240 min of support", price: "€100" },
-      { name: "Max plan", detail: "500 min of support", price: "€200" },
-    ],
+    phase: "phase1",
     footnotes: ["Each session is 10 min", "Each plan is valid for 12 months"],
-    ctaSubject: "Relay, Build Phase plan inquiry",
     contactTopic: "build",
   },
   {
@@ -280,21 +163,8 @@ const HOW_WE_RELAY: PhasePlan[] = [
     role: "You tell us when. We quote on complexity.",
     intro:
       "A Relay engineer takes the wheel through launch, fixed scope, fixed price, calendar promise.",
-    tiers: [
-      { name: "Simple", detail: "Single integration", price: "€1,500" },
-      {
-        name: "Medium",
-        detail: "Multi-system, basic compliance",
-        price: "€3,000",
-      },
-      {
-        name: "Complex",
-        detail: "Regulated · multi-region · high-throughput",
-        price: "€5,000",
-      },
-    ],
+    phase: "phase2",
     footnotes: ["Customized quote available for specific cases"],
-    ctaSubject: "Relay, Launch & Go-Live inquiry",
     contactTopic: "launch",
   },
   {
@@ -303,44 +173,41 @@ const HOW_WE_RELAY: PhasePlan[] = [
     role: "We take accountability. You focus on your business.",
     intro:
       "Monthly retainer. Same team that launched you keeps it shipping, secure, and current.",
-    tiers: [
-      {
-        name: "Monthly retainer",
-        detail: "Quoted to your needs",
-        price: "€1K – €8K / mo",
-      },
-    ],
+    phase: "phase3",
     footnotes: ["Customized quote available for specific cases"],
-    ctaSubject: "Relay, Maintain & Scale inquiry",
     contactTopic: "maintain",
   },
 ];
 
-const EXPLAINER_CAPTION = {
-  fontFamily: "var(--font-mono)",
-  fontSize: 10,
-  letterSpacing: "0.14em",
-  textTransform: "uppercase" as const,
-  color: "rgba(244,242,238,0.55)",
-  textAlign: "center" as const,
-  marginTop: 12,
-};
-
-const LATEST_THINKING = [
+// FAQ items rendered above the Insights section. Native <details>/<summary>
+// gives keyboard + screen-reader behavior for free; the styling rotates a
+// CSS "+" into a "×" via transform when the disclosure opens. Default open
+// (matches the design comp) so a first-time visitor sees the answers
+// without having to click around.
+const FAQ: { q: string; a: string }[] = [
   {
-    tag: "Perspective",
-    title: "The next software team is already forming.",
-    body: "AI has moved software creation closer to the people with the ideas. The enduring advantage will come from pairing that new creative access with human software engineering judgment.",
+    q: "I’m not a developer. Will the engineer judge my AI-generated code?",
+    a: "No. The engineers on Relay specifically work with builders using AI tools. They’ve seen every kind of Lovable, Cursor, and Replit project. They start where your code is, not where they wish it was. No rewrites for ego.",
   },
   {
-    tag: "Field note",
-    title: "Creation is becoming a conversation.",
-    body: "Prompts, prototypes, reviews, and releases are beginning to live in one continuous workflow. Human software engineers belong inside that workflow.",
+    q: "What AI tools do you support?",
+    a: "Lovable, Cursor, Replit, v0, Bolt, Windsurf, Claude, ChatGPT, Gemini, and Copilot are the most common. If you built it with AI and it talks to the internet, we can help. Tell us your stack when you connect.",
   },
   {
-    tag: "Commitment",
-    title: "Useful software still needs care.",
-    body: "The goal is not only to create more software. It is to help more software become reliable, understood, maintained, and worth trusting.",
+    q: "Is my code and data safe?",
+    a: "Yes. Sessions are private and ephemeral by default. Engineers sign an NDA before joining your call. We’re GDPR-compliant. For enterprise, we offer dedicated regions and signed BAAs.",
+  },
+  {
+    q: "What if I just need a quick answer, not an hour-long call?",
+    a: "Every session is a 10-minute block. Past 10 minutes, you’re billed by the minute for exactly the time you used.",
+  },
+  {
+    q: "Can I cancel my plan?",
+    a: "Plans can’t be cancelled once purchased. Every plan is valid for 12 months from the day you activate it, so unused minutes carry across the year.",
+  },
+  {
+    q: "Do you take on net-new builds from scratch?",
+    a: "Relay is for builders who already have something: an AI prototype, an MVP, a live product. If you’re starting from zero, build a v0 or Lovable prototype first, then bring us in. If you need us to take net-new builds then visit www.thegaetwaydigital.com, who are our trusted partners and can implement AI engineering projects from scratch.",
   },
 ];
 
@@ -382,6 +249,28 @@ export function MarketingHome() {
     <Shell>
       <SplineHero />
 
+      {/* How we relay, three-phase plans with Get-in-touch CTA.
+          id="pricing" is the anchor target for the global "Pricing"
+          nav link, which deep-links to this section from any page. */}
+      <section
+        id="pricing"
+        className="r-section"
+        style={{ background: "#f5f5f7", scrollMarginTop: "80px" }}
+      >
+        <div className="r-wrap">
+          <div style={{ marginBottom: 48 }}>
+            <Eyebrow>How we relay</Eyebrow>
+            <h2 className="r-h-1" style={{ marginTop: 16, maxWidth: "22ch" }}>
+              Three phases. One team.
+            </h2>
+          </div>
+
+          <PhaseCards phases={HOW_WE_RELAY} />
+
+          <EnterpriseCta />
+        </div>
+      </section>
+
       {/* See Relay in action, two explainer films, side-by-side.
           Left: motion-graphic concept (CSS-animated, ExplainerVideo).
           Right: cinematic live-action film (Higgsfield-generated, mp4). */}
@@ -396,10 +285,7 @@ export function MarketingHome() {
           className="r-wrap-narrow"
           style={{ maxWidth: 1320, padding: "0 24px" }}
         >
-          <div
-            data-aos="fade-up"
-            style={{ textAlign: "center", marginBottom: 40 }}
-          >
+          <div style={{ textAlign: "center", marginBottom: 40 }}>
             <h2
               style={{
                 fontFamily: "var(--font-display)",
@@ -429,27 +315,44 @@ export function MarketingHome() {
                 lineHeight: 1.55,
               }}
             >
-              One minute on how Relay connects AI builders with real engineers,
-              from first connect to launch to ongoing care.
+              Two takes on how Relay connects AI builders with real engineers
+              — a quick enterprise pitch and the full product walkthrough.
             </p>
           </div>
 
-          {/* 2-up grid: Approach B (in-browser motion graphic) on the left,
-              Approach C' (cinematic film, v5 visuals re-muxed with the v6
-              VO from edge-tts Andrew) on the right. Same 60s VO under both,
-              so the audio swap-to-human-VO point is a single file
-              (public/audio/relay-vo-v6.wav). Collapses to 1-col below 880px. */}
+          {/* 2-up grid: Enterprise explainer film (left) and cinematic film
+              (right). Both are MP4s with native controls; each <figure> carries
+              a <figcaption> badge so visitors can self-select by audience +
+              length. Collapses to 1-col below 880px. */}
           <div className="r-explainer-2up" style={{ alignItems: "start" }}>
-            <figure data-aos="fade-up" data-aos-delay="100" style={{ margin: 0 }}>
-              <ExplainerMotionV6Lazy />
-              <figcaption style={EXPLAINER_CAPTION}>
-                Motion graphic · 60s · in-browser
-              </figcaption>
+            <figure style={{ margin: 0 }}>
+              <video
+                src="/relay-explainer-enterprise-v1.mp4"
+                poster="/relay-explainer-v6-poster.svg"
+                controls
+                preload="metadata"
+                playsInline
+                style={{
+                  width: "100%",
+                  aspectRatio: "16 / 9",
+                  maxHeight: 540,
+                  borderRadius: 12,
+                  border: "1px solid rgba(244,242,238,0.08)",
+                  display: "block",
+                  background: "var(--ink)",
+                }}
+                data-testid="hero-video-enterprise"
+              />
+              <VideoBadge
+                eyebrow="ENTERPRISE PITCH"
+                duration="47s"
+                description="Why governance, compliance, and scale matter when AI ships to prod."
+              />
             </figure>
-            <figure data-aos="fade-up" data-aos-delay="200" style={{ margin: 0 }}>
+            <figure style={{ margin: 0 }}>
               <video
                 src="/relay-explainer-v6-cinematic.mp4"
-                poster="/relay-explainer-v6-poster.jpg"
+                poster="/relay-explainer-v6-poster.svg"
                 controls
                 preload="metadata"
                 playsInline
@@ -464,16 +367,18 @@ export function MarketingHome() {
                 }}
                 data-testid="hero-video-cinematic"
               />
-              <figcaption style={EXPLAINER_CAPTION}>
-                Cinematic film · 60s
-              </figcaption>
+              <VideoBadge
+                eyebrow="PRODUCT WALKTHROUGH"
+                duration="3 min"
+                description="How a RELAY build becomes a live launch — paired with a real engineer."
+              />
             </figure>
           </div>
         </div>
       </section>
 
       {/* Why Relay exists, compact 2-col intro + 4+1 tile grid */}
-      <section className="r-section">
+      <section className="r-section" style={{ background: "#f5f5f7" }}>
         <div className="r-wrap">
           {/* Eyebrow on its own row, top-left */}
           <div
@@ -526,24 +431,20 @@ export function MarketingHome() {
               style={{
                 margin: 0,
                 maxWidth: "52ch",
+                fontSize: "clamp(16px, 1.3vw, 19px)",
               }}
             >
-              AI has democratized the act of writing code. Architecture,
-              deployment, security, and maintenance remain acts of judgment ,
-              context, accountability, experience that cannot be generated.{" "}
-              <RelayLogo size="1em" color="var(--ink)" /> bridges what AI starts
-              and what production demands.
+              AI has made software creation accessible to more people than ever.
+              But shipping still depends on architecture, deployment judgment,
+              security decisions, and operational care.{" "}
+              <RelayLogo size="1em" color="var(--ink)" /> bridges the gap
+              between what AI can generate and what production requires.
             </p>
           </div>
 
           <div className="r-tiles r-tiles-trio">
-            {PHASES.map((p, i) => (
-              <div
-                className="r-tile"
-                key={p.num}
-                data-aos="fade-up"
-                data-aos-delay={i * 90}
-              >
+            {PHASES.map((p) => (
+              <div className="r-tile" key={p.num}>
                 <div className="r-tile-num">{p.num}</div>
                 <h3 className="r-tile-title">{p.label}</h3>
                 <p
@@ -588,145 +489,8 @@ export function MarketingHome() {
         </div>
       </section>
 
-      {/* How we relay, three-phase plans with Get-in-touch CTA */}
-      <section className="r-section" style={{ background: "var(--paper)" }}>
-        <div className="r-wrap">
-          <div style={{ marginBottom: 48 }}>
-            <Eyebrow>How we relay</Eyebrow>
-            <h2 className="r-h-1" style={{ marginTop: 16, maxWidth: "22ch" }}>
-              Three phases. One team.
-            </h2>
-          </div>
-
-          <div className="r-legs">
-            {HOW_WE_RELAY.map((phase) => (
-              <div className="r-leg" key={phase.num}>
-                <div className="r-leg-num">{phase.num}</div>
-                <h3 className="r-leg-title">{phase.title}</h3>
-                <div className="r-leg-tag">{phase.role}</div>
-                <p
-                  className="r-leg-desc"
-                  style={{ marginBottom: 20, flex: "0 0 auto" }}
-                >
-                  {phase.intro}
-                </p>
-
-                <div
-                  style={{
-                    borderTop: "1px solid var(--rule)",
-                    flex: 1,
-                  }}
-                >
-                  {phase.tiers.map((tier, i) => (
-                    <div
-                      key={tier.name}
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "baseline",
-                        gap: 12,
-                        padding: "12px 0",
-                        borderBottom:
-                          i < phase.tiers.length - 1
-                            ? "1px solid var(--rule)"
-                            : "none",
-                      }}
-                    >
-                      <div style={{ minWidth: 0 }}>
-                        <div
-                          style={{
-                            fontSize: 14,
-                            fontWeight: 500,
-                            color: "var(--ink)",
-                            letterSpacing: "-0.005em",
-                          }}
-                        >
-                          {tier.name}
-                        </div>
-                        <div
-                          style={{
-                            fontSize: 12,
-                            color: "var(--ink-soft)",
-                            marginTop: 2,
-                            lineHeight: 1.4,
-                          }}
-                        >
-                          {tier.detail}
-                        </div>
-                      </div>
-                      <div
-                        style={{
-                          fontFamily: "var(--font-mono)",
-                          fontSize: 14,
-                          fontWeight: 500,
-                          color: "var(--green-deep)",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {tier.price}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {phase.footnotes.length > 0 && (
-                  <ul
-                    style={{
-                      listStyle: "none",
-                      padding: 0,
-                      margin: "16px 0 24px",
-                      fontSize: 11,
-                      color: "var(--ink-mute)",
-                      lineHeight: 1.5,
-                    }}
-                  >
-                    {phase.footnotes.map((note) => (
-                      <li key={note} style={{ marginBottom: 2 }}>
-                        * {note}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-
-                <Link
-                  href={`/company/contact?topic=${phase.contactTopic}`}
-                  className="r-btn r-btn-ink"
-                  style={{
-                    width: "100%",
-                    justifyContent: "center",
-                    marginTop: "auto",
-                  }}
-                >
-                  Get in touch <span className="arrow">→</span>
-                </Link>
-              </div>
-            ))}
-          </div>
-
-          <div
-            style={{
-              marginTop: 24,
-              fontSize: 13,
-              color: "var(--ink-soft)",
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-            }}
-          >
-            <span
-              className="r-dot r-dot-static"
-              style={{ ["--dot-size" as string]: "6px" }}
-            ></span>
-            <span>
-              We respond to every inquiry within 24 hours. The continuity is the
-              moat.
-            </span>
-          </div>
-        </div>
-      </section>
-
       {/* What we support, AI tracks pills + integrations marquee */}
-      <section className="r-section" style={{ background: "var(--paper)" }}>
+      <section className="r-section" style={{ background: "#ffffff" }}>
         <div className="r-wrap">
           <div style={{ marginBottom: 40, maxWidth: "62ch" }}>
             <div className="r-hero-eyebrow">
@@ -778,12 +542,13 @@ export function MarketingHome() {
               {TRACKS.map((t) => (
                 <span
                   key={t.id}
+                  className="r-track-chip"
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
                     gap: 10,
                     padding: "6px 16px 6px 6px",
-                    background: "var(--cream)",
+                    background: "#ffffff",
                     border: "1px solid var(--rule)",
                     borderRadius: 999,
                     fontSize: 14,
@@ -831,18 +596,6 @@ export function MarketingHome() {
               }}
             >
               <span>Production stack we work with</span>
-              <span
-                style={{
-                  padding: "2px 10px",
-                  background: "var(--green-tint)",
-                  color: "var(--green-deep)",
-                  borderRadius: 999,
-                  fontSize: 10,
-                  letterSpacing: "0.04em",
-                }}
-              >
-                150+ integrations
-              </span>
             </div>
             <div className="r-marquee">
               <div className="r-marquee-track">
@@ -855,7 +608,7 @@ export function MarketingHome() {
                 marginTop: 16,
                 fontSize: 13,
                 color: "var(--ink-soft)",
-                maxWidth: "62ch",
+                maxWidth: "none",
               }}
             >
               If it talks to an API, our engineers have shipped with it. The
@@ -866,72 +619,128 @@ export function MarketingHome() {
         </div>
       </section>
 
-      {/* Insights, Latest Thinking content (3 editorial cards) + Read-all */}
-      <section className="r-section">
+      {/* Press the dot — closing CTA above the FAQ. Cream plate, big
+          green sphere, italic-serif headline, filled green pill, and a
+          mono spec strip with trust signals. Component is client-only
+          because the sphere and the pill both call useTryRelay().open. */}
+      <PressTheDot />
+
+      {/* FAQ — editorial 2-col layout with intro on the left and a white
+          card of expandable items on the right. <details> elements give
+          native keyboard + screen-reader support; the "+" indicator
+          rotates 45° to a "×" on open via CSS. All items default open
+          so first-time visitors see answers without clicking. */}
+      <section
+        className="r-section r-faq"
+        aria-label="Frequently asked questions"
+      >
         <div className="r-wrap">
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "end",
-              marginBottom: 40,
-              flexWrap: "wrap",
-              gap: 24,
-            }}
-          >
-            <div>
-              <div className="r-hero-eyebrow">
-                <span
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 0,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.1em",
-                    fontSize: 11,
-                  }}
-                >
-                  <RelayLogo size={11} trailingGap={10} />
-                  <span>Insights</span>
-                </span>
-              </div>
-              <h2 className="r-h-1" style={{ marginTop: 16, marginBottom: 0 }}>
-                Notes on the shift from prototype creation to{" "}
-                <em>durable software.</em>
+          <div className="r-faq-grid">
+            <div className="r-faq-intro">
+              <div className="r-faq-eyebrow">FAQ</div>
+              <h2 className="r-h-1 r-faq-h">
+                Questions builders ask before pressing <em>the dot.</em>
               </h2>
+              <p className="r-faq-lede">
+                Still wondering something? Send us a note. A real human answers
+                within the hour.
+              </p>
+              <a href="mailto:support@relay.green" className="r-faq-email">
+                <span
+                  className="r-dot r-dot-static"
+                  style={{ ["--dot-size" as string]: "8px" }}
+                  aria-hidden="true"
+                />
+                <span>
+                  Email{" "}
+                  <span className="r-faq-email-addr">support@relay.green</span>
+                </span>
+              </a>
             </div>
-            <Link
-              href="/resources"
-              className="r-btn r-btn-link"
-              style={{ textDecoration: "none" }}
-            >
-              Read all insights <span className="arrow">→</span>
-            </Link>
-          </div>
-          <div className="r-insights-grid">
-            {LATEST_THINKING.map((item) => (
-              <div className="r-insight" key={item.tag}>
-                <span className="r-insight-tag">{item.tag}</span>
-                <h3 className="r-insight-title">{item.title}</h3>
-                <p
-                  style={{
-                    margin: "12px 0 0",
-                    fontSize: 14,
-                    lineHeight: 1.55,
-                    color: "var(--ink-soft)",
-                  }}
-                >
-                  {item.body}
-                </p>
-              </div>
-            ))}
+            <div className="r-faq-list">
+              {FAQ.map((item) => (
+                <details key={item.q} className="r-faq-item">
+                  <summary>
+                    <span className="r-faq-q">{item.q}</span>
+                    <span className="r-faq-icon" aria-hidden="true">
+                      +
+                    </span>
+                  </summary>
+                  <p className="r-faq-a">{item.a}</p>
+                </details>
+              ))}
+            </div>
           </div>
         </div>
       </section>
-
-      {/* CTA Banner — shared component (CtaBanner) is the single source
-          of truth for the dark closing banner. See app/_marketing/CtaBanner.tsx. */}
-      <CtaBanner />
     </Shell>
+  );
+}
+
+/**
+ * Caption rendered below each hero video. Communicates: (1) what kind of
+ * content the visitor will get (eyebrow), (2) how much of their time it
+ * costs (duration pill), and (3) the angle / pitch in one short line.
+ *
+ * Visually mirrors the section's existing eyebrow rhythm (mono, uppercase,
+ * letter-spaced), so it reads as a category label rather than a heading.
+ */
+function VideoBadge({
+  eyebrow,
+  duration,
+  description,
+}: {
+  eyebrow: string;
+  duration: string;
+  description: string;
+}) {
+  return (
+    <figcaption
+      style={{
+        marginTop: 16,
+        textAlign: "center",
+        color: "rgba(244,242,238,0.7)",
+        fontSize: 13,
+        lineHeight: 1.55,
+      }}
+    >
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 10,
+          marginBottom: 6,
+        }}
+      >
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            letterSpacing: "0.14em",
+            textTransform: "uppercase",
+            color: "var(--cream)",
+          }}
+        >
+          {eyebrow}
+        </span>
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 10,
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            color: "rgba(244,242,238,0.6)",
+            padding: "3px 8px",
+            borderRadius: 999,
+            border: "1px solid rgba(244,242,238,0.2)",
+          }}
+        >
+          {duration}
+        </span>
+      </span>
+      <span style={{ display: "block", maxWidth: "38ch", margin: "0 auto" }}>
+        {description}
+      </span>
+    </figcaption>
   );
 }

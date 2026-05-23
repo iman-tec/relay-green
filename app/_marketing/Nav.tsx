@@ -7,33 +7,25 @@ import { TryRelayButton } from "./TryRelayButton";
 import { RelayLogo } from "./RelayLogo";
 import { MobileNavDrawer } from "./MobileNavDrawer";
 
-type NavChild = { label: string; href: string; meta?: string };
-
 type NavItem =
   | {
       label: string;
       href: string;
       route: string;
-      children?: NavChild[];
     }
   | { label: string; href?: undefined };
 
 const NAV_ITEMS: NavItem[] = [
-  { label: "How it works", href: "/product", route: "/product" },
+  { label: "How it Works", href: "/product", route: "/product" },
   {
-    label: "Enterprises",
+    label: "For Enterprises",
     href: "/for-enterprise",
     route: "/for-enterprise",
   },
-  { label: "Resources", href: "/resources", route: "/resources" },
   {
-    label: "Company",
-    href: "/company/about",
-    route: "/company",
-    children: [
-      { label: "About", href: "/company/about", meta: "Who we are" },
-      { label: "Contact", href: "/company/contact", meta: "Talk to us" },
-    ],
+    label: "About RELAY",
+    href: "/",
+    route: "/",
   },
 ];
 
@@ -44,7 +36,6 @@ const DRAWER_ITEMS = NAV_ITEMS.filter(
     label: string;
     href: string;
     route: string;
-    children?: NavChild[];
   } => !!item.href
 );
 
@@ -117,47 +108,6 @@ export function Nav() {
             const active =
               pathname === item.href ||
               (item.route !== item.href && pathname.startsWith(item.route));
-
-            // Items with children render with a hover/focus popover
-            // surfacing the children. Clicking the parent still
-            // navigates to its primary href, so the previous behavior
-            // is preserved for click-only users.
-            if (item.children && item.children.length > 0) {
-              return (
-                <div key={item.label} className="r-nav-company">
-                  <Link
-                    href={item.href}
-                    className={"r-nav-link" + (active ? " active" : "")}
-                  >
-                    {item.label}
-                  </Link>
-                  <div
-                    className="r-nav-company-popover"
-                    role="menu"
-                    aria-label={`${item.label} sub-menu`}
-                  >
-                    {item.children.map((child) => {
-                      const childActive = pathname === child.href;
-                      return (
-                        <Link
-                          key={child.href}
-                          href={child.href}
-                          role="menuitem"
-                          className={childActive ? "active" : undefined}
-                        >
-                          <span>{child.label}</span>
-                          {child.meta && (
-                            <span className="r-nav-popover-meta">
-                              {child.meta}
-                            </span>
-                          )}
-                        </Link>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            }
 
             return (
               <Link

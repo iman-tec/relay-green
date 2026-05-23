@@ -271,7 +271,7 @@ export function ExplainerVideo() {
           position: relative;
           width: 100%;
           aspect-ratio: 16 / 9;
-          background: var(--cream, #f4f2ee);
+          background: var(--cream, #f0eee9);
           color: var(--ink, #1a1814);
           border-radius: 14px;
           overflow: hidden;
@@ -293,7 +293,7 @@ export function ExplainerVideo() {
         .explainer-play-btn {
           width: 84px; height: 84px;
           border-radius: 50%;
-          background: var(--cream, #f4f2ee);
+          background: var(--cream, #f0eee9);
           border: none; cursor: pointer;
           display: flex; align-items: center; justify-content: center;
           box-shadow: 0 14px 48px rgba(0,0,0,0.35);
@@ -315,7 +315,7 @@ export function ExplainerVideo() {
           appearance: none;
           background: rgba(20,20,19,0.7);
           border: 1px solid rgba(244,242,238,0.2);
-          color: var(--cream, #f4f2ee);
+          color: var(--cream, #f0eee9);
           width: 32px; height: 32px;
           border-radius: 50%;
           cursor: pointer;
@@ -324,8 +324,8 @@ export function ExplainerVideo() {
         }
         .explainer-control-btn:hover { background: rgba(20,20,19,0.85); }
         .explainer-control-btn[aria-pressed="true"] {
-          background: var(--green-deep, #3f5c2e);
-          border-color: var(--green-deep, #3f5c2e);
+          background: var(--green-deep, #3f5c34);
+          border-color: var(--green-deep, #3f5c34);
         }
         .explainer-progress {
           flex: 1; height: 3px;
@@ -334,7 +334,7 @@ export function ExplainerVideo() {
         }
         .explainer-progress-fill {
           height: 100%;
-          background: var(--green, #4f6b3a);
+          background: var(--green, #4d6b40);
           transition: width 0.15s linear;
         }
         .explainer-time {
@@ -348,14 +348,14 @@ export function ExplainerVideo() {
           position: absolute; top: 18px; right: 22px;
           width: 8px; height: 8px;
           border-radius: 50%;
-          background: var(--green, #4f6b3a);
+          background: var(--green, #4d6b40);
           z-index: 3;
         }
         .explainer-corner-dot::after {
           content: "";
           position: absolute; inset: -3px;
           border-radius: 50%;
-          background: var(--green, #4f6b3a);
+          background: var(--green, #4d6b40);
           opacity: 0.5;
           animation: explainer-pulse 2.4s cubic-bezier(0.2,0.7,0.2,1) infinite;
         }
@@ -418,7 +418,7 @@ export function ExplainerVideo() {
               }}
             >
               Build with AI. Ship with{" "}
-              <em style={{ color: "var(--green-deep, #3f5c2e)" }}>
+              <em style={{ color: "var(--green-deep, #3f5c34)" }}>
                 engineers.
               </em>
             </div>
@@ -437,7 +437,7 @@ export function ExplainerVideo() {
                   padding: "10px 20px",
                   borderRadius: 999,
                   background: "var(--ink, #1a1814)",
-                  color: "var(--cream, #f4f2ee)",
+                  color: "var(--cream, #f0eee9)",
                   border: "none",
                   cursor: "pointer",
                   fontSize: 14,
@@ -451,8 +451,8 @@ export function ExplainerVideo() {
                 style={{
                   padding: "10px 20px",
                   borderRadius: 999,
-                  background: "var(--green, #4f6b3a)",
-                  color: "var(--cream, #f4f2ee)",
+                  background: "var(--green, #4d6b40)",
+                  color: "var(--cream, #f0eee9)",
                   textDecoration: "none",
                   fontSize: 14,
                   fontWeight: 500,
@@ -628,7 +628,7 @@ function SceneTitle({ children }: { children: React.ReactNode }) {
       }}
     >
       {children}
-      <style>{`h2 em { font-style: italic; color: var(--green-deep, #3f5c2e); }`}</style>
+      <style>{`h2 em { font-style: italic; color: var(--green-deep, #3f5c34); }`}</style>
     </h2>
   );
 }
@@ -684,7 +684,7 @@ function WhyVisual({ progress }: { progress: number }) {
               aspectRatio: "1 / 1",
               borderRadius: 3,
               background:
-                i === 4 ? "var(--green, #4f6b3a)" : "var(--rule, #d8d2c5)",
+                i === 4 ? "var(--green, #4d6b40)" : "var(--rule, #d8d2c5)",
               opacity: i === 4 ? 1 : 0.5 + Math.sin(progress * 8 + i) * 0.3,
               transition: "opacity 0.3s",
             }}
@@ -711,7 +711,7 @@ function WhyVisual({ progress }: { progress: number }) {
           width: 80,
           height: 80,
           background: "var(--paper, #f9f7f3)",
-          border: "1px solid var(--green-deep, #3f5c2e)",
+          border: "1px solid var(--green-deep, #3f5c34)",
           borderRadius: 14,
           position: "relative",
           overflow: "hidden",
@@ -752,7 +752,7 @@ function WhyVisual({ progress }: { progress: number }) {
             width: 12,
             height: 12,
             borderRadius: "50%",
-            background: "var(--green, #4f6b3a)",
+            background: "var(--green, #4d6b40)",
             border: "2px solid var(--paper, #f9f7f3)",
           }}
         ></span>
@@ -765,9 +765,9 @@ function WhyVisual({ progress }: { progress: number }) {
 
 function FourMoments({ progress }: { progress: number }) {
   const items = [
-    { label: "Architecture", color: "rgba(79,107,58,0.15)" },
+    { label: "Architecture", color: "rgba(77, 107, 64, 0.15)" },
     { label: "Security", color: "rgba(204,120,92,0.18)" },
-    { label: "Deployment", color: "rgba(79,107,58,0.10)" },
+    { label: "Deployment", color: "rgba(77, 107, 64, 0.10)" },
     { label: "Maintenance", color: "rgba(204,120,92,0.12)" },
   ];
   return (
@@ -789,7 +789,7 @@ function FourMoments({ progress }: { progress: number }) {
               background: "var(--paper, #f9f7f3)",
               border: `1px solid ${
                 itemProgress > 0.5
-                  ? "var(--green-deep, #3f5c2e)"
+                  ? "var(--green-deep, #3f5c34)"
                   : "var(--rule, #d8d2c5)"
               }`,
               borderRadius: 10,
@@ -863,7 +863,7 @@ function PressPanel() {
           width: 16,
           height: 16,
           borderRadius: "50%",
-          background: "var(--green, #4f6b3a)",
+          background: "var(--green, #4d6b40)",
           position: "relative",
         }}
       >
@@ -872,7 +872,7 @@ function PressPanel() {
             position: "absolute",
             inset: -5,
             borderRadius: "50%",
-            background: "var(--green, #4f6b3a)",
+            background: "var(--green, #4d6b40)",
             opacity: 0.5,
             animation:
               "explainer-pulse 1.4s cubic-bezier(0.2,0.7,0.2,1) infinite",
@@ -1044,7 +1044,7 @@ function ZoomInterface({ progress }: { progress: number }) {
               right: 12,
               padding: "3px 8px",
               background: isJoined
-                ? "rgba(79,107,58,0.85)"
+                ? "rgba(77, 107, 64, 0.85)"
                 : "rgba(204,120,92,0.7)",
               borderRadius: 999,
               fontFamily: "var(--font-jetbrains, monospace)",
@@ -1156,7 +1156,7 @@ function ZoomInterface({ progress }: { progress: number }) {
                   ? "rgba(255,255,255,0.85)"
                   : "rgba(255,255,255,0.5)",
               background: b.accent
-                ? "rgba(79,107,58,0.85)"
+                ? "rgba(77, 107, 64, 0.85)"
                 : "rgba(255,255,255,0.06)",
               display: "inline-flex",
               alignItems: "center",
@@ -1226,7 +1226,7 @@ function PhaseTrack({ progress }: { progress: number }) {
           left: 0,
           height: 2,
           width: `${Math.min(progress, 1) * 100}%`,
-          background: "var(--green, #4f6b3a)",
+          background: "var(--green, #4d6b40)",
           transition: "width 0.15s linear",
         }}
       ></div>
@@ -1238,9 +1238,9 @@ function PhaseTrack({ progress }: { progress: number }) {
           width: 14,
           height: 14,
           borderRadius: "50%",
-          background: "var(--green, #4f6b3a)",
+          background: "var(--green, #4d6b40)",
           transform: "translate(-50%, -50%)",
-          boxShadow: "0 0 0 4px rgba(79,107,58,0.18)",
+          boxShadow: "0 0 0 4px rgba(77, 107, 64, 0.18)",
           transition: "left 0.15s linear",
         }}
       ></div>
@@ -1262,10 +1262,10 @@ function PhaseTrack({ progress }: { progress: number }) {
               style={{
                 background: reached
                   ? "var(--paper, #f9f7f3)"
-                  : "var(--cream, #f4f2ee)",
+                  : "var(--cream, #f0eee9)",
                 border: `1px solid ${
                   reached
-                    ? "var(--green-deep, #3f5c2e)"
+                    ? "var(--green-deep, #3f5c34)"
                     : "var(--rule, #d8d2c5)"
                 }`,
                 borderRadius: 10,
@@ -1290,7 +1290,7 @@ function PhaseTrack({ progress }: { progress: number }) {
                   fontStyle: "italic",
                   fontFamily: "var(--font-source-serif, serif)",
                   fontSize: 11.5,
-                  color: "var(--green-deep, #3f5c2e)",
+                  color: "var(--green-deep, #3f5c34)",
                   marginTop: 2,
                 }}
               >
@@ -1358,7 +1358,7 @@ function BackboneStats({ progress }: { progress: number }) {
                   fontFamily: "var(--font-source-serif, serif)",
                   fontSize: "clamp(24px, 3vw, 40px)",
                   lineHeight: 1,
-                  color: "var(--cream, #f4f2ee)",
+                  color: "var(--cream, #f0eee9)",
                   letterSpacing: "-0.022em",
                   marginBottom: 6,
                 }}
@@ -1430,7 +1430,7 @@ function EndCard({ progress }: { progress: number }) {
             width: "0.66em",
             height: "0.66em",
             borderRadius: "50%",
-            background: "var(--green, #4f6b3a)",
+            background: "var(--green, #4d6b40)",
             marginLeft: "0.06em",
             transform: `scale(${visibleCount > letters.length ? 1 : 0.2})`,
             opacity: visibleCount > letters.length ? 1 : 0,
@@ -1450,7 +1450,7 @@ function EndCard({ progress }: { progress: number }) {
         }}
       >
         Build with AI. Ship with{" "}
-        <span style={{ color: "var(--green-deep, #3f5c2e)" }}>engineers.</span>
+        <span style={{ color: "var(--green-deep, #3f5c34)" }}>engineers.</span>
       </div>
       <div
         style={{

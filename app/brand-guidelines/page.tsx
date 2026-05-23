@@ -1,5 +1,5 @@
 /*
- * /brand-guidelines — Relay Brand Guidelines v1.0.
+ * /brand-guidelines, Relay Brand Guidelines v1.0.
  *
  * Recreates the design handoff (project/brand-guidelines.html) as a Next
  * server component. All visuals are scoped under .bg-root via the sibling
@@ -9,12 +9,14 @@
 import type { CSSProperties } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { RelayLogo } from "../_marketing/RelayLogo";
 import "./brand-guidelines.css";
 
 export const metadata: Metadata = {
-  title: "Relay — Brand Guidelines",
+  title: "Brand Guidelines",
   description:
     "What Relay looks like, sounds like, and does not do. The brand is the green dot.",
+  alternates: { canonical: "/brand-guidelines" },
 };
 
 const markText: CSSProperties = {
@@ -87,7 +89,7 @@ export default function BrandGuidelinesPage() {
       {/* HERO */}
       <header className="bg-hero" id="brand">
         <div className="wrap">
-          <div className="bg-eyebrow">— Brand Guidelines · v1.0 · May 2026</div>
+          <div className="bg-eyebrow">Brand Guidelines · v1.0 · May 2026</div>
           <h1>
             The brand is the <em>green dot.</em>
           </h1>
@@ -95,12 +97,12 @@ export default function BrandGuidelinesPage() {
             Relay is the irreducibly human moment between AI’s automation and a
             builder’s confusion. The mark is calm. The voice is plain. The dot
             is the promise. This document codifies what the brand looks like,
-            sounds like, and does not do — so that everyone who builds for
-            Relay builds it the same way.
+            sounds like, and does not do, so that everyone who builds for Relay
+            builds it the same way.
           </p>
           <div className="bg-hero-meta">
             <div>
-              <b>Owner</b>Brand · Relay, Inc.
+              <b>Owner</b>Brand · Relay TechnoForge, Inc.
             </div>
             <div>
               <b>Status</b>Living document
@@ -120,7 +122,7 @@ export default function BrandGuidelinesPage() {
         <div className="wrap">
           <div className="bg-section-head">
             <div>
-              <div className="bg-section-num">01 — Essence</div>
+              <div className="bg-section-num">01, Essence</div>
             </div>
             <div>
               <h2>
@@ -129,34 +131,34 @@ export default function BrandGuidelinesPage() {
               <p className="lede">
                 Read this once. Everything else in this document follows from
                 it. If a design, a line of copy, or a feature decision
-                contradicts the essence, it’s wrong — even if it looks great.
+                contradicts the essence, it’s wrong, even if it looks great.
               </p>
             </div>
           </div>
 
           <div className="bg-grid-3">
             <div className="bg-tile">
-              <div className="bg-tile-num">— Promise</div>
+              <div className="bg-tile-num">Promise</div>
               <h4>Build with AI. Ship with engineers.</h4>
               <p>
-                One tap. One senior engineer. One promise — a real person, by
+                One tap. One software engineer. One promise, a real person, by
                 name and face, joins in seconds and stays through launch.
               </p>
             </div>
             <div className="bg-tile">
-              <div className="bg-tile-num">— Position</div>
+              <div className="bg-tile-num">Position</div>
               <h4>Software-as-a-Service has a Service in it again.</h4>
               <p>
                 Relay restores the human half of SaaS. Not a chatbot, not a
-                forum, not a marketplace. A senior engineer who stays from
-                build to shipped to running.
+                forum, not a marketplace. A software engineer who stays from build
+                to shipped to running.
               </p>
             </div>
             <div className="bg-tile">
-              <div className="bg-tile-num">— Personality</div>
+              <div className="bg-tile-num">Personality</div>
               <h4>Calm. Plain-spoken. Quietly confident.</h4>
               <p>
-                We sound like a senior engineer at a whiteboard, not a tech
+                We sound like a software engineer at a whiteboard, not a tech
                 company at a launch event. No exclamation marks. No
                 “revolutionize.” No emoji.
               </p>
@@ -182,7 +184,7 @@ export default function BrandGuidelinesPage() {
                 marginBottom: 24,
               }}
             >
-              — The one-line test
+              The one-line test
             </div>
             <div
               style={{
@@ -193,7 +195,7 @@ export default function BrandGuidelinesPage() {
                 maxWidth: "24ch",
               }}
             >
-              Would a senior engineer say this{" "}
+              Would a software engineer say this{" "}
               <em style={{ fontStyle: "italic", color: "#6FCF87" }}>
                 out loud,
               </em>{" "}
@@ -209,7 +211,7 @@ export default function BrandGuidelinesPage() {
               }}
             >
               If yes, ship it. If not, rewrite it. This applies to headlines,
-              button labels, error messages, sales decks — everything.
+              button labels, error messages, sales decks, everything.
             </div>
           </div>
         </div>
@@ -220,7 +222,7 @@ export default function BrandGuidelinesPage() {
         <div className="wrap">
           <div className="bg-section-head">
             <div>
-              <div className="bg-section-num">02 — Mark</div>
+              <div className="bg-section-num">02, Mark</div>
             </div>
             <div>
               <h2>
@@ -229,8 +231,8 @@ export default function BrandGuidelinesPage() {
               <p className="lede">
                 The mark is a word and a dot. RELAY set in uppercase sans,
                 tracked open, with a single perfect circle in Relay Green
-                sitting one space after. The word is the company. The dot is
-                the press. Together they are the entire system.
+                sitting one space after. The word is the company. The dot is the
+                press. Together they are the entire system.
               </p>
             </div>
           </div>
@@ -295,7 +297,7 @@ export default function BrandGuidelinesPage() {
           <div className="bg-grid-2" style={{ marginTop: 56 }}>
             <div>
               <div className="bg-section-num" style={{ marginBottom: 16 }}>
-                — Do
+                Do
               </div>
               <div className="bg-do">
                 Use the wordmark with a single dot, always at the
@@ -315,7 +317,7 @@ export default function BrandGuidelinesPage() {
             </div>
             <div>
               <div className="bg-section-num" style={{ marginBottom: 16 }}>
-                — Don&apos;t
+                Don&apos;t
               </div>
               <div className="bg-dont">
                 Don’t add a tagline lockup. The mark stands alone.
@@ -328,8 +330,8 @@ export default function BrandGuidelinesPage() {
                 cream, on a green field).
               </div>
               <div className="bg-dont">
-                Don’t animate the dot decoratively — it pulses to mean
-                something, never to look interesting.
+                Don’t animate the dot decoratively, it pulses to mean something,
+                never to look interesting.
               </div>
               <div className="bg-dont">
                 Don’t spell it “relay.green” in the mark. The URL is the URL;
@@ -345,29 +347,29 @@ export default function BrandGuidelinesPage() {
         <div className="wrap">
           <div className="bg-section-head">
             <div>
-              <div className="bg-section-num">03 — Color</div>
+              <div className="bg-section-num">03, Color</div>
             </div>
             <div>
               <h2>
                 Cream and ink, with a <em>single green.</em>
               </h2>
               <p className="lede">
-                The palette is two warm neutrals and one earned green. Green
-                is reserved for the dot, for state changes the user caused
+                The palette is two warm neutrals and one earned green. Green is
+                reserved for the dot, for state changes the user caused
                 (“Engineer joined”), and for the act of human contact. Never
-                decorative. If you find yourself reaching for green, ask
-                whether a human is involved.
+                decorative. If you find yourself reaching for green, ask whether
+                a human is involved.
               </p>
             </div>
           </div>
 
           <div className="bg-eyebrow" style={{ marginBottom: 16 }}>
-            — Primary tokens
+            Primary tokens
           </div>
           <div className="bg-color-grid">
-            <Swatch name="Cream" token="--cream" hex="#F4F2EE" fill="#f4f2ee">
-              Default page background. Warm, paper-like. Sets the editorial
-              tone of the brand.
+            <Swatch name="Cream" token="--cream" hex="#F4F2EE" fill="#f0eee9">
+              Default page background. Warm, paper-like. Sets the editorial tone
+              of the brand.
             </Swatch>
             <Swatch name="Ink" token="--ink" hex="#1A1814" fill="#1a1814">
               Body text, primary buttons, dark sections. Almost-but-not-quite
@@ -377,24 +379,24 @@ export default function BrandGuidelinesPage() {
               name="Moss"
               token="--green-bright"
               hex="#4F6B3A"
-              fill="#4f6b3a"
+              fill="#4d6b40"
             >
-              The brand. The dot. Human presence. Use sparingly — it is the
-              only color that earns attention.
+              The brand. The dot. Human presence. Use sparingly, it is the only
+              color that earns attention.
             </Swatch>
             <Swatch
               name="Deep Moss"
               token="--green-deep"
               hex="#3F5C2E"
-              fill="#3f5c2e"
+              fill="#3f5c34"
             >
-              Italic emphasis in serif headlines. Hyperlink color. Accessible
-              on cream.
+              Italic emphasis in serif headlines. Hyperlink color. Accessible on
+              cream.
             </Swatch>
           </div>
 
           <div className="bg-eyebrow" style={{ margin: "56px 0 16px" }}>
-            — Surface + support
+            Surface + support
           </div>
           <div className="bg-color-grid">
             <Swatch name="Paper" token="--paper" hex="#F9F7F3" fill="#f9f7f3">
@@ -432,7 +434,7 @@ export default function BrandGuidelinesPage() {
             }}
           >
             <div className="bg-section-num" style={{ marginBottom: 16 }}>
-              — The 80/15/5 rule
+              The 80/15/5 rule
             </div>
             <p
               style={{
@@ -442,9 +444,7 @@ export default function BrandGuidelinesPage() {
               }}
             >
               On any given screen:{" "}
-              <strong style={{ color: "var(--ink)" }}>
-                80% cream / paper
-              </strong>{" "}
+              <strong style={{ color: "var(--ink)" }}>80% cream / paper</strong>{" "}
               as background,{" "}
               <strong style={{ color: "var(--ink)" }}>15% ink</strong> as type
               and structure,{" "}
@@ -461,7 +461,7 @@ export default function BrandGuidelinesPage() {
         <div className="wrap">
           <div className="bg-section-head">
             <div>
-              <div className="bg-section-num">04 — Typography</div>
+              <div className="bg-section-num">04, Typography</div>
             </div>
             <div>
               <h2>
@@ -470,19 +470,20 @@ export default function BrandGuidelinesPage() {
                 Sans for the work.
               </h2>
               <p className="lede">
-                Display in Fraunces (a Tiempos-adjacent free serif), with
-                italics doing emphasis work. Body and UI in Instrument Sans (a
-                Söhne-adjacent free grotesk). Mono in JetBrains for code,
-                eyebrows, and numerical labels. Three families. Done.
+                Display and body in Source Serif 4, the editorial serif that
+                mirrors anthropic.com&rsquo;s house feel, calm, authoritative,
+                no flourishes. UI and eyebrows in Inter, the neutral grotesque
+                that sits quietly behind the type. Mono in JetBrains for code
+                and numerical labels. Three families. Done.
               </p>
             </div>
           </div>
 
           <div className="bg-type-row">
             <div className="bg-type-meta">
-              — Display
-              <div>Fraunces 400 / italic</div>
-              <div>Clamp 48–96px</div>
+              Display
+              <div>Source Serif 4 · 400 / italic</div>
+              <div>Clamp 32–56px</div>
             </div>
             <div className="bg-type-display">
               Build with AI.
@@ -492,8 +493,8 @@ export default function BrandGuidelinesPage() {
           </div>
           <div className="bg-type-row">
             <div className="bg-type-meta">
-              — Heading 1<div>Fraunces 400</div>
-              <div>48px / -0.025em</div>
+              Heading 1<div>Source Serif 4 · 400</div>
+              <div>48px / -0.018em</div>
             </div>
             <div className="bg-type-h1">
               Your engineer becomes <em>your engineer.</em>
@@ -501,8 +502,8 @@ export default function BrandGuidelinesPage() {
           </div>
           <div className="bg-type-row">
             <div className="bg-type-meta">
-              — Heading 2<div>Fraunces 400</div>
-              <div>32px / -0.02em</div>
+              Heading 2<div>Source Serif 4 · 400</div>
+              <div>32px / -0.014em</div>
             </div>
             <div className="bg-type-h2">
               From build to shipped, with the same engineer.
@@ -510,26 +511,26 @@ export default function BrandGuidelinesPage() {
           </div>
           <div className="bg-type-row">
             <div className="bg-type-meta">
-              — Eyebrow<div>JetBrains Mono 500</div>
+              Eyebrow<div>JetBrains Mono · 500</div>
               <div>12px / 0.05em / UPPER</div>
             </div>
-            <div className="bg-type-eyebrow">— How it works · 06 frames</div>
+            <div className="bg-type-eyebrow">How it works · 06 frames</div>
           </div>
           <div className="bg-type-row">
             <div className="bg-type-meta">
-              — Body<div>Instrument Sans 400</div>
+              Body<div>Source Serif 4 · 400</div>
               <div>17px / 1.65</div>
             </div>
             <div className="bg-type-body">
               Software is following the path coal once did: when a thing gets
               cheaper, we use a lot more of it. AI dev tools were supposed to
-              reduce demand for engineers — instead they multiplied builders
-              by an order of magnitude.
+              reduce demand for engineers, instead they multiplied builders by
+              an order of magnitude.
             </div>
           </div>
           <div className="bg-type-row">
             <div className="bg-type-meta">
-              — Caption<div>Instrument Sans 400</div>
+              Caption<div>Inter · 400</div>
               <div>14px / 1.55</div>
             </div>
             <div className="bg-type-small">
@@ -541,10 +542,10 @@ export default function BrandGuidelinesPage() {
           <div className="bg-grid-2" style={{ marginTop: 56 }}>
             <div>
               <div className="bg-section-num" style={{ marginBottom: 16 }}>
-                — Italic, with intent
+                Italic, with intent
               </div>
               <div className="bg-do">
-                Italics in Fraunces are reserved for{" "}
+                Italics in Source Serif 4 are reserved for{" "}
                 <em>the human moment</em> in a sentence. They mark the part
                 where Relay is the answer.
               </div>
@@ -555,7 +556,7 @@ export default function BrandGuidelinesPage() {
             </div>
             <div>
               <div className="bg-section-num" style={{ marginBottom: 16 }}>
-                — Mono numerals
+                Mono numerals
               </div>
               <div className="bg-do">
                 Use{" "}
@@ -578,7 +579,7 @@ export default function BrandGuidelinesPage() {
                     fontSize: 13,
                   }}
                 >
-                  — Pricing · 03
+                  Pricing · 03
                 </code>
               </div>
             </div>
@@ -591,17 +592,17 @@ export default function BrandGuidelinesPage() {
         <div className="wrap">
           <div className="bg-section-head">
             <div>
-              <div className="bg-section-num">05 — Voice</div>
+              <div className="bg-section-num">05, Voice</div>
             </div>
             <div>
               <h2>
                 Plain words, <em>fewer of them.</em>
               </h2>
               <p className="lede">
-                Imagine a senior engineer explaining the product to a friend
-                on a Sunday walk. That’s the register. Direct, slightly
-                understated, occasionally dry. We never sell — we describe
-                what is true. The product does the convincing.
+                Imagine a software engineer explaining the product to a friend on
+                a Sunday walk. That’s the register. Direct, slightly
+                understated, occasionally dry. We never sell, we describe what
+                is true. The product does the convincing.
               </p>
             </div>
           </div>
@@ -611,8 +612,8 @@ export default function BrandGuidelinesPage() {
               Build with AI. Ship with <em>engineers.</em>
             </VoiceCard>
             <VoiceCard tone="dont">
-              Revolutionize your workflow with the world’s first AI-native
-              human assistance platform!
+              Revolutionize your workflow with the world’s first AI-native human
+              assistance platform!
             </VoiceCard>
             <VoiceCard tone="do">
               Same engineer. Three legs. <em>One relationship.</em>
@@ -633,10 +634,10 @@ export default function BrandGuidelinesPage() {
 
           <div className="bg-grid-3" style={{ marginTop: 56 }}>
             <div className="bg-tile">
-              <div className="bg-tile-num">— Lexicon · use</div>
+              <div className="bg-tile-num">Lexicon · use</div>
               <h4>
-                builder · ship · pass the baton · same engineer · on
-                demand · ready
+                builder · ship · pass the baton · same engineer · on demand ·
+                ready
               </h4>
               <p>
                 Words that come from how the work actually feels. Specific,
@@ -644,7 +645,7 @@ export default function BrandGuidelinesPage() {
               </p>
             </div>
             <div className="bg-tile">
-              <div className="bg-tile-num">— Lexicon · avoid</div>
+              <div className="bg-tile-num">Lexicon · avoid</div>
               <h4>
                 solution · empower · revolutionize · seamless · world-class ·
                 cutting-edge
@@ -655,10 +656,9 @@ export default function BrandGuidelinesPage() {
               </p>
             </div>
             <div className="bg-tile">
-              <div className="bg-tile-num">— Punctuation</div>
+              <div className="bg-tile-num">Punctuation</div>
               <h4>
-                Em-dash — sparingly. No exclamation marks. Periods earn the
-                line.
+                Em-dash, sparingly. No exclamation marks. Periods earn the line.
               </h4>
               <p>
                 Sentences are short. Paragraphs are short. White space is part
@@ -674,7 +674,7 @@ export default function BrandGuidelinesPage() {
         <div className="wrap">
           <div className="bg-section-head">
             <div>
-              <div className="bg-section-num">06 — Components</div>
+              <div className="bg-section-num">06, Components</div>
             </div>
             <div>
               <h2>
@@ -690,7 +690,7 @@ export default function BrandGuidelinesPage() {
 
           <div className="bg-comp-grid">
             <div className="bg-comp-cell">
-              <span className="bg-mark-cell-label">— Button · Ink (default)</span>
+              <span className="bg-mark-cell-label">Button · Ink (default)</span>
               <button type="button" className="bg-btn bg-btn-ink">
                 Get in touch <span>→</span>
               </button>
@@ -706,7 +706,7 @@ export default function BrandGuidelinesPage() {
             </div>
             <div className="bg-comp-cell">
               <span className="bg-mark-cell-label">
-                — Button · Green (the moment)
+                Button · Green (the moment)
               </span>
               <button type="button" className="bg-btn bg-btn-green">
                 Try Relay <span>→</span>
@@ -722,7 +722,7 @@ export default function BrandGuidelinesPage() {
               </p>
             </div>
             <div className="bg-comp-cell">
-              <span className="bg-mark-cell-label">— Button · Ghost</span>
+              <span className="bg-mark-cell-label">Button · Ghost</span>
               <button type="button" className="bg-btn bg-btn-ghost">
                 See the kit <span>→</span>
               </button>
@@ -738,7 +738,7 @@ export default function BrandGuidelinesPage() {
             </div>
             <div className="bg-comp-cell" style={{ gridColumn: "span 2" }}>
               <span className="bg-mark-cell-label">
-                — Press-for-a-human (the hero CTA)
+                Press-for-a-human (the hero CTA)
               </span>
               <button type="button" className="bg-press">
                 <span className="dot"></span> Press for a human
@@ -750,12 +750,12 @@ export default function BrandGuidelinesPage() {
                   marginTop: 16,
                 }}
               >
-                The single most important component. Used once per screen,
-                max. Pulses on hover. Means something.
+                The single most important component. Used once per screen, max.
+                Pulses on hover. Means something.
               </p>
             </div>
             <div className="bg-comp-cell">
-              <span className="bg-mark-cell-label">— Engineer card</span>
+              <span className="bg-mark-cell-label">Engineer card</span>
               <div
                 style={{
                   display: "flex",
@@ -816,7 +816,7 @@ export default function BrandGuidelinesPage() {
         <div className="wrap">
           <div className="bg-section-head">
             <div>
-              <div className="bg-section-num">07 — Layout & Spacing</div>
+              <div className="bg-section-num">07, Layout & Spacing</div>
             </div>
             <div>
               <h2>
@@ -824,15 +824,15 @@ export default function BrandGuidelinesPage() {
               </h2>
               <p className="lede">
                 Every section starts with vast top-padding and an eyebrow.
-                Content sits in a 1200px max-width container with 32px
-                gutters. Headlines don’t fill the column — they wrap
-                intentionally, around an idea.
+                Content sits in a 1200px max-width container with 32px gutters.
+                Headlines don’t fill the column, they wrap intentionally, around
+                an idea.
               </p>
             </div>
           </div>
 
           <div className="bg-eyebrow" style={{ marginBottom: 16 }}>
-            — Spacing scale (8pt base)
+            Spacing scale (8pt base)
           </div>
           <div>
             <SpaceRow size={4} token="--sp-1" />
@@ -848,7 +848,7 @@ export default function BrandGuidelinesPage() {
 
           <div className="bg-grid-3" style={{ marginTop: 56 }}>
             <div className="bg-tile">
-              <div className="bg-tile-num">— Section rhythm</div>
+              <div className="bg-tile-num">Section rhythm</div>
               <h4>96 / 100 / 128</h4>
               <p>
                 Sections breathe. Top padding is 100–128px. Anything tighter
@@ -856,7 +856,7 @@ export default function BrandGuidelinesPage() {
               </p>
             </div>
             <div className="bg-tile">
-              <div className="bg-tile-num">— Containers</div>
+              <div className="bg-tile-num">Containers</div>
               <h4>1200 / 820 / 32</h4>
               <p>
                 1200px primary container. 820px narrow container for long-form
@@ -864,11 +864,11 @@ export default function BrandGuidelinesPage() {
               </p>
             </div>
             <div className="bg-tile">
-              <div className="bg-tile-num">— Radii</div>
+              <div className="bg-tile-num">Radii</div>
               <h4>8 · 12 · 16 · 999</h4>
               <p>
-                Cards: 12px. Hero panels: 16px. Buttons: full pill (999).
-                Don’t mix radii within a composition.
+                Cards: 12px. Hero panels: 16px. Buttons: full pill (999). Don’t
+                mix radii within a composition.
               </p>
             </div>
           </div>
@@ -880,14 +880,14 @@ export default function BrandGuidelinesPage() {
         <div className="wrap">
           <div className="bg-section-head">
             <div>
-              <div className="bg-section-num">08 — Imagery & Motion</div>
+              <div className="bg-section-num">08, Imagery & Motion</div>
             </div>
             <div>
               <h2>
                 Faces, not <em>illustrations.</em>
               </h2>
               <p className="lede">
-                When we show a human, we show a real one — first name, photo,
+                When we show a human, we show a real one, first name, photo,
                 expertise. We never use stock illustration, never use 3D
                 abstract shapes, never use AI-generated faces. The product is
                 humans; the brand should look like it.
@@ -897,7 +897,7 @@ export default function BrandGuidelinesPage() {
 
           <div className="bg-grid-2">
             <div className="bg-tile">
-              <div className="bg-tile-num">— Imagery rules</div>
+              <div className="bg-tile-num">Imagery rules</div>
               <h4>Documentary, not directed.</h4>
               <p style={{ marginBottom: 12 }}>
                 Engineer photos are square crops, ink-and-cream toned, with a
@@ -905,17 +905,17 @@ export default function BrandGuidelinesPage() {
                 No corporate-stock smiles.
               </p>
               <p>
-                Product UI is shown the way it actually looks — in real
-                terminal windows, real chat threads, real code. Never
-                “futuristic” mockups.
+                Product UI is shown the way it actually looks, in real terminal
+                windows, real chat threads, real code. Never “futuristic”
+                mockups.
               </p>
             </div>
             <div className="bg-tile">
-              <div className="bg-tile-num">— Motion principles</div>
+              <div className="bg-tile-num">Motion principles</div>
               <h4>Pulse means presence. Everything else is still.</h4>
               <p style={{ marginBottom: 12 }}>
-                The dot pulses at 2s ease-in-out, ±20% scale. That motion is
-                the brand. Reserve it for active “a human is here” states.
+                The dot pulses at 2s ease-in-out, ±20% scale. That motion is the
+                brand. Reserve it for active “a human is here” states.
               </p>
               <p>
                 Transitions are 200ms, ease-out. Page changes are instant
@@ -932,7 +932,7 @@ export default function BrandGuidelinesPage() {
         <div className="wrap">
           <div className="bg-section-head">
             <div>
-              <div className="bg-section-num">09 — Naming & Architecture</div>
+              <div className="bg-section-num">09, Naming & Architecture</div>
             </div>
             <div>
               <h2>
@@ -952,23 +952,25 @@ export default function BrandGuidelinesPage() {
           </div>
           <div style={namingRow}>
             <div style={namingConcept}>The brand name</div>
-            <div style={namingSay}>Relay</div>
-            <div style={namingNot}>relay.green, Relay.Green, ReLay, Relay AI</div>
+            <div style={namingSay}>
+              <RelayLogo />
+            </div>
+            <div style={namingNot}>
+              relay.green, Relay.Green, ReLay, Relay AI
+            </div>
           </div>
           <div style={namingRow}>
             <div style={namingConcept}>The promise</div>
             <div style={namingSay}>Build with AI. Ship with engineers.</div>
             <div style={namingNot}>
-              A real engineer, in your AI build / The press for a person /
-              From build to shipped
+              A real engineer, in your AI build / The press for a person / From
+              build to shipped
             </div>
           </div>
           <div style={namingRow}>
             <div style={namingConcept}>The CTA</div>
             <div style={namingSay}>Try Relay / Press for a human</div>
-            <div style={namingNot}>
-              Get started / Sign up / Request a demo
-            </div>
+            <div style={namingNot}>Get started / Sign up / Request a demo</div>
           </div>
           <div style={namingRow}>
             <div style={namingConcept}>The user</div>
@@ -987,9 +989,7 @@ export default function BrandGuidelinesPage() {
           <div style={namingRow}>
             <div style={namingConcept}>The session</div>
             <div style={namingSay}>Session / Build moment</div>
-            <div style={namingNot}>
-              Ticket / Chat / Conversation / Inquiry
-            </div>
+            <div style={namingNot}>Ticket / Chat / Conversation / Inquiry</div>
           </div>
           <div style={namingRow}>
             <div style={namingConcept}>The handoff</div>
@@ -1001,9 +1001,7 @@ export default function BrandGuidelinesPage() {
             <div style={namingSay}>
               Track (Claude track, Cursor track, Lovable track…)
             </div>
-            <div style={namingNot}>
-              Vertical / Practice / Channel / Pillar
-            </div>
+            <div style={namingNot}>Vertical / Practice / Channel / Pillar</div>
           </div>
           <div style={{ ...namingRow, borderBottom: "none" }}>
             <div style={namingConcept}>The promise time</div>
@@ -1018,40 +1016,35 @@ export default function BrandGuidelinesPage() {
         <div className="wrap">
           <div className="bg-section-head">
             <div>
-              <div className="bg-section-num">10 — Independence & posture</div>
+              <div className="bg-section-num">10, Independence & posture</div>
             </div>
             <div>
               <h2>
                 A new company. <em>By design.</em>
               </h2>
               <p className="lede">
-                Relay is an independent company headquartered in San
-                Francisco, with engineering operations in London. We don’t
-                lead with org charts, parent companies, or anyone’s logo but
-                our own. The brand stands on the press, the engineer, the
-                moment of relief.
+                Relay is an independent company. We don’t lead with org charts,
+                parent companies, or anyone’s logo but our own. The brand stands
+                on the press, the engineer, the moment of relief.
               </p>
             </div>
           </div>
 
           <div className="bg-grid-2">
             <div className="bg-tile">
-              <div className="bg-tile-num">
-                — What we say about ourselves
-              </div>
-              <h4>San Francisco · London · Independent</h4>
+              <div className="bg-tile-num">What we say about ourselves</div>
+              <h4>Independent</h4>
               <p>
-                “Relay, Inc. — independent, San Francisco · London.” That’s
-                the full corporate line. Anything more belongs in legal, not
-                on the page.
+                “Relay TechnoForge, Inc., independent.” That’s the full corporate line.
+                Anything more belongs in legal, not on the page.
               </p>
             </div>
             <div className="bg-tile">
-              <div className="bg-tile-num">— What we don’t do</div>
+              <div className="bg-tile-num">What we don’t do</div>
               <h4>No backers in the wordmark. No logos in the hero.</h4>
               <p>
                 Investors and partners are mentioned where it’s honest to
-                mention them — never as a credibility crutch in the marketing
+                mention them, never as a credibility crutch in the marketing
                 surface. The press and the engineer carry the brand.
               </p>
             </div>
@@ -1108,7 +1101,7 @@ function VoiceCard({
 }) {
   return (
     <div className={`bg-voice-card ${tone}`}>
-      <div className="bg-voice-tag">{tone === "do" ? "— Yes" : "— No"}</div>
+      <div className="bg-voice-tag">{tone === "do" ? ", Yes" : ", No"}</div>
       <div className="bg-voice-line">{children}</div>
     </div>
   );

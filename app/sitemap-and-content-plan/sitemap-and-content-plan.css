@@ -7,17 +7,17 @@
  */
 
 .sm-root {
-  --cream: #f4f2ee;
+  --cream: #f0eee9;
   --cream-2: #ece8e1;
   --paper: #fbfaf7;
   --ink: #1a1815;
   --ink-soft: #3d3935;
   --ink-mute: #7a7570;
   --rule: #d9d4cb;
-  --green: #4f6b3a;
-  --green-deep: #3f5c2e;
+  --green: #4d6b40;
+  --green-deep: #3f5c34;
   --green-tint: #e8ede0;
-  --font-serif: var(--font-fraunces), Georgia, serif;
+  --font-serif: var(--font-source-serif), Georgia, serif;
   --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: var(--font-jetbrains), ui-monospace, monospace;
   --maxw: 1200px;

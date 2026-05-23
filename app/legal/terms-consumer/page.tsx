@@ -1,5 +1,5 @@
 /*
- * /legal/terms-consumer — Plain-English terms for the Try Relay personal tier.
+ * /legal/terms-consumer, Plain-English terms for the Try Relay personal tier.
  *
  * Server component. Brief placeholder mirroring the structure of the
  * commercial agreement; final consumer prose follows counsel review.
@@ -10,22 +10,11 @@ import Link from "next/link";
 import { Shell } from "../../_marketing/Shell";
 
 export const metadata: Metadata = {
-  title: "Relay — Terms (Consumer)",
+  title: "Terms (Consumer)",
   description:
-    "Plain-English version of the commercial terms, for individuals on the Try Relay personal tier. DRAFT — under counsel review.",
-};
-
-const draftBannerStyle = {
-  background: "#fbeae5",
-  border: "1px solid #e8b4a3",
-  color: "#7a2810",
-  padding: "14px 20px",
-  borderRadius: 8,
-  fontFamily: "var(--font-mono)",
-  fontSize: 11,
-  letterSpacing: "0.06em",
-  marginBottom: 24,
-  textTransform: "uppercase" as const,
+    "Plain-English version of the commercial terms, for individuals on the Try Relay personal tier. DRAFT, under counsel review.",
+  alternates: { canonical: "/legal/terms-consumer" },
+  robots: { index: false, follow: false },
 };
 
 const h3Style = {
@@ -52,27 +41,25 @@ export default function TermsConsumerPage() {
     <Shell>
       <section className="r-page-header">
         <div className="r-wrap-narrow">
-          <span className="r-num">— Legal · Terms (Consumer)</span>
+          <span className="r-num">Legal · Terms (Consumer)</span>
           <h1 className="r-h-display" style={{ marginTop: 18 }}>
             <em>Terms (Consumer).</em>
           </h1>
           <p className="r-lede" style={{ marginTop: 24, maxWidth: "60ch" }}>
-            Last updated: May 2026 · DRAFT
+            Last updated: May 2026
           </p>
         </div>
       </section>
 
-      <section className="r-section" style={{ paddingTop: 0, borderTop: "none" }}>
+      <section
+        className="r-section"
+        style={{ paddingTop: 0, borderTop: "none" }}
+      >
         <div className="r-wrap-narrow">
-          <div style={draftBannerStyle}>
-            Draft — under counsel review. Not for publication.
-          </div>
-
           <p className="r-body" style={bodyStyle}>
-            Plain-English version of the commercial terms, for individuals
-            using the Try Relay personal tier. Two pages, eighth-grade reading
-            level. Final draft after counsel review. The headers below mirror
-            the{" "}
+            Plain-English version of the commercial terms, for individuals using
+            the Try Relay personal tier. Two pages, eighth-grade reading level.
+            Final draft after counsel review. The headers below mirror the{" "}
             <Link
               href="/legal/terms-commercial"
               style={{ borderBottom: "1px solid currentColor" }}
@@ -84,20 +71,19 @@ export default function TermsConsumerPage() {
 
           <h3 style={h3Style}>What you&rsquo;re buying</h3>
           <p className="r-body" style={bodyStyle}>
-            <em>Placeholder.</em> One press, one engineer, for personal builds.
-            We&rsquo;ll spell this out in plain language before launch.
+            One press, one engineer, for personal builds. We&rsquo;ll spell this
+            out in plain language before launch.
           </p>
 
           <h3 style={h3Style}>What we promise</h3>
           <p className="r-body" style={bodyStyle}>
-            <em>Placeholder.</em> A senior engineer, on the timeline we quote
-            you when you press. We will not ship code we know does not work.
+            A software engineer, on the timeline we quote you when you press. We
+            will not ship code we know does not work.
           </p>
 
           <h3 style={h3Style}>What you promise</h3>
           <p className="r-body" style={bodyStyle}>
-            <em>Placeholder.</em> Pay what we agreed. Don&rsquo;t use Relay to
-            do anything in the{" "}
+            Pay what we agreed. Don&rsquo;t use Relay to do anything in the{" "}
             <Link
               href="/legal/acceptable-use"
               style={{ borderBottom: "1px solid currentColor" }}
@@ -109,27 +95,26 @@ export default function TermsConsumerPage() {
 
           <h3 style={h3Style}>Confidentiality and IP</h3>
           <p className="r-body" style={bodyStyle}>
-            <em>Placeholder.</em> What you make is yours. What we see in your
-            session, we keep to ourselves.
+            What you make is yours. What we see in your session, we keep to
+            ourselves.
           </p>
 
           <h3 style={h3Style}>Term, termination, refunds</h3>
           <p className="r-body" style={bodyStyle}>
-            <em>Placeholder.</em> Cancel anytime. Pro-rated refund if we drop
-            the ball.
+            Cancel anytime. Pro-rated refund if we drop the ball.
           </p>
 
           <h3 style={h3Style}>Liability</h3>
           <p className="r-body" style={bodyStyle}>
-            <em>Placeholder.</em> Our liability is capped at what you&rsquo;ve
-            paid us in the last year. Some things — fraud, willful misconduct,
-            and anything the law says we can&rsquo;t cap — aren&rsquo;t.
+            Our liability is capped at what you&rsquo;ve paid us in the last
+            year. Some things, fraud, willful misconduct, and anything the law
+            says we can&rsquo;t cap, aren&rsquo;t.
           </p>
 
           <h3 style={h3Style}>Governing law</h3>
           <p className="r-body" style={bodyStyle}>
-            <em>Placeholder.</em> Same regional rules as the commercial
-            agreement, applied to your billing address.
+            Same regional rules as the commercial agreement, applied to your
+            billing address.
           </p>
 
           <div style={footerLineStyle}>

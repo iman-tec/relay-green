@@ -1,5 +1,5 @@
 /*
- * /product — How it works.
+ * /product, How it works.
  *
  * Reordered: hero → audience cards → trust pillars → 6-frame how-it-works
  * sequence → modalities → on-the-record (Zoom + compliance) → pull quote →
@@ -15,186 +15,530 @@
 
 import type { Metadata } from "next";
 import { Shell } from "../_marketing/Shell";
-import { TryRelayButton } from "../_marketing/TryRelayButton";
-import { HowItWorks } from "../_marketing/HowItWorks";
+import { RelayLogo } from "../_marketing/RelayLogo";
+import { ProofDotButton } from "../_marketing/ProofDotButton";
+import { ProductHeroOrb } from "./ProductHeroOrb";
 
 export const metadata: Metadata = {
-  title: "Relay — How it works",
+  title: "How it works",
   description:
-    "Three phases. One team. Same engineer the whole way — from build through launch through ongoing maintenance.",
+    "Three phases. One team. Same engineer the whole way, from build through launch through ongoing maintenance.",
+  alternates: { canonical: "/product" },
 };
-
-type Modality = {
-  title: string;
-  body: string;
-  icon: React.ReactNode;
-};
-
-const ICON_PROPS = {
-  width: 24,
-  height: 24,
-  viewBox: "0 0 24 24",
-  fill: "none",
-  stroke: "currentColor",
-  strokeWidth: 1.6,
-  strokeLinecap: "round" as const,
-  strokeLinejoin: "round" as const,
-};
-
-const MODALITIES: Modality[] = [
-  {
-    title: "Live chat",
-    body: "Instant messaging with context-aware engineers who can read your codebase, understand your stack, and guide you forward with precision — not generic answers.",
-    icon: (
-      <svg {...ICON_PROPS} aria-hidden="true">
-        <path d="M3 5h18v11H7l-4 4z" />
-      </svg>
-    ),
-  },
-  {
-    title: "Voice",
-    body: "Hop on a quick call when typing is not fast enough. Walk through architecture decisions, refine approaches, or simply think out loud with someone who understands the territory.",
-    icon: (
-      <svg {...ICON_PROPS} aria-hidden="true">
-        <rect x="9" y="3" width="6" height="11" rx="3" />
-        <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
-      </svg>
-    ),
-  },
-  {
-    title: "Screen share",
-    body: "Show, do not explain. Share your screen and let an engineer point, navigate, and build with you side by side — as if they were sitting at the next desk.",
-    icon: (
-      <svg {...ICON_PROPS} aria-hidden="true">
-        <rect x="3" y="4" width="18" height="13" rx="2" />
-        <path d="M8 21h8M12 17v4" />
-      </svg>
-    ),
-  },
-];
-
-const AUDIENCES = [
-  {
-    tag: "Solo",
-    title: "Solo builders",
-    body: "Ship your side project without hiring a team. Get support, get deployed, and get the sleep that comes from knowing someone experienced has reviewed what you have built.",
-    icon: (
-      <svg {...ICON_PROPS} aria-hidden="true">
-        <circle cx="12" cy="8" r="4" />
-        <path d="M4 21c0-4 4-7 8-7s8 3 8 7" />
-      </svg>
-    ),
-  },
-  {
-    tag: "Teams",
-    title: "Teams inside companies",
-    body: "Enable your AI-native team to move fast without breaking operations. Guardrails that feel like enablement, because they are designed by engineers who understand momentum.",
-    icon: (
-      <svg {...ICON_PROPS} aria-hidden="true">
-        <circle cx="9" cy="8" r="3.5" />
-        <circle cx="17" cy="10" r="2.5" />
-        <path d="M2 21c0-3.5 3-6 7-6s7 2.5 7 6M14 21c0-2.5 1.7-4.5 4-4.5s4 2 4 4.5" />
-      </svg>
-    ),
-  },
-  {
-    tag: "Enterprise",
-    title: "Enterprise leaders",
-    body: "Give every business unit a safe path from prototype to production. Scale AI-assisted building without the risk that comes from absence of engineering judgment.",
-    icon: (
-      <svg {...ICON_PROPS} aria-hidden="true">
-        <path d="M3 21h18M5 21V8l7-5 7 5v13M9 21v-6h6v6" />
-      </svg>
-    ),
-  },
-];
 
 const TRUST_PILLARS = [
   {
-    title: "Global delivery",
-    body: "Engineers across time zones so help is always awake when you are — without compromising data residency where it matters.",
+    title: "Always awake",
+    body: "Engineers across time zones, so help is available whenever you press the dot.",
   },
   {
     title: "Enterprise-grade security",
-    body: "SOC 2 aligned, GDPR aware, and built on a secure operational backbone that has served Fortune 500 clients.",
+    body: "SOC 2 aligned, GDPR aware. Data residency where it matters.",
   },
   {
     title: "Engineer continuity",
     body: "Same engineer from first commit to fifth iteration. Context that compounds. Trust that deepens over time.",
   },
-  {
-    title: "Operational backbone",
-    body: "Decades of enterprise delivery experience through NINtec Systems. This is not improvisation. It is discipline.",
-  },
 ];
 
-const SESSION_RAILS = [
-  {
-    num: "01",
-    title: "Zoom-native",
-    body: "Sessions run on Zoom — the platform your team already uses. No new tools, no logins to manage, no friction at the moment of need.",
-  },
-  {
-    num: "02",
-    title: "Recorded with context",
-    body: "Recordings, transcripts, code diffs, and decisions are captured against your project — searchable, replayable, and tied to the work itself.",
-  },
-  {
-    num: "03",
-    title: "Project-aware",
-    body: "Spin up projects, plan sprints, schedule the next session, and streamline ongoing work between presses. The session is part of the workflow.",
-  },
-  {
-    num: "04",
-    title: "Compliant by default",
-    body: "GDPR-ready posture. Data-handling and access controls aligned to enterprise standards. Regional residency on the roadmap. Compliance is part of the product.",
-  },
+/* Front-door AI tools the Relay dot can be pressed from. Read as the
+   shortlist of recognized AI build environments. */
+const FRONT_DOORS = [
+  "Claude",
+  "ChatGPT",
+  "Gemini",
+  "Copilot",
+  "Cursor",
+  "Lovable",
+  "Replit",
+  "v0",
 ];
 
-function RelayMark({
-  size = 13,
-  color = "var(--ink)",
-}: {
-  size?: number;
-  color?: string;
-}) {
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 0,
-        textTransform: "uppercase",
-        letterSpacing: "0.04em",
-        fontWeight: 500,
-        fontSize: size,
-        color,
-        fontFamily: "var(--font-sans)",
-      }}
-    >
-      <span>Relay</span>
-      <span
-        className="r-mark-dot"
-        style={{
-          width: Math.round(size * 0.78),
-          height: Math.round(size * 0.78),
-          borderRadius: "50%",
-          background: "var(--green)",
-          display: "inline-block",
-          marginLeft: 2,
-        }}
-      ></span>
-    </span>
-  );
-}
+/* The full production-stack list Relay engineers ship to. Alphabetized
+   so the columns interleave categories (payments, db, hosting, comms,
+   analytics, etc.) — scanning vertically reads as breadth, not as a
+   category list. */
+const PRODUCTION_STACK = [
+  "Adyen",
+  "Airbyte",
+  "Algolia",
+  "Amplitude",
+  "Anthropic",
+  "Apollo",
+  "App Store",
+  "Asana",
+  "Auth0",
+  "AWS",
+  "Azure",
+  "BetterStack",
+  "BigQuery",
+  "Bitbucket",
+  "Brevo",
+  "Brex",
+  "Bubble",
+  "Builder.io",
+  "Bunny",
+  "Chroma",
+  "Clerk",
+  "Cloudflare",
+  "Cloudinary",
+  "Cognito",
+  "Cohere",
+  "Contentful",
+  "Customer.io",
+  "Datadog",
+  "DigitalOcean",
+  "Discord",
+  "Drizzle",
+  "DynamoDB",
+  "Elasticsearch",
+  "ElevenLabs",
+  "Expo",
+  "Fastly",
+  "FaunaDB",
+  "Figma",
+  "Firebase Auth",
+  "Firestore",
+  "Fly.io",
+  "Freshworks",
+  "Front",
+  "FullStory",
+  "GCP",
+  "Ghost",
+  "GitHub",
+  "GitLab",
+  "Google Maps",
+  "Grafana",
+  "Hasura",
+  "Heap",
+  "Heroku",
+  "Hetzner",
+  "Honeycomb",
+  "Hotjar",
+  "HubSpot",
+  "Hugging Face",
+  "ImageKit",
+  "Inngest",
+  "Intercom",
+  "Jira",
+  "Klaviyo",
+  "Lemon Squeezy",
+  "Linear",
+  "LogRocket",
+  "Loops",
+  "Mailchimp",
+  "Mailgun",
+  "Mapbox",
+  "Marketo",
+  "Meilisearch",
+  "Mercury",
+  "MessageBird",
+  "Microsoft Teams",
+  "Mistral",
+  "Mixpanel",
+  "MongoDB",
+  "Mux",
+  "MySQL",
+  "Neon",
+  "Netlify",
+  "New Relic",
+  "Notion",
+  "Okta",
+  "Onfido",
+  "OpenAI",
+  "OpenTelemetry",
+  "Paddle",
+  "PayPal",
+  "Persona",
+  "Pinecone",
+  "Pipedrive",
+  "PlanetScale",
+  "Plausible",
+  "Play Store",
+  "Postgres",
+  "PostHog",
+  "Postmark",
+  "Prisma",
+  "Prismic",
+  "Prometheus",
+  "Qdrant",
+  "Railway",
+  "Razorpay",
+  "Redis",
+  "Render",
+  "Replicate",
+  "Resend",
+  "Salesforce",
+  "Sanity",
+  "S3",
+  "Segment",
+  "SendGrid",
+  "Sentry",
+  "Shopify",
+  "Slack",
+  "Snowflake",
+  "Square",
+  "Statsig",
+  "Storyblok",
+  "Strapi",
+  "Stripe",
+  "Stripe Identity",
+  "Stytch",
+  "Supabase",
+  "Temporal",
+  "TestFlight",
+  "Trigger.dev",
+  "tRPC",
+  "Twilio",
+  "Typesense",
+  "Uploadcare",
+  "Veriff",
+  "Vercel",
+  "Vimeo",
+  "Vonage",
+  "Weaviate",
+  "Webflow",
+  "WhatsApp Business",
+  "WordPress",
+  "WorkOS",
+  "Zapier",
+  "Zendesk",
+  "Zoom",
+];
+
+const PRODUCT_PAGE_PALETTES = {
+  referenceCobaltOchre: {
+    name: "Reference Cobalt Ochre",
+    hero: "linear-gradient(115deg, rgba(249,245,226,0.98) 0%, rgba(149,193,238,0.9) 31%, rgba(58,131,239,0.88) 64%, rgba(37,62,154,0.94) 100%), radial-gradient(circle at 22% 16%, rgba(249,245,226,0.78) 0%, rgba(249,245,226,0) 34%), radial-gradient(circle at 78% 34%, rgba(190,123,24,0.28) 0%, rgba(190,123,24,0) 30%)",
+    core: "linear-gradient(180deg, rgba(249,245,226,0.98) 0%, rgba(228,238,247,0.96) 100%)",
+    model:
+      "linear-gradient(180deg, rgba(240,244,238,0.98) 0%, rgba(149,193,238,0.38) 100%)",
+    session:
+      "linear-gradient(180deg, rgba(224,237,249,0.96) 0%, rgba(249,245,226,0.98) 100%)",
+    integrations:
+      "linear-gradient(180deg, rgba(249,245,226,1) 0%, rgba(235,225,199,0.98) 100%)",
+    trust:
+      "radial-gradient(ellipse 100% 120% at 70% 30%, #253e9a 0%, #17275f 58%, #0c1533 100%)",
+  },
+  referenceTealSpectrum: {
+    name: "Reference Teal Spectrum",
+    hero: "linear-gradient(115deg, rgba(211,239,235,0.98) 0%, rgba(130,194,184,0.9) 30%, rgba(48,114,119,0.9) 66%, rgba(14,51,72,0.94) 100%), radial-gradient(circle at 22% 16%, rgba(211,239,235,0.78) 0%, rgba(211,239,235,0) 34%), radial-gradient(circle at 78% 34%, rgba(68,146,134,0.3) 0%, rgba(68,146,134,0) 30%)",
+    core: "linear-gradient(180deg, rgba(211,239,235,0.98) 0%, rgba(186,224,219,0.96) 100%)",
+    model:
+      "linear-gradient(180deg, rgba(198,231,226,0.98) 0%, rgba(130,194,184,0.52) 100%)",
+    session:
+      "linear-gradient(180deg, rgba(154,208,200,0.66) 0%, rgba(211,239,235,0.98) 100%)",
+    integrations:
+      "linear-gradient(180deg, rgba(221,244,241,1) 0%, rgba(181,222,216,0.98) 100%)",
+    trust:
+      "radial-gradient(ellipse 100% 120% at 70% 30%, #2d7375 0%, #184c5d 56%, #0e3348 100%)",
+  },
+  referenceBlueCyanSun: {
+    name: "Reference Blue Cyan Sun",
+    hero: "linear-gradient(115deg, rgba(223,246,255,0.98) 0%, rgba(27,195,245,0.84) 30%, rgba(10,108,241,0.88) 64%, rgba(0,31,84,0.94) 100%), radial-gradient(circle at 22% 16%, rgba(223,246,255,0.78) 0%, rgba(223,246,255,0) 34%), radial-gradient(circle at 78% 34%, rgba(255,183,3,0.32) 0%, rgba(255,183,3,0) 30%)",
+    core: "linear-gradient(180deg, rgba(223,246,255,0.98) 0%, rgba(202,237,249,0.96) 100%)",
+    model:
+      "linear-gradient(180deg, rgba(217,244,254,0.98) 0%, rgba(27,195,245,0.24) 100%)",
+    session:
+      "linear-gradient(180deg, rgba(178,229,248,0.72) 0%, rgba(223,246,255,0.98) 100%)",
+    integrations:
+      "linear-gradient(180deg, rgba(239,250,255,1) 0%, rgba(255,239,176,0.68) 100%)",
+    trust:
+      "radial-gradient(ellipse 100% 120% at 70% 30%, #0a6cf1 0%, #003a91 52%, #001f54 100%)",
+  },
+  brightBlueCascade: {
+    name: "Bright Blue Cascade",
+    hero: "linear-gradient(115deg, rgba(0,84,255,0.98) 0%, rgba(13,97,255,0.96) 45%, rgba(36,119,255,0.94) 100%), radial-gradient(circle at 22% 16%, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0) 34%), radial-gradient(circle at 78% 34%, rgba(223,246,255,0.22) 0%, rgba(223,246,255,0) 30%)",
+    core: "linear-gradient(180deg, rgba(75,145,255,0.94) 0%, rgba(119,174,255,0.9) 100%)",
+    model:
+      "linear-gradient(180deg, rgba(151,197,255,0.88) 0%, rgba(187,219,255,0.9) 100%)",
+    session:
+      "linear-gradient(180deg, rgba(202,229,255,0.92) 0%, rgba(224,242,255,0.96) 100%)",
+    integrations:
+      "linear-gradient(180deg, rgba(234,247,255,0.98) 0%, rgba(247,252,255,1) 100%)",
+    trust:
+      "radial-gradient(ellipse 100% 120% at 70% 30%, #0a55e8 0%, #0840b5 52%, #062b78 100%)",
+  },
+  royalBlueGlassMono: {
+    name: "Royal Blue Glass Mono",
+    hero: "linear-gradient(112deg, rgba(255,255,255,0.98) 0%, rgba(255,255,255,0.94) 38%, rgba(210,222,251,0.78) 46%, rgba(17,30,108,0.92) 72%, rgba(17,30,108,0.98) 100%), radial-gradient(ellipse 80% 95% at 18% 86%, rgba(255,255,255,0.76) 0%, rgba(255,255,255,0.24) 34%, rgba(255,255,255,0) 58%), radial-gradient(ellipse 70% 72% at 88% 8%, rgba(4,13,65,0.62) 0%, rgba(4,13,65,0.28) 42%, rgba(4,13,65,0) 72%), linear-gradient(35deg, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0.08) 42%, rgba(255,255,255,0) 74%)",
+    core: "linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(246,248,252,0.98) 100%)",
+    model:
+      "linear-gradient(180deg, rgba(250,252,255,1) 0%, rgba(235,240,248,0.96) 100%)",
+    session:
+      "linear-gradient(180deg, rgba(241,245,251,0.98) 0%, rgba(255,255,255,1) 100%)",
+    integrations:
+      "linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(240,244,250,0.98) 100%)",
+    trust:
+      "radial-gradient(ellipse 100% 120% at 70% 30%, #111e6c 0%, #0b164f 58%, #060d2f 100%)",
+  },
+  blueSpaceTwoTone: {
+    name: "Blue Space Two Tone",
+    hero: "linear-gradient(120deg, rgba(255,255,255,0.94) 0%, rgba(232,237,255,0.86) 24%, rgba(0,0,255,0.92) 54%, rgba(29,41,81,0.98) 100%), radial-gradient(ellipse 78% 88% at 18% 84%, rgba(255,255,255,0.74) 0%, rgba(255,255,255,0.2) 34%, rgba(255,255,255,0) 58%), radial-gradient(ellipse 70% 72% at 88% 8%, rgba(7,14,48,0.58) 0%, rgba(7,14,48,0.24) 42%, rgba(7,14,48,0) 72%)",
+    core: "linear-gradient(180deg, rgba(247,249,255,1) 0%, rgba(229,235,255,0.98) 100%)",
+    model:
+      "linear-gradient(180deg, rgba(238,242,255,1) 0%, rgba(206,217,255,0.94) 100%)",
+    session:
+      "linear-gradient(180deg, rgba(221,229,255,0.96) 0%, rgba(246,248,255,1) 100%)",
+    integrations:
+      "linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(232,237,250,0.98) 100%)",
+    trust:
+      "radial-gradient(ellipse 100% 120% at 70% 30%, #1d2951 0%, #111b3c 56%, #080f24 100%)",
+  },
+  kineticTriad: {
+    name: "Kinetic Triad",
+    hero: "linear-gradient(118deg, rgba(255,255,255,0.94) 0%, rgba(255,244,228,0.9) 24%, rgba(255,150,26,0.9) 48%, rgba(45,150,142,0.9) 70%, rgba(222,47,40,0.92) 100%), radial-gradient(ellipse 78% 88% at 18% 84%, rgba(255,255,255,0.76) 0%, rgba(255,255,255,0.22) 34%, rgba(255,255,255,0) 58%), radial-gradient(ellipse 70% 72% at 88% 8%, rgba(222,47,40,0.32) 0%, rgba(222,47,40,0.12) 42%, rgba(222,47,40,0) 72%)",
+    core: "linear-gradient(180deg, rgba(255,248,237,1) 0%, rgba(238,248,246,0.98) 100%)",
+    model:
+      "linear-gradient(180deg, rgba(232,247,245,1) 0%, rgba(255,231,212,0.94) 100%)",
+    session:
+      "linear-gradient(180deg, rgba(255,237,224,0.96) 0%, rgba(238,249,247,1) 100%)",
+    integrations:
+      "linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(255,243,226,0.98) 100%)",
+    trust:
+      "radial-gradient(ellipse 100% 120% at 70% 30%, #2d968e 0%, #1f5f5d 48%, #321412 100%)",
+  },
+  graphiteCyan: {
+    name: "Graphite Cyan",
+    hero: "linear-gradient(118deg, rgba(238,238,238,0.98) 0%, rgba(238,238,238,0.92) 26%, rgba(0,136,204,0.82) 50%, rgba(102,102,102,0.88) 76%, rgba(0,0,0,0.96) 100%), radial-gradient(ellipse 78% 88% at 18% 84%, rgba(255,255,255,0.78) 0%, rgba(255,255,255,0.22) 34%, rgba(255,255,255,0) 58%), radial-gradient(ellipse 70% 74% at 74% 24%, rgba(0,136,204,0.58) 0%, rgba(0,136,204,0.24) 44%, rgba(0,136,204,0) 76%)",
+    core: "linear-gradient(180deg, rgba(238,238,238,1) 0%, rgba(226,242,248,0.98) 100%)",
+    model:
+      "linear-gradient(180deg, rgba(218,236,244,1) 0%, rgba(151,151,151,0.42) 100%)",
+    session:
+      "linear-gradient(180deg, rgba(0,136,204,0.18) 0%, rgba(238,238,238,1) 100%)",
+    integrations:
+      "linear-gradient(180deg, rgba(248,248,248,1) 0%, rgba(230,242,248,0.98) 100%)",
+    trust:
+      "radial-gradient(ellipse 100% 120% at 70% 30%, #0088cc 0%, #666666 46%, #000000 100%)",
+  },
+  charcoalRustPowder: {
+    name: "Charcoal Rust Powder",
+    hero: "linear-gradient(118deg, rgba(255,255,255,0.94) 0%, rgba(232,243,249,0.9) 22%, rgba(144,177,196,0.88) 48%, rgba(128,56,38,0.9) 72%, rgba(38,50,50,0.96) 100%), radial-gradient(ellipse 78% 88% at 18% 84%, rgba(255,255,255,0.72) 0%, rgba(255,255,255,0.22) 34%, rgba(255,255,255,0) 58%), radial-gradient(ellipse 70% 72% at 86% 12%, rgba(38,50,50,0.52) 0%, rgba(38,50,50,0.2) 42%, rgba(38,50,50,0) 72%)",
+    core: "linear-gradient(180deg, rgba(241,247,250,1) 0%, rgba(224,237,244,0.98) 100%)",
+    model:
+      "linear-gradient(180deg, rgba(230,240,246,1) 0%, rgba(216,196,186,0.86) 100%)",
+    session:
+      "linear-gradient(180deg, rgba(235,219,211,0.88) 0%, rgba(236,245,249,1) 100%)",
+    integrations:
+      "linear-gradient(180deg, rgba(250,252,253,1) 0%, rgba(226,238,244,0.98) 100%)",
+    trust:
+      "radial-gradient(ellipse 100% 120% at 70% 30%, #803826 0%, #263232 56%, #111818 100%)",
+  },
+  solidForestPlumClay: {
+    name: "Solid Forest Plum Clay",
+    hero: "#3f6739",
+    core: "#e9f0d9",
+    model: "#5a3a5f",
+    session: "#df7c3c",
+    integrations: "#e9f0d9",
+    trust: "#563e31",
+  },
+  lushInkSmoke: {
+    name: "Lush Ink Smoke",
+    hero: "radial-gradient(ellipse 70% 65% at 18% 46%, rgba(6,47,79,0.92) 0%, rgba(6,47,79,0.42) 38%, rgba(6,47,79,0) 68%), radial-gradient(ellipse 62% 58% at 68% 42%, rgba(129,55,114,0.88) 0%, rgba(129,55,114,0.34) 42%, rgba(129,55,114,0) 72%), radial-gradient(ellipse 58% 60% at 72% 78%, rgba(184,38,1,0.86) 0%, rgba(184,38,1,0.36) 44%, rgba(184,38,1,0) 74%), linear-gradient(115deg, #000000 0%, #062f4f 46%, #000000 100%)",
+    core: "linear-gradient(180deg, rgba(8,24,35,1) 0%, rgba(6,47,79,0.96) 100%)",
+    model:
+      "linear-gradient(180deg, rgba(6,47,79,1) 0%, rgba(129,55,114,0.96) 100%)",
+    session:
+      "linear-gradient(180deg, rgba(129,55,114,0.98) 0%, rgba(184,38,1,0.92) 100%)",
+    integrations:
+      "linear-gradient(180deg, rgba(18,18,18,1) 0%, rgba(6,47,79,0.94) 100%)",
+    trust:
+      "radial-gradient(ellipse 100% 120% at 70% 30%, #b82601 0%, #062f4f 46%, #000000 100%)",
+  },
+  terracottaSage: {
+    name: "Terracotta Sage",
+    hero: "linear-gradient(118deg, rgba(232,237,214,0.96) 0%, rgba(232,237,214,0.9) 28%, rgba(174,193,177,0.88) 54%, rgba(186,92,73,0.92) 100%), radial-gradient(ellipse 78% 88% at 18% 84%, rgba(255,255,255,0.62) 0%, rgba(255,255,255,0.18) 34%, rgba(255,255,255,0) 58%), radial-gradient(ellipse 70% 72% at 86% 12%, rgba(186,92,73,0.28) 0%, rgba(186,92,73,0.1) 42%, rgba(186,92,73,0) 72%)",
+    core: "linear-gradient(180deg, rgba(232,237,214,1) 0%, rgba(219,229,207,0.98) 100%)",
+    model:
+      "linear-gradient(180deg, rgba(223,232,211,1) 0%, rgba(174,193,177,0.62) 100%)",
+    session:
+      "linear-gradient(180deg, rgba(224,206,190,0.88) 0%, rgba(232,237,214,1) 100%)",
+    integrations:
+      "linear-gradient(180deg, rgba(241,244,229,1) 0%, rgba(218,228,210,0.98) 100%)",
+    trust:
+      "radial-gradient(ellipse 100% 120% at 70% 30%, #ba5c49 0%, #496455 52%, #26382f 100%)",
+  },
+  heritageGreenBurgundy: {
+    name: "Heritage Green Burgundy",
+    hero: "linear-gradient(118deg, rgba(235,225,198,0.96) 0%, rgba(235,225,198,0.9) 22%, rgba(78,139,83,0.9) 46%, rgba(111,27,40,0.9) 72%, rgba(44,58,51,0.96) 100%), radial-gradient(ellipse 78% 88% at 18% 84%, rgba(255,255,255,0.58) 0%, rgba(255,255,255,0.16) 34%, rgba(255,255,255,0) 58%), radial-gradient(ellipse 70% 72% at 86% 12%, rgba(111,27,40,0.28) 0%, rgba(111,27,40,0.1) 42%, rgba(111,27,40,0) 72%)",
+    core: "linear-gradient(180deg, rgba(235,225,198,1) 0%, rgba(224,218,198,0.98) 100%)",
+    model:
+      "linear-gradient(180deg, rgba(232,223,204,1) 0%, rgba(186,165,142,0.72) 100%)",
+    session:
+      "linear-gradient(180deg, rgba(214,199,178,0.88) 0%, rgba(235,225,198,1) 100%)",
+    integrations:
+      "linear-gradient(180deg, rgba(244,238,222,1) 0%, rgba(224,214,194,0.98) 100%)",
+    trust:
+      "radial-gradient(ellipse 100% 120% at 70% 30%, #6f1b28 0%, #2c3a33 56%, #17211d 100%)",
+  },
+  appleMono: {
+    name: "Apple Mono",
+    hero: "#ffffff",
+    core: "linear-gradient(180deg, #f5f5f7 0%, #ffffff 100%)",
+    model: "linear-gradient(180deg, #ffffff 0%, #f5f5f7 100%)",
+    session: "linear-gradient(180deg, #f5f5f7 0%, #ffffff 100%)",
+    integrations: "#ffffff",
+    trust: "#d8d8d4",
+  },
+  appleAirBlue: {
+    name: "Apple Air Blue",
+    hero: "linear-gradient(180deg, #dff2fb 0%, #edf8fd 48%, #ffffff 100%), radial-gradient(ellipse 72% 62% at 50% 18%, rgba(255,255,255,0.72) 0%, rgba(255,255,255,0) 64%), radial-gradient(ellipse 82% 72% at 18% 28%, rgba(188,225,242,0.36) 0%, rgba(188,225,242,0) 68%)",
+    core: "linear-gradient(180deg, #ffffff 0%, #f2f9fd 100%)",
+    model: "linear-gradient(180deg, #f2f9fd 0%, #ffffff 100%)",
+    session: "linear-gradient(180deg, #ffffff 0%, #edf7fc 100%)",
+    integrations: "linear-gradient(180deg, #f5fbfe 0%, #ffffff 100%)",
+    trust:
+      "radial-gradient(ellipse 100% 120% at 70% 30%, #1b5f86 0%, #0b2f46 58%, #051822 100%)",
+  },
+  altermindRidge: {
+    name: "Altermind Ridge",
+    hero: "radial-gradient(ellipse 90% 72% at 50% 18%, rgba(42,86,76,0.26) 0%, rgba(42,86,76,0) 62%), linear-gradient(180deg, #0b2420 0%, #061b18 48%, #03100f 100%)",
+    core: "linear-gradient(180deg, #ffffff 0%, #f2f9fd 100%)",
+    model: "linear-gradient(180deg, #f2f9fd 0%, #ffffff 100%)",
+    session: "linear-gradient(180deg, #ffffff 0%, #edf7fc 100%)",
+    integrations: "linear-gradient(180deg, #f5fbfe 0%, #ffffff 100%)",
+    trust:
+      "radial-gradient(ellipse 100% 120% at 70% 30%, #123c35 0%, #09231f 58%, #03100f 100%)",
+  },
+  warmSunriseGlass: {
+    name: "Warm Sunrise Glass",
+    hero: "linear-gradient(115deg, rgba(255,255,255,0.96) 0%, rgba(255,248,231,0.92) 32%, rgba(255,215,156,0.88) 68%, rgba(247,167,88,0.88) 100%), radial-gradient(circle at 24% 18%, rgba(255,255,255,0.84) 0%, rgba(255,255,255,0) 34%), radial-gradient(circle at 76% 30%, rgba(255,238,190,0.36) 0%, rgba(255,238,190,0) 30%)",
+    core: "linear-gradient(180deg, rgba(255,249,236,0.98) 0%, rgba(255,244,224,0.96) 100%)",
+    model:
+      "linear-gradient(180deg, rgba(255,247,231,0.98) 0%, rgba(255,238,210,0.95) 100%)",
+    session:
+      "linear-gradient(180deg, rgba(255,241,218,0.96) 0%, rgba(255,250,242,0.98) 100%)",
+    integrations:
+      "linear-gradient(180deg, rgba(255,252,246,1) 0%, rgba(255,245,229,0.98) 100%)",
+    trust:
+      "radial-gradient(ellipse 100% 120% at 70% 30%, #2a2118 0%, #17130f 62%, #0f0d0a 100%)",
+  },
+  goldenDaylightGlass: {
+    name: "Golden Daylight Glass",
+    hero: "linear-gradient(115deg, rgba(255,255,255,0.96) 0%, rgba(255,250,232,0.92) 28%, rgba(250,224,141,0.88) 62%, rgba(230,164,56,0.86) 100%), radial-gradient(circle at 24% 18%, rgba(255,255,255,0.84) 0%, rgba(255,255,255,0) 34%), radial-gradient(circle at 76% 30%, rgba(255,244,183,0.36) 0%, rgba(255,244,183,0) 30%)",
+    core: "linear-gradient(180deg, rgba(255,252,239,0.98) 0%, rgba(255,247,220,0.96) 100%)",
+    model:
+      "linear-gradient(180deg, rgba(255,249,230,0.98) 0%, rgba(250,234,190,0.94) 100%)",
+    session:
+      "linear-gradient(180deg, rgba(255,244,213,0.96) 0%, rgba(255,251,240,0.98) 100%)",
+    integrations:
+      "linear-gradient(180deg, rgba(255,253,246,1) 0%, rgba(255,244,215,0.98) 100%)",
+    trust:
+      "radial-gradient(ellipse 100% 120% at 70% 30%, #2b2415 0%, #17140c 62%, #0f0d08 100%)",
+  },
+  morningBlue: {
+    name: "Morning Blue",
+    hero: "linear-gradient(115deg, rgba(255,255,255,0.96) 0%, rgba(234,247,255,0.92) 30%, rgba(181,222,246,0.88) 66%, rgba(139,199,240,0.88) 100%), radial-gradient(circle at 24% 18%, rgba(255,255,255,0.84) 0%, rgba(255,255,255,0) 34%), radial-gradient(circle at 76% 30%, rgba(224,246,255,0.36) 0%, rgba(224,246,255,0) 30%)",
+    core: "linear-gradient(180deg, rgba(248,253,255,0.98) 0%, rgba(231,245,253,0.96) 100%)",
+    model:
+      "linear-gradient(180deg, rgba(242,250,255,0.98) 0%, rgba(218,238,250,0.95) 100%)",
+    session:
+      "linear-gradient(180deg, rgba(229,244,253,0.96) 0%, rgba(248,253,255,0.98) 100%)",
+    integrations:
+      "linear-gradient(180deg, rgba(252,254,255,1) 0%, rgba(232,246,254,0.98) 100%)",
+    trust:
+      "radial-gradient(ellipse 100% 120% at 70% 30%, #173148 0%, #101d2a 62%, #0b121a 100%)",
+  },
+  pacificGlass: {
+    name: "Pacific Glass",
+    hero: "linear-gradient(115deg, rgba(248,252,255,0.96) 0%, rgba(216,240,247,0.92) 30%, rgba(143,205,224,0.88) 66%, rgba(75,157,203,0.88) 100%), radial-gradient(circle at 24% 18%, rgba(255,255,255,0.84) 0%, rgba(255,255,255,0) 34%), radial-gradient(circle at 76% 30%, rgba(220,251,255,0.34) 0%, rgba(220,251,255,0) 30%)",
+    core: "linear-gradient(180deg, rgba(246,253,255,0.98) 0%, rgba(225,244,248,0.96) 100%)",
+    model:
+      "linear-gradient(180deg, rgba(239,250,253,0.98) 0%, rgba(207,233,241,0.95) 100%)",
+    session:
+      "linear-gradient(180deg, rgba(218,241,248,0.96) 0%, rgba(248,253,255,0.98) 100%)",
+    integrations:
+      "linear-gradient(180deg, rgba(252,254,255,1) 0%, rgba(225,245,250,0.98) 100%)",
+    trust:
+      "radial-gradient(ellipse 100% 120% at 70% 30%, #143642 0%, #0d2028 62%, #071419 100%)",
+  },
+  monochromePacific: {
+    name: "Monochrome Pacific",
+    hero: "linear-gradient(115deg, rgba(250,254,255,0.98) 0%, rgba(225,246,251,0.94) 28%, rgba(158,215,229,0.9) 62%, rgba(61,151,179,0.9) 100%), radial-gradient(circle at 24% 18%, rgba(255,255,255,0.78) 0%, rgba(255,255,255,0) 34%), radial-gradient(circle at 76% 30%, rgba(211,244,250,0.34) 0%, rgba(211,244,250,0) 30%)",
+    core: "linear-gradient(180deg, rgba(247,253,255,0.98) 0%, rgba(226,245,250,0.96) 100%)",
+    model:
+      "linear-gradient(180deg, rgba(236,249,252,0.98) 0%, rgba(205,233,241,0.95) 100%)",
+    session:
+      "linear-gradient(180deg, rgba(219,240,246,0.96) 0%, rgba(246,253,255,0.98) 100%)",
+    integrations:
+      "linear-gradient(180deg, rgba(251,254,255,1) 0%, rgba(225,244,249,0.98) 100%)",
+    trust:
+      "radial-gradient(ellipse 100% 120% at 70% 30%, #1a5263 0%, #113542 58%, #09212a 100%)",
+  },
+  monochromeGrey: {
+    name: "Monochrome Grey",
+    hero: "linear-gradient(115deg, rgba(226,228,230,0.98) 0%, rgba(198,202,205,0.94) 30%, rgba(149,156,162,0.92) 66%, rgba(78,86,93,0.94) 100%), radial-gradient(circle at 24% 18%, rgba(255,255,255,0.48) 0%, rgba(255,255,255,0) 34%), radial-gradient(circle at 76% 30%, rgba(214,217,220,0.22) 0%, rgba(214,217,220,0) 30%)",
+    core: "linear-gradient(180deg, rgba(218,220,222,0.98) 0%, rgba(198,202,205,0.96) 100%)",
+    model:
+      "linear-gradient(180deg, rgba(205,209,212,0.98) 0%, rgba(171,177,182,0.95) 100%)",
+    session:
+      "linear-gradient(180deg, rgba(184,190,195,0.96) 0%, rgba(213,216,219,0.98) 100%)",
+    integrations:
+      "linear-gradient(180deg, rgba(224,226,228,1) 0%, rgba(188,194,199,0.98) 100%)",
+    trust:
+      "radial-gradient(ellipse 100% 120% at 70% 30%, #24272a 0%, #141618 58%, #070808 100%)",
+  },
+  clearSky: {
+    name: "Clear Sky",
+    hero: "linear-gradient(115deg, rgba(255,255,255,0.96) 0%, rgba(233,246,255,0.92) 30%, rgba(170,219,246,0.88) 66%, rgba(106,183,232,0.88) 100%), radial-gradient(circle at 24% 18%, rgba(255,255,255,0.84) 0%, rgba(255,255,255,0) 34%), radial-gradient(circle at 76% 30%, rgba(224,246,255,0.36) 0%, rgba(224,246,255,0) 30%)",
+    core: "linear-gradient(180deg, rgba(249,253,255,0.98) 0%, rgba(232,246,255,0.96) 100%)",
+    model:
+      "linear-gradient(180deg, rgba(243,250,255,0.98) 0%, rgba(214,237,251,0.95) 100%)",
+    session:
+      "linear-gradient(180deg, rgba(225,242,253,0.96) 0%, rgba(249,253,255,0.98) 100%)",
+    integrations:
+      "linear-gradient(180deg, rgba(252,254,255,1) 0%, rgba(231,246,255,0.98) 100%)",
+    trust:
+      "radial-gradient(ellipse 100% 120% at 70% 30%, #16324c 0%, #0e1e2e 62%, #08131e 100%)",
+  },
+  blueMist: {
+    name: "Blue Mist",
+    hero: "linear-gradient(115deg, rgba(250,252,255,0.96) 0%, rgba(226,238,247,0.92) 32%, rgba(185,207,225,0.88) 68%, rgba(138,175,203,0.88) 100%), radial-gradient(circle at 24% 18%, rgba(255,255,255,0.84) 0%, rgba(255,255,255,0) 34%), radial-gradient(circle at 76% 30%, rgba(235,246,255,0.34) 0%, rgba(235,246,255,0) 30%)",
+    core: "linear-gradient(180deg, rgba(249,252,255,0.98) 0%, rgba(235,243,249,0.96) 100%)",
+    model:
+      "linear-gradient(180deg, rgba(244,249,252,0.98) 0%, rgba(223,234,243,0.95) 100%)",
+    session:
+      "linear-gradient(180deg, rgba(231,240,247,0.96) 0%, rgba(250,252,255,0.98) 100%)",
+    integrations:
+      "linear-gradient(180deg, rgba(253,254,255,1) 0%, rgba(235,244,250,0.98) 100%)",
+    trust:
+      "radial-gradient(ellipse 100% 120% at 70% 30%, #243445 0%, #151f2a 62%, #0d141c 100%)",
+  },
+  optimistBlue: {
+    name: "Optimist Blue",
+    hero: "linear-gradient(115deg, rgba(255,255,255,0.96) 0%, rgba(230,247,255,0.92) 28%, rgba(151,220,246,0.88) 62%, rgba(59,167,224,0.88) 100%), radial-gradient(circle at 24% 18%, rgba(255,255,255,0.84) 0%, rgba(255,255,255,0) 34%), radial-gradient(circle at 76% 30%, rgba(219,249,255,0.36) 0%, rgba(219,249,255,0) 30%)",
+    core: "linear-gradient(180deg, rgba(248,253,255,0.98) 0%, rgba(226,246,255,0.96) 100%)",
+    model:
+      "linear-gradient(180deg, rgba(241,251,255,0.98) 0%, rgba(205,238,251,0.95) 100%)",
+    session:
+      "linear-gradient(180deg, rgba(218,242,252,0.96) 0%, rgba(248,253,255,0.98) 100%)",
+    integrations:
+      "linear-gradient(180deg, rgba(252,254,255,1) 0%, rgba(225,247,255,0.98) 100%)",
+    trust:
+      "radial-gradient(ellipse 100% 120% at 70% 30%, #12364c 0%, #0b2130 62%, #06151f 100%)",
+  },
+} as const;
+
+const productPalette = PRODUCT_PAGE_PALETTES.appleMono;
 
 export default function ProductPage() {
   return (
     <Shell>
-      {/* Page-local CSS — scroll-triggered fade-ups + hover effects.
+      {/* Page-local CSS, scroll-triggered fade-ups + hover effects.
           animation-timeline: view() in supporting browsers; staggered
           delays as fallback. prefers-reduced-motion turns it all off. */}
       <style>{`
+        :root {
+          --green: #4d6b40;
+          --green-bright: #4d6b40;
+          --green-deep: #3f5c34;
+          --green-tint: rgba(77, 107, 64, 0.1);
+          --cream: #f5f5f7;
+          --paper: #ffffff;
+          --rule: rgba(0, 0, 0, 0.12);
+        }
+
         @keyframes prod-fade-up {
           from { opacity: 0; transform: translateY(20px); }
           to   { opacity: 1; transform: translateY(0); }
@@ -224,9 +568,9 @@ export default function ProductPage() {
         }
 
         .audience-card {
-          background: var(--cream);
+          background: #ffffff;
           border: 1px solid var(--rule);
-          border-radius: 14px;
+          border-radius: 8px;
           padding: 32px;
           display: flex;
           flex-direction: column;
@@ -240,10 +584,10 @@ export default function ProductPage() {
           content: "";
           position: absolute;
           inset: 0;
-          border-radius: 14px;
+          border-radius: 8px;
           background: linear-gradient(
             135deg,
-            rgba(79, 107, 58, 0.08) 0%,
+            rgba(0, 0, 0, 0.04) 0%,
             transparent 60%
           );
           opacity: 0;
@@ -252,8 +596,8 @@ export default function ProductPage() {
         }
         .audience-card:hover {
           transform: translateY(-4px);
-          box-shadow: 0 18px 40px rgba(20, 20, 19, 0.08);
-          border-color: rgba(79, 107, 58, 0.35);
+          box-shadow: 0 16px 36px rgba(0, 0, 0, 0.08);
+          border-color: rgba(0, 0, 0, 0.22);
         }
         .audience-card:hover::before {
           opacity: 1;
@@ -270,6 +614,32 @@ export default function ProductPage() {
         }
         .audience-card:hover .audience-card-icon {
           transform: scale(1.08) rotate(-2deg);
+        }
+
+        .product-card-surface {
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.035),
+            0 18px 48px rgba(0, 0, 0, 0.045);
+        }
+
+        .product-card-surface:hover {
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.045),
+            0 26px 60px rgba(0, 0, 0, 0.07);
+          transform: translateY(-2px);
+        }
+
+        .product-card-surface {
+          transition: transform 0.32s cubic-bezier(0.2, 0.7, 0.2, 1),
+            box-shadow 0.32s cubic-bezier(0.2, 0.7, 0.2, 1);
+        }
+
+        .hero-scroll-hint::selection {
+          background: transparent;
+        }
+
+        @media (max-width: 640px) {
+          .core-sequence-heading {
+            white-space: normal !important;
+          }
         }
 
         .trust-pillar {
@@ -306,143 +676,1303 @@ export default function ProductPage() {
             animation: none !important;
           }
           .audience-card,
-          .audience-card-icon {
+          .audience-card-icon,
+          .product-card-surface {
             transition: none;
           }
         }
       `}</style>
 
-      {/* HERO */}
-      <section style={{ padding: "56px 0 32px" }}>
-        <div
-          className="r-wrap"
-          style={{ textAlign: "center", maxWidth: "60ch", margin: "0 auto" }}
-        >
-          <h1
-            className="r-h-display"
+      {/* HERO — centered editorial hero. Eyebrow + two-line headline +
+          lede + a large green "press" disc that anchors the page's
+          gesture. The disc is non-functional decor here; the real Try
+          Relay flow is opened from the nav. */}
+      <section
+        className="r-product-hero"
+        style={{
+          background: "#ffffff",
+          padding: "76px 0 58px",
+          textAlign: "left",
+        }}
+      >
+        <div className="r-wrap" style={{ maxWidth: 1180, margin: "0 auto" }}>
+          <div
+            className="r-product-hero-layout"
             style={{
-              margin: 0,
-              fontSize: "clamp(36px, 4.6vw, 60px)",
-              letterSpacing: "-0.022em",
-              lineHeight: 1.05,
+              display: "grid",
+              gridTemplateColumns: "minmax(0, 1.05fr) minmax(300px, 0.72fr)",
+              gap: 64,
+              alignItems: "center",
             }}
           >
-            Build. Ship. <em>Evolve.</em>
-          </h1>
-          <p
-            className="r-lede"
-            style={{
-              marginTop: 16,
-              marginLeft: "auto",
-              marginRight: "auto",
-              maxWidth: "58ch",
-              fontSize: "clamp(15px, 1.3vw, 18px)",
-            }}
-          >
-            From first prototype to production-grade software and beyond.
-            Three phases. One team. Same engineer the whole way.
-          </p>
+            <div>
+              <div
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 10,
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  letterSpacing: "0.14em",
+                  textTransform: "uppercase",
+                  color: "var(--ink-mute)",
+                  marginBottom: 18,
+                }}
+              >
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: 999,
+                    background: "var(--green)",
+                    display: "inline-block",
+                  }}
+                  aria-hidden="true"
+                />
+                How Relay works
+              </div>
+              <h1
+                className="r-h-display"
+                style={{
+                  margin: 0,
+                  fontSize: "clamp(40px, 5.2vw, 68px)",
+                  letterSpacing: "-0.04em",
+                  lineHeight: 0.98,
+                  maxWidth: "16ch",
+                }}
+              >
+                One Press.
+                <br />
+                One Engineer.
+                <br />
+                <em
+                  style={{
+                    color: "var(--green-deep)",
+                    display: "inline-block",
+                    fontSize: "clamp(30px, 3.6vw, 48px)",
+                    fontStyle: "italic",
+                    lineHeight: 1.04,
+                    marginTop: 6,
+                  }}
+                >
+                  From being stuck to
+                  <br />
+                  solution ready in real time.
+                </em>
+              </h1>
+              <p
+                style={{
+                  margin: "22px 0 0",
+                  fontSize: "clamp(16px, 1.35vw, 20px)",
+                  lineHeight: 1.45,
+                  color: "var(--ink-soft)",
+                  maxWidth: "48ch",
+                }}
+              >
+                Here’s exactly what happens when you press the green button, and
+                why it’s the fastest way to turn an AI build session into
+                robust, scalable, secure, working software.
+              </p>
+            </div>
+
+            <div
+              className="r-product-orb-card"
+              style={{
+                justifySelf: "end",
+                width: "min(100%, 360px)",
+                minHeight: 312,
+                borderRadius: 8,
+                border: "1px solid var(--rule)",
+                background:
+                  "linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(245,245,247,0.92) 100%)",
+                boxShadow:
+                  "0 1px 2px rgba(0,0,0,0.035), 0 24px 70px rgba(0,0,0,0.08)",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 18,
+                padding: 34,
+              }}
+            >
+              <ProductHeroOrb />
+              <span
+                className="hero-scroll-hint"
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  color: "var(--ink-mute)",
+                  background: "transparent",
+                  userSelect: "none",
+                }}
+              >
+                PRESS TO START RELAY
+              </span>
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* AUDIENCE — Solo / Teams / Enterprise (moved up, with hover lift) */}
+      {/* THE CORE MECHANIC — vertical 4-step timeline. Each step is a
+          numbered green disc on the left rail + a card on the right
+          with title, body, and optional chips. Lines between discs
+          give the section its "relay" gesture. Anchor id matches the
+          hero's "Scroll to see the full flow" link. */}
       <section
+        id="core-mechanic"
         className="r-section"
-        style={{ borderTop: "none", paddingTop: 56 }}
+        style={{
+          borderTop: "none",
+          background: productPalette.core,
+          padding: "88px 0",
+        }}
       >
-        <div className="r-wrap">
-          <h2
-            className="r-h-1 prod-fade"
-            style={{
-              textAlign: "center",
-              margin: "0 auto 40px",
-              fontSize: "clamp(28px, 3.2vw, 44px)",
-              letterSpacing: "-0.018em",
-              lineHeight: 1.1,
-              maxWidth: "22ch",
-            }}
-          >
-            Built for every kind of <em>builder.</em>
-          </h2>
+        <div className="r-wrap" style={{ maxWidth: 960, margin: "0 auto" }}>
+          <div style={{ textAlign: "center", marginBottom: 64 }}>
+            <h2
+              className="r-h-1 core-sequence-heading"
+              style={{
+                margin: "0 auto",
+                fontSize: "clamp(26px, 3vw, 42px)",
+                letterSpacing: "-0.026em",
+                lineHeight: 1.03,
+                maxWidth: "none",
+                whiteSpace: "nowrap",
+              }}
+            >
+              Press, Match, Join, Solve, Deploy, Maintain
+            </h2>
+          </div>
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-              gap: 16,
-            }}
-          >
-            {AUDIENCES.map((a, i) => (
+          {/* Timeline rows */}
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {[
+              {
+                n: 1,
+                title: "You press the green button",
+                body: (
+                  <>
+                    You’re in Claude, Cursor, Lovable, Replit, v0, Bolt,
+                    wherever you build with AI. You hit a wall: a deployment
+                    error, a CORS issue, a database design question. You don’t
+                    post on Discord and wait. You press{" "}
+                    <span
+                      style={{
+                        display: "inline-block",
+                        width: "0.7em",
+                        height: "0.7em",
+                        borderRadius: 999,
+                        background: "var(--green)",
+                        verticalAlign: "middle",
+                        margin: "0 1px",
+                      }}
+                      aria-hidden="true"
+                    />
+                    .
+                  </>
+                ),
+                chips: [
+                  "Claude",
+                  "Cursor",
+                  "Lovable",
+                  "Replit",
+                  "v0",
+                  "Bolt",
+                  "+140 more",
+                ].map((label) => (
+                  <span
+                    key={label}
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 11,
+                      color: "var(--ink-soft)",
+                      padding: "4px 12px",
+                      borderRadius: 999,
+                      background: "var(--paper)",
+                      border: "1px solid var(--rule)",
+                    }}
+                  >
+                    {label}
+                  </span>
+                )),
+              },
+              {
+                n: 2,
+                title: "We match you with the right engineer",
+                body: (
+                  <>
+                    Relay reads your stack context, what AI tool you’re using,
+                    what framework, what infrastructure. In under 3 minutes, we
+                    route you to a qualified human engineer who knows your exact
+                    stack. A real engineer with production experience on the
+                    tools you’re using.
+                  </>
+                ),
+                chips: [
+                  {
+                    label: "Average match: 8.2s",
+                    icon: (
+                      <svg
+                        width="11"
+                        height="11"
+                        viewBox="0 0 24 24"
+                        fill="var(--green-deep)"
+                        aria-hidden="true"
+                      >
+                        <path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z" />
+                      </svg>
+                    ),
+                  },
+                  {
+                    label: "Stack-verified engineer",
+                    icon: (
+                      <svg
+                        width="11"
+                        height="11"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="var(--green-deep)"
+                        strokeWidth="2.4"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <circle cx="12" cy="12" r="10" />
+                        <path d="M8 12l3 3 5-6" />
+                      </svg>
+                    ),
+                  },
+                ].map((c) => (
+                  <span
+                    key={c.label}
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 11,
+                      color: "var(--ink-soft)",
+                      padding: "4px 12px 4px 10px",
+                      borderRadius: 999,
+                      background: "#f5f5f7",
+                      border: "1px solid var(--rule)",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                  >
+                    {c.icon}
+                    {c.label}
+                  </span>
+                )),
+              },
+              {
+                n: 3,
+                title: "Engineer joins your session",
+                body: (
+                  <>
+                    They appear in your Relay session, chat, voice, or screen
+                    share. They can see your code, your error messages, your
+                    architecture. They don’t need 20 minutes of context. They
+                    jump straight in because Relay pre-loads your stack and
+                    build state. You’re coding again in under a minute.
+                  </>
+                ),
+                chips: [
+                  {
+                    label: "Chat",
+                    icon: (
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="var(--green-deep)"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M3 5h18v11H7l-4 4z" />
+                      </svg>
+                    ),
+                  },
+                  {
+                    label: "Voice",
+                    icon: (
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="var(--green-deep)"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <rect x="9" y="3" width="6" height="11" rx="3" />
+                        <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+                      </svg>
+                    ),
+                  },
+                  {
+                    label: "Screen share",
+                    icon: (
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="var(--green-deep)"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <rect x="3" y="4" width="18" height="13" rx="2" />
+                        <path d="M8 21h8M12 17v4" />
+                      </svg>
+                    ),
+                  },
+                ].map((c) => (
+                  <span
+                    key={c.label}
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 11,
+                      color: "var(--ink-soft)",
+                      padding: "4px 12px 4px 10px",
+                      borderRadius: 999,
+                      background: "#f5f5f7",
+                      border: "1px solid var(--rule)",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                  >
+                    {c.icon}
+                    {c.label}
+                  </span>
+                )),
+              },
+              {
+                n: 4,
+                title: "Ship it, and they stay with you",
+                body: (
+                  <>
+                    The fix is in. The feature works. You deploy. Here’s what’s
+                    different from every other help model:{" "}
+                    <strong style={{ color: "var(--ink)", fontWeight: 600 }}>
+                      the same engineer stays connected to your project.
+                    </strong>{" "}
+                    They remember your stack, your preferences, your
+                    architecture. Next time you press the dot, it’s the same
+                    person, no re-explaining, no context loss.
+                  </>
+                ),
+                chips: null as React.ReactNode,
+              },
+            ].map((step, i, arr) => (
               <div
-                key={a.tag}
-                className={`audience-card prod-fade prod-fade-${i + 1}`}
+                key={step.n}
+                style={{ display: "flex", gap: 24, alignItems: "stretch" }}
               >
-                <div className="audience-card-icon">{a.icon}</div>
-                <span
+                {/* Left rail: number disc + connecting line */}
+                <div
                   style={{
-                    alignSelf: "flex-start",
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 10,
-                    letterSpacing: "0.08em",
-                    textTransform: "uppercase",
-                    color: "var(--green-deep)",
-                    background: "var(--green-tint)",
-                    padding: "4px 10px",
-                    borderRadius: 999,
-                    marginBottom: 18,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    flexShrink: 0,
+                    width: 32,
                   }}
                 >
-                  {a.tag}
-                </span>
-                <h3
+                  <div
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 999,
+                      background: "var(--green)",
+                      color: "var(--cream)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontFamily: "var(--font-sans)",
+                      fontWeight: 600,
+                      fontSize: 14,
+                      flexShrink: 0,
+                    }}
+                  >
+                    {step.n}
+                  </div>
+                  {i < arr.length - 1 && (
+                    <div
+                      style={{
+                        flex: 1,
+                        width: 2,
+                        background: "var(--green)",
+                        opacity: 0.45,
+                        marginTop: 6,
+                        marginBottom: 0,
+                      }}
+                    />
+                  )}
+                </div>
+
+                {/* Card */}
+                <div
+                  className="product-card-surface"
                   style={{
-                    fontFamily: "var(--font-display)",
-                    fontWeight: 500,
-                    fontSize: 22,
-                    letterSpacing: "-0.01em",
-                    margin: "0 0 12px",
-                    color: "var(--ink)",
+                    flex: 1,
+                    background: "#ffffff",
+                    border: "1px solid var(--rule)",
+                    borderRadius: 8,
+                    padding: "26px 30px",
+                    marginBottom: i < arr.length - 1 ? 22 : 0,
                   }}
                 >
-                  {a.title}
-                </h3>
-                <p className="r-tile-body" style={{ margin: 0 }}>
-                  {a.body}
-                </p>
+                  <h3
+                    style={{
+                      fontFamily: "var(--font-sans)",
+                      fontWeight: 600,
+                      fontSize: 19,
+                      letterSpacing: "-0.005em",
+                      margin: "0 0 12px",
+                      color: "var(--ink)",
+                    }}
+                  >
+                    {step.title}
+                  </h3>
+                  <p
+                    style={{
+                      fontSize: 14,
+                      lineHeight: 1.68,
+                      color: "var(--ink-soft)",
+                      margin: 0,
+                    }}
+                  >
+                    {step.body}
+                  </p>
+                  {step.chips && (
+                    <div
+                      style={{
+                        marginTop: 14,
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: 8,
+                      }}
+                    >
+                      {step.chips}
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* TRUST — AI for speed. Engineers for trust. (moved up, ink band) */}
+      {/* THE RELAY MODEL — three-phase pricing/commitment cards.
+          Centered eyebrow + two-line headline + lede; three cards in
+          a row, each with a small icon badge, phase label, title,
+          body, 3-bullet list, and a green price footer. Cards on
+          paper bg, hairline borders, no nested chrome. */}
       <section
+        className="r-section"
         style={{
-          background: "var(--ink)",
-          color: "var(--cream)",
-          padding: "72px 0",
+          background: productPalette.model,
+          borderTop: "1px solid var(--rule)",
+          padding: "88px 0",
         }}
       >
-        <div className="r-wrap">
+        <div className="r-wrap" style={{ maxWidth: 1200, margin: "0 auto" }}>
+          <div style={{ textAlign: "center", marginBottom: 56 }}>
+            <div
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+                color: "var(--green-deep)",
+                marginBottom: 14,
+              }}
+            >
+              The Relay model
+            </div>
+            <h2
+              className="r-h-1"
+              style={{
+                margin: "0 auto",
+                fontSize: "clamp(30px, 3.4vw, 48px)",
+                letterSpacing: "-0.026em",
+                lineHeight: 1.04,
+                maxWidth: "40ch",
+              }}
+            >
+              Three phases. One engineer.
+              <br />
+              <em style={{ color: "var(--green-deep)", fontStyle: "italic" }}>
+                All the way from build to scale.
+              </em>
+            </h2>
+            <p
+              style={{
+                margin: "18px auto 0",
+                maxWidth: "60ch",
+                fontSize: 15,
+                lineHeight: 1.6,
+                color: "var(--ink-soft)",
+              }}
+            >
+              Relay isn’t a one-and-done help desk. It’s an engineering
+              relationship that follows your product from idea to production,
+              with the same person / team who know your code.
+            </p>
+          </div>
+
           <div
+            className="r-grid-collapse-md"
             style={{
               display: "grid",
-              gridTemplateColumns: "1fr 1.3fr",
-              gap: 64,
-              alignItems: "start",
+              gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+              gap: 0,
+              alignItems: "stretch",
             }}
           >
-            <div className="prod-fade">
+            {[
+              {
+                phase: "Phase 1",
+                title: "Build",
+                body: "On-demand sessions while your AI takes a build from concept to MVP. Every time you’re stuck, a bug, a config issue, a design decision, one press gets you unstuck.",
+                bullets: [
+                  "Pay-per-session or bundled credits",
+                  "Same engineer assigned to your project",
+                  "Avg. session: 25 minutes to resolution",
+                ],
+                icon: (
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="var(--green-deep)"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M14.7 6.3a4 4 0 0 1-5 5l-7 7 2 2 7-7a4 4 0 0 1 5-5L14.7 6.3z" />
+                  </svg>
+                ),
+              },
+              {
+                phase: "Phase 2",
+                title: "Launch",
+                body: "When your MVP is ready and you need to go live, your engineer takes over the production-readiness work. Fixed scope, fixed timeline, predictable outcome.",
+                bullets: [
+                  "CI/CD, auth, monitoring, error handling",
+                  "Security audit & compliance checklist",
+                  "Fixed scope with clear deliverable gates",
+                ],
+                icon: (
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="var(--green-deep)"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M4.5 16.5L3 21l4.5-1.5M14 7l3 3M21 3l-1 6-9 9-3-3 9-9 4-3z" />
+                  </svg>
+                ),
+              },
+              {
+                phase: "Phase 3",
+                title: "Maintain",
+                body: "Your product is live. Your engineer stays on a monthly retainer, monitoring, patching, iterating. They know the codebase better than anyone.",
+                bullets: [
+                  "Monthly retainer with SLA guarantees",
+                  "Proactive monitoring & incident response",
+                  "Feature iteration without context loss",
+                ],
+                icon: (
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="var(--green-deep)"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5" />
+                  </svg>
+                ),
+              },
+            ].map((card) => (
+              <div
+                key={card.phase}
+                className="product-card-surface enterprise-card-surface"
+                style={{
+                  background: "#ffffff",
+                  border: "1px solid var(--rule)",
+                  borderRadius: 8,
+                  padding: 32,
+                  display: "flex",
+                  flexDirection: "column",
+                }}
+              >
+                <div
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 8,
+                    background: "#ffffff",
+                    border: "1px solid var(--rule)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    marginBottom: 18,
+                  }}
+                >
+                  {card.icon}
+                </div>
+                <div
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 10.5,
+                    letterSpacing: "0.10em",
+                    textTransform: "uppercase",
+                    color: "var(--ink-mute)",
+                    marginBottom: 8,
+                  }}
+                >
+                  {card.phase}
+                </div>
+                <h3
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontWeight: 600,
+                    fontSize: 22,
+                    letterSpacing: "-0.008em",
+                    margin: "0 0 12px",
+                    color: "var(--ink)",
+                  }}
+                >
+                  {card.title}
+                </h3>
+                <p
+                  style={{
+                    fontSize: 14,
+                    lineHeight: 1.6,
+                    color: "var(--ink-soft)",
+                    margin: "0 0 16px",
+                  }}
+                >
+                  {card.body}
+                </p>
+                <ul
+                  style={{
+                    listStyle: "none",
+                    padding: 0,
+                    margin: "0 0 20px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 6,
+                    flex: 1,
+                  }}
+                >
+                  {card.bullets.map((b) => (
+                    <li
+                      key={b}
+                      style={{
+                        fontSize: 13,
+                        lineHeight: 1.5,
+                        color: "var(--ink-soft)",
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: 8,
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 5,
+                          height: 5,
+                          borderRadius: 999,
+                          background: "var(--green)",
+                          display: "inline-block",
+                          marginTop: 8,
+                          flexShrink: 0,
+                        }}
+                        aria-hidden="true"
+                      />
+                      <span>{b}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* INSIDE A SESSION — 2-col split. Left: editorial brief with
+          4 green-check bullets. Right: a mock dev-tools window with a
+          numbered session log (Priya joins, error → walkthrough). The
+          mock window has macOS chrome (3 dots + LIVE indicator) for
+          familiarity but is plain JSX (not a real terminal). */}
+      <section
+        className="r-section"
+        style={{
+          background: productPalette.session,
+          padding: "88px 0",
+        }}
+      >
+        <div className="r-wrap" style={{ maxWidth: 1200, margin: "0 auto" }}>
+          <div
+            className="r-grid-collapse-md"
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 72,
+              alignItems: "center",
+            }}
+          >
+            {/* LEFT — editorial */}
+            <div>
               <div
                 style={{
                   fontFamily: "var(--font-mono)",
                   fontSize: 11,
                   letterSpacing: "0.14em",
                   textTransform: "uppercase",
-                  color: "rgba(244,242,238,0.5)",
+                  color: "var(--ink-mute)",
+                  marginBottom: 14,
+                }}
+              >
+                Inside a session
+              </div>
+              <h2
+                className="r-h-1"
+                style={{
+                  margin: 0,
+                  fontSize: "clamp(30px, 3.4vw, 48px)",
+                  letterSpacing: "-0.026em",
+                  lineHeight: 1.04,
+                  maxWidth: "22ch",
+                }}
+              >
+                Your build session,{" "}
+                <em style={{ color: "var(--green-deep)", fontStyle: "italic" }}>
+                  with a real engineer in it.
+                </em>
+              </h2>
+              <p
+                style={{
+                  margin: "24px 0 30px",
+                  maxWidth: "48ch",
+                  fontSize: 17,
+                  lineHeight: 1.58,
+                  color: "var(--ink-soft)",
+                }}
+              >
+                Here’s what the Relay session looks like. It’s deliberately
+                minimal, one pane for your code, one pane for your engineer. No
+                clutter, no project-management theater. Just a human and a
+                problem.
+              </p>
+              <ul
+                style={{
+                  listStyle: "none",
+                  padding: 0,
+                  margin: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 12,
+                }}
+              >
+                {[
+                  "Your AI tool stays open, Relay runs alongside it",
+                  "Engineer can see your screen (with your permission)",
+                  "Every session is logged, who joined, what was discussed, what was resolved",
+                  "Session ends when the problem is solved, no clock-watching",
+                ].map((item) => (
+                  <li
+                    key={item}
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: 12,
+                      fontSize: 14,
+                      lineHeight: 1.55,
+                      color: "var(--ink-soft)",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 18,
+                        height: 18,
+                        borderRadius: 999,
+                        background: "rgba(77, 107, 64, 0.14)",
+                        color: "var(--green-deep)",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                        marginTop: 1,
+                      }}
+                      aria-hidden="true"
+                    >
+                      <svg
+                        width="11"
+                        height="11"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M5 12l5 5L20 7" />
+                      </svg>
+                    </span>
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* RIGHT — mock terminal/session log */}
+            <div
+              style={{
+                background: "#161616",
+                borderRadius: 8,
+                overflow: "hidden",
+                boxShadow:
+                  "0 24px 70px rgba(0, 0, 0, 0.22), 0 8px 20px rgba(0, 0, 0, 0.12)",
+                fontFamily:
+                  "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+                fontSize: 13,
+                lineHeight: 1.5,
+              }}
+              aria-label="Example Relay session log"
+            >
+              {/* macOS-style title bar */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  padding: "10px 14px",
+                  background: "#202020",
+                  borderBottom: "1px solid #2a2a2a",
+                  gap: 10,
+                }}
+              >
+                <div style={{ display: "flex", gap: 6 }}>
+                  {["#ff5f57", "#febc2e", "#28c840"].map((c) => (
+                    <span
+                      key={c}
+                      style={{
+                        width: 11,
+                        height: 11,
+                        borderRadius: 999,
+                        background: c,
+                        display: "inline-block",
+                      }}
+                    />
+                  ))}
+                </div>
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: "#9a9a9a",
+                    letterSpacing: 0,
+                    flex: 1,
+                    textAlign: "center",
+                  }}
+                >
+                  Relay Session · #47A2
+                </span>
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 5,
+                    fontSize: 10,
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    color: "#7CC36B",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 7,
+                      height: 7,
+                      borderRadius: 999,
+                      background: "#7CC36B",
+                      display: "inline-block",
+                    }}
+                  />
+                  Live
+                </span>
+              </div>
+
+              {/* Body */}
+              <div style={{ padding: "16px 0", color: "#e6e6e6" }}>
+                {[
+                  {
+                    n: 1,
+                    line: (
+                      <>
+                        <span style={{ color: "#c78bff" }}>import</span> {"{ "}
+                        <span style={{ color: "#e6e6e6" }}>relay</span>
+                        {" }"} <span style={{ color: "#c78bff" }}>from</span>{" "}
+                        <span style={{ color: "#a5d6a7" }}>
+                          {"'@relay/sdk'"}
+                        </span>
+                        ;
+                      </>
+                    ),
+                  },
+                  { n: 2, line: <>&nbsp;</> },
+                  {
+                    n: 3,
+                    line: (
+                      <span style={{ color: "#7a7a7a" }}>
+                        {"// Engineer Priya joined 4s ago"}
+                      </span>
+                    ),
+                  },
+                  {
+                    n: 4,
+                    line: (
+                      <span style={{ color: "#7a7a7a" }}>
+                        {"// She sees your error log:"}
+                      </span>
+                    ),
+                  },
+                  {
+                    n: 5,
+                    line: (
+                      <span style={{ color: "#ff8a80" }}>
+                        Error: CORS policy blocked fetch
+                      </span>
+                    ),
+                  },
+                  {
+                    n: 6,
+                    line: (
+                      <span style={{ color: "#8a8a8a" }}>
+                        at api.staging.example.com
+                      </span>
+                    ),
+                  },
+                  { n: 7, line: <>&nbsp;</> },
+                  {
+                    n: 8,
+                    line: (
+                      <>
+                        <span style={{ color: "#7CC36B", fontWeight: 600 }}>
+                          Priya:
+                        </span>{" "}
+                        I can see the issue.
+                      </>
+                    ),
+                  },
+                  { n: 9, line: <>Your Vercel env vars are missing</> },
+                  { n: 10, line: <>API_ORIGIN. Want me to walk</> },
+                  { n: 11, line: <>you through the fix?</> },
+                  { n: 12, line: <>&nbsp;</> },
+                  {
+                    n: 13,
+                    line: (
+                      <>
+                        <span style={{ color: "#ffd54f", fontWeight: 600 }}>
+                          You:
+                        </span>{" "}
+                        yes please 🙏
+                      </>
+                    ),
+                  },
+                  { n: 14, line: <>&nbsp;</> },
+                  {
+                    n: 15,
+                    line: (
+                      <>
+                        <span style={{ color: "#7CC36B", fontWeight: 600 }}>
+                          Priya:
+                        </span>{" "}
+                        Go to Settings →
+                      </>
+                    ),
+                  },
+                  { n: 16, line: <>Environment Variables →</> },
+                  {
+                    n: 17,
+                    line: (
+                      <>
+                        Add <span style={{ color: "#82b1ff" }}>API_ORIGIN</span>{" "}
+                        =
+                      </>
+                    ),
+                  },
+                  {
+                    n: 18,
+                    line: (
+                      <span style={{ color: "#82b1ff" }}>
+                        https://api.staging.example.com
+                      </span>
+                    ),
+                  },
+                  {
+                    n: 19,
+                    line: <>→ Redeploy. That’s it.</>,
+                  },
+                  {
+                    n: 20,
+                    line: (
+                      <span
+                        style={{
+                          display: "inline-block",
+                          width: "0.55em",
+                          height: "1em",
+                          background: "#e6e6e6",
+                          verticalAlign: "text-bottom",
+                          animation: "relay-caret 1s steps(2) infinite",
+                        }}
+                        aria-hidden="true"
+                      />
+                    ),
+                  },
+                ].map((row) => (
+                  <div
+                    key={row.n}
+                    style={{
+                      display: "flex",
+                      paddingLeft: 14,
+                      paddingRight: 16,
+                    }}
+                  >
+                    <span
+                      style={{
+                        color: "#5a5a5a",
+                        width: 28,
+                        flexShrink: 0,
+                        textAlign: "right",
+                        marginRight: 14,
+                        userSelect: "none",
+                      }}
+                    >
+                      {row.n}
+                    </span>
+                    <span style={{ flex: 1 }}>{row.line}</span>
+                  </div>
+                ))}
+              </div>
+              <style>{`
+                @keyframes relay-caret {
+                  0%, 50% { opacity: 1; }
+                  51%, 100% { opacity: 0; }
+                }
+                @media (prefers-reduced-motion: reduce) {
+                  [aria-label="Example Relay session log"] [aria-hidden="true"] {
+                    animation: none !important;
+                  }
+                }
+              `}</style>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Integrations — front doors (AI tools we press the dot from)
+          + production stack (services we ship to). Sits directly under
+          the On-the-Record section so the reader moves from "how the
+          session works" to "what it works with" without a chapter
+          break. Subsection labels use a middot separator instead of an
+          em-dash, per the brand rule. */}
+      <section
+        style={{
+          padding: "88px 0",
+          background: productPalette.integrations,
+        }}
+      >
+        <div className="r-wrap" style={{ maxWidth: 1200, margin: "0 auto" }}>
+          <div style={{ marginBottom: 72, maxWidth: 980 }}>
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 10,
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+                color: "var(--ink-mute)",
+                marginBottom: 24,
+              }}
+            >
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 999,
+                  background: "var(--green)",
+                  display: "inline-block",
+                }}
+                aria-hidden="true"
+              ></span>
+              Integrations
+            </div>
+            <h2
+              className="r-h-1"
+              style={{
+                margin: "0 0 18px",
+                fontSize: "clamp(30px, 3.4vw, 48px)",
+                letterSpacing: "-0.026em",
+                lineHeight: 1.04,
+              }}
+            >
+              Every front door. Every <em>production stack.</em>
+            </h2>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 18,
+                lineHeight: 1.5,
+                color: "var(--ink-soft)",
+                maxWidth: "58ch",
+              }}
+            >
+              The full list of tools we press the dot from, and the production
+              services we wire you into.
+            </p>
+          </div>
+
+          {/* Subsection 1 — Front doors (AI build tools) */}
+          <div style={{ marginBottom: 64 }}>
+            <h3
+              style={{
+                fontFamily: "var(--font-display)",
+                fontWeight: 400,
+                fontSize: "clamp(20px, 1.8vw, 26px)",
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                color: "var(--ink)",
+                margin: "0 0 18px",
+              }}
+            >
+              Front doors · AI build tools
+            </h3>
+            <ul
+              style={{
+                listStyle: "none",
+                padding: "24px 0 0",
+                margin: 0,
+                borderTop: "1px solid var(--rule)",
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+                gap: "14px 30px",
+                fontFamily: "var(--font-mono)",
+                fontSize: 11.5,
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+                color: "var(--ink)",
+              }}
+            >
+              {FRONT_DOORS.map((tool) => (
+                <li key={tool}>{tool}</li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Subsection 2 — Production stack */}
+          <div>
+            <h3
+              style={{
+                fontFamily: "var(--font-display)",
+                fontWeight: 400,
+                fontSize: "clamp(20px, 1.8vw, 26px)",
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+                color: "var(--ink)",
+                margin: "0 0 18px",
+              }}
+            >
+              Production stack · {PRODUCTION_STACK.length} services
+            </h3>
+            <ul
+              style={{
+                listStyle: "none",
+                padding: "24px 0 0",
+                margin: 0,
+                borderTop: "1px solid var(--rule)",
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+                gap: "11px 30px",
+                fontFamily: "var(--font-sans)",
+                fontSize: 14,
+                color: "var(--ink-soft)",
+              }}
+            >
+              {PRODUCTION_STACK.map((svc) => (
+                <li key={svc}>{svc}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      {/* TRUST, AI for speed. Engineers for trust. — moved here so the
+          dark band lands after the page has shown the full operational
+          arc (Build/Ship/Evolve, Modalities, Zoom, Integrations).
+          Reads as the "trust earned" moment before the closing climax. */}
+      <section
+        className="r-proof-band r-proof-band-product"
+        style={{
+          color: "var(--ink)",
+        }}
+      >
+        <div className="r-wrap">
+          <div
+            className="r-grid-collapse-md r-proof-shell"
+            style={{
+              display: "grid",
+              gridTemplateColumns: "minmax(0, 0.92fr) minmax(0, 1.35fr)",
+              gap: 56,
+              alignItems: "start",
+            }}
+          >
+            <div className="prod-fade r-proof-intro">
+              <div
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 10,
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  letterSpacing: "0.14em",
+                  textTransform: "uppercase",
+                  color: "var(--ink-mute)",
                   marginBottom: 16,
                 }}
               >
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: 999,
+                    background: "var(--green)",
+                    display: "inline-block",
+                  }}
+                  aria-hidden="true"
+                />
                 Built to trust
               </div>
               <h2
@@ -450,17 +1980,17 @@ export default function ProductPage() {
                   fontFamily: "var(--font-display)",
                   fontWeight: 400,
                   margin: "0 0 20px",
-                  fontSize: "clamp(28px, 3vw, 40px)",
-                  letterSpacing: "-0.018em",
-                  lineHeight: 1.1,
-                  maxWidth: "16ch",
-                  color: "var(--cream)",
+                  fontSize: "clamp(32px, 3.8vw, 52px)",
+                  letterSpacing: "-0.032em",
+                  lineHeight: 0.98,
+                  maxWidth: "15ch",
+                  color: "var(--ink)",
                 }}
               >
                 AI for speed.{" "}
                 <em
                   style={{
-                    color: "#a4c074",
+                    color: "var(--green)",
                     fontStyle: "italic",
                   }}
                 >
@@ -470,39 +2000,39 @@ export default function ProductPage() {
               <p
                 style={{
                   fontSize: 15,
-                  lineHeight: 1.65,
-                  color: "rgba(244,242,238,0.78)",
+                  lineHeight: 1.62,
+                  color: "var(--ink-soft)",
                   maxWidth: "44ch",
                   margin: 0,
                 }}
               >
-                <RelayMark size={13} color="var(--cream)" /> is backed by
-                operational depth, global delivery capability, and the
-                engineering rigor of NINtec Systems. Continuity is not a
-                feature. It is the foundation on which reliable software is
-                built.
+                <RelayLogo size={13} color="var(--ink)" /> stays with you. Same
+                engineer in build, launch, and maintenance, continuity is the
+                whole company.
               </p>
+              <ProofDotButton />
             </div>
 
             <div
+              className="r-proof-cards"
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                gap: 32,
+                gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                gap: 12,
               }}
             >
               {TRUST_PILLARS.map((p, i) => (
                 <div
                   key={p.title}
-                  className={`trust-pillar prod-fade prod-fade-${i + 1}`}
-                  style={{ color: "var(--cream)" }}
+                  className={`trust-pillar r-proof-card prod-fade prod-fade-${i + 1}`}
+                  style={{ color: "var(--ink)" }}
                 >
                   <h4
                     style={{
                       fontFamily: "var(--font-sans)",
                       fontSize: 15,
                       fontWeight: 600,
-                      color: "var(--cream)",
+                      color: "var(--ink)",
                       letterSpacing: "-0.005em",
                       margin: "0 0 10px",
                     }}
@@ -513,7 +2043,7 @@ export default function ProductPage() {
                     style={{
                       fontSize: 13.5,
                       lineHeight: 1.6,
-                      color: "rgba(244,242,238,0.72)",
+                      color: "var(--ink-soft)",
                       margin: 0,
                     }}
                   >
@@ -522,294 +2052,6 @@ export default function ProductPage() {
                 </div>
               ))}
             </div>
-          </div>
-        </div>
-      </section>
-
-      {/* HOW IT WORKS — auto-rotating 6-frame sequence */}
-      <section className="r-section" style={{ borderTop: "none" }}>
-        <div className="r-wrap">
-          <HowItWorks />
-        </div>
-      </section>
-
-      {/* MODALITIES — Chat / Voice / Screen share */}
-      <section
-        className="r-section"
-        style={{
-          background: "var(--paper)",
-          borderTop: "1px solid var(--rule)",
-        }}
-      >
-        <div className="r-wrap">
-          <h2
-            className="r-h-1"
-            style={{
-              textAlign: "center",
-              margin: "0 auto",
-              maxWidth: "24ch",
-              fontSize: "clamp(26px, 2.8vw, 38px)",
-              letterSpacing: "-0.018em",
-              lineHeight: 1.1,
-            }}
-          >
-            Chat. Voice. Screen share.
-            <br />
-            <em>One engineer. One team.</em>
-          </h2>
-          <div
-            style={{
-              marginTop: 48,
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-              gap: 16,
-            }}
-          >
-            {MODALITIES.map((m, i) => (
-              <div
-                key={m.title}
-                className={`audience-card prod-fade prod-fade-${i + 1}`}
-                style={{ background: "var(--cream)" }}
-              >
-                <div className="audience-card-icon">{m.icon}</div>
-                <h3
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    fontWeight: 600,
-                    fontSize: 18,
-                    letterSpacing: "-0.005em",
-                    margin: "0 0 10px",
-                    color: "var(--ink)",
-                  }}
-                >
-                  {m.title}
-                </h3>
-                <p
-                  style={{
-                    fontSize: 14,
-                    lineHeight: 1.6,
-                    color: "var(--ink-soft)",
-                    margin: 0,
-                  }}
-                >
-                  {m.body}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ON THE RECORD — 2-col intro + 4-up rail + compliance badges */}
-      <section className="r-section">
-        <div className="r-wrap">
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1.1fr 1fr",
-              gap: 56,
-              alignItems: "center",
-              marginBottom: 40,
-            }}
-          >
-            <div className="prod-fade">
-              <div
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 0,
-                  fontSize: 11,
-                  letterSpacing: "0.1em",
-                  textTransform: "uppercase",
-                  color: "var(--ink-soft)",
-                  marginBottom: 16,
-                }}
-              >
-                <span>Relay</span>
-                <span
-                  className="r-mark-dot"
-                  style={{
-                    width: 9,
-                    height: 9,
-                    borderRadius: "50%",
-                    background: "var(--green)",
-                    display: "inline-block",
-                    marginRight: 10,
-                  }}
-                ></span>
-                <span>— On the record</span>
-              </div>
-              <h2
-                className="r-h-1"
-                style={{
-                  margin: 0,
-                  fontSize: "clamp(26px, 2.8vw, 38px)",
-                  letterSpacing: "-0.018em",
-                  lineHeight: 1.1,
-                  maxWidth: "20ch",
-                }}
-              >
-                Zoom-native sessions, recorded with consent.{" "}
-                <em>Compliant by default.</em>
-              </h2>
-            </div>
-            <p
-              className="r-body prod-fade prod-fade-2"
-              style={{
-                margin: 0,
-                maxWidth: "52ch",
-                fontSize: 15,
-                lineHeight: 1.6,
-              }}
-            >
-              Every Relay session runs on Zoom — the tool your team already
-              uses. We record (with consent), keep transcripts and code
-              context tied to your project, and turn each conversation into
-              something you can plan against and ship from. GDPR-aligned and
-              built to enterprise compliance from day one.
-            </p>
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: 0,
-              borderTop: "1px solid var(--rule)",
-              borderBottom: "1px solid var(--rule)",
-              background: "var(--cream)",
-            }}
-          >
-            {SESSION_RAILS.map((s, i) => (
-              <div
-                key={s.num}
-                className={`prod-fade prod-fade-${i + 1}`}
-                style={{
-                  padding: "32px 28px",
-                  borderRight:
-                    i < SESSION_RAILS.length - 1
-                      ? "1px solid var(--rule)"
-                      : "none",
-                  display: "flex",
-                  flexDirection: "column",
-                }}
-              >
-                <div
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 11,
-                    color: "var(--ink-mute)",
-                    letterSpacing: "0.06em",
-                    marginBottom: 14,
-                  }}
-                >
-                  {s.num}
-                </div>
-                <h3
-                  style={{
-                    fontFamily: "var(--font-display)",
-                    fontWeight: 400,
-                    fontSize: 20,
-                    lineHeight: 1.2,
-                    letterSpacing: "-0.01em",
-                    margin: "0 0 10px",
-                    color: "var(--ink)",
-                  }}
-                >
-                  {s.title}
-                </h3>
-                <p
-                  style={{
-                    fontSize: 13.5,
-                    lineHeight: 1.55,
-                    color: "var(--ink-soft)",
-                    margin: 0,
-                  }}
-                >
-                  {s.body}
-                </p>
-              </div>
-            ))}
-          </div>
-
-          <div
-            style={{
-              marginTop: 32,
-              display: "flex",
-              justifyContent: "center",
-              gap: 8,
-              flexWrap: "wrap",
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              color: "var(--green-deep)",
-              letterSpacing: "0.04em",
-              textTransform: "uppercase",
-            }}
-          >
-            {[
-              "GDPR",
-              "SOC 2 posture",
-              "Data residency",
-              "Per-tenant isolation",
-              "Consent on record",
-              "DPA available",
-            ].map((badge) => (
-              <span
-                key={badge}
-                style={{
-                  padding: "4px 12px",
-                  background: "var(--green-tint)",
-                  border: "1px solid rgba(79, 107, 58, 0.18)",
-                  borderRadius: 999,
-                }}
-              >
-                {badge}
-              </span>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="r-pull">
-        <div className="r-wrap-narrow">
-          <div className="r-pull-quote">
-            Your engineer
-            <br />
-            becomes <em>your engineer.</em>
-          </div>
-        </div>
-      </section>
-
-      <section className="r-cta-banner">
-        <div className="r-wrap-narrow">
-          <h2 className="r-h-1" style={{ marginBottom: 24 }}>
-            AI changed <em>who</em> can build.
-            <br />
-            Relay changes <em>the way</em> they ship.
-          </h2>
-          <p className="r-lede">
-            Click the green dot. A real engineer joins in seconds. Stays
-            with you to launch. Stays with you after.
-          </p>
-          <div
-            style={{
-              display: "flex",
-              gap: 12,
-              justifyContent: "center",
-              flexWrap: "wrap",
-            }}
-          >
-            <TryRelayButton />
-            <button
-              type="button"
-              className="r-btn r-btn-ghost"
-              style={{
-                borderColor: "rgba(244,242,238,0.3)",
-                color: "var(--cream)",
-              }}
-            >
-              Talk to sales <span className="arrow">→</span>
-            </button>
           </div>
         </div>
       </section>

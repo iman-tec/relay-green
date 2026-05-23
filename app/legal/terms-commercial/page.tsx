@@ -1,5 +1,5 @@
 /*
- * /legal/terms-commercial — Master commercial terms. DRAFT.
+ * /legal/terms-commercial, Master commercial terms. DRAFT.
  *
  * Server component. Prose lifted from the section-10 working draft.
  * Counsel review pending. Final wording will replace this prior to launch.
@@ -10,22 +10,11 @@ import Link from "next/link";
 import { Shell } from "../../_marketing/Shell";
 
 export const metadata: Metadata = {
-  title: "Relay — Terms (Commercial)",
+  title: "Terms (Commercial)",
   description:
-    "What you're buying, what we promise, what you promise. Plain English. DRAFT — under counsel review.",
-};
-
-const draftBannerStyle = {
-  background: "#fbeae5",
-  border: "1px solid #e8b4a3",
-  color: "#7a2810",
-  padding: "14px 20px",
-  borderRadius: 8,
-  fontFamily: "var(--font-mono)",
-  fontSize: 11,
-  letterSpacing: "0.06em",
-  marginBottom: 24,
-  textTransform: "uppercase" as const,
+    "What you're buying, what we promise, what you promise. Plain English. DRAFT, under counsel review.",
+  alternates: { canonical: "/legal/terms-commercial" },
+  robots: { index: false, follow: false },
 };
 
 const h3Style = {
@@ -63,23 +52,22 @@ export default function TermsCommercialPage() {
     <Shell>
       <section className="r-page-header">
         <div className="r-wrap-narrow">
-          <span className="r-num">— Legal · Terms (Commercial)</span>
+          <span className="r-num">Legal · Terms (Commercial)</span>
           <h1 className="r-h-display" style={{ marginTop: 18 }}>
             <em>Terms (Commercial).</em>
           </h1>
           <p className="r-lede" style={{ marginTop: 24, maxWidth: "60ch" }}>
-            Last updated: May 2026 · DRAFT. The master agreement for teams and
-            companies on a paid plan.
+            Last updated: May 2026. The master agreement for teams and companies
+            on a paid plan.
           </p>
         </div>
       </section>
 
-      <section className="r-section" style={{ paddingTop: 0, borderTop: "none" }}>
+      <section
+        className="r-section"
+        style={{ paddingTop: 0, borderTop: "none" }}
+      >
         <div className="r-wrap-narrow">
-          <div style={draftBannerStyle}>
-            Draft — under counsel review. Not for publication.
-          </div>
-
           <h3 style={h3Style}>What you&rsquo;re buying</h3>
           <p className="r-body" style={bodyStyle}>
             The right, for your team, to press for a senior Relay engineer and
@@ -107,24 +95,23 @@ export default function TermsCommercialPage() {
               Acceptable Use Policy
             </Link>
             . Don&rsquo;t reverse-engineer the desktop. Tell us if a Relay
-            engineer behaves in a way you wouldn&rsquo;t tolerate from your
-            own.
+            engineer behaves in a way you wouldn&rsquo;t tolerate from your own.
           </p>
 
           <h3 style={h3Style}>Confidentiality and IP</h3>
           <p className="r-body" style={bodyStyle}>
             Mutual NDA included by default. Customer owns all output of any
-            Relay session. Relay retains rights to general know-how the
-            engineer carries between sessions; we never use one customer&rsquo;s
-            code to do another customer&rsquo;s work.
+            Relay session. Relay retains rights to general know-how the engineer
+            carries between sessions; we never use one customer&rsquo;s code to
+            do another customer&rsquo;s work.
           </p>
 
           <h3 style={h3Style}>Term, termination, refunds</h3>
           <p className="r-body" style={bodyStyle}>
             Monthly subscriptions auto-renew; cancel any time before the next
             billing date. Annual subscriptions cancel at term end. Pro-rated
-            refund if we materially fail to deliver. Termination for cause on
-            30 days&rsquo; notice, either way.
+            refund if we materially fail to deliver. Termination for cause on 30
+            days&rsquo; notice, either way.
           </p>
 
           <h3 style={h3Style}>Liability</h3>
@@ -165,8 +152,7 @@ export default function TermsCommercialPage() {
             >
               Sub-Processors
             </Link>{" "}
-            list. Individuals on the Try Relay personal tier are governed by
-            the{" "}
+            list. Individuals on the Try Relay personal tier are governed by the{" "}
             <Link
               href="/legal/terms-consumer"
               style={{ borderBottom: "1px solid currentColor" }}

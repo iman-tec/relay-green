@@ -30,7 +30,7 @@ const COLORS = {
   ink: "#2c2a26",
   inkSoft: "#6b6862",
   green: "#3dcb7e",
-  greenDeep: "#4f6b3a",
+  greenDeep: "#4d6b40",
 } as const;
 
 export function OgCard({

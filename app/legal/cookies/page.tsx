@@ -1,5 +1,5 @@
 /*
- * /legal/cookies — Cookie Notice. DRAFT.
+ * /legal/cookies, Cookie Notice. DRAFT.
  *
  * Four-category table (strictly necessary, functional, analytics, marketing).
  * Live source for the table will eventually be /trust/data-handling.
@@ -10,22 +10,10 @@ import Link from "next/link";
 import { Shell } from "../../_marketing/Shell";
 
 export const metadata: Metadata = {
-  title: "Relay — Cookie Notice",
+  title: "Cookie Notice",
   description:
-    "What cookies relay.green uses, why, and for how long. Four categories, plain table. DRAFT — under counsel review.",
-};
-
-const draftBannerStyle = {
-  background: "#fbeae5",
-  border: "1px solid #e8b4a3",
-  color: "#7a2810",
-  padding: "14px 20px",
-  borderRadius: 8,
-  fontFamily: "var(--font-mono)",
-  fontSize: 11,
-  letterSpacing: "0.06em",
-  marginBottom: 24,
-  textTransform: "uppercase" as const,
+    "What cookies relay.green uses, why, and for how long. Four categories, plain table.",
+  alternates: { canonical: "/legal/cookies" },
 };
 
 const h3Style = {
@@ -49,30 +37,38 @@ const footerLineStyle = {
 
 const tableStyle = {
   width: "100%",
-  borderCollapse: "collapse" as const,
+  borderCollapse: "separate" as const,
+  borderSpacing: 0,
   marginTop: 24,
-  marginBottom: 24,
+  marginBottom: 28,
   fontSize: 14,
+  background: "#ffffff",
+  border: "1px solid #d2d2d7",
+  borderRadius: 8,
+  overflow: "hidden",
+  boxShadow: "0 22px 54px rgba(0, 0, 0, 0.05)",
 };
 
 const thStyle = {
   textAlign: "left" as const,
-  padding: "12px 14px",
-  borderBottom: "1px solid var(--ink)",
+  padding: "15px 18px",
+  borderBottom: "1px solid #d2d2d7",
+  background: "#f5f5f7",
   fontFamily: "var(--font-sans)",
   fontWeight: 600,
   fontSize: 12,
   letterSpacing: "0.06em",
   textTransform: "uppercase" as const,
-  color: "var(--ink)",
+  color: "#6e6e73",
 };
 
 const tdStyle = {
-  padding: "14px 14px",
-  borderBottom: "1px solid var(--rule)",
+  padding: "18px",
+  borderBottom: "1px solid #d2d2d7",
+  background: "#ffffff",
   verticalAlign: "top" as const,
-  lineHeight: 1.5,
-  color: "var(--ink-2)",
+  lineHeight: 1.55,
+  color: "#424245",
 };
 
 const categoryRowStyle = {
@@ -129,8 +125,7 @@ const rows: Row[] = [
   },
   {
     category: "Marketing",
-    purpose:
-      "Attribution for paid campaigns, only set after explicit consent.",
+    purpose: "Attribution for paid campaigns, only set after explicit consent.",
     vendor: "Relay (first-party) + LinkedIn Insight Tag",
     retention: "90 days",
   },
@@ -147,28 +142,27 @@ export default function CookiesPage() {
     <Shell>
       <section className="r-page-header">
         <div className="r-wrap-narrow">
-          <span className="r-num">— Legal · Cookie Notice</span>
+          <span className="r-num">Legal · Cookie Notice</span>
           <h1 className="r-h-display" style={{ marginTop: 18 }}>
             <em>Cookie Notice.</em>
           </h1>
           <p className="r-lede" style={{ marginTop: 24, maxWidth: "60ch" }}>
-            Last updated: May 2026 · DRAFT
+            Last updated: May 2026
           </p>
         </div>
       </section>
 
-      <section className="r-section" style={{ paddingTop: 0, borderTop: "none" }}>
+      <section
+        className="r-section"
+        style={{ paddingTop: 0, borderTop: "none", background: "#f5f5f7" }}
+      >
         <div className="r-wrap-narrow">
-          <div style={draftBannerStyle}>
-            Draft — under counsel review. Not for publication.
-          </div>
-
           <p className="r-body" style={bodyStyle}>
             Cookies and similar storage technologies let relay.green keep you
-            signed in, remember your settings, and understand whether the
-            site is working. We group them into four categories, listed below.
-            You can withdraw consent for analytics and marketing categories
-            from your account preferences at any time. Strictly necessary and
+            signed in, remember your settings, and understand whether the site
+            is working. We group them into four categories, listed below. You
+            can withdraw consent for analytics and marketing categories from
+            your account preferences at any time. Strictly necessary and
             functional cookies are required for the service to operate.
           </p>
 
@@ -196,8 +190,8 @@ export default function CookiesPage() {
           </table>
 
           <p className="r-body" style={bodyStyle}>
-            The live, machine-generated source of this table lives on the
-            trust center alongside our sub-processor list. See{" "}
+            The trust center keeps the operational record behind this notice,
+            including the current sub-processor list. See{" "}
             <Link
               href="/trust/subprocessors"
               style={{ borderBottom: "1px solid currentColor" }}
@@ -221,13 +215,6 @@ export default function CookiesPage() {
               style={{ borderBottom: "1px solid currentColor" }}
             >
               Privacy Policy
-            </Link>
-            ,{" "}
-            <Link
-              href="/legal/sub-processors"
-              style={{ borderBottom: "1px solid currentColor" }}
-            >
-              Sub-Processors
             </Link>
             .
           </div>

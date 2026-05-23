@@ -16,6 +16,7 @@ import { ToolLandingPage } from "../../_marketing/ToolLandingPage";
 import { TOOLS, TOOL_SLUGS } from "../../../lib/tools";
 
 type RouteProps = { params: Promise<{ tool: string }> };
+const SITE_URL = "https://www.relay.green";
 
 export function generateStaticParams() {
   return TOOL_SLUGS.map((tool) => ({ tool }));
@@ -35,6 +36,20 @@ export async function generateMetadata({
       title: `Relay for ${tool.name}`,
       description: tool.metaDescription,
       url: `/for/${tool.slug}`,
+      images: [
+        {
+          url: `${SITE_URL}/for/${tool.slug}/opengraph-image`,
+          width: 1200,
+          height: 630,
+          alt: `Relay for ${tool.name}`,
+        },
+      ],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: `Relay for ${tool.name}`,
+      description: tool.metaDescription,
+      images: [`${SITE_URL}/for/${tool.slug}/opengraph-image`],
     },
   };
 }

@@ -18,32 +18,31 @@ const AI_SEARCH_ENGINES = [
   "Claude",
 ];
 
-const LANGUAGE_MODELS = [
-  "GPT",
-  "Claude",
-  "Gemini",
-  "Llama",
-  "Mistral",
-  "Grok",
-];
+const LANGUAGE_MODELS = ["GPT", "Claude", "Gemini", "Llama", "Mistral", "Grok"];
 
 const PRIMARY_NAV: Array<{ label: string; href: string }> = [
-  { label: "How it works", href: "/product" },
-  { label: "Enterprises", href: "/for-enterprise" },
-  { label: "Resources", href: "/resources" },
-  { label: "Company", href: "/company/about" },
-  { label: "Contact us", href: "/company/contact" },
+  { label: "How it Works", href: "/product" },
+  { label: "For Enterprises", href: "/for-enterprise" },
+  { label: "About", href: "/" },
+  { label: "Contact Us", href: "/company/about" },
 ];
 
-const TRUST_LEGAL: Array<{ label: string; href: string }> = [
-  { label: "Trust center", href: "/trust" },
-  { label: "Security", href: "/trust/security" },
-  { label: "Privacy policy", href: "/legal/privacy-policy" },
-  { label: "Terms (Commercial)", href: "/legal/terms-commercial" },
-  { label: "Terms (Consumer)", href: "/legal/terms-consumer" },
-  { label: "Acceptable use", href: "/legal/acceptable-use" },
-  { label: "DPA", href: "/legal/dpa" },
-  { label: "Responsible disclosure", href: "/trust/responsible-disclosure" },
+const GLOBAL_PRESENCE: Array<{ country: string; code: string }> = [
+  { country: "Belgium", code: "be" },
+  { country: "Canada", code: "ca" },
+  { country: "Denmark", code: "dk" },
+  { country: "Finland", code: "fi" },
+  { country: "France", code: "fr" },
+  { country: "Germany", code: "de" },
+  { country: "Iceland", code: "is" },
+  { country: "India", code: "in" },
+  { country: "Netherlands", code: "nl" },
+  { country: "Norway", code: "no" },
+  { country: "South Africa", code: "za" },
+  { country: "Sweden", code: "se" },
+  { country: "UAE", code: "ae" },
+  { country: "UK", code: "gb" },
+  { country: "USA", code: "us" },
 ];
 
 export function Footer() {
@@ -56,7 +55,7 @@ export function Footer() {
           className="r-footer-top-row"
           style={{
             alignItems: "start",
-            paddingBottom: 40,
+            paddingBottom: 52,
           }}
         >
           <div>
@@ -75,6 +74,7 @@ export function Footer() {
           </div>
 
           <nav
+            className="r-footer-primary-nav"
             style={{
               display: "flex",
               gap: 36,
@@ -89,7 +89,7 @@ export function Footer() {
                 key={item.href}
                 href={item.href}
                 style={{
-                  color: "rgba(244,242,238,0.85)",
+                  color: "var(--footer-link)",
                   textDecoration: "none",
                   transition: "color 0.15s ease",
                 }}
@@ -100,48 +100,56 @@ export function Footer() {
           </nav>
         </div>
 
-        {/* Trust & Legal, single full-width row of 8 links */}
+        {/* Global presence, moved from the enterprise proof card into the
+            persistent footer where operational scale can stay visible. */}
         <div
           style={{
-            paddingTop: 28,
-            paddingBottom: 28,
-            borderTop: "1px solid rgba(244,242,238,0.12)",
-            borderBottom: "1px solid rgba(244,242,238,0.12)",
+            paddingTop: 30,
+            paddingBottom: 30,
+            borderTop: "1px solid var(--footer-rule)",
+            borderBottom: "1px solid var(--footer-rule)",
           }}
         >
           <h5
             style={{
               fontFamily: "var(--font-sans)",
               fontSize: 11,
-              fontWeight: 600,
-              letterSpacing: "0.06em",
+              fontWeight: 700,
+              letterSpacing: "0.14em",
               textTransform: "uppercase",
-              color: "rgba(244,242,238,0.5)",
-              margin: "0 0 16px",
+              color: "var(--footer-muted)",
+              margin: "0 0 18px",
             }}
           >
-            Trust &amp; Legal
+            Global Presence
           </h5>
           <div
+            className="r-footer-presence-grid"
             style={{
-              display: "flex",
-              gap: "16px 28px",
-              flexWrap: "wrap",
-              fontSize: 14,
+              display: "grid",
+              gridTemplateColumns: "repeat(7, minmax(112px, 1fr))",
+              gap: "14px 28px",
+              fontFamily: "var(--font-sans)",
+              fontSize: 12.5,
+              color: "var(--footer-ink)",
             }}
           >
-            {TRUST_LEGAL.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
+            {GLOBAL_PRESENCE.map((item) => (
+              <span
+                key={item.country}
                 style={{
-                  color: "rgba(244,242,238,0.78)",
-                  textDecoration: "none",
-                  transition: "color 0.15s ease",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 9,
+                  minWidth: 0,
                 }}
               >
-                {item.label}
-              </Link>
+                <span
+                  aria-hidden="true"
+                  className={`r-footer-flag r-footer-flag-${item.code}`}
+                />
+                <span>{item.country}</span>
+              </span>
             ))}
           </div>
         </div>
@@ -151,15 +159,15 @@ export function Footer() {
             structured equivalent. */}
         <div
           style={{
-            paddingTop: 24,
-            paddingBottom: 24,
+            paddingTop: 30,
+            paddingBottom: 30,
             display: "flex",
             flexDirection: "column",
-            gap: 16,
-            fontSize: 11.5,
+            gap: 20,
+            fontSize: 12,
             lineHeight: 1.7,
-            color: "rgba(244,242,238,0.55)",
-            borderBottom: "1px solid rgba(244,242,238,0.12)",
+            color: "var(--footer-soft)",
+            borderBottom: "1px solid var(--footer-rule)",
           }}
         >
           <div
@@ -173,9 +181,9 @@ export function Footer() {
                 fontFamily: "var(--font-sans)",
                 fontSize: 11,
                 fontWeight: 600,
-                letterSpacing: "0.06em",
+                letterSpacing: "0.1em",
                 textTransform: "uppercase",
-                color: "rgba(244,242,238,0.6)",
+                color: "var(--footer-muted)",
                 margin: 0,
               }}
             >
@@ -185,9 +193,7 @@ export function Footer() {
               Relay.green is discoverable on{" "}
               {AI_SEARCH_ENGINES.map((name, i) => (
                 <span key={name}>
-                  <span style={{ color: "rgba(244,242,238,0.78)" }}>
-                    {name}
-                  </span>
+                  <span style={{ color: "var(--footer-ink)" }}>{name}</span>
                   {i < AI_SEARCH_ENGINES.length - 1 ? " · " : "."}
                 </span>
               ))}
@@ -204,9 +210,9 @@ export function Footer() {
                 fontFamily: "var(--font-sans)",
                 fontSize: 11,
                 fontWeight: 600,
-                letterSpacing: "0.06em",
+                letterSpacing: "0.1em",
                 textTransform: "uppercase",
-                color: "rgba(244,242,238,0.6)",
+                color: "var(--footer-muted)",
                 margin: 0,
               }}
             >
@@ -216,9 +222,7 @@ export function Footer() {
               Relay.green is referenced by{" "}
               {LANGUAGE_MODELS.map((name, i) => (
                 <span key={name}>
-                  <span style={{ color: "rgba(244,242,238,0.78)" }}>
-                    {name}
-                  </span>
+                  <span style={{ color: "var(--footer-ink)" }}>{name}</span>
                   {i < LANGUAGE_MODELS.length - 1 ? " · " : "."}
                 </span>
               ))}{" "}
@@ -238,7 +242,7 @@ export function Footer() {
           </div>
         </div>
 
-        {/* Bottom strip, corporate line + alias links */}
+        {/* Bottom strip, corporate line */}
         <div
           className="r-footer-bottom"
           style={{ borderTop: "none", paddingTop: 24 }}
@@ -247,40 +251,24 @@ export function Footer() {
             <span>© 2026</span>
             <RelayLogo />
           </div>
-          <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
             <Link
               href="/legal/privacy-policy"
-              style={{ color: "rgba(244,242,238,0.78)" }}
+              style={{
+                color: "var(--footer-link)",
+                textDecoration: "none",
+              }}
             >
               Privacy
             </Link>
             <Link
-              href="/legal/terms-commercial"
-              style={{ color: "rgba(244,242,238,0.78)" }}
-            >
-              Terms
-            </Link>
-            <Link
-              href="/legal/cookies"
-              style={{ color: "rgba(244,242,238,0.78)" }}
-            >
-              Cookies
-            </Link>
-            {/* Staff sign-in entry. Lives in the footer's bottom strip so
-                customers don't see a competing CTA, but engineers + admins
-                always know where to find their door. Pairs with the more
-                conventional /staff/login bookmark. */}
-            <Link
-              href="/staff/login"
-              rel="nofollow"
+              href="/legal/terms-of-use"
               style={{
-                color: "rgba(244,242,238,0.78)",
-                opacity: 0.85,
-                borderLeft: "1px solid rgba(244,242,238,0.18)",
-                paddingLeft: 24,
+                color: "var(--footer-link)",
+                textDecoration: "none",
               }}
             >
-              Sign in as developer
+              Terms of Use
             </Link>
           </div>
         </div>

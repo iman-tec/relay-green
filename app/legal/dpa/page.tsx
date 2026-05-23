@@ -1,5 +1,5 @@
 /*
- * /legal/dpa — Data Processing Addendum. DRAFT.
+ * /legal/dpa, Data Processing Addendum. DRAFT.
  *
  * Standard DPA reference page; the executable PDF version is exchanged
  * during contracting. Sub-processors live at /trust/subprocessors.
@@ -10,22 +10,11 @@ import Link from "next/link";
 import { Shell } from "../../_marketing/Shell";
 
 export const metadata: Metadata = {
-  title: "Relay — Data Processing Addendum",
+  title: "Data Processing Addendum",
   description:
-    "Standard DPA, EEA SCCs (Module 2), UK Addendum, India DPDP-aligned clauses. Updated quarterly. DRAFT — under counsel review.",
-};
-
-const draftBannerStyle = {
-  background: "#fbeae5",
-  border: "1px solid #e8b4a3",
-  color: "#7a2810",
-  padding: "14px 20px",
-  borderRadius: 8,
-  fontFamily: "var(--font-mono)",
-  fontSize: 11,
-  letterSpacing: "0.06em",
-  marginBottom: 24,
-  textTransform: "uppercase" as const,
+    "Standard DPA, EEA SCCs (Module 2), UK Addendum, India DPDP-aligned clauses. Updated quarterly. DRAFT, under counsel review.",
+  alternates: { canonical: "/legal/dpa" },
+  robots: { index: false, follow: false },
 };
 
 const h3Style = {
@@ -63,26 +52,25 @@ export default function DpaPage() {
     <Shell>
       <section className="r-page-header">
         <div className="r-wrap-narrow">
-          <span className="r-num">— Legal · Data Processing Addendum</span>
+          <span className="r-num">Legal · Data Processing Addendum</span>
           <h1 className="r-h-display" style={{ marginTop: 18 }}>
             <em>Data Processing Addendum.</em>
           </h1>
           <p className="r-lede" style={{ marginTop: 24, maxWidth: "60ch" }}>
-            Last updated: May 2026 · DRAFT. Updated quarterly.
+            Last updated: May 2026. Updated quarterly.
           </p>
         </div>
       </section>
 
-      <section className="r-section" style={{ paddingTop: 0, borderTop: "none" }}>
+      <section
+        className="r-section"
+        style={{ paddingTop: 0, borderTop: "none" }}
+      >
         <div className="r-wrap-narrow">
-          <div style={draftBannerStyle}>
-            Draft — under counsel review. Not for publication.
-          </div>
-
           <h3 style={h3Style}>Overview</h3>
           <p className="r-body" style={bodyStyle}>
-            Standard Data Processing Addendum. EEA SCCs (Module 2) annexed.
-            UK Addendum annexed. India DPDP-compliant clauses annexed.
+            Standard Data Processing Addendum. EEA SCCs (Module 2) annexed. UK
+            Addendum annexed. India DPDP-compliant clauses annexed.
             Sub-processor list at{" "}
             <Link
               href="/trust/subprocessors"
@@ -96,21 +84,21 @@ export default function DpaPage() {
           <h3 style={h3Style}>What this addendum covers</h3>
           <h4 style={h4Style}>Roles</h4>
           <p className="r-body" style={bodyStyle}>
-            For most data flows, the Customer is the Controller and Relay is
-            the Processor. For Relay&rsquo;s own account and billing
-            information, Relay is the Controller. Roles per data category are
-            defined in Annex I.
+            For most data flows, the Customer is the Controller and Relay is the
+            Processor. For Relay&rsquo;s own account and billing information,
+            Relay is the Controller. Roles per data category are defined in
+            Annex I.
           </p>
 
           <h4 style={h4Style}>International transfers</h4>
           <p className="r-body" style={bodyStyle}>
             EEA transfers rely on the European Commission&rsquo;s Standard
-            Contractual Clauses (Module 2 — controller to processor),
-            incorporated by reference. UK transfers rely on the UK
-            International Data Transfer Addendum to the SCCs. India residents
-            are handled under the Digital Personal Data Protection Act
-            (DPDP) framework, with notice, consent, and grievance officer
-            mechanisms documented in Annex III.
+            Contractual Clauses (Module 2, controller to processor),
+            incorporated by reference. UK transfers rely on the UK International
+            Data Transfer Addendum to the SCCs. India residents are handled
+            under the Digital Personal Data Protection Act (DPDP) framework,
+            with notice, consent, and grievance officer mechanisms documented in
+            Annex III.
           </p>
 
           <h4 style={h4Style}>Sub-processors</h4>
@@ -122,14 +110,14 @@ export default function DpaPage() {
             >
               /trust/subprocessors
             </Link>
-            . Customers may subscribe to email notifications of changes; we
-            give 30 days&rsquo; notice before adding a new sub-processor.
+            . Customers may subscribe to email notifications of changes; we give
+            30 days&rsquo; notice before adding a new sub-processor.
           </p>
 
           <h4 style={h4Style}>Security</h4>
           <p className="r-body" style={bodyStyle}>
-            Technical and organisational measures are described in Annex II
-            and align with the security posture published at{" "}
+            Technical and organisational measures are described in Annex II and
+            align with the security posture published at{" "}
             <Link
               href="/trust/security"
               style={{ borderBottom: "1px solid currentColor" }}
@@ -141,10 +129,9 @@ export default function DpaPage() {
 
           <h4 style={h4Style}>Audits and assurance</h4>
           <p className="r-body" style={bodyStyle}>
-            Customers may exercise audit rights through our SOC 2 Type II
-            report (under NDA) and an annual questionnaire. On-site audit
-            rights are available to Enterprise customers under the order
-            form.
+            Customers may exercise audit rights through our SOC 2 Type II report
+            (under NDA) and an annual questionnaire. On-site audit rights are
+            available to Enterprise customers under the order form.
           </p>
 
           <h3 style={h3Style}>Executing this DPA</h3>
@@ -153,10 +140,10 @@ export default function DpaPage() {
             order form and requires no separate signature. For customers who
             need a counter-signed copy, contact{" "}
             <Link
-              href="/company/contact"
+              href="/company/about#contact"
               style={{ borderBottom: "1px solid currentColor" }}
             >
-              /company/contact
+              /company/about#contact
             </Link>{" "}
             and we&rsquo;ll route it through our legal team.
           </p>

@@ -1,5 +1,5 @@
 /*
- * /trust/privacy — Plain-language companion to the legal Privacy Policy.
+ * /trust/privacy, Plain-language companion to the legal Privacy Policy.
  *
  * Where data lives (text-only diagram), the four customer rights, and
  * self-serve buttons. The legal document is the source of truth; this
@@ -12,18 +12,19 @@ import { Shell } from "../../_marketing/Shell";
 import { TryRelayButton } from "../../_marketing/TryRelayButton";
 
 export const metadata: Metadata = {
-  title: "Relay — Privacy",
+  title: "Privacy",
   description:
     "Plain-language companion to the legal Privacy Policy. Where your data lives, and how to exercise your rights in one click.",
+  alternates: { canonical: "/trust/privacy" },
 };
 
 const WHERE_DATA_LIVES = [
-  "Account & billing — US (AWS us-east-1), encrypted at rest",
-  "Session transcripts (chat, voice metadata) — region of customer choice",
-  "Screen-share recordings — region of customer choice, 90-day default",
-  "Code snippets shared in-session — same region as the transcript",
-  "Audit logs — US, write-once, 12-month retention",
-  "Marketing analytics — anonymized, no session content",
+  "Account & billing, US (AWS us-east-1), encrypted at rest",
+  "Session transcripts (chat, voice metadata), region of customer choice",
+  "Screen-share recordings, region of customer choice, 90-day default",
+  "Code snippets shared in-session, same region as the transcript",
+  "Audit logs, US, write-once, 12-month retention",
+  "Marketing analytics, anonymized, no session content",
 ];
 
 const RIGHTS = [
@@ -31,21 +32,25 @@ const RIGHTS = [
     name: "Right to access",
     body: "See everything we hold about you, in a structured export.",
     cta: "Request my data",
+    subject: "Privacy request: access my data",
   },
   {
     name: "Right to rectification",
     body: "Correct anything inaccurate. We confirm in writing within 30 days.",
     cta: "Correct my record",
+    subject: "Privacy request: correct my record",
   },
   {
     name: "Right to deletion",
     body: "Erase your account and all session data. Subject to legal retention obligations.",
     cta: "Delete my account",
+    subject: "Privacy request: delete my account",
   },
   {
     name: "Right to portability",
     body: "Take everything with you in a machine-readable format.",
     cta: "Export everything",
+    subject: "Privacy request: export my data",
   },
 ];
 
@@ -54,14 +59,14 @@ export default function TrustPrivacyPage() {
     <Shell>
       <section className="r-page-header">
         <div className="r-wrap-narrow">
-          <span className="r-num">— Trust · Privacy</span>
+          <span className="r-num">Trust · Privacy</span>
           <h1 className="r-h-display" style={{ marginTop: 18 }}>
             Your data, <em>in plain words.</em>
           </h1>
           <p className="r-lede" style={{ marginTop: 24 }}>
-            The legal Privacy Policy is the source of truth. This page exists
-            so a human can read the posture in five minutes — what we hold,
-            where it sits, and how to take it back.
+            The legal Privacy Policy is the source of truth. This page exists so
+            a human can read the posture in five minutes, what we hold, where it
+            sits, and how to take it back.
           </p>
         </div>
       </section>
@@ -86,8 +91,9 @@ export default function TrustPrivacyPage() {
               padding: 0,
               margin: 0,
               border: "1px solid var(--rule)",
-              borderRadius: "var(--radius)",
-              background: "var(--paper)",
+              borderRadius: 8,
+              background: "#ffffff",
+              boxShadow: "0 22px 54px rgba(0, 0, 0, 0.05)",
             }}
           >
             {WHERE_DATA_LIVES.map((line, i) => (
@@ -98,13 +104,15 @@ export default function TrustPrivacyPage() {
                   borderBottom:
                     i === WHERE_DATA_LIVES.length - 1
                       ? "none"
-                      : "1px solid var(--rule)",
+                      : "1px solid #d2d2d7",
                   fontFamily: "var(--font-mono)",
                   fontSize: 13,
                   color: "var(--ink-2)",
                 }}
               >
-                <span style={{ color: "var(--green)", marginRight: 10 }}>·</span>
+                <span style={{ color: "var(--green)", marginRight: 10 }}>
+                  ·
+                </span>
                 {line}
               </li>
             ))}
@@ -131,9 +139,9 @@ export default function TrustPrivacyPage() {
                 key={r.name}
                 style={{
                   padding: "24px 24px",
-                  border: "1px solid var(--rule)",
-                  borderRadius: "var(--radius)",
-                  background: "var(--cream)",
+                  border: "1px solid #d2d2d7",
+                  borderRadius: 8,
+                  background: "#ffffff",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "space-between",
@@ -159,9 +167,14 @@ export default function TrustPrivacyPage() {
                     {r.body}
                   </p>
                 </div>
-                <button type="button" className="r-btn r-btn-ink">
+                <a
+                  href={`mailto:legal@relay.green?subject=${encodeURIComponent(
+                    r.subject
+                  )}`}
+                  className="r-btn r-btn-ink"
+                >
                   {r.cta} <span className="arrow">→</span>
-                </button>
+                </a>
               </div>
             ))}
           </div>

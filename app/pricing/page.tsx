@@ -8,10 +8,8 @@
  */
 
 import type { Metadata } from "next";
-import Link from "next/link";
 import { Shell } from "../_marketing/Shell";
 import { PricingTiers } from "../_marketing/PricingTiers";
-import { TryRelayButton } from "../_marketing/TryRelayButton";
 import { JsonLd } from "../_marketing/JsonLd";
 import { CtaBanner } from "../_marketing/CtaBanner";
 import {
@@ -20,6 +18,8 @@ import {
   webPageSchema,
   faqSchema,
 } from "../../lib/seo/schema";
+
+const SITE_URL = "https://www.relay.green";
 
 export const metadata: Metadata = {
   title: "Pricing",
@@ -31,10 +31,23 @@ export const metadata: Metadata = {
     description:
       "Free, Pro, Max, Teams. Same engineer across sessions on Pro and up. SOC 2 + GDPR posture on Teams.",
     url: "/pricing",
+    images: [
+      {
+        url: `${SITE_URL}/pricing/opengraph-image`,
+        width: 1200,
+        height: 630,
+        alt: "Relay pricing plans",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Pricing, Relay",
+    description:
+      "Free, Pro, Max, Teams. Same engineer across sessions on Pro and up.",
+    images: [`${SITE_URL}/pricing/opengraph-image`],
   },
 };
-
-const SITE_URL = "https://www.relay.green";
 
 const FAQ = [
   {

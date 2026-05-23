@@ -1,5 +1,5 @@
 /*
- * /company/governance — permanent redirect to /company/about.
+ * /company/governance, permanent redirect to /company/about.
  *
  * Governance content was merged into the About page so visitors get the
  * full company story (intro + how we're built + governance breakdown) on
