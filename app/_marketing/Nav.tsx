@@ -121,9 +121,9 @@ export function Nav() {
           })}
         </div>
         <div className="r-nav-cta">
-          <button type="button" className="r-nav-link">
+          <Link href="/login" className="r-nav-link">
             Sign in
-          </button>
+          </Link>
           <TryRelayButton />
         </div>
       </div>
