@@ -11,6 +11,7 @@ import { useSearchParams } from "next/navigation";
 import { TabsHeader, type Tab } from "@/app/_components/admin-v2/TabsHeader";
 import { SignOutButton } from "@/app/_components/admin-v2/SignOutButton";
 import { UserChip } from "@/app/_components/admin-v2/UserChip";
+import { ThemeToggle } from "@/app/_components/ThemeToggle";
 import { EnterpriseTab } from "./EnterpriseTab";
 import { ResellersTab } from "./ResellersTab";
 import { PodsTab } from "./PodsTab";
@@ -45,6 +46,7 @@ export function PanelClient({
         subtitle="Superadmin Panel"
         rightSlot={
           <div className="flex items-center gap-3">
+            <ThemeToggle />
             <UserChip email={me.email} roleLabel={me.roleLabel} />
             <SignOutButton />
           </div>

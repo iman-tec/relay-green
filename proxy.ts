@@ -35,6 +35,7 @@ const STAFF_PREFIXES = [
 
 const CUSTOMER_PREFIXES = [
   "/room",
+  "/account",
 ];
 
 const STAFF_LOGIN = "/staff/login";

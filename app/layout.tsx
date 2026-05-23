@@ -6,6 +6,8 @@ import { AnalyticsGate } from "./_marketing/AnalyticsGate";
 import { CookieConsent } from "./_marketing/CookieConsent";
 import { RouteProgress } from "./_components/RouteProgress";
 import { AosProvider } from "./_components/AosProvider";
+import { ThemeProvider, THEME_INIT_SCRIPT } from "./_components/ThemeProvider";
+import { FloatingThemeToggle } from "./_components/FloatingThemeToggle";
 import { organizationSchema, websiteSchema } from "../lib/seo/schema";
 
 /*
@@ -120,9 +122,9 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  // Single dark theme — matches the dark-only tokens in globals.css.
-  themeColor: "#2c2a26",
-  colorScheme: "dark",
+  // Single light theme — matches the light tokens in globals.css.
+  themeColor: "#faf9f5",
+  colorScheme: "light",
   width: "device-width",
   initialScale: 1,
   maximumScale: 5,
@@ -139,13 +141,22 @@ export default function RootLayout({
       className={`${sourceSerif.variable} ${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
+      <head>
+        {/* Apply the saved theme class before paint so the first render
+            already matches the user's preference. Inline + synchronous —
+            don't move this into a deferred bundle. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body className="flex min-h-full flex-col" suppressHydrationWarning>
-        <JsonLd data={[organizationSchema(), websiteSchema()]} />
-        <RouteProgress />
-        <AosProvider />
-        {children}
-        <CookieConsent />
-        <AnalyticsGate />
+        <ThemeProvider>
+          <JsonLd data={[organizationSchema(), websiteSchema()]} />
+          <RouteProgress />
+          <AosProvider />
+          {children}
+          <FloatingThemeToggle />
+          <CookieConsent />
+          <AnalyticsGate />
+        </ThemeProvider>
       </body>
     </html>
   );

@@ -29,6 +29,18 @@ export async function routeAfterAuth(
   const isCustomerOnly = roles.length > 0 && roles.every((r) => r === "client");
   const mode = isCustomerOnly ? "customer" : "staff";
 
+  // Password recovery (the "Reset password" link from the profile page /
+  // forgot-password) must always land on /set-password so the user can pick
+  // a new password — even though they already have one. The has-password
+  // divert below only fires for brand-new users; recovery needs the same
+  // destination unconditionally.
+  if (new URL(request.url).searchParams.get("type") === "recovery") {
+    const target = new URL("/set-password", request.url);
+    target.searchParams.set("mode", mode);
+    target.searchParams.set("continue", landing);
+    return NextResponse.redirect(target);
+  }
+
   const url        = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (url && serviceKey) {

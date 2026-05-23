@@ -14,22 +14,41 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import {
-  AlertTriangle, Eye, Loader2, ArrowUpRight, Search,
+  Eye, Loader2, ArrowUpRight, Search,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import { humanState } from "@/lib/relay/session-status";
 import type { GuestCall } from "@/lib/supabase/types";
+import {
+  Button,
+  Card,
+  CardBody,
+  EmptyState as UiEmptyState,
+  HealthBar,
+  StatusBadge,
+  cn,
+  type StatusTone,
+} from "@/app/_components/ui";
+import { MatchingPanel } from "./MatchingPanel";
 
-const BRAND_GREEN = "#3f5c2e";
-const BRAND_GREEN_SOFT = "rgba(63, 92, 46, 0.12)";
-const URGENT_AMBER = "#d4a017";
-const URGENT_AMBER_SOFT = "rgba(212, 160, 23, 0.14)";
-// "Critical" colour used to be a deep red (#8b1a1a) but read as too loud on
-// dark backgrounds. Swapped to a deep orange so the green → amber → danger
-// gradient still has clear separation without the alarm-bell feel.
-const CRIT_RED = "#c2410c";
-const CRIT_RED_SOFT = "rgba(194, 65, 12, 0.18)";
+// Health → semantic token mapping. Lives next to the verdict helpers so
+// any UI piece that needs the colour reads from the same lookup.
+const HEALTH_TONE: Record<"green" | "amber" | "red", StatusTone> = {
+  green: "ok",
+  amber: "warn",
+  red: "risk",
+};
+const HEALTH_LABEL: Record<"green" | "amber" | "red", string> = {
+  green: "Healthy",
+  amber: "Watch",
+  red: "At risk",
+};
+const HEALTH_VAR: Record<"green" | "amber" | "red", string> = {
+  green: "var(--ok)",
+  amber: "var(--warn)",
+  red: "var(--risk)",
+};
 
 const ACTIVE_STATES  = ["queued", "assigned", "joining", "live", "grace"];
 // 'assigned' (engineer claimed, chat live, timer running) is shown as
@@ -56,7 +75,7 @@ type SessionWithHealth = GuestCall & { health?: HealthSnapshot };
 // (most conversations happen on Zoom voice, not chat).
 const MIN_MESSAGES_FOR_AI = 2;
 
-type Tab = "all" | "waiting" | "live" | "past";
+type Tab = "all" | "waiting" | "live" | "past" | "matching";
 
 // Per-page selector — shared by all three panels (All, Active, Past). Lifted
 // to the parent so changing "20 / page" once stays applied as you tab around.
@@ -69,24 +88,18 @@ const DEFAULT_PAGE_SIZE: PageSize = 20;
 // their pagination state while visually sharing the footer with HealthLegend.
 const PagerSlotContext = createContext<HTMLElement | null>(null);
 
-// Pulsing-glow animation for sessions currently in a waiting state
-// (queued / assigned). The card grows a fading halo and the status chip
-// breathes with the same colour cue so the supervisor's eye is drawn to
-// customers who still need to be picked up. Color is driven by the
-// `--glow` CSS variable, which cascades from the card down to the chip.
+// Pulsing-glow animation for sessions currently in a waiting state. The card
+// grows a fading halo so the supervisor's eye is drawn to customers who
+// still need to be picked up. Colour cascades from the `--glow` CSS
+// variable so it follows the session's current health tone.
 const WAITING_GLOW_CSS = `
   @keyframes relay-pulse-glow {
     0%, 100% { box-shadow: 0 0 0 0 transparent; }
     50%      { box-shadow: 0 0 14px 2px var(--glow, transparent); }
   }
-  @keyframes relay-pulse-glow-soft {
-    0%, 100% { box-shadow: 0 0 0 0 transparent; }
-    50%      { box-shadow: 0 0 8px 1px var(--glow, transparent); }
-  }
-  .relay-card-glow { animation: relay-pulse-glow      1.8s ease-in-out infinite; }
-  .relay-chip-glow { animation: relay-pulse-glow-soft 1.8s ease-in-out infinite; }
+  .relay-card-glow { animation: relay-pulse-glow 1.8s ease-in-out infinite; }
   @media (prefers-reduced-motion: reduce) {
-    .relay-card-glow, .relay-chip-glow { animation: none; }
+    .relay-card-glow { animation: none; }
   }
 `;
 
@@ -279,27 +292,33 @@ export function SuperviseClient() {
       <style>{WAITING_GLOW_CSS}</style>
       <div className="mx-auto w-full max-w-screen-2xl flex-1 space-y-6 px-6 pt-8 pb-6">
         <div>
-          <h1 className="text-xl font-semibold" style={{ color: "var(--text)" }}>
+          <h1 className="font-serif text-3xl font-medium tracking-tight text-[var(--text)]">
             Live operations
           </h1>
-          <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
-            Every active session, live. The colored bar is the session&apos;s
-            current health — green is healthy, amber is shaky, red is at risk.
-            Use Join to drop into a session.
+          <p className="mt-1.5 text-sm leading-relaxed text-[var(--text-muted)]">
+            Every active session, live. The health bar on each card tells you
+            who needs attention — healthy, shaky, or at risk. Use Join to
+            drop into a session.
           </p>
         </div>
 
-        {/* Tabs: All · Waiting · Live · Past */}
-        <Tabs tab={tab} setTab={setTab} counts={{
-          all:     liveSessions.length + waitingSessions.length + pastSessions.length,
-          waiting: waitingSessions.length,
-          live:    liveSessions.length,
-          past:    pastSessions.length,
-        }} />
+        {/* Tabs: All · Waiting · Live · Past · (Matching for pod-supervisors) */}
+        <Tabs
+          tab={tab}
+          setTab={setTab}
+          counts={{
+            all:      liveSessions.length + waitingSessions.length + pastSessions.length,
+            waiting:  waitingSessions.length,
+            live:     liveSessions.length,
+            past:     pastSessions.length,
+            matching: 0,
+          }}
+          showMatching={scope.kind === "pod" && !!scope.podId}
+        />
 
         {loading ? (
           <div className="flex justify-center py-16">
-            <Loader2 size={20} className="animate-spin" style={{ color: BRAND_GREEN }} />
+            <Loader2 size={20} className="animate-spin text-[var(--text-muted)]" />
           </div>
         ) : (
           <TabPanel
@@ -337,36 +356,16 @@ export function SuperviseClient() {
 
 function HealthLegend() {
   return (
-    <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-      <LegendChip color={BRAND_GREEN}  label="Healthy" />
-      <LegendChip color={URGENT_AMBER} label="Neutral" />
-      <LegendChip color={CRIT_RED}     label="Danger" />
-    </div>
-  );
-}
-
-function LegendChip({ color, label }: { color: string; label: string }) {
-  const tooltip = `Call Sentiment - ${label}`;
-  return (
-    <div
-      className="inline-flex items-center gap-2"
-      title={tooltip}
-      aria-label={tooltip}
-    >
-      <span
-        aria-hidden
-        className="inline-block h-2.5 w-2.5 rounded-full"
-        style={{
-          backgroundColor: color,
-          boxShadow: `0 0 0 3px color-mix(in srgb, ${color} 18%, transparent)`,
-        }}
-      />
-      <span
-        className="text-[11px] font-semibold uppercase tracking-wider"
-        style={{ color }}
-      >
-        {label}
-      </span>
+    <div className="flex flex-wrap items-center gap-2">
+      <StatusBadge tone="ok" compact>
+        Healthy
+      </StatusBadge>
+      <StatusBadge tone="warn" compact>
+        Shaky
+      </StatusBadge>
+      <StatusBadge tone="risk" compact>
+        At risk
+      </StatusBadge>
     </div>
   );
 }
@@ -411,16 +410,18 @@ function deriveHealthDeterministic(s: GuestCall): Health {
   return "green";
 }
 
-const HEALTH_TOKENS: Record<Health, { bar: string; pill_bg: string; pill_fg: string; label: string }> = {
-  green: { bar: BRAND_GREEN,  pill_bg: BRAND_GREEN_SOFT,  pill_fg: BRAND_GREEN,  label: "Healthy" },
-  amber: { bar: URGENT_AMBER, pill_bg: URGENT_AMBER_SOFT, pill_fg: URGENT_AMBER, label: "Watch"   },
-  red:   { bar: CRIT_RED,     pill_bg: CRIT_RED_SOFT,     pill_fg: CRIT_RED,     label: "At risk" },
-};
+// Translate the live-AI score (or its fallback) into the 0-100 input
+// `<HealthBar>` expects. Score is in [-1, 1] (negative = bad, positive =
+// good); map to a "health" percentage centred on 50.
+function scoreToHealthPct(score: number): number {
+  const clamped = Math.max(-1, Math.min(1, score));
+  return Math.round((clamped + 1) * 50);
+}
 
 function SessionTile({ session }: { session: SessionWithHealth }) {
   const router = useRouter();
   const health = deriveHealth(session);
-  const tok    = HEALTH_TOKENS[health];
+  const tone = HEALTH_TONE[health];
   const aiMessageCount = session.health?.message_count ?? 0;
   // Only surface the AI summary line when the score was derived from real
   // chat. Otherwise it just shows "Quiet — no signal yet." which is noise.
@@ -434,98 +435,103 @@ function SessionTile({ session }: { session: SessionWithHealth }) {
   const join = () => router.push(`/staff/session/${session.id}`);
 
   // Waiting sessions (queued / assigned) breathe a coloured halo so they
-  // catch the supervisor's eye until they're picked up. `--glow` cascades
-  // from the card to the status chip so both pulse the same colour.
+  // catch the supervisor's eye until they're picked up.
   const isWaiting = WAITING_STATES.has(session.status);
   const glowVar = isWaiting
-    ? ({ "--glow": tok.bar } as React.CSSProperties)
+    ? ({ "--glow": HEALTH_VAR[health] } as React.CSSProperties)
     : {};
 
+  const healthScore =
+    typeof aiScore === "number" ? scoreToHealthPct(aiScore) : null;
+
   return (
-    <div
-      // Whole card is still clickable (preserves the existing "click to
-      // observe" affordance) but the Join button is the explicit CTA.
+    <Card
+      variant="surface"
+      interactive
       onClick={join}
       role="button"
       tabIndex={0}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); join(); } }}
-      className={`group relative cursor-pointer overflow-hidden rounded-xl border p-4 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:scale-[1.025] hover:border-[var(--text-muted)]/40 hover:shadow-lg motion-reduce:transform-none motion-reduce:transition-none${isWaiting ? " relay-card-glow" : ""}`}
-      style={{
-        borderColor: "var(--border)",
-        backgroundColor: "var(--surface)",
-        ...glowVar,
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          join();
+        }
       }}
+      className={cn(
+        "relative p-4 group",
+        isWaiting && "relay-card-glow",
+      )}
+      style={glowVar as React.CSSProperties}
     >
       {/* Left accent bar — at-a-glance health indicator */}
       <span
         aria-hidden
         className="absolute inset-y-0 left-0 w-1"
-        style={{ backgroundColor: tok.bar }}
+        style={{ backgroundColor: HEALTH_VAR[health] }}
       />
 
       <div className="mb-3 flex items-center justify-between gap-2">
-        <span
-          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide${isWaiting ? " relay-chip-glow" : ""}`}
-          style={{ backgroundColor: tok.pill_bg, color: tok.pill_fg }}
-        >
+        <StatusBadge tone={tone} compact>
           {humanState(session.status)}
-        </span>
-        <span
-          className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-          style={{ backgroundColor: tok.pill_bg, color: tok.pill_fg }}
-          title={`Session health: ${tok.label}`}
-        >
-          {health !== "green" && <AlertTriangle size={10} />}
-          {tok.label}
-        </span>
+        </StatusBadge>
+        <StatusBadge tone={tone} compact>
+          {HEALTH_LABEL[health]}
+        </StatusBadge>
       </div>
 
       <div className="mb-3">
-        <div className="text-base font-semibold" style={{ color: "var(--text)" }}>
+        <div className="text-base font-semibold text-[var(--text)]">
           {session.guest_name}
         </div>
-        <div className="truncate text-xs" style={{ color: "var(--text-muted)" }}>
+        <div className="truncate text-xs text-[var(--text-muted)]">
           {session.guest_email}
         </div>
       </div>
 
-      <div className="mb-3 grid grid-cols-2 gap-2 border-t pt-3 text-xs" style={{ borderColor: "var(--border)" }}>
-        <Stat label={LIVE_STATES.has(session.status) ? "Live for" : "Waiting"} value={fmtSecs(elapsed)} />
+      <div className="mb-3 border-t border-[var(--border)] pt-3">
+        <HealthBar score={healthScore} size="sm" />
+      </div>
+
+      <div className="mb-3 grid grid-cols-2 gap-2 text-xs">
+        <Stat
+          label={LIVE_STATES.has(session.status) ? "Live for" : "Waiting"}
+          value={fmtSecs(elapsed)}
+        />
         <Stat label="Recalls" value={String(session.recall_count ?? 0)} />
         <Stat label="Engineer" value={session.agent_name ?? "—"} />
         <Stat label="Project" value={session.project_name ?? "—"} />
       </div>
 
-      {/* AI sentiment summary — present once score-session-health has run
-       *  at least once for this session (~1 min after it starts). */}
       {aiSummary && (
-        <div
-          className="mb-4 rounded-md border px-2.5 py-2 text-[11px] leading-snug"
+        <p
+          className="mb-3 max-w-prose rounded-md border px-2.5 py-2 text-[11px] leading-snug"
           style={{
-            borderColor: tok.pill_bg,
-            backgroundColor: tok.pill_bg,
-            color: tok.pill_fg,
+            borderColor: `color-mix(in srgb, ${HEALTH_VAR[health]} 30%, transparent)`,
+            backgroundColor: `color-mix(in srgb, ${HEALTH_VAR[health]} 12%, transparent)`,
+            color: HEALTH_VAR[health],
           }}
-          title={typeof aiScore === "number" ? `Sentiment score: ${aiScore.toFixed(2)}` : undefined}
+          title={
+            typeof aiScore === "number" ? `Sentiment score: ${aiScore.toFixed(2)}` : undefined
+          }
         >
           <span className="font-semibold uppercase tracking-wide opacity-80">AI · </span>
           {aiSummary}
-        </div>
+        </p>
       )}
 
-      {/* Explicit Join CTA. Stop propagation so clicking the button
-       *  doesn't double-fire on top of the card-level onClick. */}
-      <button
-        type="button"
-        onClick={(e) => { e.stopPropagation(); join(); }}
-        className="inline-flex w-full items-center justify-center gap-1.5 rounded-md py-2 text-xs font-semibold transition-opacity hover:opacity-90"
-        style={{ backgroundColor: tok.bar, color: "#fff" }}
+      <Button
+        full
+        size="sm"
+        onClick={(e) => {
+          e.stopPropagation();
+          join();
+        }}
+        iconLeft={<Eye size={14} />}
+        iconRight={<ArrowUpRight size={12} className="opacity-80" />}
       >
-        <Eye size={12} />
         Join session
-        <ArrowUpRight size={11} className="opacity-80" />
-      </button>
-    </div>
+      </Button>
+    </Card>
   );
 }
 
@@ -538,37 +544,61 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-// ── Tabs (All · Waiting · Live · Past) ─────────────────────────────────────
+// ── Tabs (All · Waiting · Live · Past · Matching) ─────────────────────────
+// Matching tab is pod-supervisor only — scoped to engineers in their pod.
+// The super_admin global variant lives in /admin/v2 → Matching tile.
 function Tabs({
-  tab, setTab, counts,
+  tab,
+  setTab,
+  counts,
+  showMatching,
 }: {
   tab: Tab;
   setTab: (t: Tab) => void;
   counts: Record<Tab, number>;
+  showMatching: boolean;
 }) {
+  const base = ["all", "waiting", "live", "past"] as const;
+  const visible: readonly Tab[] = showMatching ? [...base, "matching"] : base;
   return (
-    <div className="flex items-center gap-1 border-b" style={{ borderColor: "var(--border)" }}>
-      {(["all", "waiting", "live", "past"] as const).map((t) => {
+    <div
+      role="tablist"
+      aria-label="Session views"
+      className="flex items-center gap-1 border-b border-[var(--border)]"
+    >
+      {visible.map((t) => {
         const active = t === tab;
+        const showCount = t !== "matching";
         return (
           <button
             key={t}
+            role="tab"
+            aria-selected={active}
             onClick={() => setTab(t)}
-            className="relative px-3 py-2 text-sm capitalize transition-colors"
-            style={{
-              color: active ? "var(--text)" : "var(--text-muted)",
-              fontWeight: active ? 600 : 500,
-            }}
+            className={cn(
+              "relative inline-flex items-center gap-2 px-3 py-2.5 text-sm capitalize transition-colors",
+              active
+                ? "font-semibold text-[var(--text)]"
+                : "font-medium text-[var(--text-muted)] hover:text-[var(--text)]",
+            )}
           >
-            {t}
-            <span className="ml-1.5 text-[10px]" style={{ color: "var(--text-muted)" }}>
-              ({counts[t]})
-            </span>
+            <span>{t}</span>
+            {showCount && (
+              <span
+                className={cn(
+                  "inline-flex min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] tabular-nums",
+                  active
+                    ? "bg-[var(--primary-soft)] text-[var(--primary)]"
+                    : "bg-[color-mix(in_srgb,var(--text)_8%,transparent)] text-[var(--text-muted)]",
+                )}
+              >
+                {counts[t]}
+              </span>
+            )}
             {active && (
               <span
                 aria-hidden
-                className="absolute -bottom-px left-2 right-2 h-[2px] rounded-t-sm"
-                style={{ backgroundColor: BRAND_GREEN }}
+                className="absolute -bottom-px left-2 right-2 h-[2px] rounded-t-sm bg-[var(--primary)]"
               />
             )}
           </button>
@@ -589,6 +619,9 @@ function TabPanel({
   perPage: PageSize;
   setPerPage: (n: PageSize) => void;
 }) {
+  if (tab === "matching") {
+    return <MatchingPanel />;
+  }
   if (tab === "all") {
     return (
       <AllPanel
@@ -1089,14 +1122,14 @@ function PagerBtn({
 }
 
 function EmptyState({ title, body }: { title: string; body: string }) {
+  // Wrapper around ui/EmptyState that matches the dashed-card framing the
+  // supervise board used to render inline. Keeps the call-sites untouched.
   return (
-    <div
-      className="rounded-xl border border-dashed px-6 py-16 text-center"
-      style={{ borderColor: "var(--border)" }}
-    >
-      <p className="text-sm font-medium" style={{ color: "var(--text)" }}>{title}</p>
-      <p className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>{body}</p>
-    </div>
+    <Card variant="hollow" className="border-dashed">
+      <CardBody>
+        <UiEmptyState compact title={title} body={body} />
+      </CardBody>
+    </Card>
   );
 }
 
@@ -1134,9 +1167,7 @@ function PastSessionTile({ session }: { session: SessionWithHealth }) {
     :                          "Not scored";
 
   const barColor =
-    sentiment === "neutral"
-      ? "color-mix(in srgb, var(--text-muted) 30%, transparent)"
-      : HEALTH_TOKENS[sentiment as Health].bar;
+    sentiment === "neutral" ? "var(--text-faint)" : HEALTH_VAR[sentiment as Health];
 
   const ended = session.ended_at ?? session.created_at;
   const durationMin = session.duration_minutes ?? null;
@@ -1144,76 +1175,79 @@ function PastSessionTile({ session }: { session: SessionWithHealth }) {
   const open = () => router.push(`/staff/session/${session.id}`);
 
   return (
-    <div
+    <Card
+      variant="surface"
+      interactive
       onClick={open}
       role="button"
       tabIndex={0}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } }}
-      className="group relative cursor-pointer overflow-hidden rounded-xl border p-4 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:scale-[1.025] hover:border-[var(--text-muted)]/40 hover:shadow-lg motion-reduce:transform-none motion-reduce:transition-none"
-      style={{
-        borderColor: "var(--border)",
-        backgroundColor: "var(--surface)",
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          open();
+        }
       }}
+      className="relative p-4 group"
     >
-      {/* Left accent bar — colour = post-completion sentiment */}
       <div
         className="absolute left-0 top-0 h-full w-1"
         style={{ backgroundColor: barColor }}
       />
 
-      {/* Header row — pill + score (mirrors SessionTile spacing) */}
       <div className="mb-3 flex items-center justify-between gap-2">
-        <span
-          className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-          style={{
-            backgroundColor: "color-mix(in srgb, var(--text-muted) 12%, transparent)",
-            color: "var(--text-muted)",
-          }}
-        >
+        <StatusBadge tone="neutral" compact>
           {humanState(session.status)}
-        </span>
+        </StatusBadge>
         {hasScore && (
           <span
-            className="text-[10px] tabular-nums"
-            style={{ color: "var(--text-muted)" }}
+            className="text-[10px] tabular-nums text-[var(--text-muted)]"
             title={`sentiment score ${score!.toFixed(2)}`}
           >
-            {(score! >= 0 ? "+" : "")}{score!.toFixed(2)}
+            {(score! >= 0 ? "+" : "")}
+            {score!.toFixed(2)}
           </span>
         )}
       </div>
 
-      {/* Customer (matches SessionTile typography: base + xs) */}
       <div className="mb-3">
-        <div className="text-base font-semibold" style={{ color: "var(--text)" }}>
+        <div className="text-base font-semibold text-[var(--text)]">
           {session.guest_name || "Customer"}
         </div>
-        <div className="truncate text-xs" style={{ color: "var(--text-muted)" }}>
+        <div className="truncate text-xs text-[var(--text-muted)]">
           {session.guest_email || ""}
         </div>
       </div>
 
-      <div className="mb-3 grid grid-cols-2 gap-2 border-t pt-3 text-xs" style={{ borderColor: "var(--border)" }}>
-        <Stat label="Ended" value={new Date(ended).toLocaleString(undefined, {
-          month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
-        })} />
-        <Stat label="Duration" value={durationMin != null ? `${Math.round(Number(durationMin))} min` : "—"} />
+      <div className="mb-3 grid grid-cols-2 gap-2 border-t border-[var(--border)] pt-3 text-xs">
+        <Stat
+          label="Ended"
+          value={new Date(ended).toLocaleString(undefined, {
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+          })}
+        />
+        <Stat
+          label="Duration"
+          value={durationMin != null ? `${Math.round(Number(durationMin))} min` : "—"}
+        />
         <Stat label="Engineer" value={session.agent_name || "—"} />
         <Stat label="Project" value={session.project_name || "—"} />
       </div>
 
-      {/* Post-completion sentiment caption */}
-      <div className="rounded-md border px-2.5 py-2 text-[11px] leading-snug"
+      <p
+        className="max-w-prose rounded-md border px-2.5 py-2 text-[11px] leading-snug"
         style={{
-          borderColor: sentiment === "neutral"
-            ? "var(--border)"
-            : HEALTH_TOKENS[sentiment as Health].pill_bg,
-          backgroundColor: sentiment === "neutral"
-            ? "color-mix(in srgb, var(--text-muted) 6%, transparent)"
-            : HEALTH_TOKENS[sentiment as Health].pill_bg,
-          color: sentiment === "neutral"
-            ? "var(--text-muted)"
-            : HEALTH_TOKENS[sentiment as Health].pill_fg,
+          borderColor:
+            sentiment === "neutral"
+              ? "var(--border)"
+              : `color-mix(in srgb, ${HEALTH_VAR[sentiment as Health]} 30%, transparent)`,
+          backgroundColor:
+            sentiment === "neutral"
+              ? "color-mix(in srgb, var(--text-muted) 6%, transparent)"
+              : `color-mix(in srgb, ${HEALTH_VAR[sentiment as Health]} 12%, transparent)`,
+          color: sentiment === "neutral" ? "var(--text-muted)" : HEALTH_VAR[sentiment as Health],
         }}
       >
         <span className="font-semibold uppercase tracking-wide opacity-80">
@@ -1221,8 +1255,8 @@ function PastSessionTile({ session }: { session: SessionWithHealth }) {
           {summaryText ? " — " : ""}
         </span>
         {summaryText ?? (hasScore ? "" : "no summary available")}
-      </div>
-    </div>
+      </p>
+    </Card>
   );
 }
 

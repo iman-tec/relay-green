@@ -27,6 +27,11 @@ import { Breadcrumb, type Crumb } from "@/app/_components/admin-v2/Breadcrumb";
 import { FilterTile } from "@/app/_components/admin-v2/FilterTile";
 import { ROLE } from "@/lib/relay/roles";
 import { AddInternalUserDrawer } from "./_drawers/AddInternalUserDrawer";
+import { MatchingInline } from "./MatchingInline";
+
+// "matching" is a sibling tile to the role filters. It swaps the main
+// area to the live matching board instead of filtering the users table.
+const MATCHING_TILE = "matching" as const;
 
 type UserRow = {
   id:                  string;
@@ -39,7 +44,12 @@ type UserRow = {
   createdAt:           string;
 };
 
-type TileKey = "all" | typeof ROLE.super_admin | typeof ROLE.supervisor | typeof ROLE.engineer;
+type TileKey =
+  | "all"
+  | typeof ROLE.super_admin
+  | typeof ROLE.supervisor
+  | typeof ROLE.engineer
+  | typeof MATCHING_TILE;
 
 const INTERNAL_ROLES = [ROLE.super_admin, ROLE.supervisor, ROLE.engineer] as const;
 
@@ -85,7 +95,15 @@ export function InternalUsersTab() {
   useEffect(() => { refreshCounts(); }, [refreshCounts]);
 
   // ─ Rows: depends on the selected tile. For "all" we union the 3 roles. ─
+  // The "matching" tile is a separate surface that doesn't read the
+  // users API, so skip the fetch entirely.
   const refresh = useCallback(async () => {
+    if (tile === MATCHING_TILE) {
+      setRows([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -176,8 +194,11 @@ export function InternalUsersTab() {
   };
 
   // ─ Render ─────────────────────────────────────────────────────────
+  // "matching" is a non-user surface; the add-user drawer button still
+  // exists so we default it to engineer when nothing else applies.
   const activeRoleForAdd: typeof ROLE.engineer | typeof ROLE.supervisor | typeof ROLE.super_admin =
-    tile === "all" ? ROLE.engineer : tile;
+    tile === "all" || tile === MATCHING_TILE ? ROLE.engineer : tile;
+  const showingMatching = tile === MATCHING_TILE;
 
   return (
     <div className="flex h-full min-h-0">
@@ -208,6 +229,15 @@ export function InternalUsersTab() {
               onClick={() => setTile(r)}
             />
           ))}
+          {/* Matching is a live ops surface, not a role filter, but it
+              lives in this sidebar so super_admin keeps one cohesive
+              workspace for internal operations. */}
+          <FilterTile
+            label="Matching"
+            count={0}
+            selected={tile === MATCHING_TILE}
+            onClick={() => setTile(MATCHING_TILE)}
+          />
         </div>
         <div className="mt-auto border-t p-3" style={{ borderColor: "var(--border)" }}>
           <button
@@ -222,6 +252,10 @@ export function InternalUsersTab() {
       </aside>
 
       <main className="min-w-0 flex-1 overflow-y-auto p-6">
+        {showingMatching ? (
+          <MatchingInline />
+        ) : (
+        <>
         <Breadcrumb
           items={(() => {
             const crumbs: Crumb[] = [{
@@ -346,6 +380,8 @@ export function InternalUsersTab() {
             </div>
           )}
         </section>
+        </>
+        )}
       </main>
 
       <AddInternalUserDrawer

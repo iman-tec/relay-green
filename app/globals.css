@@ -1,50 +1,132 @@
 @import "tailwindcss";
 
+/* Tailwind v4 dark variant — rewire to require explicit `.dark` ancestor
+ * so the ThemeProvider (app/_components/ThemeProvider.tsx) controls the
+ * theme via a single class on <html>. Without this, `dark:` would key
+ * off the OS preference and override the user's explicit choice. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /*
- * Relay.green Design System — claude.ai-aligned tokens.
- * See RelayGreen_Spec_Decisions_v1.md Section E (Design System) for source.
+ * Relay.green Design System — light tokens.
+ *
+ * Transformation (2026-05-22): swapped the cream/coral palette for a
+ * white + single-green system per the room-w.png / theeme-w.png mockups.
+ * Variable names are stable so every component picks up the new look
+ * without per-file edits.
+ *
+ *   --background    pure white app canvas
+ *   --surface       white cards / inputs (slight differentiation vs canvas)
+ *   --surface-raised soft gray rail / hover background
+ *   --primary       Relay green — the ONE accent. CTAs, sent bubbles, online.
+ *   --ok / --warn / --risk semantic status, light variants
  */
-
-/* Dark-only design tokens. The app is single-theme by product decision — we
- * don't render the same surfaces under any other context, so there's no
- * value in a light variant. Removed the previous prefers-color-scheme: dark
- * media query that flipped these on top of a light :root; the values below
- * are now the only source. */
 :root {
-  /* Surfaces */
-  --background: #2c2a26; /* warm dark */
-  --surface: #1f1e1b;
-  --border: #3a3833;
+  /* Surfaces — white app canvas, near-white card differentiation, soft rail */
+  --background: #f7f9f8;        /* app canvas */
+  --surface: #ffffff;            /* cards, sheets, composer */
+  --surface-raised: #f1f4f3;     /* hover bg, sidebar rail, bot bubble */
+  --border: #e6eae8;             /* hairline */
+  --border-strong: #d4dad7;      /* focused input, divider on white */
 
-  /* Text */
-  --text: #f5f4ee;
-  --text-muted: #a6a29b;
+  /* Text — near-black headings, gray body */
+  --text: #14171a;
+  --text-muted: #5b6470;
+  --text-faint: #8a939d;
 
-  /* Brand */
-  --primary: #d97757; /* Claude coral — primary CTA only */
-  --primary-hover: #c66645;
-  --green-dot: #3dcb7e; /* the brand green dot — launcher only */
-  --accent-red: #c87c3d; /* supervisor red-card alerts only */
+  /* Brand — single Relay green */
+  --primary: #16a34a;
+  --primary-hover: #15803d;
+  --primary-soft: color-mix(in srgb, var(--primary) 12%, transparent);
+  --primary-tint: #e7f6ee;       /* selected card tint, sent-bubble fill */
 
-  /* Force the browser's native form controls (Stripe iframe, date pickers,
-   * scrollbars, etc.) to render in dark mode regardless of OS preference. */
-  color-scheme: dark;
+  /* Green dot kept as an alias — many call-sites reference --green-dot.
+   * Aliasing to --primary keeps the brand consistent without a sweep. */
+  --green-dot: var(--primary);
+  --green-soft: var(--primary-soft);
+
+  /* Legacy aliases — kept for prior call-sites (do NOT remove yet, audit
+   * later). Re-pointed to the new palette so nothing renders coral. */
+  --accent-red: #dc2626;
+  --accent: var(--primary);
+  --accent-strong: var(--primary-hover);
+
+  /* Semantic status (label + icon, not color-only). Health-bar meaning
+   * preserved: green = healthy, amber = neutral/shaky, red = danger. */
+  --ok: var(--primary);
+  --ok-soft: var(--primary-soft);
+  --warn: #d97706;
+  --warn-soft: color-mix(in srgb, #d97706 14%, transparent);
+  --risk: #dc2626;
+  --risk-soft: color-mix(in srgb, #dc2626 14%, transparent);
+
+  /* Overlays */
+  --scrim: rgba(20, 23, 26, 0.48);
+
+  /* Motion timings (brief: 150-200ms micro-interactions) */
+  --motion-fast: 150ms;
+  --motion-med: 200ms;
+  --motion-slow: 280ms;
+
+  /* Native form controls render in light mode now. */
+  color-scheme: light;
 
   /* Aliases for compatibility with framework defaults */
   --foreground: var(--text);
+}
+
+/* Dark mode — applied by ThemeProvider via `.dark` on <html>.
+ * Mirrors the light token shape so every component picks up the swap
+ * automatically. Brand green stays the same family but brightens
+ * slightly for better contrast on dark surfaces. */
+:root.dark {
+  --background: #14171a;
+  --surface: #1c1f23;
+  --surface-raised: #232830;
+  --border: #2a2f35;
+  --border-strong: #3a414a;
+
+  --text: #f5f7fa;
+  --text-muted: #98a1ac;
+  --text-faint: #6c7682;
+
+  --primary: #22c55e;
+  --primary-hover: #16a34a;
+  --primary-tint: #133622;
+
+  --accent-red: #ef4444;
+  --warn: #f59e0b;
+  --risk: #ef4444;
+
+  --scrim: rgba(0, 0, 0, 0.6);
+
+  color-scheme: dark;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-text: var(--text);
   --color-text-muted: var(--text-muted);
+  --color-text-faint: var(--text-faint);
   --color-primary: var(--primary);
   --color-primary-hover: var(--primary-hover);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-tint: var(--primary-tint);
   --color-green-dot: var(--green-dot);
+  --color-green-soft: var(--green-soft);
   --color-accent-red: var(--accent-red);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-risk: var(--risk);
+  --color-risk-soft: var(--risk-soft);
 
   --font-serif: var(--font-source-serif);
   --font-sans: var(--font-inter);
@@ -210,6 +292,13 @@ textarea {
     border-color 140ms ease,
     background-color 140ms ease;
 }
+
+/* Three-dot typing indicator used by the intake assistant while it
+   waits on /api/intake/turn. */
+@keyframes relay-typing {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+  40%           { transform: translateY(-2px); opacity: 1; }
+}
 [data-hover-lift]:hover:not([disabled]) {
   transform: translateY(-1px);
 }
@@ -230,4 +319,41 @@ textarea {
 @keyframes relay-toast-in {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ──────── Status / launcher pulse ─────────────────────────────────────
+   `relay-pulse-ok` — gentle green halo for the launcher and ringing state.
+   Calming, slow (1.8s), respects reduced-motion. Used by Button variant
+   `launcher` and the ringing screen's living motion. */
+@keyframes relay-pulse-ok {
+  0%, 100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--green-dot) 55%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 10px color-mix(in srgb, var(--green-dot) 0%, transparent);
+  }
+}
+
+[data-relay-pulse] {
+  animation: relay-pulse-ok 1800ms ease-in-out infinite;
+}
+
+/* Reduced-motion: kill every keyframe animation introduced for the
+ * transformation. Existing `relay-page-in` and `[data-hover-lift]` already
+ * have their own guards above; the rules below cover the new ones and the
+ * legacy `ping` / `relay-pulse` / `engineer-ring` keyframes called out in
+ * the audit. */
+@media (prefers-reduced-motion: reduce) {
+  [data-relay-pulse],
+  .animate-ping,
+  [class*="animate-[relay-pulse"],
+  [class*="animate-[engineer-ring"] {
+    animation: none !important;
+  }
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }

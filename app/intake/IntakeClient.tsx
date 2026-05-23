@@ -1,39 +1,62 @@
 "use client";
 
 /*
- * Client intake wizard.
+ * Client intake — editorial flow.
  *
- * Two modes:
- *   • no ?projectId — wizard creates a brand-new project, writes the intake
- *     against that project_id, mints the first session, and fires
- *     match_engineer.
- *   • ?projectId=X  — wizard fills the intake for an EXISTING project that
- *     doesn't have one yet (legacy projects that pre-date intake-per-project).
- *     Same final steps: session + match_engineer + redirect to matching.
+ * Two paths:
+ *   • First-time user → full 4-step editorial intake (tech comfort →
+ *                       stack chip groups → what-you're-building → urgency).
+ *   • Returning user (hasFullIntake from local profile) → QuickReturnIntake
+ *                       (lightweight "Is this for [Project]?" screen).
  *
- * The intake row is the canonical "answers about this project". Sessions in
- * the same project reuse the intake (with declined_by cleared between
- * sessions) so engineer-matching uses consistent answers every time.
+ * Existing data contract preserved:
+ *   client_intakes(familiarity, ai_tools_used, developing, technologies)
+ *
+ * New durable signals (techComfort, stack arrays, urgency) are mirrored into
+ * a local profile-context object (lib/relay/profile.ts) so returning users
+ * skip the heavy intake. // TODO(profile): wire to a real backend store.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { WizardShell } from "@/app/_components/wizard/WizardShell";
-import { ChipGroup } from "@/app/_components/wizard/ChipGroup";
+import { Loader2, X, Check } from "lucide-react";
+import { Wordmark } from "@/app/_components/Wordmark";
+import { Button, Card, CardBody, Toast, cn } from "@/app/_components/ui";
+import { QuickReturnIntake } from "@/app/_components/intake/QuickReturnIntake";
 import { createClient } from "@/lib/supabase/browser";
+import {
+  hasFullIntake,
+  patchProfile,
+  readProfile,
+  STACK_OPTIONS,
+  TECH_COMFORT_OPTIONS,
+  URGENCY_OPTIONS,
+  type ProfileSnapshot,
+  type ProfileStack,
+  type TechComfort,
+  type Urgency,
+} from "@/lib/relay/profile";
 
-const FAMILIARITY = ["Totally Unknown", "Semi-Technical", "Well Experienced"] as const;
-const AI_TOOLS = ["Claude", "ChatGPT (Codex)", "Deep Seek", "Lovable", "Replit", "Some Other"] as const;
-const DEVELOPING = ["Website", "Mobile App", "IoT System", "AIML product"] as const;
-const TECHNOLOGIES = [
-  "React", "Angular", "Vue", "Node.js", "Python", "Java", "PHP",
-  "AWS", "Azure", "Google Cloud", "Docker", "Kubernetes",
-  "MySQL", "PostgreSQL", "MongoDB", "Linux", "iOS", "Android", "Firebase",
-] as const;
+const DEVELOPING_OPTIONS: ReadonlyArray<{
+  value: "Website" | "Mobile App" | "IoT System" | "AIML product";
+  label: string;
+  description: string;
+  emoji: string;
+}> = [
+  { value: "Website", label: "Website / web app", description: "Browser-based product, dashboard, or marketing site.", emoji: "🌐" },
+  { value: "Mobile App", label: "Mobile app", description: "iOS, Android, or cross-platform.", emoji: "📱" },
+  { value: "IoT System", label: "IoT / hardware", description: "Devices, sensors, embedded systems.", emoji: "🔌" },
+  { value: "AIML product", label: "AI / ML product", description: "Model, pipeline, or AI-first feature.", emoji: "🤖" },
+];
 
 const ACTIVE_SESSION_STATES = [
   "queued", "assigned", "joining", "live", "grace", "ending", "expired_free",
 ] as const;
+
+const TOTAL_STEPS = 4;
+
+type StackCat = "aiTools" | "backend" | "frontend";
+type DevelopingValue = (typeof DEVELOPING_OPTIONS)[number]["value"];
 
 export function IntakeClient() {
   const router = useRouter();
@@ -41,31 +64,40 @@ export function IntakeClient() {
   const projectIdParam = searchParams.get("projectId");
 
   const [authLoading, setAuthLoading] = useState(true);
+  const [profile, setProfile] = useState<ProfileSnapshot | null>(null);
+  const [forceFullIntake, setForceFullIntake] = useState(false);
   const [step, setStep] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [familiarity, setFamiliarity] = useState<string[]>([]);
-  const [aiTools, setAiTools] = useState<string[]>([]);
-  const [developing, setDeveloping] = useState<string[]>([]);
-  const [technologies, setTechnologies] = useState<string[]>([]);
+  // Editorial intake state. Initial values prefill from profile so users who
+  // come back via the "answer the full intake" link don't lose ground.
+  const [techComfort, setTechComfort] = useState<TechComfort | null>(null);
+  const [stack, setStack] = useState<ProfileStack>({
+    aiTools: [],
+    backend: [],
+    frontend: [],
+  });
+  const [developing, setDeveloping] = useState<DevelopingValue | null>(null);
+  const [urgency, setUrgency] = useState<Urgency | null>(null);
 
-  const wantsTechStep =
-    familiarity[0] === "Semi-Technical" || familiarity[0] === "Well Experienced";
-  const totalSteps = wantsTechStep ? 4 : 3;
-
+  // Hydrate profile + auth.
   useEffect(() => {
     const sb = createClient();
+    const p = readProfile();
+    setProfile(p);
+    setTechComfort(p.techComfort ?? null);
+    setStack(p.stack);
+    setUrgency(p.urgency ?? null);
+
     void (async () => {
       const { data } = await sb.auth.getUser();
       if (!data.user) {
         router.replace("/login?next=/intake");
         return;
       }
-      // Short-circuit: if we were handed a project that already has an
-      // intake, skip the wizard entirely and fire match_engineer with
-      // the stored answers. This makes "Start in this old project"
-      // resolve to the same push-ring matching UX as "Create new project".
+      // Project-fill-in shortcut: if /intake was hit with ?projectId for an
+      // already-answered project, skip the wizard and go straight to ring.
       if (projectIdParam) {
         const { data: existing } = await sb
           .from("client_intakes")
@@ -74,19 +106,20 @@ export function IntakeClient() {
           .eq("customer_user_id", data.user.id)
           .maybeSingle();
         if (existing?.id) {
-          // Mint a fresh session, point the intake at it, clear the
-          // declined_by set so prior decliners can be re-rung, then match.
-          const { data: callData } = await sb.rpc(
+          const { data: sessRow } = await sb.rpc(
             "get_or_create_active_customer_session",
             { _project_id: projectIdParam },
           );
-          const session = (Array.isArray(callData) ? callData[0] : callData) as { id: string } | null;
+          const session = (Array.isArray(sessRow) ? sessRow[0] : sessRow) as {
+            id?: string;
+          } | null;
           if (session?.id) {
-            await sb.from("client_intakes")
+            await sb
+              .from("client_intakes")
               .update({ guest_call_id: session.id, declined_by: [] })
               .eq("id", existing.id);
             await sb.rpc("match_engineer", { _intake_id: existing.id });
-            router.replace(`/room?matching=${existing.id}`);
+            router.replace(`/intake/matching/${existing.id}`);
             return;
           }
         }
@@ -95,13 +128,13 @@ export function IntakeClient() {
     })();
   }, [router, projectIdParam]);
 
-  const canAdvance =
-    (step === 1 && familiarity.length === 1) ||
-    (step === 2 && aiTools.length === 1) ||
-    (step === 3 && developing.length === 1) ||
-    (step === 4 && technologies.length > 0);
+  const showQuickReturn = !forceFullIntake && profile && hasFullIntake(profile);
 
   const submit = useCallback(async () => {
+    if (!techComfort || !developing || !urgency) {
+      setError("Pick an option to continue");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -109,9 +142,8 @@ export function IntakeClient() {
       const { data: u } = await sb.auth.getUser();
       if (!u.user) throw new Error("Not signed in");
 
-      // 1. Resolve the project. Either we were handed one (legacy-project
-      //    fill-in mode), or we create a new one.
       let projectId = projectIdParam;
+      let projectName = "Project";
       if (!projectId) {
         const { data: created, error: projErr } = await sb.rpc(
           "create_project",
@@ -119,14 +151,13 @@ export function IntakeClient() {
         );
         if (projErr) throw projErr;
         const row = Array.isArray(created)
-          ? (created[0] as { id?: string } | null)
-          : (created as { id?: string } | null);
+          ? (created[0] as { id?: string; name?: string } | null)
+          : (created as { id?: string; name?: string } | null);
         projectId = row?.id ?? null;
+        projectName = row?.name ?? "Project";
         if (!projectId) throw new Error("Could not create project");
       }
 
-      // 2. Cancel any lingering active session that belongs to a different
-      //    project — otherwise get_or_create returns the old session.
       const { data: activeSessions } = await sb
         .from("guest_calls")
         .select("id, project_id")
@@ -134,12 +165,13 @@ export function IntakeClient() {
         .in("status", ACTIVE_SESSION_STATES as unknown as string[])
         .order("created_at", { ascending: false })
         .limit(1);
-      const lingering = (activeSessions ?? [])[0] as { id: string; project_id: string | null } | undefined;
+      const lingering = (activeSessions ?? [])[0] as
+        | { id: string; project_id: string | null }
+        | undefined;
       if (lingering && lingering.project_id !== projectId) {
         await sb.rpc("cancel_customer_session", { _session_id: lingering.id });
       }
 
-      // 3. Mint the session for this project.
       const { data: callData, error: rpcErr } = await sb.rpc(
         "get_or_create_active_customer_session",
         { _project_id: projectId },
@@ -151,20 +183,29 @@ export function IntakeClient() {
         }
         throw rpcErr;
       }
-      const session = (Array.isArray(callData) ? callData[0] : callData) as { id: string };
+      const session = (Array.isArray(callData) ? callData[0] : callData) as {
+        id: string;
+      };
       if (!session?.id) throw new Error("Could not create session");
 
-      // 4. Upsert the intake row keyed on (project_id, customer_user_id).
-      //    declined_by is cleared so a fresh session can re-try engineers
-      //    that declined in a previous session for this project.
+      // Map the editorial answers back onto the existing schema columns.
+      // // TODO(api): widen client_intakes.ai_tools_used to text[], add
+      // techComfort + urgency as first-class columns. UI is already aware.
+      const familiarity =
+        techComfort === "well_experienced"
+          ? "Well Experienced"
+          : techComfort === "semi_technical"
+            ? "Semi-Technical"
+            : "Totally Unknown";
+      const allStack = [...stack.backend, ...stack.frontend];
       const intakePayload = {
         guest_call_id: session.id,
         customer_user_id: u.user.id,
         project_id: projectId,
-        familiarity: familiarity[0],
-        ai_tools_used: aiTools[0],
-        developing: developing[0],
-        technologies: wantsTechStep ? technologies : [],
+        familiarity,
+        ai_tools_used: stack.aiTools.join(", ") || "Other",
+        developing,
+        technologies: allStack,
         declined_by: [] as string[],
       };
       const { data: intakeData, error: intakeErr } = await sb
@@ -175,86 +216,339 @@ export function IntakeClient() {
       if (intakeErr) throw intakeErr;
       const intakeId = intakeData.id as string;
 
-      // 5. Match.
       await sb.rpc("match_engineer", { _intake_id: intakeId });
 
-      // 6. Back to /room — the MatchingModal there picks the intake up
-      //    from the ?matching query param and pops in-place.
-      router.replace(`/room?matching=${intakeId}`);
+      // Persist durable signals to profile. // TODO(profile): real store.
+      patchProfile({
+        techComfort,
+        urgency,
+        stack,
+        hasFullIntake: true,
+        lastProjectId: projectId,
+        lastProjectName: projectName,
+      });
+
+      router.replace(`/intake/matching/${intakeId}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not start matching");
       setBusy(false);
     }
-  }, [router, projectIdParam, familiarity, aiTools, developing, technologies, wantsTechStep]);
+  }, [router, projectIdParam, techComfort, stack, developing, urgency]);
+
+  const canAdvance = useMemo(() => {
+    if (step === 1) return techComfort !== null;
+    if (step === 2) {
+      const total =
+        stack.aiTools.length + stack.backend.length + stack.frontend.length;
+      return total > 0;
+    }
+    if (step === 3) return developing !== null;
+    if (step === 4) return urgency !== null;
+    return false;
+  }, [step, techComfort, stack, developing, urgency]);
 
   const onNext = useCallback(() => {
     if (!canAdvance) return;
-    if (step === 1 && !wantsTechStep && totalSteps === 3) {
-      setStep(2); return;
-    }
-    if (step >= totalSteps) {
-      void submit(); return;
+    if (step >= TOTAL_STEPS) {
+      void submit();
+      return;
     }
     setStep((s) => s + 1);
-  }, [canAdvance, step, totalSteps, wantsTechStep, submit]);
+  }, [canAdvance, step, submit]);
 
   const onBack = step > 1 ? () => setStep((s) => s - 1) : undefined;
 
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-sm" style={{ color: "var(--text-muted)" }}>
+      <div className="flex min-h-[100dvh] items-center justify-center bg-[var(--background)] text-sm text-[var(--text-muted)]">
+        <Loader2 size={18} className="mr-2 animate-spin" />
         Loading…
       </div>
     );
   }
 
+  if (showQuickReturn && profile) {
+    return (
+      <QuickReturnIntake
+        initialProfile={profile}
+        onChooseFullIntake={() => {
+          setForceFullIntake(true);
+          setStep(1);
+        }}
+      />
+    );
+  }
+
   return (
-    <WizardShell
-      title={titleFor(step)}
-      subtitle={subtitleFor(step)}
-      step={step}
-      totalSteps={totalSteps}
-      canAdvance={canAdvance}
-      isLast={step === totalSteps}
-      busy={busy}
-      nextLabel={step === totalSteps ? "Find Engineer" : "Next"}
-      onNext={onNext}
-      onBack={onBack}
-      footer={
-        error ? (
-          <p className="text-sm" style={{ color: "var(--accent-red)" }}>{error}</p>
-        ) : null
-      }
-    >
-      {step === 1 && (
-        <ChipGroup options={FAMILIARITY} value={familiarity} onChange={setFamiliarity} />
-      )}
-      {step === 2 && (
-        <ChipGroup options={AI_TOOLS} value={aiTools} onChange={setAiTools} />
-      )}
-      {step === 3 && (
-        <ChipGroup options={DEVELOPING} value={developing} onChange={setDeveloping} />
-      )}
-      {step === 4 && wantsTechStep && (
-        <ChipGroup options={TECHNOLOGIES} value={technologies} multi onChange={setTechnologies} />
-      )}
-    </WizardShell>
+    <main className="flex min-h-[100dvh] flex-col items-center bg-[var(--background)] px-4 py-10">
+      <Wordmark />
+
+      <Card variant="surface" className="relative mt-8 w-full max-w-2xl">
+        <button
+          type="button"
+          onClick={() => router.replace("/room")}
+          aria-label="Close intake"
+          className="absolute right-4 top-4 inline-flex size-8 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-raised)] hover:text-[var(--text)]"
+        >
+          <X size={16} />
+        </button>
+
+        <CardBody className="flex flex-col gap-6 px-6 py-8 sm:px-8">
+          {/* Step pill + progress */}
+          <div className="flex flex-col items-center gap-3">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--primary-tint)] px-3 py-1 font-mono text-[11px] uppercase tracking-[0.18em] text-[var(--primary-hover)]">
+              Question {step} of {TOTAL_STEPS}
+            </span>
+            <ProgressSegments current={step} total={TOTAL_STEPS} />
+          </div>
+
+          {/* Headline + subline */}
+          <header className="text-center">
+            <Headline step={step} />
+            <p className="mt-2 max-w-md mx-auto text-sm leading-relaxed text-[var(--text-muted)]">
+              {subtitleFor(step)}
+            </p>
+          </header>
+
+          {/* Step body */}
+          <div className="flex flex-col gap-4">
+            {step === 1 && (
+              <RadioCardGroup
+                value={techComfort}
+                onChange={setTechComfort}
+                options={TECH_COMFORT_OPTIONS}
+              />
+            )}
+            {step === 2 && (
+              <StackChipGroups stack={stack} onChange={setStack} />
+            )}
+            {step === 3 && (
+              <RadioCardGroup<DevelopingValue>
+                value={developing}
+                onChange={setDeveloping}
+                options={DEVELOPING_OPTIONS}
+              />
+            )}
+            {step === 4 && (
+              <RadioCardGroup
+                value={urgency}
+                onChange={setUrgency}
+                options={URGENCY_OPTIONS}
+              />
+            )}
+          </div>
+
+          {error && <Toast tone="risk">{error}</Toast>}
+
+          {/* Footer */}
+          <div className="mt-2 flex items-center justify-between gap-3 border-t border-[var(--border)] pt-5">
+            <Button
+              variant="ghost"
+              size="md"
+              onClick={onBack}
+              disabled={!onBack || busy}
+            >
+              ← Back
+            </Button>
+            <Button
+              variant="primary"
+              size="md"
+              onClick={onNext}
+              disabled={!canAdvance || busy}
+              loading={busy}
+            >
+              {step === TOTAL_STEPS ? "Find my engineer →" : "Continue →"}
+            </Button>
+          </div>
+        </CardBody>
+      </Card>
+    </main>
   );
 }
 
-function titleFor(step: number) {
-  return [
-    "How familiar are you with development?",
-    "Which AI tool have you been using?",
-    "What are you building?",
-    "Which technologies are you working with?",
-  ][step - 1];
+// ── Components ─────────────────────────────────────────────────────────────
+
+function Headline({ step }: { step: number }) {
+  // One italic green word per step — matches the editorial demo.
+  if (step === 1) {
+    return (
+      <h1 className="font-serif text-3xl font-medium leading-tight text-[var(--text)] sm:text-4xl">
+        How <em className="not-italic italic text-[var(--primary)]">comfortable</em>{" "}
+        are you with code?
+      </h1>
+    );
+  }
+  if (step === 2) {
+    return (
+      <h1 className="font-serif text-3xl font-medium leading-tight text-[var(--text)] sm:text-4xl">
+        What are you{" "}
+        <em className="not-italic italic text-[var(--primary)]">building</em>{" "}
+        with?
+      </h1>
+    );
+  }
+  if (step === 3) {
+    return (
+      <h1 className="font-serif text-3xl font-medium leading-tight text-[var(--text)] sm:text-4xl">
+        What kind of{" "}
+        <em className="not-italic italic text-[var(--primary)]">project</em>{" "}
+        is this?
+      </h1>
+    );
+  }
+  return (
+    <h1 className="font-serif text-3xl font-medium leading-tight text-[var(--text)] sm:text-4xl">
+      How <em className="not-italic italic text-[var(--primary)]">soon</em> do
+      you need someone?
+    </h1>
+  );
 }
-function subtitleFor(step: number) {
-  return [
-    "Helps us right-size the conversation.",
-    "We tailor the engineer match to your tooling.",
-    "One option that fits best.",
-    "Select all that apply.",
-  ][step - 1];
+
+function subtitleFor(step: number): string {
+  if (step === 1) return "Helps us right-size the conversation.";
+  if (step === 2)
+    return "We support 150+ integrations. Pick what matters — we'll match you with an engineer who's shipped on it.";
+  if (step === 3) return "One option that fits best.";
+  return "We'll line your engineer up accordingly.";
+}
+
+function ProgressSegments({ current, total }: { current: number; total: number }) {
+  return (
+    <div
+      className="flex items-center gap-1.5"
+      role="progressbar"
+      aria-valuemin={1}
+      aria-valuemax={total}
+      aria-valuenow={current}
+      aria-label={`Question ${current} of ${total}`}
+    >
+      {Array.from({ length: total }, (_, i) => (
+        <span
+          key={i}
+          aria-hidden
+          className={cn(
+            "h-1.5 w-8 rounded-full transition-colors",
+            i < current ? "bg-[var(--primary)]" : "bg-[var(--surface-raised)]",
+          )}
+        />
+      ))}
+    </div>
+  );
+}
+
+// Radio cards — full-width selectable row w/ emoji, title, description, radio.
+function RadioCardGroup<T extends string>({
+  value,
+  onChange,
+  options,
+}: {
+  value: T | null;
+  onChange: (v: T) => void;
+  options: ReadonlyArray<{
+    value: T;
+    label: string;
+    description: string;
+    emoji: string;
+  }>;
+}) {
+  return (
+    <div role="radiogroup" className="flex flex-col gap-2.5">
+      {options.map((opt) => {
+        const selected = value === opt.value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            onClick={() => onChange(opt.value)}
+            className={cn(
+              "group flex w-full items-start gap-3 rounded-xl border px-4 py-3 text-left transition-colors",
+              selected
+                ? "border-[var(--primary)] bg-[var(--primary-tint)]"
+                : "border-[var(--border)] bg-[var(--surface)] hover:border-[var(--border-strong)]",
+            )}
+          >
+            <span aria-hidden className="mt-0.5 text-xl leading-none">
+              {opt.emoji}
+            </span>
+            <span className="flex flex-1 flex-col leading-snug">
+              <span className="text-sm font-semibold text-[var(--text)]">
+                {opt.label}
+              </span>
+              <span className="text-xs text-[var(--text-muted)]">
+                {opt.description}
+              </span>
+            </span>
+            <span
+              aria-hidden
+              className={cn(
+                "mt-1 inline-flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
+                selected
+                  ? "border-[var(--primary)] bg-[var(--primary)] text-white"
+                  : "border-[var(--border-strong)] bg-[var(--surface)]",
+              )}
+            >
+              {selected && <Check size={12} strokeWidth={3} />}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Stack chip groups — three labeled multi-select clusters.
+function StackChipGroups({
+  stack,
+  onChange,
+}: {
+  stack: ProfileStack;
+  onChange: (s: ProfileStack) => void;
+}) {
+  const toggle = (cat: StackCat, option: string) => {
+    const cur = stack[cat];
+    const has = cur.some((x) => x.toLowerCase() === option.toLowerCase());
+    onChange({
+      ...stack,
+      [cat]: has
+        ? cur.filter((x) => x.toLowerCase() !== option.toLowerCase())
+        : [...cur, option],
+    });
+  };
+  return (
+    <div className="flex flex-col gap-5">
+      {STACK_OPTIONS.map((group) => (
+        <section key={group.category}>
+          <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">
+            {group.label}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {group.options.map((opt) => {
+              const selected = stack[group.category as StackCat].some(
+                (x) => x.toLowerCase() === opt.toLowerCase(),
+              );
+              return (
+                <button
+                  key={opt}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => toggle(group.category as StackCat, opt)}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors",
+                    selected
+                      ? "border-[var(--primary)] bg-[var(--primary-tint)] text-[var(--primary-hover)]"
+                      : "border-[var(--border)] bg-[var(--surface)] text-[var(--text)] hover:border-[var(--border-strong)]",
+                  )}
+                >
+                  {selected && <Check size={12} strokeWidth={3} />}
+                  {opt}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
 }

@@ -9,8 +9,7 @@
  * inline copy; this component covers login, room, dashboard, inbox, etc.).
  */
 
-const BRAND_GREEN = "#3f5c2e";
-
+const BRAND_GREEN = "var(--primary)";
 const SIZES = {
   sm: { font: "14px", dot: 10, gap: "4px" },
   md: { font: "18px", dot: 12, gap: "6px" },

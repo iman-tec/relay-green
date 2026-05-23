@@ -17,9 +17,8 @@ import {
 import { Sparkles, ArrowLeft, RotateCw, Loader2, Lock, AlertTriangle } from "lucide-react";
 import type { GuestCall, GuestMessage, SummaryState } from "@/lib/supabase/types";
 
-const BRAND_GREEN = "#3f5c2e";
-const BRAND_GREEN_SOFT = "rgba(63, 92, 46, 0.12)";
-
+const BRAND_GREEN = "var(--primary)";
+const BRAND_GREEN_SOFT = "var(--primary-soft)";
 export function PostCallView({
   session,
   messages,

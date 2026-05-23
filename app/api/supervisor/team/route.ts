@@ -71,11 +71,18 @@ export async function GET() {
     return NextResponse.json({ pod, engineers: [] });
   }
 
-  // 3. Profiles + emails (auth.users) in one shot.
-  const [{ data: profiles }, { data: authList }] = await Promise.all([
+  // 3. Profiles + emails (auth.users) + availability flag in one shot.
+  const [{ data: profiles }, { data: authList }, { data: availRows }] = await Promise.all([
     admin.from("profiles_with_role").select("id, full_name, primary_role").in("id", engineerIds),
     admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
+    admin.from("engineer_profiles").select("user_id, is_available").in("user_id", engineerIds),
   ]);
+
+  // is_available is the engineer's explicit online/offline toggle (§3.2).
+  const onlineById = new Map<string, boolean>();
+  for (const r of (availRows ?? []) as { user_id: string; is_available: boolean }[]) {
+    onlineById.set(r.user_id, r.is_available);
+  }
 
   const emailById = new Map<string, string>();
   for (const u of authList?.users ?? []) {
@@ -122,6 +129,7 @@ export async function GET() {
       currentCustomer: cur?.guest_name ?? null,
       lastCustomer:    last?.guest_name ?? null,
       lastCallAt:      last?.ended_at ?? null,
+      isOnline:        onlineById.get(p.id) ?? null,
     };
   });
 

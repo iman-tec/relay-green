@@ -1,22 +1,25 @@
 "use client";
 
 /*
- * Compact inline meeting entry that lives inside the chat message stream.
+ * Inline meeting entry inside the chat message stream.
+ *
  * Each "📞 Zoom meeting started" system message renders one of these at
  * its chronological position. The paired "📞 Zoom meeting ended" message
  * is folded in (the renderer suppresses it) so we get one entry per call.
  *
- * Active state shows a Join button using the session's current Zoom URLs.
- * Ended state shows a duration computed from the message timestamps.
+ *  - Active state: the in-stream Zoom CTA is now PROMINENT. Brief §5.5
+ *    requires the call button to be the star of the centre pane; a
+ *    `<Button variant="launcher">` (green pulse halo) carries that role.
+ *  - Ended state: compact pill with duration + optional summary toggle.
+ *
+ * Token-only — `BRAND_GREEN`/`BRAND_GREEN_SOFT`/`BRAND_GREEN_BORDER`
+ * deleted from this file in Phase 7.
  */
 
 import { useState } from "react";
-import { Video, PhoneOff, ExternalLink, Loader2, Sparkles } from "lucide-react";
+import { Video, PhoneOff, ExternalLink, Sparkles, Loader2 } from "lucide-react";
 import { MeetingSummaryEntry } from "./MeetingSummaryEntry";
-
-const BRAND_GREEN        = "#3f5c2e";
-const BRAND_GREEN_SOFT   = "rgba(63, 92, 46, 0.12)";
-const BRAND_GREEN_BORDER = "rgba(63, 92, 46, 0.32)";
+import { Button } from "@/app/_components/ui";
 
 type Props = {
   active: boolean;
@@ -33,18 +36,14 @@ type Props = {
    *  disabled "Joined" chip so the user can't double-click into Zoom. */
   selfJoined?: boolean;
   /** Engineer-only: hang up the Zoom call without joining it. Renders a
-   *  small red "End" button next to Join on the active state. */
+   *  secondary "End call" button alongside Join on the active state. */
   onCancel?: () => void | Promise<void>;
   /** Ended-state only: when an AI Companion summary exists for this call,
    *  pass its raw body so the card can render a Sparkles toggle that
-   *  expands the parsed summary inline below. Hidden by default to keep
-   *  the chat timeline quiet. */
+   *  expands the parsed summary inline below. */
   summaryBody?: string | null;
-  /** Ended-state only: the system-message body that carries the Zoom cloud
-   *  recording URL + passcode (e.g. "🎥 Recording available: <url>\n
-   *  Passcode: <pw>"). Threaded into the summary card so supervisors see
-   *  the recording inside the expanded summary instead of as a separate
-   *  chat chip. Pass null for non-supervisor viewers. */
+  /** Ended-state only: system-message body that carries the Zoom cloud
+   *  recording URL + passcode. */
   recordingBody?: string | null;
 };
 
@@ -57,12 +56,19 @@ function formatDuration(sec: number): string {
   return `${m} min ${r} sec`;
 }
 
-export function MeetingChatEntry({ active, durationSec, joinUrl, onJoin, selfJoined, onCancel, summaryBody, recordingBody }: Props) {
+export function MeetingChatEntry({
+  active,
+  durationSec,
+  joinUrl,
+  onJoin,
+  selfJoined,
+  onCancel,
+  summaryBody,
+  recordingBody,
+}: Props) {
   const [cancelling, setCancelling] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
-  // The ✨ toggle appears whenever the card has *anything* worth surfacing —
-  // an AI summary or a recording. A recording-only meeting (no summary)
-  // still gets the toggle so supervisors can reach the URL + passcode.
+
   const hasSummary = !active && !!summaryBody;
   const hasRecording = !active && !!recordingBody;
   const canExpand = hasSummary || hasRecording;
@@ -76,103 +82,116 @@ export function MeetingChatEntry({ active, durationSec, joinUrl, onJoin, selfJoi
   const handleCancel = async () => {
     if (!onCancel || cancelling) return;
     setCancelling(true);
-    try { await onCancel(); }
-    finally { setCancelling(false); }
+    try {
+      await onCancel();
+    } finally {
+      setCancelling(false);
+    }
   };
 
-  return (
-    <div className="flex flex-col items-center gap-2">
-      <div
-        className="inline-flex max-w-md items-center gap-2.5 rounded-xl border px-3 py-2"
-        style={{
-          borderColor: active ? BRAND_GREEN_BORDER : "var(--border)",
-          backgroundColor: active
-            ? BRAND_GREEN_SOFT
-            : "color-mix(in srgb, var(--text) 4%, transparent)",
-        }}
-      >
+  // ── Active: prominent call card with the launcher CTA ───────────
+  if (active) {
+    return (
+      <div className="flex flex-col items-center gap-2">
         <div
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+          className="flex w-full max-w-md flex-col items-center gap-3 rounded-2xl border px-5 py-4 text-center"
           style={{
-            backgroundColor: active
-              ? BRAND_GREEN
-              : "color-mix(in srgb, var(--text) 10%, transparent)",
-            color: active ? "#fff" : "var(--text-muted)",
+            borderColor: "color-mix(in srgb, var(--green-dot) 35%, transparent)",
+            background: "var(--ok-soft)",
           }}
         >
-          {active ? <Video size={13} /> : <PhoneOff size={13} />}
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[var(--ok)]">
+            <span
+              aria-hidden
+              className="inline-block size-1.5 rounded-full animate-[relay-pulse-ok_1800ms_ease-in-out_infinite]"
+              style={{ background: "var(--green-dot)" }}
+            />
+            Zoom call · ongoing
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {joinUrl && !selfJoined && (
+              <Button
+                variant="launcher"
+                size="lg"
+                onClick={handleJoin}
+                iconLeft={<Video size={16} />}
+                iconRight={<ExternalLink size={14} />}
+              >
+                Join Zoom call
+              </Button>
+            )}
+            {selfJoined && (
+              <span
+                aria-disabled="true"
+                className="inline-flex items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--ok)_40%,transparent)] bg-[var(--ok-soft)] px-4 py-2 text-sm font-medium text-[var(--ok)]"
+              >
+                <Video size={14} />
+                You&apos;re on the call
+              </span>
+            )}
+            {onCancel && (
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => void handleCancel()}
+                loading={cancelling}
+                iconLeft={!cancelling ? <PhoneOff size={14} /> : null}
+              >
+                End call
+              </Button>
+            )}
+          </div>
         </div>
-        <div className="flex min-w-0 flex-col">
-          <span className="text-xs font-medium" style={{ color: "var(--text)" }}>
-            {active ? "Zoom call · ongoing" : "Zoom call · ended"}
+      </div>
+    );
+  }
+
+  // ── Ended: compact pill + optional summary toggle ────────────────
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div className="inline-flex max-w-md items-center gap-2.5 rounded-xl border border-[var(--border)] bg-[color-mix(in_srgb,var(--text)_4%,transparent)] px-3 py-2">
+        <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--text)_10%,transparent)] text-[var(--text-muted)]">
+          <PhoneOff size={13} />
+        </div>
+        <div className="flex min-w-0 flex-col leading-tight">
+          <span className="text-xs font-medium text-[var(--text)]">
+            Zoom call · ended
           </span>
-          {!active && durationSec !== undefined ? (
-            <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+          {durationSec !== undefined && (
+            <span className="text-[10px] text-[var(--text-muted)]">
               {formatDuration(durationSec)}
             </span>
-          ) : null}
+          )}
         </div>
-        {active && joinUrl && !selfJoined ? (
-          <button
-            type="button"
-            onClick={handleJoin}
-            className="ml-1 inline-flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-semibold"
-            style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
-          >
-            <ExternalLink size={11} />
-            Join
-          </button>
-        ) : null}
-        {active && selfJoined ? (
-          <span
-            aria-disabled="true"
-            className="ml-1 inline-flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-semibold opacity-70"
-            style={{
-              backgroundColor: BRAND_GREEN_SOFT,
-              color: BRAND_GREEN,
-              border: `1px solid ${BRAND_GREEN_BORDER}`,
-            }}
-          >
-            <Video size={11} />
-            Joined
-          </span>
-        ) : null}
-        {active && onCancel ? (
-          <button
-            type="button"
-            onClick={() => void handleCancel()}
-            disabled={cancelling}
-            title="End this Zoom call"
-            className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold transition-colors disabled:opacity-60"
-            style={{ backgroundColor: "var(--accent-red)", color: "#fff" }}
-          >
-            {cancelling ? <Loader2 size={11} className="animate-spin" /> : <PhoneOff size={11} />}
-            End
-          </button>
-        ) : null}
-        {canExpand ? (
+        {canExpand && (
           <button
             type="button"
             onClick={() => setSummaryOpen((v) => !v)}
             aria-pressed={summaryOpen}
+            aria-label={summaryOpen ? "Hide call summary" : "Show call summary"}
             title={summaryOpen ? "Hide call summary" : "Show call summary"}
-            className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition-colors"
-            style={{
-              backgroundColor: summaryOpen ? BRAND_GREEN : "transparent",
-              color: summaryOpen ? "#fff" : BRAND_GREEN,
-              border: `1px solid ${BRAND_GREEN_BORDER}`,
-            }}
+            className={
+              "ml-1 inline-flex size-7 shrink-0 items-center justify-center rounded-full border transition-colors " +
+              (summaryOpen
+                ? "border-[var(--primary)] bg-[var(--primary)] text-white"
+                : "border-[var(--border)] text-[var(--primary)] hover:bg-[var(--primary-soft)]")
+            }
           >
-            <Sparkles size={12} />
+            {cancelling ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <Sparkles size={12} />
+            )}
           </button>
-        ) : null}
+        )}
       </div>
-      {canExpand && summaryOpen ? (
+      {canExpand && summaryOpen && (
         <MeetingSummaryEntry
           body={summaryBody ?? "🤖 AI Companion summary"}
           recordingBody={recordingBody ?? null}
         />
-      ) : null}
+      )}
     </div>
   );
 }

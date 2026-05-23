@@ -23,8 +23,10 @@ import { useEffect, useState } from "react";
 import { Loader2, X, ArrowRight, Check, ChevronLeft, Sparkles } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import { SUPPORT_PLANS, LAUNCH_PLANS, RETAINER, type SupportPlanCode } from "@/lib/relay/pricing";
-import { loadStripe, type Appearance } from "@stripe/stripe-js";
+import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
+import { buildStripeAppearance } from "@/lib/stripe/appearance";
+import { useTheme } from "@/app/_components/ThemeProvider";
 
 // Single Stripe.js loader for the whole app — Stripe recommends not
 // re-loading on every modal open. Returns null at build time on the server.
@@ -34,7 +36,7 @@ const stripePromise = STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY
 
 // Aligned with the rest of the app: same brand green as supervise/admin,
 // same surface/border/text tokens as ConnectingModal + the customer chat.
-const BRAND_GREEN = "#3f5c2e";
+const BRAND_GREEN = "var(--primary)";
 const SURFACE     = "var(--surface)";
 const CARD        = "var(--surface)";
 const CARD_EDGE   = "var(--border)";
@@ -428,49 +430,10 @@ function PlanCard({
 
 // ── Stripe Elements payment form ───────────────────────────────────────────
 // Builds the payment form from Stripe Elements (PaymentElement). Unlike
-// Stripe Checkout (hosted or embedded), Elements accepts a full `appearance`
-// config so we can force a dark theme that matches the rest of the app —
-// no Stripe Dashboard branding dependency.
-
-const DARK_APPEARANCE: Appearance = {
-  theme: "night",
-  labels: "floating",
-  variables: {
-    colorPrimary:    BRAND_GREEN,
-    colorBackground: SURFACE,
-    colorText:       INK,
-    colorTextSecondary: INK_SOFT,
-    colorTextPlaceholder: INK_MUTE,
-    colorDanger:     "#e88670",
-    fontFamily:      "Inter, system-ui, -apple-system, sans-serif",
-    borderRadius:    "8px",
-  },
-  rules: {
-    ".Input": {
-      backgroundColor: CARD,
-      border: `1px solid ${CARD_EDGE}`,
-      color: INK,
-    },
-    ".Input:focus": {
-      borderColor: BRAND_GREEN,
-      boxShadow: `0 0 0 2px rgba(93, 138, 68, 0.2)`,
-    },
-    ".Label": {
-      color: INK_SOFT,
-    },
-    ".Tab, .Block": {
-      backgroundColor: CARD,
-      border: `1px solid ${CARD_EDGE}`,
-    },
-    ".Tab:hover": {
-      borderColor: BRAND_GREEN,
-    },
-    ".Tab--selected": {
-      borderColor: BRAND_GREEN,
-      backgroundColor: SURFACE,
-    },
-  },
-};
+// Stripe Checkout (hosted or embedded), Elements accepts a full
+// `appearance` config so we can match the rest of the app — light or
+// dark. See lib/stripe/appearance.ts; appearance is rebuilt at the
+// moment Elements mounts and the parent remounts on theme change.
 
 function PaymentForm({
   clientSecret, paymentIntentId, amountCents, planName, plan, onCancel,
@@ -502,12 +465,18 @@ function PaymentForm({
       </div>
     );
   }
+  // Read the theme via the provider so this Elements tree remounts
+  // (via key={theme}) whenever the user flips the toggle — Stripe
+  // doesn't observe DOM changes, so a fresh appearance has to come
+  // through a re-render with a new key.
+  const { theme } = useTheme();
   return (
     <Elements
+      key={theme}
       stripe={stripePromise}
       options={{
         clientSecret,
-        appearance: DARK_APPEARANCE,
+        appearance: buildStripeAppearance(),
         loader: "auto",
       }}
     >

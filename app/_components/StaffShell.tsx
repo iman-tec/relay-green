@@ -28,6 +28,7 @@ import {
   Eye, Users as UsersIcon, Wallet as WalletIcon, Table as TableIcon, Inbox as InboxIcon,
 } from "lucide-react";
 import { Wordmark } from "./Wordmark";
+import { ThemeToggle } from "./ThemeToggle";
 import { useStaffGuard } from "@/lib/relay/useStaffGuard";
 import { highestRoleLabel, highestRoleSummary, formatRole } from "@/lib/relay/role-labels";
 import { ROLE, type Role } from "@/lib/relay/roles";
@@ -315,11 +316,16 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
           <div className="flex-1" />
         </nav>
 
-        {/* Bottom: notification bell + profile */}
+        {/* Bottom: theme toggle + profile */}
         <div
           className="border-t px-2 py-2"
           style={{ borderColor: "var(--border)" }}
         >
+          <div
+            className={`mb-1 flex ${collapsed ? "justify-center" : "justify-end"}`}
+          >
+            <ThemeToggle showLabel={!collapsed} />
+          </div>
           <ProfileButton
             email={guardEmail(guard)}
             roles={roles}

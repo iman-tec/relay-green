@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useEngineerWorkspace } from "@/lib/relay/useEngineerWorkspace";
 import { useRequireEngineerProfile } from "@/lib/relay/useRequireEngineerProfile";
+import { EngineerAvailabilityToggle } from "@/app/_components/EngineerAvailabilityToggle";
 import {
   Activity,
   CheckCircle2,
@@ -70,16 +71,19 @@ export function DashboardClient() {
             Your sessions and clients
           </p>
         </div>
-        {queue.length > 0 && (
-          <button
-            onClick={handleTakeNext}
-            className="inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-opacity hover:opacity-90"
-            style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
-          >
-            <PhoneIncoming size={14} />
-            Take next call · {queue.length} waiting
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          <EngineerAvailabilityToggle />
+          {queue.length > 0 && (
+            <button
+              onClick={handleTakeNext}
+              className="inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-opacity hover:opacity-90"
+              style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+            >
+              <PhoneIncoming size={14} />
+              Take next call · {queue.length} waiting
+            </button>
+          )}
+        </div>
       </div>
 
       {error && (

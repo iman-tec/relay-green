@@ -20,8 +20,7 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 
-const BRAND_GREEN = "#3f5c2e";
-
+const BRAND_GREEN = "var(--primary)";
 export function RouteProgress() {
   const pathname = usePathname();
   const [phase, setPhase] = useState<"idle" | "loading" | "done">("idle");

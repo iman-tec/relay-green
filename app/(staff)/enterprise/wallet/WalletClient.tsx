@@ -16,8 +16,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, Check, ArrowRight, ChevronLeft, CreditCard, Sparkles } from "lucide-react";
-import { loadStripe, type Appearance } from "@stripe/stripe-js";
+import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
+import { buildStripeAppearance } from "@/lib/stripe/appearance";
+import { useTheme } from "@/app/_components/ThemeProvider";
 import { createClient } from "@/lib/supabase/browser";
 import { PLAN_CATALOG, formatEur, type PlanTier } from "@/lib/billing/plans";
 
@@ -339,21 +341,9 @@ function PlanCard({
 }
 
 /* ──────── Stripe Elements payment form ──────── */
-
-const DARK_APPEARANCE: Appearance = {
-  theme: "night",
-  labels: "floating",
-  variables: {
-    colorPrimary:    BRAND_GREEN,
-    colorBackground: "#141413",
-    colorText:       "#f5f2ec",
-    colorTextSecondary: "#c7c5bd",
-    colorTextPlaceholder: "#7c7a73",
-    colorDanger:     "#e88670",
-    fontFamily:      "Inter, system-ui, -apple-system, sans-serif",
-    borderRadius:    "8px",
-  },
-};
+// Appearance is built dynamically from the current theme tokens — see
+// lib/stripe/appearance.ts. Parent re-renders Elements with key={theme}
+// when the user toggles light/dark so Stripe picks up the new colours.
 
 function CheckoutPanel({
   checkout, onBack, onSuccess,
@@ -408,23 +398,51 @@ function CheckoutPanel({
           {checkout.planName} · {formatEur(checkout.amountCents)}
         </div>
       </div>
-      <Elements
-        stripe={stripePromise}
-        options={{
-          clientSecret: checkout.clientSecret,
-          appearance:   DARK_APPEARANCE,
-          loader:       "auto",
-        }}
-      >
-        <CheckoutForm
-          amountCents={checkout.amountCents}
-          planName={checkout.planName}
-          tier={checkout.tier}
-          paymentIntentId={checkout.paymentIntentId}
-          onSuccess={onSuccess}
-        />
-      </Elements>
+      <ThemedCheckoutElements
+        clientSecret={checkout.clientSecret}
+        amountCents={checkout.amountCents}
+        planName={checkout.planName}
+        tier={checkout.tier}
+        paymentIntentId={checkout.paymentIntentId}
+        onSuccess={onSuccess}
+      />
     </div>
+  );
+}
+
+// Tiny wrapper that reads the current theme via useTheme() and keys the
+// <Elements> mount on it, so Stripe re-renders with fresh colours every
+// time the user flips the toggle. Stripe's appearance API is iframe-side
+// and won't observe CSS variable changes otherwise.
+function ThemedCheckoutElements({
+  clientSecret, amountCents, planName, tier, paymentIntentId, onSuccess,
+}: {
+  clientSecret: string;
+  amountCents: number;
+  planName: string;
+  tier: PlanTier;
+  paymentIntentId: string;
+  onSuccess: () => Promise<void>;
+}) {
+  const { theme } = useTheme();
+  return (
+    <Elements
+      key={theme}
+      stripe={stripePromise}
+      options={{
+        clientSecret,
+        appearance: buildStripeAppearance(),
+        loader:     "auto",
+      }}
+    >
+      <CheckoutForm
+        amountCents={amountCents}
+        planName={planName}
+        tier={tier}
+        paymentIntentId={paymentIntentId}
+        onSuccess={onSuccess}
+      />
+    </Elements>
   );
 }
 
