@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+  <rect width="1920" height="1080" fill="#ffffff"/>
+  <text x="960" y="540" text-anchor="middle" dominant-baseline="central"
+        font-family="Inter, system-ui, -apple-system, sans-serif"
+        font-weight="500" font-size="96" letter-spacing="4" fill="#111110"
+        text-transform="uppercase">RELAY</text>
+  <circle cx="1105" cy="528" r="16" fill="#00c853">
+    <animate attributeName="opacity" values="1;0.5;1" dur="2s" repeatCount="indefinite"/>
+  </circle>
+</svg>

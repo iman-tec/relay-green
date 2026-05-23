@@ -1,5 +1,5 @@
 /*
- * /trust/responsible-disclosure — How to report a vulnerability.
+ * /trust/responsible-disclosure, How to report a vulnerability.
  *
  * Scope, safe harbor, contact, PGP key (placeholder), response SLA,
  * and recognition policy. No bug bounty at launch; a single line of
@@ -12,9 +12,11 @@ import { Shell } from "../../_marketing/Shell";
 import { TryRelayButton } from "../../_marketing/TryRelayButton";
 
 export const metadata: Metadata = {
-  title: "Relay — Responsible disclosure",
+  title: "Responsible disclosure",
   description:
     "How to report a vulnerability to Relay. Scope, safe harbor, contact, response SLA, and recognition policy.",
+  alternates: { canonical: "/trust/responsible-disclosure" },
+  robots: { index: false, follow: false },
 };
 
 const IN_SCOPE = [
@@ -26,7 +28,7 @@ const IN_SCOPE = [
 
 const OUT_OF_SCOPE = [
   "Social engineering of Relay engineers, customers, or vendors",
-  "Physical attacks on Relay or NINtec offices",
+  "Physical attacks on Relay facilities",
   "Denial-of-service tests against production",
   "Findings already disclosed in our changelog or known-issues page",
   "Best-practice recommendations without a working proof of concept",
@@ -37,14 +39,14 @@ export default function TrustResponsibleDisclosurePage() {
     <Shell>
       <section className="r-page-header">
         <div className="r-wrap-narrow">
-          <span className="r-num">— Trust · Responsible disclosure</span>
+          <span className="r-num">Trust · Responsible disclosure</span>
           <h1 className="r-h-display" style={{ marginTop: 18 }}>
             Found something? <em>Tell us first.</em>
           </h1>
           <p className="r-lede" style={{ marginTop: 24 }}>
             Researchers acting in good faith are welcome here. The terms below
-            describe what is in scope, how to reach the security team, and
-            what you should expect after the report lands.
+            describe what is in scope, how to reach the security team, and what
+            you should expect after the report lands.
           </p>
         </div>
       </section>
@@ -55,9 +57,9 @@ export default function TrustResponsibleDisclosurePage() {
           <div
             style={{
               padding: "28px 28px",
-              border: "1px solid var(--rule)",
+              border: "1px solid #d2d2d7",
               borderRadius: "var(--radius)",
-              background: "var(--paper)",
+              background: "#f5f5f7",
               marginBottom: 16,
             }}
           >
@@ -92,9 +94,9 @@ export default function TrustResponsibleDisclosurePage() {
           <div
             style={{
               padding: "28px 28px",
-              border: "1px solid var(--rule)",
+              border: "1px solid #d2d2d7",
               borderRadius: "var(--radius)",
-              background: "var(--paper)",
+              background: "#f5f5f7",
             }}
           >
             <p
@@ -117,7 +119,7 @@ export default function TrustResponsibleDisclosurePage() {
                 margin: 0,
               }}
             >
-              [Key fingerprint TBD]
+              Available on request after initial contact.
             </p>
           </div>
         </div>
@@ -127,6 +129,7 @@ export default function TrustResponsibleDisclosurePage() {
         <div className="r-wrap-narrow">
           <h2 className="r-h-2">Scope.</h2>
           <div
+            className="r-grid-collapse-md"
             style={{
               display: "grid",
               gridTemplateColumns: "1fr 1fr",
@@ -204,7 +207,7 @@ export default function TrustResponsibleDisclosurePage() {
             Relay will not initiate or support legal action against researchers
             who act in good faith, stay within the in-scope assets, do not
             access more data than required to demonstrate a finding, and report
-            promptly. We will work with you on coordinated disclosure timing —
+            promptly. We will work with you on coordinated disclosure timing ,
             our default is to publish a fix and an acknowledgment together.
           </p>
         </div>
@@ -214,10 +217,10 @@ export default function TrustResponsibleDisclosurePage() {
         <div className="r-wrap-narrow">
           <h2 className="r-h-2">Response SLA.</h2>
           <p className="r-body" style={{ marginBottom: 16 }}>
-            Initial acknowledgment within{" "}
-            <strong>five business days</strong>. A triage decision and a
-            severity rating within ten. Status updates every two weeks until
-            resolution. We will not silently close a report.
+            Initial acknowledgment within <strong>five business days</strong>. A
+            triage decision and a severity rating within ten. Status updates
+            every two weeks until resolution. We will not silently close a
+            report.
           </p>
         </div>
       </section>

@@ -7,20 +7,26 @@
  */
 
 .bg-root {
-  --cream: #f4f2ee;
+  --cream: #f0eee9;
   --cream-2: #ece8e0;
   --paper: #f9f7f3;
   --ink: #1a1814;
   --ink-soft: #4a4640;
   --ink-mute: #8a857c;
   --rule: #d8d2c5;
-  --green: #4f6b3a;
-  --green-bright: #4f6b3a;
-  --green-deep: #3f5c2e;
-  --green-tint: #eaece0;
+  --green: #4d6b40;
+  --green-bright: #4d6b40;
+  --green-deep: #3f5c34;
+  --green-tint: #e6eadd;
   --warning: #b8741a;
-  --font-display: var(--font-fraunces), "Tiempos", Georgia, serif;
-  --font-sans: var(--font-instrument-sans), -apple-system, "SF Pro Text", system-ui, sans-serif;
+  /* Brand stack — mirrors the marketing site (anthropic.com manner):
+     Source Serif 4 stands in for "Anthropic Serif" on display + body,
+     Inter stands in for "Anthropic Sans" on UI + eyebrow, JetBrains
+     Mono on labels. */
+  --font-display:
+    var(--font-source-serif), "Anthropic Serif", "Newsreader", Georgia, serif;
+  --font-sans:
+    var(--font-inter), -apple-system, "SF Pro Text", system-ui, sans-serif;
   --font-mono: var(--font-jetbrains), "SF Mono", Menlo, monospace;
 
   font-family: var(--font-sans);

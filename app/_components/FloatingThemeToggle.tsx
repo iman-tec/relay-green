@@ -30,6 +30,27 @@ const STAFF_PREFIXES = [
   "/staff",
 ];
 
+// Marketing/landing surface (cream `.mk-root` theme, fixed light — it doesn't
+// respond to the app's dark/light tokens), so the floating toggle would be a
+// dead control there. The post-login customer app (/room, /account, /intake,
+// /login, /set-password) still uses the app tokens and keeps the toggle.
+const MARKETING_PREFIXES = [
+  "/pricing",
+  "/product",
+  "/company",
+  "/trust",
+  "/legal",
+  "/for",
+  "/for-enterprise",
+  "/explainer",
+  "/brand-guidelines",
+  "/resources",
+  "/sitemap-and-content-plan",
+  "/download-relay-desktop",
+  "/download",
+  "/payment",
+];
+
 function isStaffRoute(pathname: string | null): boolean {
   if (!pathname) return false;
   return STAFF_PREFIXES.some(
@@ -37,9 +58,17 @@ function isStaffRoute(pathname: string | null): boolean {
   );
 }
 
+function isMarketingRoute(pathname: string | null): boolean {
+  if (!pathname) return false;
+  if (pathname === "/") return true; // landing/home
+  return MARKETING_PREFIXES.some(
+    (p) => pathname === p || pathname.startsWith(p + "/"),
+  );
+}
+
 export function FloatingThemeToggle() {
   const pathname = usePathname();
-  if (isStaffRoute(pathname)) return null;
+  if (isStaffRoute(pathname) || isMarketingRoute(pathname)) return null;
 
   return (
     <div

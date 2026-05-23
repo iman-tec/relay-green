@@ -5,13 +5,10 @@ import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 import { TryRelayButton } from "./TryRelayButton";
 
-type NavChild = { label: string; href: string; meta?: string };
-
 type NavItem = {
   label: string;
   href: string;
   route: string;
-  children?: NavChild[];
 };
 
 type Props = {
@@ -76,50 +73,6 @@ export function MobileNavDrawer({ open, onClose, items }: Props) {
             const active =
               pathname === item.href ||
               (item.route !== item.href && pathname.startsWith(item.route));
-            const hasChildren = !!item.children && item.children.length > 0;
-
-            // Items with children render the parent as a non-link header
-            // followed by indented child rows. Drawer is the only place
-            // the children get inline space, desktop uses a popover.
-            if (hasChildren) {
-              return (
-                <div key={item.label} className="r-mobile-drawer-group">
-                  <Link
-                    href={item.href}
-                    className={
-                      "r-mobile-drawer-link" + (active ? " active" : "")
-                    }
-                    onClick={onClose}
-                  >
-                    <span>{item.label}</span>
-                    <span className="arrow" aria-hidden="true">
-                      →
-                    </span>
-                  </Link>
-                  <div className="r-mobile-drawer-children">
-                    {item.children!.map((child) => {
-                      const childActive = pathname === child.href;
-                      return (
-                        <Link
-                          key={child.href}
-                          href={child.href}
-                          className={
-                            "r-mobile-drawer-link" +
-                            (childActive ? " active" : "")
-                          }
-                          onClick={onClose}
-                        >
-                          <span>{child.label}</span>
-                          <span className="arrow" aria-hidden="true">
-                            →
-                          </span>
-                        </Link>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            }
 
             return (
               <Link

@@ -68,7 +68,7 @@ export function CtaBanner({
             <>
               <TryRelayButton />
               <Link
-                href="/company/contact?topic=sales"
+                href="/company/about#contact"
                 className="r-btn r-btn-ghost r-cta-banner-ghost"
               >
                 Talk to sales <span className="arrow">→</span>

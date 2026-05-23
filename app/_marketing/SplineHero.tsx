@@ -50,57 +50,18 @@ export function SplineHero() {
       </div>
 
       <div className="r-wrap">
-        <div className="r-hero-content">
-          <div
-            className="r-hero-tagline"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 0,
-              color: "var(--ink-soft)",
-              flexWrap: "wrap",
-            }}
-          >
-            <RelayLogo size={11} trailingGap={12} />
-            <span
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontWeight: 500,
-                fontSize: 11,
-                color: "var(--ink-soft)",
-                letterSpacing: "0.04em",
-                textTransform: "uppercase",
-              }}
-            >
-              AI didn’t replace engineers. It multiplied builders.
-            </span>
-          </div>
-          <h1 className="r-h-display">
-            Build with AI.
+        <div className="r-hero-content r-hero-stagger">
+          <h1 className="r-h-display r-hero-headline">
+            Your AI built it.
             <br />
-            Ship with <em>engineers.</em>
+            <RelayLogo size="1em" trailingGap={6} />
+            <br className="r-hero-mobile-break" /> gets it <em>live.</em>
           </h1>
-          <p className="r-lede" style={{ marginTop: 28, maxWidth: "54ch" }}>
-            <RelayLogo size="1em" color="var(--ink)" /> connects AI builders
-            with real engineers.
+          <p className="r-lede r-hero-sub">
+            Get real engineering help for debugging, deployment, integrations,
+            scaling, and production readiness, exactly when AI stops being
+            enough.
           </p>
-          <ul className="r-hero-moments" aria-label="When Relay helps">
-            <li>
-              <span className="r-hero-moments-dot" aria-hidden="true" />
-              When you get stuck.
-            </li>
-            <li>
-              <span className="r-hero-moments-dot" aria-hidden="true" />
-              When you’re ready to launch.
-            </li>
-            <li>
-              <span className="r-hero-moments-dot" aria-hidden="true" />
-              When your product needs ongoing support.
-            </li>
-          </ul>
-          <div className="r-hero-modalities" aria-label="Session modalities">
-            Chat · Voice · Screen
-          </div>
           <div className="r-hero-cta">
             <TryRelayButton />
             <Link href="/product" className="r-btn r-btn-ghost">

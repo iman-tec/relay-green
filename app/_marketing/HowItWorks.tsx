@@ -7,7 +7,6 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { TryRelayButton } from "./TryRelayButton";
 
 type Step = { num: string; label: string; title: string };
 
@@ -383,12 +382,6 @@ export function HowItWorks() {
         </div>
       </div>
 
-      <div className="r-how-cta">
-        <span className="r-how-cta-tagline">
-          Same Engineering Team
-        </span>
-        <TryRelayButton />
-      </div>
     </>
   );
 }

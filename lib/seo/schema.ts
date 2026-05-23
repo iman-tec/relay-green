@@ -45,26 +45,10 @@ export function organizationSchema(): JsonLdObject {
     contactPoint: [
       {
         "@type": "ContactPoint",
-        contactType: "sales",
+        contactType: "customer support",
         email: "support@relay.green",
         areaServed: ["US", "EU", "UK", "IN"],
         availableLanguage: ["English"],
-      },
-      {
-        "@type": "ContactPoint",
-        contactType: "customer support",
-        email: "support@relay.green",
-        availableLanguage: ["English"],
-      },
-      {
-        "@type": "ContactPoint",
-        contactType: "press",
-        email: "support@relay.green",
-      },
-      {
-        "@type": "ContactPoint",
-        contactType: "security",
-        email: "support@relay.green",
       },
     ],
   };

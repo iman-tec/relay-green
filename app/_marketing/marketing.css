@@ -7,32 +7,30 @@
  */
 
 .mk-root {
-  /* Cream / ink scale — the editorial backbone */
-  --cream: #f4f2ee;
-  --cream-2: #ece8df;
-  --cream-3: #e3ddd0;
-  --paper: #faf8f4;
+  /* Cream / ink scale — Nordic-leaning cool cream */
+  --cream: #f0eee9;
+  --cream-2: #e7e3d9;
+  --cream-3: #ddd6c7;
+  --paper: #f8f6f1;
   --ink: #141413;
   --ink-2: #2a2a27;
   --ink-soft: #5b5b54;
   --ink-mute: #8c8a82;
-  --rule: #d8d3c6;
-  --rule-soft: #e6e1d3;
+  --rule: #d4cfc1;
+  --rule-soft: #e2ddcd;
 
-  /* Brand greens — Moss. Considered, alive, grounded.
-     One brand green: #4f6b3a (--green). Used for the dot on every
-     surface and for italic emphasis everywhere — including on the
-     dark --ink band — so dot, italic, and link all read as the same
-     green tone. Note: on ink the moss sits at ~3:1 contrast, which is
-     below WCAG AA for body text; we accept that trade-off because the
-     brand consistency outweighs the legibility hit on short emphasis
-     phrases. Body text stays in --cream / cream-with-alpha. */
-  --green-deep: #3f5c2e;
-  --green: #4f6b3a;
-  --green-bright: #4f6b3a;
-  --green-glow: rgba(79, 107, 58, 0.22);
-  --green-tint: #eaece0;
-  --green-wash: #f3f4ec;
+  /* Brand greens — Moss, Nordic-leaning. Considered, alive, grounded.
+     Slightly cooler than the original olive moss to push toward sage.
+     Used for the dot, italic emphasis, and link color across all
+     surfaces. On the --ink band the moss sits at ~3:1 contrast (below
+     WCAG AA for body text); acceptable for short emphasis phrases,
+     not for body. Body text stays in --cream / cream-with-alpha. */
+  --green-deep: #3f5c34;
+  --green: #4d6b40;
+  --green-bright: #5a7849;
+  --green-glow: rgba(77, 107, 64, 0.22);
+  --green-tint: #e6eadd;
+  --green-wash: #eff2e8;
 
   /* Supporting accents */
   --clay: #cc785c;
@@ -75,14 +73,20 @@
   /* Motion */
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
 
-  background: var(--cream);
+  background: #ffffff;
   color: var(--ink);
   font-family: var(--font-sans);
   font-size: var(--text-base);
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  /* dvh tracks the *visible* viewport on mobile (URL bar collapse), so
+     the document height doesn't jump when the browser chrome resizes.
+     The vh line is a fallback for browsers older than Safari 15.4 /
+     Chrome 108 / Firefox 101 — they ignore the dvh line and use vh. */
   min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: clip;
 }
 
 .mk-root *,
@@ -190,9 +194,13 @@
 /* Desktop-only line break: lets a long headline force a structural
    break at a chosen point on wide viewports while allowing natural
    text-wrap on narrow ones (avoids orphan single-word lines). */
-.r-br-desktop { display: none; }
+.r-br-desktop {
+  display: none;
+}
 @media (min-width: 720px) {
-  .r-br-desktop { display: inline; }
+  .r-br-desktop {
+    display: inline;
+  }
 }
 .mk-root .r-wrap-narrow {
   max-width: 920px;
@@ -212,7 +220,7 @@
 }
 
 .mk-root .r-section {
-  padding: 96px 0;
+  padding: 72px 0;
   border-top: 1px solid var(--rule);
 }
 .mk-root .r-section-tight {
@@ -357,9 +365,11 @@
   background: var(--green);
   color: white;
   border-color: var(--green);
+  animation: r-green-button-heartbeat 3s ease-in-out infinite;
 }
 .mk-root .r-btn-green:hover {
   background: var(--green-deep);
+  animation-play-state: paused;
 }
 .mk-root .r-btn-ghost {
   background: transparent;
@@ -391,6 +401,30 @@
   transform: translateX(3px);
 }
 
+@keyframes r-green-button-heartbeat {
+  0%,
+  72%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(77, 107, 64, 0);
+    transform: scale(1);
+  }
+  8% {
+    box-shadow: 0 0 0 8px rgba(77, 107, 64, 0.2);
+    transform: scale(1.025);
+  }
+  14% {
+    box-shadow: 0 0 0 0 rgba(77, 107, 64, 0);
+    transform: scale(1);
+  }
+  22% {
+    box-shadow: 0 0 0 12px rgba(77, 107, 64, 0.14);
+    transform: scale(1.018);
+  }
+}
+.mk-root .r-green-sphere {
+  animation: r-green-sphere-heartbeat 3.6s ease-in-out infinite;
+}
+
 /* ============ The green dot — central brand motif ============ */
 .mk-root .r-dot {
   position: relative;
@@ -401,6 +435,7 @@
   background: var(--green-bright);
   vertical-align: middle;
   flex-shrink: 0;
+  animation: r-green-heartbeat 3.2s ease-in-out infinite;
 }
 .mk-root .r-dot::before {
   content: "";
@@ -430,10 +465,10 @@
   0%,
   100% {
     transform: scale(1);
-    opacity: 0.5;
+    opacity: 0.58;
   }
   50% {
-    transform: scale(1.6);
+    transform: scale(2);
     opacity: 0;
   }
 }
@@ -449,7 +484,7 @@
 }
 
 /* Brand wordmark dot — animate the green dot on every "RELAY •" lockup
-   sitewide. Subtle pulse: scale 1 → 1.7, opacity 0.5 → 0 over 2.4s.
+   sitewide. Pulse halo: scale 1 → 2.1, opacity 0.62 → 0 over 2.2s.
    Apply via className="r-mark-dot" on top of an inline-styled or .r-logo-dot
    span. The dot stays solid; the animation is a fading halo behind it.
 
@@ -478,6 +513,7 @@
      to the root stacking context and renders behind the page background,
      leaving the pulse invisible even though the animation runs. */
   isolation: isolate;
+  animation: r-green-heartbeat 3.2s ease-in-out infinite;
 }
 .mk-root .r-mark-dot::after,
 .mk-root .r-logo-dot::after {
@@ -486,8 +522,8 @@
   inset: 0;
   border-radius: 50%;
   background: var(--green);
-  opacity: 0.5;
-  animation: r-mark-pulse 2.4s var(--ease) infinite;
+  opacity: 0.62;
+  animation: r-mark-pulse 2.2s var(--ease) infinite;
   pointer-events: none;
   z-index: -1;
 }
@@ -495,11 +531,49 @@
   0%,
   100% {
     transform: scale(1);
-    opacity: 0.5;
+    opacity: 0.62;
   }
   50% {
-    transform: scale(1.7);
+    transform: scale(2.1);
     opacity: 0;
+  }
+}
+@keyframes r-green-heartbeat {
+  0%,
+  70%,
+  100% {
+    transform: scale(1);
+  }
+  8% {
+    transform: scale(1.25);
+  }
+  14% {
+    transform: scale(1);
+  }
+  22% {
+    transform: scale(1.15);
+  }
+  30% {
+    transform: scale(1);
+  }
+}
+@keyframes r-green-sphere-heartbeat {
+  0%,
+  70%,
+  100% {
+    transform: scale(1);
+  }
+  8% {
+    transform: scale(1.08);
+  }
+  14% {
+    transform: scale(1);
+  }
+  22% {
+    transform: scale(1.05);
+  }
+  30% {
+    transform: scale(1);
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -508,6 +582,15 @@
     animation: none;
     opacity: 0;
   }
+  .mk-root .r-mark-dot,
+  .mk-root .r-logo-dot,
+  .mk-root .r-dot,
+  .mk-root .r-btn-green,
+  .mk-root .r-green-sphere,
+  .mk-root .r-press-sphere,
+  .mk-root .r-contact-dot-sphere {
+    animation: none !important;
+  }
 }
 
 /* ============ Nav ============ */
@@ -515,28 +598,29 @@
   position: sticky;
   top: 0;
   z-index: 50;
-  /* Opacity bumped 0.85 → 0.94 to stop dark sections (about-page reach
-     band, product CTA banner, footer) from bleeding text up through
-     the translucent cream nav as they scroll past. The blur still
-     keeps the glassy feel; the higher alpha just keeps content from
-     visually overlapping with the nav labels. */
-  background: rgba(244, 242, 238, 0.94);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border-bottom: 1px solid transparent;
-  transition: border-color 0.2s ease;
+  background: #f5f5f7;
+  border-bottom: 1px solid rgba(210, 210, 215, 0.72);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.72) inset;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 .mk-root .r-nav.scrolled {
-  border-bottom-color: var(--rule);
+  background: #f5f5f7;
+  border-bottom-color: #d2d2d7;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.78) inset,
+    0 10px 34px rgba(0, 0, 0, 0.055);
 }
 .mk-root .r-nav-inner {
   max-width: var(--maxw);
   margin: 0 auto;
   padding: 0 var(--pad);
-  height: 64px;
+  height: 66px;
   display: flex;
   align-items: center;
-  gap: 32px;
+  gap: 34px;
   /* position:relative so the brand can absolute-center inside this row
      on mobile (burger left / brand centered / Try Relay right). On
      desktop the brand renders in normal flex flow, so the relative
@@ -566,31 +650,34 @@
 }
 .mk-root .r-nav-links {
   display: flex;
-  gap: 4px;
+  gap: 6px;
   flex: 1;
   align-items: center;
 }
 .mk-root .r-nav-link {
-  padding: 8px 14px;
+  padding: 8px 15px;
   font-size: 14px;
-  color: var(--ink-2);
-  border-radius: 999px;
+  color: #424245;
+  border-radius: 8px;
   transition: all 0.15s ease;
   cursor: pointer;
-  border: none;
+  border: 1px solid transparent;
   background: transparent;
-  font-weight: 450;
+  font-weight: 500;
 }
 .mk-root .r-nav-link:hover {
-  color: var(--ink);
-  background: rgba(0, 0, 0, 0.04);
+  color: #1d1d1f;
+  background: #f5f5f7;
+  border-color: #e5e5ea;
 }
 .mk-root .r-nav-link.active {
-  color: var(--ink);
+  color: #1d1d1f;
+  background: #f5f5f7;
+  border-color: rgba(210, 210, 215, 0.82);
 }
 .mk-root .r-nav-cta {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   align-items: center;
 }
 
@@ -604,16 +691,17 @@
   display: none;
   width: 44px;
   height: 44px;
-  border-radius: 999px;
-  border: 1px solid var(--rule);
-  background: transparent;
+  border-radius: 8px;
+  border: 1px solid #d2d2d7;
+  background: #ffffff;
   color: var(--ink);
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
 }
 .mk-root .r-nav-burger:hover {
-  border-color: var(--ink);
+  border-color: #aeb0b5;
+  background: #f5f5f7;
 }
 .mk-root .r-nav-burger svg {
   width: 20px;
@@ -623,9 +711,9 @@
   position: fixed;
   inset: 0;
   z-index: 60;
-  background: rgba(20, 20, 19, 0.5);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  background: rgba(20, 20, 19, 0.42);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   display: flex;
   justify-content: flex-end;
   animation: r-fade-in 0.18s ease;
@@ -633,7 +721,8 @@
 .mk-root .r-mobile-drawer-panel {
   width: min(88vw, 360px);
   height: 100%;
-  background: var(--cream);
+  background: #ffffff;
+  border-left: 1px solid #d2d2d7;
   display: flex;
   flex-direction: column;
   padding: 20px 24px 32px;
@@ -660,9 +749,9 @@
 .mk-root .r-mobile-drawer-close {
   width: 44px;
   height: 44px;
-  border-radius: 999px;
-  border: 1px solid var(--rule);
-  background: transparent;
+  border-radius: 8px;
+  border: 1px solid #d2d2d7;
+  background: #ffffff;
   color: var(--ink);
   display: inline-flex;
   align-items: center;
@@ -682,7 +771,7 @@
   font-size: 22px;
   letter-spacing: -0.012em;
   padding: 14px 0;
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid #d2d2d7;
   color: var(--ink);
   display: flex;
   align-items: center;
@@ -702,7 +791,7 @@
   display: flex;
   flex-direction: column;
   padding-left: 16px;
-  border-left: 1px solid var(--rule);
+  border-left: 1px solid #d2d2d7;
   margin: 4px 0 8px 4px;
 }
 .mk-root .r-mobile-drawer-children .r-mobile-drawer-link {
@@ -730,23 +819,39 @@
   flex-direction: column;
   gap: 12px;
 }
-.mk-root .r-mobile-drawer-foot .r-try-relay {
+.mk-root .r-mobile-drawer-foot .r-try-relay-wrap {
   width: 100%;
+}
+.mk-root .r-mobile-drawer-foot .r-try-relay {
+  flex: 1;
   justify-content: center;
+}
+
+.mk-root .r-try-relay-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  isolation: isolate;
+  /* Lift above sibling rows in the hero (e.g. the "Built with…" trust
+     strip) so the opened caret-dropdown ("Download Relay Desktop")
+     doesn't get visually overlapped by later-painted siblings. */
+  z-index: 10;
+  filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.1));
 }
 
 .mk-root .r-try-relay {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  height: 40px;
-  padding: 0 18px 0 16px;
-  border-radius: 999px;
-  background: var(--ink);
-  color: var(--cream);
+  gap: 5px;
+  height: 38px;
+  padding: 0 15px 0 16px;
+  border-radius: 9px 0 0 9px;
+  background: #111111;
+  color: #ffffff;
   font-size: 14px;
-  font-weight: 500;
-  border: 1px solid var(--ink);
+  font-weight: 600;
+  border: 1px solid #111111;
+  border-right: 1px solid rgba(255, 255, 255, 0.16);
   transition:
     background 0.22s var(--ease),
     border-color 0.22s var(--ease),
@@ -757,10 +862,80 @@
   overflow: visible;
 }
 .mk-root .r-try-relay:hover {
-  background: var(--green-deep);
-  border-color: var(--green-deep);
-  color: var(--cream);
+  background: #1d1d1f;
+  border-color: #1d1d1f;
+  color: #ffffff;
   transform: translateY(-1px);
+}
+.mk-root .r-try-relay-caret {
+  position: relative;
+  height: 38px;
+  width: 44px;
+  padding: 0;
+  border-radius: 0 9px 9px 0;
+  border: 1px solid #111111;
+  border-left: 0;
+  background: #111111;
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  transition:
+    background 0.22s var(--ease),
+    border-color 0.22s var(--ease),
+    transform 0.22s var(--ease);
+}
+.mk-root .r-try-relay-chevron {
+  display: block;
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+}
+.mk-root .r-try-relay-caret:hover,
+.mk-root .r-try-relay-caret[aria-expanded="true"] {
+  background: #1d1d1f;
+  border-color: #1d1d1f;
+  transform: translateY(-1px);
+}
+.mk-root .r-try-relay-menu {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 10px);
+  width: max-content;
+  min-width: 100%;
+  max-width: min(220px, calc(100vw - 32px));
+  padding: 6px;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid #d2d2d7;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.05),
+    0 18px 48px rgba(0, 0, 0, 0.16);
+  z-index: 100;
+}
+.mk-root .r-try-relay-menu a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 11px;
+  border-radius: 6px;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  line-height: 1.25;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.mk-root .r-try-relay-menu a:hover {
+  background: #f5f5f7;
+  color: var(--green-deep);
 }
 /* Animated border ring on hover — outward pulse echoing the brand "press" */
 .mk-root .r-try-relay::after {
@@ -794,31 +969,51 @@
   .mk-root .r-try-relay::after {
     animation: none !important;
   }
+  .mk-root .r-try-relay,
+  .mk-root .r-try-relay-caret {
+    transition: none;
+  }
 }
 .mk-root .r-try-relay .r-dot {
-  --dot-size: 10px;
+  display: none;
 }
-.mk-root .r-try-relay .arrow {
-  font-size: 12px;
-  opacity: 0.7;
-  transition: transform 0.2s var(--ease);
-}
-.mk-root .r-try-relay:hover .arrow {
-  transform: translateX(3px);
-  opacity: 1;
-}
-
 /* ============ Footer ============ */
 .mk-root .r-footer {
-  background: var(--ink);
-  color: var(--cream);
+  --footer-bg: #111111;
+  --footer-bg-soft: #151513;
+  --footer-ink: var(--cream);
+  --footer-link: rgba(244, 242, 238, 0.84);
+  --footer-muted: rgba(244, 242, 238, 0.52);
+  --footer-soft: rgba(244, 242, 238, 0.58);
+  --footer-rule: rgba(244, 242, 238, 0.14);
+  position: relative;
+  overflow: hidden;
+  background: #111111;
+  color: var(--footer-ink);
   /* Top padding kept modest because the CTA banner above shares this --ink
      background — they visually merge, so 56px reads as plenty of breathing
      room without ballooning into a void of dark space. */
-  padding: 56px 0 32px;
+  padding: 72px 0 34px;
+  border-top: 1px solid var(--footer-rule);
+}
+.mk-root .r-footer::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--green) 0%,
+    rgba(77, 107, 64, 0.72) 26%,
+    rgba(244, 242, 238, 0.12) 26%,
+    rgba(244, 242, 238, 0.12) 100%
+  );
+  pointer-events: none;
 }
 .mk-root .r-footer .r-wrap {
+  position: relative;
   padding-top: 0;
+  z-index: 1;
 }
 .mk-root .r-footer-grid {
   display: grid;
@@ -831,7 +1026,7 @@
   font-size: 11px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgba(244, 242, 238, 0.5);
+  color: var(--footer-muted);
   margin: 0 0 16px;
   font-weight: 500;
 }
@@ -844,22 +1039,31 @@
   margin-bottom: 10px;
 }
 .mk-root .r-footer-col a {
-  color: rgba(244, 242, 238, 0.78);
+  color: var(--footer-link);
   font-size: 14px;
   transition: color 0.15s;
   cursor: pointer;
 }
 .mk-root .r-footer-col a:hover {
-  color: var(--cream);
+  color: var(--green-deep);
+}
+.mk-root .r-footer a {
+  text-decoration: none;
+}
+.mk-root .r-footer a:hover {
+  color: #ffffff !important;
+}
+.mk-root .r-footer-primary-nav a {
+  color: var(--footer-ink) !important;
 }
 .mk-root .r-footer-bottom {
-  padding-top: 32px;
-  border-top: 1px solid rgba(244, 242, 238, 0.12);
+  padding-top: 24px;
+  border-top: 1px solid var(--footer-rule);
   display: flex;
   justify-content: space-between;
   align-items: center;
   font-size: 12px;
-  color: rgba(244, 242, 238, 0.5);
+  color: var(--footer-muted);
   flex-wrap: wrap;
   gap: 16px;
 }
@@ -868,25 +1072,203 @@
    .r-footer-tag rule below since the tagline still uses it. */
 .mk-root .r-footer-tag {
   font-family: var(--font-display);
-  font-size: 16px;
-  line-height: 1.4;
-  color: rgba(244, 242, 238, 0.78);
+  font-size: clamp(18px, 1.7vw, 24px);
+  line-height: 1.22;
+  color: rgba(244, 242, 238, 0.86);
   font-style: italic;
-  max-width: 28ch;
+  max-width: 24ch;
 }
 /* Brand+nav row at the top of the footer — minmax(220px, 1fr) for the
    brand block, auto for the nav. Collapses below 768. */
 .mk-root .r-footer-top-row {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) auto;
-  gap: 48px;
+  gap: 72px;
 }
 /* "Available on …" mention rows in the footer — short label column +
    long sentence column. Stacks below 768 so the labels don't squeeze. */
 .mk-root .r-footer-mention {
   display: grid;
-  grid-template-columns: minmax(180px, 0.7fr) 1fr;
-  gap: 24px;
+  grid-template-columns: minmax(260px, 0.72fr) 1fr;
+  gap: 36px;
+}
+.mk-root .r-footer-flag {
+  position: relative;
+  display: inline-block;
+  width: 18px;
+  height: 12px;
+  flex: 0 0 18px;
+  overflow: hidden;
+  border-radius: 2px;
+  box-shadow:
+    0 0 0 1px rgba(244, 242, 238, 0.18),
+    0 1px 2px rgba(0, 0, 0, 0.2);
+}
+.mk-root .r-footer-flag::before,
+.mk-root .r-footer-flag::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.mk-root .r-footer-flag-be {
+  background: linear-gradient(
+    90deg,
+    #111 0 33%,
+    #ffd90c 33% 66%,
+    #e53138 66% 100%
+  );
+}
+.mk-root .r-footer-flag-ca {
+  background: linear-gradient(
+    90deg,
+    #d52b1e 0 25%,
+    #fff 25% 75%,
+    #d52b1e 75% 100%
+  );
+}
+.mk-root .r-footer-flag-ca::after {
+  inset: 4px 8px;
+  border-radius: 999px;
+  background: #d52b1e;
+}
+.mk-root .r-footer-flag-dk {
+  background:
+    linear-gradient(90deg, transparent 0 28%, #fff 28% 38%, transparent 38%),
+    linear-gradient(180deg, transparent 0 42%, #fff 42% 58%, transparent 58%),
+    #c60c30;
+}
+.mk-root .r-footer-flag-fi {
+  background:
+    linear-gradient(90deg, transparent 0 32%, #003580 32% 46%, transparent 46%),
+    linear-gradient(
+      180deg,
+      transparent 0 38%,
+      #003580 38% 58%,
+      transparent 58%
+    ),
+    #fff;
+}
+.mk-root .r-footer-flag-fr {
+  background: linear-gradient(
+    90deg,
+    #002395 0 33%,
+    #fff 33% 66%,
+    #ed2939 66% 100%
+  );
+}
+.mk-root .r-footer-flag-de {
+  background: linear-gradient(
+    180deg,
+    #000 0 33%,
+    #dd0000 33% 66%,
+    #ffce00 66% 100%
+  );
+}
+.mk-root .r-footer-flag-is {
+  background:
+    linear-gradient(90deg, transparent 0 30%, #d72828 30% 42%, transparent 42%),
+    linear-gradient(
+      180deg,
+      transparent 0 38%,
+      #d72828 38% 58%,
+      transparent 58%
+    ),
+    linear-gradient(90deg, transparent 0 25%, #fff 25% 47%, transparent 47%),
+    linear-gradient(180deg, transparent 0 30%, #fff 30% 66%, transparent 66%),
+    #02529c;
+}
+.mk-root .r-footer-flag-in {
+  background: linear-gradient(
+    180deg,
+    #ff9933 0 33%,
+    #fff 33% 66%,
+    #138808 66% 100%
+  );
+}
+.mk-root .r-footer-flag-in::after {
+  inset: 4px 8px;
+  border-radius: 999px;
+  background: #000080;
+}
+.mk-root .r-footer-flag-nl {
+  background: linear-gradient(
+    180deg,
+    #ae1c28 0 33%,
+    #fff 33% 66%,
+    #21468b 66% 100%
+  );
+}
+.mk-root .r-footer-flag-no {
+  background:
+    linear-gradient(90deg, transparent 0 28%, #00205b 28% 42%, transparent 42%),
+    linear-gradient(
+      180deg,
+      transparent 0 38%,
+      #00205b 38% 58%,
+      transparent 58%
+    ),
+    linear-gradient(90deg, transparent 0 22%, #fff 22% 48%, transparent 48%),
+    linear-gradient(180deg, transparent 0 30%, #fff 30% 66%, transparent 66%),
+    #ba0c2f;
+}
+.mk-root .r-footer-flag-za {
+  background:
+    linear-gradient(
+      150deg,
+      transparent 0 42%,
+      #ffb81c 42% 49%,
+      #007a4d 49% 62%,
+      #fff 62% 69%,
+      transparent 69%
+    ),
+    linear-gradient(
+      30deg,
+      transparent 0 42%,
+      #ffb81c 42% 49%,
+      #007a4d 49% 62%,
+      #fff 62% 69%,
+      transparent 69%
+    ),
+    linear-gradient(180deg, #de3831 0 50%, #002395 50% 100%);
+}
+.mk-root .r-footer-flag-za::before {
+  clip-path: polygon(0 0, 44% 50%, 0 100%);
+  background: #000;
+}
+.mk-root .r-footer-flag-se {
+  background:
+    linear-gradient(90deg, transparent 0 30%, #fecc00 30% 44%, transparent 44%),
+    linear-gradient(
+      180deg,
+      transparent 0 38%,
+      #fecc00 38% 56%,
+      transparent 56%
+    ),
+    #006aa7;
+}
+.mk-root .r-footer-flag-ae {
+  background:
+    linear-gradient(90deg, #ff0000 0 28%, transparent 28% 100%),
+    linear-gradient(180deg, #00732f 0 33%, #fff 33% 66%, #000 66% 100%);
+}
+.mk-root .r-footer-flag-gb {
+  background:
+    linear-gradient(90deg, transparent 0 42%, #c8102e 42% 58%, transparent 58%),
+    linear-gradient(
+      180deg,
+      transparent 0 36%,
+      #c8102e 36% 64%,
+      transparent 64%
+    ),
+    linear-gradient(90deg, transparent 0 36%, #fff 36% 64%, transparent 64%),
+    linear-gradient(180deg, transparent 0 28%, #fff 28% 72%, transparent 72%),
+    #012169;
+}
+.mk-root .r-footer-flag-us {
+  background:
+    linear-gradient(90deg, #3c3b6e 0 45%, transparent 45% 100%),
+    repeating-linear-gradient(180deg, #b22234 0 1.85px, #fff 1.85px 3.7px);
 }
 @media (max-width: 768px) {
   .mk-root .r-footer-top-row,
@@ -894,8 +1276,16 @@
     grid-template-columns: 1fr;
     gap: 12px;
   }
+  .mk-root .r-footer-presence-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
   .mk-root .r-footer-top-row {
     gap: 32px;
+  }
+}
+@media (min-width: 769px) and (max-width: 1180px) {
+  .mk-root .r-footer-presence-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
   }
 }
 
@@ -903,11 +1293,34 @@
 .mk-root .r-hero {
   position: relative;
   padding: 0;
-  min-height: clamp(520px, 70vh, 780px);
+  /* Hero fills ~50% of the visible viewport so the next section
+     occupies the other half on first paint ("half hero + half next").
+     dvh tracks the actual visible viewport on mobile so the URL-bar
+     collapse doesn't shift layout. The vh line is the fallback for
+     browsers older than Safari 15.4 / Chrome 108 / Firefox 101. */
+  min-height: 50vh;
+  min-height: 50dvh;
   display: flex;
   align-items: center;
   overflow: hidden;
   isolation: isolate;
+  background: #ffffff;
+}
+/* Fine paper-grain texture layered over the hero. SVG fractalNoise filter
+   rendered to a base64 data URI so the texture ships with the CSS rule —
+   no extra HTTP request, no asset pipeline. Opacity is intentionally low
+   (5%); on cream the result reads as the tooth of letterpress paper, not
+   visible noise. The pseudo sits ABOVE the Spline canvas but below the
+   text column (z-index 1) and is non-interactive. */
+.mk-root .r-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.06;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.08  0 0 0 0 0.08  0 0 0 0 0.08  0 0 0 0.9 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
 }
 .mk-root .r-hero > .r-wrap {
   position: relative;
@@ -934,7 +1347,9 @@
 .mk-root .r-hero-cta {
   display: flex;
   gap: 12px;
-  margin-top: 40px;
+  /* Tightened from 40 → 24 as part of the hero-content compression
+     so the whole stack fits inside 65dvh on 768p laptops. */
+  margin-top: 24px;
   flex-wrap: wrap;
 }
 
@@ -943,7 +1358,91 @@
    class so mobile can tighten it to 20 px and let the H1 sit higher
    on small viewports. */
 .mk-root .r-hero-tagline {
-  margin-bottom: 32px;
+  /* Tightened from 32 → 18 as part of the hero-content compression. */
+  margin-bottom: 18px;
+}
+
+/* Spec-sheet variant of the hero tagline. Editorial-technical voice —
+   a tiny green index number, a hairline tick, then the body line in
+   uppercase mono. The whole row hugs the H1 so the reader's eye lands
+   on "Stuck on your AI build?" within a single sweep. */
+.mk-root .r-hero-tagline.r-hero-tagline--spec {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  /* Tightened from 32 → 18 as part of the hero-content compression. */
+  margin-bottom: 18px;
+}
+.mk-root .r-spec-index {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  color: var(--green-deep, #1d5d21);
+  /* The numeric tabular feel comes for free from a monospaced face. */
+  font-variant-numeric: tabular-nums;
+}
+.mk-root .r-spec-bar {
+  display: inline-block;
+  width: 22px;
+  height: 1px;
+  background: var(--rule);
+  /* nudge the rule onto the cap-line of the mono so it visually bisects
+     the line rather than dropping to the baseline. */
+  transform: translateY(-1px);
+}
+.mk-root .r-spec-text {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-mute, #6a6a62);
+}
+
+/* Staggered entrance for the hero text column. Each child fades up
+   200 ms apart so the eyebrow, lead-question, H1, lede, moments, and
+   CTAs land in sequence — one orchestrated page-load moment instead of
+   six scattered transitions. ::nth-child selectors target the flow
+   children of .r-hero-content directly so no markup churn is needed. */
+.mk-root .r-hero-stagger > * {
+  opacity: 0;
+  transform: translateY(14px);
+  animation: r-hero-rise 720ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+.mk-root .r-hero-stagger > *:nth-child(1) {
+  animation-delay: 80ms;
+}
+.mk-root .r-hero-stagger > *:nth-child(2) {
+  animation-delay: 200ms;
+}
+.mk-root .r-hero-stagger > *:nth-child(3) {
+  animation-delay: 320ms;
+}
+.mk-root .r-hero-stagger > *:nth-child(4) {
+  animation-delay: 460ms;
+}
+.mk-root .r-hero-stagger > *:nth-child(5) {
+  animation-delay: 580ms;
+}
+.mk-root .r-hero-stagger > *:nth-child(6) {
+  animation-delay: 700ms;
+}
+.mk-root .r-hero-stagger > *:nth-child(7) {
+  animation-delay: 820ms;
+}
+@keyframes r-hero-rise {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mk-root .r-hero-stagger > * {
+    opacity: 1;
+    transform: none;
+    animation: none;
+  }
 }
 
 /* "When Relay helps" — three-line moments list under the hero lede.
@@ -981,6 +1480,22 @@
      italic serif text instead of riding the cap-height. */
   transform: translateY(-2px);
 }
+/* Single-line variant of the moments list. Same italic-serif voice as
+   the old 3-bullet stack but condensed into one sentence; the green
+   dot still anchors the start of the line so the visual rhyme with the
+   list version (and the RELAY mark dot) survives. */
+.mk-root .r-hero-moments-line {
+  margin: 18px 0 0;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-family: var(--font-display);
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--ink);
+  font-style: italic;
+  max-width: 54ch;
+}
 /* Modality strip — single line of mono uppercase set against the
    lede italic moments, signals the *how* (chat / voice / screen) the
    same way enterprise marketing footers signal certifications. */
@@ -994,32 +1509,78 @@
   font-weight: 600;
 }
 
+/* Hero headline tuning — the H1 is two short lines split by a <br>, so
+   we slightly tighten leading versus the default .r-h-display and lock
+   the green-italic "live." accent to the second line's terminal word.
+   max-width caps the measure so neither line ever runs the full grid. */
+.mk-root .r-hero-headline {
+  max-width: 18ch;
+  line-height: 1.01;
+  /* Cap the homepage hero headline tighter than the global .r-h-display
+     (which goes up to 96px). 64px is enough for editorial weight while
+     keeping the headline ~195px tall on 1366px viewports — so the hero
+     content can fit inside the 65dvh floor on 768p laptops without the
+     hero stretching to 93% of viewport. */
+  font-size: clamp(40px, 5vw, 64px);
+}
+.mk-root .r-hero-mobile-break {
+  display: none;
+}
+
+/* Hero subtext — same editorial serif as .r-lede but slightly narrower
+   measure and a touch more breathing room above so the headline reads
+   as the dominant element, not just one of two large blocks. */
+.mk-root .r-hero-sub {
+  /* Tightened from 28 → 18 as part of the hero-content compression. */
+  margin-top: 18px;
+  max-width: 52ch;
+  color: var(--ink-2);
+}
+
+/* Trust strip — quiet uppercase mono row pairing the audience-facing
+   tool names (Claude, Cursor, Lovable, Bolt, ChatGPT, Windsurf) with a
+   short scaffolding label. Sits as the final cell in the hero stagger
+   so it lands after the CTAs and confirms "yes, this is for you" to a
+   non-technical builder scanning the section. */
+.mk-root .r-hero-trust {
+  /* Tightened from 30 → 18 as part of the hero-content compression. */
+  margin-top: 18px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  font-weight: 600;
+}
+.mk-root .r-hero-trust-label {
+  color: var(--ink-soft);
+  opacity: 0.7;
+}
+.mk-root .r-hero-trust-items {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: var(--ink);
+}
+.mk-root .r-hero-trust-sep {
+  color: var(--ink-mute);
+  opacity: 0.45;
+}
 /* ============ Spline as hero background ============ */
 .mk-root .r-spline-bg {
   position: absolute;
   inset: 0;
   z-index: 0;
-  /* CSS poster background. Renders immediately on first paint while the
-     Spline runtime + scene binary download in the background. Approximates
-     the live Spline scene's mood (dark forest-green vignette anchored to
-     the right of the hero) so the canvas area looks finished even before
-     WebGL is ready, and remains a credible static background if Spline
-     never mounts (reduced motion, JS disabled, slow network). The live
-     canvas mounts above this once ready and covers it. */
-  background:
-    radial-gradient(
-      ellipse 95% 80% at 100% 45%,
-      rgba(40, 62, 34, 0.78) 0%,
-      rgba(58, 84, 46, 0.45) 28%,
-      rgba(82, 110, 70, 0.18) 55%,
-      transparent 75%
-    ),
-    radial-gradient(
-      ellipse 55% 60% at 100% 95%,
-      rgba(18, 32, 14, 0.7) 0%,
-      transparent 55%
-    ),
-    var(--paper);
+  /* Fully transparent — the hero's pale-green plate (.r-hero background)
+     fills end-to-end and the Spline 3D scene renders on top with its
+     own tones. No CSS poster behind the canvas anymore; the green plate
+     IS the poster. */
+  background: transparent;
   pointer-events: auto;
   /* New stacking context so the tint layer below blends only with the
      Spline canvas, never with the cream gradient or the text content. */
@@ -1082,11 +1643,11 @@
   z-index: 1;
   background: linear-gradient(
     100deg,
-    var(--cream) 0%,
-    var(--cream) 32%,
-    rgba(244, 242, 238, 0.92) 48%,
-    rgba(244, 242, 238, 0.55) 62%,
-    rgba(244, 242, 238, 0) 80%
+    #ffffff 0%,
+    #ffffff 34%,
+    rgba(255, 255, 255, 0.94) 50%,
+    rgba(255, 255, 255, 0.58) 64%,
+    rgba(255, 255, 255, 0) 82%
   );
   pointer-events: none;
 }
@@ -1098,26 +1659,30 @@
   bottom: 0;
   height: 64px;
   z-index: 1;
-  background: linear-gradient(180deg, transparent, var(--cream));
+  background: linear-gradient(180deg, transparent, #ffffff);
   pointer-events: none;
 }
 @media (max-width: 980px) {
   .mk-root .r-hero {
-    min-height: clamp(720px, 100vh, 1100px);
+    /* Same 50dvh proportion on tablet/mobile. On small phones where
+       content exceeds 50dvh, the hero grows to fit content (the floor
+       is just a minimum); that's preferable to clipping the headline. */
+    min-height: 50vh;
+    min-height: 50dvh;
   }
   .mk-root .r-hero::before {
     background:
       linear-gradient(
         180deg,
-        var(--cream) 0%,
-        rgba(244, 242, 238, 0.85) 32%,
-        rgba(244, 242, 238, 0.4) 60%,
-        rgba(244, 242, 238, 0) 100%
+        #ffffff 0%,
+        rgba(255, 255, 255, 0.88) 32%,
+        rgba(255, 255, 255, 0.42) 60%,
+        rgba(255, 255, 255, 0) 100%
       ),
       linear-gradient(
         100deg,
-        rgba(244, 242, 238, 0.55) 0%,
-        rgba(244, 242, 238, 0) 60%
+        rgba(255, 255, 255, 0.58) 0%,
+        rgba(255, 255, 255, 0) 60%
       );
   }
 }
@@ -1161,8 +1726,7 @@
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 0;
-  border-top: 1px solid var(--rule);
-  border-left: 1px solid var(--rule);
+  border: 0;
 }
 /* Trio variant: 3 across with a 4th tile spanning all 3 below as a base. */
 .mk-root .r-tiles-trio {
@@ -1170,9 +1734,9 @@
 }
 .mk-root .r-tile {
   padding: 36px 32px;
-  border-right: 1px solid var(--rule);
-  border-bottom: 1px solid var(--rule);
-  background: var(--cream);
+  border: 1px solid #d2d2d7;
+  border-radius: 8px;
+  background: #ffffff;
   position: relative;
   transition:
     background 0.2s ease,
@@ -1183,27 +1747,94 @@
   flex-direction: column;
   cursor: default;
 }
-.mk-root .r-tile:hover {
-  background: var(--paper);
+.mk-root .r-tiles-trio .r-tile {
+  border-radius: 0;
+  margin-left: -1px;
+  margin-top: -1px;
 }
-/* Hover lift only inside the quad layout, and only on the four upper tiles. */
+.mk-root .r-tiles-trio .r-tile:nth-child(1) {
+  margin-left: 0;
+  margin-top: 0;
+  border-top-left-radius: 8px;
+}
+.mk-root .r-tiles-trio .r-tile:nth-child(2),
+.mk-root .r-tiles-trio .r-tile:nth-child(3) {
+  margin-top: 0;
+}
+.mk-root .r-tiles-trio .r-tile:nth-child(3) {
+  border-top-right-radius: 8px;
+}
+.mk-root .r-tile:not(.r-tile-base):hover {
+  background: #ffffff;
+}
+.mk-root .r-tile-base {
+  transition:
+    transform 0.32s cubic-bezier(0.2, 0.7, 0.2, 1),
+    box-shadow 0.32s cubic-bezier(0.2, 0.7, 0.2, 1),
+    background 0.32s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.mk-root .r-tile-base:hover {
+  /* Lift + slightly lighter ink + accent shadow so the dark "Same
+     team. End to end." band animates in the same family as the
+     three white .r-tile siblings above it. */
+  background: #1a1a1c;
+  transform: translateY(-3px);
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.32);
+  z-index: 2;
+  position: relative;
+}
+.mk-root .r-tile-base:hover .r-tile-title em {
+  color: var(--green-bright, var(--green));
+  transition: color 0.2s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mk-root .r-tile-base,
+  .mk-root .r-tile-base:hover {
+    transition: none;
+    transform: none;
+  }
+}
+/* Hover lift on the three upper tiles inside the quad layout — same
+   .r-leg / .enterprise-card-surface pattern (3px lift + shadow + title
+   color change) so the cards animate consistently with the rest of
+   the site. z-index lifts above the negative-margin neighbors so the
+   lift reads cleanly. */
 .mk-root .r-tiles-trio .r-tile:not(.r-tile-base):hover {
   transform: translateY(-3px);
-  box-shadow: 0 12px 28px rgba(20, 20, 19, 0.08);
-  z-index: 1;
+  box-shadow: 0 16px 38px rgba(20, 20, 19, 0.07);
+  z-index: 2;
+}
+.mk-root .r-tiles-trio .r-tile:not(.r-tile-base):hover .r-tile-title {
+  color: var(--green-deep, var(--green));
+  transition: color 0.2s ease;
+}
+.mk-root .r-tiles-trio .r-tile:not(.r-tile-base) {
+  transition:
+    transform 0.32s cubic-bezier(0.2, 0.7, 0.2, 1),
+    box-shadow 0.32s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mk-root .r-tiles-trio .r-tile:not(.r-tile-base),
+  .mk-root .r-tiles-trio .r-tile:not(.r-tile-base):hover {
+    transition: none;
+    transform: none;
+    box-shadow: none;
+  }
 }
 
 /* The dark base tile: full-width, two-column layout (title + body), ink. */
 .mk-root .r-tile-base {
   grid-column: 1 / -1;
-  background: var(--ink);
+  background: #111111;
   color: var(--cream);
   padding: 48px 40px;
   display: grid;
   grid-template-columns: 1fr 1.4fr;
-  gap: 56px;
+  gap: 36px;
   align-items: center;
   min-height: auto;
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
 }
 .mk-root .r-tile-base .r-tile-num {
   color: rgba(244, 242, 238, 0.5);
@@ -1308,23 +1939,349 @@
   transform: translateX(2px);
 }
 
+/* ============ FAQ ============
+   Editorial 2-up in the approved white/grey system. Native <details>
+   elements give keyboard/screen-reader support; the "+" indicator rotates
+   45° on open so it becomes a "×" without JavaScript. */
+.mk-root .r-faq {
+  background: #ffffff;
+  padding: 96px 0;
+}
+.mk-root .r-faq-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: clamp(32px, 5vw, 80px);
+  align-items: start;
+}
+@media (max-width: 880px) {
+  .mk-root .r-faq-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.mk-root .r-faq-intro {
+  max-width: 36ch;
+}
+.mk-root .r-faq-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--green-deep, #3f5c34);
+  margin-bottom: 22px;
+}
+.mk-root .r-faq-h {
+  font-size: clamp(32px, 3.8vw, 52px);
+  line-height: 1.05;
+  letter-spacing: -0.018em;
+  margin: 0 0 22px;
+}
+.mk-root .r-faq-h em {
+  font-style: italic;
+  color: var(--green-deep);
+}
+.mk-root .r-faq-lede {
+  font-family: var(--font-display);
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  margin: 0 0 28px;
+}
+.mk-root .r-faq-email {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 180ms ease;
+}
+.mk-root .r-faq-email:hover {
+  border-bottom-color: var(--ink);
+}
+.mk-root .r-faq-email-addr {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+/* The card holding the items. Restrained border and 8px radius match
+   the product/enterprise/company pages. */
+.mk-root .r-faq-list {
+  background: #f5f5f7;
+  border: 1px solid #d2d2d7;
+  border-radius: 8px;
+  padding: 8px clamp(20px, 2.4vw, 36px);
+}
+.mk-root .r-faq-item {
+  border-bottom: 1px solid #d2d2d7;
+  padding: 28px 0;
+}
+/* Hover on the closed FAQ row — subtle background, plus question +
+   icon both shift to green-deep so the affordance reads. Open state
+   already turns the icon green via the [open] rule below, so this
+   just makes the closed state feel interactive. */
+.mk-root .r-faq-item > summary:hover .r-faq-q {
+  color: var(--green-deep, var(--green));
+  transition: color 0.2s ease;
+}
+.mk-root .r-faq-item > summary:hover .r-faq-icon {
+  color: var(--green-deep, var(--green));
+}
+.mk-root .r-faq-q {
+  transition: color 0.2s ease;
+}
+.mk-root .r-faq-item:last-child {
+  border-bottom: none;
+}
+/* Native <summary> ships with a disclosure triangle on most browsers —
+   strip it so the "+" we own is the only indicator. */
+.mk-root .r-faq-item > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  /* The :focus-visible outline lands on the summary, not the icon. */
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+.mk-root .r-faq-item > summary::-webkit-details-marker {
+  display: none;
+}
+.mk-root .r-faq-q {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.005em;
+  line-height: 1.4;
+}
+.mk-root .r-faq-icon {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 300;
+  color: var(--ink-soft);
+  /* Rotate 45° on open to morph the "+" glyph into a "×" — single
+     transform, no glyph swap, no JS. */
+  transition:
+    transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    color 180ms ease;
+  line-height: 1;
+}
+.mk-root .r-faq-item[open] > summary > .r-faq-icon {
+  transform: rotate(45deg);
+  color: var(--green-deep);
+}
+.mk-root .r-faq-a {
+  margin: 14px 0 4px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  max-width: 72ch;
+}
+
+/* ============ Press the dot (closing CTA) ============
+   The final beat above the footer. Cream plate, centered composition,
+   one big interactive sphere, italic-serif headline, supporting line,
+   filled green pill, and a quiet mono spec strip on the floor that
+   carries trust signals (compliance, latency, minimums). */
+.mk-root .r-press {
+  position: relative;
+  background: #f5f5f7;
+  padding: clamp(48px, 6vw, 80px) 0 0;
+  text-align: center;
+  overflow: hidden;
+}
+.mk-root .r-press-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 24px clamp(50px, 5.8vw, 76px);
+}
+.mk-root .r-press-sphere {
+  width: clamp(112px, 11vw, 150px);
+  height: clamp(112px, 11vw, 150px);
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  margin: clamp(20px, 2.4vw, 30px) 0 clamp(14px, 1.8vw, 20px);
+  cursor: pointer;
+  /* Brand-green ball: highlight at top-left through brand greens to
+     a deep forest base. Tuned smaller here so it reads as a button
+     rather than the hero centerpiece. */
+  background: radial-gradient(
+    circle at 34% 28%,
+    #d4e0c8 0%,
+    #9bb38a 16%,
+    var(--green-bright) 42%,
+    var(--green) 72%,
+    var(--green-deep) 100%
+  );
+  box-shadow:
+    inset -18px -26px 42px rgba(0, 0, 0, 0.32),
+    inset 14px 18px 32px rgba(255, 255, 255, 0.22),
+    0 28px 56px rgba(18, 50, 20, 0.22),
+    0 8px 14px rgba(18, 50, 20, 0.16);
+  transition:
+    transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.mk-root .r-press-sphere:hover {
+  transform: translateY(-3px) scale(1.03);
+}
+.mk-root .r-press-sphere:active {
+  transform: translateY(2px) scale(0.97);
+}
+.mk-root .r-press-sphere:focus-visible {
+  outline: 3px solid var(--green-bright, #4d6b40);
+  outline-offset: 8px;
+}
+/* Click-driven press animation: squashes deep, settles with a slight
+   overshoot, then returns to rest. JS toggles .is-pressing on each
+   click and clears it on animationend so rapid clicks restart cleanly.
+   The 100% keyframe matches the resting transform/shadow exactly so the
+   sphere does not snap when the class is removed. */
+@keyframes r-press-squish {
+  0% {
+    transform: translateY(0) scale(1, 1);
+    box-shadow:
+      inset -18px -26px 42px rgba(0, 0, 0, 0.32),
+      inset 14px 18px 32px rgba(255, 255, 255, 0.22),
+      0 28px 56px rgba(18, 50, 20, 0.22),
+      0 8px 14px rgba(18, 50, 20, 0.16);
+  }
+  35% {
+    transform: translateY(8px) scale(0.92, 0.86);
+    box-shadow:
+      inset -26px -34px 48px rgba(0, 0, 0, 0.46),
+      inset 18px 22px 36px rgba(255, 255, 255, 0.16),
+      0 6px 14px rgba(18, 50, 20, 0.3),
+      0 2px 4px rgba(18, 50, 20, 0.22);
+  }
+  62% {
+    transform: translateY(-4px) scale(1.04, 1.05);
+  }
+  100% {
+    transform: translateY(0) scale(1, 1);
+    box-shadow:
+      inset -18px -26px 42px rgba(0, 0, 0, 0.32),
+      inset 14px 18px 32px rgba(255, 255, 255, 0.22),
+      0 28px 56px rgba(18, 50, 20, 0.22),
+      0 8px 14px rgba(18, 50, 20, 0.16);
+  }
+}
+.mk-root .r-press-sphere.is-pressing {
+  animation: r-press-squish 460ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.mk-root .r-press-h {
+  font-family: var(--font-display);
+  font-style: normal;
+  font-weight: 400;
+  font-size: clamp(26px, 2.8vw, 40px);
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+  margin: 0 0 14px;
+  max-width: none;
+}
+.mk-root .r-press-h em {
+  font-style: italic;
+  font-weight: 400;
+}
+.mk-root .r-press-h-accent {
+  color: var(--green, #4d6b40);
+}
+.mk-root .r-press-sub {
+  font-family: var(--font-sans);
+  font-size: clamp(14px, 1.05vw, 15px);
+  line-height: 1.5;
+  color: var(--ink-soft);
+  margin: 0;
+  max-width: 52ch;
+}
+.mk-root .r-press-caption {
+  font-family: var(--font-sans);
+  font-size: clamp(12px, 0.9vw, 13px);
+  line-height: 1.5;
+  color: var(--ink-soft);
+  margin: 0;
+  letter-spacing: 0.01em;
+}
+.mk-root .r-press-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  border: none;
+  cursor: pointer;
+  padding: 16px 36px;
+  border-radius: 999px;
+  background: var(--green, #4d6b40);
+  color: #fff;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  box-shadow:
+    0 10px 24px rgba(40, 62, 34, 0.22),
+    0 2px 4px rgba(40, 62, 34, 0.12);
+  transition:
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.mk-root .r-press-cta:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 14px 32px rgba(40, 62, 34, 0.28),
+    0 3px 6px rgba(40, 62, 34, 0.14);
+}
+.mk-root .r-press-cta:active {
+  transform: translateY(1px);
+}
+.mk-root .r-press-cta:focus-visible {
+  outline: 3px solid var(--green-bright, #4d6b40);
+  outline-offset: 4px;
+}
+.mk-root .r-press-cta-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  flex-shrink: 0;
+}
+
 /* ============ Marquee ============ */
 .mk-root .r-marquee {
   overflow: hidden;
   border-top: 1px solid var(--rule);
   border-bottom: 1px solid var(--rule);
   padding: 22px 0;
-  background: var(--cream);
+  background: #f5f5f7;
 }
 .mk-root .r-marquee-track {
   display: flex;
   gap: 56px;
-  animation: r-marquee 4s linear infinite;
+  /* 6s = 2× speed of the previous 12s loop. */
+  animation: r-marquee 6s linear infinite;
   white-space: nowrap;
   font-family: var(--font-display);
   font-size: 22px;
   color: var(--ink-soft);
   letter-spacing: -0.01em;
+  will-change: transform;
+  transform: translate3d(0, 0, 0);
 }
 .mk-root .r-marquee-track span {
   display: inline-flex;
@@ -1340,10 +2297,10 @@
 }
 @keyframes r-marquee {
   0% {
-    transform: translateX(0);
+    transform: translate3d(0, 0, 0);
   }
   100% {
-    transform: translateX(-50%);
+    transform: translate3d(-50%, 0, 0);
   }
 }
 
@@ -1351,16 +2308,20 @@
 .mk-root .r-legs {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 1px;
-  background: var(--rule);
-  border: 1px solid var(--rule);
+  gap: 0;
+  background: transparent;
+  border: 0;
 }
 .mk-root .r-leg {
-  background: var(--cream);
+  background: #ffffff;
   padding: 36px 32px;
   position: relative;
+  border: 1px solid #d2d2d7;
+  border-radius: 8px;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
   /* Hover-lift animation. The phase cards sit in a shared-border grid
      (.r-legs uses 1 px gap on a --rule background to draw inter-card
      rules), so a translated card would clip behind its neighbors. The
@@ -1375,7 +2336,7 @@
 }
 .mk-root .r-leg:hover {
   transform: translateY(-3px);
-  background: var(--paper);
+  background: #ffffff;
   box-shadow: 0 16px 38px rgba(20, 20, 19, 0.07);
   z-index: 2;
 }
@@ -1391,12 +2352,148 @@
     box-shadow: none;
   }
 }
+/* When a phase card has its inline inquiry form open, suppress the
+   hover-lift so cursor movement over the form doesn't repeatedly bump
+   the card up. The :has() selector lets the parent .r-leg react to its
+   own descendant state without lifting state up into Home.tsx. */
+.mk-root .r-leg:has(.r-phase-cta-form):hover {
+  transform: none;
+  box-shadow: none;
+  background: #ffffff;
+}
+.mk-root .r-leg:has(.r-phase-cta-form) .r-leg-title {
+  color: var(--ink);
+}
+.mk-root .r-phase-cta-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--rule);
+}
+.mk-root .r-phase-cta-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
 .mk-root .r-leg-num {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--ink-mute);
   letter-spacing: 0.08em;
   margin-bottom: 20px;
+}
+.mk-root .r-leg-tier-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  padding: 12px 0;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  position: relative;
+  transition:
+    background 180ms ease,
+    color 180ms ease,
+    transform 180ms ease,
+    box-shadow 180ms ease;
+}
+.mk-root .r-leg-tier-row:last-child {
+  border-bottom: none;
+}
+.mk-root .r-leg-tier-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+.mk-root .r-leg-tier-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  letter-spacing: -0.005em;
+  transition: color 180ms ease;
+}
+.mk-root .r-leg-tier-detail {
+  font-size: 12px;
+  color: var(--ink-soft);
+  line-height: 1.4;
+  transition: color 180ms ease;
+}
+.mk-root .r-leg-tier-price {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--green-deep);
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  transition: color 180ms ease;
+}
+.mk-root .r-leg-tier-arrow {
+  display: inline-block;
+  opacity: 0;
+  transform: translateX(-4px);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+.mk-root .r-leg-tier-row:hover,
+.mk-root .r-leg-tier-row:focus-visible {
+  background: var(--green);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(34, 71, 47, 0.18);
+  z-index: 1;
+  outline: none;
+}
+.mk-root .r-leg-tier-row:hover .r-leg-tier-name,
+.mk-root .r-leg-tier-row:focus-visible .r-leg-tier-name,
+.mk-root .r-leg-tier-row:hover .r-leg-tier-price,
+.mk-root .r-leg-tier-row:focus-visible .r-leg-tier-price {
+  color: var(--cream);
+}
+.mk-root .r-leg-tier-row:hover .r-leg-tier-detail,
+.mk-root .r-leg-tier-row:focus-visible .r-leg-tier-detail {
+  color: rgba(244, 242, 238, 0.82);
+}
+.mk-root .r-leg-tier-row:hover .r-leg-tier-arrow,
+.mk-root .r-leg-tier-row:focus-visible .r-leg-tier-arrow {
+  opacity: 1;
+  transform: translateX(0);
+}
+.mk-root .r-leg-tier-row:active {
+  transform: translateY(0);
+  box-shadow: 0 4px 10px rgba(34, 71, 47, 0.22);
+}
+/* Static modifier: tier rows on the explainer phase cards no longer
+   route anywhere — the Try Relay flow is the single buy-path. Disable
+   the button affordances so the rows read as info display. */
+.mk-root .r-leg-tier-row-static,
+.mk-root .r-leg-tier-row-static:hover,
+.mk-root .r-leg-tier-row-static:focus-visible {
+  cursor: default;
+  background: transparent;
+  transform: none;
+  box-shadow: none;
+  outline: none;
+}
+.mk-root .r-leg-tier-row-static:hover .r-leg-tier-name,
+.mk-root .r-leg-tier-row-static:hover .r-leg-tier-price,
+.mk-root .r-leg-tier-row-static:hover .r-leg-tier-detail {
+  color: inherit;
+}
+.mk-root .r-leg-cta-row {
+  margin-top: 8px;
 }
 .mk-root .r-leg-title {
   font-family: var(--font-display);
@@ -1424,6 +2521,161 @@
   margin-top: 20px;
   padding-top: 16px;
   border-top: 1px solid var(--rule);
+}
+
+/* ============ Enterprise band card (Phase 04) ============
+   Full-width card that sits below the .r-legs three-card grid. Visually
+   echoes .r-leg with the current white/grey system and display-serif title,
+   but spans the full row and reveals an inline form on click instead of
+   navigating to /company/contact. Hover-lift is suppressed because the
+   band is too wide for the translate to feel right. */
+.mk-root .r-leg-enterprise {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 24px;
+  align-items: center;
+  padding: 28px 32px;
+  margin-top: 0;
+  border: 1px solid #d2d2d7;
+  border-radius: 8px;
+  background: #ffffff;
+  min-width: 0;
+  overflow: hidden;
+}
+.mk-root .r-leg-enterprise-intro {
+  min-width: 0;
+}
+.mk-root .r-leg-enterprise .r-leg-desc {
+  max-width: 78ch;
+  overflow-wrap: anywhere;
+  /* Avoid an orphaned tail word ("need.") when the sentence wraps to two
+     lines on tablet/narrow-desktop widths. */
+  text-wrap: balance;
+}
+/* On wide desktops the enterprise band has enough room for the full
+   sentence on one line. Below this breakpoint it wraps gracefully via
+   text-wrap: balance above. */
+@media (min-width: 1100px) {
+  .mk-root .r-leg-enterprise .r-leg-desc {
+    max-width: none;
+    white-space: nowrap;
+  }
+}
+.mk-root .r-leg-enterprise-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid #d2d2d7;
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--ink-soft);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+.mk-root .r-leg-enterprise-close:hover {
+  background: var(--ink);
+  color: var(--cream);
+  border-color: var(--ink);
+}
+.mk-root .r-leg-enterprise-close:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+
+/* ============ Compact enterprise CTA card (dark-section variant) ============
+   Used on dark CTA bands (e.g. for-enterprise page footer). When the
+   "Talk to Relay for Enterprise" button is clicked it swaps for a
+   centered white/grey card containing the inquiry form. Reuses the close
+   button styles from .r-leg-enterprise-close above. */
+.mk-root .r-cta-enterprise-card {
+  position: relative;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 32px 32px 28px;
+  border: 1px solid #d2d2d7;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffffff 0%, #f5f5f7 100%);
+  color: var(--ink);
+  text-align: left;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 26px 70px rgba(0, 0, 0, 0.16);
+}
+.mk-root .r-cta-enterprise-card .r-contact-form,
+.mk-root .r-cta-enterprise-card .r-contact-success {
+  border-color: #d2d2d7;
+}
+@media (max-width: 720px) {
+  .mk-root .r-cta-enterprise-card {
+    padding: 24px;
+  }
+}
+.mk-root .r-leg-enterprise:hover {
+  /* Match the 3 phase cards above (.r-leg:hover) — same lift, shadow,
+     and title color change so the band reads as the 4th card in the
+     set, not a separate floor element. */
+  transform: translateY(-3px);
+  box-shadow: 0 16px 38px rgba(20, 20, 19, 0.07);
+  background: #ffffff;
+  z-index: 2;
+}
+.mk-root .r-leg-enterprise:hover .r-leg-title {
+  color: var(--green-deep, var(--green));
+  transition: color 0.2s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mk-root .r-leg-enterprise,
+  .mk-root .r-leg-enterprise:hover {
+    transform: none;
+    box-shadow: none;
+  }
+}
+.mk-root .r-leg-enterprise[data-open="true"] {
+  grid-template-columns: 1fr;
+  background: #f5f5f7;
+}
+.mk-root .r-leg-enterprise .r-leg-num {
+  margin-bottom: 0;
+}
+.mk-root .r-leg-enterprise-cta {
+  white-space: nowrap;
+  justify-self: end;
+}
+.mk-root .r-leg-enterprise-form {
+  grid-column: 1 / -1;
+  margin-top: 8px;
+  padding-top: 24px;
+  border-top: 1px solid var(--rule);
+}
+@media (max-width: 720px) {
+  .mk-root .r-leg-enterprise {
+    grid-template-columns: 1fr;
+    gap: 18px;
+    padding: 24px;
+  }
+  .mk-root .r-leg-enterprise-cta {
+    justify-self: start;
+    width: auto;
+    max-width: 100%;
+  }
+  .mk-root .r-leg-tier-row {
+    gap: 10px;
+  }
+  .mk-root .r-leg-tier-price {
+    font-size: 13px;
+    text-align: right;
+  }
 }
 
 /* ============ Insights cards ============ */
@@ -1545,8 +2797,7 @@
      translate up 2 px, brighten the supporting line (0.62 → 0.95), and
      bump the green numeral to full strength. The transition is short
      (180 ms) so the response feels immediate, not laggy. */
-  transition:
-    transform 0.2s var(--ease);
+  transition: transform 0.2s var(--ease);
 }
 .mk-root .r-cta-banner-promise:last-child {
   border-right: none;
@@ -1647,14 +2898,12 @@
 .mk-root .r-product-hero {
   padding: 64px 0 24px;
 }
-.mk-root .r-product-hero-head {
-  max-width: 56ch;
-  margin: 0 auto;
-  text-align: center;
+.mk-root .r-product-orb-card {
+  backdrop-filter: blur(18px);
 }
-.mk-root .r-product-hero-head .r-lede {
-  margin-left: auto;
-  margin-right: auto;
+.mk-root .r-product-hero-head {
+  margin: 0;
+  text-align: left;
 }
 .mk-root .r-product-phases {
   margin: 48px auto 0;
@@ -1724,6 +2973,15 @@
   font-weight: 500;
 }
 @media (max-width: 768px) {
+  .mk-root .r-product-hero-layout {
+    grid-template-columns: 1fr !important;
+    gap: 36px !important;
+  }
+  .mk-root .r-product-orb-card {
+    justify-self: stretch !important;
+    width: 100% !important;
+    min-height: 248px !important;
+  }
   .mk-root .r-product-phases {
     grid-template-columns: 1fr;
   }
@@ -1744,6 +3002,185 @@
   .mk-root .r-product-phase:hover {
     transition: none;
     transform: none;
+  }
+}
+
+/* ============ Shared proof bands ============
+   Used on Product / Enterprise / Company for the credibility moments.
+   The previous treatment was a flat grey slab; this makes the section a
+   designed object with an inset surface, soft Relay-dot atmosphere, and
+   contained proof cards. */
+.mk-root .r-proof-band {
+  position: relative;
+  overflow: hidden;
+  padding: 88px 0;
+  border-top: 1px solid rgba(20, 20, 19, 0.06);
+  border-bottom: 1px solid rgba(20, 20, 19, 0.06);
+  background:
+    radial-gradient(
+      ellipse 78% 92% at 92% 8%,
+      rgba(77, 107, 64, 0.12) 0%,
+      rgba(77, 107, 64, 0) 58%
+    ),
+    linear-gradient(135deg, #ffffff 0%, #f5f5f7 48%, #d9dad5 100%);
+}
+.mk-root .r-proof-band::before {
+  content: "";
+  position: absolute;
+  right: max(-120px, -8vw);
+  top: -190px;
+  width: clamp(360px, 45vw, 660px);
+  aspect-ratio: 1;
+  border-radius: 999px;
+  background: radial-gradient(
+    circle at 42% 38%,
+    rgba(255, 255, 255, 0.72) 0%,
+    rgba(77, 107, 64, 0.16) 24%,
+    rgba(77, 107, 64, 0.06) 44%,
+    rgba(77, 107, 64, 0) 70%
+  );
+  pointer-events: none;
+}
+.mk-root .r-proof-band::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: linear-gradient(
+    90deg,
+    rgba(77, 107, 64, 0) 0%,
+    rgba(77, 107, 64, 0.72) 18%,
+    rgba(20, 20, 19, 0.12) 18%,
+    rgba(20, 20, 19, 0.12) 100%
+  );
+  pointer-events: none;
+}
+.mk-root .r-proof-band > .r-wrap,
+.mk-root .r-proof-band > .r-wrap-narrow {
+  position: relative;
+  z-index: 1;
+}
+.mk-root .r-proof-band-company {
+  background: #ffffff;
+}
+.mk-root .r-proof-band-company::before,
+.mk-root .r-proof-band-company::after {
+  display: none;
+}
+.mk-root .r-proof-band-product {
+  background: #f5f5f7;
+}
+.mk-root .r-proof-band-product::before,
+.mk-root .r-proof-band-product::after {
+  display: none;
+}
+.mk-root .r-proof-band-enterprise {
+  background: #ffffff;
+}
+.mk-root .r-proof-band-enterprise::before,
+.mk-root .r-proof-band-enterprise::after {
+  display: none;
+}
+.mk-root .r-proof-shell {
+  padding: clamp(28px, 4vw, 48px);
+  border: 1px solid rgba(20, 20, 19, 0.1);
+  border-radius: 8px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.88) 0%,
+    rgba(250, 250, 251, 0.78) 100%
+  );
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 28px 80px rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(18px);
+}
+.mk-root .r-proof-intro {
+  position: relative;
+}
+.mk-root .r-proof-dot-button {
+  display: block;
+  width: 136px;
+  height: 136px;
+  margin-top: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  background:
+    radial-gradient(
+      circle at 34% 28%,
+      rgba(255, 255, 255, 0.52) 0%,
+      rgba(255, 255, 255, 0) 36%
+    ),
+    radial-gradient(circle, var(--green) 0%, var(--green-deep) 100%);
+  box-shadow:
+    0 16px 36px rgba(77, 107, 64, 0.28),
+    inset 0 -8px 14px rgba(20, 20, 19, 0.18);
+  transition:
+    transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: r-green-sphere-heartbeat 3.6s ease-in-out infinite;
+}
+.mk-root .r-proof-dot-button:hover {
+  transform: translateY(-2px) scale(1.03);
+}
+.mk-root .r-proof-dot-button:active {
+  transform: translateY(1px) scale(0.97);
+}
+.mk-root .r-proof-dot-button:focus-visible {
+  outline: 3px solid var(--green-bright);
+  outline-offset: 6px;
+}
+.mk-root .r-proof-card {
+  position: relative;
+  min-height: 178px;
+  padding: 28px;
+  border: 1px solid rgba(20, 20, 19, 0.09);
+  border-radius: 8px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.92) 0%,
+    rgba(247, 247, 248, 0.82) 100%
+  );
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.03),
+    0 16px 44px rgba(0, 0, 0, 0.055);
+}
+.mk-root .r-proof-card.trust-pillar {
+  padding: 44px 28px 28px;
+}
+.mk-root .r-proof-card.trust-pillar::before {
+  left: 28px;
+  top: 26px;
+  width: 34px;
+}
+.mk-root .r-proof-panel {
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 28px 80px rgba(0, 0, 0, 0.09);
+}
+.mk-root .r-proof-band-company .r-proof-card {
+  min-height: 252px;
+}
+@media (max-width: 900px) {
+  .mk-root .r-proof-cards {
+    grid-template-columns: 1fr !important;
+  }
+}
+@media (max-width: 768px) {
+  .mk-root .r-proof-band {
+    padding: 72px 0;
+  }
+  .mk-root .r-proof-shell {
+    padding: 24px;
+  }
+  .mk-root .r-proof-dot-button {
+    width: 96px;
+    height: 96px;
+    margin-top: 24px;
   }
 }
 
@@ -1812,11 +3249,30 @@
   max-width: 100%;
 }
 
+/* Tool landing page hero (/for/<tool>) — same green plate as
+   .r-page-header so all nine /for/cursor, /for/lovable, /for/v0,
+   etc. land into the brand atmosphere on first paint. The
+   r-section base class still controls vertical rhythm; this
+   variant only swaps the background and removes the cream
+   border-top so the green plate reads as the page header. */
+.mk-root .r-section.r-section-hero {
+  background: radial-gradient(
+    ellipse 110% 130% at 22% 18%,
+    #e2ecd0 0%,
+    #d3e2bb 60%,
+    #c5d8ab 100%
+  );
+  border-top: none;
+}
+
 /* ============ Page header (non-home pages) ============ */
 .mk-root .r-page-header {
-  /* Trimmed from 96 0 56 — sub-page headers don't need to ape the home
-     hero's vertical commitment. This sets a calmer baseline rhythm. */
-  padding: 64px 0 40px;
+  /* Standard linked-page header used by legal, trust, resources, and
+     footer destinations. Keep it in the current Apple-style white/grey
+     system rather than the older green plate. */
+  padding: 72px 0 56px;
+  background: linear-gradient(180deg, #ffffff 0%, #f5f5f7 100%);
+  border-bottom: 1px solid #d2d2d7;
 }
 .mk-root .r-page-header .r-num {
   display: block;
@@ -2022,7 +3478,7 @@
 /* Code window */
 .mk-root .r-code-window {
   background: #18181a;
-  color: #f4f2ee;
+  color: #f0eee9;
   border-radius: 8px;
   padding: 16px 18px;
   font-family: var(--font-mono);
@@ -2288,13 +3744,13 @@
   animation: r-fade-in 0.18s ease;
 }
 .mk-root-modal {
-  background: var(--cream, #f4f2ee);
+  background: var(--cream, #f0eee9);
   border-radius: 16px;
   padding: 40px;
   max-width: 520px;
   width: 100%;
   position: relative;
-  border: 1px solid var(--rule, #d8d3c6);
+  border: 1px solid var(--rule, #d4cfc1);
   font-family: var(--font-inter), system-ui, sans-serif;
   color: var(--ink, #141413);
 }
@@ -2325,8 +3781,8 @@
   margin: 0 0 24px;
 }
 .mk-root-modal .console-card {
-  background: #faf8f4;
-  border: 1px solid #d8d3c6;
+  background: #f8f6f1;
+  border: 1px solid #d4cfc1;
   border-radius: 10px;
   padding: 16px;
   margin-bottom: 24px;
@@ -2348,14 +3804,14 @@
   flex: 1;
   height: 44px;
   padding: 0 16px;
-  border: 1px solid #d8d3c6;
+  border: 1px solid #d4cfc1;
   border-radius: 999px;
   /* 16px keeps iOS Safari from auto-zooming the viewport on focus —
      anything smaller and the page scales up the moment the field is
      tapped. Visually it still reads as the small UI input rest of the
      site uses (Inter at 16 is calmer than Inter at 14). */
   font-size: 16px;
-  background: #faf8f4;
+  background: #f8f6f1;
   font-family: inherit;
   color: #141413;
 }
@@ -2416,6 +3872,13 @@
   .mk-root .r-tracks-grid,
   .mk-root .r-insights-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+  .mk-root .r-tiles-trio .r-tile:nth-child(2) {
+    border-top-right-radius: 8px;
+  }
+  .mk-root .r-tiles-trio .r-tile:nth-child(3) {
+    margin-left: 0;
+    border-top-right-radius: 0;
   }
   .mk-root .r-tile-base {
     grid-template-columns: 1fr;
@@ -2494,15 +3957,14 @@
   .mk-root .r-grid-3 {
     grid-template-columns: repeat(2, 1fr);
   }
-  /* Hero rebalance for mobile: drop the desktop's vertical-center
-     layout (which leaves a giant cream void above the eyebrow) and
-     anchor the content at the top of the section. The hero becomes
-     content-sized — eyebrow, headline, lede, two stacked CTAs — with
-     no min-height pretending to fill 88 vh. The Spline scene shifts
-     from "full backdrop competing with type" to "quiet atmospheric
-     wash behind the bottom third" so the editorial type leads. */
+  /* Hero rebalance for mobile: anchor the content at the top of the
+     section (instead of vertical-centering, which left a giant cream
+     void above the eyebrow). Hero still fills 100dvh from the
+     ≤980px rule above so first-paint is consistent with desktop —
+     just top-anchored content. The Spline scene shifts from "full
+     backdrop competing with type" to "quiet atmospheric wash behind
+     the bottom third" so the editorial type leads. */
   .mk-root .r-hero {
-    min-height: 0;
     align-items: flex-start;
   }
   .mk-root .r-hero > .r-wrap {
@@ -2520,6 +3982,18 @@
   .mk-root .r-hero-tagline {
     margin-bottom: 20px;
   }
+  .mk-root .r-hero-tagline.r-hero-tagline--spec {
+    flex-wrap: wrap;
+    gap: 10px;
+    max-width: 100%;
+  }
+  .mk-root .r-spec-text {
+    min-width: 0;
+    flex: 1 1 100%;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    line-height: 1.5;
+  }
   .mk-root .r-hero-cta {
     gap: 10px;
     margin-top: 28px;
@@ -2527,6 +4001,33 @@
   .mk-root .r-hero-cta > * {
     width: 100%;
     justify-content: center;
+  }
+  /* Hero copy compression on tablet/mobile — the H1 max-width caps the
+     measure, the sub gets a tighter margin, and the trust strip shrinks
+     its tracking and gap so all six tool names fit comfortably above
+     the fold on a 375 px viewport. */
+  .mk-root .r-hero-headline {
+    max-width: none;
+  }
+  .mk-root .r-hero-mobile-break {
+    display: block;
+  }
+  .mk-root .r-hero-sub {
+    margin-top: 22px;
+    max-width: 42ch;
+  }
+  .mk-root .r-hero-trust {
+    margin-top: 36px;
+    gap: 10px;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    max-width: 100%;
+  }
+  .mk-root .r-hero-trust-items {
+    display: flex;
+    min-width: 0;
+    max-width: 100%;
+    gap: 8px;
   }
   /* Tone the Spline canvas into a quiet wash. Strong cream-to-faint
      mask removes the diagonal stripe pattern from the upper two-thirds
@@ -2559,17 +4060,17 @@
   .mk-root .r-hero::before {
     background: linear-gradient(
       180deg,
-      var(--cream) 0%,
-      var(--cream) 35%,
-      rgba(244, 242, 238, 0.85) 60%,
-      rgba(244, 242, 238, 0.4) 100%
+      #ffffff 0%,
+      #ffffff 35%,
+      rgba(255, 255, 255, 0.86) 60%,
+      rgba(255, 255, 255, 0.42) 100%
     );
   }
   /* Bottom fade pulled taller and stronger so the moss wash dissolves
      into the next section rather than ending in a hard horizon line. */
   .mk-root .r-hero::after {
     height: 96px;
-    background: linear-gradient(180deg, transparent 0%, var(--cream) 70%);
+    background: linear-gradient(180deg, transparent 0%, #ffffff 70%);
   }
   /* HowItWorks: drop the fixed 480px stage and let the active frame
      render in normal flow; stack step buttons two-per-row. */
@@ -2627,7 +4128,8 @@
   }
   .mk-root .r-modality button,
   .mk-root .r-btn,
-  .mk-root .r-try-relay {
+  .mk-root .r-try-relay,
+  .mk-root .r-try-relay-caret {
     height: 44px;
   }
   .mk-root .r-nav-burger {
@@ -2650,11 +4152,42 @@
 }
 
 @media (max-width: 640px) {
+  /* Keep Try Relay pinned top-right on mobile. The dropdown caret hides
+     to save horizontal room; the main pill still opens the modal.
+     A small right margin + extra inner padding give the pill breathing
+     room from the screen edge and the brand mark. */
+  .mk-root .r-nav-cta {
+    display: flex;
+    margin-right: 6px;
+  }
+  .mk-root .r-nav-cta .r-try-relay {
+    padding: 0 14px;
+    font-size: 13px;
+    border-radius: 9px;
+  }
+  .mk-root .r-nav-cta .r-try-relay-caret {
+    display: none;
+  }
+  .mk-root .r-nav-inner {
+    gap: 12px;
+  }
+  .mk-root .r-nav-brand {
+    justify-content: center;
+  }
   .mk-root .r-tiles,
   .mk-root .r-tiles-trio,
   .mk-root .r-tracks-grid,
   .mk-root .r-insights-grid {
     grid-template-columns: 1fr;
+  }
+  .mk-root .r-tiles-trio .r-tile {
+    margin-left: 0;
+  }
+  .mk-root .r-tiles-trio .r-tile:nth-child(2) {
+    border-top-right-radius: 0;
+  }
+  .mk-root .r-tiles-trio .r-tile:nth-child(1) {
+    border-top-right-radius: 8px;
   }
   .mk-root .r-grid-3 {
     grid-template-columns: 1fr;
@@ -2692,13 +4225,37 @@
      272 px, and the burger (44) + Try Relay pill (~140) + gaps (16)
      would crowd the centered RELAY+dot into a 72 px zone where the
      wordmark can't fit on a single line. Trim the gutter and the pill
-     padding so the brand mark gets enough room. */
+     padding so the brand mark gets enough room while still giving the
+     pill visible breathing room from the edge and the brand. */
   .mk-root .r-nav-inner {
     padding: 0 12px;
+    gap: 10px;
   }
   .mk-root .r-try-relay {
-    padding: 0 14px 0 12px;
-    gap: 8px;
+    padding: 0 12px;
+    gap: 4px;
+    font-size: 13px;
+  }
+  .mk-root .r-try-relay-caret {
+    width: 34px;
+  }
+  .mk-root .r-product-hero .r-h-display,
+  .mk-root .r-company-hero .r-h-display {
+    font-size: 36px !important;
+    line-height: 1.08 !important;
+    letter-spacing: -0.025em !important;
+  }
+  .mk-root .r-enterprise-hero .r-h-display {
+    font-size: 31px !important;
+    line-height: 1.1 !important;
+    letter-spacing: -0.018em !important;
+  }
+  .mk-root .r-product-hero-layout,
+  .mk-root .r-product-orb-card,
+  .mk-root .r-enterprise-hero .enterprise-card-surface,
+  .mk-root .r-company-hero .company-card-surface {
+    min-width: 0;
+    max-width: 100%;
   }
   .mk-root-modal-backdrop {
     padding: 16px;
@@ -2816,8 +4373,125 @@
 /* =====================================================================
    /company/contact — form + direct lanes layout
    ===================================================================== */
+/* ============ AI track chip hover ================================
+   The "Built with" chips (Claude / ChatGPT / Gemini / Copilot / etc.)
+   on the homepage. Subtle lift + green-tinted border + soft shadow so
+   they read as interactive surfaces alongside the rest of the card
+   grids. */
+.mk-root .r-track-chip {
+  transition:
+    transform 0.28s cubic-bezier(0.2, 0.7, 0.2, 1),
+    box-shadow 0.28s cubic-bezier(0.2, 0.7, 0.2, 1),
+    border-color 0.2s ease;
+}
+.mk-root .r-track-chip:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(20, 20, 19, 0.09);
+  border-color: var(--green, #4d6b40);
+  z-index: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mk-root .r-track-chip,
+  .mk-root .r-track-chip:hover {
+    transition: none;
+    transform: none;
+  }
+}
+
+/* ============ Card-grid surface ====================================
+   Shared card style used on /for-enterprise (SHIP_FASTER, GOVERNANCE,
+   EMBED_PHASES) and /product (three-phase grid). Provides a subtle
+   resting shadow and a homepage-.r-leg-matching hover lift + title
+   color change. Pair with grid `gap: 0` for a flush table-grid look
+   where adjacent 1px borders merge into a clean divider. */
+.mk-root .enterprise-card-surface {
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.035),
+    0 18px 48px rgba(0, 0, 0, 0.045);
+  transition:
+    transform 0.32s cubic-bezier(0.2, 0.7, 0.2, 1),
+    box-shadow 0.32s cubic-bezier(0.2, 0.7, 0.2, 1);
+  position: relative;
+}
+.mk-root .enterprise-card-surface:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 16px 38px rgba(20, 20, 19, 0.07);
+  z-index: 2;
+}
+.mk-root .enterprise-card-surface:hover h3 {
+  color: var(--green-deep, var(--green));
+  transition: color 0.2s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mk-root .enterprise-card-surface,
+  .mk-root .enterprise-card-surface:hover {
+    transition: none;
+    transform: none;
+  }
+}
+
+/* ============ Contact Us hero (2-col: text left, dot-card right) ====
+   The text column flows naturally; the right column hosts the HeroDot
+   card. Below 900px the grid stacks (text first, card below) so the
+   sphere never crowds the headline on tablet/mobile. */
+.mk-root .r-contact-hero-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
+  gap: 56px;
+  align-items: center;
+}
+.mk-root .r-contact-hero-text {
+  min-width: 0;
+}
+.mk-root .r-hero-dot-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  padding: 48px 32px 40px;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 18px;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.03),
+    0 18px 48px rgba(0, 0, 0, 0.07);
+}
+/* Override the .r-press-sphere default margin (designed for the home
+   PressTheDot section); inside the card the gap handles spacing. */
+.mk-root .r-hero-dot-sphere {
+  margin: 0;
+}
+.mk-root .r-hero-dot-caption {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+@media (max-width: 900px) {
+  .mk-root .r-contact-hero-grid {
+    grid-template-columns: 1fr;
+    gap: 40px;
+  }
+  .mk-root .r-hero-dot-card {
+    max-width: 420px;
+    margin: 0 auto;
+    width: 100%;
+  }
+}
+/* On mobile, the press-the-dot card leads — the CTA is the point of
+   the hero. Visual-only reorder; JSX stays text-first so screen
+   readers still hear the heading and lede before the button. */
+@media (max-width: 640px) {
+  .mk-root .r-hero-dot-card {
+    order: -1;
+  }
+}
+
 .mk-root .r-contact-section {
-  padding-top: 56px;
+  padding-top: 112px;
 }
 .mk-root .r-contact-grid {
   display: grid;
@@ -2837,10 +4511,13 @@
   display: flex;
   flex-direction: column;
   gap: 18px;
-  background: var(--cream);
+  background: #ffffff;
   border: 1px solid var(--rule);
-  border-radius: 14px;
-  padding: 32px;
+  border-radius: 8px;
+  padding: 40px;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.035),
+    0 18px 48px rgba(0, 0, 0, 0.045);
 }
 .mk-root .r-contact-row {
   display: grid;
@@ -2852,7 +4529,7 @@
     grid-template-columns: 1fr;
   }
   .mk-root .r-contact-form {
-    padding: 24px;
+    padding: 28px;
   }
 }
 .mk-root .r-contact-field {
@@ -2889,13 +4566,18 @@
   font-family: var(--font-sans);
   font-size: 15px;
   color: var(--ink);
-  background: var(--paper);
-  border: 1px solid var(--rule);
+  background: #f5f5f7;
+  border: 1px solid #d2d2d7;
   border-radius: 8px;
-  padding: 12px 14px;
+  padding: 14px 15px;
   transition:
+    background 0.12s ease,
     border-color 0.12s ease,
     box-shadow 0.12s ease;
+}
+.mk-root .r-contact-field input::placeholder,
+.mk-root .r-contact-field textarea::placeholder {
+  color: #86868b;
 }
 .mk-root .r-contact-field textarea {
   resize: vertical;
@@ -2907,12 +4589,36 @@
 .mk-root .r-contact-field select:focus-visible,
 .mk-root .r-contact-field textarea:focus-visible {
   outline: none;
+  background: #ffffff;
   border-color: var(--green-deep);
   box-shadow: 0 0 0 3px var(--green-tint);
 }
 .mk-root .r-contact-field input:disabled,
 .mk-root .r-contact-field select:disabled,
 .mk-root .r-contact-field textarea:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.mk-root .r-contact-consent {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 10px;
+  align-items: start;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+.mk-root .r-contact-consent input {
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  accent-color: var(--green);
+}
+.mk-root .r-contact-consent input:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+.mk-root .r-contact-consent input:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
@@ -2947,9 +4653,9 @@
 }
 
 .mk-root .r-contact-success {
-  background: var(--cream);
+  background: #ffffff;
   border: 1px solid var(--rule);
-  border-radius: 14px;
+  border-radius: 8px;
   padding: 40px 32px;
   display: flex;
   flex-direction: column;
@@ -2980,6 +4686,13 @@
   display: flex;
   flex-direction: column;
   gap: 18px;
+  background: #ffffff;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 34px;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.03),
+    0 18px 48px rgba(0, 0, 0, 0.04);
 }
 .mk-root .r-contact-aside-h {
   font-family: var(--font-mono);
@@ -3038,6 +4751,61 @@
   line-height: 1.5;
   color: var(--ink-soft);
   max-width: 36ch;
+}
+/* Compact press-the-dot affordance under the email lane. Same brand
+   sphere as the homepage, smaller so it sits neatly inside the column. */
+.mk-root .r-contact-dot {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+}
+.mk-root .r-contact-dot-sphere {
+  width: clamp(160px, 22vw, 240px);
+  height: clamp(160px, 22vw, 240px);
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  background: radial-gradient(
+    circle at 34% 28%,
+    #d4e0c8 0%,
+    #9bb38a 16%,
+    var(--green-bright) 42%,
+    var(--green) 72%,
+    var(--green-deep) 100%
+  );
+  box-shadow:
+    inset -10px -14px 22px rgba(0, 0, 0, 0.32),
+    inset 8px 10px 18px rgba(255, 255, 255, 0.22),
+    0 14px 26px rgba(18, 50, 20, 0.2),
+    0 4px 8px rgba(18, 50, 20, 0.14);
+  transition:
+    transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: r-green-sphere-heartbeat 3.6s ease-in-out infinite;
+}
+.mk-root .r-contact-dot-sphere:hover {
+  transform: translateY(-2px) scale(1.03);
+}
+.mk-root .r-contact-dot-sphere:active {
+  transform: translateY(1px) scale(0.97);
+}
+.mk-root .r-contact-dot-sphere:focus-visible {
+  outline: 3px solid var(--green-bright, #4d6b40);
+  outline-offset: 6px;
+}
+.mk-root .r-contact-dot-caption {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin: 0;
+  text-align: center;
+  width: 100%;
 }
 .mk-root .r-contact-where {
   margin-top: 8px;
@@ -3098,12 +4866,573 @@
   }
 }
 @keyframes r-mesh-blink {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 0.25;
     transform: scale(0.85);
   }
   50% {
     opacity: 0.9;
     transform: scale(1);
+  }
+}
+
+/* ============================================================
+   Try Relay wizard (.r-tw-*)
+
+   Centered-modal-card overlay. All wizard styling lives here so
+   tuning is a single-file edit. The wizard sits inside the same
+   .mk-root-modal-backdrop as the legacy modal it replaced; we
+   wear a .r-tw-backdrop modifier alongside so step-specific
+   tweaks (e.g., wider modal) don't leak to other modals.
+   ============================================================ */
+
+.mk-root .r-tw-backdrop {
+  background:
+    radial-gradient(
+      ellipse 60% 70% at 50% 8%,
+      rgba(77, 107, 64, 0.18) 0%,
+      rgba(77, 107, 64, 0) 58%
+    ),
+    rgba(8, 8, 8, 0.68);
+  backdrop-filter: blur(18px) saturate(0.95);
+  -webkit-backdrop-filter: blur(18px) saturate(0.95);
+  align-items: flex-start;
+  padding: 6vh 24px;
+  overflow-y: auto;
+}
+.mk-root .r-tw-modal {
+  position: relative;
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
+  background:
+    radial-gradient(
+      ellipse 86% 64% at 86% 0%,
+      rgba(77, 107, 64, 0.1) 0%,
+      rgba(77, 107, 64, 0) 60%
+    ),
+    linear-gradient(180deg, #ffffff 0%, #f5f5f7 100%);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 20px;
+  padding: 56px 40px 38px;
+  box-shadow:
+    0 44px 120px rgba(0, 0, 0, 0.42),
+    0 12px 32px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78);
+  color: var(--ink);
+  font-family: var(--font-display);
+}
+.mk-root .r-tw-close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  background: rgba(245, 245, 247, 0.92);
+  border: 1px solid rgba(20, 20, 19, 0.08);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 18px;
+  color: var(--ink);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    transform 120ms ease;
+}
+.mk-root .r-tw-close:hover {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+.mk-root .r-tw-close:focus-visible {
+  outline: 2px solid var(--green-deep);
+  outline-offset: 2px;
+}
+
+/* Step chrome ---------------------------------------------------- */
+.mk-root .r-tw-chip {
+  display: inline-block;
+  align-self: center;
+  margin: 0 auto 22px;
+  padding: 5px 14px;
+  background: #ffffff;
+  border: 1px solid #d2d2d7;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--ink-mute);
+  font-weight: 500;
+  text-align: center;
+  /* Make sure the chip centers in its block context. */
+  width: max-content;
+}
+.mk-root .r-tw-modal > .r-tw-chip {
+  display: block;
+  width: max-content;
+  margin-left: auto;
+  margin-right: auto;
+}
+.mk-root .r-tw-heading {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(30px, 3vw, 38px);
+  letter-spacing: -0.026em;
+  line-height: 1.06;
+  text-align: center;
+  margin: 0 0 12px;
+  color: var(--ink);
+}
+.mk-root .r-tw-heading em {
+  color: var(--green-deep);
+  font-style: italic;
+}
+.mk-root .r-tw-subcopy {
+  font-family: var(--font-sans);
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  text-align: center;
+  margin: 0 auto 30px;
+  max-width: 44ch;
+}
+
+/* Radio cards (Q1 + Q3) ----------------------------------------- */
+.mk-root .r-tw-radio-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.mk-root .r-tw-radio-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  width: 100%;
+  padding: 18px 18px;
+  background: #ffffff;
+  border: 1px solid #d2d2d7;
+  border-radius: 12px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.025),
+    0 12px 34px rgba(0, 0, 0, 0.04);
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease,
+    transform 120ms ease;
+}
+.mk-root .r-tw-radio-card:hover {
+  border-color: #aeb0b5;
+  background: #fbfbfc;
+  transform: translateY(-1px);
+}
+.mk-root .r-tw-radio-card.is-on {
+  border-color: var(--green-deep);
+  background: linear-gradient(180deg, #ffffff 0%, #f8faf7 100%);
+  box-shadow:
+    0 0 0 1px var(--green-deep) inset,
+    0 16px 42px rgba(77, 107, 64, 0.12);
+}
+.mk-root .r-tw-radio-dot {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid #b8b8bd;
+  background: #ffffff;
+  margin-top: 4px;
+  position: relative;
+}
+.mk-root .r-tw-radio-card.is-on .r-tw-radio-dot {
+  border-color: var(--green-deep);
+}
+.mk-root .r-tw-radio-card.is-on .r-tw-radio-dot::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--green-deep);
+}
+.mk-root .r-tw-radio-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.mk-root .r-tw-radio-title {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  letter-spacing: -0.005em;
+}
+.mk-root .r-tw-radio-sub {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.52;
+  color: var(--ink-soft);
+}
+.mk-root .r-tw-pulse-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--green);
+  position: relative;
+  flex-shrink: 0;
+}
+.mk-root .r-tw-pulse-dot::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  background: var(--green);
+  opacity: 0.5;
+  animation: r-tw-pulse 1.8s cubic-bezier(0.2, 0.7, 0.2, 1) infinite;
+}
+@keyframes r-tw-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.45;
+  }
+  50% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+/* Stack groups (Q2) --------------------------------------------- */
+.mk-root .r-tw-stack-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  margin-bottom: 30px;
+}
+.mk-root .r-tw-stack-group-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  margin-bottom: 10px;
+}
+.mk-root .r-tw-stack-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.mk-root .r-tw-stack-chip {
+  padding: 7px 14px;
+  background: #ffffff;
+  border: 1px solid #d2d2d7;
+  border-radius: 999px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    color 140ms ease,
+    transform 120ms ease;
+}
+.mk-root .r-tw-stack-chip:hover {
+  border-color: #aeb0b5;
+  transform: translateY(-1px);
+}
+.mk-root .r-tw-stack-chip.is-on {
+  background: var(--ink);
+  color: #ffffff;
+  border-color: var(--ink);
+}
+
+/* Footer (Continue / Back) --------------------------------------- */
+.mk-root .r-tw-footer {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+.mk-root .r-tw-footer-single {
+  justify-content: center;
+}
+.mk-root .r-tw-footer-pair > * {
+  flex: 1;
+}
+.mk-root .r-tw-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 13px 22px;
+  border-radius: 999px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    transform 120ms ease;
+  letter-spacing: 0.01em;
+}
+.mk-root .r-tw-btn-primary {
+  background: var(--ink);
+  color: #ffffff;
+  width: 100%;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.16);
+}
+.mk-root .r-tw-footer-pair .r-tw-btn-primary {
+  width: auto;
+}
+.mk-root .r-tw-btn-primary:disabled {
+  background: #86868b;
+  color: rgba(255, 255, 255, 0.86);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+.mk-root .r-tw-btn-primary:not(:disabled):hover {
+  background: #000;
+  transform: translateY(-1px);
+}
+.mk-root .r-tw-btn-ghost {
+  background: #ffffff;
+  color: var(--ink);
+  border: 1px solid #d2d2d7;
+}
+.mk-root .r-tw-btn-ghost:hover {
+  background: #f5f5f7;
+  border-color: #aeb0b5;
+}
+
+/* Step 4: Finding ----------------------------------------------- */
+.mk-root .r-tw-finding {
+  text-align: center;
+  padding: 36px 0;
+}
+.mk-root .r-tw-finding-spinner {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 1px solid #d2d2d7;
+  margin: 0 auto 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--green-deep);
+  animation: r-tw-spin 1.4s linear infinite;
+}
+@keyframes r-tw-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.mk-root .r-tw-finding-title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  color: var(--ink);
+  margin-bottom: 10px;
+}
+.mk-root .r-tw-finding-sub {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+.mk-root .r-tw-finding-sub strong {
+  color: var(--green-deep);
+  font-weight: 600;
+}
+
+/* Step 5: Match -------------------------------------------------- */
+.mk-root .r-tw-match {
+  text-align: center;
+}
+.mk-root .r-tw-match-heading {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(28px, 3.2vw, 38px);
+  letter-spacing: -0.018em;
+  line-height: 1.05;
+  margin: 6px 0 6px;
+  color: var(--ink);
+}
+.mk-root .r-tw-match-heading em {
+  color: var(--ink);
+  /* Italicized first name carries the warmth; we keep it ink to
+     match the screenshot exactly, not green like Q1/Q3 headings. */
+}
+.mk-root .r-tw-match-sub {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--ink-soft);
+  margin: 0 0 22px;
+}
+.mk-root .r-tw-match-card {
+  background: #ffffff;
+  border: 1px solid #d2d2d7;
+  border-radius: 12px;
+  padding: 22px;
+  text-align: left;
+  margin-bottom: 22px;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.03),
+    0 18px 48px rgba(0, 0, 0, 0.08);
+}
+.mk-root .r-tw-match-card-head {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+.mk-root .r-tw-match-avatar {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #f5f5f7;
+  border: 1px solid #d2d2d7;
+  color: var(--green-deep);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0.04em;
+}
+.mk-root .r-tw-match-card-info {
+  flex: 1;
+  min-width: 0;
+}
+.mk-root .r-tw-match-card-name {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--ink);
+}
+.mk-root .r-tw-match-card-avail {
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  margin-top: 2px;
+}
+.mk-root .r-tw-match-card-skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.mk-root .r-tw-match-skill {
+  padding: 3px 9px;
+  background: #f5f5f7;
+  color: var(--green-deep);
+  border: 1px solid rgba(77, 107, 64, 0.18);
+  border-radius: 999px;
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.mk-root .r-tw-match-card-divider {
+  height: 1px;
+  background: #d2d2d7;
+  margin: 18px 0 14px;
+}
+.mk-root .r-tw-match-pricing {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mk-root .r-tw-match-price-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.mk-root .r-tw-match-price-label {
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--green-deep);
+}
+.mk-root .r-tw-match-price-sub {
+  display: block;
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--ink-mute);
+  margin-top: 2px;
+}
+.mk-root .r-tw-match-price-value {
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.mk-root .r-tw-start-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 28px;
+  background: var(--green-deep);
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-bottom: 12px;
+  box-shadow: 0 14px 34px rgba(77, 107, 64, 0.26);
+  transition:
+    background 160ms ease,
+    transform 120ms ease;
+}
+.mk-root .r-tw-start-cta:hover {
+  background: var(--green);
+  transform: translateY(-1px);
+}
+.mk-root .r-tw-start-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  display: inline-block;
+}
+.mk-root .r-tw-match-foot {
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+
+/* Mobile responsive --------------------------------------------- */
+@media (max-width: 600px) {
+  .mk-root .r-tw-backdrop {
+    padding: 2vh 12px;
+  }
+  .mk-root .r-tw-modal {
+    padding: 48px 22px 28px;
+    border-radius: 14px;
+  }
+  .mk-root .r-tw-heading {
+    font-size: 24px;
+  }
+  .mk-root .r-tw-radio-card {
+    padding: 14px 14px;
   }
 }

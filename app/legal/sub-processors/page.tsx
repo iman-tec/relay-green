@@ -1,5 +1,5 @@
 /*
- * /legal/sub-processors — Sub-processors index. DRAFT.
+ * /legal/sub-processors, Sub-processors index. DRAFT.
  *
  * The legal-surface stub. The trust center page at /trust/subprocessors
  * is the live source of truth (auto-updates from /trust/data-handling).
@@ -10,22 +10,11 @@ import Link from "next/link";
 import { Shell } from "../../_marketing/Shell";
 
 export const metadata: Metadata = {
-  title: "Relay — Sub-Processors",
+  title: "Sub-Processors",
   description:
-    "Where to find Relay's live, dated list of sub-processors. The trust center is the source of truth. DRAFT — under counsel review.",
-};
-
-const draftBannerStyle = {
-  background: "#fbeae5",
-  border: "1px solid #e8b4a3",
-  color: "#7a2810",
-  padding: "14px 20px",
-  borderRadius: 8,
-  fontFamily: "var(--font-mono)",
-  fontSize: 11,
-  letterSpacing: "0.06em",
-  marginBottom: 24,
-  textTransform: "uppercase" as const,
+    "Where to find Relay's live, dated list of sub-processors. The trust center is the source of truth. DRAFT, under counsel review.",
+  alternates: { canonical: "/legal/sub-processors" },
+  robots: { index: false, follow: false },
 };
 
 const h3Style = {
@@ -48,12 +37,13 @@ const footerLineStyle = {
 };
 
 const calloutStyle = {
-  background: "var(--paper)",
-  border: "1px solid var(--rule)",
-  borderRadius: 12,
+  background: "#ffffff",
+  border: "1px solid #d2d2d7",
+  borderRadius: 8,
   padding: "24px 28px",
   marginTop: 24,
   marginBottom: 24,
+  boxShadow: "0 22px 54px rgba(0, 0, 0, 0.05)",
 };
 
 export default function SubProcessorsPage() {
@@ -61,31 +51,31 @@ export default function SubProcessorsPage() {
     <Shell>
       <section className="r-page-header">
         <div className="r-wrap-narrow">
-          <span className="r-num">— Legal · Sub-Processors</span>
+          <span className="r-num">Legal · Sub-Processors</span>
           <h1 className="r-h-display" style={{ marginTop: 18 }}>
             <em>Sub-Processors.</em>
           </h1>
           <p className="r-lede" style={{ marginTop: 24, maxWidth: "60ch" }}>
-            Last updated: May 2026 · DRAFT
+            Last updated: May 2026
           </p>
         </div>
       </section>
 
-      <section className="r-section" style={{ paddingTop: 0, borderTop: "none" }}>
+      <section
+        className="r-section"
+        style={{ paddingTop: 0, borderTop: "none" }}
+      >
         <div className="r-wrap-narrow">
-          <div style={draftBannerStyle}>
-            Draft — under counsel review. Not for publication.
-          </div>
-
           <p className="r-body" style={bodyStyle}>
-            Relay maintains a live, dated table of sub-processors — cloud,
-            email, billing, observability, and analytics providers — with
-            purpose, region, and DPA link per row. The legal surface points
-            to the trust center, which is the system of record.
+            Relay maintains a live, dated table of sub-processors, cloud, email,
+            billing, observability, and analytics providers, with purpose and
+            region per row. The trust center is the system of record.
           </p>
 
           <div style={calloutStyle}>
-            <h3 style={{ ...h3Style, marginTop: 0 }}>The live list lives at the trust center</h3>
+            <h3 style={{ ...h3Style, marginTop: 0 }}>
+              The live list lives at the trust center
+            </h3>
             <p className="r-body" style={bodyStyle}>
               Visit{" "}
               <Link
@@ -97,9 +87,8 @@ export default function SubProcessorsPage() {
               >
                 /trust/subprocessors
               </Link>{" "}
-              for the current table, the change log, and the email
-              subscription that notifies you 30 days before any new
-              sub-processor is added.
+              for the current table and the email subscription for material
+              sub-processor changes.
             </p>
           </div>
 
@@ -112,15 +101,8 @@ export default function SubProcessorsPage() {
             >
               Privacy Policy
             </Link>{" "}
-            (who we share data with) and our{" "}
-            <Link
-              href="/legal/dpa"
-              style={{ borderBottom: "1px solid currentColor" }}
-            >
-              Data Processing Addendum
-            </Link>{" "}
-            (sub-processor consent and notice). Cookie vendors are listed
-            separately in the{" "}
+            (who we share data with). Cookie vendors are listed separately in
+            the{" "}
             <Link
               href="/legal/cookies"
               style={{ borderBottom: "1px solid currentColor" }}

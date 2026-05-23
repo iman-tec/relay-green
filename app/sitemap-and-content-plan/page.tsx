@@ -1,5 +1,5 @@
 /*
- * /sitemap-and-content-plan — Relay sitemap & content plan v1.0.
+ * /sitemap-and-content-plan, Relay sitemap & content plan v1.0.
  *
  * Recreates the design handoff (project/sitemap-and-content-plan.html) as a
  * Next server component. The body markup is read verbatim from the
@@ -8,7 +8,7 @@
  * table) cannot leak to other routes.
  *
  * Security note: the HTML is committed to this repo from a trusted Claude
- * Design handoff bundle and is never sourced from user input — XSS surface
+ * Design handoff bundle and is never sourced from user input, XSS surface
  * is the same as any other static asset under app/.
  */
 
@@ -18,9 +18,14 @@ import type { Metadata } from "next";
 import "./sitemap-and-content-plan.css";
 
 export const metadata: Metadata = {
-  title: "Relay — Trust & legal content reference",
+  title: "Trust & legal content reference",
   description:
     "The trust-center and legal-page draft content gathered on one screen for counsel and security review before the production cutover.",
+  // Internal-only working doc. Belt-and-suspenders alongside the disallow
+  // entry in app/robots.ts so the page never appears in SERPs even if a
+  // crawler ignores robots.txt.
+  robots: { index: false, follow: false, nocache: true },
+  alternates: { canonical: "/sitemap-and-content-plan" },
 };
 
 const BODY_HTML = readFileSync(
