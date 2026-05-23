@@ -11,15 +11,18 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Wifi } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
-import { cn } from "@/app/_components/ui";
+import { Button, Modal, cn } from "@/app/_components/ui";
 
 export function EngineerAvailabilityToggle({ className }: { className?: string }) {
   const sbRef = useRef(createClient());
   const [online, setOnline] = useState<boolean | null>(null); // null = loading
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Login reminder: if the engineer loads in Offline, prompt them once to go
+  // online so they don't silently sit out of the matcher.
+  const [promptOpen, setPromptOpen] = useState(false);
 
   // Load current availability for the signed-in engineer.
   useEffect(() => {
@@ -34,7 +37,16 @@ export function EngineerAvailabilityToggle({ className }: { className?: string }
         .eq("user_id", user.id)
         .maybeSingle();
       if (!alive) return;
-      setOnline((data as { is_available?: boolean } | null)?.is_available ?? false);
+      const avail = (data as { is_available?: boolean } | null)?.is_available ?? false;
+      setOnline(avail);
+      // Show the status prompt ONCE per login (browser session), regardless of
+      // current state, so the engineer consciously confirms online/offline and
+      // never silently misses calls. Re-shows on a fresh sign-in / new tab.
+      const key = `relay-online-prompt:${user.id}`;
+      if (typeof window !== "undefined" && !sessionStorage.getItem(key)) {
+        sessionStorage.setItem(key, "1");
+        setPromptOpen(true);
+      }
     })();
     return () => { alive = false; };
   }, []);
@@ -59,6 +71,7 @@ export function EngineerAvailabilityToggle({ className }: { className?: string }
   const isOnline = online === true;
 
   return (
+    <>
     <div className={cn("flex flex-col items-end gap-1", className)}>
       <button
         type="button"
@@ -90,5 +103,48 @@ export function EngineerAvailabilityToggle({ className }: { className?: string }
       </button>
       {error && <span className="text-[11px] text-[var(--risk)]">{error}</span>}
     </div>
+
+    <Modal
+      open={promptOpen}
+      onClose={() => setPromptOpen(false)}
+      title={isOnline ? "You're online" : "Set your availability"}
+      description={
+        isOnline
+          ? "You'll receive incoming-call notifications."
+          : "Customers can only be matched to engineers who are online."
+      }
+      footer={
+        isOnline ? (
+          <>
+            <Button variant="ghost" onClick={() => { setPromptOpen(false); void toggle(); }}>
+              Go offline
+            </Button>
+            <Button variant="primary" onClick={() => setPromptOpen(false)}>
+              Got it
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button variant="ghost" onClick={() => setPromptOpen(false)}>
+              Stay offline
+            </Button>
+            <Button
+              variant="primary"
+              iconLeft={<Wifi className="size-4" />}
+              onClick={() => { setPromptOpen(false); void toggle(); }}
+            >
+              Go online
+            </Button>
+          </>
+        )
+      }
+    >
+      <p className="text-sm text-[var(--text-muted)]">
+        {isOnline
+          ? "You're set to receive calls. Toggle off any time from the top bar."
+          : "Go online and you'll start receiving incoming-call notifications — while offline, calls are routed to other engineers."}
+      </p>
+    </Modal>
+    </>
   );
 }

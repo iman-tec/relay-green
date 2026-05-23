@@ -64,30 +64,18 @@ export async function GET() {
   });
 
   // ── Resolve the candidate engineer set ────────────────────────────────────
-  let engineerIds: string[] = [];
-  if (isAdmin) {
-    const { data } = await admin
-      .from("user_roles")
-      .select("user_id")
-      .eq("role", "engineer");
-    engineerIds = Array.from(new Set(((data ?? []) as { user_id: string }[]).map((r) => r.user_id)));
-  } else {
-    // Pods the caller supervises → engineers in those pods.
-    const { data: myPods } = await admin
-      .from("pod_members")
-      .select("pod_id")
-      .eq("user_id", user.id)
-      .in("pod_role", ["supervisor", "pod_lead"]);
-    const podIds = Array.from(new Set(((myPods ?? []) as { pod_id: string }[]).map((r) => r.pod_id)));
-    if (podIds.length) {
-      const { data: members } = await admin
-        .from("pod_members")
-        .select("user_id")
-        .eq("pod_role", "engineer")
-        .in("pod_id", podIds);
-      engineerIds = Array.from(new Set(((members ?? []) as { user_id: string }[]).map((r) => r.user_id)));
-    }
-  }
+  // Both super_admins AND supervisors can assign/reassign to ANY engineer
+  // (matches _can_manually_assign), so the picker always offers every engineer
+  // platform-wide. Each row is annotated with its pod name for context.
+  // user_roles stores role_id (FK), not a role text column — read the
+  // resolved-name view instead.
+  const { data: allEngineers } = await admin
+    .from("user_role_names")
+    .select("user_id")
+    .eq("role", "engineer");
+  const engineerIds: string[] = Array.from(
+    new Set(((allEngineers ?? []) as { user_id: string }[]).map((r) => r.user_id)),
+  );
 
   if (engineerIds.length === 0) {
     return NextResponse.json({ engineers: [] });

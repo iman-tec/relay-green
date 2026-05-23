@@ -46,6 +46,10 @@ export function MatchingActions({
   const [working, setWorking] = useState<string | null>(null); // engineer id | "cancel"
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  // Fixed-position coords so the menu floats above the table rather than being
+  // clipped by the board's overflow-x-auto / overflow-hidden containers.
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
 
   const loadEngineers = useCallback(async () => {
     setLoading(true);
@@ -65,7 +69,12 @@ export function MatchingActions({
   const toggleOpen = useCallback(() => {
     setOpen((prev) => {
       const next = !prev;
-      if (next && engineers === null) void loadEngineers();
+      if (next) {
+        const r = triggerRef.current?.getBoundingClientRect();
+        // Right-align a 256px panel to the button so it never runs off-screen.
+        if (r) setCoords({ top: r.bottom + 4, left: Math.max(8, r.right - 256) });
+        if (engineers === null) void loadEngineers();
+      }
       return next;
     });
   }, [engineers, loadEngineers]);
@@ -100,6 +109,7 @@ export function MatchingActions({
       <div className="flex items-center gap-1.5">
         {/* Assign dropdown */}
         <button
+          ref={triggerRef}
           type="button"
           onClick={toggleOpen}
           className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium"
@@ -151,10 +161,10 @@ export function MatchingActions({
         <>
           {/* Backdrop */}
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          {/* Panel */}
+          {/* Panel — fixed so it floats over the table, not clipped by it */}
           <div
-            className="absolute top-full left-0 z-50 mt-1 max-h-72 w-64 overflow-y-auto rounded-lg border shadow-xl"
-            style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+            className="fixed z-50 max-h-72 w-64 overflow-y-auto rounded-lg border shadow-xl"
+            style={{ top: coords?.top ?? 0, left: coords?.left ?? 0, borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
           >
             <div className="border-b px-3 py-2 text-[10px] font-medium tracking-wide uppercase"
                  style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>

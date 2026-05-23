@@ -66,6 +66,10 @@ export function IntakeClient() {
   const [authLoading, setAuthLoading] = useState(true);
   const [profile, setProfile] = useState<ProfileSnapshot | null>(null);
   const [forceFullIntake, setForceFullIntake] = useState(false);
+  // Returning user starting a NEW project (§1.2): skip Q1 (tech expertise is
+  // permanent) but still ask Q2–Q4 for this project. Carries the chosen name.
+  const [newProjectMode, setNewProjectMode] = useState(false);
+  const [newProjectName, setNewProjectName] = useState<string | null>(null);
   const [step, setStep] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -128,7 +132,14 @@ export function IntakeClient() {
     })();
   }, [router, projectIdParam]);
 
-  const showQuickReturn = !forceFullIntake && profile && hasFullIntake(profile);
+  const showQuickReturn =
+    !forceFullIntake && !newProjectMode && profile && hasFullIntake(profile);
+
+  // New-project mode skips Q1 (step 1); the wizard runs Q2→Q4 (steps 2–4).
+  const skipQ1 = newProjectMode;
+  const firstStep = skipQ1 ? 2 : 1;
+  const totalQuestions = skipQ1 ? TOTAL_STEPS - 1 : TOTAL_STEPS;
+  const displayStep = skipQ1 ? step - 1 : step;
 
   const submit = useCallback(async () => {
     if (!techComfort || !developing || !urgency) {
@@ -143,18 +154,18 @@ export function IntakeClient() {
       if (!u.user) throw new Error("Not signed in");
 
       let projectId = projectIdParam;
-      let projectName = "Project";
+      let projectName = newProjectName?.trim() || "Project";
       if (!projectId) {
         const { data: created, error: projErr } = await sb.rpc(
           "create_project",
-          { _name: "Project" },
+          { _name: projectName },
         );
         if (projErr) throw projErr;
         const row = Array.isArray(created)
           ? (created[0] as { id?: string; name?: string } | null)
           : (created as { id?: string; name?: string } | null);
         projectId = row?.id ?? null;
-        projectName = row?.name ?? "Project";
+        projectName = row?.name ?? projectName;
         if (!projectId) throw new Error("Could not create project");
       }
 
@@ -233,7 +244,7 @@ export function IntakeClient() {
       setError(e instanceof Error ? e.message : "Could not start matching");
       setBusy(false);
     }
-  }, [router, projectIdParam, techComfort, stack, developing, urgency]);
+  }, [router, projectIdParam, newProjectName, techComfort, stack, developing, urgency]);
 
   const canAdvance = useMemo(() => {
     if (step === 1) return techComfort !== null;
@@ -256,7 +267,7 @@ export function IntakeClient() {
     setStep((s) => s + 1);
   }, [canAdvance, step, submit]);
 
-  const onBack = step > 1 ? () => setStep((s) => s - 1) : undefined;
+  const onBack = step > firstStep ? () => setStep((s) => s - 1) : undefined;
 
   if (authLoading) {
     return (
@@ -274,6 +285,12 @@ export function IntakeClient() {
         onChooseFullIntake={() => {
           setForceFullIntake(true);
           setStep(1);
+        }}
+        onNewProject={(name) => {
+          // §1.2: new project for a returning user → skip Q1, ask Q2–Q4.
+          setNewProjectName(name);
+          setNewProjectMode(true);
+          setStep(2);
         }}
       />
     );
@@ -297,9 +314,9 @@ export function IntakeClient() {
           {/* Step pill + progress */}
           <div className="flex flex-col items-center gap-3">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--primary-tint)] px-3 py-1 font-mono text-[11px] uppercase tracking-[0.18em] text-[var(--primary-hover)]">
-              Question {step} of {TOTAL_STEPS}
+              Question {displayStep} of {totalQuestions}
             </span>
-            <ProgressSegments current={step} total={TOTAL_STEPS} />
+            <ProgressSegments current={displayStep} total={totalQuestions} />
           </div>
 
           {/* Headline + subline */}

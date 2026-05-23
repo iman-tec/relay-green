@@ -96,7 +96,34 @@ Deno.serve(async (req) => {
       })
       .join("\n");
 
-    if (!transcript.trim()) {
+    // Guard against hallucinated summaries for trivial sessions. A lone
+    // "hello" in chat (no real exchange, no Zoom) used to pass the
+    // emptiness check below and the model would invent a problem that was
+    // never discussed. Require genuine substance before calling OpenAI:
+    //   • at least one Zoom AI Companion summary block (the call happened), OR
+    //   • a real chat exchange (3+ human messages, or 80+ chars of human text)
+    // Anything thinner falls through to the "nothing to summarize" branch,
+    // which correctly records no_conversation when Zoom was never joined.
+    const humanMsgs = (msgs ?? []).filter(
+      (m: any) =>
+        m.sender_kind !== "system" &&
+        typeof m.body === "string" &&
+        m.body.trim().length > 0,
+    );
+    const companionBlocks = (msgs ?? []).filter(
+      (m: any) =>
+        m.sender_kind === "system" &&
+        typeof m.body === "string" &&
+        m.body.includes("AI Companion summary"),
+    );
+    const humanChars = humanMsgs.reduce(
+      (n: number, m: any) => n + m.body.trim().length,
+      0,
+    );
+    const hasSubstance =
+      companionBlocks.length > 0 || humanMsgs.length >= 3 || humanChars >= 80;
+
+    if (!transcript.trim() || !hasSubstance) {
       // Distinguish three "nothing to summarize" cases so the UI shows the
       // right copy without waiting on the watchdog:
       //   • Neither party joined Zoom AND no chat                → no_conversation

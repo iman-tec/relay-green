@@ -14,7 +14,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import {
-  Eye, Loader2, ArrowUpRight, Search,
+  Eye, Loader2, ArrowUpRight, Search, AlertTriangle,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
@@ -31,6 +31,8 @@ import {
   type StatusTone,
 } from "@/app/_components/ui";
 import { MatchingPanel } from "./MatchingPanel";
+import { SupervisorAvailabilityToggle } from "@/app/_components/SupervisorAvailabilityToggle";
+import { MatchingActions } from "@/app/_components/MatchingActions";
 
 // Health → semantic token mapping. Lives next to the verdict helpers so
 // any UI piece that needs the colour reads from the same lookup.
@@ -68,7 +70,26 @@ type HealthSnapshot = {
   computed_at: string;
   message_count?: number;
 };
-type SessionWithHealth = GuestCall & { health?: HealthSnapshot };
+// engineerRealName: the engineer's actual full_name (claimed_by → profiles),
+// shown ONLY on these staff surfaces next to the customer-facing alias so
+// supervisors/super_admin can map nickname ↔ identity. Never sent to customers.
+type SessionWithHealth = GuestCall & {
+  health?: HealthSnapshot;
+  engineerRealName?: string | null;
+  // intake id, resolved only for sessions awaiting reassignment so the card
+  // can render the Reassign (Assign ▾) control, which is intake-keyed.
+  intakeId?: string | null;
+};
+
+// Staff-only label mapping the customer-facing alias to the engineer's real
+// name, e.g. "Leo · Rahul Sharma". Renders just the alias if we couldn't
+// resolve the name, and "—" when neither is set.
+function engineerLabel(s: { agent_name: string | null; engineerRealName?: string | null }): string {
+  const alias = s.agent_name || null;
+  const real = s.engineerRealName || null;
+  if (alias && real) return `${alias} · ${real}`;
+  return alias ?? real ?? "—";
+}
 
 // Minimum chat messages required before we trust the AI verdict. Below
 // this, fall back to deterministic — the LLM has nothing useful to read
@@ -119,7 +140,7 @@ const LIVE_LIMIT = 200;
 type Scope =
   | { kind: "loading" }
   | { kind: "unscoped" }
-  | { kind: "pod"; podId: string | null };
+  | { kind: "pod"; podId: string | null; meId: string };
 
 export function SuperviseClient() {
   const [sessions, setSessions] = useState<SessionWithHealth[]>([]);
@@ -140,7 +161,7 @@ export function SuperviseClient() {
     (async () => {
       const sb = supabaseRef.current;
       const { data: u } = await sb.auth.getUser();
-      if (cancelled || !u.user) { setScope({ kind: "pod", podId: null }); return; }
+      if (cancelled || !u.user) { setScope({ kind: "pod", podId: null, meId: "" }); return; }
       const [rolesRes, podRes] = await Promise.all([
         sb.from("user_role_names").select("role").eq("user_id", u.user.id),
         sb.from("pod_members").select("pod_id").eq("user_id", u.user.id).maybeSingle(),
@@ -151,7 +172,7 @@ export function SuperviseClient() {
         setScope({ kind: "unscoped" });
       } else {
         const podId = (podRes.data as { pod_id?: string } | null)?.pod_id ?? null;
-        setScope({ kind: "pod", podId });
+        setScope({ kind: "pod", podId, meId: u.user.id });
       }
     })();
     return () => { cancelled = true; };
@@ -160,18 +181,19 @@ export function SuperviseClient() {
   const refresh = async () => {
     const sb = supabaseRef.current;
     if (scope.kind === "loading") return;
-    // Pod-scoped viewers with no pod assignment get an empty grid — there's
-    // no organisational owner for any session yet. Skip the query entirely.
-    if (scope.kind === "pod" && !scope.podId) {
+    // Pod-scoped viewers we couldn't identify get an empty grid.
+    if (scope.kind === "pod" && !scope.meId) {
       setSessions([]);
       setPastSessions([]);
       setLoading(false);
       return;
     }
-    // Bug #7: supervisors are restricted to sessions whose pod_id matches
-    // their own pod. super_admin sees everything.
-    // pod_id is stamped on guest_calls at claim time (claim_session RPC) —
-    // see migration 20260519100000_guest_calls_pod_scope.sql.
+    // Supervisors see sessions in their own pod (pod_id) PLUS any session whose
+    // coverage has FAILED OVER to them (supervisor_user_id) — so when a pod's
+    // own supervisor is offline, the online supervisor who picked up the slack
+    // can still watch it and nothing goes unsupervised. super_admin sees all.
+    // supervisor_user_id is stamped automatically at claim + rebalanced when a
+    // supervisor toggles online/offline (migration 20260524100000).
     let liveQ = sb.from("guest_calls").select("*")
       .in("status", ACTIVE_STATES)
       .order("created_at", { ascending: false })
@@ -180,9 +202,15 @@ export function SuperviseClient() {
       .in("status", PAST_STATES)
       .order("ended_at", { ascending: false, nullsFirst: false })
       .limit(200);
-    if (scope.kind === "pod" && scope.podId) {
-      liveQ = liveQ.eq("pod_id", scope.podId);
-      pastQ = pastQ.eq("pod_id", scope.podId);
+    if (scope.kind === "pod") {
+      const base = scope.podId
+        ? `supervisor_user_id.eq.${scope.meId},pod_id.eq.${scope.podId}`
+        : `supervisor_user_id.eq.${scope.meId}`;
+      // Also surface any session awaiting reassignment (a declined manual
+      // assignment, which is queued with no pod/coverage yet) to every
+      // supervisor, so it never gets stuck with nobody able to pick it up.
+      liveQ = liveQ.or(`${base},reassign_needed.eq.true`);
+      pastQ = pastQ.or(base);
     }
     const [liveRes, pastRes] = await Promise.all([liveQ, pastQ]);
     const rows     = (liveRes.data as GuestCall[]) ?? [];
@@ -211,8 +239,50 @@ export function SuperviseClient() {
       );
     }
 
-    setSessions(rows.map((s) => ({ ...s, health: healthMap.get(s.id) })));
-    setPastSessions(pastRows.map((s) => ({ ...s, health: healthMap.get(s.id) })));
+    // Resolve engineer real names (claimed_by → profiles.full_name) for the
+    // staff-only alias↔identity mapping shown on each card. One round-trip.
+    const engineerIds = Array.from(
+      new Set([...rows, ...pastRows].map((s) => s.claimed_by).filter((x): x is string => !!x)),
+    );
+    let nameById = new Map<string, string>();
+    if (engineerIds.length > 0) {
+      const { data: profs } = await sb
+        .from("profiles")
+        .select("id, full_name")
+        .in("id", engineerIds);
+      nameById = new Map(
+        (profs ?? [])
+          .filter((p: { full_name: string | null }) => !!p.full_name)
+          .map((p: { id: string; full_name: string | null }) => [p.id, p.full_name as string]),
+      );
+    }
+    // For sessions awaiting reassignment, resolve the intake id so the card can
+    // render the Reassign (Assign ▾) control (which is intake-keyed).
+    const reassignCallIds = rows
+      .filter((s) => s.reassign_needed && s.status === "queued")
+      .map((s) => s.id);
+    let intakeByCall = new Map<string, string>();
+    if (reassignCallIds.length > 0) {
+      const { data: intakes } = await sb
+        .from("client_intakes")
+        .select("id, guest_call_id")
+        .in("guest_call_id", reassignCallIds);
+      intakeByCall = new Map(
+        (intakes ?? [])
+          .filter((r: { guest_call_id: string | null }) => !!r.guest_call_id)
+          .map((r: { id: string; guest_call_id: string | null }) => [r.guest_call_id as string, r.id]),
+      );
+    }
+
+    const withName = (s: GuestCall): SessionWithHealth => ({
+      ...s,
+      health: healthMap.get(s.id),
+      engineerRealName: s.claimed_by ? nameById.get(s.claimed_by) ?? null : null,
+      intakeId: intakeByCall.get(s.id) ?? null,
+    });
+
+    setSessions(rows.map(withName));
+    setPastSessions(pastRows.map(withName));
     setLoading(false);
   };
 
@@ -291,15 +361,22 @@ export function SuperviseClient() {
     <div className="flex min-h-screen flex-col">
       <style>{WAITING_GLOW_CSS}</style>
       <div className="mx-auto w-full max-w-screen-2xl flex-1 space-y-6 px-6 pt-8 pb-6">
-        <div>
-          <h1 className="font-serif text-3xl font-medium tracking-tight text-[var(--text)]">
-            Live operations
-          </h1>
-          <p className="mt-1.5 text-sm leading-relaxed text-[var(--text-muted)]">
-            Every active session, live. The health bar on each card tells you
-            who needs attention — healthy, shaky, or at risk. Use Join to
-            drop into a session.
-          </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="font-serif text-3xl font-medium tracking-tight text-[var(--text)]">
+              Live operations
+            </h1>
+            <p className="mt-1.5 text-sm leading-relaxed text-[var(--text-muted)]">
+              Every active session, live. The health bar on each card tells you
+              who needs attention — healthy, shaky, or at risk. Use Join to
+              drop into a session.
+            </p>
+          </div>
+          {/* On-duty toggle — drives coverage failover. Only the supervise
+              audience (supervisor / super_admin) reaches this client. */}
+          {scope.kind !== "loading" && (
+            <SupervisorAvailabilityToggle className="shrink-0 pt-1" />
+          )}
         </div>
 
         {/* Tabs: All · Waiting · Live · Past · (Matching for pod-supervisors) */}
@@ -313,7 +390,7 @@ export function SuperviseClient() {
             past:     pastSessions.length,
             matching: 0,
           }}
-          showMatching={scope.kind === "pod" && !!scope.podId}
+          showMatching={scope.kind === "unscoped" || (scope.kind === "pod" && !!scope.podId)}
         />
 
         {loading ? (
@@ -328,6 +405,7 @@ export function SuperviseClient() {
             pastSessions={pastSessions}
             perPage={perPage}
             setPerPage={setPerPage}
+            matchingGlobal={scope.kind === "unscoped"}
           />
         )}
       </div>
@@ -428,9 +506,16 @@ function SessionTile({ session }: { session: SessionWithHealth }) {
   const aiSummary = aiMessageCount >= MIN_MESSAGES_FOR_AI ? session.health?.summary : undefined;
   const aiScore   = aiMessageCount >= MIN_MESSAGES_FOR_AI ? session.health?.score   : undefined;
 
-  const elapsed = session.joined_at
-    ? Math.floor((Date.now() - new Date(session.joined_at).getTime()) / 1000)
-    : Math.floor((Date.now() - new Date(session.created_at).getTime()) / 1000);
+  // "Live for" anchors on assigned_at (when the engineer accepted and chat
+  // began) — the same anchor the customer countdown and engineer room use, so
+  // every surface agrees. Independent of Zoom. Queued sessions count their
+  // wait from created_at.
+  const inLive    = LIVE_STATES.has(session.status);
+  const liveLabel = inLive ? "Live for" : "Waiting";
+  const elapsedAnchor = inLive
+    ? (session.assigned_at ?? session.joined_at ?? session.created_at)
+    : session.created_at;
+  const elapsed = Math.floor((Date.now() - new Date(elapsedAnchor).getTime()) / 1000);
 
   const join = () => router.push(`/staff/session/${session.id}`);
 
@@ -494,13 +579,36 @@ function SessionTile({ session }: { session: SessionWithHealth }) {
 
       <div className="mb-3 grid grid-cols-2 gap-2 text-xs">
         <Stat
-          label={LIVE_STATES.has(session.status) ? "Live for" : "Waiting"}
+          label={liveLabel}
           value={fmtSecs(elapsed)}
         />
         <Stat label="Recalls" value={String(session.recall_count ?? 0)} />
-        <Stat label="Engineer" value={session.agent_name ?? "—"} />
+        <Stat label="Engineer" value={engineerLabel(session)} />
         <Stat label="Project" value={session.project_name ?? "—"} />
       </div>
+
+      {/* Declined manual assignment — supervisor reassigns from here. The
+          Assign control is intake-keyed; stopPropagation so interacting with
+          it doesn't navigate into the session. */}
+      {session.reassign_needed && session.status === "queued" && session.intakeId && (
+        <div
+          className="mb-3 rounded-md border px-2.5 py-2"
+          style={{
+            borderColor: "var(--risk)",
+            backgroundColor: "color-mix(in srgb, var(--risk) 12%, transparent)",
+          }}
+          onClick={(e) => e.stopPropagation()}
+          role="presentation"
+        >
+          <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: "var(--risk)" }}>
+            <AlertTriangle size={12} />
+            Engineer declined — reassign
+          </div>
+          {/* No onChanged needed — supervisor_assign clears reassign_needed on
+              guest_calls, which this grid's realtime subscription picks up. */}
+          <MatchingActions intakeId={session.intakeId} />
+        </div>
+      )}
 
       {aiSummary && (
         <p
@@ -610,7 +718,7 @@ function Tabs({
 
 // ── Tab panel — chooses the right grid for the active tab ─────────────────
 function TabPanel({
-  tab, liveSessions, waitingSessions, pastSessions, perPage, setPerPage,
+  tab, liveSessions, waitingSessions, pastSessions, perPage, setPerPage, matchingGlobal,
 }: {
   tab: Tab;
   liveSessions: SessionWithHealth[];
@@ -618,9 +726,12 @@ function TabPanel({
   pastSessions: SessionWithHealth[];
   perPage: PageSize;
   setPerPage: (n: PageSize) => void;
+  matchingGlobal: boolean;
 }) {
   if (tab === "matching") {
-    return <MatchingPanel />;
+    return matchingGlobal
+      ? <MatchingPanel endpoint="/api/admin/matching" scope="global" />
+      : <MatchingPanel />;
   }
   if (tab === "all") {
     return (
@@ -1232,7 +1343,7 @@ function PastSessionTile({ session }: { session: SessionWithHealth }) {
           label="Duration"
           value={durationMin != null ? `${Math.round(Number(durationMin))} min` : "—"}
         />
-        <Stat label="Engineer" value={session.agent_name || "—"} />
+        <Stat label="Engineer" value={engineerLabel(session)} />
         <Stat label="Project" value={session.project_name || "—"} />
       </div>
 

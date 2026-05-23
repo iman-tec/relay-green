@@ -30,10 +30,17 @@ const BRAND_GREEN = "#3f5c2e";
 const URGENT_AMBER = "#d4a017";
 const CRIT_RED    = "#c2410c";
 
-const COUNTDOWN_URGENT_S = 30; // amber threshold
-const COUNTDOWN_CRIT_S   = 10; // red threshold
+const COUNTDOWN_URGENT_S = 12; // amber threshold (25s ring)
+const COUNTDOWN_CRIT_S   = 5;  // red threshold
 
-export function MatchingPanel() {
+export function MatchingPanel({
+  // Pod supervisors hit the pod-scoped endpoint; super_admin passes the global
+  // /api/admin/matching endpoint to see every ring platform-wide. Both return
+  // the same row shape.
+  endpoint = "/api/supervisor/matching",
+  scope = "pod",
+}: { endpoint?: string; scope?: "pod" | "global" } = {}) {
+  const isGlobal = scope === "global";
   const [rows, setRows] = useState<MatchingRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
@@ -45,7 +52,7 @@ export function MatchingPanel() {
 
   const refresh = async () => {
     try {
-      const res = await fetch("/api/supervisor/matching", { cache: "no-store" });
+      const res = await fetch(endpoint, { cache: "no-store" });
       const body = await res.json().catch(() => ({ rows: [] }));
       setRows((body.rows ?? []) as MatchingRow[]);
     } finally {
@@ -108,8 +115,8 @@ export function MatchingPanel() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="text-sm" style={{ color: "var(--text-muted)" }}>
           {rows.length === 0
-            ? "No one in your pod is being matched right now."
-            : `${rows.length} engineer${rows.length === 1 ? "" : "s"} in your pod being rung. Updates live.`}
+            ? (isGlobal ? "No one is being matched right now." : "No one in your pod is being matched right now.")
+            : `${rows.length} engineer${rows.length === 1 ? "" : "s"} ${isGlobal ? "" : "in your pod "}being rung. Updates live.`}
         </p>
         <div className="relative">
           <Search
@@ -143,7 +150,9 @@ export function MatchingPanel() {
         ) : filtered.length === 0 ? (
           <p className="px-5 py-10 text-center text-xs" style={{ color: "var(--text-muted)" }}>
             {rows.length === 0
-              ? "No engineers in your pod are being rung right now. New offers appear here automatically."
+              ? (isGlobal
+                  ? "No engineers are being rung right now. New offers appear here automatically."
+                  : "No engineers in your pod are being rung right now. New offers appear here automatically.")
               : `No matches against “${query}”.`}
           </p>
         ) : (

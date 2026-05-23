@@ -38,10 +38,14 @@ const ACTIVE_SESSION_STATES = [
 export function QuickReturnIntake({
   initialProfile,
   onChooseFullIntake,
+  onNewProject,
 }: {
   initialProfile: ProfileSnapshot;
   /** "I'm here for something new" → drop back to the full editorial intake. */
   onChooseFullIntake: () => void;
+  /** Picked "New project" → hand the name up so the wizard can ask Q2–Q4
+   *  for it (Q1/tech-expertise is already known). §1.2. */
+  onNewProject: (name: string) => void;
 }) {
   const router = useRouter();
   const [projects, setProjects] = useState<Project[] | null>(null);
@@ -322,9 +326,13 @@ export function QuickReturnIntake({
               full
               loading={busy}
               disabled={!canSubmit}
-              onClick={submit}
+              onClick={
+                mode === "new"
+                  ? () => onNewProject(newProjectName.trim())
+                  : submit
+              }
             >
-              Find my engineer →
+              {mode === "new" ? "Continue →" : "Find my engineer →"}
             </Button>
             <button
               type="button"

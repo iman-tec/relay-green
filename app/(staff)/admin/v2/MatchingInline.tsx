@@ -25,8 +25,8 @@ import type { AdminMatchingRow } from "@/app/api/admin/matching/route";
 
 const URGENT_AMBER = "#d4a017";
 const CRIT_RED     = "#c2410c";
-const COUNTDOWN_URGENT_S = 30;
-const COUNTDOWN_CRIT_S   = 10;
+const COUNTDOWN_URGENT_S = 12; // amber (25s ring)
+const COUNTDOWN_CRIT_S   = 5;  // red
 
 const COL_COUNT = 9; // Customer · Engineer · Pod · Score · Ring · Declined · Queued · Stack · Override
 

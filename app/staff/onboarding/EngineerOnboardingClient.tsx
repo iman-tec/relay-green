@@ -111,6 +111,9 @@ export function EngineerOnboardingClient() {
           updated_at: new Date().toISOString(),
         }, { onConflict: "user_id" });
       if (upsertErr) throw upsertErr;
+      // Assign a stable privacy alias now so the engineer has a nickname from
+      // the start — customers never see real names. Best-effort.
+      await sb.rpc("assign_engineer_alias", { _user: userId }).then(undefined, () => {});
       setDone(true);
       setTimeout(() => router.replace("/dashboard"), 1200);
     } catch (e) {

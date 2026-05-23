@@ -93,20 +93,6 @@ function isEngineer(roles: readonly Role[]): boolean {
   return roles.includes(ROLE.engineer);
 }
 
-// A user is "engineer-primary" when engineer is their HIGHEST role —
-// nothing supervisorial or admin-level above it. Used to gate the
-// full-screen incoming-call popup so super_admins / supervisors who
-// also happen to hold engineer don't get hijacked by ringtones.
-const SUPERVISORY_ROLES: readonly Role[] = [
-  ROLE.supervisor,
-  ROLE.department_admin,
-  ROLE.enterprise_admin,
-  ROLE.super_admin,
-];
-function isEngineerOnly(roles: readonly Role[]): boolean {
-  return roles.includes(ROLE.engineer) && !roles.some((r) => SUPERVISORY_ROLES.includes(r));
-}
-
 function initials(email: string): string {
   const local = email.split("@")[0] ?? "";
   const parts = local.split(/[._-]/);
@@ -219,6 +205,12 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
         style={{ backgroundColor: "var(--background)", color: "var(--text)" }}
       >
         {children}
+        {/* The v2 panels strip the shell chrome but must still surface the
+            incoming-call ring (engineers) and supervisor alerts — including the
+            "assignment declined, reassign" toast — so a super_admin sitting on
+            /admin/v2 is notified just like on /supervise. */}
+        {isEngineer(roles) && <EngineerIncomingMatch />}
+        {!engineer && <SupervisorAlerts roles={roles} />}
       </div>
     );
   }
@@ -336,19 +328,20 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
 
       <main className="flex-1 min-w-0">{children}</main>
 
-      {/* Engineer-PRIMARY only: full-screen incoming call popup. A user
-       *  who also holds a supervisorial role (super_admin, enterprise_admin,
-       *  department_admin, supervisor) won't be paged here — they monitor
-       *  calls via Inbox/Supervise instead.
+      {/* Full-screen incoming-call popup for anyone who can take calls
+       *  (engineer role). The modal self-gates: it only renders when
+       *  match_engineer has created a PENDING offer for this exact user, and
+       *  the matcher only offers to engineers whose availability toggle is on
+       *  (engineer_profiles.is_available). So a supervisor/admin who also
+       *  holds engineer is only paged if they've gone "Online" as an engineer
+       *  — availability is the control, not role composition. (Previously
+       *  gated to engineer-ONLY accounts, which silently suppressed rings for
+       *  multi-role engineers.)
        *
-       *  TEMP 2026-05-18: legacy EngineerIncomingRequest mount disabled
-       *  while the push-ring (EngineerIncomingMatch) path is being
-       *  validated. Legacy queued sessions (anonymous /room users) can
-       *  still be picked up from /dashboard or /inbox; they just won't
-       *  auto-ring engineers. Re-enable by un-commenting the line below
-       *  and the matching import at the top of the file. */}
-      {/* {isEngineerOnly(roles) && <EngineerIncomingRequest />} */}
-      {isEngineerOnly(roles) && <EngineerIncomingMatch />}
+       *  TEMP 2026-05-18: legacy EngineerIncomingRequest mount disabled while
+       *  the push-ring (EngineerIncomingMatch) path is validated. */}
+      {/* {isEngineer(roles) && <EngineerIncomingRequest />} */}
+      {isEngineer(roles) && <EngineerIncomingMatch />}
 
       {/* Supervisor-only: non-blocking urgent session alerts */}
       {!engineer && <SupervisorAlerts roles={roles} />}
@@ -417,6 +410,18 @@ function ProfileButton({
   }, [open]);
 
   const handleSignOut = async () => {
+    // Flip the engineer Offline before the session dies, so the matcher and
+    // the supervisor/admin assign list stop showing them as available. Must
+    // run BEFORE signOut (the RPC needs auth.uid()). Best-effort: non-engineer
+    // roles get NOT_AN_ENGINEER, which we ignore.
+    try {
+      await supabaseRef.current.rpc("engineer_set_online", { _online: false });
+    } catch { /* best-effort cleanup */ }
+    // Supervisors go off duty on logout too, so coverage re-routes to whoever
+    // is still on duty (non-supervisors get NOT_A_SUPERVISOR, which we ignore).
+    try {
+      await supabaseRef.current.rpc("supervisor_set_online", { _online: false });
+    } catch { /* best-effort cleanup */ }
     await supabaseRef.current.auth.signOut();
     router.push("/staff/login");
   };
@@ -537,6 +542,9 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
   const isSupervisor = !isEngineer(roles);
   const [alerts, setAlerts] = useState<AlertToast[]>([]);
   const seenRef = useRef<Set<string>>(new Set());
+  // Separate dedupe set for "reassignment needed" toasts so a session can be
+  // re-flagged after it's reassigned (cleared when reassign_needed goes false).
+  const seenReassignRef = useRef<Set<string>>(new Set());
   const supabaseRef = useRef(createClient());
 
   const dismiss = (id: string) =>
@@ -553,6 +561,27 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
         (payload) => {
           const row = (payload.new ?? payload.old) as GuestCall | null;
           if (!row || !row.id) return;
+
+          // A directed (manual) assignment was declined → the supervisor needs
+          // to reassign. Toast once per reassignment episode; clear the dedupe
+          // marker when the flag goes false so a later decline re-notifies.
+          if (row.reassign_needed) {
+            if (!seenReassignRef.current.has(row.id)) {
+              seenReassignRef.current.add(row.id);
+              setAlerts((prev) => [
+                ...prev,
+                {
+                  id: `${row.id}-reassign-${Date.now()}`,
+                  sessionId: row.id,
+                  name: row.guest_name ?? "A customer",
+                  urgency: "reassign",
+                },
+              ]);
+            }
+          } else {
+            seenReassignRef.current.delete(row.id);
+          }
+
           const urgent = row.urgency === "urgent" || row.urgency === "critical";
           const liveish = ["queued", "assigned", "joining", "live", "grace"].includes(
             row.status as string,
@@ -600,9 +629,13 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
             }}
           />
           <div className="flex-1">
-            <div className="text-sm font-medium">{a.name}</div>
+            <div className="text-sm font-medium">
+              {a.urgency === "reassign" ? "Assignment declined" : a.name}
+            </div>
             <div className="text-xs" style={{ color: "var(--text-muted)" }}>
-              {a.urgency} session
+              {a.urgency === "reassign"
+                ? `${a.name} needs a new engineer — reassign in Supervise`
+                : `${a.urgency} session`}
             </div>
           </div>
           <button

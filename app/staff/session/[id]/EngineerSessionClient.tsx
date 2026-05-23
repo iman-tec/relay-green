@@ -48,11 +48,9 @@ const CRIT_RED_SOFT      = "rgba(139, 26, 26, 0.18)";
 export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
   const router = useRouter();
   const state  = useEngineerSession(sessionId);
-  // Anchor the engineer's elapsed-time display on assigned_at — the moment
-  // they claimed the session. Chat starts immediately at claim, so the
-  // engineer needs to see the clock running before either party joins Zoom.
-  // (The customer-side useSessionTimer does the same and that's what enforces
-  // the 10-min free cap, so the two views stay in lock-step.)
+  // Anchor the engineer's elapsed-time display on assigned_at — when they
+  // accepted and the session/chat began. Matches the customer view and the
+  // server billing anchor; independent of the Zoom call.
   const timer  = useSessionTimer(state.session?.assigned_at ?? state.session?.joined_at ?? null, state.session?.free_minutes ?? 10);
   const [meEmail, setMeEmail] = useState<string>("");
   // Viewer role gate. Anyone the useIsSupervisor hook recognises as a
@@ -907,9 +905,12 @@ function ChatPane({
   const showStartMeetingButton = !readOnly && (!session.zoom_meeting_id || zoomEnded);
 
   // Join URL the engineer/monitor should open. The latest active meeting
-  // always points at the current session row's URLs.
+  // always points at the current session row's URLs. Supervisors (read-only
+  // monitor mode) join via the anonymous observer registrant
+  // (zoom_observer_url) so neither party sees who is watching — falling back
+  // to the customer join URL for legacy rows minted before observer support.
   const zoomCardUrl = readOnly
-    ? session.zoom_join_url
+    ? session.zoom_observer_url ?? session.zoom_join_url
     : session.zoom_start_url ?? session.zoom_join_url;
 
   // Pair "started" / "ended" system messages in chronological order so each
@@ -977,7 +978,10 @@ function ChatPane({
                       durationSec={durationSec}
                       joinUrl={!ended ? zoomCardUrl : null}
                       onJoin={!ended && !readOnly ? () => void state.markJoined() : undefined}
-                      selfJoined={!!session.engineer_joined_at}
+                      // A read-only supervisor can always drop into the call as
+                      // an observer — don't gate their Join button on the
+                      // engineer's join state (engineer_joined_at).
+                      selfJoined={!readOnly && !!session.engineer_joined_at}
                       onCancel={!ended && !readOnly ? handleCancelMeeting : undefined}
                       summaryBody={summary?.body ?? null}
                       recordingBody={isSupervisor ? recording?.body ?? null : null}

@@ -25,6 +25,8 @@ export type GuestCall = {
   zoom_meeting_id: string | null;
   zoom_join_url: string | null;
   zoom_start_url: string | null;
+  // Anonymous supervisor observer join URL (migration 20260524110000).
+  zoom_observer_url: string | null;
   claimed_by: string | null;
   claimed_at: string | null;
   started_at: string | null;
@@ -58,6 +60,13 @@ export type GuestCall = {
   // row. NULL until claimed (queued) or for engineers with no pod assignment.
   // Drives /supervise scoping for pod_lead / ops_manager.
   pod_id: string | null;
+  // Covering supervisor — auto-assigned at claim, re-balanced on supervisor
+  // online/offline so a session is never left unsupervised when its pod's own
+  // supervisor is offline (migration 20260524100000).
+  supervisor_user_id: string | null;
+  // True when a directed (manual) assignment was declined and the session is
+  // awaiting a supervisor reassignment (migration 20260524170000).
+  reassign_needed: boolean;
   // Phase 4: project grouping. Both nullable for legacy / "General" sessions.
   project_id: string | null;
   project_name: string | null;

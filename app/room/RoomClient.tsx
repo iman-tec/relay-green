@@ -41,6 +41,7 @@ import { Button, EmptyState, IconButton, Modal, cn } from "@/app/_components/ui"
 import { useCustomerSession } from "@/lib/relay/useCustomerSession";
 import { useIsSupervisor, isSupervisorOnlyMessage } from "@/lib/relay/useIsSupervisor";
 import { useSessionTimer } from "@/lib/relay/useSessionTimer";
+import { computeSessionClock } from "@/lib/relay/sessionClock";
 import { createClient } from "@/lib/supabase/browser";
 import { patchProfile, readProfile } from "@/lib/relay/profile";
 import { IntakeAssistant } from "@/app/_components/intake/IntakeAssistant";
@@ -70,20 +71,22 @@ const ACTIVE_TIMER_STATES = ["assigned", "joining", "live", "grace", "expired_fr
 
 function useFreeSessionLifecycle(
   session: GuestCall | null,
-  paidMinutesRemaining: number,
+  entitlement: { free_consumed_at: string | null; paid_minutes_remaining: number },
 ) {
-  // `now` is the only state — replaces a tick counter and lets us derive
-  // isFreeExpired in the body without reading Date.now() directly (which the
-  // lint rule disallows as it's impure for render).
+  // `now` is the only state — replaces a tick counter and lets us derive the
+  // clock in the body without reading Date.now() directly (which the lint
+  // rule disallows as it's impure for render).
   const [now, setNow] = useState<number>(() => Date.now());
   const status      = session?.status;
-  // Anchor the free-cap clock on assigned_at — the moment the engineer
-  // claimed and chat became possible. Falls back to joined_at for any
-  // legacy row that doesn't have assigned_at populated.
-  const startedAt   = session?.assigned_at ?? session?.joined_at ?? null;
+  // Anchor the clock on assigned_at — billing starts when the engineer accepts
+  // and the session/chat begins (matches the server's end_session anchor). NOT
+  // tied to Zoom: starting a Zoom call mid-session never resets the clock.
+  const anchor      = session?.assigned_at ?? session?.joined_at ?? null;
   const freeMinutes = session?.free_minutes ?? 10;
-  const paidExtensionAt  = session?.paid_extension_at;
-  const sessionId        = session?.id;
+  const paidExtensionAt    = session?.paid_extension_at ?? null;
+  const sessionId          = session?.id;
+  const freeConsumed       = entitlement.free_consumed_at != null;
+  const paidMinutesRemaining = entitlement.paid_minutes_remaining;
 
   const isActive = !!status && (ACTIVE_TIMER_STATES as readonly string[]).includes(status);
 
@@ -94,38 +97,45 @@ function useFreeSessionLifecycle(
     return () => clearInterval(id);
   }, [isActive]);
 
-  // Derived from `now` in state — pure with respect to render inputs.
-  // Once the customer is on paid time (paid_extension_at stamped), the
-  // 10-min free cap no longer applies — they're on metered paid time.
-  const isFreeExpired =
-    isActive && !!startedAt && !paidExtensionAt &&
-    now - new Date(startedAt).getTime() >= freeMinutes * 60 * 1000;
+  // Single source of truth for free + paid enforcement (see sessionClock).
+  // Three outcomes it can ask for:
+  //   • shouldPivotToPaid  free cap hit, balance available → start paid time
+  //   • shouldEnd          free expired with no balance, OR paid balance
+  //                        exhausted → hard end with the matching reason
+  const clock = isActive
+    ? computeSessionClock({ anchor, now, freeMinutes, freeConsumed, paidExtensionAt, paidMinutesRemaining })
+    : null;
+  const shouldPivot = !!clock?.shouldPivotToPaid;
+  const shouldEnd   = !!clock?.shouldEnd;
+  const endReason   = clock?.endReason ?? null;
 
   useEffect(() => {
     if (!sessionId) return;
-    if (!isFreeExpired) return;
     const sb = createClient();
 
-    // Customer has paid balance → silently pivot onto paid time. The timer
-    // mode flips from countdown to count-up on the next render.
-    if (paidMinutesRemaining > 0) {
+    // Customer has paid balance and just crossed the free cap → silently
+    // pivot onto paid time. The timer mode flips from countdown to count-up
+    // on the next render; billing then meters from paid_extension_at.
+    if (shouldPivot) {
       if (!paidExtensionAt) {
         void sb.from("guest_calls").update({ paid_extension_at: new Date().toISOString() }).eq("id", sessionId);
       }
       return;
     }
 
-    // Zero balance → hard end per spec Q2. end_session is idempotent on
-    // terminal states, so duplicate firings (customer + engineer tabs both
-    // ticking) collapse safely. summarize-guest-call + end-zoom-meeting
-    // are fire-and-forget; the latter will 403 from the customer tab today
-    // (auth is still engineer-only — bug #8 will relax it).
-    void (async () => {
-      await sb.rpc("end_session", { _session_id: sessionId, _reason: "free_session_expired" });
-      void sb.functions.invoke("summarize-guest-call", { body: { guest_call_id: sessionId } });
-      void sb.functions.invoke("end-zoom-meeting", { body: { session_id: sessionId } });
-    })();
-  }, [sessionId, isFreeExpired, paidExtensionAt, paidMinutesRemaining]);
+    // Hard end — free expired with zero balance, OR the paid balance ran out
+    // mid-call (the bug: nothing used to stop a paid session). end_session is
+    // idempotent on terminal states, so duplicate firings (customer + engineer
+    // tabs both ticking) collapse safely. summarize-guest-call +
+    // end-zoom-meeting are fire-and-forget.
+    if (shouldEnd) {
+      void (async () => {
+        await sb.rpc("end_session", { _session_id: sessionId, _reason: endReason ?? "free_session_expired" });
+        void sb.functions.invoke("summarize-guest-call", { body: { guest_call_id: sessionId } });
+        void sb.functions.invoke("end-zoom-meeting", { body: { session_id: sessionId } });
+      })();
+    }
+  }, [sessionId, shouldPivot, shouldEnd, endReason, paidExtensionAt]);
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────
@@ -171,7 +181,7 @@ export function RoomClient() {
   // Free-cap + buffer watchdog. Self-contained — does its own 1s ticking
   // only when status is "live"/"expired_free", so the whole tree no longer
   // re-renders every second.
-  useFreeSessionLifecycle(state.session, state.entitlement.paid_minutes_remaining);
+  useFreeSessionLifecycle(state.session, state.entitlement);
 
   // Desktop-shell integration: hide the floating orb widget while the
   // customer is in a session. Bridge is no-op in the plain browser.
@@ -285,9 +295,13 @@ export function RoomClient() {
     }
     if (
       state.session?.status === "ended" &&
-      state.session.ended_reason === "free_session_expired" &&
+      (state.session.ended_reason === "free_session_expired" ||
+        state.session.ended_reason === "paid_balance_exhausted") &&
       state.entitlement.paid_minutes_remaining <= 0
     ) {
+      // Free trial OR paid credits ran the session to its end — surface the
+      // recharge/upgrade path. "free_expired" copy covers both (upgrade to
+      // continue); the paid case lands here once the wallet hits 0.
       setPaywallOpen("free_expired");
     }
   }, [state.session?.status, state.session?.ended_reason, state.entitlement.paid_minutes_remaining, isEmployee]);
@@ -1754,8 +1768,8 @@ const FloatingStatus = memo(function FloatingStatus({
   const [confirmEnd, setConfirmEnd] = useState(false);
 
   // Hide entirely when there's nothing useful to show (idle, no session).
-  // Timer shows from the moment the engineer claims (status='assigned') —
-  // chat starts then, and the 10-min free cap counts chat + Zoom combined.
+  // Timer shows from the moment the engineer accepts (status='assigned') —
+  // chat starts then, and the free cap counts from there (chat + Zoom combined).
   const showTimer =
     !!session &&
     !!session.assigned_at &&
@@ -2638,16 +2652,15 @@ const WalletBalance = memo(function WalletBalance({
 
   const paidAt       = session?.paid_extension_at ?? null;
   const freeConsumed = !!entitlement.free_consumed_at;
-  // Session starts when the engineer claims (assigned_at). Chat is part of
-  // the paid session — billing ticks from that point forward, regardless
-  // of whether Zoom has been joined yet.
+  // Billing ticks from assigned_at (when the engineer accepted and chat began),
+  // not from Zoom — so starting a Zoom call never resets the burn.
   const assignedAt   = session?.assigned_at ?? null;
   const isEnded      = session?.status === "ended" || session?.status === "cancelled" || session?.status === "abandoned";
 
   // Tick the visible balance whenever paid minutes are being burned:
   // either paid_extension_at is stamped (first-timer who upgraded), or the
   // customer is a returning paid user (free already consumed) and the
-  // engineer has claimed.
+  // engineer has accepted.
   const shouldTick = !isEnded && !!assignedAt && (!!paidAt || freeConsumed);
 
   // Store the clock in state so the body stays pure for the lint rule.
