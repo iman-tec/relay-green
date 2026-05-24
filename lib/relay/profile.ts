@@ -33,6 +33,8 @@ export type TechComfort =
 
 export type Urgency = "now" | "this_week" | "planning";
 
+export type Need = "stuck" | "launch" | "maintain";
+
 export interface ProfileStack {
   aiTools: string[];
   backend: string[];
@@ -51,6 +53,11 @@ export interface ProfileSnapshot {
    *  once. Returning users skip the heavy intake and see the lightweight
    *  project-confirm screen instead. */
   hasFullIntake: boolean;
+  /** Supabase auth user id this profile belongs to. Binding the local
+   *  cache to a specific user prevents the "shared browser → wrong user
+   *  sees Welcome back" bug: when the current auth user does not match,
+   *  callers must treat the profile as empty. */
+  userId: string | null;
   /** Epoch ms of last persist. Used in debug + future expiry. */
   updatedAt: number;
 }
@@ -65,6 +72,7 @@ function empty(): ProfileSnapshot {
     lastProjectId: null,
     lastProjectName: null,
     hasFullIntake: false,
+    userId: null,
     updatedAt: 0,
   };
 }
@@ -101,6 +109,7 @@ export interface ProfilePatch {
   lastProjectId?: string | null;
   lastProjectName?: string | null;
   hasFullIntake?: boolean;
+  userId?: string | null;
 }
 
 function mergeStack(prev: ProfileStack, incoming?: Partial<ProfileStack>): ProfileStack {
@@ -138,6 +147,7 @@ export function patchProfile(p: ProfilePatch): ProfileSnapshot {
       p.lastProjectName === undefined ? prev.lastProjectName : p.lastProjectName,
     hasFullIntake:
       p.hasFullIntake === undefined ? prev.hasFullIntake : p.hasFullIntake,
+    userId: p.userId === undefined ? prev.userId : p.userId,
     updatedAt: Date.now(),
   };
   if (typeof window !== "undefined") {
@@ -168,13 +178,35 @@ export function writeStack(stack: ProfileStack): ProfileSnapshot {
   return next;
 }
 
-/** Convenience: does this profile have enough to skip the full intake? */
-export function hasFullIntake(p: ProfileSnapshot = readProfile()): boolean {
+/** Convenience: does this profile have enough to skip the full intake?
+ *  When `currentUserId` is supplied, returns false on a userId mismatch —
+ *  protects against the shared-browser cross-account contamination bug
+ *  where a stale localStorage profile leaked a "Welcome back" greeting
+ *  onto a new sign-in. Pass `null` to skip the binding check (guest path).
+ */
+export function hasFullIntake(
+  p: ProfileSnapshot = readProfile(),
+  currentUserId?: string | null,
+): boolean {
   if (!p.hasFullIntake) return false;
   if (!p.techComfort) return false;
+  if (currentUserId !== undefined && p.userId && p.userId !== currentUserId) {
+    return false;
+  }
   const total =
     p.stack.aiTools.length + p.stack.backend.length + p.stack.frontend.length;
   return total > 0;
+}
+
+/** Wipe the local profile entirely. Called when the auth user changes and
+ *  the prior cached profile belonged to a different account. */
+export function clearProfile(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    /* swallow */
+  }
 }
 
 /** Human-readable stack list ("Claude, Next.js, Supabase") for the
@@ -206,6 +238,35 @@ export const TECH_COMFORT_OPTIONS: ReadonlyArray<{
     label: "Technically equipped",
     description: "I code; I just need an expert pair on this.",
     emoji: "💻",
+  },
+];
+
+export const NEED_OPTIONS: ReadonlyArray<{
+  value: Need;
+  label: string;
+  description: string;
+  emoji: string;
+}> = [
+  {
+    value: "stuck",
+    label: "I'm building — need help getting unstuck",
+    description:
+      "You're in the middle of a build with AI. Hit a wall. Need a human to debug, architect, or just point you the right way.",
+    emoji: "🟥",
+  },
+  {
+    value: "launch",
+    label: "I'm ready to launch — need someone to ship it",
+    description:
+      "Your MVP works. Now you need domains, SSL, security, performance, and a production deploy. Someone who's done it before.",
+    emoji: "🚀",
+  },
+  {
+    value: "maintain",
+    label: "I need ongoing support — maintenance, scale, reliability",
+    description:
+      "Your product is live. APIs change, dependencies break, traffic grows. You need someone who remembers your stack.",
+    emoji: "🔧",
   },
 ];
 
