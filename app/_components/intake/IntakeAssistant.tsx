@@ -438,6 +438,31 @@ export function IntakeAssistant({
     // blob:// reference; persistence is the backend's job.
   }, []);
 
+  // Clipboard paste — pulls a pasted screenshot off the clipboard and stages
+  // it. Plain-text pastes fall through to the textarea untouched.
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent) => {
+      const img = Array.from(e.clipboardData?.items ?? [])
+        .filter((it) => it.kind === "file" && it.type.startsWith("image/"))
+        .map((it) => it.getAsFile())
+        .find((f): f is File => f !== null);
+      if (!img) return;
+      e.preventDefault();
+      handleFile(img);
+    },
+    [handleFile],
+  );
+
+  // Drag-and-drop anywhere on the composer stages the first dropped file.
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      const f = Array.from(e.dataTransfer.files ?? [])[0];
+      if (f) handleFile(f);
+    },
+    [handleFile],
+  );
+
   const handleSubmit = useCallback(
     (e: FormEvent) => {
       e.preventDefault();
@@ -618,7 +643,14 @@ export function IntakeAssistant({
             Type a message for your engineer
           </label>
 
-          <div className="flex flex-1 items-end gap-1 rounded-xl border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 transition-colors focus-within:border-[var(--primary)] focus-within:ring-2 focus-within:ring-[var(--primary-soft)]">
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "copy";
+            }}
+            onDrop={handleDrop}
+            className="flex flex-1 items-end gap-1 rounded-xl border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 transition-colors focus-within:border-[var(--primary)] focus-within:ring-2 focus-within:ring-[var(--primary-soft)]"
+          >
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
@@ -647,6 +679,7 @@ export function IntakeAssistant({
               id="intake-composer"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
+              onPaste={handlePaste}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();

@@ -129,6 +129,21 @@ export function ChatComposer({
     stage(files);
   };
 
+  // Clipboard paste — screenshots (Cmd/Ctrl+V) arrive as image files on the
+  // clipboard. Pull them out and stage them; let plain-text pastes fall
+  // through to the textarea untouched.
+  const onPaste = (e: React.ClipboardEvent) => {
+    if (disabled) return;
+    const items = Array.from(e.clipboardData?.items ?? []);
+    const imgs = items
+      .filter((it) => it.kind === "file" && it.type.startsWith("image/"))
+      .map((it) => it.getAsFile())
+      .filter((f): f is File => f !== null);
+    if (imgs.length === 0) return;
+    e.preventDefault();
+    stage(imgs);
+  };
+
   const accentBorder = hover ? BRAND_GREEN : "var(--border)";
 
   return (
@@ -257,6 +272,7 @@ export function ChatComposer({
             disabled={disabled}
             placeholder={placeholder}
             onChange={(e) => setText(e.target.value)}
+            onPaste={onPaste}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
