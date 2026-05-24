@@ -38,6 +38,24 @@ async function forward(req: NextRequest, ctx: { params: Promise<{ path: string[]
   headers.delete("content-length");
   headers.delete("accept-encoding"); // let upstream pick; we'll re-encode below
 
+  // Guarantee the project apikey reaches Supabase. The browser client
+  // normally attaches it, but if NEXT_PUBLIC_SUPABASE_ANON_KEY wasn't
+  // inlined into the client bundle (env missing at build time) the call
+  // arrives without one and Supabase rejects with "No API key found".
+  // The publishable/anon key is public by design, so injecting it
+  // server-side here is safe and makes the proxy self-sufficient. The
+  // user's session JWT still rides in the Authorization header from the
+  // browser and is left untouched when present.
+  if (!headers.has("apikey")) {
+    const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (anon) {
+      headers.set("apikey", anon);
+      if (!headers.has("authorization")) {
+        headers.set("authorization", `Bearer ${anon}`);
+      }
+    }
+  }
+
   const hasBody = !["GET", "HEAD"].includes(req.method);
   const upstream = await fetch(target.toString(), {
     method:  req.method,
