@@ -402,3 +402,81 @@ No new public env vars. No new secrets shipped to the client.
 | `// TODO(auth)` | `app/_marketing/TryRelayFunnel.tsx`, `app/try-room/page.tsx`, `app/try-room/TryRoomClient.tsx` | Upgrade guest landing to real passwordless session keyed by `guest_calls` + magic-link upsell. |
 | `// TODO(profile)` | `lib/relay/profile.ts`, `app/intake/IntakeClient.tsx` | Move localStorage profile snapshot to a real backend store (the new `customer_profiles` table that landed on main already covers part of this). |
 
+---
+
+## 10. v1.1 follow-up audit (2026-05-24)
+
+Follow-up to §9 covering four user-reported issues against the v1-demo branch.
+
+### 10.1 Multi-select on the "AI tools" / stack question (Order 1)
+
+**Verified already correct on all live surfaces — no code change to selection logic needed.**
+
+| File | Line | State shape | Toggle | Verdict |
+|------|------|-------------|--------|---------|
+| `app/_marketing/TryRelayFunnel.tsx` | 59, 524–532, 552–554 | `aiTools: string[]` | `.some()` + spread, true toggle | Multi ✓ |
+| `app/intake/IntakeClient.tsx` | 80–84, 530–538 | `aiTools: string[]` | `.some()` + spread, true toggle | Multi ✓ |
+| `app/_components/intake/QuickReturnIntake.tsx` | — | (project picker, not stack) | n/a | n/a |
+| `app/account/AccountClient.tsx` | — | (no AI-tool selector) | n/a | n/a |
+
+**Eliminated source of confusion:** `app/_marketing/try-relay/` (legacy `TryRelayWizard`, `steps.tsx`, `data.ts`) had `aiTool: string | null` (single-string) + `multi: false` and a hardcoded `ENGINEERS` array (Jordan D. / Priya R. / Marcus K.). The directory was unused at runtime (`TryRelayProvider` mounts `TryRelayFunnel`) but kept showing up in greps as a "this code allows only one selection" red herring. **Directory deleted in this commit.**
+
+**Verification path:** open `/`, click Try RELAY, advance to Q2 (stack), click Claude + ChatGPT + Cursor — all three highlight + persist in `localStorage.relay-tryrelay-context.stack.aiTools`.
+
+### 10.2 Engineers from Supabase, online first (Order 2)
+
+**Hardcoded mock engineers — all deleted with `app/_marketing/try-relay/data.ts`.** Remaining "Priya R." strings in `Home.tsx`, `HowItWorks.tsx`, `brand-guidelines/page.tsx`, `product/page.tsx` are **marketing testimonial copy** rendered as static text; they never feed the matcher and are intentionally left untouched.
+
+**Live runtime engineer sources:**
+
+- Customer-facing Match Found card → [`/api/online-engineers`](app/api/online-engineers/route.ts) → server-side service-role read of `engineer_profiles` filtered `is_available=true`, joined to `profiles` for name → pseudonymized.
+- Customer matching pipeline → `match_engineer(_intake_id)` RPC in [supabase/migrations/20260520100000_onboarding_and_matching.sql] — also filters `is_available=true` and **excludes** engineers in an active session (`guest_calls.status IN ('assigned','joining','live','grace','expired_free','ending')`).
+- Online truth: `engineer_profiles.is_available` (boolean). The presence-audit infrastructure on main (`engineer_sessions`, `engineer_status_changes`, `engineer_set_online(bool)` RPC, migration 20260522150000) writes to `is_available` atomically, so the existing column read is authoritative. **No additional table query needed.**
+
+The matcher already rings only-online engineers (offline engineers are filtered out at the SQL level). Order-by-overlap+experience inside that online subset is the existing ring queue.
+
+`// TODO(presence): wire realtime online status` — could subscribe to the `engineer_status_changes` channel to update the Match Found card in-modal if an engineer goes offline mid-funnel; out of scope for v1.
+
+### 10.3 Try-RELAY = guest path, no auth (Order 3)
+
+**Verified clean across the entry surfaces:**
+
+| Entry | File | Click target |
+|-------|------|--------------|
+| Nav button | `app/_marketing/Nav.tsx:127` | `<TryRelayButton />` → context `open()` |
+| Hero "Press the dot" | `app/_marketing/PressTheDot.tsx:26` | context `open()` |
+| Proof dots | `app/_marketing/ProofDotButton.tsx:12` | context `open()` |
+| Product hero orb | `app/product/ProductHeroOrb.tsx:13` | context `open()` |
+| CTA banner | `app/_marketing/CtaBanner.tsx:69` | `<TryRelayButton />` |
+| Mobile nav | `app/_marketing/MobileNavDrawer.tsx:104` | `<TryRelayButton />` |
+
+Every entry resolves through `TryRelayProvider` → `TryRelayFunnel` → `startSession()` → `router.push("/try-room")` (no auth check). [`proxy.ts`](proxy.ts:36-39) `CUSTOMER_PREFIXES = ["/room", "/account"]` — `/try-room` and `/intake` are **not** gated by the edge proxy.
+
+The only login redirect in the funnel flow path is `app/intake/IntakeClient.tsx:98-101` — a deliberate client-side guard on the signed-in `/intake` surface, not on the Try-RELAY guest path.
+
+Smoke (dev): `curl /try-room` returns 200 without any cookie present.
+
+### 10.4 First-time signed-in flow preserved (Order 4)
+
+**Flow stays:** `/intake` (4-step editorial wizard) → `router.replace("/intake/matching/{intakeId}")` → MatchingClient ring queue → `router.replace("/room")` on engineer accept.
+
+CTA rename only — `app/intake/IntakeClient.tsx:381` changed from `Find my engineer →` to **`Get an engineer →`** to match the user's spec wording. No other edits to the signed-in flow.
+
+The chat-continues-into-room mechanism is unchanged:
+
+- Intake transcript persisted via `append_intake_message` RPC to `client_intakes.intake_messages` (`app/_components/intake/IntakeAssistant.tsx:79`).
+- `summarize-intake` edge function rolls the transcript into `client_intakes.intake_summary` at the moment the engineer accepts (`app/intake/matching/[id]/MatchingClient.tsx:228`).
+- `RoomClient` auto-fetches the active session via `useCustomerSession` from `guest_calls`; no URL params required for the handoff.
+- New signed-in accounts see the first-time greeting (the §9.4 fix) — `"Hi! Describe your issue — what do you need help with?"`. The async upgrade effect swaps to "Welcome back" only if Supabase confirms prior `guest_calls` history for the current `auth.uid()`.
+
+### 10.5 Files touched this pass
+
+| Action | Path | Reason |
+|--------|------|--------|
+| delete | `app/_marketing/try-relay/TryRelayWizard.tsx` | unused legacy single-select wizard |
+| delete | `app/_marketing/try-relay/steps.tsx` | unused, hardcoded selection state |
+| delete | `app/_marketing/try-relay/data.ts` | hardcoded `ENGINEERS` mock array + `multi: false` constraint |
+| edit | `app/intake/IntakeClient.tsx:381` | CTA label `Find my engineer →` → `Get an engineer →` |
+| edit | `UIchanges.md` (this file) | §10 follow-up audit |
+
+

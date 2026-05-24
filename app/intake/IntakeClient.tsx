@@ -378,7 +378,7 @@ export function IntakeClient() {
               disabled={!canAdvance || busy}
               loading={busy}
             >
-              {step === TOTAL_STEPS ? "Find my engineer →" : "Continue →"}
+              {step === TOTAL_STEPS ? "Get an engineer →" : "Continue →"}
             </Button>
           </div>
         </CardBody>
