@@ -8,116 +8,236 @@
 
 import { Shell } from "./Shell";
 import { SplineHero } from "./SplineHero";
+import { HowItWorks } from "./HowItWorks";
 import { RelayLogo } from "./RelayLogo";
 import { EnterpriseCta } from "./EnterpriseCta";
 import { PhaseCards, type PhaseCard } from "./PhaseCards";
 import { PressTheDot } from "./PressTheDot";
+import { VideoCard } from "./VideoCard";
 
 const TRACKS = [
   {
     id: "claude",
     name: "Claude",
     mark: "C",
+    color: "#cc785c",
     desc: "Anthropic. The reasoning track. Architectures, refactors, the gnarly questions.",
   },
   {
     id: "chatgpt",
     name: "ChatGPT",
     mark: "G",
+    color: "#10a37f",
     desc: "OpenAI. The most-built-on track. Plugins, function calls, pipelines.",
   },
   {
     id: "gemini",
     name: "Gemini",
     mark: "G",
+    color: "#5f6368",
     desc: "Google. Multimodal. Long-context. Workspace-native builds.",
   },
   {
     id: "copilot",
     name: "Copilot",
     mark: "M",
+    color: "#7c3aed",
     desc: "Microsoft. Inside the IDE. Inside the org. Enterprise-shaped.",
   },
   {
     id: "cursor",
     name: "Cursor",
     mark: "C",
+    color: "#6b7280",
     desc: "AI-native editor. The track for builders who already speak code.",
   },
   {
     id: "lovable",
     name: "Lovable",
     mark: "L",
+    color: "#ec4899",
     desc: "Prompt-to-app. The marketing manager’s front door. Where most marketing-led builds begin.",
   },
   {
     id: "replit",
     name: "Replit",
     mark: "R",
+    color: "#f26207",
     desc: "Browser-native dev. Agents. Deploys. The classroom-to-production track.",
   },
   {
     id: "v0",
     name: "v0",
     mark: "v",
+    color: "#000000",
     desc: "Vercel. Component generation. The design-to-React handoff track.",
+  },
+  {
+    id: "bolt",
+    name: "Bolt",
+    mark: "B",
+    color: "#2563eb",
+    desc: "StackBlitz. In-browser AI builds. WebContainers. Instant deploys.",
+  },
+  {
+    id: "windsurf",
+    name: "Windsurf",
+    mark: "W",
+    color: "#06b6d4",
+    desc: "Codeium. Agentic IDE. Long-running tasks. Multi-file context.",
   },
 ];
 
-// Curated top production stack names for the homepage strip. Mixed order
-// (payments / db / hosting / comms / analytics / etc.) so the scrolling
-// marquee shows breadth rather than reading like a category list.
+// Full production-stack list (~145 services) used by the homepage marquee.
+// Alphabetized so the scrolling rows interleave categories (payments, db,
+// hosting, comms, analytics, etc.) and read as breadth rather than as a
+// category list.
 const INTEGRATIONS = [
-  "Stripe",
   "Adyen",
-  "PayPal",
-  "Razorpay",
-  "Paddle",
-  "Neon",
-  "Supabase",
-  "Postgres",
-  "MongoDB",
-  "Redis",
-  "DynamoDB",
-  "MySQL",
-  "BigQuery",
-  "Snowflake",
-  "Firestore",
-  "Vercel",
-  "Netlify",
-  "Cloudflare",
-  "AWS",
-  "GCP",
-  "Azure",
-  "Render",
-  "Fly.io",
-  "Railway",
-  "DigitalOcean",
-  "SendGrid",
-  "Postmark",
-  "Resend",
-  "Twilio",
+  "Airbyte",
+  "Algolia",
+  "Amplitude",
+  "Anthropic",
+  "Apollo",
+  "App Store",
+  "Asana",
   "Auth0",
+  "AWS",
+  "Azure",
+  "BetterStack",
+  "BigQuery",
+  "Bitbucket",
+  "Brevo",
+  "Brex",
+  "Bubble",
+  "Builder.io",
+  "Bunny",
+  "Chroma",
   "Clerk",
-  "WorkOS",
-  "Okta",
-  "Firebase Auth",
+  "Cloudflare",
+  "Cloudinary",
   "Cognito",
-  "Segment",
-  "PostHog",
-  "Mixpanel",
+  "Cohere",
+  "Contentful",
+  "Customer.io",
   "Datadog",
-  "Sentry",
+  "DigitalOcean",
+  "Discord",
+  "Drizzle",
+  "DynamoDB",
+  "Elasticsearch",
+  "ElevenLabs",
+  "Expo",
+  "Fastly",
+  "FaunaDB",
+  "Figma",
+  "Firebase Auth",
+  "Firestore",
+  "Fly.io",
+  "Freshworks",
+  "Front",
+  "FullStory",
+  "GCP",
+  "Ghost",
   "GitHub",
   "GitLab",
-  "Linear",
-  "Figma",
-  "Slack",
-  "Salesforce",
+  "Google Maps",
+  "Grafana",
+  "Hasura",
+  "Heap",
+  "Heroku",
+  "Hetzner",
+  "Honeycomb",
+  "Hotjar",
   "HubSpot",
+  "Hugging Face",
+  "ImageKit",
+  "Inngest",
+  "Intercom",
+  "Jira",
+  "Klaviyo",
+  "Lemon Squeezy",
+  "Linear",
+  "LogRocket",
+  "Loops",
+  "Mailchimp",
+  "Mailgun",
+  "Mapbox",
+  "Marketo",
+  "Meilisearch",
+  "Mercury",
+  "MessageBird",
+  "Microsoft Teams",
+  "Mistral",
+  "Mixpanel",
+  "MongoDB",
+  "Mux",
+  "MySQL",
+  "Neon",
+  "Netlify",
+  "New Relic",
+  "Notion",
+  "Okta",
+  "Onfido",
   "OpenAI",
-  "Anthropic",
+  "OpenTelemetry",
+  "Paddle",
+  "PayPal",
+  "Persona",
   "Pinecone",
+  "Pipedrive",
+  "PlanetScale",
+  "Plausible",
+  "Play Store",
+  "Postgres",
+  "PostHog",
+  "Postmark",
+  "Prisma",
+  "Prismic",
+  "Prometheus",
+  "Qdrant",
+  "Railway",
+  "Razorpay",
+  "Redis",
+  "Render",
+  "Replicate",
+  "Resend",
+  "Salesforce",
+  "Sanity",
+  "S3",
+  "Segment",
+  "SendGrid",
+  "Sentry",
+  "Shopify",
+  "Slack",
+  "Snowflake",
+  "Square",
+  "Statsig",
+  "Storyblok",
+  "Strapi",
+  "Stripe",
+  "Stripe Identity",
+  "Stytch",
+  "Supabase",
+  "Temporal",
+  "TestFlight",
+  "Trigger.dev",
+  "tRPC",
+  "Twilio",
+  "Typesense",
+  "Uploadcare",
+  "Veriff",
+  "Vercel",
+  "Vimeo",
+  "Vonage",
+  "Weaviate",
+  "Webflow",
+  "WhatsApp Business",
+  "WordPress",
+  "WorkOS",
+  "Zapier",
+  "Zendesk",
+  "Zoom",
 ];
 
 const PHASES = [
@@ -249,6 +369,8 @@ export function MarketingHome() {
     <Shell>
       <SplineHero />
 
+      <HowItWorks />
+
       {/* How we relay, three-phase plans with Get-in-touch CTA.
           id="pricing" is the anchor target for the global "Pricing"
           nav link, which deep-links to this section from any page. */}
@@ -306,73 +428,28 @@ export function MarketingHome() {
               <RelayLogo size="0.78em" />
               <span>in action</span>
             </h2>
-            <p
-              style={{
-                fontSize: 14,
-                color: "rgba(244,242,238,0.6)",
-                maxWidth: "48ch",
-                margin: "0 auto",
-                lineHeight: 1.55,
-              }}
-            >
-              Two takes on how Relay connects AI builders with real engineers
-              — a quick enterprise pitch and the full product walkthrough.
-            </p>
           </div>
 
-          {/* 2-up grid: Enterprise explainer film (left) and cinematic film
-              (right). Both are MP4s with native controls; each <figure> carries
-              a <figcaption> badge so visitors can self-select by audience +
-              length. Collapses to 1-col below 880px. */}
+          {/* 2-up grid: enterprise pitch (left) and product walkthrough
+              (right). Each card is an idle poster with a green corner-play
+              button + inset metadata; click swaps in the native <video>. */}
           <div className="r-explainer-2up" style={{ alignItems: "start" }}>
-            <figure style={{ margin: 0 }}>
-              <video
-                src="/relay-explainer-enterprise-v1.mp4"
-                poster="/relay-explainer-v6-poster.svg"
-                controls
-                preload="metadata"
-                playsInline
-                style={{
-                  width: "100%",
-                  aspectRatio: "16 / 9",
-                  maxHeight: 540,
-                  borderRadius: 12,
-                  border: "1px solid rgba(244,242,238,0.08)",
-                  display: "block",
-                  background: "var(--ink)",
-                }}
-                data-testid="hero-video-enterprise"
-              />
-              <VideoBadge
-                eyebrow="ENTERPRISE PITCH"
-                duration="47s"
-                description="Why governance, compliance, and scale matter when AI ships to prod."
-              />
-            </figure>
-            <figure style={{ margin: 0 }}>
-              <video
-                src="/relay-explainer-v6-cinematic.mp4"
-                poster="/relay-explainer-v6-poster.svg"
-                controls
-                preload="metadata"
-                playsInline
-                style={{
-                  width: "100%",
-                  aspectRatio: "16 / 9",
-                  maxHeight: 540,
-                  borderRadius: 12,
-                  border: "1px solid rgba(244,242,238,0.08)",
-                  display: "block",
-                  background: "var(--ink)",
-                }}
-                data-testid="hero-video-cinematic"
-              />
-              <VideoBadge
-                eyebrow="PRODUCT WALKTHROUGH"
-                duration="3 min"
-                description="How a RELAY build becomes a live launch — paired with a real engineer."
-              />
-            </figure>
+            <VideoCard
+              src="/relay-explainer-enterprise-v1.mp4"
+              poster="/relay-explainer-v6-poster.svg"
+              eyebrow="Enterprise pitch"
+              duration="47s"
+              description="Why governance, compliance, and scale matter when AI ships to prod."
+              testId="hero-video-enterprise"
+            />
+            <VideoCard
+              src="/relay-combine-v2b.mp4"
+              poster="/relay-explainer-v6-poster.svg"
+              eyebrow="Product walkthrough"
+              duration="3 min"
+              description="How a build becomes a live launch — paired with a real engineer."
+              testId="hero-video-cinematic"
+            />
           </div>
         </div>
       </section>
@@ -417,14 +494,15 @@ export function MarketingHome() {
               style={{
                 marginTop: 0,
                 marginBottom: 0,
-                maxWidth: "22ch",
-                fontSize: "clamp(28px, 3.2vw, 44px)",
+                maxWidth: "30ch",
+                fontSize: "clamp(22px, 2.5vw, 34px)",
                 letterSpacing: "-0.015em",
-                lineHeight: 1.1,
+                lineHeight: 1.15,
               }}
             >
-              The boundary between creator and engineer is <em>dissolving.</em>{" "}
-              The need for engineering judgment is <em>not.</em>
+              The line between creator and engineer is <em>disappearing.</em>
+              <br />
+              Engineering judgment is <em>not.</em>
             </h2>
             <p
               className="r-lede"
@@ -434,11 +512,10 @@ export function MarketingHome() {
                 fontSize: "clamp(16px, 1.3vw, 19px)",
               }}
             >
-              AI has made software creation accessible to more people than ever.
-              But shipping still depends on architecture, deployment judgment,
-              security decisions, and operational care.{" "}
-              <RelayLogo size="1em" color="var(--ink)" /> bridges the gap
-              between what AI can generate and what production requires.
+              AI accelerates creation.
+              <br />
+              <RelayLogo size="1em" color="var(--ink)" /> adds the engineering
+              judgment required for production.
             </p>
           </div>
 
@@ -560,8 +637,8 @@ export function MarketingHome() {
                     style={{
                       width: 26,
                       height: 26,
-                      background: "var(--ink)",
-                      color: "var(--cream)",
+                      background: t.color,
+                      color: "#ffffff",
                       borderRadius: 8,
                       display: "inline-flex",
                       alignItems: "center",
@@ -597,12 +674,28 @@ export function MarketingHome() {
             >
               <span>Production stack we work with</span>
             </div>
-            <div className="r-marquee">
-              <div className="r-marquee-track">
-                <span>{INTEGRATIONS.join(" · ")}</span>
-                <span>{INTEGRATIONS.join(" · ")}</span>
-              </div>
-            </div>
+            {(() => {
+              // Split the full production-stack list into 3 visual rows
+              // (~48 / 48 / 48). All rows scroll the same direction; the
+              // outer .r-marquee container provides one unified border so
+              // the three lines read as a single ticker block.
+              const rowSize = Math.ceil(INTEGRATIONS.length / 3);
+              const rows = [
+                INTEGRATIONS.slice(0, rowSize),
+                INTEGRATIONS.slice(rowSize, rowSize * 2),
+                INTEGRATIONS.slice(rowSize * 2),
+              ];
+              return (
+                <div className="r-marquee r-marquee-multi">
+                  {rows.map((row, i) => (
+                    <div className="r-marquee-track" key={i}>
+                      <span>{row.join(" · ")}</span>
+                      <span>{row.join(" · ")}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
             <p
               style={{
                 marginTop: 16,
@@ -677,70 +770,3 @@ export function MarketingHome() {
   );
 }
 
-/**
- * Caption rendered below each hero video. Communicates: (1) what kind of
- * content the visitor will get (eyebrow), (2) how much of their time it
- * costs (duration pill), and (3) the angle / pitch in one short line.
- *
- * Visually mirrors the section's existing eyebrow rhythm (mono, uppercase,
- * letter-spaced), so it reads as a category label rather than a heading.
- */
-function VideoBadge({
-  eyebrow,
-  duration,
-  description,
-}: {
-  eyebrow: string;
-  duration: string;
-  description: string;
-}) {
-  return (
-    <figcaption
-      style={{
-        marginTop: 16,
-        textAlign: "center",
-        color: "rgba(244,242,238,0.7)",
-        fontSize: 13,
-        lineHeight: 1.55,
-      }}
-    >
-      <span
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 10,
-          marginBottom: 6,
-        }}
-      >
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            letterSpacing: "0.14em",
-            textTransform: "uppercase",
-            color: "var(--cream)",
-          }}
-        >
-          {eyebrow}
-        </span>
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 10,
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-            color: "rgba(244,242,238,0.6)",
-            padding: "3px 8px",
-            borderRadius: 999,
-            border: "1px solid rgba(244,242,238,0.2)",
-          }}
-        >
-          {duration}
-        </span>
-      </span>
-      <span style={{ display: "block", maxWidth: "38ch", margin: "0 auto" }}>
-        {description}
-      </span>
-    </figcaption>
-  );
-}

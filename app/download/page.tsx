@@ -29,6 +29,8 @@ export const metadata: Metadata = {
  *   --green-tint #eaece0 engineer corner glow tint
  */
 
+// Build type retained for the BuildCard component below; will be needed
+// again when the signed Windows + macOS installers ship.
 type Build = {
   audience: "Customer" | "Engineer";
   title: string;
@@ -41,27 +43,14 @@ type Build = {
   accentGlow: string;
 };
 
-// Customer build is the only one promoted in the main Windows grid.
-// The staff build is intentionally tucked into the footer as a small
-// utility link — engineers know what they're looking for.
-const CUSTOMER_BUILD: Build = {
-  audience: "Customer",
-  title: "Relay",
-  description:
-    "For builders who want a Relay engineer on tap. One click summons the next available engineer to your project.",
-  href: "/downloads/Relay-Setup.exe",
-  filename: "Relay-Setup.exe",
-  sizeMb: 78,
-  accentText: "var(--clay)",
-  accentBg:   "var(--ink)",
-  accentGlow: "var(--clay-soft)",
-};
-
-const STAFF_DOWNLOAD = {
-  href: "/downloads/Relay-Staff-Setup.exe",
-  filename: "Relay-Staff-Setup.exe",
-  sizeMb: 78,
-};
+// Windows installers are currently being code-signed. Until the signed
+// builds ship, the BuildCard is replaced with a coming-soon panel and
+// the .exe files live outside the public path
+// (/public/_unreleased-downloads/, not served). When the signed builds
+// are ready: restore CUSTOMER_BUILD + STAFF_DOWNLOAD constants below,
+// move the files back to /public/downloads/, and replace
+// <ComingSoonWindowsPanel /> in the Windows section with <BuildCard /> +
+// the staff footer link.
 
 export default function DownloadPage() {
   return (
@@ -104,11 +93,9 @@ export default function DownloadPage() {
         <PlatformSection
           icon={<WindowsIcon />}
           title="Windows"
-          subtitle="64-bit · v0.1.0 · Unsigned installer (SmartScreen will warn — click More info → Run anyway)."
+          subtitle="Signed 64-bit installer arriving with the next release."
         >
-          <div className="mx-auto max-w-xl">
-            <BuildCard build={CUSTOMER_BUILD} />
-          </div>
+          <ComingSoonWindowsPanel />
         </PlatformSection>
 
         {/* ── macOS ─────────────────────────────────────────────────── */}
@@ -236,10 +223,6 @@ export default function DownloadPage() {
           </h2>
           <ul className="grid gap-3 sm:grid-cols-2">
             <NoteItem
-              title="SmartScreen warning"
-              body="Windows will flag the installer the first time you run it. Click More info → Run anyway. We're working on code signing."
-            />
-            <NoteItem
               title="Sign in once"
               body="After install, sign in with your Relay account. The app keeps you signed in across launches."
             />
@@ -251,10 +234,14 @@ export default function DownloadPage() {
               title="Customer: one-click calls"
               body="Press + in your project to ring an engineer. The app handles matching, Zoom hand-off, and chat in one window."
             />
+            <NoteItem
+              title="Want notice when it's ready?"
+              body="Email support@relay.green and we'll add you to the desktop-launch list."
+            />
           </ul>
         </section>
 
-        {/* ── Staff utility link (footer-style) ─────────────────────── */}
+        {/* ── Staff build status (footer-style) ─────────────────────── */}
         <div
           className="mt-16 border-t pt-6 text-center text-[13px]"
           style={{
@@ -263,20 +250,19 @@ export default function DownloadPage() {
           }}
         >
           Relay engineering staff?{" "}
-          <a
-            href={STAFF_DOWNLOAD.href}
-            download={STAFF_DOWNLOAD.filename}
-            className="underline underline-offset-2 transition-colors hover:no-underline"
-            style={{ color: "var(--green-deep)" }}
-          >
-            Download the staff build
-          </a>
+          <span style={{ color: "var(--green-deep)" }}>
+            The staff build is in the same signing pipeline.
+          </span>
           <span className="mx-1.5" style={{ color: "var(--ink-mute)" }}>
             ·
           </span>
-          <span style={{ color: "var(--ink-mute)" }}>
-            Windows · {STAFF_DOWNLOAD.sizeMb} MB · {STAFF_DOWNLOAD.filename}
-          </span>
+          <a
+            href="mailto:support@relay.green?subject=Relay%20Staff%20desktop%20build"
+            className="underline underline-offset-2 transition-colors hover:no-underline"
+            style={{ color: "var(--ink-soft)" }}
+          >
+            Email support
+          </a>
         </div>
       </main>
     </Shell>
@@ -396,6 +382,74 @@ function BuildCard({ build }: { build: Build }) {
         <DownloadIcon />
         Download for Windows
       </a>
+    </div>
+  );
+}
+
+// Coming-soon panel for the Windows section. Mirrors the existing
+// macOS panel's layout so the page reads as two parallel "in flight"
+// platforms rather than two ad-hoc messages. Keep the visual rhyme.
+function ComingSoonWindowsPanel() {
+  return (
+    <div
+      className="relative overflow-hidden rounded-2xl border p-8 sm:p-10"
+      style={{
+        backgroundColor: "var(--paper)",
+        borderColor: "var(--rule)",
+      }}
+    >
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 opacity-[0.05]"
+        style={{
+          backgroundImage:
+            "repeating-linear-gradient(45deg, currentColor 0 1px, transparent 1px 14px)",
+          color: "var(--ink-soft)",
+        }}
+      />
+      <div className="relative flex flex-col items-start gap-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="max-w-xl">
+          <div
+            className="mb-3 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]"
+            style={{
+              color: "var(--ink)",
+              borderColor: "var(--rule)",
+              backgroundColor: "var(--cream)",
+            }}
+          >
+            <ClockIcon /> Coming soon
+          </div>
+          <h3
+            className="text-2xl font-medium"
+            style={{
+              fontFamily: "var(--font-display)",
+              color: "var(--ink)",
+            }}
+          >
+            The Windows build is in code-signing.
+          </h3>
+          <p
+            className="mt-2 text-[15px] leading-relaxed"
+            style={{ color: "var(--ink-2)" }}
+          >
+            We&apos;re finalizing an Authenticode-signed installer so
+            Windows won&apos;t flag it on first launch. Until that ships,
+            the web app gives you the full experience in any modern
+            browser.
+          </p>
+        </div>
+        <Link
+          href="/"
+          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full border px-5 py-2.5 text-sm font-semibold transition-colors hover:bg-black/[0.04]"
+          style={{
+            borderColor: "var(--ink)",
+            color: "var(--ink)",
+          }}
+        >
+          Use the web app
+          <ArrowRight />
+        </Link>
+      </div>
     </div>
   );
 }

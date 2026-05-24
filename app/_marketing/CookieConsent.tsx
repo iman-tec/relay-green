@@ -77,6 +77,39 @@ export function CookieConsent() {
     }
   }, []);
 
+  // GDPR right-to-withdraw: the footer's "Manage cookie preferences"
+  // link dispatches "relay:cookies-reopen" on the same tab, which
+  // re-mounts the banner with the user's current saved preferences
+  // pre-selected. Settings panel opens immediately so the user can
+  // see + change choices rather than being asked Accept/Reject again.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.self !== window.top) return;
+    const onReopen = () => {
+      try {
+        const raw = window.localStorage.getItem(`${STORAGE_KEY}.settings`);
+        if (raw) {
+          const saved = JSON.parse(raw) as Partial<{
+            functional: boolean;
+            analytics: boolean;
+            marketing: boolean;
+          }>;
+          setPreferences((p) => ({
+            functional: saved.functional ?? p.functional,
+            analytics: saved.analytics ?? p.analytics,
+            marketing: saved.marketing ?? p.marketing,
+          }));
+        }
+      } catch {
+        // ignore; fall through with defaults
+      }
+      setSettingsOpen(true);
+      setVisible(true);
+    };
+    window.addEventListener("relay:cookies-reopen", onReopen);
+    return () => window.removeEventListener("relay:cookies-reopen", onReopen);
+  }, []);
+
   // Escape closes the legal preview modal (but not the cookie banner —
   // the user must explicitly Accept or Save settings to dismiss that).
   useEffect(() => {

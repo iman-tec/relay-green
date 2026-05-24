@@ -6,11 +6,13 @@
  * inline form (instead of navigating to /company/contact) so a prospect
  * researching custom pricing can submit without leaving the section.
  *
- * Submissions POST to /api/contact with topic="ENTERPRISE" and reuse the
- * same Prisma + Resend plumbing as the main ContactForm.
+ * Submissions POST to /api/contact via lib/contact/submitContact.ts with
+ * topic="ENTERPRISE". On 5xx the helper falls back to opening mailto:
+ * so the inquiry path survives a backend outage.
  */
 
 import { useRef, useState } from "react";
+import { submitContact } from "../../lib/contact/submitContact";
 
 type Status = "idle" | "submitting" | "success" | "error";
 
@@ -38,29 +40,17 @@ export function EnterpriseCta() {
 
     setStatus("submitting");
     setErrorMessage(null);
-    try {
-      // No contact API in this app — hand off to the visitor's mail client.
-      const subject = `Relay enquiry — ${payload.topic}`;
-      const body = [
-        `Name: ${payload.name}`,
-        `Email: ${payload.email}`,
-        payload.company ? `Company: ${payload.company}` : "",
-        `Topic: ${payload.topic}`,
-        "",
-        payload.message,
-      ]
-        .filter(Boolean)
-        .join("\n");
-      window.location.href = `mailto:hello@relay.green?subject=${encodeURIComponent(
-        subject
-      )}&body=${encodeURIComponent(body)}`;
+    const result = await submitContact(payload);
+    if (result.ok) {
       setStatus("success");
-    } catch {
-      setStatus("error");
-      setErrorMessage(
-        "Couldn't open your email app — write to hello@relay.green directly."
-      );
+      return;
     }
+    setStatus("error");
+    setErrorMessage(
+      result.error === "rate_limited"
+        ? "Too many submissions just now — try again in a few minutes, or email hello@relay.green directly."
+        : "Couldn't send. Check your name, email, and message, or write to hello@relay.green directly."
+    );
   }
 
   function reset() {

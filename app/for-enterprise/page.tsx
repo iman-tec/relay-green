@@ -10,6 +10,13 @@ import type { Metadata } from "next";
 import { Shell } from "../_marketing/Shell";
 import { RelayLogo } from "../_marketing/RelayLogo";
 import { EnterpriseCtaButton } from "../_marketing/EnterpriseCtaButton";
+import { JsonLd } from "../_marketing/JsonLd";
+import {
+  breadcrumbSchema,
+  webPageSchema,
+} from "../../lib/seo/schema";
+
+const SITE_URL = "https://www.relay.green";
 
 export const metadata: Metadata = {
   title: "For Enterprise",
@@ -26,28 +33,25 @@ const SIGNALS = [
   "AI dev tool platforms themselves are quietly partnering with services firms for the human layer they cannot build.",
 ];
 
-/* "Ship faster" promise grid. Four cards, each one paragraph, with a
-   small line-icon at top-left. Icons live in `EntIcon` below. */
-const SHIP_FASTER: { iconKey: string; title: string; body: string }[] = [
+/* "Shadow stack" — provocative dark callout with 4 stat tiles framing
+   the cost of unsupervised AI app sprawl, and Relay's answer. Replaces
+   the older "Deploy faster" feature grid. */
+const SHADOW_STATS: { num: string; body: string }[] = [
   {
-    iconKey: "grid",
-    title: "Business units move autonomously",
-    body: "Non-technical teams can build with AI staying aligned with engineering standards. Relay gives them a direct path to production-ready software.",
+    num: "68%",
+    body: "of marketing teams ship internal tools their IT didn't scope.",
   },
   {
-    iconKey: "shield",
-    title: "Trust and compliance by design",
-    body: "Security review, data handling, and audit trails are embedded in the workflow from the start, strengthening confidence at every step.",
+    num: "3.2x",
+    body: 'increase in "rogue" AI app deployments YoY at orgs > 500 people.',
   },
   {
-    iconKey: "layers",
-    title: "Engineering depth, flexible access",
-    body: "Access software engineers on demand without headcount approvals, hiring cycles, or long-term contracts.",
+    num: "14s",
+    body: "avg time to a Relay engineer joining one of those builds.",
   },
   {
-    iconKey: "refresh",
-    title: "Operational continuity by design",
-    body: "Relay engineers stay with your teams. Context compounds. Knowledge deepens as projects grow and evolve.",
+    num: "$0",
+    body: "rebuilds. Relay starts where the AI left off.",
   },
 ];
 
@@ -240,6 +244,24 @@ const EMBED_PHASES: {
 export default function ForEnterprisePage() {
   return (
     <Shell>
+      {/* Structured data: WebPage + BreadcrumbList for rich-result
+          eligibility. Organization + WebSite schemas already render
+          globally from app/layout.tsx. */}
+      <JsonLd
+        data={[
+          webPageSchema({
+            url: `${SITE_URL}/for-enterprise`,
+            name: "Relay for Enterprise",
+            description:
+              "Govern the AI your team is already using. Real engineers join AI-driven build sessions in seconds, under your NDA, in your region, and on your audit trail.",
+          }),
+          breadcrumbSchema([
+            { name: "Home", href: "/" },
+            { name: "For Enterprise", href: "/for-enterprise" },
+          ]),
+        ]}
+      />
+
       {/* Local CSS for the signals fade-up animation. Modern browsers use
           animation-timeline: view() for scroll-triggered playback; older
           browsers get the animation on first render. prefers-reduced-motion
@@ -406,7 +428,16 @@ export default function ForEnterprisePage() {
                   textWrap: "balance",
                 }}
               >
-                Superpowers for every Non Technical AI builder in your team.
+                <em
+                  style={{ color: "var(--green)", fontStyle: "italic" }}
+                >
+                  Govern
+                </em>{" "}
+                the AI
+                <br />
+                your team is
+                <br />
+                <span style={{ color: "var(--green)" }}>already using.</span>
                 <span
                   aria-hidden="true"
                   style={{
@@ -453,10 +484,10 @@ export default function ForEnterprisePage() {
                   maxWidth: "54ch",
                 }}
               >
-                Your team builds, automates, and creates with AI, moving at the
-                speed of thought. When AI gets stuck or a build needs a human’s
-                judgment, Relay gets a real engineer in front of them in
-                seconds. One press, one engineer, governed by default.
+                Your team is building with Cursor, Claude, and Lovable,
+                whether IT signed off or not. Relay puts a qualified engineer
+                behind every AI-built system in seconds:
+                under your NDA, in your region, and on your audit trail.
               </p>
 
               <div
@@ -723,77 +754,107 @@ export default function ForEnterprisePage() {
         </div>
       </section>
 
-      {/* Ship faster — 4 enterprise guarantees with small line-icons.
-          Centered header. White background, white cards with hairline
-          borders — same graphite/white vocabulary as the rest of the page. */}
-      <section style={{ padding: "88px 0", background: "#ffffff" }}>
-        <div className="r-wrap" style={{ maxWidth: 1200, margin: "0 auto" }}>
-          <div style={{ marginBottom: 40, textAlign: "center" }}>
-            <h2
-              className="r-h-1 enterprise-ship-heading"
+      {/* Shadow stack — dark provocative callout. Eyebrow + bold serif
+          headline with italic + bright-green accent, then a 4-tile stats
+          grid. Replaces the older "Deploy faster" white feature grid;
+          intentionally a dark island between the surrounding white/grey
+          sections to give the stats visual weight. */}
+      <section
+        style={{
+          padding: "clamp(72px, 8vw, 110px) 0",
+          background: "#06090a",
+        }}
+      >
+        <div
+          className="r-wrap"
+          style={{ maxWidth: 1200, margin: "0 auto", padding: "0 24px" }}
+        >
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 10,
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              letterSpacing: "0.2em",
+              textTransform: "uppercase",
+              color: "var(--green)",
+              marginBottom: 24,
+            }}
+          >
+            <span
+              aria-hidden="true"
               style={{
-                margin: "0 auto",
-                maxWidth: "none",
-                fontSize: "clamp(28px, 3vw, 42px)",
-                letterSpacing: "-0.026em",
-                lineHeight: 1.04,
-                textWrap: "balance",
-                whiteSpace: "nowrap",
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: "var(--green)",
+                display: "inline-block",
               }}
-            >
-              Deploy faster with <em>Engineering partnership</em>
-            </h2>
+            />
+            The shadow stack
           </div>
+
+          <h2
+            style={{
+              fontFamily: "var(--font-display)",
+              fontSize: "clamp(28px, 3.6vw, 48px)",
+              fontWeight: 400,
+              lineHeight: 1.15,
+              letterSpacing: "-0.02em",
+              color: "var(--cream)",
+              margin: "0 0 56px",
+            }}
+          >
+            Half your team is shipping{" "}
+            <em style={{ fontStyle: "italic" }}>Lovable apps</em> to prod.
+            <br />
+            The other half is fixing them{" "}
+            <span style={{ color: "var(--green)", fontWeight: 500 }}>
+              quietly.
+            </span>
+          </h2>
 
           <div
             style={{
               display: "grid",
               gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: 0,
+              gap: 16,
             }}
           >
-            {SHIP_FASTER.map((card) => (
+            {SHADOW_STATS.map((stat) => (
               <div
-                key={card.title}
-                className="enterprise-card-surface"
+                key={stat.num}
                 style={{
-                  background: "#ffffff",
-                  border: "1px solid var(--rule)",
-                  borderRadius: 8,
-                  padding: 30,
+                  background: "rgba(255, 255, 255, 0.02)",
+                  border: "1px solid rgba(255, 255, 255, 0.08)",
+                  borderRadius: 16,
+                  padding: "32px 28px",
                 }}
               >
                 <div
                   style={{
-                    marginBottom: 14,
-                    color: "var(--green-deep)",
-                    display: "inline-flex",
-                  }}
-                >
-                  <EntIcon kind={card.iconKey} />
-                </div>
-                <h3
-                  style={{
                     fontFamily: "var(--font-display)",
+                    fontSize: "clamp(48px, 5vw, 68px)",
                     fontWeight: 400,
-                    fontSize: "clamp(15px, 1.2vw, 17px)",
-                    letterSpacing: "-0.008em",
-                    lineHeight: 1.25,
-                    margin: "0 0 10px",
-                    color: "var(--ink)",
+                    lineHeight: 1,
+                    color: "var(--green)",
+                    letterSpacing: "-0.02em",
+                    marginBottom: 24,
                   }}
                 >
-                  {card.title}
-                </h3>
+                  {stat.num}
+                </div>
                 <p
                   style={{
-                    fontSize: 13,
+                    fontSize: 14,
                     lineHeight: 1.55,
-                    color: "var(--ink-soft)",
+                    color: "rgba(244, 242, 238, 0.7)",
                     margin: 0,
+                    maxWidth: "28ch",
                   }}
                 >
-                  {card.body}
+                  {stat.body}
                 </p>
               </div>
             ))}
@@ -908,193 +969,152 @@ export default function ForEnterprisePage() {
         </div>
       </section>
 
-      {/* Operational backbone — centered card-style credential.
-          Centered section header above a single wrapping card that
-          carries identity → tags → body → stats. Bottom row carries
-          two outbound bridges (one tagline, one link to /company/about
-          for Relay's longer story). */}
-      <section className="r-proof-band r-proof-band-enterprise">
-        <div className="r-wrap" style={{ maxWidth: 1100, margin: "0 auto" }}>
-          <div style={{ marginBottom: 40, textAlign: "center" }}>
-            <h2
-              className="r-h-1 enterprise-backbone-heading"
+      {/* What you get — 6-card org-wide retainer breakdown on a dark
+          island. Three columns × two rows; titles in brand-green with the
+          .mk-sweep underline that draws L→R on card hover. Matches the
+          Shadow Stack visual language earlier on this page. */}
+      <section
+        style={{
+          padding: "clamp(56px, 6.5vw, 88px) 0",
+          background: "#06090a",
+        }}
+      >
+        <div
+          className="r-wrap"
+          style={{ maxWidth: 1200, margin: "0 auto", padding: "0 24px" }}
+        >
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 10,
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              letterSpacing: "0.2em",
+              textTransform: "uppercase",
+              color: "var(--green)",
+              marginBottom: 20,
+            }}
+          >
+            <span
+              aria-hidden="true"
               style={{
-                margin: "0 auto",
-                maxWidth: "none",
-                fontSize: "clamp(28px, 3vw, 42px)",
-                letterSpacing: "-0.026em",
-                lineHeight: 1.04,
-                textWrap: "balance",
-                whiteSpace: "nowrap",
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: "var(--green)",
+                display: "inline-block",
               }}
-            >
-              Operational backbone you can <em>trust</em>
-            </h2>
+            />
+            What you get
           </div>
 
           <div
-            className="enterprise-card-surface r-proof-panel"
+            className="r-grid-collapse-md"
             style={{
-              background: "#ffffff",
-              border: "1px solid #d2d2d7",
-              borderRadius: 8,
-              overflow: "hidden",
+              display: "grid",
+              gridTemplateColumns: "1.1fr 1fr",
+              gap: 56,
+              alignItems: "start",
+              marginBottom: 40,
             }}
           >
-            {/* Identity row: icon + name/tagline + URL pill */}
-            <div
+            <h2
               style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 16,
-                padding: "22px 28px",
-                borderBottom: "1px solid #d2d2d7",
-                flexWrap: "wrap",
+                fontFamily: "var(--font-display)",
+                fontSize: "clamp(32px, 4.2vw, 56px)",
+                fontWeight: 400,
+                lineHeight: 1.1,
+                letterSpacing: "-0.02em",
+                color: "var(--cream)",
+                margin: 0,
               }}
             >
+              One contract.{" "}
+              <em style={{ fontStyle: "italic", color: "var(--green)" }}>
+                Organization-wide cover.
+              </em>
+            </h2>
+            <p
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: 16,
+                lineHeight: 1.6,
+                color: "rgba(244, 242, 238, 0.7)",
+                margin: 0,
+                maxWidth: "48ch",
+              }}
+            >
+              A pooled retainer your whole org can press into — with
+              single-pane visibility, audit logs, and a named team that learns
+              your stack across departments.
+            </p>
+          </div>
+
+          <div
+            className="r-grid-collapse-md"
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+              gap: 16,
+            }}
+          >
+            {[
+              {
+                title: "Named Team",
+                body: "A roster of 4–8 engineers who learn your stack across departments. Same humans every time.",
+              },
+              {
+                title: "Pooled Hours",
+                body: "One retainer for the org. Any team presses, any minute lands against the pool.",
+              },
+              {
+                title: "Org Audit Logs",
+                body: "Every session, every change, every commit. SIEM-ready. Splunk-ready. CISO-ready.",
+              },
+              {
+                title: "Compliance Brief",
+                body: "GDPR compliant. We sign your DPA.",
+              },
+            ].map((card) => (
               <div
+                key={card.title}
+                className="mk-stat-card"
                 style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 8,
-                  background: "#f5f5f7",
-                  border: "1px solid #d2d2d7",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
+                  background: "rgba(255, 255, 255, 0.02)",
+                  border: "1px solid rgba(255, 255, 255, 0.08)",
+                  borderRadius: 16,
+                  padding: "26px 28px 30px",
                 }}
-                aria-hidden="true"
               >
-                <svg
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="var(--ink)"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M3 21h18M5 21V8l7-5 7 5v13M9 21v-6h6v6" />
-                </svg>
-              </div>
-              <div style={{ flex: 1, minWidth: 200 }}>
                 <h3
                   style={{
                     fontFamily: "var(--font-sans)",
-                    fontWeight: 600,
                     fontSize: 18,
+                    fontWeight: 600,
+                    margin: "0 0 12px",
                     letterSpacing: "-0.005em",
-                    margin: "0 0 2px",
-                    color: "var(--ink)",
                   }}
                 >
-                  NINtec Systems
+                  <span
+                    className="mk-sweep"
+                    style={{ color: "var(--green)" }}
+                  >
+                    {card.title}
+                  </span>
                 </h3>
-                <div
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 13,
-                    color: "var(--ink-soft)",
-                  }}
-                >
-                  Operating partner · Gateway Group company
-                </div>
-              </div>
-              <a
-                href="https://www.nintecsystems.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="r-btn r-btn-ghost"
-                style={{
-                  height: 34,
-                  padding: "0 14px",
-                  fontSize: 13,
-                  color: "var(--ink-soft)",
-                  gap: 6,
-                }}
-              >
-                www.nintecsystems.com
-                <span aria-hidden="true" style={{ fontSize: 11 }}>
-                  ↗
-                </span>
-              </a>
-            </div>
-
-            {/* Tag chips */}
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 8,
-                padding: "14px 28px",
-                borderBottom: "1px solid #d2d2d7",
-                background: "#f5f5f7",
-              }}
-            >
-              {[
-                "Parent",
-                "Operational backbone",
-                "NSE/BSE listed",
-                "Ticker · NINSYS",
-              ].map((tag) => (
-                <span
-                  key={tag}
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 10.5,
-                    color: "var(--ink-soft)",
-                    letterSpacing: "0.06em",
-                    textTransform: "uppercase",
-                    padding: "4px 10px",
-                    borderRadius: 999,
-                    background: "#ffffff",
-                    border: "1px solid #d2d2d7",
-                  }}
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
-
-            {/* Body — prose centered inside the card via a max-width
-                wrapper so the reading column lands symmetric to the card
-                edges instead of jammed left with empty right whitespace. */}
-            <div style={{ padding: "28px 28px 32px" }}>
-              <div style={{ maxWidth: "62ch", margin: "0 auto" }}>
                 <p
-                  className="r-body"
                   style={{
-                    margin: "0 0 14px",
-                    fontSize: 16,
-                    lineHeight: 1.65,
-                    fontWeight: 500,
-                    color: "var(--ink)",
-                  }}
-                >
-                  <RelayLogo size={13} color="var(--ink)" trailingGap={6} />
-                  is backed by the engineering depth, global delivery
-                  capability, and enterprise operational discipline of NINtec
-                  Systems, an NSE/BSE listed software engineering firm and part
-                  of the Gateway Group.
-                </p>
-                <p
-                  className="r-body"
-                  style={{
+                    fontSize: 14,
+                    lineHeight: 1.55,
+                    color: "rgba(244, 242, 238, 0.65)",
                     margin: 0,
-                    fontSize: 15,
-                    lineHeight: 1.65,
-                    color: "var(--ink-soft)",
                   }}
                 >
-                  This is not a startup figuring out scale. It is a product
-                  built on twenty-nine years of delivery experience, with access
-                  to two thousand engineers across fifteen countries on a true
-                  follow-the-sun, twenty-four-by-seven model.
+                  {card.body}
                 </p>
               </div>
-            </div>
+            ))}
           </div>
         </div>
       </section>

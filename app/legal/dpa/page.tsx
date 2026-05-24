@@ -1,8 +1,10 @@
 /*
- * /legal/dpa, Data Processing Addendum. DRAFT.
+ * /legal/dpa, Data Processing Addendum.
  *
  * Standard DPA reference page; the executable PDF version is exchanged
  * during contracting. Sub-processors live at /trust/subprocessors.
+ * `robots: { index: false }` keeps this page out of public search
+ * results — it's a destination for procurement teams, not crawlers.
  */
 
 import type { Metadata } from "next";
@@ -12,7 +14,7 @@ import { Shell } from "../../_marketing/Shell";
 export const metadata: Metadata = {
   title: "Data Processing Addendum",
   description:
-    "Standard DPA, EEA SCCs (Module 2), UK Addendum, India DPDP-aligned clauses. Updated quarterly. DRAFT, under counsel review.",
+    "Standard DPA, EEA SCCs (Module 2), UK Addendum, India DPDP-aligned clauses. Updated quarterly.",
   alternates: { canonical: "/legal/dpa" },
   robots: { index: false, follow: false },
 };

@@ -16,8 +16,15 @@
 import type { Metadata } from "next";
 import { Shell } from "../_marketing/Shell";
 import { RelayLogo } from "../_marketing/RelayLogo";
-import { ProofDotButton } from "../_marketing/ProofDotButton";
+import { BuiltToTrustCenter } from "../_marketing/BuiltToTrustCenter";
 import { ProductHeroOrb } from "./ProductHeroOrb";
+import { JsonLd } from "../_marketing/JsonLd";
+import {
+  breadcrumbSchema,
+  webPageSchema,
+} from "../../lib/seo/schema";
+
+const SITE_URL = "https://www.relay.green";
 
 export const metadata: Metadata = {
   title: "How it works",
@@ -28,182 +35,13 @@ export const metadata: Metadata = {
 
 const TRUST_PILLARS = [
   {
-    title: "Always awake",
-    body: "Engineers across time zones, so help is available whenever you press the dot.",
-  },
-  {
     title: "Enterprise-grade security",
     body: "SOC 2 aligned, GDPR aware. Data residency where it matters.",
   },
   {
-    title: "Engineer continuity",
+    title: "Engineering Team Continuity",
     body: "Same engineer from first commit to fifth iteration. Context that compounds. Trust that deepens over time.",
   },
-];
-
-/* Front-door AI tools the Relay dot can be pressed from. Read as the
-   shortlist of recognized AI build environments. */
-const FRONT_DOORS = [
-  "Claude",
-  "ChatGPT",
-  "Gemini",
-  "Copilot",
-  "Cursor",
-  "Lovable",
-  "Replit",
-  "v0",
-];
-
-/* The full production-stack list Relay engineers ship to. Alphabetized
-   so the columns interleave categories (payments, db, hosting, comms,
-   analytics, etc.) — scanning vertically reads as breadth, not as a
-   category list. */
-const PRODUCTION_STACK = [
-  "Adyen",
-  "Airbyte",
-  "Algolia",
-  "Amplitude",
-  "Anthropic",
-  "Apollo",
-  "App Store",
-  "Asana",
-  "Auth0",
-  "AWS",
-  "Azure",
-  "BetterStack",
-  "BigQuery",
-  "Bitbucket",
-  "Brevo",
-  "Brex",
-  "Bubble",
-  "Builder.io",
-  "Bunny",
-  "Chroma",
-  "Clerk",
-  "Cloudflare",
-  "Cloudinary",
-  "Cognito",
-  "Cohere",
-  "Contentful",
-  "Customer.io",
-  "Datadog",
-  "DigitalOcean",
-  "Discord",
-  "Drizzle",
-  "DynamoDB",
-  "Elasticsearch",
-  "ElevenLabs",
-  "Expo",
-  "Fastly",
-  "FaunaDB",
-  "Figma",
-  "Firebase Auth",
-  "Firestore",
-  "Fly.io",
-  "Freshworks",
-  "Front",
-  "FullStory",
-  "GCP",
-  "Ghost",
-  "GitHub",
-  "GitLab",
-  "Google Maps",
-  "Grafana",
-  "Hasura",
-  "Heap",
-  "Heroku",
-  "Hetzner",
-  "Honeycomb",
-  "Hotjar",
-  "HubSpot",
-  "Hugging Face",
-  "ImageKit",
-  "Inngest",
-  "Intercom",
-  "Jira",
-  "Klaviyo",
-  "Lemon Squeezy",
-  "Linear",
-  "LogRocket",
-  "Loops",
-  "Mailchimp",
-  "Mailgun",
-  "Mapbox",
-  "Marketo",
-  "Meilisearch",
-  "Mercury",
-  "MessageBird",
-  "Microsoft Teams",
-  "Mistral",
-  "Mixpanel",
-  "MongoDB",
-  "Mux",
-  "MySQL",
-  "Neon",
-  "Netlify",
-  "New Relic",
-  "Notion",
-  "Okta",
-  "Onfido",
-  "OpenAI",
-  "OpenTelemetry",
-  "Paddle",
-  "PayPal",
-  "Persona",
-  "Pinecone",
-  "Pipedrive",
-  "PlanetScale",
-  "Plausible",
-  "Play Store",
-  "Postgres",
-  "PostHog",
-  "Postmark",
-  "Prisma",
-  "Prismic",
-  "Prometheus",
-  "Qdrant",
-  "Railway",
-  "Razorpay",
-  "Redis",
-  "Render",
-  "Replicate",
-  "Resend",
-  "Salesforce",
-  "Sanity",
-  "S3",
-  "Segment",
-  "SendGrid",
-  "Sentry",
-  "Shopify",
-  "Slack",
-  "Snowflake",
-  "Square",
-  "Statsig",
-  "Storyblok",
-  "Strapi",
-  "Stripe",
-  "Stripe Identity",
-  "Stytch",
-  "Supabase",
-  "Temporal",
-  "TestFlight",
-  "Trigger.dev",
-  "tRPC",
-  "Twilio",
-  "Typesense",
-  "Uploadcare",
-  "Veriff",
-  "Vercel",
-  "Vimeo",
-  "Vonage",
-  "Weaviate",
-  "Webflow",
-  "WhatsApp Business",
-  "WordPress",
-  "WorkOS",
-  "Zapier",
-  "Zendesk",
-  "Zoom",
 ];
 
 const PRODUCT_PAGE_PALETTES = {
@@ -525,6 +363,24 @@ const productPalette = PRODUCT_PAGE_PALETTES.appleMono;
 export default function ProductPage() {
   return (
     <Shell>
+      {/* Structured data: WebPage + BreadcrumbList for rich-result
+          eligibility. Organization + WebSite schemas already render
+          globally from app/layout.tsx. */}
+      <JsonLd
+        data={[
+          webPageSchema({
+            url: `${SITE_URL}/product`,
+            name: "How Relay works",
+            description:
+              "Three phases. One team. Same engineer the whole way, from build through launch through ongoing maintenance.",
+          }),
+          breadcrumbSchema([
+            { name: "Home", href: "/" },
+            { name: "How it works", href: "/product" },
+          ]),
+        ]}
+      />
+
       {/* Page-local CSS, scroll-triggered fade-ups + hover effects.
           animation-timeline: view() in supporting browsers; staggered
           delays as fallback. prefers-reduced-motion turns it all off. */}
@@ -779,20 +635,19 @@ export default function ProductPage() {
               className="r-product-orb-card"
               style={{
                 justifySelf: "end",
-                width: "min(100%, 360px)",
-                minHeight: 312,
-                borderRadius: 8,
-                border: "1px solid var(--rule)",
-                background:
-                  "linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(245,245,247,0.92) 100%)",
+                width: "min(100%, 460px)",
+                minHeight: 440,
+                borderRadius: 16,
+                border: "1px solid rgba(255,255,255,0.08)",
+                background: "#06090a",
                 boxShadow:
-                  "0 1px 2px rgba(0,0,0,0.035), 0 24px 70px rgba(0,0,0,0.08)",
+                  "0 1px 2px rgba(0,0,0,0.3), 0 24px 70px rgba(0,0,0,0.4), 0 0 80px -20px rgba(77,200,109,0.18)",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
-                gap: 18,
-                padding: 34,
+                gap: 28,
+                padding: 44,
               }}
             >
               <ProductHeroOrb />
@@ -803,7 +658,7 @@ export default function ProductPage() {
                   fontSize: 11,
                   letterSpacing: "0.12em",
                   textTransform: "uppercase",
-                  color: "var(--ink-mute)",
+                  color: "rgba(244, 242, 238, 0.6)",
                   background: "transparent",
                   userSelect: "none",
                 }}
@@ -1209,7 +1064,7 @@ export default function ProductPage() {
                 maxWidth: "40ch",
               }}
             >
-              Three phases. One engineer.
+              Three phases. One Engineering Team.
               <br />
               <em style={{ color: "var(--green-deep)", fontStyle: "italic" }}>
                 All the way from build to scale.
@@ -1422,512 +1277,7 @@ export default function ProductPage() {
         </div>
       </section>
 
-      {/* INSIDE A SESSION — 2-col split. Left: editorial brief with
-          4 green-check bullets. Right: a mock dev-tools window with a
-          numbered session log (Priya joins, error → walkthrough). The
-          mock window has macOS chrome (3 dots + LIVE indicator) for
-          familiarity but is plain JSX (not a real terminal). */}
-      <section
-        className="r-section"
-        style={{
-          background: productPalette.session,
-          padding: "88px 0",
-        }}
-      >
-        <div className="r-wrap" style={{ maxWidth: 1200, margin: "0 auto" }}>
-          <div
-            className="r-grid-collapse-md"
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 72,
-              alignItems: "center",
-            }}
-          >
-            {/* LEFT — editorial */}
-            <div>
-              <div
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                  letterSpacing: "0.14em",
-                  textTransform: "uppercase",
-                  color: "var(--ink-mute)",
-                  marginBottom: 14,
-                }}
-              >
-                Inside a session
-              </div>
-              <h2
-                className="r-h-1"
-                style={{
-                  margin: 0,
-                  fontSize: "clamp(30px, 3.4vw, 48px)",
-                  letterSpacing: "-0.026em",
-                  lineHeight: 1.04,
-                  maxWidth: "22ch",
-                }}
-              >
-                Your build session,{" "}
-                <em style={{ color: "var(--green-deep)", fontStyle: "italic" }}>
-                  with a real engineer in it.
-                </em>
-              </h2>
-              <p
-                style={{
-                  margin: "24px 0 30px",
-                  maxWidth: "48ch",
-                  fontSize: 17,
-                  lineHeight: 1.58,
-                  color: "var(--ink-soft)",
-                }}
-              >
-                Here’s what the Relay session looks like. It’s deliberately
-                minimal, one pane for your code, one pane for your engineer. No
-                clutter, no project-management theater. Just a human and a
-                problem.
-              </p>
-              <ul
-                style={{
-                  listStyle: "none",
-                  padding: 0,
-                  margin: 0,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 12,
-                }}
-              >
-                {[
-                  "Your AI tool stays open, Relay runs alongside it",
-                  "Engineer can see your screen (with your permission)",
-                  "Every session is logged, who joined, what was discussed, what was resolved",
-                  "Session ends when the problem is solved, no clock-watching",
-                ].map((item) => (
-                  <li
-                    key={item}
-                    style={{
-                      display: "flex",
-                      alignItems: "flex-start",
-                      gap: 12,
-                      fontSize: 14,
-                      lineHeight: 1.55,
-                      color: "var(--ink-soft)",
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: 18,
-                        height: 18,
-                        borderRadius: 999,
-                        background: "rgba(77, 107, 64, 0.14)",
-                        color: "var(--green-deep)",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        flexShrink: 0,
-                        marginTop: 1,
-                      }}
-                      aria-hidden="true"
-                    >
-                      <svg
-                        width="11"
-                        height="11"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="3"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <path d="M5 12l5 5L20 7" />
-                      </svg>
-                    </span>
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            {/* RIGHT — mock terminal/session log */}
-            <div
-              style={{
-                background: "#161616",
-                borderRadius: 8,
-                overflow: "hidden",
-                boxShadow:
-                  "0 24px 70px rgba(0, 0, 0, 0.22), 0 8px 20px rgba(0, 0, 0, 0.12)",
-                fontFamily:
-                  "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-                fontSize: 13,
-                lineHeight: 1.5,
-              }}
-              aria-label="Example Relay session log"
-            >
-              {/* macOS-style title bar */}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  padding: "10px 14px",
-                  background: "#202020",
-                  borderBottom: "1px solid #2a2a2a",
-                  gap: 10,
-                }}
-              >
-                <div style={{ display: "flex", gap: 6 }}>
-                  {["#ff5f57", "#febc2e", "#28c840"].map((c) => (
-                    <span
-                      key={c}
-                      style={{
-                        width: 11,
-                        height: 11,
-                        borderRadius: 999,
-                        background: c,
-                        display: "inline-block",
-                      }}
-                    />
-                  ))}
-                </div>
-                <span
-                  style={{
-                    fontSize: 11,
-                    color: "#9a9a9a",
-                    letterSpacing: 0,
-                    flex: 1,
-                    textAlign: "center",
-                  }}
-                >
-                  Relay Session · #47A2
-                </span>
-                <span
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 5,
-                    fontSize: 10,
-                    letterSpacing: "0.12em",
-                    textTransform: "uppercase",
-                    color: "#7CC36B",
-                  }}
-                >
-                  <span
-                    style={{
-                      width: 7,
-                      height: 7,
-                      borderRadius: 999,
-                      background: "#7CC36B",
-                      display: "inline-block",
-                    }}
-                  />
-                  Live
-                </span>
-              </div>
-
-              {/* Body */}
-              <div style={{ padding: "16px 0", color: "#e6e6e6" }}>
-                {[
-                  {
-                    n: 1,
-                    line: (
-                      <>
-                        <span style={{ color: "#c78bff" }}>import</span> {"{ "}
-                        <span style={{ color: "#e6e6e6" }}>relay</span>
-                        {" }"} <span style={{ color: "#c78bff" }}>from</span>{" "}
-                        <span style={{ color: "#a5d6a7" }}>
-                          {"'@relay/sdk'"}
-                        </span>
-                        ;
-                      </>
-                    ),
-                  },
-                  { n: 2, line: <>&nbsp;</> },
-                  {
-                    n: 3,
-                    line: (
-                      <span style={{ color: "#7a7a7a" }}>
-                        {"// Engineer Priya joined 4s ago"}
-                      </span>
-                    ),
-                  },
-                  {
-                    n: 4,
-                    line: (
-                      <span style={{ color: "#7a7a7a" }}>
-                        {"// She sees your error log:"}
-                      </span>
-                    ),
-                  },
-                  {
-                    n: 5,
-                    line: (
-                      <span style={{ color: "#ff8a80" }}>
-                        Error: CORS policy blocked fetch
-                      </span>
-                    ),
-                  },
-                  {
-                    n: 6,
-                    line: (
-                      <span style={{ color: "#8a8a8a" }}>
-                        at api.staging.example.com
-                      </span>
-                    ),
-                  },
-                  { n: 7, line: <>&nbsp;</> },
-                  {
-                    n: 8,
-                    line: (
-                      <>
-                        <span style={{ color: "#7CC36B", fontWeight: 600 }}>
-                          Priya:
-                        </span>{" "}
-                        I can see the issue.
-                      </>
-                    ),
-                  },
-                  { n: 9, line: <>Your Vercel env vars are missing</> },
-                  { n: 10, line: <>API_ORIGIN. Want me to walk</> },
-                  { n: 11, line: <>you through the fix?</> },
-                  { n: 12, line: <>&nbsp;</> },
-                  {
-                    n: 13,
-                    line: (
-                      <>
-                        <span style={{ color: "#ffd54f", fontWeight: 600 }}>
-                          You:
-                        </span>{" "}
-                        yes please 🙏
-                      </>
-                    ),
-                  },
-                  { n: 14, line: <>&nbsp;</> },
-                  {
-                    n: 15,
-                    line: (
-                      <>
-                        <span style={{ color: "#7CC36B", fontWeight: 600 }}>
-                          Priya:
-                        </span>{" "}
-                        Go to Settings →
-                      </>
-                    ),
-                  },
-                  { n: 16, line: <>Environment Variables →</> },
-                  {
-                    n: 17,
-                    line: (
-                      <>
-                        Add <span style={{ color: "#82b1ff" }}>API_ORIGIN</span>{" "}
-                        =
-                      </>
-                    ),
-                  },
-                  {
-                    n: 18,
-                    line: (
-                      <span style={{ color: "#82b1ff" }}>
-                        https://api.staging.example.com
-                      </span>
-                    ),
-                  },
-                  {
-                    n: 19,
-                    line: <>→ Redeploy. That’s it.</>,
-                  },
-                  {
-                    n: 20,
-                    line: (
-                      <span
-                        style={{
-                          display: "inline-block",
-                          width: "0.55em",
-                          height: "1em",
-                          background: "#e6e6e6",
-                          verticalAlign: "text-bottom",
-                          animation: "relay-caret 1s steps(2) infinite",
-                        }}
-                        aria-hidden="true"
-                      />
-                    ),
-                  },
-                ].map((row) => (
-                  <div
-                    key={row.n}
-                    style={{
-                      display: "flex",
-                      paddingLeft: 14,
-                      paddingRight: 16,
-                    }}
-                  >
-                    <span
-                      style={{
-                        color: "#5a5a5a",
-                        width: 28,
-                        flexShrink: 0,
-                        textAlign: "right",
-                        marginRight: 14,
-                        userSelect: "none",
-                      }}
-                    >
-                      {row.n}
-                    </span>
-                    <span style={{ flex: 1 }}>{row.line}</span>
-                  </div>
-                ))}
-              </div>
-              <style>{`
-                @keyframes relay-caret {
-                  0%, 50% { opacity: 1; }
-                  51%, 100% { opacity: 0; }
-                }
-                @media (prefers-reduced-motion: reduce) {
-                  [aria-label="Example Relay session log"] [aria-hidden="true"] {
-                    animation: none !important;
-                  }
-                }
-              `}</style>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Integrations — front doors (AI tools we press the dot from)
-          + production stack (services we ship to). Sits directly under
-          the On-the-Record section so the reader moves from "how the
-          session works" to "what it works with" without a chapter
-          break. Subsection labels use a middot separator instead of an
-          em-dash, per the brand rule. */}
-      <section
-        style={{
-          padding: "88px 0",
-          background: productPalette.integrations,
-        }}
-      >
-        <div className="r-wrap" style={{ maxWidth: 1200, margin: "0 auto" }}>
-          <div style={{ marginBottom: 72, maxWidth: 980 }}>
-            <div
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 10,
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                letterSpacing: "0.14em",
-                textTransform: "uppercase",
-                color: "var(--ink-mute)",
-                marginBottom: 24,
-              }}
-            >
-              <span
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: 999,
-                  background: "var(--green)",
-                  display: "inline-block",
-                }}
-                aria-hidden="true"
-              ></span>
-              Integrations
-            </div>
-            <h2
-              className="r-h-1"
-              style={{
-                margin: "0 0 18px",
-                fontSize: "clamp(30px, 3.4vw, 48px)",
-                letterSpacing: "-0.026em",
-                lineHeight: 1.04,
-              }}
-            >
-              Every front door. Every <em>production stack.</em>
-            </h2>
-            <p
-              style={{
-                margin: 0,
-                fontSize: 18,
-                lineHeight: 1.5,
-                color: "var(--ink-soft)",
-                maxWidth: "58ch",
-              }}
-            >
-              The full list of tools we press the dot from, and the production
-              services we wire you into.
-            </p>
-          </div>
-
-          {/* Subsection 1 — Front doors (AI build tools) */}
-          <div style={{ marginBottom: 64 }}>
-            <h3
-              style={{
-                fontFamily: "var(--font-display)",
-                fontWeight: 400,
-                fontSize: "clamp(20px, 1.8vw, 26px)",
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
-                color: "var(--ink)",
-                margin: "0 0 18px",
-              }}
-            >
-              Front doors · AI build tools
-            </h3>
-            <ul
-              style={{
-                listStyle: "none",
-                padding: "24px 0 0",
-                margin: 0,
-                borderTop: "1px solid var(--rule)",
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
-                gap: "14px 30px",
-                fontFamily: "var(--font-mono)",
-                fontSize: 11.5,
-                letterSpacing: "0.14em",
-                textTransform: "uppercase",
-                color: "var(--ink)",
-              }}
-            >
-              {FRONT_DOORS.map((tool) => (
-                <li key={tool}>{tool}</li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Subsection 2 — Production stack */}
-          <div>
-            <h3
-              style={{
-                fontFamily: "var(--font-display)",
-                fontWeight: 400,
-                fontSize: "clamp(20px, 1.8vw, 26px)",
-                letterSpacing: "0.04em",
-                textTransform: "uppercase",
-                color: "var(--ink)",
-                margin: "0 0 18px",
-              }}
-            >
-              Production stack · {PRODUCTION_STACK.length} services
-            </h3>
-            <ul
-              style={{
-                listStyle: "none",
-                padding: "24px 0 0",
-                margin: 0,
-                borderTop: "1px solid var(--rule)",
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
-                gap: "11px 30px",
-                fontFamily: "var(--font-sans)",
-                fontSize: 14,
-                color: "var(--ink-soft)",
-              }}
-            >
-              {PRODUCTION_STACK.map((svc) => (
-                <li key={svc}>{svc}</li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      </section>
+      {/* INSIDE A SESSION section removed per request. */}
 
       {/* TRUST, AI for speed. Engineers for trust. — moved here so the
           dark band lands after the page has shown the full operational
@@ -2010,14 +1360,13 @@ export default function ProductPage() {
                 engineer in build, launch, and maintenance, continuity is the
                 whole company.
               </p>
-              <ProofDotButton />
             </div>
 
             <div
               className="r-proof-cards"
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
                 gap: 12,
               }}
             >
@@ -2051,6 +1400,13 @@ export default function ProductPage() {
                   </p>
                 </div>
               ))}
+            </div>
+
+            {/* Centered press-the-dot block — spans both columns of the
+                shell grid so the ball sits at the visual center of the
+                section, with the headline + CTA stacked beneath it. */}
+            <div style={{ gridColumn: "1 / -1", marginTop: 24 }}>
+              <BuiltToTrustCenter />
             </div>
           </div>
         </div>

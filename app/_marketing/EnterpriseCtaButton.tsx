@@ -5,13 +5,16 @@
  * footer band on /for-enterprise). Renders the green "Talk to Relay
  * for Enterprise" pill button; on click swaps the button for a white/grey
  * card containing the same inquiry form as EnterpriseCta. Posts to
- * /api/contact with topic="ENTERPRISE".
+ * /api/contact with topic="ENTERPRISE" via lib/contact/submitContact.ts
+ * (which falls back to mailto: on a 5xx so a backend outage cannot kill
+ * the inquiry path).
  *
  * The card is intentionally narrow and centered so it reads as a
  * focused inquiry slot, not a hero panel.
  */
 
 import { useRef, useState } from "react";
+import { submitContact } from "../../lib/contact/submitContact";
 
 type Status = "idle" | "submitting" | "success" | "error";
 
@@ -50,29 +53,17 @@ export function EnterpriseCtaButton({
 
     setStatus("submitting");
     setErrorMessage(null);
-    try {
-      // No contact API in this app — hand off to the visitor's mail client.
-      const subject = `Relay enquiry — ${payload.topic}`;
-      const body = [
-        `Name: ${payload.name}`,
-        `Email: ${payload.email}`,
-        payload.company ? `Company: ${payload.company}` : "",
-        `Topic: ${payload.topic}`,
-        "",
-        payload.message,
-      ]
-        .filter(Boolean)
-        .join("\n");
-      window.location.href = `mailto:hello@relay.green?subject=${encodeURIComponent(
-        subject
-      )}&body=${encodeURIComponent(body)}`;
+    const result = await submitContact(payload);
+    if (result.ok) {
       setStatus("success");
-    } catch {
-      setStatus("error");
-      setErrorMessage(
-        "Couldn't open your email app — write to hello@relay.green directly."
-      );
+      return;
     }
+    setStatus("error");
+    setErrorMessage(
+      result.error === "rate_limited"
+        ? "Too many submissions just now — try again in a few minutes, or email hello@relay.green directly."
+        : "Couldn't send. Check your name, email, and message, or write to hello@relay.green directly."
+    );
   }
 
   function close() {

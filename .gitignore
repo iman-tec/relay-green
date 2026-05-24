@@ -23,6 +23,12 @@
 # production
 /build
 
+# Unsigned installers staged for code-signing.
+# Files live here until they're code-signed (Authenticode), then move
+# back to /public/downloads/ and re-add to git in a follow-up commit.
+# See LAUNCH.md §1.3.
+/public/_unreleased-downloads/
+
 # misc
 .DS_Store
 *.pem

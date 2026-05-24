@@ -16,7 +16,6 @@ import Link from "next/link";
 import ReactDOM from "react-dom";
 import { TryRelayButton } from "./TryRelayButton";
 import { SplineBackground } from "./SplineBackground";
-import { RelayLogo } from "./RelayLogo";
 
 const SPLINE_SCENE_URL =
   "https://prod.spline.design/IU3NwT-PryTFjbq8/scene.splinecode";
@@ -52,15 +51,18 @@ export function SplineHero() {
       <div className="r-wrap">
         <div className="r-hero-content r-hero-stagger">
           <h1 className="r-h-display r-hero-headline">
-            Your AI built it.
+            The <em style={{ color: "var(--green)" }}>human layer</em>
             <br />
-            <RelayLogo size="1em" trailingGap={6} />
-            <br className="r-hero-mobile-break" /> gets it <em>live.</em>
+            for AI-built
+            <br />
+            software.
           </h1>
           <p className="r-lede r-hero-sub">
-            Get real engineering help for debugging, deployment, integrations,
-            scaling, and production readiness, exactly when AI stops being
-            enough.
+            Your AI shipped a prototype. We ship the product.
+            <br />
+            Real engineers join your build in seconds — to debug,
+            <br />
+            deploy, integrate, and stay with you long after the demo.
           </p>
           <div className="r-hero-cta">
             <TryRelayButton />

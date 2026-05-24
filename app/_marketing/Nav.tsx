@@ -23,6 +23,11 @@ const NAV_ITEMS: NavItem[] = [
     route: "/for-enterprise",
   },
   {
+    label: "Pricing",
+    href: "/#pricing",
+    route: "/#pricing",
+  },
+  {
     label: "About RELAY",
     href: "/",
     route: "/",

@@ -1,8 +1,11 @@
 /*
- * /legal/cookies, Cookie Notice. DRAFT.
+ * /legal/cookies, Cookie Notice.
  *
  * Four-category table (strictly necessary, functional, analytics, marketing).
- * Live source for the table will eventually be /trust/data-handling.
+ * The vendor rows are the source of truth for what the cookie banner
+ * gates — keep this list in sync with app/_marketing/AnalyticsGate.tsx
+ * and any new third-party scripts you add. Long-form trust posture
+ * lives at /trust/data-handling.
  */
 
 import type { Metadata } from "next";
@@ -85,55 +88,55 @@ type Row = {
   retention: string;
 };
 
+/*
+ * Vendor table.
+ *
+ * This list is the source of truth for the cookie notice and MUST match
+ * the actual technologies loaded by the site (currently Vercel Analytics
+ * + Vercel Speed Insights, both gated by AnalyticsGate.tsx). If you add
+ * Plausible / Sentry / LinkedIn Insight Tag / Hotjar / GA4 / etc., add a
+ * row here in the same PR so the disclosure stays accurate.
+ */
 const rows: Row[] = [
   {
     category: "Strictly necessary",
-    purpose: "Session authentication, CSRF protection.",
-    vendor: "Relay (first-party)",
-    retention: "Session",
+    purpose:
+      "Remember your cookie choice (Accept / Reject / preference settings) so we don't re-prompt on every visit.",
+    vendor: "Relay (first-party, localStorage key relay.cookies)",
+    retention: "12 months from your last visit",
   },
   {
     category: "Strictly necessary",
-    purpose: "Load balancing across regions.",
-    vendor: "Relay (first-party)",
-    retention: "1 hour",
+    purpose: "Session authentication and CSRF protection on signed-in surfaces.",
+    vendor: "Relay (first-party) + Supabase Auth",
+    retention: "Session",
   },
   {
     category: "Functional",
-    purpose: "Remember your selected region and locale.",
-    vendor: "Relay (first-party)",
-    retention: "12 months",
-  },
-  {
-    category: "Functional",
-    purpose: "Saved press settings (default modality).",
-    vendor: "Relay (first-party)",
+    purpose: "Remember your light/dark theme preference across visits.",
+    vendor: "Relay (first-party, localStorage key relay.theme)",
     retention: "12 months",
   },
   {
     category: "Analytics",
     purpose:
-      "Aggregated, IP-truncated page-view counts to size the bench by region.",
-    vendor: "Plausible Analytics",
-    retention: "Sessionised; no individual identifier stored",
+      "Aggregated, anonymized page-view counts. Only loaded after you Accept on the cookie banner.",
+    vendor: "Vercel Analytics",
+    retention: "Per Vercel's published policy (vercel.com/legal/privacy-policy)",
   },
   {
     category: "Analytics",
-    purpose: "Anonymous performance and error telemetry.",
-    vendor: "Sentry",
-    retention: "30 days",
+    purpose:
+      "Core Web Vitals telemetry (LCP, INP, CLS) to detect performance regressions. Only loaded after Accept.",
+    vendor: "Vercel Speed Insights",
+    retention: "Per Vercel's published policy (vercel.com/legal/privacy-policy)",
   },
   {
     category: "Marketing",
-    purpose: "Attribution for paid campaigns, only set after explicit consent.",
-    vendor: "Relay (first-party) + LinkedIn Insight Tag",
-    retention: "90 days",
-  },
-  {
-    category: "Marketing",
-    purpose: "A/B test assignment for landing-page experiments (consented).",
-    vendor: "Relay (first-party)",
-    retention: "30 days",
+    purpose:
+      "None today. The marketing category exists for future paid-campaign attribution; no marketing cookies are currently loaded.",
+    vendor: "None at this time",
+    retention: "n/a",
   },
 ];
 

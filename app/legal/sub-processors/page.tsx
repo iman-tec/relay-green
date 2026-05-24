@@ -1,5 +1,5 @@
 /*
- * /legal/sub-processors, Sub-processors index. DRAFT.
+ * /legal/sub-processors, Sub-processors index.
  *
  * The legal-surface stub. The trust center page at /trust/subprocessors
  * is the live source of truth (auto-updates from /trust/data-handling).
@@ -12,7 +12,7 @@ import { Shell } from "../../_marketing/Shell";
 export const metadata: Metadata = {
   title: "Sub-Processors",
   description:
-    "Where to find Relay's live, dated list of sub-processors. The trust center is the source of truth. DRAFT, under counsel review.",
+    "Where to find Relay's live, dated list of sub-processors. The trust center is the source of truth.",
   alternates: { canonical: "/legal/sub-processors" },
   robots: { index: false, follow: false },
 };

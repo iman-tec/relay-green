@@ -1,0 +1,510 @@
+================================================================================
+RELAY.GREEN — MARKETING SITE ELEMENTS INVENTORY
+================================================================================
+Source of truth: app/, app/_marketing/, app/sitemap.ts, app/robots.ts
+Generated: 2026-05-24 (pre-go-live audit)
+Stack: Next.js 16 (App Router) + React 19 + Tailwind v4
+Canonical host: https://www.relay.green
+
+Scope of this file: PUBLIC MARKETING SURFACE only. Excludes authenticated app
+(/dashboard, /inbox, /supervise, /staff/*, /room, /widget, etc.).
+
+================================================================================
+0. GLOBAL CHROME (every public page)
+================================================================================
+
+Site title template (next/metadata):
+  default  : "Relay.green, Human engineers, in seconds"
+  template : "%s · Relay"
+Default description:
+  "You're building with AI. We're the humans who help you ship. Click the
+   green dot to get a qualified engineer in seconds."
+Canonical base : https://www.relay.green
+Viewport theme : #4d6b40 brand green (app/layout.tsx)
+Manifest theme : #4d6b40 brand green (app/manifest.ts; single source of truth)
+Robots         : index/follow ON; googleBot max-snippet -1, max-image-preview large
+Manifest path  : /manifest.webmanifest
+Favicon        : /favicon.ico (cream + green dot, dynamic via app/icon.tsx)
+Apple icon     : /apple-icon (180×180)
+OG image       : /opengraph-image (1200×630, cream + green dot brand card)
+Twitter image  : /twitter-image  (1200×600, summary_large_image)
+
+JSON-LD blocks (all pages, via app/_marketing/JsonLd.tsx in layout):
+  - Organization  (legalName "Relay.green, Inc.", US/EU/UK/IN areaServed,
+                   support@relay.green)
+  - WebSite       (publisher ref, en-US)
+
+Fonts (next/font):
+  - Source Serif 4  (display + body)            — --font-source-serif
+  - Inter           (UI + eyebrow)              — --font-inter
+  - JetBrains Mono  (code / labels / meta)      — --font-jetbrains
+
+Cookie consent (modal banner; app/_marketing/CookieConsent.tsx):
+  - Title  : "We value your privacy."
+  - Body   : 4-line paragraph + inline Privacy Policy + Terms of Use buttons
+  - Actions: "Cookie settings" / "Accept & Continue"
+  - Settings expansion: Strictly necessary (locked), Functional, Analytics,
+    Marketing checkboxes; stored at localStorage["relay.cookies"].
+  - Custom event "relay:cookies-changed" gates Vercel Analytics +
+    SpeedInsights via app/_marketing/AnalyticsGate.tsx.
+  - Skipped on /legal/cookies route (non-blocking there).
+  - Skipped inside iframes (window.self !== window.top).
+
+NAV (sticky top; app/_marketing/Nav.tsx; surfaces on every marketing page):
+  Brand mark    : RELAY • (RelayLogo, 22px, pulsing green dot)  → /
+  Links (desktop, 980px+):
+    "How it Works"      → /product
+    "For Enterprises"   → /for-enterprise
+    "Pricing"           → /#pricing      (anchor on home)
+    "About RELAY"       → /
+  Right cluster :
+    "Sign in"           → /login
+    "Try RELAY"         → opens Try Relay modal (TryRelayProvider)
+    "▾" caret menu      → "Download Relay Desktop" → /download-relay-desktop
+  Mobile (<=980px)      : hamburger → full-screen drawer with same items.
+
+FOOTER (every marketing page; app/_marketing/Footer.tsx):
+  Top row:
+    - Brand mark RELAY • (28px, cream) + tagline
+      "Press once. A real engineer joins your AI build."
+    - Primary nav: How it Works → /product
+                   For Enterprises → /for-enterprise
+                   About → /
+                   Contact Us → /company/about   [no #contact anchor]
+  Global presence grid (15 flags + country names):
+    Belgium, Canada, Denmark, Finland, France, Germany, Iceland, India,
+    Netherlands, Norway, South Africa, Sweden, UAE, UK, USA
+  AI search-engine mention strip (AEO signal):
+    "ChatGPT Search · Perplexity · Google AI Overview · Gemini · Copilot ·
+     Claude."
+  Language model mention strip:
+    "GPT · Claude · Gemini · Llama · Mistral · Grok." → link to /llms.txt
+  Bottom strip:
+    "© 2026 RELAY •" · Privacy (/legal/privacy-policy) · Terms of Use
+    (/legal/terms-of-use)
+
+================================================================================
+1. HOMEPAGE  —  /
+   File: app/page.tsx + app/_marketing/Home.tsx
+================================================================================
+
+Meta title       : "Build with AI. Ship with engineers."
+Meta description : "Press once. A software engineer joins your AI build in
+                    seconds, and stays with you from build to shipped to
+                    running."
+Canonical        : /
+Auth gate        : signed-in users redirect to role dashboard (auth fails soft).
+
+Section 1.1 — HERO (SplineHero, server component + Spline 3D background)
+  H1   : "The human layer for AI-built software."
+         (em "human layer" in brand-green italic)
+  Lede : "Your AI shipped a prototype. We ship the product.
+          Real engineers join your build in seconds — to debug, deploy,
+          integrate, and stay with you long after the demo."
+  CTAs : [Try RELAY] (primary, opens modal)
+         [See how it works →] (ghost, → /product)
+  Background: Spline scene from prod.spline.design (lazy, reduced-motion-aware,
+              cream gradient poster fallback).
+
+Section 1.2 — HOW IT WORKS (HowItWorks, SVG quadratic-bezier journey)
+  Eyebrow : "How it works"
+  H2      : "Six beats. From a stuck moment to a shipped product."
+            (id="how-it-works-heading")
+  Six nodes on the curve: Press, Match, Join, Solve, Ship, Maintain.
+  Pure SVG (no JS), aria-label set on the figure.
+
+Section 1.3 — HOW WE RELAY  (anchor id="pricing")
+  Eyebrow : "How we relay"
+  H2      : "Three phases. One team."
+  Three phase cards (PhaseCards):
+    Phase 01 — Build Phase     "You build. We support."
+                Footnotes: "Each session is 10 min", "Each plan is valid for 12 months"
+    Phase 02 — Launch and Go-Live  "You tell us when. We quote on complexity."
+                Footnotes: "Customized quote available for specific cases"
+    Phase 03 — Maintain and Scale  "We take accountability. You focus on your business."
+                Footnotes: "Customized quote available for specific cases"
+  Tier rows + prices : sourced from app/_marketing/plans.ts (shared with /payment).
+  EnterpriseCta block (form, mailto: hello@relay.green).
+
+Section 1.4 — SEE RELAY IN ACTION (dark band)
+  H2      : "See [RELAY •] in action"
+  Lede    : "Two takes on how Relay connects AI builders with real engineers
+             — a quick enterprise pitch and the full product walkthrough."
+  2-up VideoCard grid:
+    LEFT  — Enterprise pitch · 47s
+            poster /relay-explainer-v6-poster.svg
+            src    /relay-explainer-enterprise-v1.mp4
+            data-testid hero-video-enterprise
+    RIGHT — Product walkthrough · 3 min
+            poster /relay-explainer-v6-poster.svg
+            src    /relay-combine-v2b.mp4
+            data-testid hero-video-cinematic
+
+Section 1.5 — WHY RELAY EXISTS  (light band, 2-col + 4 tiles)
+  Eyebrow: "Why Relay • exists"
+  H2     : "The line between creator and engineer is *disappearing.*
+            Engineering judgment is *not.*"
+  Lede   : "AI accelerates creation.
+            RELAY • adds the engineering judgment required for production."
+  Tiles  : "Phase 01 — Build Phase",
+           "Phase 02 — Launch and Go-Live",
+           "Phase 03 — Maintain and Scale",
+           "Across all three phases — Same team. End to end."
+
+Section 1.6 — WHAT WE SUPPORT
+  Eyebrow : "RELAY • supports"
+  H2      : "Pick your tools. *We're already there.*"
+  Body    : "The Relay team supports the AI tools you build with, and the
+             production stack you ship into. Eight front doors. A hundred
+             and fifty integrations behind them, and counting."
+  AI tracks pills (10): Claude, ChatGPT, Gemini, Copilot, Cursor, Lovable,
+                        Replit, v0, Bolt, Windsurf.
+  Production-stack marquee (~145 services): Adyen, Airbyte, …, Zoom.
+  Caption : "If it talks to an API, our engineers have shipped with it.
+             The list above is a sample, not a limit, name your stack and
+             we'll match you with someone who has launched on it before."
+
+Section 1.7 — PRESS THE DOT (closing CTA; PressTheDot)
+  H2     : "AI changed *who* can build.
+            Relay changes *the way* they ship."
+  Body   : "First session is free. An engineer joins in seconds. Same
+            person stays with you from build to shipped to running."
+  CTA    : large green sphere (button, aria-label "Press the dot to start
+           a Relay session") — opens Try Relay modal.
+  Caption: "One press. That's it."
+
+Section 1.8 — FAQ (native <details>/<summary>, default open)
+  Eyebrow: "FAQ"
+  H2     : "Questions builders ask before pressing *the dot.*"
+  Lede   : "Still wondering something? Send us a note. A real human
+            answers within the hour."
+  Contact: support@relay.green
+  Items  :
+    Q. I'm not a developer. Will the engineer judge my AI-generated code?
+    Q. What AI tools do you support?
+    Q. Is my code and data safe?
+    Q. What if I just need a quick answer, not an hour-long call?
+    Q. Can I cancel my plan?
+    Q. Do you take on net-new builds from scratch?
+       (partner referral to www.thegaetwaydigital.com)
+
+CTAs across page:
+  - "Try RELAY" (modal)            (Nav, hero, mobile drawer, PressTheDot sphere)
+  - "See how it works →" → /product
+  - EnterpriseCtaButton → "Talk to Relay for Enterprise" → inline contact form
+    (mailto: hello@relay.green)
+  - "Email support@relay.green" (FAQ)
+
+================================================================================
+2. HOW IT WORKS  —  /product
+   File: app/product/page.tsx
+================================================================================
+
+Meta title       : "How it works · Relay"
+Meta description : "Three phases. One team. Same engineer the whole way,
+                    from build through launch through ongoing maintenance."
+Canonical        : /product
+Palette in use   : appleMono (white + green accents)
+
+Section 2.1 — HERO
+  Dot-eyebrow : "How Relay works"
+  H1          : "One Press.\nOne Engineer.\n*From being stuck to solution
+                 ready in real time.*"
+  Lede        : "Here's exactly what happens when you press the green
+                 button, and why it's the fastest way to turn an AI build
+                 session into robust, scalable, secure, working software."
+  Right side  : ProductHeroOrb (animated 3D-style green orb) + caption
+                "PRESS TO START RELAY"
+
+Section 2.2 — CORE MECHANIC (id="core-mechanic")
+  H2 : "Press, Match, Join, Solve, Deploy, Maintain"
+  Vertical 4-step timeline (numbered discs + cards):
+    1. You press the green button.
+       Chips: Claude, Cursor, Lovable, Replit, v0, Bolt, +140 more
+    2. We match you with the right engineer.
+       Chips: Average match: 8.2s, Stack-verified engineer
+    3. Engineer joins your session.
+       Chips: Chat, Voice, Screen share
+    4. Ship it, and they stay with you.
+
+Section 2.3 — THE RELAY MODEL (3-up phase cards)
+  Eyebrow : "The Relay model"
+  H2      : "Three phases. One engineer. *All the way from build to scale.*"
+  Cards   :
+    Phase 1 — Build     (icon, body, 3 bullets)
+    Phase 2 — Launch    (icon, body, 3 bullets)
+    Phase 3 — Maintain  (icon, body, 3 bullets)
+
+Section 2.4 — BUILT TO TRUST (dark band)
+  Dot-eyebrow : "Built to trust"
+  H2          : "AI for speed. *Engineers for trust.*"
+  Lede        : "RELAY • stays with you. Same engineer in build, launch,
+                 and maintenance, continuity is the whole company."
+  Right grid  : 2 trust pillars (animated L→R underline)
+                  - Enterprise-grade security  (SOC 2 aligned, GDPR aware,
+                    data residency)
+                  - Engineering Team Continuity  (same engineer from first
+                    commit to fifth iteration)
+  Bottom      : BuiltToTrustCenter (centered ball + "First 10 min on us" +
+                green CTA "Press the dot →")
+
+CTAs : ProductHeroOrb → Try Relay modal; "Press the dot →" → Try Relay modal.
+
+================================================================================
+3. FOR ENTERPRISE  —  /for-enterprise
+   File: app/for-enterprise/page.tsx
+================================================================================
+
+Meta title       : "For Enterprise · Relay"
+Meta description : "Superpowers for every Non Technical AI builder in your
+                    team. RELAY ensures it works. Real engineers join AI-
+                    driven build sessions in seconds, one press away,
+                    governed by default. Backed by NINtec Systems with
+                    2,000+ engineers across 15 countries."
+Canonical        : /for-enterprise
+
+Section 3.1 — HERO (split layout, light)
+  Dot-eyebrow : "For CEOs, CMOs, CFOs, CSOs, CGOs"
+  H1          : "*Govern* the AI your team is already using.
+                 — — — — — —
+                 RELAY • *ensures it works.*"
+  Lede        : "Your team is building with Cursor, Claude, and Lovable,
+                 whether IT signed off or not. Relay puts a qualified
+                 engineer behind every AI-built system in seconds: under
+                 your NDA, in your region, and on your audit trail."
+  CTA         : EnterpriseCtaButton → inline form (mailto: hello@relay.green)
+  Right card  : "The conversations happening in your org this week"
+                CEO  · "AI transformation is a board-level metric. …"
+                CMO  · "Marketing is shipping landing pages, campaigns, …"
+                CFO  · "Procurement is being asked for shadow-AI tools …"
+                CSO  · "Sales ops is wiring HubSpot, Salesforce, Slack …"
+                CGO  · "Growth needs experiments live yesterday. …"
+
+Section 3.2 — MARKET SIGNALS
+  Eyebrow: "What we're hearing"
+  H2     : "The market is shouting. *We're listening.* (pulse dot)"
+  Stats  : 4,000+ Shadow AI apps per F500 org
+           47% Of non-tech staff using AI tools daily
+           15+ AI front-doors in a typical enterprise
+  5-item signals list (numbered 01–05) — Discord, F500 CIO reports,
+  hiring funnel compression, "Citizen Developer Enablement" procurement,
+  AI dev-tool platform partnerships.
+
+Section 3.3 — THE SHADOW STACK (dark band)
+  Eyebrow : "The shadow stack"
+  H2      : "Half your team is shipping *Lovable apps* to prod.
+             The other half is fixing them *quietly.*"
+  4 stat tiles : 68% / 3.2x / 14s / $0
+
+Section 3.4 — GOVERNANCE THAT SCALES (4-up grid)
+  H2 : "Governance that scales with *your organization*"
+  4 cards (icons): Org-wide policy controls; SAML / SSO + role-based access;
+                   Audit-ready by default; Usage analytics & spend control.
+  Footer mono row: "Policies · approvals · audit logs · session recordings
+                   · data residency · custom retention"
+
+Section 3.5 — WHAT YOU GET (dark band, 4-up)
+  Eyebrow : "What you get"
+  H2      : "One contract. *Organization-wide cover.*"
+  Cards   : Named Team / Pooled Hours / Org Audit Logs / Compliance Brief.
+
+Section 3.6 — HOW WE EMBED (3 phase cards)
+  H2 : "How we *embed* with your teams"
+  Cards : Phase 01 Onboard & Align / Phase 02 Run & Govern / Phase 03 Scale & Embed
+
+Section 3.7 — CTA
+  H2  : "Ready to enable your *teams?*"
+  Sub : "One press. One engineer. One governed standard, across your org."
+  CTA : EnterpriseCtaButton
+
+================================================================================
+4. PRICING  —  /pricing
+   File: app/pricing/page.tsx
+================================================================================
+
+Meta title       : "Pricing · Relay"
+Meta description : "Free for the first session. Pro for solo builders. Max
+                    for solo founders running revenue on AI builds. Teams
+                    for 50+ builders. Talk to us for enterprise."
+Canonical        : /pricing
+OG (per-page)    : /pricing/opengraph-image (1200×630)
+                   "Pricing, Relay" / "Free, Pro, Max, Teams. …"
+
+JSON-LD blocks   :
+  - WebPage     (name "Relay, Pricing")
+  - Service + AggregateOffer (3 offers, USD, /pricing url)
+  - BreadcrumbList
+  - FAQPage
+
+Components rendered:
+  - PricingTiers (Free / Pro / Max / Teams — sourced from plans.ts)
+  - CtaBanner (default brand closer; "AI changed who can build…")
+  - FAQ section: Is Free really free? · Same engineer every time? ·
+                 Max vs Teams? · Custom enterprise pricing?
+
+================================================================================
+5. LEGAL FOOTER PAGES  (all linked from footer + cookie consent)
+================================================================================
+
+5.1  /legal/privacy-policy   [DRAFT — counsel review pending]
+     Title:   "Privacy Policy · Relay"
+     Desc:    "What we collect, what we don't, how we use it, and where
+               we store it. Plain English."
+     Canon:   /legal/privacy-policy
+     Sections (h3): Data we collect (h4: Personal & Account Info; Service
+                    Usage; Technical & Device; Cookies; Other; Non-Personal;
+                    Browsing; Data Retention) · How we use your data · Who
+                    we share with · Security · Processing · Disclosure &
+                    cross-border transfers · Data retention period · Cookies
+                    · Social media credentials · Mailers · Anti-spam · Links
+                    to other sites · Children's privacy · Your consent ·
+                    Changes · Contact (legal@relay.green, dpo@relay.green)
+     Embed mode  : ?embed=1 renders without Nav/Footer for cookie modal.
+
+5.2  /legal/terms-of-use     [DRAFT — counsel review pending]
+     Title: "Terms of Use · Relay"  Canon: /legal/terms-of-use
+     19 numbered sections, includes EUR/USD/GBP/INR pricing references,
+     Stripe billing, Zoom Video SDK, AI provider mention, NINtec mention,
+     governing law fallback England and Wales.
+
+5.3  /legal/cookies          [DRAFT]
+     Title: "Cookie Notice · Relay"  Canon: /legal/cookies
+     4-category cookie table (Strictly necessary, Functional, Analytics,
+     Marketing). Vendors listed: Relay (first-party), Plausible Analytics,
+     Sentry, LinkedIn Insight Tag.
+     [DISCLOSURE MISMATCH — actual analytics in code is Vercel Analytics +
+      Vercel Speed Insights only. See Approval Required list.]
+
+5.4  Other legal (in sitemap but not all linked from footer):
+     /legal/acceptable-use    (in /llms.txt and sitemap)
+     /legal/dpa
+     /legal/sub-processors
+     /legal/terms-commercial
+     /legal/terms-consumer
+
+================================================================================
+6. TRUST CENTER  —  /trust  (linked from sitemap + privacy)
+================================================================================
+
+Title : "Trust center · Relay"  Canon: /trust
+Subpages: /trust/privacy, /trust/compliance, /trust/data-handling,
+          /trust/subprocessors, /trust/security, /trust/responsible-disclosure
+FAQ schema injected via JsonLd.
+
+================================================================================
+7. COMPANY / CONTACT  —  /company/about
+================================================================================
+
+Title : "Contact Us · Relay"
+Desc  : "Contact Relay for sales, enterprise rollouts, partnerships,
+         press, security, and general questions."
+Canon : /company/about
+Contains: HeroDot + ContactForm + direct-lane email blocks (#contact anchor
+          exists at line 107, used by CtaBanner "Talk to sales" link).
+
+================================================================================
+8. RESOURCES / ARTICLES (linked from sitemap + /llms.txt)
+================================================================================
+
+Hub : /resources  → /resources/articles · /research · /white-papers · /guides
+                    · /customer-stories
+10 articles, 2 research pieces, 3 white papers, 2 guides, 1 customer story
+(See app/resources/_data/posts.ts; full list in sitemap.ts.)
+
+================================================================================
+9. AI-TOOL LANDING PAGES  (dynamic, ToolLandingPage component)
+================================================================================
+
+Route        : /for/[tool]
+generateStaticParams: cursor, lovable, replit, v0, bolt, claude, chatgpt,
+                      copilot, gemini, windsurf
+Each emits per-tool opengraph-image; CTAs link to /pricing and /product.
+
+================================================================================
+10. OTHER PUBLIC SURFACES
+================================================================================
+
+  /brand-guidelines           — visual identity reference (low SEO weight)
+  /explainer                  — 45-second product film page (video sitemap)
+  /download-relay-desktop     — installer landing (linked from Try Relay menu)
+  /download                   — generic installer landing
+  /sitemap-and-content-plan   — internal editorial map (disallowed in robots)
+
+================================================================================
+11. ASSETS REFERENCED FROM MARKETING PAGES
+================================================================================
+
+Video      : /relay-explainer-enterprise-v1.mp4   (~47s, hero card)
+             /relay-combine-v2b.mp4               (~3min, hero card)
+             /relay-explainer-final-v5.mp4        (referenced from /explainer)
+             /relay-explainer-v6-cinematic.mp4    (referenced from /explainer)
+Poster     : /relay-explainer-v6-poster.svg / .jpg
+             /relay-explainer-poster.jpg
+Audio      : /audio/relay-vo-v6.wav  (+ JSON sidecar /audio/relay-vo-v6.json)
+External   : Spline scene  https://prod.spline.design/IU3NwT-PryTFjbq8/scene.splinecode
+             (preconnect + preload at LOW priority in SplineHero.tsx)
+Installers : /downloads/Relay-Setup.exe         (PUBLICLY DOWNLOADABLE — verify
+             /downloads/Relay-Staff-Setup.exe    code-signing + AV scan before
+                                                 launch)
+AEO        : /llms.txt        (rich AI discovery)
+             /llms-full.txt   (extended LLM index)
+Manifest   : /manifest.webmanifest  (BOTH app/manifest.ts AND a static file in
+                                     public/ exist — see Approval Required)
+Static design alts: /aaklmblue/{index,enterprise,how-it-works}.html
+                    /espresso/{index,enterprise,how-it-works}.html
+                    [NOT INTENDED FOR PUBLIC INDEX — robots.ts now disallows]
+
+================================================================================
+12. FORMS ON THE PUBLIC MARKETING SURFACE
+================================================================================
+
+  EnterpriseCtaButton  (hero + closing CTA on /for-enterprise)
+    Fields  : name, email, company, message; honeypot "website".
+    Submit  : lib/contact/submitContact.ts → POST /api/contact, mailto:
+              fallback only on network failure or 5xx.
+    A11y    : labels per field, aria-describedby for errors, aria-invalid,
+              role="status" success state.
+  EnterpriseCta / PhaseCtaForm  (Home + Phase cards)
+    Same shape and honeypot, contactTopic param varies (build/launch/maintain).
+    Same submitContact() flow.
+  ContactForm  (/company/about)
+    Topic selectable from 8 options (SALES, ENTERPRISE, BUILD, LAUNCH,
+    MAINTAIN, PARTNERSHIPS, PRESS, GENERAL). Same submitContact() flow.
+
+Server endpoint:
+  POST /api/contact  (app/api/contact/route.ts)
+    - JSON body validation (name/email/topic/message required, length caps)
+    - Honeypot drop (silent 200 if "website" field non-empty)
+    - Per-IP rate limit (5 submissions / 10 min, in-memory token bucket)
+    - Resend transactional email send when RESEND_API_KEY is set;
+      log-only fallback when it isn't (lead preserved in server logs)
+    - Returns: 200 ok | 400 invalid | 429 rate_limited | 500 send_failed
+
+================================================================================
+13. ROUTES SERVED BY THE BUILD  (from `next build` route map)
+================================================================================
+
+Public marketing (○ Static or ● SSG):
+  /                              /product
+  /for-enterprise                /pricing
+  /explainer                     /brand-guidelines
+  /company/about                 /company/governance
+  /download                      /download-relay-desktop
+  /for/[tool]   (9 prebuilt tool paths)
+  /resources    + 18 article/research/guide/white-paper/customer-story routes
+  /trust  + /trust/{privacy,compliance,data-handling,subprocessors,
+                    security,responsible-disclosure}
+  /legal/{privacy-policy,terms-of-use,cookies,acceptable-use,dpa,
+          sub-processors,terms-commercial,terms-consumer}
+  /sitemap-and-content-plan   (disallowed in robots.txt)
+  /widget/{customer,engineer}  (now disallowed in robots.txt)
+  /room  /intake  /set-password  (legacy demo surfaces; robots-disallowed)
+
+Generated metadata routes:
+  /robots.txt  /sitemap.xml  /manifest.webmanifest
+  /opengraph-image  /twitter-image  /icon  /apple-icon
+  /pricing/opengraph-image  /for/[tool]/opengraph-image
+
+================================================================================
+END OF FILE
+================================================================================

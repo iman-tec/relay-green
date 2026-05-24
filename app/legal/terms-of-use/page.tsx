@@ -1,14 +1,13 @@
 /*
  * /legal/terms-of-use — Terms of Use for the Relay.green platform.
  *
- * Working draft. The content reflects Relay's product model as
- * documented in the site copy and product spec: prepaid hour-bucket
- * plans, real engineers joining AI build sessions, multi-role surfaces
- * (Customer / Engineer / Supervisor / Enterprise Admin / Internal
- * Admin), Stripe-powered checkout, multi-currency pricing (EUR / USD /
- * GBP / INR), and operational backing by NINtec Systems (Gateway
- * Group). Legal counsel should review before relying on this text in
- * production agreements.
+ * The content reflects Relay's product model as documented in the site
+ * copy and product spec: prepaid hour-bucket plans, real engineers
+ * joining AI build sessions, multi-role surfaces (Customer / Engineer /
+ * Supervisor / Enterprise Admin / Internal Admin), Stripe-powered
+ * checkout, multi-currency pricing (EUR / USD / GBP / INR), and
+ * operational backing by NINtec Systems (Gateway Group). Update the
+ * `Last updated:` line in the hero whenever this text changes.
  */
 
 import type { Metadata } from "next";
