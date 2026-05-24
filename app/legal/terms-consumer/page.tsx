@@ -2,7 +2,9 @@
  * /legal/terms-consumer, Plain-English terms for the Try Relay personal tier.
  *
  * Server component. Brief placeholder mirroring the structure of the
- * commercial agreement; final consumer prose follows counsel review.
+ * commercial agreement; the full consumer prose lands when the personal
+ * tier opens. `robots: { index: false }` keeps it out of public search
+ * results until then.
  */
 
 import type { Metadata } from "next";
@@ -12,7 +14,7 @@ import { Shell } from "../../_marketing/Shell";
 export const metadata: Metadata = {
   title: "Terms (Consumer)",
   description:
-    "Plain-English version of the commercial terms, for individuals on the Try Relay personal tier. DRAFT, under counsel review.",
+    "Plain-English version of the commercial terms, for individuals on the Try Relay personal tier.",
   alternates: { canonical: "/legal/terms-consumer" },
   robots: { index: false, follow: false },
 };
@@ -59,7 +61,7 @@ export default function TermsConsumerPage() {
           <p className="r-body" style={bodyStyle}>
             Plain-English version of the commercial terms, for individuals using
             the Try Relay personal tier. Two pages, eighth-grade reading level.
-            Final draft after counsel review. The headers below mirror the{" "}
+            The headers below mirror the{" "}
             <Link
               href="/legal/terms-commercial"
               style={{ borderBottom: "1px solid currentColor" }}

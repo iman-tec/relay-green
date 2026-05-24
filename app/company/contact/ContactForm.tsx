@@ -8,13 +8,16 @@
  * with the topic preselected). The select is the source of truth, the
  * URL param just primes its initial value.
  *
- * Submit goes to /api/contact. On 200 the form is replaced by a quiet
- * thank-you panel; on error the form stays mounted with an inline message
- * so the user can fix and retry.
+ * Submit goes to POST /api/contact via lib/contact/submitContact.ts (the
+ * helper falls back to mailto: on a 5xx so a backend outage cannot kill
+ * the inquiry path). On success the form is replaced by a quiet thank-you
+ * panel; on validation/rate-limit error the form stays mounted with an
+ * inline message so the user can fix and retry.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { submitContact } from "../../../lib/contact/submitContact";
 
 type Status = "idle" | "submitting" | "success" | "error";
 
@@ -78,29 +81,17 @@ export function ContactForm() {
 
     setStatus("submitting");
     setErrorMessage(null);
-    try {
-      // No contact API in this app — hand off to the visitor's mail client.
-      const subject = `Relay enquiry — ${payload.topic}`;
-      const body = [
-        `Name: ${payload.name}`,
-        `Email: ${payload.email}`,
-        payload.company ? `Company: ${payload.company}` : "",
-        `Topic: ${payload.topic}`,
-        "",
-        payload.message,
-      ]
-        .filter(Boolean)
-        .join("\n");
-      window.location.href = `mailto:hello@relay.green?subject=${encodeURIComponent(
-        subject
-      )}&body=${encodeURIComponent(body)}`;
+    const result = await submitContact(payload);
+    if (result.ok) {
       setStatus("success");
-    } catch {
-      setStatus("error");
-      setErrorMessage(
-        "Couldn't open your email app — write to hello@relay.green directly."
-      );
+      return;
     }
+    setStatus("error");
+    setErrorMessage(
+      result.error === "rate_limited"
+        ? "Too many submissions just now — try again in a few minutes, or email hello@relay.green directly."
+        : "Couldn't send. Check your name, email, and message, or write to hello@relay.green directly."
+    );
   }
 
   function reset() {

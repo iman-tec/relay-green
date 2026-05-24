@@ -25,6 +25,99 @@ const nextConfig: NextConfig = {
   // 3000 ("Already has other meetings in progress."). Disabling it removes
   // that dev-only artifact; production has never run in StrictMode anyway.
   reactStrictMode: false,
+
+  // Baseline security headers for the public marketing site.
+  //
+  // CSP ships in REPORT-ONLY mode below so violations surface in the
+  // browser console without breaking the page. Once the report-only
+  // window has been clean for a week or two, swap the header key to
+  // `Content-Security-Policy` to enforce. Do NOT enforce before testing
+  // — Next.js inline boot scripts, the theme-init script, the JSON-LD
+  // payloads, the Spline CDN scene file, and the Vercel Analytics
+  // endpoints all need to land in the allowlist below or the page goes
+  // blank.
+  async headers() {
+    const cspDirectives = [
+      // Default deny: anything not explicitly allowed elsewhere is blocked.
+      "default-src 'self'",
+      // Inline + eval needed for: Next 16 hydration boot script, the
+      // theme-init inline script in app/layout.tsx, JSON-LD payloads,
+      // and the Spline WebGL runtime (which uses eval for shader code).
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://va.vercel-scripts.com",
+      // Inline styles are unavoidable: every page uses style={{...}}
+      // and many components emit <style> blocks for scroll animations.
+      "style-src 'self' 'unsafe-inline'",
+      // Data URIs for the SVG paper-texture overlay; blob: for the
+      // Spline-rendered canvas snapshots; same-origin for our /icon,
+      // /apple-icon, /opengraph-image, /twitter-image dynamic routes.
+      "img-src 'self' data: blob: https://prod.spline.design",
+      // next/font self-hosts Google Fonts at /_next/static/media so
+      // 'self' is enough; no third-party font CDN.
+      "font-src 'self' data:",
+      // Vercel Analytics + Speed Insights beacons; Spline asset fetch.
+      "connect-src 'self' https://prod.spline.design https://va.vercel-scripts.com https://vitals.vercel-insights.com",
+      // Same-origin <iframe> only — used by the cookie-consent legal
+      // preview modal (/legal/privacy-policy?embed=1 etc).
+      "frame-src 'self'",
+      // Prevent third-party sites from framing relay.green pages
+      // (overlap with X-Frame-Options: SAMEORIGIN below).
+      "frame-ancestors 'self'",
+      // <video> / <audio> sources — same-origin (explainer mp4s ship
+      // out of /public).
+      "media-src 'self'",
+      // Block plug-in content entirely.
+      "object-src 'none'",
+      // Lock down where forms can POST. Forms today only mailto:; the
+      // base-uri restriction prevents injected <base> tags from
+      // redirecting relative URLs.
+      "form-action 'self'",
+      "base-uri 'self'",
+      // Upgrade any stray http:// asset references to https://.
+      "upgrade-insecure-requests",
+    ].join("; ");
+
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          // HSTS — force HTTPS for two years, include subdomains, allow preload.
+          // Safe on Vercel which terminates TLS on every domain by default.
+          {
+            key: "Strict-Transport-Security",
+            value: "max-age=63072000; includeSubDomains; preload",
+          },
+          // Block content-type sniffing.
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          // SAMEORIGIN allows the cookie-consent legal preview iframe to
+          // embed /legal/privacy-policy and /legal/terms-of-use on the
+          // same origin while blocking third-party framing.
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          // Send only origin on cross-origin navigation; full referrer
+          // within same origin so internal analytics still work.
+          {
+            key: "Referrer-Policy",
+            value: "strict-origin-when-cross-origin",
+          },
+          // Minimal permissions baseline — block geolocation / mic / cam
+          // / payment APIs until explicitly opted in by a feature that
+          // needs them.
+          {
+            key: "Permissions-Policy",
+            value:
+              "geolocation=(), microphone=(), camera=(), payment=(), usb=(), interest-cohort=()",
+          },
+          { key: "X-DNS-Prefetch-Control", value: "on" },
+          // CSP in report-only mode. Observe browser console for
+          // violations during the soak period, then swap to
+          // `Content-Security-Policy` to enforce.
+          {
+            key: "Content-Security-Policy-Report-Only",
+            value: cspDirectives,
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

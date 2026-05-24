@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { RelayLogo } from "./RelayLogo";
+import { ManageCookiesLink } from "./ManageCookiesLink";
 
 /**
  * Visible-text mention of every major LLM and AI-search engine, sitting in
@@ -24,7 +25,10 @@ const PRIMARY_NAV: Array<{ label: string; href: string }> = [
   { label: "How it Works", href: "/product" },
   { label: "For Enterprises", href: "/for-enterprise" },
   { label: "About", href: "/" },
-  { label: "Contact Us", href: "/company/about" },
+  // The /company/about route is titled "Contact Us" in metadata and has
+  // an #contact section anchor; deep-linking to the anchor avoids the
+  // extra scroll past the page hero on click.
+  { label: "Contact Us", href: "/company/about#contact" },
 ];
 
 const GLOBAL_PRESENCE: Array<{ country: string; code: string }> = [
@@ -270,6 +274,12 @@ export function Footer() {
             >
               Terms of Use
             </Link>
+            {/* GDPR / DPDP withdrawal-of-consent path. Dispatches a
+                same-tab custom event that CookieConsent listens for, so
+                the banner re-opens with the user's current preferences
+                pre-selected. Plain <button> reset (no navigation) to
+                keep the user on the page they're already reading. */}
+            <ManageCookiesLink />
           </div>
         </div>
       </div>

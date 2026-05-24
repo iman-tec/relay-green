@@ -1516,12 +1516,10 @@
 .mk-root .r-hero-headline {
   max-width: 18ch;
   line-height: 1.01;
-  /* Cap the homepage hero headline tighter than the global .r-h-display
-     (which goes up to 96px). 64px is enough for editorial weight while
-     keeping the headline ~195px tall on 1366px viewports — so the hero
-     content can fit inside the 65dvh floor on 768p laptops without the
-     hero stretching to 93% of viewport. */
-  font-size: clamp(40px, 5vw, 64px);
+  /* Hero H1 sized 1.5× the original (clamp 40/5vw/64 → 60/7.5vw/96) for
+     stronger above-the-fold presence with the new 3-line "human layer"
+     headline. Caps at 96px so very wide viewports stay readable. */
+  font-size: clamp(60px, 7.5vw, 96px);
 }
 .mk-root .r-hero-mobile-break {
   display: none;
@@ -1625,12 +1623,15 @@
 
 /* Moss-green tint over the Spline canvas. mix-blend-mode: color keeps
    the canvas's lightness (so shape, depth, and lighting still read) but
-   replaces hue + saturation with the brand green dot color. */
+   replaces hue + saturation with the brand green dot color. opacity 0.7
+   reduces the tint strength by 30% from full so the Spline scene's own
+   tones bleed through more — calmer green, less saturated overall look. */
 .mk-root .r-spline-tint {
   position: absolute;
   inset: 0;
   background: var(--green-bright);
   mix-blend-mode: color;
+  opacity: 0.7;
   pointer-events: none;
 }
 /* Cream→transparent gradient on the left so the text column stays
@@ -2099,7 +2100,7 @@
    carries trust signals (compliance, latency, minimums). */
 .mk-root .r-press {
   position: relative;
-  background: #f5f5f7;
+  background: #06090a;
   padding: clamp(48px, 6vw, 80px) 0 0;
   text-align: center;
   overflow: hidden;
@@ -2111,12 +2112,13 @@
   padding: 0 24px clamp(50px, 5.8vw, 76px);
 }
 .mk-root .r-press-sphere {
-  width: clamp(112px, 11vw, 150px);
-  height: clamp(112px, 11vw, 150px);
+  position: relative;
+  width: clamp(168px, 16.5vw, 225px);
+  height: clamp(168px, 16.5vw, 225px);
   border-radius: 50%;
   border: none;
   padding: 0;
-  margin: clamp(20px, 2.4vw, 30px) 0 clamp(14px, 1.8vw, 20px);
+  margin: clamp(24px, 2.8vw, 36px) 0 clamp(16px, 2vw, 24px);
   cursor: pointer;
   /* Brand-green ball: highlight at top-left through brand greens to
      a deep forest base. Tuned smaller here so it reads as a button
@@ -2147,6 +2149,62 @@
 .mk-root .r-press-sphere:focus-visible {
   outline: 3px solid var(--green-bright, #4d6b40);
   outline-offset: 8px;
+}
+
+/* Pulsing aura behind the sphere — the "heartbeat" hue. A radial green
+   glow rendered as a ::before pseudo-element sized 1.7× the sphere; a
+   2-beat (lub-dub) keyframe animates scale + opacity together so the
+   halo expands and brightens with each beat. Sits at z-index 0 so the
+   sphere (z-index 1) always paints over it. pointer-events: none keeps
+   click target on the sphere alone. Honors prefers-reduced-motion. */
+.mk-root .r-press-sphere::before {
+  content: "";
+  position: absolute;
+  inset: -35%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(77, 200, 109, 0.55) 0%,
+    rgba(77, 200, 109, 0.22) 32%,
+    rgba(77, 200, 109, 0) 65%
+  );
+  z-index: 0;
+  pointer-events: none;
+  filter: blur(6px);
+  animation: r-press-heartbeat 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+.mk-root .r-press-sphere {
+  z-index: 1;
+}
+@keyframes r-press-heartbeat {
+  0% {
+    transform: scale(1);
+    opacity: 0.45;
+  }
+  14% {
+    transform: scale(1.12);
+    opacity: 0.85;
+  }
+  28% {
+    transform: scale(1.04);
+    opacity: 0.55;
+  }
+  42% {
+    transform: scale(1.22);
+    opacity: 0.95;
+  }
+  70%,
+  100% {
+    transform: scale(1);
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mk-root .r-press-sphere::before {
+    animation: none;
+    opacity: 0.6;
+    transform: scale(1.05);
+  }
 }
 /* Click-driven press animation: squashes deep, settles with a slight
    overshoot, then returns to rest. JS toggles .is-pressing on each
@@ -2192,7 +2250,7 @@
   font-size: clamp(26px, 2.8vw, 40px);
   line-height: 1.15;
   letter-spacing: -0.015em;
-  color: var(--ink);
+  color: var(--cream);
   margin: 0 0 14px;
   max-width: none;
 }
@@ -2207,7 +2265,7 @@
   font-family: var(--font-sans);
   font-size: clamp(14px, 1.05vw, 15px);
   line-height: 1.5;
-  color: var(--ink-soft);
+  color: rgba(244, 242, 238, 0.65);
   margin: 0;
   max-width: 52ch;
 }
@@ -2215,7 +2273,7 @@
   font-family: var(--font-sans);
   font-size: clamp(12px, 0.9vw, 13px);
   line-height: 1.5;
-  color: var(--ink-soft);
+  color: rgba(244, 242, 238, 0.55);
   margin: 0;
   letter-spacing: 0.01em;
 }
@@ -2262,24 +2320,90 @@
   flex-shrink: 0;
 }
 
-/* ============ Marquee ============ */
+/* ============ HowItWorks journey flowing path ============
+   The dashed path animates its stroke-dashoffset so the 2px dashes flow
+   left → right continuously, communicating direction along the wave. The
+   12px loop matches one full dash+gap cycle (dasharray "2 10"), so the
+   pattern wraps invisibly. The static green arrow polygon at t≈0.92
+   reinforces direction even when motion is paused. */
+.mk-root .mk-journey-path {
+  animation: r-journey-flow 1.2s linear infinite;
+}
+@keyframes r-journey-flow {
+  to {
+    stroke-dashoffset: -12;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mk-root .mk-journey-path {
+    animation: none;
+  }
+}
+
+/* ============ HowItWorks journey dots ============
+   Each node in the wave-journey SVG has two circles: an outer aura
+   (low-opacity, pulses + scales bigger) and an inner solid dot (smaller
+   pulse for a subtle "heartbeat"). transform-box: fill-box pins the
+   transform-origin to each circle's own center so the scale animation
+   pivots around the dot, not the SVG (0,0). All 6 nodes pulse in
+   unison so the journey reads as alive. */
+.mk-root .mk-journey-aura {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: r-press-heartbeat 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+.mk-root .mk-journey-dot {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: r-journey-dot-pulse 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+@keyframes r-journey-dot-pulse {
+  0%,
+  70%,
+  100% {
+    transform: scale(1);
+  }
+  14% {
+    transform: scale(1.12);
+  }
+  42% {
+    transform: scale(1.18);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mk-root .mk-journey-aura,
+  .mk-root .mk-journey-dot {
+    animation: none;
+  }
+}
+
+/* ============ Marquee ============
+   Production-stack ticker. .r-marquee-multi variant stacks 3 tracks in
+   one bordered container, all scrolling the same direction. The full
+   ~145-item list is split across the 3 rows so the breadth is visible
+   at a glance without forcing a long single line. */
 .mk-root .r-marquee {
   overflow: hidden;
   border-top: 1px solid var(--rule);
   border-bottom: 1px solid var(--rule);
-  padding: 22px 0;
+  padding: 16px 0;
   background: #f5f5f7;
+}
+.mk-root .r-marquee-multi {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px 0;
 }
 .mk-root .r-marquee-track {
   display: flex;
-  gap: 56px;
-  /* 6s = 2× speed of the previous 12s loop. */
+  gap: 40px;
   animation: r-marquee 6s linear infinite;
   white-space: nowrap;
   font-family: var(--font-display);
-  font-size: 22px;
+  font-size: 15px;
   color: var(--ink-soft);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.005em;
   will-change: transform;
   transform: translate3d(0, 0, 0);
 }
@@ -2509,6 +2633,23 @@
   font-weight: 500;
 }
 
+/* ============ Video card (.mk-video-card) ============
+   Used by app/_marketing/VideoCard.tsx for the "See Relay in action" 2-up.
+   Idle poster has a green radial glow + corner play button; on hover the
+   card lifts slightly and the play button pulses, signaling clickability. */
+.mk-root .mk-video-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(48, 197, 109, 0.45) !important;
+  box-shadow: 0 24px 60px -30px rgba(48, 197, 109, 0.4);
+}
+.mk-root .mk-video-card:hover .mk-video-play {
+  transform: scale(1.08);
+}
+.mk-root .mk-video-card:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 3px;
+}
+
 /* ============ Sweep underline (.mk-sweep) ============
    Pure-CSS L→R underline that draws on hover. Wrap a phrase in
    <span className="mk-sweep">…</span> and the underline animates in when
@@ -2541,8 +2682,53 @@
 .mk-root .mk-sweep:hover::after,
 .mk-root .r-leg:hover .mk-sweep::after,
 .mk-root .r-tile:hover .mk-sweep::after,
-.mk-root .r-leg-enterprise:hover .mk-sweep::after {
+.mk-root .r-leg-enterprise:hover .mk-sweep::after,
+.mk-root .mk-stat-card:hover .mk-sweep::after {
   transform: scaleX(1);
+}
+
+/* ============ Stat card (.mk-stat-card) ============
+   Used by the "What you get" 6-card grid on /product. On hover the card
+   lifts slightly, the border picks up a subtle green tint, and the title's
+   .mk-sweep underline draws in via the rule above. */
+.mk-root .mk-stat-card {
+  transition:
+    transform 250ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 250ms ease,
+    background 250ms ease;
+}
+.mk-root .mk-stat-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(77, 200, 109, 0.32) !important;
+  background: rgba(77, 200, 109, 0.04) !important;
+}
+
+/* ============ Product hero orb (.r-product-orb) ============
+   The 192×192 ball that sits in the dark card at the top of /product.
+   Adds a pulsing green aura behind the sphere via ::before, reusing the
+   r-press-heartbeat keyframes for rhythm consistency across the site. */
+.mk-root .r-product-orb::before {
+  content: "";
+  position: absolute;
+  inset: -35%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(77, 200, 109, 0.55) 0%,
+    rgba(77, 200, 109, 0.22) 32%,
+    rgba(77, 200, 109, 0) 65%
+  );
+  z-index: -1;
+  pointer-events: none;
+  filter: blur(6px);
+  animation: r-press-heartbeat 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mk-root .r-product-orb::before {
+    animation: none;
+    opacity: 0.6;
+    transform: scale(1.05);
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .mk-root .mk-sweep::after {
@@ -3117,6 +3303,97 @@
 .mk-root .r-proof-band-product::after {
   display: none;
 }
+
+/* ============ Built to trust — dark SHELL on light BAND ============
+   The band stays the light marketing surface (#f5f5f7); only the inner
+   .r-proof-shell flips to a dark glass surface. Text, trust pillar
+   cards, ball + aura are all painted for the dark shell — but the page
+   surrounding it remains the calm cream/grey of the marketing site. */
+.mk-root .r-proof-band-product .r-proof-shell {
+  background: #06090a;
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.15),
+    0 28px 80px rgba(0, 0, 0, 0.18),
+    0 0 60px -20px rgba(77, 200, 109, 0.15);
+}
+/* Eyebrow "Built to trust" — the inline style sets color: var(--ink-mute);
+   override to green so it pops on the dark surface. The eyebrow is the
+   first <div> child of .r-proof-intro, distinguishable by inline-flex. */
+.mk-root .r-proof-band-product .r-proof-intro > div:first-child {
+  color: var(--green) !important;
+}
+.mk-root .r-proof-band-product .r-proof-intro h2 {
+  color: var(--cream) !important;
+}
+.mk-root .r-proof-band-product .r-proof-intro p {
+  color: rgba(244, 242, 238, 0.7) !important;
+}
+/* RelayLogo inside the subtext uses color="var(--ink)" prop → hits an
+   inline style. Fall-through by targeting the SVG/text inside the
+   <RelayLogo> markup with high-specificity selector. */
+.mk-root .r-proof-band-product .r-proof-intro p svg,
+.mk-root .r-proof-band-product .r-proof-intro p span {
+  color: var(--cream) !important;
+  fill: var(--cream) !important;
+}
+.mk-root .r-proof-band-product .r-proof-card {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.04) 0%,
+    rgba(255, 255, 255, 0.02) 100%
+  ) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  box-shadow: none !important;
+}
+.mk-root .r-proof-band-product .r-proof-card h4 {
+  color: var(--cream) !important;
+}
+.mk-root .r-proof-band-product .r-proof-card p {
+  color: rgba(244, 242, 238, 0.65) !important;
+}
+/* Green ball: 180×180 (was 272 — reduced 33% to right-size against the
+   surrounding dark shell). Pulsing green aura via ::before reuses the
+   r-press-heartbeat keyframes so the rhythm matches the rest of the
+   marketing site. Tight top margin pairs with smaller vertical paddings
+   so the shell doesn't read as empty space around a shrunken sphere. */
+.mk-root .r-proof-band-product .r-proof-dot-button {
+  position: relative;
+  width: 180px;
+  height: 180px;
+  margin: 12px 0 0;
+}
+/* Press-the-dot CTA inside the centered Built-to-Trust block. */
+.mk-root .r-press-dot-cta:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+}
+.mk-root .r-press-dot-cta:active {
+  transform: translateY(1px);
+}
+.mk-root .r-proof-band-product .r-proof-dot-button::before {
+  content: "";
+  position: absolute;
+  inset: -35%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(77, 200, 109, 0.55) 0%,
+    rgba(77, 200, 109, 0.22) 32%,
+    rgba(77, 200, 109, 0) 65%
+  );
+  z-index: -1;
+  pointer-events: none;
+  filter: blur(6px);
+  animation: r-press-heartbeat 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mk-root .r-proof-band-product .r-proof-dot-button::before {
+    animation: none;
+    opacity: 0.6;
+    transform: scale(1.05);
+  }
+}
 .mk-root .r-proof-band-enterprise {
   background: #ffffff;
 }
@@ -3192,6 +3469,28 @@
 }
 .mk-root .r-proof-card.trust-pillar {
   padding: 44px 28px 28px;
+  transition:
+    transform 250ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 250ms ease,
+    background 250ms ease,
+    box-shadow 250ms ease;
+}
+.mk-root .r-proof-card.trust-pillar:hover {
+  transform: translateY(-3px);
+}
+/* Scope hover treatment to the dark product variant so the cards lift
+   into a subtle green glow on the dark band, instead of just shifting. */
+.mk-root .r-proof-band-product .r-proof-card.trust-pillar:hover {
+  border-color: rgba(77, 200, 109, 0.35) !important;
+  background: linear-gradient(
+    180deg,
+    rgba(77, 200, 109, 0.06) 0%,
+    rgba(77, 200, 109, 0.02) 100%
+  ) !important;
+  box-shadow: 0 16px 36px -16px rgba(77, 200, 109, 0.35) !important;
+}
+.mk-root .r-proof-band-product .r-proof-card.trust-pillar:hover::before {
+  background: var(--green) !important;
 }
 .mk-root .r-proof-card.trust-pillar::before {
   left: 28px;
@@ -4489,19 +4788,24 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 22px;
-  padding: 48px 32px 40px;
-  background: #ffffff;
-  border: 1px solid rgba(0, 0, 0, 0.06);
+  gap: 28px;
+  padding: 64px 40px 52px;
+  background: #06090a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 18px;
   box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.03),
-    0 18px 48px rgba(0, 0, 0, 0.07);
+    0 1px 2px rgba(0, 0, 0, 0.2),
+    0 18px 48px rgba(0, 0, 0, 0.3),
+    0 0 80px -20px rgba(77, 200, 109, 0.18);
 }
-/* Override the .r-press-sphere default margin (designed for the home
-   PressTheDot section); inside the card the gap handles spacing. */
+/* Override the .r-press-sphere defaults: zero margin (the card's gap
+   handles spacing) AND double the sphere size so it dominates the card
+   as the primary CTA. The .r-press-sphere::before heartbeat aura comes
+   along for free and reads much louder on this dark card. */
 .mk-root .r-hero-dot-sphere {
   margin: 0;
+  width: clamp(280px, 28vw, 380px);
+  height: clamp(280px, 28vw, 380px);
 }
 .mk-root .r-hero-dot-caption {
   margin: 0;
@@ -4509,7 +4813,7 @@
   font-size: 11px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--ink-soft);
+  color: rgba(244, 242, 238, 0.6);
 }
 @media (max-width: 900px) {
   .mk-root .r-contact-hero-grid {

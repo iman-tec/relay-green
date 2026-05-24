@@ -5,13 +5,16 @@
  * on the marketing home (Build / Launch / Maintain). Mirrors the
  * EnterpriseCta behavior: the bottom CTA reveals an inline contact form
  * in place instead of navigating to /company/contact. Submissions POST
- * to /api/contact with the card's topic.
+ * to /api/contact via lib/contact/submitContact.ts with the card's topic
+ * (BUILD / LAUNCH / MAINTAIN). Helper falls back to mailto: on 5xx so
+ * the inquiry path survives a backend outage.
  *
  * Input IDs are prefixed with the topic so multiple cards with their
  * forms open simultaneously don't produce duplicate-id collisions.
  */
 
 import { useRef, useState } from "react";
+import { submitContact } from "../../lib/contact/submitContact";
 
 type Status = "idle" | "submitting" | "success" | "error";
 
@@ -71,29 +74,17 @@ export function PhaseCtaForm({
 
     setStatus("submitting");
     setErrorMessage(null);
-    try {
-      // No contact API in this app — hand off to the visitor's mail client.
-      const subject = `Relay enquiry — ${payload.topic}`;
-      const body = [
-        `Name: ${payload.name}`,
-        `Email: ${payload.email}`,
-        payload.company ? `Company: ${payload.company}` : "",
-        `Topic: ${payload.topic}`,
-        "",
-        payload.message,
-      ]
-        .filter(Boolean)
-        .join("\n");
-      window.location.href = `mailto:hello@relay.green?subject=${encodeURIComponent(
-        subject
-      )}&body=${encodeURIComponent(body)}`;
+    const result = await submitContact(payload);
+    if (result.ok) {
       setStatus("success");
-    } catch {
-      setStatus("error");
-      setErrorMessage(
-        "Couldn't open your email app — write to hello@relay.green directly."
-      );
+      return;
     }
+    setStatus("error");
+    setErrorMessage(
+      result.error === "rate_limited"
+        ? "Too many submissions just now — try again in a few minutes, or email hello@relay.green directly."
+        : "Couldn't send. Check your name, email, and message, or write to hello@relay.green directly."
+    );
   }
 
   function reset() {

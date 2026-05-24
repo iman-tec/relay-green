@@ -35,6 +35,25 @@ export default function robots(): MetadataRoute.Robots {
           "/supervisor",
           "/enterprise",
           "/admin",
+          "/staff/",
+          "/dashboard",
+          "/inbox",
+          "/triage",
+          "/supervise",
+          "/reseller",
+          "/department",
+          "/account",
+          "/room",
+          "/intake",
+          "/payment",
+          "/set-password",
+          "/widget/",
+          // Static-HTML design-exploration alternates served from /public.
+          // These are internal references, not part of the public site;
+          // their meta, OG, and viewport conflict with the canonical pages
+          // and would split crawl signal if indexed.
+          "/aaklmblue/",
+          "/espresso/",
         ],
       },
     ],

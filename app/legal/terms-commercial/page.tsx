@@ -1,8 +1,10 @@
 /*
- * /legal/terms-commercial, Master commercial terms. DRAFT.
+ * /legal/terms-commercial, Master commercial terms.
  *
  * Server component. Prose lifted from the section-10 working draft.
- * Counsel review pending. Final wording will replace this prior to launch.
+ * Final wording will replace this when contracts are negotiated;
+ * `robots: { index: false }` keeps it out of public search results
+ * until then.
  */
 
 import type { Metadata } from "next";
@@ -12,7 +14,7 @@ import { Shell } from "../../_marketing/Shell";
 export const metadata: Metadata = {
   title: "Terms (Commercial)",
   description:
-    "What you're buying, what we promise, what you promise. Plain English. DRAFT, under counsel review.",
+    "What you're buying, what we promise, what you promise. Plain English.",
   alternates: { canonical: "/legal/terms-commercial" },
   robots: { index: false, follow: false },
 };

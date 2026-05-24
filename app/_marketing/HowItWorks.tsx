@@ -1,408 +1,169 @@
-"use client";
-
 /*
- * The 6-frame "how it works" auto-advancing sequence from the design.
- * Auto-advances every 4.5s; clicking a step pins the user's choice and
- * cancels further auto-advance.
+ * "How it works" — six-beat journey visualization that sits directly below
+ * the hero. A dotted green curve (single quadratic bezier from Press to
+ * Maintain) sweeps left to right; six nodes lie on the curve at evenly-
+ * spaced t values (0, 0.2, 0.4, 0.6, 0.8, 1.0) so they trace the wave
+ * naturally. Each node has a label above; the four interior nodes also
+ * carry a step number (02–05) below. The two endpoints (Press, Maintain)
+ * are the bookends and intentionally not numbered.
+ *
+ * Pure SVG, no JS. Scales fluidly via viewBox/preserveAspectRatio. The
+ * low-opacity outer ring on each node is a halo for depth on dark bg.
  */
 
-import { useEffect, useRef, useState } from "react";
-
-type Step = { num: string; label: string; title: string };
+type Step = {
+  label: string;
+  x: number;
+  y: number;
+  num: string | null;
+};
 
 const STEPS: Step[] = [
-  {
-    num: "01",
-    label: "Build",
-    title: "AI takes you eighty percent of the way.",
-  },
-  { num: "02", label: "Press", title: "You press the green dot." },
-  {
-    num: "03",
-    label: "Match",
-    title: "A software engineer joins. By name. By face.",
-  },
-  {
-    num: "04",
-    label: "Solve",
-    title: "Chat, voice, screen. They take it the rest of the way.",
-  },
-  { num: "05", label: "Baton", title: "Same engineer takes you to launch." },
-  { num: "06", label: "Retain", title: "Same engineer keeps it running." },
+  { label: "Press", x: 60, y: 200, num: null },
+  { label: "Match", x: 277, y: 121, num: "02" },
+  { label: "Join", x: 495, y: 83, num: "03" },
+  { label: "Solve", x: 715, y: 87, num: "04" },
+  { label: "Ship", x: 937, y: 133, num: "05" },
+  { label: "Maintain", x: 1160, y: 220, num: null },
 ];
 
 export function HowItWorks() {
-  const [step, setStep] = useState(0);
-  const [pinned, setPinned] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (pinned) return;
-    timer.current = setTimeout(
-      () => setStep((s) => (s + 1) % STEPS.length),
-      4500
-    );
-    return () => {
-      if (timer.current) clearTimeout(timer.current);
-    };
-  }, [step, pinned]);
-
-  const pickStep = (i: number) => {
-    setPinned(true);
-    setStep(i);
-  };
-
   return (
-    <>
-      <div className="r-how-stage">
-        <Frame
-          active={step === 0}
-          eyebrow="Frame 01 · The build moment"
-          title={STEPS[0].title}
-        >
-          <div className="r-code-window" style={{ marginTop: 16 }}>
-            <div className="head">
-              <span></span>
-              <span></span>
-              <span></span>
-            </div>
-            <div>
-              <span className="com"># Lovable build · webhook handler</span>
-            </div>
-            <div>
-              <span className="key">POST</span>{" "}
-              <span className="str">/webhooks/stripe</span>
-            </div>
-            <div>
-              <span className="err">→ 401 Unauthorized</span>
-            </div>
-            <div style={{ marginTop: 8 }}>
-              <span className="com">
-                # AI: “Try setting STRIPE_SECRET in env.”
-              </span>
-            </div>
-            <div>
-              <span className="com">
-                # Want a software engineer to take it from here.
-              </span>
-            </div>
+    <section
+      aria-labelledby="how-it-works-heading"
+      style={{
+        background: "#06090a",
+        padding: "clamp(40px, 5vw, 72px) 0",
+        position: "relative",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          maxWidth: 1320,
+          margin: "0 auto",
+          padding: "0 24px",
+        }}
+      >
+        <div style={{ textAlign: "center", marginBottom: 28 }}>
+          <div
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              letterSpacing: "0.18em",
+              textTransform: "uppercase",
+              color: "var(--green)",
+              marginBottom: 12,
+            }}
+          >
+            How it works
           </div>
-        </Frame>
+          <h2
+            id="how-it-works-heading"
+            style={{
+              fontFamily: "var(--font-display)",
+              fontSize: "clamp(26px, 3vw, 38px)",
+              fontWeight: 400,
+              color: "var(--cream)",
+              lineHeight: 1.2,
+              margin: 0,
+              letterSpacing: "-0.015em",
+            }}
+          >
+            Six beats. From a stuck moment to a shipped product.
+          </h2>
+        </div>
 
-        <Frame
-          active={step === 1}
-          eyebrow="Frame 02 · One press"
-          title={STEPS[1].title}
+        <svg
+          viewBox="0 0 1220 240"
+          preserveAspectRatio="xMidYMid meet"
+          style={{
+            width: "100%",
+            height: "auto",
+            display: "block",
+            overflow: "visible",
+          }}
+          role="img"
+          aria-label="Relay journey: Press, Match, Join, Solve, Ship, Maintain"
         >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-              flex: 1,
-              marginTop: 24,
-            }}
-          >
-            <button
-              type="button"
-              className="r-press-button"
-              style={{ maxWidth: 320 }}
-            >
-              <span
-                className="r-dot"
-                style={{ ["--dot-size" as string]: "14px" }}
-              ></span>
-              Press for an engineer
-            </button>
-          </div>
-          <div
-            style={{
-              textAlign: "center",
-              fontSize: 13,
-              color: "var(--ink-soft)",
-            }}
-          >
-            One input. One engineer. One promise.
-          </div>
-        </Frame>
+          {/* Dotted wave: single quadratic bezier from Press to Maintain.
+              Control point (600, -50) creates the arc peak around y=80.
+              The .mk-journey-path class animates stroke-dashoffset so the
+              dashes flow L→R, reinforcing the journey direction. */}
+          <path
+            className="mk-journey-path"
+            d="M 60 200 Q 600 -50 1160 220"
+            fill="none"
+            stroke="var(--green)"
+            strokeWidth="3.5"
+            strokeDasharray="3 11"
+            strokeLinecap="round"
+            opacity="0.65"
+          />
 
-        <Frame
-          active={step === 2}
-          eyebrow="Frame 03 · The arrival"
-          title={STEPS[2].title}
-        >
-          <div className="r-engineer-card" style={{ marginTop: 16 }}>
-            <div className="r-engineer-avatar">
-              P
-              <span
-                className="r-dot"
-                style={{ ["--dot-size" as string]: "12px" }}
-              ></span>
-            </div>
-            <div className="r-engineer-info">
-              <div className="r-engineer-name">Priya R. · 4 yrs Stripe</div>
-              <div className="r-engineer-status">
-                <span
-                  className="r-dot"
-                  style={{ ["--dot-size" as string]: "6px" }}
-                ></span>
-                Online · joined in 71s
-              </div>
-            </div>
-          </div>
-          <div
-            style={{
-              marginTop: 12,
-              fontSize: 13,
-              color: "var(--ink-soft)",
-            }}
-          >
-            Engineer face & name visible <em>before</em> any commitment. No
-            bait-and-switch.
-          </div>
-        </Frame>
-
-        <Frame
-          active={step === 3}
-          eyebrow="Frame 04 · The session"
-          title={STEPS[3].title}
-        >
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 10,
-              marginTop: 12,
-            }}
-          >
-            <div className="r-chat-message">
-              Stripe webhook 401s in prod. Works locally.
-            </div>
-            <div className="r-chat-message from-engineer">
-              Got it, your prod endpoint just needs the signing secret. Want to
-              share screen so I can show you?
-            </div>
-            <div className="r-chat-message">yes please</div>
-            <div className="r-chat-message from-engineer">
-              Done. Settings → Developers → Webhooks → reveal signing secret.
-              Paste into STRIPE_WEBHOOK_SECRET. Redeploy.
-            </div>
-          </div>
-        </Frame>
-
-        <Frame
-          active={step === 4}
-          eyebrow="Frame 05 · Pass the baton"
-          title={STEPS[4].title}
-        >
-          <div
-            style={{
-              marginTop: 16,
-              padding: 18,
-              background: "var(--green-tint)",
-              border: "1px solid rgba(46,168,79,0.3)",
-              borderRadius: 12,
-            }}
-          >
-            <div
-              style={{
-                fontSize: 12,
-                color: "var(--green-deep)",
-                marginBottom: 8,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
-              }}
-            >
-              From Priya · 0:18
-            </div>
-            <div
-              style={{
-                fontSize: 15,
-                color: "var(--ink)",
-                marginBottom: 12,
-                lineHeight: 1.5,
-              }}
-            >
-              Want me to take this one to launch? Same, me. ~5 days.{" "}
-              <strong>€2,400 fixed.</strong>
-            </div>
-            <div
-              style={{
-                fontSize: 12,
-                color: "var(--ink-soft)",
-                marginBottom: 16,
-              }}
-            >
-              HubSpot connected · Domain set up · Stripe live keys
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button
-                type="button"
-                className="r-btn r-btn-green"
-                style={{ height: 36 }}
+          {STEPS.map((s) => (
+            <g key={s.label} transform={`translate(${s.x}, ${s.y})`}>
+              <circle
+                className="mk-journey-aura"
+                r="22"
+                fill="var(--green)"
+                opacity="0.18"
+              />
+              <circle
+                className="mk-journey-dot"
+                r="11"
+                fill="var(--green)"
+              />
+              <text
+                y="-28"
+                textAnchor="middle"
+                fontFamily="var(--font-sans)"
+                fontSize="15"
+                fontWeight="600"
+                fill="var(--cream)"
               >
-                Pass the baton
-              </button>
-              <button
-                type="button"
-                className="r-btn r-btn-ghost"
-                style={{ height: 36 }}
-              >
-                See scope
-              </button>
-              <button
-                type="button"
-                className="r-btn r-btn-ghost"
-                style={{ height: 36 }}
-              >
-                Not yet
-              </button>
-            </div>
-          </div>
-        </Frame>
-
-        <Frame
-          active={step === 5}
-          eyebrow="Frame 06 · The retainer"
-          title={STEPS[5].title}
-        >
-          <div
-            className="r-grid-2-even"
-            style={{
-              gap: 12,
-              marginTop: 16,
-            }}
-          >
-            {[
-              { k: "Same engineer", v: "Priya R." },
-              { k: "SLA", v: "P1 · 4hr · 24/7" },
-              { k: "Monthly retainer", v: "€2,800" },
-              { k: "Quarterly review", v: "Architecture + roadmap" },
-            ].map((row) => (
-              <div
-                key={row.k}
-                style={{
-                  padding: 14,
-                  background: "var(--cream)",
-                  border: "1px solid var(--rule)",
-                  borderRadius: 8,
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "var(--ink-mute)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.08em",
-                    marginBottom: 4,
-                  }}
+                {s.label}
+              </text>
+              {s.num && (
+                <text
+                  y="40"
+                  textAnchor="middle"
+                  fontFamily="var(--font-mono)"
+                  fontSize="11"
+                  letterSpacing="2"
+                  fill="rgba(244, 242, 238, 0.4)"
                 >
-                  {row.k}
-                </div>
-                <div
-                  style={{
-                    fontSize: 14,
-                    color: "var(--ink)",
-                    fontWeight: 500,
-                  }}
-                >
-                  {row.v}
-                </div>
-              </div>
-            ))}
-          </div>
-          <div
-            style={{
-              marginTop: 16,
-              fontSize: 13,
-              color: "var(--green-deep)",
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-            }}
-          >
-            <span
-              className="r-dot r-dot-static"
-              style={{ ["--dot-size" as string]: "6px" }}
-            ></span>{" "}
-            Continuity discount applied automatically.
-          </div>
-        </Frame>
+                  {s.num}
+                </text>
+              )}
+            </g>
+          ))}
+
+          {/* Direction arrows — one between each pair of adjacent nodes
+              (5 total). Positions and rotations are pre-computed at the
+              midpoint t-values (0.1, 0.3, 0.5, 0.7, 0.9) of the bezier
+              and tangent angles at those points. Rendered AFTER step
+              <g>s so they sit on top of the flowing path. */}
+          {[
+            { x: 168, y: 155, angle: -20 },
+            { x: 386, y: 97, angle: -10 },
+            { x: 605, y: 80, angle: 1 },
+            { x: 826, y: 105, angle: 12 },
+            { x: 1048, y: 171, angle: 22 },
+          ].map((a, i) => (
+            <g
+              key={i}
+              transform={`translate(${a.x} ${a.y}) rotate(${a.angle})`}
+            >
+              <polygon
+                points="0,-6 12,0 0,6"
+                fill="var(--green)"
+                opacity="0.9"
+              />
+            </g>
+          ))}
+        </svg>
       </div>
-
-      <div className="r-how-controls">
-        {STEPS.map((s, i) => (
-          <button
-            key={s.num}
-            type="button"
-            className={"r-how-step" + (step === i ? " active" : "")}
-            onClick={() => pickStep(i)}
-          >
-            <span className="num">{s.num}</span>
-            <span className="label">{s.label}</span>
-          </button>
-        ))}
-      </div>
-
-      {/* Phase bracket row, groups the 6 steps into the 3 contractual
-          phases. Widths intentionally mirror the step strip above:
-          Phase 1 spans steps 01-04 (flex 4), Phase 2 is step 05 (flex 1),
-          Phase 3 is step 06 (flex 1). Stacks to a single column on mobile. */}
-      <div className="r-how-phases" aria-label="Phase grouping">
-        <div className="r-how-phase">
-          <span className="r-how-phase-head">
-            <span className="r-how-phase-num">Phase 1</span>
-            <span className="r-how-phase-range">Steps 01–04</span>
-          </span>
-          <span className="r-how-phase-title">Build &amp; solve</span>
-          <span className="r-how-phase-desc">
-            AI builds. You press. A software engineer joins. The stuck moment is
-            solved — same session.
-          </span>
-        </div>
-        <div className="r-how-phase">
-          <span className="r-how-phase-head">
-            <span className="r-how-phase-num">Phase 2</span>
-            <span className="r-how-phase-range">Step 05</span>
-          </span>
-          <span className="r-how-phase-title">Baton</span>
-          <span className="r-how-phase-desc">
-            Same engineer takes you to launch.
-          </span>
-        </div>
-        <div className="r-how-phase">
-          <span className="r-how-phase-head">
-            <span className="r-how-phase-num">Phase 3</span>
-            <span className="r-how-phase-range">Step 06</span>
-          </span>
-          <span className="r-how-phase-title">Retain</span>
-          <span className="r-how-phase-desc">
-            Same engineer keeps it running.
-          </span>
-        </div>
-      </div>
-
-    </>
-  );
-}
-
-function Frame({
-  active,
-  title,
-  children,
-}: {
-  active: boolean;
-  /** Optional eyebrow label, accepted for API compatibility but no longer rendered. */
-  eyebrow?: string;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className={"r-how-frame" + (active ? " active" : "")}>
-      <h3 className="r-h-2" style={{ maxWidth: "24ch" }}>
-        {title}
-      </h3>
-      {children}
-    </div>
+    </section>
   );
 }

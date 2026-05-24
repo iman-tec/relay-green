@@ -1,5 +1,5 @@
 /*
- * /legal/acceptable-use, Acceptable Use Policy. DRAFT.
+ * /legal/acceptable-use, Acceptable Use Policy.
  *
  * One paragraph from section 10 of content.html, with a short
  * "Why this exists" intro. Single source of truth for what we will
@@ -13,7 +13,7 @@ import { Shell } from "../../_marketing/Shell";
 export const metadata: Metadata = {
   title: "Acceptable Use Policy",
   description:
-    "What you may not press a Relay engineer to do. Short, declarative, scoped narrowly. DRAFT, under counsel review.",
+    "What you may not press a Relay engineer to do. Short, declarative, scoped narrowly.",
   alternates: { canonical: "/legal/acceptable-use" },
   robots: { index: false, follow: false },
 };

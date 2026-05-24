@@ -122,8 +122,11 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  // Single light theme — matches the light tokens in globals.css.
-  themeColor: "#faf9f5",
+  // Brand green (matches the dot, italic emphasis, and the manifest
+  // theme_color). Android tints the URL bar with this value on the
+  // marketing surface, reinforcing the green-dot brand mark before the
+  // page paints. Aligned with app/manifest.ts; do not drift these.
+  themeColor: "#4d6b40",
   colorScheme: "light",
   width: "device-width",
   initialScale: 1,

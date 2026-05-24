@@ -8,12 +8,13 @@ export function ProductHeroOrb() {
   return (
     <button
       type="button"
-      className="r-green-sphere"
+      className="r-green-sphere r-product-orb"
       aria-label="Press the dot to start a Relay session"
       onClick={open}
       style={{
-        width: 96,
-        height: 96,
+        position: "relative",
+        width: 192,
+        height: 192,
         borderRadius: 999,
         border: 0,
         padding: 0,

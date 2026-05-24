@@ -1,8 +1,9 @@
 /*
- * /legal/privacy-policy, Relay's privacy policy. DRAFT.
+ * /legal/privacy-policy, Relay's privacy policy.
  *
- * Server component. Prose lifted from the section-10 working draft in the
- * sitemap-and-content-plan content.html. Counsel review pending.
+ * Server component. Prose lifted from the section-10 working draft in
+ * docs/sitemap-and-content-plan/. Update the `Last updated:` line in the
+ * hero whenever this text changes.
  */
 
 import type { Metadata } from "next";
