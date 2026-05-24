@@ -2508,6 +2508,47 @@
   margin-bottom: 18px;
   font-weight: 500;
 }
+
+/* ============ Sweep underline (.mk-sweep) ============
+   Pure-CSS L→R underline that draws on hover. Wrap a phrase in
+   <span className="mk-sweep">…</span> and the underline animates in when
+   the cursor is over the text OR over its containing card (.r-leg, .r-tile,
+   .r-leg-enterprise). On hover-out it retracts back toward its left origin.
+   prefers-reduced-motion users get an instant underline, no transition.
+   TODO(design): tweak the four CSS vars below to taste. */
+.mk-root .mk-sweep {
+  --sweep-duration: 600ms;
+  --sweep-thickness: 2px;
+  --sweep-color: var(--green);
+  --sweep-offset: 2px;
+  position: relative;
+  display: inline-block;
+}
+.mk-root .mk-sweep::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--sweep-offset) * -1);
+  height: var(--sweep-thickness);
+  background: var(--sweep-color);
+  border-radius: var(--sweep-thickness);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform var(--sweep-duration) cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+.mk-root .mk-sweep:hover::after,
+.mk-root .r-leg:hover .mk-sweep::after,
+.mk-root .r-tile:hover .mk-sweep::after,
+.mk-root .r-leg-enterprise:hover .mk-sweep::after {
+  transform: scaleX(1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mk-root .mk-sweep::after {
+    transition: none;
+  }
+}
 .mk-root .r-leg-desc {
   font-size: 14px;
   line-height: 1.55;

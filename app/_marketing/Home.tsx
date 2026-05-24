@@ -459,7 +459,7 @@ export function MarketingHome() {
                     minHeight: "2.6em",
                   }}
                 >
-                  {p.role}
+                  <span className="mk-sweep">{p.role}</span>
                 </p>
                 <p className="r-tile-body">{p.body}</p>
               </div>
