@@ -149,9 +149,15 @@ export function TryRelayFunnel({ onClose }: { onClose: () => void }) {
       const sb = createClient();
 
       // 1. Anonymous auth — gives the guest a real auth.uid() with zero login.
+      //    Anon users have no email, and get_or_create_active_customer_session
+      //    derives guest_calls.guest_name (NOT NULL) from the user's
+      //    full_name → email. Seed a full_name in the user metadata so the
+      //    session insert doesn't hit a not-null violation.
       const { data: authData, error: authErr } = await sb.auth.getUser();
       if (!authData.user) {
-        const { error: anonErr } = await sb.auth.signInAnonymously();
+        const { error: anonErr } = await sb.auth.signInAnonymously({
+          options: { data: { full_name: "Guest" } },
+        });
         if (anonErr) {
           // Anonymous sign-ins are disabled on the Supabase project. Surface a
           // clear message instead of silently failing. // TODO(auth): enable
