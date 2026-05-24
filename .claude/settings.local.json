@@ -14,7 +14,10 @@
       "Bash(curl -sk -o /dev/null -w \"/try-room: %{http_code}\\\\n\" https://192.168.1.24:3000/try-room)",
       "Bash(curl -sk -o /dev/null -w \"/intake: %{http_code}\\\\n\" https://192.168.1.24:3000/intake)",
       "Bash(curl -sk -X POST -H \"Content-Type: application/json\" -d \"{\\\\\"mode\\\\\":\\\\\"greeting\\\\\"}\" -o /dev/null -w \"/api/assistant: %{http_code}\\\\n\" https://192.168.1.24:3000/api/assistant)",
-      "Bash(curl -sk -o /dev/null -w \"/api/online-engineers: %{http_code}\\\\n\" \"https://192.168.1.24:3000/api/online-engineers?technologies=Claude\")"
+      "Bash(curl -sk -o /dev/null -w \"/api/online-engineers: %{http_code}\\\\n\" \"https://192.168.1.24:3000/api/online-engineers?technologies=Claude\")",
+      "Bash(git stash *)",
+      "Bash(curl -sk -o /dev/null -w \"/room: %{http_code}\\\\n\" https://192.168.1.24:3000/room)",
+      "Bash(git commit *)"
     ]
   }
 }
