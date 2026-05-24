@@ -94,7 +94,9 @@ Deno.serve(async (req) => {
       currency: "eur",
       payment_method_types: ["card"],
       description: p.name,
-      receipt_email: u.user.email ?? undefined,
+      // || not ?? — empty-string email must become undefined (Stripe rejects
+      // an empty receipt_email with "Invalid email address").
+      receipt_email: u.user.email || undefined,
       metadata: {
         relay_kind:     "enterprise_plan",
         relay_org_id:   orgId,

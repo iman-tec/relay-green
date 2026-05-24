@@ -202,7 +202,17 @@ export function TryRelayFunnel({ onClose }: { onClose: () => void }) {
         "get_or_create_active_customer_session",
         { _project_id: projectId },
       );
-      if (rpcErr) throw rpcErr;
+      if (rpcErr) {
+        // Free 10 minutes already used on this guest → no entitlement for a
+        // new free session. Don't dead-end with a raw error: send them into
+        // the room's paywall (sign up → recharge), the clear next step.
+        if ((rpcErr.message ?? "").includes("NO_ENTITLEMENT")) {
+          onClose();
+          router.push("/room?paywall=free_used");
+          return;
+        }
+        throw rpcErr;
+      }
       const session = (Array.isArray(callData) ? callData[0] : callData) as {
         id?: string;
       } | null;

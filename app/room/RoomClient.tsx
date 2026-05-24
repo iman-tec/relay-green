@@ -273,6 +273,21 @@ export function RoomClient() {
   // job, not theirs.
   const [paywallOpen, setPaywallOpen] = useState<null | "free_expired" | "no_credits" | "manual">(null);
   const [paidToast, setPaidToast] = useState<string | null>(null);
+
+  // Explicit ?paywall= entry — e.g. the guest Try-RELAY funnel sends a
+  // visitor here when their free 10 minutes are already used
+  // (?paywall=free_used). Open the paywall on load with the matching reason
+  // and clean the param so a refresh doesn't re-trigger it.
+  const paywallParam = searchParams.get("paywall");
+  useEffect(() => {
+    if (!paywallParam) return;
+    setPaywallOpen(paywallParam === "no_credits" ? "no_credits" : "free_expired");
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("paywall");
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, [paywallParam]);
   // Shown when the customer tries to start/ring a new call while one is
   // already live — see onActiveCall guard in the start handlers below.
   const [callBlockMsg, setCallBlockMsg] = useState<string | null>(null);

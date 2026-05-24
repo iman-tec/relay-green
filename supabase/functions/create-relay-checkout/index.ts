@@ -82,7 +82,11 @@ Deno.serve(async (req) => {
       // `payment_method_types` for `automatic_payment_methods: { enabled: true }`.
       payment_method_types: ["card"],
       description: p.name,
-      receipt_email: u.user.email ?? undefined,
+      // Use || (not ??) so an empty-string email — anonymous/guest users
+      // have email "" — becomes undefined rather than "" (Stripe rejects an
+      // empty receipt_email with "Invalid email address"). Registered users
+      // still get their real receipt email.
+      receipt_email: u.user.email || undefined,
       metadata: {
         relay_user_id: u.user.id,
         relay_plan:    plan,
