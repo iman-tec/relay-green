@@ -1,7 +1,20 @@
 {
   "permissions": {
     "allow": [
-      "Bash(node ./node_modules/typescript/bin/tsc --noEmit)"
+      "Bash(node ./node_modules/typescript/bin/tsc --noEmit)",
+      "Bash(git checkout *)",
+      "Bash(node node_modules/typescript/bin/tsc --noEmit)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(grep *)",
+      "Bash(git rm *)",
+      "Bash(netstat -ano)",
+      "Bash(curl -sk -o /dev/null -w \"/: %{http_code}\\\\n\" https://192.168.1.24:3000/)",
+      "Bash(curl -sk -o /dev/null -w \"/try-room: %{http_code}\\\\n\" https://192.168.1.24:3000/try-room)",
+      "Bash(curl -sk -o /dev/null -w \"/intake: %{http_code}\\\\n\" https://192.168.1.24:3000/intake)",
+      "Bash(curl -sk -X POST -H \"Content-Type: application/json\" -d \"{\\\\\"mode\\\\\":\\\\\"greeting\\\\\"}\" -o /dev/null -w \"/api/assistant: %{http_code}\\\\n\" https://192.168.1.24:3000/api/assistant)",
+      "Bash(curl -sk -o /dev/null -w \"/api/online-engineers: %{http_code}\\\\n\" \"https://192.168.1.24:3000/api/online-engineers?technologies=Claude\")"
     ]
   }
 }
