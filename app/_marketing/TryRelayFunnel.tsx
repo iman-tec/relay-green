@@ -9,11 +9,13 @@
  * → Match Found: live engineer pulled from /api/online-engineers, displayed
  *   with a pseudonym (first name + last initial), tech overlap, eta.
  *
- * "Start session now" persists funnel answers to the local profile and lands
- * the user on /try-room (a no-auth guest variant of /room). No login wall.
+ * "Start session now" mints a Supabase anonymous session (no email, no
+ * password, no login screen), creates a real guest_calls session + intake,
+ * rings an engineer via match_engineer, and lands the user in the actual
+ * customer room (/room?newchat=1) — same UI as a signed-in customer.
  *
- * // TODO(auth): upgrade /try-room to a real passwordless guest session
- *   keyed by guest_calls + magic-link upsell once they want to keep history.
+ * // TODO(auth): offer a magic-link upsell so a guest can keep their history
+ *   by upgrading the anonymous session to a permanent account later.
  */
 
 import {
@@ -26,6 +28,7 @@ import {
 import { useRouter } from "next/navigation";
 import { Check, Loader2 } from "lucide-react";
 import { cn } from "@/app/_components/ui";
+import { createClient } from "@/lib/supabase/browser";
 import {
   NEED_OPTIONS,
   STACK_OPTIONS,
@@ -35,6 +38,13 @@ import {
   type ProfileStack,
   type Urgency,
 } from "@/lib/relay/profile";
+
+// Urgency → guest_calls.urgency enum used by the engineer queue ordering.
+const URGENCY_TO_QUEUE: Record<Urgency, "critical" | "urgent" | "normal"> = {
+  now: "urgent",
+  this_week: "normal",
+  planning: "normal",
+};
 
 type EngineerCandidate = {
   id: string;
@@ -63,6 +73,7 @@ export function TryRelayFunnel({ onClose }: { onClose: () => void }) {
   const [urgency, setUrgency] = useState<Urgency | null>(null);
   const [engineer, setEngineer] = useState<EngineerCandidate | null>(null);
   const [matching, setMatching] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const stackTotal =
@@ -120,33 +131,123 @@ export function TryRelayFunnel({ onClose }: { onClose: () => void }) {
     };
   }, [step, stack, need]);
 
-  const startSession = useCallback(() => {
-    // Persist funnel answers so /try-room and IntakeAssistant can read them.
-    // No backend write yet — guest path, // TODO(auth) for durable session.
-    patchProfile({
-      urgency: urgency ?? undefined,
-      stack,
-    });
-    if (typeof window !== "undefined") {
-      try {
-        window.localStorage.setItem(
-          "relay-tryrelay-context",
-          JSON.stringify({
-            need,
-            stack,
-            urgency,
-            engineerId: engineer?.id ?? null,
-            engineerPseudoName: engineer?.pseudoName ?? null,
-            createdAt: Date.now(),
-          }),
-        );
-      } catch {
-        /* quota / privacy mode — keep going, /try-room degrades gracefully */
+  // Drop the guest into the REAL customer room and ring an engineer — the
+  // same pipeline a signed-in customer's "new chat" uses. We mint a Supabase
+  // *anonymous* session so the guest gets a real auth.uid() (no email, no
+  // password, no login screen), then create_project →
+  // get_or_create_active_customer_session → client_intakes upsert →
+  // match_engineer. The customer lands on /room?newchat=1 (the actual room
+  // UI, unchanged) and the call appears in the engineer queue immediately.
+  const startSession = useCallback(async () => {
+    if (starting) return;
+    setStarting(true);
+    setError(null);
+    // Mirror durable signals into the local profile snapshot.
+    patchProfile({ urgency: urgency ?? undefined, stack });
+
+    try {
+      const sb = createClient();
+
+      // 1. Anonymous auth — gives the guest a real auth.uid() with zero login.
+      const { data: authData, error: authErr } = await sb.auth.getUser();
+      if (!authData.user) {
+        const { error: anonErr } = await sb.auth.signInAnonymously();
+        if (anonErr) {
+          // Anonymous sign-ins are disabled on the Supabase project. Surface a
+          // clear message instead of silently failing. // TODO(auth): enable
+          // "Allow anonymous sign-ins" in Supabase Auth settings.
+          throw new Error(
+            "Guest mode is unavailable right now. Please sign in to start a session.",
+          );
+        }
+      } else if (authErr) {
+        throw authErr;
       }
+
+      const { data: who } = await sb.auth.getUser();
+      const userId = who.user?.id;
+      if (!userId) throw new Error("Could not start a guest session");
+
+      // 2. Create a project for this guest chat.
+      const { data: created, error: projErr } = await sb.rpc("create_project", {
+        _name: "Try Relay",
+      });
+      if (projErr) throw projErr;
+      const projectRow = Array.isArray(created)
+        ? (created[0] as { id?: string; name?: string } | null)
+        : (created as { id?: string; name?: string } | null);
+      const projectId = projectRow?.id;
+      const projectName = projectRow?.name ?? "Try Relay";
+      if (!projectId) throw new Error("Could not create project");
+
+      // 3. Mint the free session (new users get the 10-min free grant).
+      const { data: callData, error: rpcErr } = await sb.rpc(
+        "get_or_create_active_customer_session",
+        { _project_id: projectId },
+      );
+      if (rpcErr) throw rpcErr;
+      const session = (Array.isArray(callData) ? callData[0] : callData) as {
+        id?: string;
+      } | null;
+      if (!session?.id) throw new Error("Could not create session");
+
+      // 4. Upsert the intake row from the funnel answers so the engineer's
+      //    tray + the matcher have context. The funnel skips tech-comfort, so
+      //    familiarity defaults to Semi-Technical. // TODO(api): widen
+      //    ai_tools_used to text[].
+      const developing =
+        need === "launch"
+          ? "Website"
+          : need === "maintain"
+            ? "Website"
+            : "Website";
+      const intakePayload = {
+        guest_call_id: session.id,
+        customer_user_id: userId,
+        project_id: projectId,
+        familiarity: "Semi-Technical",
+        ai_tools_used: stack.aiTools.join(", ") || "Other",
+        developing,
+        technologies: [...stack.backend, ...stack.frontend],
+        declined_by: [] as string[],
+      };
+      const { data: intakeRow, error: intakeErr } = await sb
+        .from("client_intakes")
+        .upsert(intakePayload, { onConflict: "project_id,customer_user_id" })
+        .select()
+        .single();
+      if (intakeErr) throw intakeErr;
+
+      // 5. Record urgency on the session for queue ordering (best-effort).
+      if (urgency) {
+        await sb
+          .from("guest_calls")
+          .update({ urgency: URGENCY_TO_QUEUE[urgency] })
+          .eq("id", session.id);
+      }
+
+      // 6. Ring engineers.
+      await sb.rpc("match_engineer", { _intake_id: intakeRow.id as string });
+
+      patchProfile({
+        userId,
+        stack,
+        urgency: urgency ?? undefined,
+        lastProjectId: projectId,
+        lastProjectName: projectName,
+      });
+
+      onClose();
+      // Land in the REAL room. ?newchat=1 shows the async chat pane while the
+      // call queues — identical to the signed-in new-chat experience.
+      router.push("/room?newchat=1");
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "Could not start your session",
+      );
+      setStarting(false);
     }
-    onClose();
-    router.push("/try-room");
-  }, [need, stack, urgency, engineer, onClose, router]);
+  }, [starting, need, stack, urgency, onClose, router]);
 
   return (
     <div
@@ -198,16 +299,16 @@ export function TryRelayFunnel({ onClose }: { onClose: () => void }) {
               isFinal={step === TOTAL_STEPS}
               onBack={step > 1 ? goBack : undefined}
               onNext={goNext}
-              hint={step === 2 ? "multiple selections" : undefined}
             />
           </>
         ) : (
           <MatchFound
             engineer={engineer}
             matching={matching}
+            starting={starting}
             error={error}
             onBack={() => setStep(3)}
-            onStart={startSession}
+            onStart={() => void startSession()}
           />
         )}
       </div>
@@ -597,12 +698,14 @@ function StackChipGroups({
 function MatchFound({
   engineer,
   matching,
+  starting,
   error,
   onBack,
   onStart,
 }: {
   engineer: EngineerCandidate | null;
   matching: boolean;
+  starting: boolean;
   error: string | null;
   onBack: () => void;
   onStart: () => void;
@@ -775,13 +878,15 @@ function MatchFound({
             <button
               type="button"
               onClick={onBack}
+              disabled={starting}
               style={{
                 appearance: "none",
                 background: "transparent",
                 border: "none",
                 color: "var(--text-muted, #6b6b6b)",
                 fontSize: 14,
-                cursor: "pointer",
+                cursor: starting ? "not-allowed" : "pointer",
+                opacity: starting ? 0.4 : 1,
                 padding: "8px 4px",
               }}
             >
@@ -790,21 +895,49 @@ function MatchFound({
             <button
               type="button"
               onClick={onStart}
+              disabled={starting}
               className="r-btn r-btn-green"
+              style={{
+                opacity: starting ? 0.7 : 1,
+                cursor: starting ? "wait" : "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+              }}
             >
-              Start session now →
+              {starting ? (
+                <>
+                  <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
+                  Connecting you…
+                </>
+              ) : (
+                "Start session now →"
+              )}
             </button>
           </div>
-          <div
-            style={{
-              marginTop: 10,
-              fontSize: 12,
-              color: "var(--text-muted, #6b6b6b)",
-              textAlign: "center",
-            }}
-          >
-            Chat · Voice · Screen share, your choice
-          </div>
+          {error ? (
+            <div
+              style={{
+                marginTop: 10,
+                fontSize: 12,
+                color: "var(--danger, #b3261e)",
+                textAlign: "center",
+              }}
+            >
+              {error}
+            </div>
+          ) : (
+            <div
+              style={{
+                marginTop: 10,
+                fontSize: 12,
+                color: "var(--text-muted, #6b6b6b)",
+                textAlign: "center",
+              }}
+            >
+              Chat · Voice · Screen share, your choice
+            </div>
+          )}
         </>
       ) : (
         <div
@@ -828,19 +961,40 @@ function MatchFound({
             <button
               type="button"
               onClick={onBack}
+              disabled={starting}
               style={{
                 appearance: "none",
                 background: "transparent",
                 border: "none",
                 color: "var(--text-muted, #6b6b6b)",
                 fontSize: 14,
-                cursor: "pointer",
+                cursor: starting ? "not-allowed" : "pointer",
+                opacity: starting ? 0.4 : 1,
               }}
             >
               ← Back
             </button>
-            <button type="button" onClick={onStart} className="r-btn r-btn-green">
-              Open the room →
+            <button
+              type="button"
+              onClick={onStart}
+              disabled={starting}
+              className="r-btn r-btn-green"
+              style={{
+                opacity: starting ? 0.7 : 1,
+                cursor: starting ? "wait" : "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              {starting ? (
+                <>
+                  <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
+                  Connecting you…
+                </>
+              ) : (
+                "Open the room →"
+              )}
             </button>
           </div>
         </div>

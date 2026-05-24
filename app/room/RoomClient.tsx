@@ -4223,9 +4223,10 @@ function SessionSummaryTray({ session }: { session: GuestCall }) {
   const supabaseRef = useRef(createClient());
   const [intake, setIntake] = useState<RoomTrayIntakeRow | null>(null);
   const [open, setOpen] = useState<boolean>(() => {
-    if (typeof window === "undefined") return true;
+    // Collapsed by default; persists per-tab once the user toggles it.
+    if (typeof window === "undefined") return false;
     const v = window.localStorage.getItem(ROOM_TRAY_KEY);
-    return v === null ? true : v === "1";
+    return v === null ? false : v === "1";
   });
 
   useEffect(() => {
