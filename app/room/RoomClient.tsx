@@ -759,6 +759,7 @@ export function RoomClient() {
       patchProfile({
         lastProjectId: projectId,
         lastProjectName: projectName,
+        userId,
       });
     } catch (e) {
       console.warn("[handleNewChat] failed:", e);
@@ -1378,6 +1379,7 @@ function ReadOnlyChatPane({
           patchProfile({
             lastProjectId: session.project_id,
             lastProjectName: session.project_name ?? null,
+            userId: session.customer_user_id ?? null,
           });
         }
 

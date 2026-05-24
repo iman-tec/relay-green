@@ -18,7 +18,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { TryRelayWizard } from "./try-relay/TryRelayWizard";
+import { TryRelayFunnel } from "./TryRelayFunnel";
 
 type Ctx = {
   isOpen: boolean;
@@ -64,7 +64,7 @@ export function TryRelayProvider({ children }: { children: ReactNode }) {
   return (
     <TryRelayCtx.Provider value={{ isOpen, open, close }}>
       {children}
-      {isOpen && <TryRelayWizard />}
+      {isOpen && <TryRelayFunnel onClose={close} />}
     </TryRelayCtx.Provider>
   );
 }

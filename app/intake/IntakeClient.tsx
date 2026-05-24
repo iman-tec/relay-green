@@ -229,7 +229,10 @@ export function IntakeClient() {
 
       await sb.rpc("match_engineer", { _intake_id: intakeId });
 
-      // Persist durable signals to profile. // TODO(profile): real store.
+      // Persist durable signals to profile. Bind to the current user_id
+      // so a different sign-in on the same browser doesn't inherit the
+      // "Welcome back" greeting (see IntakeAssistant.tsx upgrade effect).
+      // // TODO(profile): real backend store.
       patchProfile({
         techComfort,
         urgency,
@@ -237,6 +240,7 @@ export function IntakeClient() {
         hasFullIntake: true,
         lastProjectId: projectId,
         lastProjectName: projectName,
+        userId: u.user.id,
       });
 
       router.replace(`/intake/matching/${intakeId}`);

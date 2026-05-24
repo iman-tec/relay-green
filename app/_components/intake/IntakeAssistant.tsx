@@ -33,6 +33,7 @@ import {
 import { IconButton, cn } from "@/app/_components/ui";
 import { createClient } from "@/lib/supabase/browser";
 import {
+  clearProfile,
   flattenStack,
   patchProfile,
   readProfile,
@@ -87,31 +88,23 @@ export function IntakeAssistant({
     },
     [intakeId],
   );
-  // Bootstrap synchronously via lazy useState initializers (avoids the
-  // "setState in effect" cascade and gets us a first paint with the
-  // greeting + first prompt already on screen).
+  // Bootstrap synchronously via lazy useState initializers so the first
+  // paint has a greeting + first prompt on screen.
   //
-  // Returning users (profile.hasFullIntake) skip the comfort/stack
-  // re-collection — see Order 2 in UI-CHANGES.md. Instead the bot opens
-  // with an INCREMENTAL stack-check ("Last time you were using X. Anything
-  // new since?") that only appends diffs to profile.stack via
-  // patchProfile(). // TODO(ai): this is still a local script — wire the
-  // real Anthropic transport once available, signature stable.
+  // BUG FIX (cross-account "Welcome back"): the previous bootstrap used
+  // `profile.hasFullIntake` from localStorage alone to decide whether to
+  // show "Welcome back" — meaning a brand-new sign-in on a shared browser
+  // inherited the prior account's flag and saw the wrong greeting + a
+  // canned "Last time you were using X" prompt. The new logic:
+  //
+  //   1. Always render a first-time greeting on initial paint (or a
+  //      resume-context branch, which is an *explicit* user action).
+  //   2. After mount, an async effect verifies the signed-in user has
+  //      real Supabase `guest_calls` history; only then do we swap to
+  //      a "Welcome back" message. New users → empty thread, every time.
   const [bootstrap] = useState(() => {
-    const profile: ProfileSnapshot = readProfile();
-    const known = flattenStack(profile.stack);
-    const isReturning = profile.hasFullIntake && known.length > 0;
-
-    // FIX 4 — resume-context handoff. If the user clicked "Continue this
-    // session" / "Start a follow-up" on a stale session, /room stashed
-    // { mode, fromSessionId, projectName, aiSummaryTitle, aiSummary,
-    //   aiNextSteps } in localStorage. We consume it here, pick a
-    // context-aware opener via local heuristics, and clear the stash so
-    // it doesn't leak into future visits.
-    //
-    // // TODO(openai): generate context-aware resume prompts via OpenAI
-    // using prior session context. Single clearly-marked seam — swap the
-    // heuristic block below for an API call. No client key, no env var.
+    // Resume-context handoff: explicit user click on "Continue this
+    // session" / "Start a follow-up" — respect it without auth checks.
     const resumeCtx = readResumeContext();
     if (resumeCtx) {
       const prompt = pickResumePrompt(resumeCtx);
@@ -139,34 +132,11 @@ export function IntakeAssistant({
       return { seeded, first: resumePrompt, isReturning: true };
     }
 
-    if (isReturning) {
-      const knownPreview = known.slice(0, 4).join(", ");
-      const stackPrompt: IntakePrompt = {
-        id: "wrap_up", // re-use the "wrap_up" terminal id so askNext() stays quiet after
-        body:
-          known.length > 4
-            ? `Last time you were using ${knownPreview} and a few others. Anything new since?`
-            : `Last time you were using ${knownPreview}. Anything new since?`,
-        fieldFromAnswer: null,
-        quickReplies: ["No, same setup", "Cursor", "Claude", "ChatGPT", "Supabase", "Next.js"],
-      };
-      const opener =
-        greeting ?? "Welcome back — picking up where you left off.";
-      const seeded: IntakeMessage[] = [
-        { id: nextId(), role: "assistant", body: opener, createdAt: Date.now() },
-        {
-          id: nextId(),
-          role: "assistant",
-          body: stackPrompt.body,
-          createdAt: Date.now() + 1,
-        },
-      ];
-      return { seeded, first: stackPrompt, isReturning: true };
-    }
-
+    // Default: first-time greeting. Async effect below upgrades to
+    // returning ONLY if Supabase confirms prior history for this user.
     const opener =
       greeting ??
-      "Hi — I'm Relay's intake helper. I'll line up context for your engineer while we connect you.";
+      "Hi! Describe your issue — what do you need help with?";
     const first = askNext(emptyContext());
     const seeded: IntakeMessage[] = [
       { id: nextId(), role: "assistant", body: opener, createdAt: Date.now() },
@@ -197,6 +167,81 @@ export function IntakeAssistant({
   const ackIndexRef = useRef(0);
   const threadRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Async upgrade to "returning user" UX. Only fires after Supabase
+  // confirms the signed-in user has real `guest_calls` history. If the
+  // localStorage profile is tagged to a different user_id, wipe it so the
+  // stale "Welcome back" greeting never leaks across accounts.
+  //
+  // Guests (no auth) and resume-context handoffs are skipped — they keep
+  // the bootstrap message set chosen above. Heuristic fallback covers the
+  // case where the assistant API is unavailable.
+  const upgradedRef = useRef(false);
+  useEffect(() => {
+    if (upgradedRef.current) return;
+    if (bootstrap.isReturning) {
+      upgradedRef.current = true;
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const sb = supabaseRef.current;
+      const { data: authData } = await sb.auth.getUser();
+      const user = authData.user;
+      if (!user) {
+        upgradedRef.current = true;
+        return;
+      }
+      const profile: ProfileSnapshot = readProfile();
+      if (profile.userId && profile.userId !== user.id) {
+        clearProfile();
+      }
+      const { count } = await sb
+        .from("guest_calls")
+        .select("id", { count: "exact", head: true })
+        .eq("customer_user_id", user.id)
+        .in("status", ["ended", "abandoned", "cancelled", "expired_free"]);
+      if (cancelled || !count || count <= 0) {
+        upgradedRef.current = true;
+        return;
+      }
+      patchProfile({ userId: user.id });
+
+      const welcomeBody =
+        greeting ?? "Welcome back — picking up where you left off.";
+      const known = flattenStack(profile.stack);
+      const knownPreview = known.slice(0, 4).join(", ");
+      const stackPrompt: IntakePrompt = {
+        id: "wrap_up",
+        body:
+          known.length === 0
+            ? "What are you working on this time?"
+            : known.length > 4
+              ? `Last time you were using ${knownPreview} and a few others. Anything new since?`
+              : `Last time you were using ${knownPreview}. Anything new since?`,
+        fieldFromAnswer: null,
+        quickReplies:
+          known.length === 0
+            ? undefined
+            : ["No, same setup", "Cursor", "Claude", "ChatGPT", "Supabase", "Next.js"],
+      };
+      const seeded: IntakeMessage[] = [
+        { id: nextId(), role: "assistant", body: welcomeBody, createdAt: Date.now() },
+        {
+          id: nextId(),
+          role: "assistant",
+          body: stackPrompt.body,
+          createdAt: Date.now() + 1,
+        },
+      ];
+      setMessages(seeded);
+      setActivePrompt(stackPrompt);
+      upgradedRef.current = true;
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [bootstrap.isReturning, greeting]);
 
   const pickAck = useCallback((): string => {
     const acks = [
