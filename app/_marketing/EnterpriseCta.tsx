@@ -93,7 +93,9 @@ export function EnterpriseCta() {
         <h3 className="r-leg-title" style={{ marginTop: 0 }}>
           Enterprise
         </h3>
-        <div className="r-leg-tag">You scale. We embed.</div>
+        <div className="r-leg-tag">
+          <span className="mk-sweep">You scale. We embed.</span>
+        </div>
         <p className="r-leg-desc" style={{ marginTop: 8, marginBottom: 0 }}>
           Org-wide rollouts, custom retainers, regulated and multi-region work.
           We quote on what you actually need.

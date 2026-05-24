@@ -41,7 +41,9 @@ export function PhaseCards({ phases }: Props) {
           <div className="r-leg" key={phase.num}>
             <div className="r-leg-num">{phase.num}</div>
             <h3 className="r-leg-title">{phase.title}</h3>
-            <div className="r-leg-tag">{phase.role}</div>
+            <div className="r-leg-tag">
+              <span className="mk-sweep">{phase.role}</span>
+            </div>
             <p
               className="r-leg-desc"
               style={{ marginBottom: 20, flex: "0 0 auto" }}
