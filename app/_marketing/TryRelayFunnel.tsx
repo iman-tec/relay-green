@@ -154,7 +154,9 @@ export function TryRelayFunnel({ onClose }: { onClose: () => void }) {
       //    full_name → email. Seed a full_name in the user metadata so the
       //    session insert doesn't hit a not-null violation.
       const { data: authData, error: authErr } = await sb.auth.getUser();
-      if (!authData.user) {
+      if (authErr && authData.user) throw authErr;
+      let user = authData.user;
+      if (!user) {
         const { error: anonErr } = await sb.auth.signInAnonymously({
           options: { data: { full_name: "Guest" } },
         });
@@ -166,13 +168,22 @@ export function TryRelayFunnel({ onClose }: { onClose: () => void }) {
             "Guest mode is unavailable right now. Please sign in to start a session.",
           );
         }
-      } else if (authErr) {
-        throw authErr;
+        user = (await sb.auth.getUser()).data.user;
       }
 
-      const { data: who } = await sb.auth.getUser();
-      const userId = who.user?.id;
+      const userId = user?.id;
       if (!userId) throw new Error("Could not start a guest session");
+
+      // Seed a display name if missing. Covers anonymous sessions minted
+      // before this metadata was added (and any other nameless account) —
+      // get_or_create_active_customer_session derives guest_calls.guest_name
+      // (NOT NULL) from it, so a null name 400s the session insert.
+      const hasName =
+        typeof user?.user_metadata?.full_name === "string" &&
+        user.user_metadata.full_name.trim().length > 0;
+      if (!hasName) {
+        await sb.auth.updateUser({ data: { full_name: "Guest" } });
+      }
 
       // 2. Create a project for this guest chat.
       const { data: created, error: projErr } = await sb.rpc("create_project", {
