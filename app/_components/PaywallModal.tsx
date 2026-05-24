@@ -22,6 +22,7 @@
 import { useEffect, useState } from "react";
 import { Loader2, X, ArrowRight, Check, ChevronLeft, Sparkles } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
+import { GuestUpgradeForm } from "@/app/_components/GuestUpgradeForm";
 import { SUPPORT_PLANS, LAUNCH_PLANS, RETAINER, type SupportPlanCode } from "@/lib/relay/pricing";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
@@ -54,6 +55,11 @@ export function PaywallModal({
 }) {
   const [busyPlan, setBusyPlan] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Anonymous (guest) users have no email, so checkout can't issue a receipt
+  // or charge. When a guest picks a paid plan we first show a sign-up gate;
+  // pendingPlan holds the plan to resume once they've created an account.
+  const [isGuest, setIsGuest] = useState(false);
+  const [pendingPlan, setPendingPlan] = useState<SupportPlanCode | null>(null);
   // When set, we're showing the Stripe Elements payment form for this plan.
   // null = show the plan-selection grid.
   const [activeCheckout, setActiveCheckout] = useState<{
@@ -65,7 +71,16 @@ export function PaywallModal({
     minutes: number;
   } | null>(null);
 
-  const checkout = async (plan: SupportPlanCode) => {
+  const checkout = async (plan: SupportPlanCode, skipGuestGate = false) => {
+    // Guests must register before paying — they have no email for the
+    // receipt/charge. Show the sign-up gate and resume on success.
+    // skipGuestGate is passed right after a successful upgrade, where the
+    // isGuest state hasn't flushed yet but we know they now have an email.
+    if (isGuest && !skipGuestGate) {
+      setError(null);
+      setPendingPlan(plan);
+      return;
+    }
     setBusyPlan(plan);
     setError(null);
     try {
@@ -122,10 +137,71 @@ export function PaywallModal({
       setActiveCheckout(null);
       setBusyPlan(null);
       setError(null);
+      setPendingPlan(null);
     }
   }, [open]);
 
+  // Detect whether the current user is an anonymous guest when the paywall
+  // opens — drives the sign-up gate before checkout.
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    const sb = createClient();
+    void sb.auth.getUser().then(({ data }) => {
+      if (!alive) return;
+      setIsGuest(Boolean(data.user?.is_anonymous) || (!!data.user && !data.user.email));
+    });
+    return () => { alive = false; };
+  }, [open]);
+
   if (!open) return null;
+
+  // Guest sign-up gate — shown after a guest picks a paid plan. On success
+  // they're a permanent account with an email, so we resume checkout.
+  if (pendingPlan) {
+    return (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6"
+        style={{ backgroundColor: BACKDROP, backdropFilter: "blur(4px)" }}
+      >
+        <div
+          className="relative w-full max-w-md rounded-2xl border p-6 shadow-2xl"
+          style={{ backgroundColor: SURFACE, borderColor: CARD_EDGE, color: INK }}
+        >
+          <button
+            onClick={() => setPendingPlan(null)}
+            className="absolute left-4 top-4 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] transition-opacity hover:opacity-100"
+            style={{ color: INK_SOFT, opacity: 0.8 }}
+            aria-label="Back to plans"
+          >
+            <ChevronLeft size={14} />
+            Back
+          </button>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="absolute right-4 top-4 rounded-full p-1 opacity-60 transition-opacity hover:opacity-100"
+            style={{ color: INK_SOFT }}
+          >
+            <X size={16} />
+          </button>
+          <div className="mt-6">
+            <GuestUpgradeForm
+              heading="Create your account to continue"
+              blurb="Your free session is saved. Add an email and password to top up minutes and keep the same engineer."
+              ctaLabel="Create account & continue"
+              onUpgraded={() => {
+                const plan = pendingPlan;
+                setIsGuest(false);
+                setPendingPlan(null);
+                void checkout(plan, true);
+              }}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const eyebrow =
     reason === "free_expired" ? "Your free 10 minutes are up"

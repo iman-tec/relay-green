@@ -29,6 +29,7 @@ import {
   Avatar, Button, Card, CardBody, CardHeader, Chip, ChipGroup, Input, Toast, cn,
 } from "@/app/_components/ui";
 import { PaywallModal } from "@/app/_components/PaywallModal";
+import { GuestUpgradeForm } from "@/app/_components/GuestUpgradeForm";
 import { createClient } from "@/lib/supabase/browser";
 import { patchProfile, readProfile, type TechComfort } from "@/lib/relay/profile";
 import {
@@ -73,6 +74,10 @@ export function AccountClient() {
   const sbRef = useRef(createClient());
 
   const [auth, setAuth] = useState<Auth>({ kind: "loading" });
+  // True when the signed-in user is an anonymous (guest) Supabase user — they
+  // have a user_id + session but no email. We surface a "create your account"
+  // panel instead of the read-only email row.
+  const [isGuest, setIsGuest] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [banner, setBanner] = useState<Banner>(null);
@@ -110,6 +115,7 @@ export function AccountClient() {
         router.replace("/login");
         return;
       }
+      setIsGuest(Boolean(data.user.is_anonymous) || !data.user.email);
       setAuth({ kind: "authed", userId: data.user.id, email: data.user.email ?? "" });
     });
     return () => { alive = false; };
@@ -393,15 +399,33 @@ export function AccountClient() {
               autoComplete="name"
             />
 
-            {/* Email — read-only */}
-            <div className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium text-[var(--text)]">Email address</span>
-              <div className="flex h-11 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] px-3.5 text-[15px] text-[var(--text-muted)]">
-                <Mail className="size-4 shrink-0" />
-                <span className="truncate">{email || "—"}</span>
+            {/* Email — guests get a create-account panel; registered users
+                see the read-only address. */}
+            {isGuest ? (
+              <div className="rounded-lg border border-[var(--primary)] bg-[var(--primary-tint)] p-4">
+                <GuestUpgradeForm
+                  heading="Set up your account"
+                  blurb="You're in as a guest. Add an email and password to save this session, top up minutes, and sign back in later — same engineer, same history."
+                  ctaLabel="Create account"
+                  onUpgraded={(em) => {
+                    setIsGuest(false);
+                    setAuth((a) =>
+                      a.kind === "authed" ? { ...a, email: em } : a,
+                    );
+                    showBanner({ tone: "ok", text: "Account created — you're all set." });
+                  }}
+                />
               </div>
-              <p className="text-xs text-[var(--text-muted)]">Email can&apos;t be changed.</p>
-            </div>
+            ) : (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-sm font-medium text-[var(--text)]">Email address</span>
+                <div className="flex h-11 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] px-3.5 text-[15px] text-[var(--text-muted)]">
+                  <Mail className="size-4 shrink-0" />
+                  <span className="truncate">{email || "—"}</span>
+                </div>
+                <p className="text-xs text-[var(--text-muted)]">Email can&apos;t be changed.</p>
+              </div>
+            )}
 
             {/* Technical expertise — read-only, from Q1 */}
             <div className="flex flex-col gap-1.5">
