@@ -183,6 +183,7 @@ export function QuickReturnIntake({
       patchProfile({
         lastProjectId: projectId,
         lastProjectName: projectName,
+        userId: u.user.id,
       });
 
       router.replace(`/intake/matching/${intakeId}`);

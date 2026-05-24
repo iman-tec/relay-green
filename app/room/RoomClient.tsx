@@ -724,6 +724,7 @@ export function RoomClient() {
       patchProfile({
         lastProjectId: projectId,
         lastProjectName: projectName,
+        userId,
       });
     } catch (e) {
       console.warn("[handleNewChat] failed:", e);
@@ -1333,6 +1334,7 @@ function ReadOnlyChatPane({
           patchProfile({
             lastProjectId: session.project_id,
             lastProjectName: session.project_name ?? null,
+            userId: session.customer_user_id ?? null,
           });
         }
 
@@ -4370,10 +4372,10 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 // prominent green call button at the top lets them escalate to a live
 // session ("New session" path) any time.
 //
-// // TODO(openai): the bot greeting + follow-up prompts should call an
-// OpenAI-backed server route seeded with the user's profile + the last
-// project's summary. Today the IntakeAssistant uses local heuristics; the
-// transport is the single seam to swap.
+// The bot greeting + resume prompt are now hydrated through the
+// IntakeAssistant async-upgrade effect, which calls /api/assistant
+// (server-side OpenAI proxy, no client key) when a real returning user is
+// detected. Local heuristics remain as a guaranteed fallback.
 function AsyncChatPane({
   onEscalateToCall,
   onCloseAsyncMode,

@@ -53,7 +53,22 @@
       "Bash(git -C \"C:/Users/iman.mohi/projects/Relay.green\" status --short)",
       "Bash(git -C \"C:/Users/iman.mohi/projects/Relay.green\" remote -v)",
       "Bash(git -C \"C:/Users/iman.mohi/projects/Relay.green\" branch -a)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(start *)",
+      "Bash(curl -sk -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000)",
+      "Bash(curl -sk -o /dev/null -w \"%{http_code}\\\\n\" https://192.168.1.24:3000)",
+      "Bash(tasklist //FI \"PID eq 28224\")",
+      "Bash(xargs grep -l \"Welcome back\")",
+      "Bash(tasklist //FI \"IMAGENAME eq node.exe\")",
+      "Bash(tasklist //FI \"IMAGENAME eq node.exe\" //V)",
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(grep -E \"TryRelayFunnel|TryRelayProvider|TryRoom|online-engineers|assistant\\\\\\\\\\\\\\\\route|IntakeAssistant|profile\\\\.ts|QuickReturn|IntakeClient\")",
+      "Bash(curl -sk -o /dev/null -w \"marketing: %{http_code}\\\\n\" https://192.168.1.24:3000/)",
+      "Bash(curl -sk -o /dev/null -w \"try-room: %{http_code}\\\\n\" https://192.168.1.24:3000/try-room)",
+      "Bash(curl -sk -o /dev/null -w \"online-engineers: %{http_code}\\\\n\" \"https://192.168.1.24:3000/api/online-engineers?technologies=Claude\")",
+      "Bash(curl -sk -X POST -H \"Content-Type: application/json\" -d \"{\\\\\"mode\\\\\":\\\\\"greeting\\\\\"}\" -o /dev/null -w \"assistant: %{http_code}\\\\n\" https://192.168.1.24:3000/api/assistant)",
+      "Bash(curl -sk \"https://192.168.1.24:3000/api/online-engineers?technologies=Claude,Postgres,Next.js\")",
+      "Bash(curl -sk -X POST -H \"Content-Type: application/json\" -d \"{\\\\\"mode\\\\\":\\\\\"greeting\\\\\",\\\\\"funnel\\\\\":{\\\\\"need\\\\\":\\\\\"stuck\\\\\",\\\\\"stack\\\\\":{\\\\\"aiTools\\\\\":[\\\\\"Claude\\\\\"],\\\\\"backend\\\\\":[\\\\\"Postgres\\\\\"],\\\\\"frontend\\\\\":[\\\\\"Next.js\\\\\"]}}}\" \"https://192.168.1.24:3000/api/assistant\")"
     ]
   }
 }

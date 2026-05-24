@@ -18,6 +18,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { TryRelayFunnel } from "./TryRelayFunnel";
 
 type Ctx = {
   isOpen: boolean;
@@ -63,95 +64,7 @@ export function TryRelayProvider({ children }: { children: ReactNode }) {
   return (
     <TryRelayCtx.Provider value={{ isOpen, open, close }}>
       {children}
-      {isOpen && <TryRelayModal />}
+      {isOpen && <TryRelayFunnel onClose={close} />}
     </TryRelayCtx.Provider>
-  );
-}
-
-function TryRelayModal() {
-  const { close } = useTryRelay();
-
-  return (
-    <div
-      className="mk-root-modal-backdrop"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="tryrelay-title"
-      onClick={close}
-    >
-      <div className="mk-root-modal" onClick={(e) => e.stopPropagation()}>
-        <button
-          type="button"
-          className="mk-root-modal-close"
-          aria-label="Close"
-          onClick={close}
-        >
-          ×
-        </button>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            marginBottom: 20,
-          }}
-        >
-          <span
-            style={{
-              width: 14,
-              height: 14,
-              borderRadius: "50%",
-              background: "#4f6b3a",
-              display: "inline-block",
-            }}
-          ></span>
-          <span
-            style={{
-              fontFamily: "var(--font-jetbrains), monospace",
-              fontSize: 11,
-              letterSpacing: "0.06em",
-              textTransform: "uppercase",
-              color: "#8c8a82",
-            }}
-          >
-            relay.green console
-          </span>
-        </div>
-        <h2 id="tryrelay-title">The console opens here.</h2>
-        <p className="body">
-          Once you click <em style={{ color: "#3f5c2e" }}>Try Relay</em>, the
-          Relay desktop opens, same way Claude.ai opens behind{" "}
-          <em style={{ color: "#3f5c2e" }}>Try Claude</em>. The green dot lives
-          top-right; press it any time you want a software engineer in the loop.
-        </p>
-        <div className="console-card">
-          <div className="url">→ relay.green/console</div>
-          <div className="meta">
-            Currently in private beta. Public launch Q3 2026.
-          </div>
-        </div>
-        <form
-          className="mk-root-modal-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            close();
-          }}
-        >
-          <label htmlFor="tryrelay-email" className="sr-only">
-            Email address
-          </label>
-          <input
-            id="tryrelay-email"
-            type="email"
-            required
-            placeholder="you@company.com"
-            className="mk-root-modal-input"
-          />
-          <button type="submit" className="r-btn r-btn-green">
-            Join the waitlist
-          </button>
-        </form>
-      </div>
-    </div>
   );
 }

@@ -333,3 +333,94 @@ All open questions have been answered. Keeping the resolutions here so the next 
 5. **Minutes rollup math — resolved.** Parent `used / allocated` is computed in the UI as the sum of its visible children. The backend's stored parent value (if any) is ignored in favor of the computed sum. Math is consistent by construction; no "out of sync" warning.
 
 > **Status note:** The migration uses lowercase `'active'` / `'suspended'` for `status` (with a CHECK constraint), which differs from the uppercase `ACTIVE / SUSPENDED` used elsewhere in the Prisma schema. UI should render a normalized label ("Active" / "Suspended") regardless of source casing.
+
+---
+
+## 9. Try-RELAY funnel + new-account bot + OpenAI wiring (2026-05-24)
+
+**Scope shipped this pass — 4 of 5 orders. Stripe sandbox (Order 4) deferred at the user's request.**
+
+### 9.1 Try-RELAY 3-question funnel → Match Found (Order 1)
+
+- Replaces the old marketing "waitlist" modal at [app/_marketing/TryRelayProvider.tsx](app/_marketing/TryRelayProvider.tsx) with a 3-step editorial wizard + live "Match Found" engineer card.
+- New component: [app/_marketing/TryRelayFunnel.tsx](app/_marketing/TryRelayFunnel.tsx). Steps:
+  1. **Need** — "I'm building / I'm ready to launch / I need ongoing support" (3 radio cards). Constants in [lib/relay/profile.ts](lib/relay/profile.ts) `NEED_OPTIONS`.
+  2. **Stack** — 3 columns (AI tool, Backend, Frontend), multi-select. Reuses `STACK_OPTIONS` from `profile.ts`.
+  3. **Urgency** — "Right now / This week / Planning". Reuses `URGENCY_OPTIONS`.
+  4. **Match Found** — pulls a real online engineer from `/api/online-engineers`, displays pseudonym (first + last initial), tech tags, eta. CTA "Start session now →" lands the customer on `/try-room` with funnel context in `localStorage`. **No login. No email step. No password.**
+- **Technical-knowledge question is NOT rendered in this funnel.** `TECH_COMFORT_OPTIONS` remains in `profile.ts` for the legacy `/intake` surface; this funnel skips it deliberately.
+
+### 9.2 Live engineer source (`/api/online-engineers`)
+
+- New route: [app/api/online-engineers/route.ts](app/api/online-engineers/route.ts).
+- Server-side service-role read against `engineer_profiles` (filtered `is_available=true` and excluding engineers in active `guest_calls`), joined to `profiles` for the display name.
+- Returns a **pseudonymized** view only — `pseudoName` is first name + last-initial, `initials` is two-letter, plus `technologies`, `experienceLabel`, `experienceYears`, `etaSeconds`, `matchedTechnologies` (overlap with the customer's stack). The engineer's full name and email never leave the server.
+- Ranking: tech-overlap (intersection count) × 1.0 + experience bonus (Experienced 1.5 / Intermediate 1.0 / Beginner 0.5).
+
+### 9.3 Guest session landing (`/try-room`)
+
+- New pages: [app/try-room/page.tsx](app/try-room/page.tsx) + [app/try-room/TryRoomClient.tsx](app/try-room/TryRoomClient.tsx).
+- **No auth required.** The page reads the funnel handoff from `localStorage` key `relay-tryrelay-context`, displays the matched engineer card, and mounts an AI assistant chat that talks to `/api/assistant` (server OpenAI proxy).
+- Real `guest_calls` insertion + engineer matching is **NOT** wired here yet. The page is the visible "drop into the room" UX without the auth wall. `// TODO(auth)` markers are in place: upgrade to a real passwordless guest session keyed by `guest_calls` + magic-link upsell when the customer wants to keep history.
+- The existing `/room` route (which requires auth and full Supabase session bootstrap) is **untouched**; signed-in customers continue to land there exactly as before.
+
+### 9.4 New-account "Welcome back" / canned chat bug (Order 2)
+
+- **Root cause:** [app/_components/intake/IntakeAssistant.tsx](app/_components/intake/IntakeAssistant.tsx) bootstrap previously gated the "Welcome back" greeting on `profile.hasFullIntake` read straight from `localStorage`. On a shared browser, a new sign-in inherited the prior account's flag and saw the wrong greeting plus the canned "Last time you were using X" stack-check prompt.
+- **Fix:**
+  - The synchronous bootstrap now always renders a first-time greeting (`"Hi! Describe your issue — what do you need help with?"`) unless an explicit resume-context handoff (`relay-resume-context` set when the user clicks "Continue this session") is present.
+  - An async upgrade effect verifies the current Supabase user has real `guest_calls` history (`status IN ('ended','abandoned','cancelled','expired_free')`); only then does it swap the messages to a personalized "Welcome back" + stack-increment prompt. The Welcome-back copy comes from `/api/assistant` with a local heuristic fallback.
+  - The local profile snapshot is now bound to a user_id: `ProfileSnapshot.userId` (`lib/relay/profile.ts`). `patchProfile()` callers in `IntakeClient.tsx`, `QuickReturnIntake.tsx`, `RoomClient.tsx` stamp it. `hasFullIntake(profile, currentUserId)` returns false on mismatch. `clearProfile()` wipes the cache when a different user signs in.
+- **Verification path:** create two fresh accounts. Each must start with an empty thread + the first-time greeting. Only an account with real prior `ended` sessions sees "Welcome back".
+
+### 9.5 OpenAI server route (`/api/assistant`) (Order 3)
+
+- New route: [app/api/assistant/route.ts](app/api/assistant/route.ts). POST `{ mode, profile, funnel, resume, messages }`.
+- Uses `OPENAI_API_KEY` from server env only — the key never reaches the client.
+- Modes: `greeting` (first-time), `resume` (Welcome back), `chat` (free-form continuation). Each builds a system prompt from the customer's stack / urgency / prior summary.
+- **Graceful fallback:** if `OPENAI_API_KEY` is missing or the OpenAI call fails (network, 4xx, 5xx), the route returns a heuristic prompt with `fallback: "no_key" | "openai_error"`. The chat never crashes.
+- Callsites wired:
+  - `IntakeAssistant.tsx` upgrade effect — fetches Welcome-back copy for confirmed returning users.
+  - `TryRoomClient.tsx` — initial greeting + each user message reply.
+- `RoomClient.tsx` `AsyncChatPane` (line ~4369) — TODO note rewritten to point at the new route. The chat surface that pane mounts is `IntakeAssistant`, so it inherits the new wiring transparently.
+
+### 9.6 Stripe sandbox (Order 4) — DEFERRED
+
+User opted to defer the Stripe rebuild this pass. Existing Supabase edge-function PaymentIntent flow (`supabase/functions/create-relay-checkout`, `create-enterprise-checkout`, `relay-stripe-webhook`, `payments-webhook`) remains as-is. The `PaywallModal` + `WalletClient` inline Stripe Elements surfaces are untouched.
+
+**When ready, the open work is:**
+
+- Add `app/api/checkout/route.ts` — `checkout.sessions.create` in test mode, return URL.
+- Add `app/api/stripe/webhook/route.ts` — verify signature, handle `checkout.session.completed`, credit balance via Supabase RPC.
+- Env (server-only): `STRIPE_SECRET_KEY=sk_test_…`, `STRIPE_WEBHOOK_SECRET=whsec_…`, `STRIPE_PRICE_HOUR_PACK=price_…`, `STRIPE_PRICE_PRO=price_…`, `STRIPE_PRICE_BASE=price_…`.
+- Env (client): keep existing `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_…`.
+- Local dev: `stripe listen --forward-to localhost:3000/api/stripe/webhook`.
+- QA cards: `4242 4242 4242 4242` success / `4000 0000 0000 9995` decline.
+
+### 9.7 Env vars added / required
+
+Server-only:
+
+- `OPENAI_API_KEY` — **required** for `/api/assistant`; without it the route falls back to local heuristic copy.
+- `OPENAI_MODEL` — optional, default `gpt-4o-mini`.
+- `SUPABASE_SERVICE_ROLE_KEY` — required for `/api/online-engineers`; without it the route returns `{ engineer: null }`.
+
+No new public env vars. No new secrets shipped to the client.
+
+### 9.8 Setup checklist
+
+- [x] Confirm `.env.local` has `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY` populated.
+- [x] `npm install` — no new packages required.
+- [x] Restart `npm run dev` after env changes (Next reads env at process start).
+- [ ] In Supabase, confirm at least one engineer row exists in `engineer_profiles` with `is_available=true` and a non-empty `profiles.full_name` — that's the Match Found display source.
+- [ ] When promoting beyond the demo guest path, wire `/try-room` → real `guest_calls` insertion (see `// TODO(auth)` markers in `TryRelayFunnel.tsx` + `TryRoomClient.tsx`).
+
+### 9.9 Open TODOs (search markers)
+
+| Marker | File | Note |
+| --- | --- | --- |
+| `// TODO(auth)` | `app/_marketing/TryRelayFunnel.tsx`, `app/try-room/page.tsx`, `app/try-room/TryRoomClient.tsx` | Upgrade guest landing to real passwordless session keyed by `guest_calls` + magic-link upsell. |
+| `// TODO(profile)` | `lib/relay/profile.ts`, `app/intake/IntakeClient.tsx` | Move localStorage profile snapshot to a real backend store (`customer_profiles` table or column on `customer_summaries`). |
+| `// TODO(openai)` | (removed) | Both intake-assistant + resume-prompt seams are now wired to `/api/assistant`. The `RoomClient.tsx` AsyncChatPane comment retains a documentation reference only. |
+
+
