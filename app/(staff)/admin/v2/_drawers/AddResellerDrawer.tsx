@@ -50,13 +50,13 @@ export function AddResellerDrawer({
         reseller?: { id: string }; error?: string;
       };
       if (!res.ok || !body.reseller) {
-        setError(body.error ?? "Couldn't create reseller.");
+        setError(body.error ?? "Couldn't create channel partner.");
         return;
       }
       onCreated(body.reseller.id);
       reset();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't create reseller.");
+      setError(e instanceof Error ? e.message : "Couldn't create channel partner.");
     } finally {
       setLoading(false);
     }
@@ -66,7 +66,7 @@ export function AddResellerDrawer({
     <Drawer
       open={open}
       onClose={() => { reset(); onClose(); }}
-      title="Add Reseller"
+      title="Add Channel Partner"
       footer={
         <>
           <SecondaryBtn onClick={() => { reset(); onClose(); }} disabled={loading}>Cancel</SecondaryBtn>
@@ -77,11 +77,11 @@ export function AddResellerDrawer({
       }
     >
       <div className="flex flex-col gap-3">
-        <Field label="Reseller name">
-          <Input value={name} onChange={setName} placeholder="Acme Reseller LLC" />
+        <Field label="Channel partner name">
+          <Input value={name} onChange={setName} placeholder="Acme Channel Partners LLC" />
         </Field>
         <Field label="Owner email">
-          <Input value={email} onChange={setEmail} placeholder="owner@acme-reseller.com" type="email" />
+          <Input value={email} onChange={setEmail} placeholder="owner@acme-partners.com" type="email" />
         </Field>
         <Field label="Commission (%)">
           <Input value={commission} onChange={setComm} placeholder="10" inputMode="numeric" />

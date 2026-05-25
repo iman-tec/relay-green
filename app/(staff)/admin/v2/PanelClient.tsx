@@ -20,11 +20,14 @@ import { InternalUsersTab } from "./InternalUsersTab";
 type TabKey = "enterprise" | "reseller" | "pods" | "internal";
 
 const TABS: readonly Tab<TabKey>[] = [
+  { key: "reseller",   label: "Channel Partners" },
   { key: "enterprise", label: "Enterprise" },
-  { key: "reseller",   label: "Reseller"   },
   { key: "pods",       label: "Pods"       },
   { key: "internal",   label: "Internal Users" },
 ];
+
+// Landing tab when no ?tab= is present — always the first tab in TABS.
+const DEFAULT_TAB: TabKey = TABS[0].key;
 
 export function PanelClient({
   me,
@@ -32,9 +35,9 @@ export function PanelClient({
   me: { email: string; roleLabel: string };
 }) {
   const searchParams = useSearchParams();
-  const initial = (searchParams?.get("tab") as TabKey) ?? "enterprise";
+  const initial = (searchParams?.get("tab") as TabKey) ?? DEFAULT_TAB;
   const [tab, setTab] = useState<TabKey>(
-    TABS.some((t) => t.key === initial) ? initial : "enterprise",
+    TABS.some((t) => t.key === initial) ? initial : DEFAULT_TAB,
   );
 
   return (

@@ -103,7 +103,7 @@ export function ResellersTab() {
       const rBody = (await rRes.json().catch(() => ({}))) as { resellers?: Reseller[]; error?: string };
       const oBody = (await oRes.json().catch(() => ({}))) as { orgs?: Org[]; error?: string };
       if (!rRes.ok || !rBody.resellers) {
-        setError(rBody.error ?? "Couldn't load resellers.");
+        setError(rBody.error ?? "Couldn't load channel partners.");
         return;
       }
       setResellers(rBody.resellers);
@@ -116,7 +116,7 @@ export function ResellersTab() {
       }
       setOrgsByReseller(map);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't load resellers.");
+      setError(e instanceof Error ? e.message : "Couldn't load channel partners.");
     } finally {
       setLoading(false);
     }
@@ -270,8 +270,8 @@ export function ResellersTab() {
       {showResellersSidebar && (
       /* Sidebar 1 — resellers */
       <Sidebar
-        title="Resellers"
-        searchPlaceholder="Search resellers…"
+        title="Channel Partners"
+        searchPlaceholder="Search channel partners…"
         width={240}
         items={resellers.map((r) => ({
           id:     r.id,
@@ -288,7 +288,7 @@ export function ResellersTab() {
           setDeptAdmin(null);
           setResellerId(it.id);
         }}
-        emptyMessage={loading ? "Loading…" : (error ?? "No resellers yet.")}
+        emptyMessage={loading ? "Loading…" : (error ?? "No channel partners yet.")}
         footer={
           <button
             type="button"
@@ -296,7 +296,7 @@ export function ResellersTab() {
             className="flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium"
             style={{ background: "var(--primary)", color: "#fff" }}
           >
-            <Plus className="size-3.5" /> Add Reseller
+            <Plus className="size-3.5" /> Add Channel Partner
           </button>
         }
         renderRow={(it) => {
@@ -341,7 +341,7 @@ export function ResellersTab() {
           setDeptAdmin(null);
           setEntId(it.id);
         }}
-        emptyMessage={selReseller ? "No enterprises yet." : "Select a reseller."}
+        emptyMessage={selReseller ? "No enterprises yet." : "Select a channel partner."}
         footer={
           selReseller && (
             <button
@@ -433,7 +433,7 @@ export function ResellersTab() {
         <Breadcrumb
           items={(() => {
             const crumbs: Crumb[] = [{
-              label:   "Resellers",
+              label:   "Channel Partners",
               onClick: () => {
                 setEntId(null);
                 setDeptId(null);
@@ -472,8 +472,8 @@ export function ResellersTab() {
             breadcrumb above. Matches the Enterprise tab pattern. */}
         {!selReseller && (
           <EmptyState
-            title="Select a reseller"
-            blurb="Pick a reseller on the left to view their enterprises and rollups."
+            title="Select a channel partner"
+            blurb="Pick a channel partner on the left to view their enterprises and rollups."
           />
         )}
 
@@ -626,8 +626,8 @@ export function ResellersTab() {
       {selReseller && (
         <EditNameDrawer
           open={editReseller}
-          title="Edit reseller"
-          label="Reseller name"
+          title="Edit channel partner"
+          label="Channel partner name"
           currentName={selReseller.name}
           endpoint={`/api/admin/resellers/${selReseller.id}`}
           onClose={() => setEditReseller(false)}
@@ -723,7 +723,7 @@ function ResellerSummary({
           </button>
         </>
       }
-      footerHint="Resellers cannot be hard-deleted — only suspended. Cascades convert inorganic enterprises to organic."
+      footerHint="Channel partners cannot be hard-deleted — only suspended. Cascades convert inorganic enterprises to organic."
     />
   );
 }
