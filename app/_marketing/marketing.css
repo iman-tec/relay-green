@@ -4789,7 +4789,8 @@
   align-items: center;
   justify-content: center;
   gap: 28px;
-  padding: 64px 40px 52px;
+  padding: 40px;
+  aspect-ratio: 1 / 1;
   background: #06090a;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 18px;
@@ -4799,13 +4800,14 @@
     0 0 80px -20px rgba(77, 200, 109, 0.18);
 }
 /* Override the .r-press-sphere defaults: zero margin (the card's gap
-   handles spacing) AND double the sphere size so it dominates the card
-   as the primary CTA. The .r-press-sphere::before heartbeat aura comes
-   along for free and reads much louder on this dark card. */
+   handles spacing) and size the sphere at 50% of the (now square) card
+   so it reads as a balanced orb rather than filling the plate. aspect-ratio
+   keeps it a perfect circle as the width tracks the card. */
 .mk-root .r-hero-dot-sphere {
   margin: 0;
-  width: clamp(280px, 28vw, 380px);
-  height: clamp(280px, 28vw, 380px);
+  width: 50%;
+  height: auto;
+  aspect-ratio: 1 / 1;
 }
 .mk-root .r-hero-dot-caption {
   margin: 0;
