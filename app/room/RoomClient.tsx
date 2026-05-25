@@ -242,10 +242,9 @@ export function RoomClient() {
     }
   }, [newChatParam]);
 
-  // (Continue / Start-follow-up resume is now handled inline in the
-  // ReadOnlyChatPane button onClick — see `resumeInProject`. The prior
-  // URL-roundtrip via ?continueSessionId was removed because the effect
-  // could silently fail and leave the user stuck on /room?continueSessionId.)
+  // (The ended-session "Pick up where you left off" card — Continue this
+  // session / Start a follow-up session — was removed per product request.
+  // An ended session now shows a read-only transcript with no resume CTAs.)
 
   // Old localStorage flags from the removed useConnectingModalGate are
   // wiped on mount so existing customers don't carry forward suppression
@@ -857,6 +856,7 @@ export function RoomClient() {
           entitlement={state.entitlement}
           accepted={accepted}
           onEnd={state.end}
+          onJoin={() => void state.markJoined()}
         />
 
         <main className="min-h-0 flex-1">
@@ -1372,64 +1372,6 @@ function ReadOnlyChatPane({
   messages: GuestMessage[];
   session: GuestCall;
 }) {
-  const router = useRouter();
-  const [resumeBusy, setResumeBusy] = useState<"continue" | "follow_up" | null>(null);
-  const [resumeError, setResumeError] = useState<string | null>(null);
-
-  const resumeInProject = useCallback(
-    async (mode: "continue" | "follow_up") => {
-      if (resumeBusy) return;
-      setResumeBusy(mode);
-      setResumeError(null);
-      try {
-        // Stash resume context so the in-chat AI assistant opens with a
-        // context-aware "Welcome back / what's changed?" prompt.
-        try {
-          if (typeof window !== "undefined") {
-            window.localStorage.setItem(
-              "relay-resume-context",
-              JSON.stringify({
-                mode,
-                fromSessionId: session.id,
-                projectId: session.project_id ?? null,
-                projectName: session.project_name ?? null,
-                aiSummaryTitle: session.ai_summary_title ?? null,
-                aiSummary: session.ai_summary_overview ?? null,
-                aiNextSteps: session.ai_next_steps ?? null,
-                savedAt: Date.now(),
-              }),
-            );
-          }
-        } catch { /* swallow quota / privacy mode */ }
-        if (session.project_id) {
-          patchProfile({
-            lastProjectId: session.project_id,
-            lastProjectName: session.project_name ?? null,
-            userId: session.customer_user_id ?? null,
-          });
-        }
-
-        // UI-only restart — drop the user into async-chat mode for this
-        // project. NO new session is minted here; that costs an
-        // entitlement and the customer may have exhausted it on the
-        // ended session. The async chat surface keeps the prominent
-        // green call button at the top — when the customer wants a live
-        // engineer they tap it and the standard /intake → ring flow
-        // (which DOES gate on entitlement / paywall) takes over.
-        //
-        // // TODO(api): true in-place reopen of the ended session
-        // without re-minting / re-charging. Server contract: allow
-        // re-activating a same-project session within a grace window.
-        router.push(`/room?newchat=1`);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : "Something went wrong";
-        console.warn("[resumeInProject]", msg);
-        setResumeError(msg);
-        setResumeBusy(null);
-      }
-    },
-    [session, resumeBusy, router],
-  );
 
   const isSupervisor = useIsSupervisor();
   const meetingEnded = new Map<string, GuestMessage>();
@@ -1514,63 +1456,6 @@ function ReadOnlyChatPane({
         </div>
       </div>
 
-      <div className="px-4 pb-6 pt-2">
-        <div className="mx-auto w-full max-w-3xl">
-          {/* FIX 4 — replaces the bare read-only pill with a real action
-              bar so stale sessions are revivable. "Continue this session"
-              re-opens the same project for a fresh ring with the prior
-              context handed to the AI assistant. "Start a follow-up" mints
-              a new session pre-seeded with the same project. */}
-          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-sm">
-            <div className="mb-2 flex items-center gap-1.5">
-              <span className="inline-flex size-6 items-center justify-center rounded-full bg-[var(--surface-raised)] text-[var(--text-muted)]">
-                <Lock size={11} />
-              </span>
-              <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--text-muted)]">
-                Session ended
-              </span>
-            </div>
-            <h3 className="mb-1 font-serif text-lg text-[var(--text)]">
-              Pick up where you{" "}
-              <em className="not-italic italic text-[var(--primary)]">left off</em>
-              .
-            </h3>
-            <p className="mb-4 text-sm leading-relaxed text-[var(--text-muted)]">
-              We'll re-ring an engineer in this same project with the
-              context you've already given us.
-            </p>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <Button
-                variant="primary"
-                size="lg"
-                full
-                loading={resumeBusy === "continue"}
-                disabled={resumeBusy !== null}
-                onClick={() => void resumeInProject("continue")}
-                iconLeft={<RefreshCw size={14} />}
-              >
-                Continue this session
-              </Button>
-              <Button
-                variant="secondary"
-                size="lg"
-                full
-                loading={resumeBusy === "follow_up"}
-                disabled={resumeBusy !== null}
-                onClick={() => void resumeInProject("follow_up")}
-                iconLeft={<Plus size={14} />}
-              >
-                Start a follow-up session
-              </Button>
-            </div>
-            {resumeError && (
-              <p className="mt-3 text-xs text-[var(--risk)]" role="alert">
-                {resumeError}
-              </p>
-            )}
-          </div>
-        </div>
-      </div>
     </section>
   );
 }
@@ -1786,12 +1671,14 @@ function ProjectPickerPane({
 // Owns its own session timer so the 1-second tick stays local to this
 // subtree instead of cascading from RoomClient down to Sidebar/MainPane/etc.
 const FloatingStatus = memo(function FloatingStatus({
-  session, entitlement, accepted, onEnd,
+  session, entitlement, accepted, onEnd, onJoin,
 }: {
   session: GuestCall | null;
   entitlement: { free_consumed_at: string | null; paid_minutes_remaining: number };
   accepted: boolean;
   onEnd: (reason?: string) => Promise<void>;
+  /** Same action as the in-chat "Join Zoom call" button — stamps joined + opens Zoom. */
+  onJoin?: () => void | Promise<void>;
 }) {
   const [confirmEnd, setConfirmEnd] = useState(false);
 
@@ -1857,7 +1744,7 @@ const FloatingStatus = memo(function FloatingStatus({
         {showStatus && session && (
           <>
             <span aria-hidden className="h-5 w-px" style={{ backgroundColor: "var(--border)" }} />
-            <CallHeaderActions session={session} />
+            <CallHeaderActions session={session} onJoin={onJoin} />
           </>
         )}
 
@@ -1888,7 +1775,7 @@ const FloatingStatus = memo(function FloatingStatus({
 // room-w.png mock as the most obvious header control. The call button is
 // enabled the moment the engineer mints a Zoom meeting; before that it's
 // tooltipped as waiting so the user knows what to expect.
-function CallHeaderActions({ session }: { session: GuestCall }) {
+function CallHeaderActions({ session, onJoin }: { session: GuestCall; onJoin?: () => void | Promise<void> }) {
   const hasZoom = !!session.zoom_meeting_id;
   const isLiveish = ["assigned", "joining", "live", "grace"].includes(session.status);
   const canJoin = hasZoom && isLiveish;
@@ -1907,13 +1794,11 @@ function CallHeaderActions({ session }: { session: GuestCall }) {
         size="md"
         disabled={!canJoin}
         onClick={() => {
-          // Customer-side "join" is implicit — markJoined is called via
-          // the existing ZoomJoinCard onJoin path inside ChatPane. Clicking
-          // this header button scrolls the user to that card.
-          const card = document.querySelector('[data-relay-zoom-card]');
-          if (card && card.scrollIntoView) {
-            card.scrollIntoView({ behavior: "smooth", block: "center" });
-          }
+          // Header call button now does the SAME thing as the in-chat
+          // "Join Zoom call" button: stamp joined + open the Zoom URL.
+          if (!canJoin || !session.zoom_join_url) return;
+          void onJoin?.();
+          window.open(session.zoom_join_url, "_blank", "noopener,noreferrer");
         }}
       >
         <Video size={16} />
