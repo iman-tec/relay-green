@@ -25,17 +25,34 @@ export const ACCEPTED_DOC_MIME = new Set<string>([
 
 export const ACCEPTED_DOC_EXT = [".pdf", ".txt", ".xlsx", ".docx"] as const;
 
-const IMAGE_MIME_PREFIX = "image/";
+// Audio MIME types we accept from MediaRecorder output + browser-recorded
+// voice messages. webm/opus is Chrome/Firefox's MediaRecorder default,
+// mp4/m4a is Safari's. We also accept generic audio/* for inbound user
+// uploads (e.g. a customer sharing a voice note from their phone).
+export const ACCEPTED_AUDIO_MIME = new Set<string>([
+  "audio/webm",
+  "audio/ogg",
+  "audio/mp4",
+  "audio/mpeg",      // mp3
+  "audio/wav",
+  "audio/x-wav",
+  "audio/x-m4a",
+]);
 
-export type AttachmentKind = "image" | "document";
+const IMAGE_MIME_PREFIX = "image/";
+const AUDIO_MIME_PREFIX = "audio/";
+
+export type AttachmentKind = "image" | "document" | "audio";
 
 export function classify(file: File): AttachmentKind | null {
   if (file.type && file.type.startsWith(IMAGE_MIME_PREFIX)) return "image";
+  if (file.type && file.type.startsWith(AUDIO_MIME_PREFIX)) return "audio";
   if (file.type && ACCEPTED_DOC_MIME.has(file.type)) return "document";
   // Some platforms strip mime on drag-drop — fall back to extension.
   const lower = file.name.toLowerCase();
   if (ACCEPTED_DOC_EXT.some((ext) => lower.endsWith(ext))) return "document";
   if (/\.(jpe?g|png|webp|gif)$/i.test(lower)) return "image";
+  if (/\.(webm|ogg|mp3|m4a|wav)$/i.test(lower)) return "audio";
   return null;
 }
 
@@ -58,7 +75,7 @@ export function validateStagedFiles(
   for (const f of incoming) {
     const kind = classify(f);
     if (!kind) {
-      return { ok: false, error: "PDF, DOCX, XLSX, TXT, or images only." };
+      return { ok: false, error: "PDF, DOCX, XLSX, TXT, images, or audio only." };
     }
     if (f.size > MAX_BYTES) {
       return { ok: false, error: `${f.name} is over 50 MB.` };

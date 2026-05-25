@@ -20,10 +20,10 @@
  */
 
 import { useEffect, useState } from "react";
-import { Loader2, X, ArrowRight, Check, ChevronLeft, Sparkles } from "lucide-react";
+import { Loader2, X, ArrowRight, Check, ChevronLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import { GuestUpgradeForm } from "@/app/_components/GuestUpgradeForm";
-import { SUPPORT_PLANS, LAUNCH_PLANS, RETAINER, type SupportPlanCode } from "@/lib/relay/pricing";
+import { SUPPORT_PLANS, type SupportPlanCode } from "@/lib/relay/pricing";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { buildStripeAppearance } from "@/lib/stripe/appearance";
@@ -204,7 +204,7 @@ export function PaywallModal({
   }
 
   const eyebrow =
-    reason === "free_expired" ? "Your free 10 minutes are up"
+    reason === "free_expired" ? "Pick up where you left off."
     : reason === "no_credits" ? "Pick a plan to continue"
     : "Relay plans";
 
@@ -297,15 +297,16 @@ export function PaywallModal({
                 letterSpacing: "-0.02em",
               }}
             >
-              Pay only for what you need.{" "}
-              <span style={{ fontStyle: "italic", color: INK_SOFT }}>Same engineer the whole way.</span>
+              Keep going with your engineer.
+              <br />
+              <span style={{ fontStyle: "italic", color: INK_SOFT }}>Pay only for the time you use.</span>
             </h1>
             <p
               className="mx-auto mt-3 max-w-md text-[13px]"
               style={{ color: INK_SOFT }}
             >
-              Start with a free 10-minute session. Top up minutes whenever you need an
-              engineer — credits stay good for 12 months.
+              Your first 10 minutes were on us. Top up whenever you want more —
+              credits stay good for 12 months.
             </p>
           </div>
 
@@ -322,70 +323,66 @@ export function PaywallModal({
             </div>
           )}
 
-          {/* Build (pay-as-you-go) */}
-          <SectionLabel>Build — pay-as-you-go credits</SectionLabel>
-          <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
-            {SUPPORT_PLANS.map((p) => {
-              const busy = busyPlan === p.code;
-              const isPaid = p.purchasable;
-              return (
-                <PlanCard
-                  key={p.code}
-                  name={p.name}
-                  priceLabel={p.cta}
-                  suffix={p.minutes > 0 ? `/ ${p.minutes} min` : ""}
-                  blurb={p.blurb}
-                  features={[...p.features]}
-                  highlight={"highlight" in p ? !!p.highlight : false}
-                  ctaLabel={isPaid ? `Buy ${p.cta}` : "Start free"}
-                  ctaInteractive={isPaid}
-                  busy={busy}
-                  onClick={
-                    isPaid
-                      ? () => void checkout(p.code as SupportPlanCode)
-                      : onClose
-                  }
-                />
-              );
-            })}
-          </div>
+          {/* Plan grid. The Free card is suppressed on the free_expired
+              path — the user has already consumed their free session, so
+              showing it again is clutter, not choice. On the no_credits /
+              default paths it remains, since a first-time visitor still
+              benefits from seeing the no-card-required entry point.
 
-          {/* Launch + retainer */}
-          <div className="mt-4">
-            <SectionLabel>Launch & retainer — quoted on complexity</SectionLabel>
-            <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
-              {LAUNCH_PLANS.map((p) => (
-                <PlanCard
-                  key={p.code}
-                  name={p.name}
-                  priceLabel={p.priceLabel}
-                  suffix={p.suffix}
-                  blurb={p.blurb}
-                  features={[...p.features]}
-                  highlight={false}
-                  ctaLabel="Get in touch"
-                  ctaInteractive={false}
-                  busy={false}
-                  onClick={() => {
-                    window.location.href = `mailto:support@relay.green?subject=Relay%20—%20${encodeURIComponent(p.name)}%20launch%20project`;
-                  }}
-                />
-              ))}
-              <PlanCard
-                name={RETAINER.name}
-                priceLabel={RETAINER.priceLabel}
-                suffix={RETAINER.suffix}
-                blurb={RETAINER.blurb}
-                features={[...RETAINER.features]}
-                highlight={false}
-                ctaLabel="Get in touch"
-                ctaInteractive={false}
-                busy={false}
-                onClick={() => {
-                  window.location.href = "mailto:support@relay.green?subject=Relay%20—%20Monthly%20retainer";
-                }}
-              />
-            </div>
+              Highlight (Pro) gets the solid-green CTA; other paid cards
+              get a quieter outline CTA so the three pricing options
+              don't read as three competing shouts. */}
+          <p
+            className="mb-3 text-[12px]"
+            style={{ color: INK_SOFT }}
+          >
+            Each session is minimum 10 minutes. Use credits across as many
+            sessions as you need.
+          </p>
+          {(() => {
+            const visiblePlans = SUPPORT_PLANS.filter(
+              (p) => !(reason === "free_expired" && p.code === "free"),
+            );
+            const cols = visiblePlans.length === 3 ? "md:grid-cols-3" : "md:grid-cols-4";
+            return (
+              <div className={`grid grid-cols-2 gap-2.5 ${cols}`}>
+                {visiblePlans.map((p) => {
+                  const busy = busyPlan === p.code;
+                  const isPaid = p.purchasable;
+                  const isHighlight = "highlight" in p ? !!p.highlight : false;
+                  return (
+                    <PlanCard
+                      key={p.code}
+                      name={p.name}
+                      priceLabel={p.cta}
+                      suffix={p.minutes > 0 ? `/ ${p.minutes} min` : ""}
+                      blurb={p.blurb}
+                      features={[...p.features]}
+                      highlight={isHighlight}
+                      ctaLabel={isPaid ? `Continue with ${p.cta}` : "Start free"}
+                      ctaInteractive={isPaid}
+                      ctaSolid={isHighlight || !isPaid}
+                      busy={busy}
+                      onClick={
+                        isPaid
+                          ? () => void checkout(p.code as SupportPlanCode)
+                          : onClose
+                      }
+                    />
+                  );
+                })}
+              </div>
+            );
+          })()}
+
+          {/* Trust strip — the two biggest hidden fears a payer has,
+              defused in one calm line. No icons, no green emphasis —
+              sits like fine print but is read. */}
+          <div
+            className="mx-auto mt-6 max-w-2xl text-center text-[12px] leading-relaxed"
+            style={{ color: INK_MUTE }}
+          >
+            No subscription &middot; No auto-renew
           </div>
 
         </div>
@@ -407,8 +404,17 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 // ── Plan card (compact) ────────────────────────────────────────────────────
+// The highlight ring on the recommended card is intentionally subtle (a
+// 1px green border, no badge, no sparkle). Pricing modals that shout
+// "POPULAR" feel like discount sites; a quiet ring + a solid CTA on the
+// same card communicates the same recommendation without the marketing
+// pressure.
+//
+// ctaSolid controls whether the bottom button is the loud filled-green
+// pill (highlight card + the free entry) or the quieter outline pill
+// (other paid cards). One strong invitation, several quiet alternates.
 function PlanCard({
-  name, priceLabel, suffix, blurb, features, highlight, ctaLabel, ctaInteractive, busy, onClick,
+  name, priceLabel, suffix, blurb, features, highlight, ctaLabel, ctaInteractive, ctaSolid, busy, onClick,
 }: {
   name: string;
   priceLabel: string;
@@ -418,35 +424,25 @@ function PlanCard({
   highlight: boolean;
   ctaLabel: string;
   ctaInteractive: boolean;
+  ctaSolid: boolean;
   busy: boolean;
   onClick: () => void;
 }) {
   return (
     <div
-      className="relative flex h-full flex-col rounded-xl border p-3"
+      className="relative flex h-full flex-col rounded-xl border p-3.5"
       style={{
         borderColor: highlight ? BRAND_GREEN : CARD_EDGE,
         backgroundColor: CARD,
-        boxShadow: highlight ? `0 0 0 1px ${BRAND_GREEN} inset` : undefined,
       }}
     >
-      {highlight && (
-        <div
-          className="absolute -top-2 left-3 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.12em]"
-          style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
-        >
-          <Sparkles size={8} />
-          Popular
-        </div>
-      )}
-
-      <div className="text-[9px] font-semibold uppercase tracking-[0.16em]" style={{ color: INK_MUTE }}>
+      <div className="text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: INK_MUTE }}>
         {name}
       </div>
 
-      <div className="mt-0.5 flex items-baseline gap-1">
+      <div className="mt-1.5 flex items-baseline gap-1.5">
         <span
-          className="text-xl font-medium tabular-nums"
+          className="text-2xl font-medium tabular-nums"
           style={{
             color: INK,
             fontFamily: "var(--font-source-serif)",
@@ -456,30 +452,30 @@ function PlanCard({
           {priceLabel}
         </span>
         {suffix && (
-          <span className="text-[10px]" style={{ color: INK_MUTE }}>
+          <span className="text-[12px]" style={{ color: INK_MUTE }}>
             {suffix}
           </span>
         )}
       </div>
 
       <p
-        className="mt-1.5 line-clamp-2 text-[11px] leading-snug"
+        className="mt-2.5 text-[13px] leading-snug"
         style={{ color: INK_SOFT }}
       >
         {blurb}
       </p>
 
       <ul
-        className="mt-2 flex flex-col gap-1 border-t pt-2"
+        className="mt-3 flex flex-col gap-2 border-t pt-3"
         style={{ borderColor: CARD_EDGE }}
       >
         {features.map((f) => (
           <li
             key={f}
-            className="flex items-start gap-1.5 text-[11px] leading-snug"
+            className="flex items-start gap-2 text-[13px] leading-snug"
             style={{ color: INK_SOFT }}
           >
-            <Check size={10} style={{ color: BRAND_GREEN, marginTop: 3, flexShrink: 0 }} />
+            <Check size={12} style={{ color: BRAND_GREEN, marginTop: 3, flexShrink: 0 }} />
             <span>{f}</span>
           </li>
         ))}
@@ -488,16 +484,18 @@ function PlanCard({
       <button
         onClick={onClick}
         disabled={busy}
-        className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-full py-1.5 text-[11px] font-semibold transition-opacity hover:opacity-90 disabled:opacity-50"
+        className="inline-flex w-full items-center justify-center gap-1.5 rounded-full text-[13px] font-semibold transition-all hover:opacity-90 disabled:opacity-50"
         style={{
-          backgroundColor: ctaInteractive ? BRAND_GREEN : "transparent",
-          color: ctaInteractive ? "#fff" : INK,
-          border: ctaInteractive ? "none" : `1px solid ${CARD_EDGE}`,
+          marginTop: 16,
+          padding: "10px 14px",
+          backgroundColor: ctaInteractive && ctaSolid ? BRAND_GREEN : "transparent",
+          color: ctaInteractive && ctaSolid ? "#fff" : ctaInteractive ? BRAND_GREEN : INK,
+          border: ctaInteractive && ctaSolid ? "none" : `1px solid ${ctaInteractive ? BRAND_GREEN : CARD_EDGE}`,
         }}
       >
-        {busy ? <Loader2 size={11} className="animate-spin" /> : null}
+        {busy ? <Loader2 size={13} className="animate-spin" /> : null}
         {busy ? "Loading…" : ctaLabel}
-        {!busy && ctaInteractive && <ArrowRight size={11} />}
+        {!busy && ctaInteractive && <ArrowRight size={13} />}
       </button>
     </div>
   );

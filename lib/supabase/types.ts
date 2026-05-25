@@ -100,8 +100,14 @@ export type GuestMessageAttachment = {
   name:        string;
   mime:        string;
   size_bytes:  number;
-  kind:        "image" | "document";
+  kind:        "image" | "document" | "audio";
   created_at:  string;
+  /** Set by the 90-day retention sweeper (purge-completed-projects edge
+   *  fn) once the Storage object has been deleted. The row stays so the
+   *  UI can render a "Removed after retention" placeholder rather than
+   *  a broken card. */
+  purged?:     boolean;
+  purged_at?:  string | null;
 };
 
 export type GuestMessage = {

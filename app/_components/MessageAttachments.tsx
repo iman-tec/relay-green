@@ -14,9 +14,9 @@
  * signed URL on click.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
-  Download, FileText, FileSpreadsheet, FileType, Loader2,
+  Download, FileText, FileSpreadsheet, FileType, Loader2, Mic,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import type { GuestMessageAttachment } from "@/lib/supabase/types";
@@ -33,10 +33,16 @@ export function MessageAttachments({
   if (!attachments || attachments.length === 0) return null;
   const images = attachments.filter((a) => a.kind === "image").slice(0, 3);
   const docs   = attachments.filter((a) => a.kind === "document");
+  const audios = attachments.filter((a) => a.kind === "audio");
 
   return (
     <div className="flex flex-col gap-2">
       {images.length > 0 && <ImageGrid items={images} />}
+      {audios.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          {audios.map((a) => <AudioCard key={a.id} attachment={a} />)}
+        </div>
+      )}
       {docs.length > 0 && (
         <div className="flex flex-col gap-1.5">
           {docs.map((a) => <DocumentCard key={a.id} attachment={a} />)}
@@ -133,6 +139,74 @@ function ImageTile({ attachment, single }: { attachment: GuestMessageAttachment;
       >
         {downloading ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
       </button>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Voice-message card — renders an inline <audio> player with the native
+// browser controls (play/pause + scrubber + duration). The source is a
+// signed URL minted on mount; we refresh that URL if it expires before
+// the user clicks play (signed URLs default to a few hours, and bubbles
+// can live in a long-running room session).
+//
+// We keep the visual register WhatsApp-style: brand-tinted left bar with
+// a mic icon, native audio controls on the right. Native controls win
+// over a custom player here — fewer accessibility traps, themed by the
+// browser to match the user's OS rather than ours.
+// ──────────────────────────────────────────────────────────────────────────
+function AudioCard({ attachment }: { attachment: GuestMessageAttachment }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    const sb = createClient();
+    void signedDownloadUrl(sb, attachment.path).then((u) => {
+      if (!alive) return;
+      if (u) setUrl(u);
+      else setErr("Couldn't load audio.");
+    });
+    return () => { alive = false; };
+  }, [attachment.path]);
+
+  return (
+    <div
+      className="flex items-center gap-2.5 rounded-lg border px-2.5 py-2"
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface)",
+        maxWidth: 320,
+      }}
+    >
+      <span
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md"
+        style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
+      >
+        <Mic size={14} />
+      </span>
+      <div className="min-w-0 flex-1">
+        {url ? (
+          <audio
+            controls
+            preload="metadata"
+            src={url}
+            className="w-full"
+            style={{ maxWidth: "100%" }}
+          >
+            Voice message — your browser doesn&apos;t support inline playback.
+          </audio>
+        ) : err ? (
+          <p className="text-[11px]" style={{ color: "var(--accent-red)" }}>{err}</p>
+        ) : (
+          <div className="flex items-center gap-2 py-1 text-[11px]" style={{ color: "var(--text-muted)" }}>
+            <Loader2 size={11} className="animate-spin" /> Loading voice message…
+          </div>
+        )}
+        <div className="mt-0.5 text-[10px]" style={{ color: "var(--text-muted)" }}>
+          Voice message · {formatBytes(attachment.size_bytes)}
+        </div>
+      </div>
     </div>
   );
 }
