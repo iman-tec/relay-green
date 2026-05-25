@@ -40,7 +40,7 @@ export function PanelClient({
         tabs={TABS}
         active={tab}
         onChange={setTab}
-        subtitle="Reseller Panel"
+        subtitle="Channel Partner Panel"
         rightSlot={
           <div className="flex items-center gap-3">
             <UserChip email={me.email} roleLabel={me.roleLabel} />

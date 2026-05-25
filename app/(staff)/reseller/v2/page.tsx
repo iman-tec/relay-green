@@ -7,7 +7,7 @@ import { highestRoleLabel, landingForRoles } from "@/lib/relay/role-labels";
 import { PanelClient } from "./PanelClient";
 
 export const metadata: Metadata = {
-  title: "Reseller Panel (v2) — Relay.green",
+  title: "Channel Partner Panel (v2) — Relay.green",
 };
 
 // Mirror of /reseller/page.tsx. Auth gate, then mounts the redesigned

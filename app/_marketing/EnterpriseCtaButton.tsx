@@ -13,10 +13,14 @@
  * focused inquiry slot, not a hero panel.
  */
 
-import { useRef, useState } from "react";
-import { submitContact } from "../../lib/contact/submitContact";
+import { useEffect, useRef, useState } from "react";
+import { submitEnterpriseRequest } from "../../lib/contact/submitEnterpriseRequest";
 
 type Status = "idle" | "submitting" | "success" | "error";
+type ChannelPartner = { id: string; name: string };
+
+// Sentinel for the "Other — not listed" dropdown option.
+const OTHER_PARTNER = "__other__";
 
 type Props = {
   /** Visible button label. Defaults to "Talk to Relay for Enterprise". */
@@ -29,7 +33,24 @@ export function EnterpriseCtaButton({
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<Status>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [partners, setPartners] = useState<ChannelPartner[]>([]);
+  const [partnerChoice, setPartnerChoice] = useState("");
   const formRef = useRef<HTMLFormElement>(null);
+
+  // Lazy-load the channel-partner list the first time the form opens.
+  useEffect(() => {
+    if (!open || partners.length > 0) return;
+    let cancelled = false;
+    fetch("/api/channel-partners", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { channelPartners: [] }))
+      .then((d: { channelPartners?: ChannelPartner[] }) => {
+        if (!cancelled) setPartners(d.channelPartners ?? []);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [open, partners.length]);
 
   const idPrefix = "r-cta-enterprise";
   const formId = `${idPrefix}-form`;
@@ -42,18 +63,29 @@ export function EnterpriseCtaButton({
     const form = e.currentTarget;
     const data = new FormData(form);
 
+    // Channel partner is required: pick from the list, or "Other" + a name.
+    const customPartner = String(data.get("channelPartnerOther") ?? "").trim();
+    if (!partnerChoice || (partnerChoice === OTHER_PARTNER && customPartner.length === 0)) {
+      setStatus("error");
+      setErrorMessage(
+        "Please choose a channel partner — or pick “Other” and type a name."
+      );
+      return;
+    }
+
     const payload = {
       name: String(data.get("name") ?? ""),
       email: String(data.get("email") ?? ""),
       company: String(data.get("company") ?? ""),
-      topic: "ENTERPRISE",
       message: String(data.get("message") ?? ""),
+      channelPartnerId: partnerChoice === OTHER_PARTNER ? "" : partnerChoice,
+      channelPartnerName: partnerChoice === OTHER_PARTNER ? customPartner : "",
       website: String(data.get("website") ?? ""),
     };
 
     setStatus("submitting");
     setErrorMessage(null);
-    const result = await submitContact(payload);
+    const result = await submitEnterpriseRequest(payload);
     if (result.ok) {
       setStatus("success");
       return;
@@ -71,12 +103,14 @@ export function EnterpriseCtaButton({
     formRef.current?.reset();
     setStatus("idle");
     setErrorMessage(null);
+    setPartnerChoice("");
   }
 
   function resetToForm() {
     formRef.current?.reset();
     setStatus("idle");
     setErrorMessage(null);
+    setPartnerChoice("");
   }
 
   if (!open) {
@@ -191,6 +225,49 @@ export function EnterpriseCtaButton({
               aria-invalid={invalid}
             />
           </div>
+
+          <div className="r-contact-field">
+            <label htmlFor={`${idPrefix}-channel-partner`}>Channel partner</label>
+            <select
+              id={`${idPrefix}-channel-partner`}
+              name="channelPartnerId"
+              required
+              value={partnerChoice}
+              onChange={(e) => setPartnerChoice(e.target.value)}
+              disabled={submitting}
+              aria-describedby={describedBy}
+              aria-invalid={invalid}
+            >
+              <option value="" disabled>
+                Select a channel partner…
+              </option>
+              {partners.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+              <option value={OTHER_PARTNER}>Other (not listed)…</option>
+            </select>
+          </div>
+
+          {partnerChoice === OTHER_PARTNER && (
+            <div className="r-contact-field">
+              <label htmlFor={`${idPrefix}-channel-partner-other`}>
+                Channel partner name
+              </label>
+              <input
+                id={`${idPrefix}-channel-partner-other`}
+                type="text"
+                name="channelPartnerOther"
+                maxLength={160}
+                required
+                disabled={submitting}
+                placeholder="Type the channel partner's name"
+                aria-describedby={describedBy}
+                aria-invalid={invalid}
+              />
+            </div>
+          )}
 
           <div className="r-contact-field">
             <label htmlFor={`${idPrefix}-message`}>

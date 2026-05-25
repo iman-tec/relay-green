@@ -75,7 +75,7 @@ const NAV: Nav[] = [
   // enterprise_admin's primary surface — the redesigned Departments panel.
   { href: "/enterprise/v2",        label: "Dashboard", icon: LayoutDashboard, roles: [ROLE.enterprise_admin] },
   // reseller-owner console — redesigned v2 panel (from rutul-working).
-  { href: "/reseller/v2",          label: "Reseller",  icon: LayoutDashboard, roles: [ROLE.reseller] },
+  { href: "/reseller/v2",          label: "Channel Partner", icon: LayoutDashboard, roles: [ROLE.reseller] },
   // department_admin's primary surface — the redesigned Employees panel.
   { href: "/department/v2",        label: "Department", icon: LayoutDashboard, roles: [ROLE.department_admin] },
   // /finance is the org-level money + feedback console — enterprise_admin

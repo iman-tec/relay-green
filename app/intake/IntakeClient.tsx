@@ -29,7 +29,6 @@ import {
   patchProfile,
   readProfile,
   STACK_OPTIONS,
-  TECH_COMFORT_OPTIONS,
   URGENCY_OPTIONS,
   type ProfileSnapshot,
   type ProfileStack,
@@ -70,7 +69,8 @@ export function IntakeClient() {
   // permanent) but still ask Q2–Q4 for this project. Carries the chosen name.
   const [newProjectMode, setNewProjectMode] = useState(false);
   const [newProjectName, setNewProjectName] = useState<string | null>(null);
-  const [step, setStep] = useState(1);
+  // Intake starts at Q2 — the tech-expertise question (Q1) was removed.
+  const [step, setStep] = useState(2);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -135,14 +135,16 @@ export function IntakeClient() {
   const showQuickReturn =
     !forceFullIntake && !newProjectMode && profile && hasFullIntake(profile);
 
-  // New-project mode skips Q1 (step 1); the wizard runs Q2→Q4 (steps 2–4).
-  const skipQ1 = newProjectMode;
+  // Q1 (tech expertise) is removed for everyone — the wizard runs Q2→Q4
+  // (steps 2–4) as a 3-question flow. (newProjectMode is retained for the
+  // returning-user "new project" entry that carries a project name.)
+  const skipQ1 = true;
   const firstStep = skipQ1 ? 2 : 1;
   const totalQuestions = skipQ1 ? TOTAL_STEPS - 1 : TOTAL_STEPS;
   const displayStep = skipQ1 ? step - 1 : step;
 
   const submit = useCallback(async () => {
-    if (!techComfort || !developing || !urgency) {
+    if (!developing || !urgency) {
       setError("Pick an option to continue");
       return;
     }
@@ -202,12 +204,14 @@ export function IntakeClient() {
       // Map the editorial answers back onto the existing schema columns.
       // // TODO(api): widen client_intakes.ai_tools_used to text[], add
       // techComfort + urgency as first-class columns. UI is already aware.
+      // Q1 was removed; techComfort is only ever set for returning users who
+      // already had it stored. Default to the neutral middle when unknown.
       const familiarity =
         techComfort === "well_experienced"
           ? "Well Experienced"
-          : techComfort === "semi_technical"
-            ? "Semi-Technical"
-            : "Totally Unknown";
+          : techComfort === "non_technical"
+            ? "Totally Unknown"
+            : "Semi-Technical";
       const allStack = [...stack.backend, ...stack.frontend];
       const intakePayload = {
         guest_call_id: session.id,
@@ -288,7 +292,7 @@ export function IntakeClient() {
         initialProfile={profile}
         onChooseFullIntake={() => {
           setForceFullIntake(true);
-          setStep(1);
+          setStep(2);
         }}
         onNewProject={(name) => {
           // §1.2: new project for a returning user → skip Q1, ask Q2–Q4.
@@ -333,13 +337,6 @@ export function IntakeClient() {
 
           {/* Step body */}
           <div className="flex flex-col gap-4">
-            {step === 1 && (
-              <RadioCardGroup
-                value={techComfort}
-                onChange={setTechComfort}
-                options={TECH_COMFORT_OPTIONS}
-              />
-            )}
             {step === 2 && (
               <StackChipGroups stack={stack} onChange={setStack} />
             )}

@@ -2493,16 +2493,6 @@ const Sidebar = memo(function Sidebar({
             <ChevronDown size={14} />
           </IconButton>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onNewChat}
-          className="justify-start"
-          iconLeft={<MessageSquare size={13} />}
-          title="Start an async chat — no ringing, bot greets you immediately"
-        >
-          New chat
-        </Button>
 
         {/* Search across all past sessions (title / engineer / project). */}
         <div

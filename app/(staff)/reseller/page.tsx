@@ -5,7 +5,7 @@ import { ROLE } from "@/lib/relay/roles";
 import { ResellerClient } from "./ResellerClient";
 
 export const metadata: Metadata = {
-  title: "Reseller — Relay.green",
+  title: "Channel Partner — Relay.green",
 };
 
 // /reseller is the reseller-owner console. Other staff roles bounce away.

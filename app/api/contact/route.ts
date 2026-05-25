@@ -17,6 +17,7 @@
  * Upstash Redis token bucket so limits hold across instances.
  */
 import { NextResponse, type NextRequest } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
 // Topics accepted from the public marketing forms. Bot traffic posting
 // anything else returns 400 — no enumeration leak, just a hard reject.
@@ -85,6 +86,27 @@ type ContactPayload = {
 function readString(v: unknown, max: number): string {
   if (typeof v !== "string") return "";
   return v.slice(0, max).trim();
+}
+
+// Persist the enquiry to public.enquiries via the service role (bypasses RLS).
+// Best-effort: a storage failure is logged but never blocks the response —
+// the email/log path below still captures the lead.
+async function persistEnquiry(payload: ContactPayload): Promise<void> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return;
+  const admin = createClient(url, key, { auth: { persistSession: false } });
+  const { error } = await admin.from("enquiries").insert({
+    name:              payload.name,
+    email:             payload.email,
+    company:           payload.company || null,
+    topic:             payload.topic,
+    message:           payload.message,
+    marketing_consent: payload.marketingConsent,
+  });
+  if (error) {
+    console.error("[contact] enquiry persist failed (lead still emailed):", error.message);
+  }
 }
 
 async function sendViaResend(payload: ContactPayload): Promise<void> {
@@ -185,6 +207,10 @@ export async function POST(req: NextRequest) {
   if (rateLimited(ip)) {
     return NextResponse.json({ error: "rate_limited" }, { status: 429 });
   }
+
+  // Durable capture first, then notify. Persist is best-effort so a DB
+  // hiccup never costs us the email notification (or vice-versa).
+  await persistEnquiry(payload);
 
   try {
     await sendViaResend(payload);

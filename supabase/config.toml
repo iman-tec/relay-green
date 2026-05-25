@@ -4,6 +4,16 @@ project_id = "vdduelvjrzeczmakxgpn"
 site_url = "http://localhost:8080"
 additional_redirect_urls = ["http://127.0.0.1:8080", "http://localhost:8080"]
 
+# GitHub OAuth ("Continue with GitHub" on /login). The HOSTED project is
+# configured in the Supabase Dashboard (Authentication → Providers → GitHub);
+# config.toml only drives LOCAL `supabase start`. To enable it locally, set
+# GITHUB_CLIENT_ID + GITHUB_SECRET in .env and uncomment the block below.
+# (Left commented so `supabase start` doesn't fail when the secrets are unset.)
+# [auth.external.github]
+# enabled = true
+# client_id = "env(GITHUB_CLIENT_ID)"
+# secret = "env(GITHUB_SECRET)"
+
 [functions.start-guest-call]
 verify_jwt = false
 

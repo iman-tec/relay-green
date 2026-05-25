@@ -10,7 +10,7 @@ import { ROLE, type Role } from "./roles";
 
 const LABELS: Record<Role, string> = {
   [ROLE.super_admin]:      "Super Admin",
-  [ROLE.reseller]:         "Reseller",
+  [ROLE.reseller]:         "Channel Partner",
   [ROLE.enterprise_admin]: "Enterprise Admin",
   [ROLE.department_admin]: "Department Admin",
   [ROLE.supervisor]:       "Supervisor",
@@ -31,7 +31,7 @@ export function formatRole(role: string | null | undefined): string {
  */
 export function highestRoleLabel(roles: readonly string[]): string {
   if (roles.includes(ROLE.super_admin))      return "Super Admin";
-  if (roles.includes(ROLE.reseller))         return "Reseller";
+  if (roles.includes(ROLE.reseller))         return "Channel Partner";
   if (roles.includes(ROLE.enterprise_admin)) return "Enterprise Admin";
   if (roles.includes(ROLE.department_admin)) return "Department Admin";
   if (roles.includes(ROLE.supervisor))       return "Supervisor";
