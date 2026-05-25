@@ -17,48 +17,53 @@ export const metadata: Metadata = {
   alternates: { canonical: "/legal/privacy-policy" },
 };
 
+// Typography — sized down + retuned to use the platform's --text /
+// --text-muted tokens so the page picks up whichever theme (light / dark
+// / espresso) the user is on. Was h3=24/h4=14/body=16 with cream-only
+// var(--ink-mute); now 17/11/13 with theme-aware tokens.
 const h3Style = {
-  fontFamily: "var(--font-display)",
+  fontFamily: "var(--font-serif)",
   fontWeight: 500,
-  fontSize: 24,
-  marginTop: 32,
-  marginBottom: 12,
+  fontSize: 17,
+  marginTop: 22,
+  marginBottom: 8,
   letterSpacing: "-0.01em",
+  color: "var(--text)",
 };
 
 const h4Style = {
   fontFamily: "var(--font-sans)",
   fontWeight: 600,
-  fontSize: 14,
+  fontSize: 11,
   textTransform: "uppercase" as const,
   letterSpacing: "0.06em",
-  marginTop: 24,
-  marginBottom: 8,
-  color: "var(--ink-mute)",
+  marginTop: 14,
+  marginBottom: 5,
+  color: "var(--text-muted)",
 };
 
-const bodyStyle = { fontSize: 16, lineHeight: 1.65 };
+const bodyStyle = { fontSize: 13, lineHeight: 1.55, color: "var(--text)" };
 
 const listStyle = {
   ...bodyStyle,
-  paddingLeft: 22,
-  marginTop: 8,
-  marginBottom: 18,
+  paddingLeft: 18,
+  marginTop: 5,
+  marginBottom: 12,
 };
 
 const nestedListStyle = {
   ...bodyStyle,
-  paddingLeft: 22,
-  marginTop: 8,
-  marginBottom: 8,
+  paddingLeft: 18,
+  marginTop: 5,
+  marginBottom: 5,
 };
 
 const footerLineStyle = {
-  marginTop: 64,
-  paddingTop: 24,
-  borderTop: "1px solid var(--rule)",
-  fontSize: 14,
-  color: "var(--ink-soft)",
+  marginTop: 40,
+  paddingTop: 16,
+  borderTop: "1px solid var(--border)",
+  fontSize: 12,
+  color: "var(--text-muted)",
 };
 
 export default async function PrivacyPolicyPage({
@@ -76,33 +81,39 @@ export default async function PrivacyPolicyPage({
   return (
     <Shell bare={embed}>
       <style>{`
+        /* Platform-themed prose. All colors come from CSS custom
+         * properties so light / dark / espresso each render correctly.
+         * Sizes are notched down vs the prior marketing layout — body
+         * dropped from 16→13, h3 from 24→18, h4 from 14→11 — so the
+         * page fits tighter and feels more like internal docs than a
+         * marketing landing. */
         .privacy-policy-prose {
-          background: #ffffff;
-          border: 1px solid #d2d2d7;
-          border-radius: 8px;
-          padding: clamp(28px, 4vw, 52px);
-          box-shadow: 0 22px 54px rgba(0, 0, 0, 0.05);
+          background: var(--surface);
+          border: 1px solid var(--border);
+          border-radius: 10px;
+          padding: clamp(20px, 3vw, 36px);
           column-count: 2;
-          column-gap: clamp(44px, 6vw, 88px);
-          column-rule: 1px solid #e5e5e7;
+          column-gap: clamp(32px, 4vw, 56px);
+          column-rule: 1px solid var(--border);
         }
         .privacy-policy-prose > p:first-child {
-          font-size: clamp(17px, 1.4vw, 19px) !important;
-          line-height: 1.62 !important;
-          color: var(--ink);
+          font-size: 14px !important;
+          line-height: 1.55 !important;
+          color: var(--text);
           margin-top: 0;
         }
         .privacy-policy-prose > p:nth-child(2) {
-          padding-bottom: 28px;
-          margin-bottom: 8px;
-          border-bottom: 1px solid #d2d2d7;
+          padding-bottom: 16px;
+          margin-bottom: 6px;
+          border-bottom: 1px solid var(--border);
         }
         .privacy-policy-prose h3 {
-          margin-top: 42px !important;
-          padding-top: 30px;
-          border-top: 1px solid #d2d2d7;
-          font-size: clamp(24px, 2.2vw, 32px) !important;
-          line-height: 1.12;
+          margin-top: 28px !important;
+          padding-top: 20px;
+          border-top: 1px solid var(--border);
+          font-size: 18px !important;
+          line-height: 1.2;
+          color: var(--text) !important;
           break-after: avoid;
         }
         .privacy-policy-prose h3:first-of-type {
@@ -111,43 +122,45 @@ export default async function PrivacyPolicyPage({
           border-top: none;
         }
         .privacy-policy-prose h4 {
-          margin-top: 28px !important;
-          margin-bottom: 10px !important;
-          color: #6e6e73 !important;
+          margin-top: 18px !important;
+          margin-bottom: 6px !important;
+          color: var(--text-muted) !important;
           break-after: avoid;
         }
         .privacy-policy-prose p {
           max-width: none;
+          color: var(--text);
         }
         .privacy-policy-prose ul {
           max-width: none;
-          background: #f5f5f7;
-          border: 1px solid #d2d2d7;
+          background: var(--surface-raised);
+          border: 1px solid var(--border);
           border-radius: 8px;
-          padding: 18px 22px 18px 38px !important;
+          padding: 12px 16px 12px 30px !important;
           break-inside: avoid;
         }
         .privacy-policy-prose ul ul {
-          background: #ffffff;
-          margin-top: 12px !important;
+          background: var(--surface);
+          margin-top: 8px !important;
           margin-bottom: 4px !important;
         }
         .privacy-policy-prose li {
-          margin-bottom: 8px;
-          color: #424245;
+          margin-bottom: 6px;
+          color: var(--text);
+          font-size: 13px;
         }
         .privacy-policy-prose li:last-child {
           margin-bottom: 0;
         }
         @media (max-width: 640px) {
           .privacy-policy-prose {
-            padding: 24px 20px;
+            padding: 18px 16px;
             column-count: 1;
             column-gap: 0;
             column-rule: none;
           }
           .privacy-policy-prose ul {
-            padding-left: 30px !important;
+            padding-left: 24px !important;
           }
         }
       `}</style>
@@ -166,9 +179,9 @@ export default async function PrivacyPolicyPage({
       <section
         className="r-section"
         style={{
-          paddingTop: 48,
+          paddingTop: 32,
           borderTop: "none",
-          background: "#f5f5f7",
+          background: "var(--background)",
         }}
       >
         <div className="r-wrap privacy-policy-prose">

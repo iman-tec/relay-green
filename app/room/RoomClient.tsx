@@ -29,13 +29,17 @@ import {
   Plus, Send, Sparkles, Phone, X, PhoneOff, MessageSquare, Lock,
   AlertTriangle, Loader2, ChevronDown, ChevronRight, Search, PanelLeftClose, PanelLeftOpen,
   Wallet, RefreshCw, Settings, LogOut, Check, Folder, Pencil, PanelRightOpen, PanelRightClose,
-  Building2, FileText, Clock, Video, MoreHorizontal, UserPlus,
+  Building2, FileText, Clock, Video, MoreHorizontal, UserPlus, Pin, SlidersHorizontal,
+  Paperclip, Mic, Download, Music, AudioLines, ShieldCheck, Receipt, Home,
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
+import { ThemeTriplet } from "@/app/_components/ThemeTriplet";
 import { MeetingChatEntry } from "@/app/_components/MeetingChatEntry";
 import { MeetingSummaryEntry, isAiSummaryMessageBody } from "@/app/_components/MeetingSummaryEntry";
 import { PaywallModal } from "@/app/_components/PaywallModal";
-import { ChatComposer } from "@/app/_components/ChatComposer";
+import { ChatComposer, speechRecognitionErrorMessage, queryMicPermission } from "@/app/_components/ChatComposer";
+import { AccountPane } from "@/app/_components/AccountPane";
+import { LegalPane, type LegalKind } from "@/app/_components/LegalPane";
 import { MessageAttachments } from "@/app/_components/MessageAttachments";
 import { Button, EmptyState, IconButton, Modal, cn } from "@/app/_components/ui";
 import { useCustomerSession } from "@/lib/relay/useCustomerSession";
@@ -43,10 +47,12 @@ import { useIsSupervisor, isSupervisorOnlyMessage } from "@/lib/relay/useIsSuper
 import { useSessionTimer } from "@/lib/relay/useSessionTimer";
 import { computeSessionClock } from "@/lib/relay/sessionClock";
 import { createClient } from "@/lib/supabase/browser";
-import { patchProfile, readProfile } from "@/lib/relay/profile";
+import { patchProfile, readProfile, writeStack } from "@/lib/relay/profile";
+import { readProjectMetadata, writeProjectMetadata } from "@/lib/relay/projectMetadata";
 import { IntakeAssistant } from "@/app/_components/intake/IntakeAssistant";
 import { GlobalNewChatModal } from "@/app/_components/GlobalNewChatModal";
-import type { GuestCall, GuestMessage, SessionStatus, Urgency } from "@/lib/supabase/types";
+import type { GuestCall, GuestMessage, GuestMessageAttachment, SessionStatus, Urgency } from "@/lib/supabase/types";
+import { signedDownloadUrl } from "@/lib/relay/chatAttachments";
 
 // Re-pointed to design-system CSS vars after the white-theme transformation.
 // Kept as named constants so existing call-sites (style={{ color: BRAND_GREEN }})
@@ -273,6 +279,21 @@ export function RoomClient() {
   const [paywallOpen, setPaywallOpen] = useState<null | "free_expired" | "no_credits" | "manual">(null);
   const [paidToast, setPaidToast] = useState<string | null>(null);
 
+  // In-pane Account / Profile / Wallet / Billing / Security view. When
+  // non-null, MainPane renders <AccountPane> instead of the landing /
+  // chat / past-session-review. Setting this to "wallet" is how the
+  // Recharge entry works now — it slides the customer into the account
+  // pane's Wallet tab where they can hit Recharge to open the Stripe
+  // modal. Null returns to whatever view was prior (session, landing,
+  // etc).
+  const [accountTab, setAccountTab] = useState<null | "profile" | "wallet" | "billing" | "security" | "notifications">(null);
+
+  // In-pane legal document viewer (Privacy / Terms). When non-null,
+  // MainPane mounts <LegalPane> in place of everything else. Like
+  // accountTab, this is a side-track view that clears as soon as the
+  // customer navigates to a session/project/new-session.
+  const [legalView, setLegalView] = useState<null | LegalKind>(null);
+
   // Explicit ?paywall= entry — e.g. the guest Try-RELAY funnel sends a
   // visitor here when their free 10 minutes are already used
   // (?paywall=free_used). Open the paywall on load with the matching reason
@@ -458,7 +479,7 @@ export function RoomClient() {
   // or create a new one with a given name. Either way, start a session
   // bound to that project; if there's a pending composer draft, send it too.
   const startSessionInProject = useCallback(async (
-    arg: { existingId: string } | { newName: string },
+    arg: ({ existingId: string } | { newName: string }) & { projectType?: string },
   ) => {
     const sb = createClient();
     let projectId: string | null = null;
@@ -577,15 +598,51 @@ export function RoomClient() {
     }
 
     // Does this project already have an intake?
-    const { data: intake } = await sb
+    let { data: intake } = await sb
       .from("client_intakes")
       .select("id")
       .eq("project_id", projectId)
       .eq("customer_user_id", userId)
       .maybeSingle();
+
     if (!intake) {
-      router.push(`/intake?projectId=${projectId}`);
-      return;
+      // Legacy projects — created before client_intakes was written at
+      // project-creation time. If we still have their metadata in
+      // localStorage (writeProjectMetadata was always part of the
+      // create flow), backfill the intake row inline so this customer
+      // never has to see /intake again for this project. Otherwise
+      // (truly intakeless), fall back to the wizard.
+      const meta = readProjectMetadata(projectId);
+      const profile = readProfile();
+      if (meta) {
+        const familiarity =
+          profile.techComfort === "well_experienced"  ? "Well Experienced"
+          : profile.techComfort === "semi_technical"  ? "Semi-Technical"
+          : "Totally Unknown";
+        const { data: newIntake, error: backfillErr } = await sb
+          .from("client_intakes")
+          .upsert(
+            {
+              customer_user_id: userId,
+              project_id:       projectId,
+              familiarity,
+              ai_tools_used:    meta.aiTools.join(", ") || "Other",
+              developing:       mapProjectTypeToDeveloping(meta.projectType),
+              technologies:     [...meta.backend, ...meta.frontend],
+              declined_by:      [] as string[],
+            },
+            { onConflict: "project_id,customer_user_id" },
+          )
+          .select("id")
+          .single();
+        if (!backfillErr && newIntake) {
+          intake = newIntake as { id: string };
+        }
+      }
+      if (!intake) {
+        router.push(`/intake?projectId=${projectId}`);
+        return;
+      }
     }
 
     // Existing intake → start session + match, then off to the waiting screen.
@@ -638,6 +695,11 @@ export function RoomClient() {
   // can't be selected (handled at the sidebar level).
   const handleSelectProject = useCallback((projectId: string | null) => {
     setSelectedProjectId((prev) => (prev === projectId ? null : projectId));
+    // Selecting a project means the customer wants to see that project's
+    // context — auto-close the Account pane / legal viewer if either
+    // was open so navigation feels natural.
+    setAccountTab(null);
+    setLegalView(null);
   }, []);
 
   // ── Stable handlers for the Sidebar / MainPane subtrees ──────────────────
@@ -652,6 +714,9 @@ export function RoomClient() {
   const handleViewPast = useCallback((id: string | null) => {
     setViewingPastId(id);
     if (id) setProjectFormOpen(false);
+    // Opening / closing a past session: leave any side-track view behind.
+    setAccountTab(null);
+    setLegalView(null);
   }, []);
 
   const handleNewSession = useCallback(() => {
@@ -664,6 +729,9 @@ export function RoomClient() {
       return;
     }
     setViewingPastId(null);
+    // Starting a new session — exit any side-track view that was open.
+    setAccountTab(null);
+    setLegalView(null);
     setPendingDraft(null);
     // "New session" — LIVE engineer path. Intake → ring → engineer joins
     // in seconds. Same as before; this is the "I'm stuck, ring someone
@@ -753,17 +821,39 @@ export function RoomClient() {
           : profile.techComfort === "semi_technical"
             ? "Semi-Technical"
             : "Totally Unknown";
+      // Pull per-project metadata if this session is starting in a
+      // known existing project. Project-specific skills override the
+      // customer's profile-level stack so the engineer matched is the
+      // right specialist for THIS project, not whatever the customer
+      // last worked on. (handleNewChat doesn't take a per-call override
+      // argument — that's startSessionInProject's job. Was previously
+      // copy-paste-referencing `arg.projectType` here, which doesn't
+      // exist in this scope.)
+      const projectMeta = projectId ? readProjectMetadata(projectId) : null;
+      const aiToolsForIntake = projectMeta?.aiTools.length
+        ? projectMeta.aiTools
+        : profile.stack.aiTools;
+      const backendForIntake = projectMeta?.backend.length
+        ? projectMeta.backend
+        : profile.stack.backend;
+      const frontendForIntake = projectMeta?.frontend.length
+        ? projectMeta.frontend
+        : profile.stack.frontend;
+      // Map persona project types ("Marketing landing page", "CRM /
+      // Customer tracker", etc.) onto the four DB-allowed values
+      // ("Website" / "Mobile App" / "IoT System" / "AIML product").
+      // Without this, the upsert would fail the CHECK constraint and
+      // the customer would never get an intake row.
+      const developingForIntake = mapProjectTypeToDeveloping(projectMeta?.projectType);
+
       const intakePayload = {
         guest_call_id: session.id,
         customer_user_id: userId,
         project_id: projectId,
         familiarity,
-        ai_tools_used: profile.stack.aiTools.join(", ") || "Other",
-        developing: "Website",
-        technologies: [
-          ...profile.stack.backend,
-          ...profile.stack.frontend,
-        ],
+        ai_tools_used: aiToolsForIntake.join(", ") || "Other",
+        developing: developingForIntake,
+        technologies: [...backendForIntake, ...frontendForIntake],
         declined_by: [] as string[],
       };
       const { data: intakeRow, error: intakeErr } = await sb
@@ -793,11 +883,63 @@ export function RoomClient() {
     router.push("/room?newchat=1");
   }, [router, isEmployee, freeConsumed, paidRemaining, state.auth]);
 
-  // Recharge / "see plans" handler. Always opens the paywall — even when
-  // the user has credits — so the Recharge button in the profile menu is
-  // a real top-up action, not just an out-of-credits gate.
+  // Recharge / "see plans" handler. Opens the Stripe paywall overlay
+  // directly — the user-menu Recharge button is a transactional shortcut,
+  // not a navigation. The in-pane Wallet tab (in AccountPane) still
+  // shows the same paywall when its own Recharge button is hit, so
+  // customers who want the fuller plan/billing view aren't blocked from
+  // reaching it via Profile & settings → Wallet.
   const handleWalletClick = useCallback(() => {
     setPaywallOpen("manual");
+  }, []);
+
+  // Open the in-pane Account view on the Profile tab. Used by the user
+  // menu's "Profile & settings" entry (replaces the old router.push to
+  // a standalone /account route).
+  const handleOpenProfile = useCallback(() => {
+    setAccountTab("profile");
+  }, []);
+
+  // Open the in-pane Account view directly on the Billing tab. Same
+  // shape as handleOpenProfile — the menu wants a quick shortcut so
+  // customers don't have to land on Profile and click through.
+  const handleOpenBilling = useCallback(() => {
+    setAccountTab("billing");
+  }, []);
+
+  // Close the in-pane Account view and return to whatever was rendering
+  // before (session, landing, past-session review, project picker).
+  const handleCloseAccount = useCallback(() => {
+    setAccountTab(null);
+  }, []);
+
+  // Open the in-pane legal viewer for Privacy / Terms. Closes the
+  // Account pane if it was open — the two side-track views are
+  // mutually exclusive in the centre column.
+  const handleOpenLegal = useCallback((kind: LegalKind) => {
+    setLegalView(kind);
+    setAccountTab(null);
+  }, []);
+  const handleCloseLegal = useCallback(() => {
+    setLegalView(null);
+  }, []);
+
+  // Home — return to the landing surface from anywhere in /room.
+  // Clears every side-track view (account, legal, past-session
+  // review, project picker) and any project selection so the
+  // BrandedLanding renders with its default "no project picked"
+  // explainer. If a session is actively running, the chat pane will
+  // re-render on top (active session always wins the centre column);
+  // ending the session naturally drops the customer onto the
+  // landing. We deliberately don't end the session here — Home
+  // navigates, it doesn't destroy state.
+  const handleGoHome = useCallback(() => {
+    setAccountTab(null);
+    setLegalView(null);
+    setViewingPastId(null);
+    setProjectFormOpen(false);
+    setSelectedProjectId(null);
+    setPendingDraft(null);
   }, []);
 
   const handleCloseViewPast = useCallback(() => setViewingPastId(null), []);
@@ -813,6 +955,137 @@ export function RoomClient() {
     await sb.from("guest_calls").update({ project_name: trimmed }).eq("project_id", projectId);
     await refetchProjects();
   }, [refetchProjects]);
+
+  // Connect-flow new-project path: persist customer's stack choices,
+  // create project with the chosen name, write per-project metadata
+  // for future engineer matching, AND start a session immediately.
+  // Equivalent of "+ Create New Project" but with the engineer ring
+  // bolted on.
+  const handleStartNewProject = useCallback(async (opts: {
+    name: string;
+    projectType: string;
+    aiTools: string[];
+    backend: string[];
+    frontend: string[];
+  }) => {
+    writeStack({
+      aiTools: opts.aiTools,
+      backend: opts.backend,
+      frontend: opts.frontend,
+    });
+    const existing = readProfile();
+    if (!existing.techComfort) {
+      patchProfile({ techComfort: "non_technical" });
+    }
+    // startSessionInProject creates the project, the guest_call, the
+    // client_intake, AND fires match_engineer. Its return value isn't
+    // currently the project id (it just throws on error); we'll capture
+    // the new project id from the post-RPC projects refetch below in
+    // order to write per-project metadata. For now, write the metadata
+    // BEFORE the call using a placeholder key, then rebind after.
+    await startSessionInProject({
+      newName: opts.name,
+      projectType: opts.projectType,
+    });
+    // After startSessionInProject completes, the projects list refetch
+    // (triggered inside the helper) lands. We look up the newly-created
+    // project by name (most recent) and pin metadata to its id so that
+    // future sessions started from the phone-on-project shortcut hit
+    // the right matching profile.
+    setTimeout(() => {
+      const latest = [...projects].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      ).find((p) => p.name === opts.name);
+      if (latest?.id) {
+        writeProjectMetadata(latest.id, {
+          projectType: opts.projectType,
+          aiTools: opts.aiTools,
+          backend: opts.backend,
+          frontend: opts.frontend,
+        });
+      }
+    }, 600);
+  }, [startSessionInProject, projects]);
+
+  // Plain create-project path (the "+ Create New Project" button). Creates
+  // a project with the user's chosen name + metadata via create_project
+  // RPC. Does NOT start a session or ring an engineer — the customer
+  // initiates that separately via the phone button on the project row,
+  // or the top-of-sidebar Connect button.
+  const handleCreateProjectWithMetadata = useCallback(async (opts: {
+    name: string;
+    projectType: string;
+    aiTools: string[];
+    backend: string[];
+    frontend: string[];
+  }) => {
+    const sb = createClient();
+    const { data, error } = await sb.rpc("create_project", { _name: opts.name });
+    if (error) {
+      console.warn("[handleCreateProjectWithMetadata] create_project failed:", error.message);
+      throw new Error(error.message);
+    }
+    const row = Array.isArray(data) ? (data[0] as { id?: string }) : (data as { id?: string });
+    const projectId = row?.id ?? null;
+    if (projectId) {
+      writeProjectMetadata(projectId, {
+        projectType: opts.projectType,
+        aiTools: opts.aiTools,
+        backend: opts.backend,
+        frontend: opts.frontend,
+      });
+    }
+    // Also snapshot to the customer's profile so the global "Connect"
+    // button (which uses profile-level stack) reflects the most recent
+    // declared stack.
+    writeStack({
+      aiTools: opts.aiTools,
+      backend: opts.backend,
+      frontend: opts.frontend,
+    });
+    const existing = readProfile();
+    if (!existing.techComfort) {
+      patchProfile({ techComfort: "non_technical" });
+    }
+
+    // ── Write the client_intakes row up-front ────────────────────────────
+    // The form already collected every signal the engineer needs to
+    // match (project type → developing, AI tools, backend, frontend).
+    // Persisting that to client_intakes NOW means a later phone-click
+    // on this project can short-circuit straight to match_engineer
+    // instead of bouncing through the "Picking up where you left off"
+    // intake wizard. guest_call_id stays null until a session actually
+    // mints; the wizard's upsert (handleStartInProject, onConflict
+    // project_id+customer_user_id) updates the same row with a session
+    // id at ring time.
+    const userId = state.auth.kind === "authed" ? state.auth.userId : null;
+    if (projectId && userId) {
+      const techComfort = readProfile().techComfort ?? "non_technical";
+      const familiarity =
+        techComfort === "well_experienced"  ? "Well Experienced"
+        : techComfort === "semi_technical"  ? "Semi-Technical"
+        : "Totally Unknown";
+      const intakePayload = {
+        customer_user_id: userId,
+        project_id:       projectId,
+        familiarity,
+        ai_tools_used:    opts.aiTools.join(", ") || "Other",
+        developing:       mapProjectTypeToDeveloping(opts.projectType),
+        technologies:     [...opts.backend, ...opts.frontend],
+        declined_by:      [] as string[],
+      };
+      const { error: intakeErr } = await sb
+        .from("client_intakes")
+        .upsert(intakePayload, { onConflict: "project_id,customer_user_id" });
+      if (intakeErr) {
+        console.warn("[handleCreateProjectWithMetadata] intake upsert failed:", intakeErr.message);
+        // Non-fatal — the project still exists, future phone-clicks
+        // will route through /intake as a fallback.
+      }
+    }
+
+    await refetchProjects();
+  }, [refetchProjects, state.auth]);
   const handleNeedProject   = useCallback((draft: string) => {
     // Composer typed-then-send before any session existed. Carry the draft
     // forward and start a session in a project named after the customer.
@@ -845,8 +1118,14 @@ export function RoomClient() {
         onNewChat={() => setNewChatModalOpen(true)}
         onStartInProject={handleStartInProject}
         onRenameProject={handleRenameProject}
+        onStartNewProject={handleStartNewProject}
+        onCreateProjectWithMetadata={handleCreateProjectWithMetadata}
         onSelectProject={handleSelectProject}
         onWalletClick={handleWalletClick}
+        onOpenProfile={handleOpenProfile}
+        onOpenBilling={handleOpenBilling}
+        onOpenLegal={handleOpenLegal}
+        onGoHome={handleGoHome}
       />
 
       <div className="relative flex min-w-0 flex-1 flex-col">
@@ -884,6 +1163,10 @@ export function RoomClient() {
             selectedProjectId={selectedProjectId}
             onSelectProject={handleSelectProject}
             onStartInProject={handleStartInProject}
+            accountTab={accountTab}
+            onCloseAccount={handleCloseAccount}
+            legalView={legalView}
+            onCloseLegal={handleCloseLegal}
           />
           )}
         </main>
@@ -962,6 +1245,7 @@ const MainPane = memo(function MainPane({
   projectFormOpen, pendingDraft, projects,
   onProjectConfirmNew, onProjectConfirmPick, onProjectCancel, onNeedProject,
   onNewSession, selectedProjectId, onSelectProject, onStartInProject,
+  accountTab, onCloseAccount, legalView, onCloseLegal,
 }: {
   state: ReturnType<typeof useCustomerSession>;
   accepted: boolean;
@@ -986,8 +1270,42 @@ const MainPane = memo(function MainPane({
   onSelectProject: (id: string | null) => void;
   /** Start a session directly in a given project (skips picker). */
   onStartInProject: (projectId: string | null) => void;
+  /** In-pane Account tab to render (Profile / Wallet / Billing /
+   *  Security / Notifications), or null to render the normal session-
+   *  driven view. */
+  accountTab: null | "profile" | "wallet" | "billing" | "security" | "notifications";
+  /** Close the AccountPane — falls back to the prior view. */
+  onCloseAccount: () => void;
+  /** In-pane legal viewer (Privacy / Terms) or null for the normal view. */
+  legalView: LegalKind | null;
+  /** Close the legal viewer — falls back to the prior view. */
+  onCloseLegal: () => void;
 }) {
   const session = state.session;
+
+  // ── Legal viewer: highest priority. Privacy / Terms documents take
+  // over the centre column completely (no chat stub on the right) so
+  // the customer has uninterrupted reading width. Mounted before the
+  // Account pane because the user can deep-link into the legal viewer
+  // from inside Account → Notifications too.
+  if (legalView) {
+    return <LegalPane kind={legalView} onClose={onCloseLegal} />;
+  }
+
+  // ── Account pane: when the customer opened Profile/Wallet/Security ──────
+  // High priority because we want the account UI to fully take over the
+  // pane — including suppressing the WhatsApp chat stub — so they have room
+  // to actually edit their settings.
+  if (accountTab && state.auth.kind === "authed") {
+    return (
+      <AccountPane
+        userId={state.auth.userId}
+        email={state.auth.email}
+        initialTab={accountTab}
+        onClose={onCloseAccount}
+      />
+    );
+  }
 
   // ── Project picker pane: pick an existing project or name a new one ──────
   // Skip if the user is reviewing a past session — let the review pane take over.
@@ -1009,20 +1327,14 @@ const MainPane = memo(function MainPane({
     return <PastSessionReview sessionId={viewingPastId} onClose={onCloseViewPast} />;
   }
 
-  // Just-ended session: live chat (composer auto-locks via session.status
-  // === "ended") on the left, summary-only sidebar on the right.
+  // Just-ended session: same split as PastSessionReview so the layout
+  // stays consistent across "live session that just ended" and "past
+  // session opened from the sidebar." Center = AI summary (70%),
+  // right = WhatsApp chat stub (30%, inactive — there's no live call).
+  // The actual chat history during the call rolls into the AI summary,
+  // so the customer doesn't lose anything by not seeing the timeline.
   if (session?.status === "ended") {
-    return (
-      <PanelGroup direction="horizontal" autoSaveId="relay-room-review" className="h-full">
-        <Panel defaultSize={60} minSize={40} order={1}>
-          <ChatPane state={state} fullWidth employment={employment} onNeedsCredits={onNeedsCredits} />
-        </Panel>
-        <Resizer />
-        <Panel defaultSize={40} minSize={28} order={2}>
-          <SummaryPanel session={session} messages={state.messages} />
-        </Panel>
-      </PanelGroup>
-    );
+    return <EndedSessionReview session={session} messages={state.messages} />;
   }
 
   // No active session (or stale cancelled / abandoned one). Show the
@@ -1054,6 +1366,115 @@ const MainPane = memo(function MainPane({
   // creation as a fallback path via onNeedProject).
   return <ChatPane state={state} fullWidth employment={employment} onNeedsCredits={onNeedsCredits} onNeedProject={onNeedProject} />;
 });
+
+// ── Landing-explainer building blocks ─────────────────────────────────
+// Small, single-purpose cards used by BrandedLanding's how-it-works
+// explainer. Defined at module scope so React.memo / re-render cost is
+// minimal — they take no closure-bound state from BrandedLanding.
+
+// LegendCard — a phone-icon badge + bold label + descriptive blurb.
+// One per icon color (black / green) in the legend strip.
+function LegendCard({
+  bg, fg, label, blurb,
+}: { bg: string; fg: string; label: string; blurb: string }) {
+  return (
+    <div
+      className="flex items-start gap-3 rounded-xl border p-4"
+      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)" }}
+    >
+      <span
+        className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+        style={{ backgroundColor: bg, color: fg }}
+      >
+        <Phone size={13} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="text-[14px] font-semibold" style={{ color: "var(--text)" }}>
+          {label}
+        </div>
+        <div className="mt-1 text-[13px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
+          {blurb}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// StateCard — a status dot + label + blurb, used for the Online/Busy/
+// Offline three-up under the "when you tap a green icon" header.
+function StateCard({
+  dot, label, blurb,
+}: { dot: string; label: string; blurb: string }) {
+  return (
+    <div
+      className="rounded-lg border p-3"
+      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+    >
+      <div className="flex items-center gap-2">
+        <span aria-hidden className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: dot }} />
+        <span className="text-[13px] font-semibold" style={{ color: "var(--text)" }}>{label}</span>
+      </div>
+      <div className="mt-1 text-[12px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
+        {blurb}
+      </div>
+    </div>
+  );
+}
+
+// SpatialCard — left/right orientation cards. Arrow points back into
+// the actual UI region the card describes (← for sidebar, → for chat).
+function SpatialCard({
+  arrow, tag, title, blurb,
+}: { arrow: string; tag: string; title: string; blurb: string }) {
+  return (
+    <div
+      className="rounded-xl border p-4"
+      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)" }}
+    >
+      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text-faint)" }}>
+        <span aria-hidden style={{ color: "var(--primary)" }}>{arrow}</span>
+        <span>{tag}</span>
+      </div>
+      <div className="mt-1.5 text-[15px] font-semibold" style={{ color: "var(--text)" }}>
+        {title}
+      </div>
+      <div className="mt-1.5 text-[13px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
+        {blurb}
+      </div>
+    </div>
+  );
+}
+
+// FlowStep — numbered lifecycle card (Connect / Build / Ship). The
+// large numeral on the left anchors the eye to the step ordering.
+function FlowStep({
+  n, title, blurb,
+}: { n: string; title: string; blurb: string }) {
+  return (
+    <div
+      className="flex items-start gap-3 rounded-xl border p-4"
+      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)" }}
+    >
+      <div
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold"
+        style={{
+          backgroundColor: "var(--primary-soft)",
+          color: "var(--primary)",
+        }}
+      >
+        {n}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-[14px] font-semibold" style={{ color: "var(--text)" }}>
+          {title}
+        </div>
+        <div className="mt-1 text-[13px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
+          {blurb}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // Branded "empty" landing shown when no session is active. Wordmark +
 // tagline + CTA in the centre; a collapsible right-side panel surfaces
@@ -1147,181 +1568,1102 @@ function BrandedLanding({
         }}
       />
 
-      {/* Centre: branded hero */}
+      {/* Centre: Relay wordmark + tagline. Marketing CTA removed.
+          When a session is active, the customer is routed to ChatPane —
+          this no-session landing is intentionally calm. If a project is
+          selected via the sidebar, a small "Working in {project}" chip
+          surfaces below the logo as quiet context. */}
       <div className="relative flex flex-1 items-center justify-center px-6">
-        <div className="flex max-w-md flex-col items-center text-center">
+        <div className="flex max-w-3xl flex-col items-center text-center">
           <Wordmark size="lg" />
-          <h1 className="mt-6 font-serif text-3xl font-medium leading-tight tracking-tight text-[var(--text)] sm:text-4xl">
-            Real engineers, ninety seconds away.
-          </h1>
-          <p className="mt-3 text-[15px] leading-relaxed text-[var(--text-muted)]">
-            A qualified human joins your chat + Zoom call in ~90 seconds. Tap below to start.
+
+          {/* Brand tagline — "human layer" italicized + brand-green, with
+              an animated underline that sweeps a bright dot left-to-right
+              along a faint green base. The animation reinforces the
+              "still alive, waiting" feeling of the no-session landing. */}
+          <p
+            className="mt-5 text-[18px] leading-snug"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <span className="relay-tagline-glow">
+              The{" "}
+              <em
+                style={{
+                  color: "var(--primary)",
+                  fontStyle: "italic",
+                  fontWeight: 500,
+                }}
+              >
+                human layer
+              </em>
+              {" "}for AI-built software.
+            </span>
           </p>
 
-          {hasProject ? (
-            <>
-              <div className="mt-7 inline-flex items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] px-4 py-3 shadow-sm">
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
-                  <Folder size={16} />
-                </div>
-                <div className="flex min-w-0 flex-col items-start text-left">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                    Working in
-                  </span>
-                  <span
-                    className="max-w-[220px] truncate text-base font-semibold leading-tight text-[var(--text)]"
-                    title={selectedProject!.name}
-                  >
-                    {selectedProject!.name}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={onClearSelectedProject}
-                  className="ml-1 inline-flex size-7 shrink-0 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[color-mix(in_srgb,var(--text)_6%,transparent)] hover:text-[var(--text)]"
-                  aria-label="Clear selected project"
-                  title="Clear project"
-                >
-                  <X size={13} />
-                </button>
+          {hasProject && (
+            <div className="mt-6 inline-flex items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] px-4 py-3 shadow-sm">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
+                <Folder size={16} />
               </div>
-              <Button
-                variant="launcher"
-                size="xl"
-                onClick={onStartInProject}
-                iconLeft={<Plus size={16} />}
-                className="mt-5"
+              <div className="flex min-w-0 flex-col items-start text-left">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                  Working in
+                </span>
+                <span
+                  className="max-w-[220px] truncate text-base font-semibold leading-tight text-[var(--text)]"
+                  title={selectedProject!.name}
+                >
+                  {selectedProject!.name}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={onClearSelectedProject}
+                className="ml-1 inline-flex size-7 shrink-0 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[color-mix(in_srgb,var(--text)_6%,transparent)] hover:text-[var(--text)]"
+                aria-label="Clear selected project"
+                title="Clear project"
               >
-                Start session in {selectedProject!.name}
-              </Button>
-            </>
-          ) : (
-            <Button
-              variant="launcher"
-              size="xl"
-              onClick={onStartNewSession}
-              iconLeft={<Plus size={16} />}
-              className="mt-7"
-            >
-              Get an engineer now
-            </Button>
+                <X size={13} />
+              </button>
+            </div>
           )}
 
-          <p className="mt-4 text-xs text-[var(--text-faint)]">
-            Chat + Zoom. No installs. Pay only for time you use.
-          </p>
+          {/* Horizontal separator between the wordmark/tagline pair
+              (above) and the how-it-works explainer (below). Gives the
+              brand introduction a clean visual break from the
+              instructional content underneath. */}
+          <div
+            aria-hidden
+            className="mt-8 h-px w-full max-w-md"
+            style={{ backgroundColor: "var(--border)" }}
+          />
+
+          {/* How-it-works explainer — wider redesign, wrapped in its
+              own bordered card so the whole instructional block reads
+              as one cohesive panel rather than a stack of orphaned
+              sub-cards. Sections inside the panel:
+                1. Phone icon legend (2-column card grid)
+                2. Three-up availability state cards
+                3. Two-up spatial UI orientation (← left / right →)
+                4. Three numbered lifecycle steps
+                5. Pricing footnote
+              The grid layouts let the eye absorb each section in one
+              glance instead of reading top-to-bottom. */}
+          <div
+            className="mt-6 w-full rounded-2xl border p-5 text-left text-[15px] leading-relaxed"
+            style={{
+              borderColor: "var(--border)",
+              backgroundColor: "color-mix(in srgb, var(--surface) 70%, transparent)",
+              color: "var(--text-muted)",
+            }}
+          >
+
+            {/* ── 1. Phone icon legend ───────────────────────────────── */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <LegendCard
+                bg="#0a0a0a"
+                fg="#ffffff"
+                label="Black"
+                blurb="No engineer has worked on this project yet. The first tap routes through our matching engine — a stack-suitable engineer is on the call typically within thirty seconds."
+              />
+              <LegendCard
+                bg={BRAND_GREEN}
+                fg="#ffffff"
+                label="Green"
+                blurb="An engineer has already worked on this project before. They get priority routing when you tap, but you're never locked in — any other available engineer can step in seamlessly."
+              />
+            </div>
+
+            {/* ── 2. Availability states — three-up card row ─────────── */}
+            <div
+              className="mt-3 rounded-xl border p-4"
+              style={{ borderColor: "var(--border)", backgroundColor: "color-mix(in srgb, var(--surface-raised) 60%, transparent)" }}
+            >
+              <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text-faint)" }}>
+                When you tap a green icon
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <StateCard
+                  dot={BRAND_GREEN}
+                  label="Online"
+                  blurb="They pick up. Average connection time is under a minute."
+                />
+                <StateCard
+                  dot="var(--warn)"
+                  label="Busy"
+                  blurb="Drop a request and they'll join the moment they wrap their current session."
+                />
+                <StateCard
+                  dot="var(--text-faint)"
+                  label="Offline"
+                  blurb="Pick a slot on their calendar — they'll be back at the scheduled time."
+                />
+              </div>
+              <p className="mt-3 text-[13px]" style={{ color: "var(--text-muted)" }}>
+                Don't want to wait? Pick any other engineer instead — they all arrive with the
+                full project memory plus an AI-generated brief, so context handoff is instant.
+              </p>
+            </div>
+
+            {/* ── 3. Spatial UI orientation — left / right ──────────── */}
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <SpatialCard
+                arrow="←"
+                tag="Left sidebar"
+                title="Project memory"
+                blurb="Every session, every file, every voice note, and every AI-generated summary stays with the project — not the call. When an engineer joins, they have the full history; no &quot;let me get up to speed&quot; delay."
+              />
+              <SpatialCard
+                arrow="→"
+                tag="Right panel"
+                title="Live chat"
+                blurb="Type messages, drop files, send voice notes. The panel wakes the moment your engineer joins; anything you write before that is saved as drafts for them to read on arrival."
+              />
+            </div>
+
+            {/* ── 4. Lifecycle — three numbered steps ───────────────── */}
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <FlowStep
+                n="1"
+                title="Connect"
+                blurb="Tap a phone icon. Once an engineer accepts, a Zoom call opens automatically — voice, chat, and screen share all on at once."
+              />
+              <FlowStep
+                n="2"
+                title="Build"
+                blurb="Work together through the live call. Everything stays searchable in the chat panel afterwards — no notes lost."
+              />
+              <FlowStep
+                n="3"
+                title="Ship"
+                blurb="When you're ready to go live, hand the project off. Your engineer keeps maintaining and enhancing it for as long as you need."
+              />
+            </div>
+
+            {/* ── 5. Pricing footnote ───────────────────────────────── */}
+            <p className="mt-4 text-center text-[13px]" style={{ color: "var(--text-faint)" }}>
+              Pay per minute. No subscription, no auto-renew.
+            </p>
+          </div>
         </div>
       </div>
 
-      {/* Right rail: contextual AI summary (customer-level or project-level). */}
-      <aside
-        className="flex h-full shrink-0 flex-col border-l transition-[width] duration-200"
+      {/* Right rail: WhatsApp-style chat panel (30% width). Inactive in
+          this view (no live session yet). The composer is disabled and a
+          placeholder explains the activation rule. When a live session
+          starts, the customer is routed to ChatPane which has the real
+          live-chat experience — this panel is the "no session yet"
+          mirror, so the customer sees where chat WILL happen.
+
+          TODO(live-wire): when a session is active or being viewed, this
+          panel can show the live message stream + an active composer.
+          Currently the live path renders ChatPane in place of the whole
+          MainPane via the parent switch (see MainPane), so this panel
+          only ever shows in the no-session landing. */}
+      <ChatPanelStub
+        sidebarCollapsed={sidebarCollapsed}
+        onToggleCollapsed={() => setSidebarCollapsed((v) => !v)}
+      />
+    </div>
+  );
+}
+
+// ── Chat panel (pre-session drafting surface) ───────────────────────────
+// WhatsApp-styled chat surface shown when no live engineer call exists.
+// Now functional as a local-only draft buffer: customer can type
+// messages + dictate via voice while waiting for an engineer. Messages
+// land in the area above the composer and auto-scroll into view when
+// the buffer overflows the available height.
+//
+// Persistence: messages are kept in `sessionStorage` keyed by user, so
+// a refresh doesn't erase the draft, but a sign-out / cross-device hop
+// resets it. When a live engineer joins (future wiring — see
+// TODO[live-sync] below), these drafts can be flushed into the real
+// guest_messages stream as the customer's opening turn.
+//
+// Why local-only for now: there's no engineer yet, so there's no recipient
+// and no guest_call_id to attach to. The user wants the visual experience
+// of a chat surface today; the sync happens when we have a target.
+type LocalDraftMessage = {
+  id: string;
+  text: string;
+  createdAt: number;       // epoch ms — sorts independently of network state
+  /** Epoch ms of the most recent edit. null/undefined for never-edited.
+   *  Drives the "(edited)" badge next to the timestamp. */
+  editedAt?: number | null;
+};
+
+const STUB_DRAFT_STORAGE_KEY = "relay-chat-stub-draft-v1";
+
+// (Edit + Delete are always available on local-only stub drafts —
+//  there's no recipient yet, so the WhatsApp-style "you can't unsend
+//  once the other side has seen it" time limit doesn't model anything
+//  real. A time limit was attempted earlier; users hit "where's the
+//  edit button?" the moment it expired and the kebab vanished.)
+
+// Two timestamps fall on the same calendar day in the user's locale.
+function sameDay(a: number, b: number): boolean {
+  const da = new Date(a);
+  const db = new Date(b);
+  return (
+    da.getFullYear() === db.getFullYear() &&
+    da.getMonth()    === db.getMonth() &&
+    da.getDate()     === db.getDate()
+  );
+}
+
+// Centered date pill — WhatsApp's day-divider equivalent.
+function DateSeparatorPill({ ts }: { ts: number }) {
+  const d = new Date(ts);
+  const today = new Date();
+  const yesterday = new Date(); yesterday.setDate(today.getDate() - 1);
+  let label: string;
+  if (sameDay(ts, today.getTime())) label = "Today";
+  else if (sameDay(ts, yesterday.getTime())) label = "Yesterday";
+  else label = d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: today.getFullYear() === d.getFullYear() ? undefined : "numeric" });
+  return (
+    <div className="my-2 flex justify-center">
+      <span
+        className="rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
         style={{
-          width: sidebarCollapsed ? 48 : 320,
-          borderColor: "var(--border)",
-          backgroundColor: "var(--surface)",
+          backgroundColor: "color-mix(in srgb, var(--text) 8%, transparent)",
+          color: "var(--text-muted)",
         }}
       >
-        <div
-          className="flex shrink-0 items-center gap-2 border-b px-3 py-3"
-          style={{ borderColor: "var(--border)" }}
-        >
-          {!sidebarCollapsed && (
-            <div className="flex min-w-0 flex-1 items-center gap-1.5">
-              {hasProject ? (
-                <Folder size={12} style={{ color: BRAND_GREEN, flexShrink: 0 }} />
-              ) : null}
-              <span
-                className="min-w-0 truncate text-[12px] font-semibold uppercase tracking-[0.06em]"
-                style={{ color: "var(--text)" }}
-                title={`${panelTitle} × ${userName}`}
-              >
-                {panelTitle}
-                <span style={{ color: "var(--text-muted)", margin: "0 6px" }}>×</span>
-                <span style={{ color: BRAND_GREEN, textTransform: "none" }}>{userName}</span>
-              </span>
-            </div>
-          )}
+        {label}
+      </span>
+    </div>
+  );
+}
+
+// One outgoing chat bubble with WhatsApp parity:
+//   • A kebab to the LEFT of the bubble (outside) always visible at
+//     opacity-70, full on hover — opens an Edit / Delete menu
+//   • Bottom-right of bubble: time + "(edited)" + single check tick
+//   • Inline edit mode: textarea replaces the static text, Save/Cancel
+//     buttons + Enter / Esc shortcuts
+//   • Enter animation: small slide-up + fade so each new bubble feels
+//     posted rather than spawned in place
+//   • Press-and-hold (long-press) opens the menu on touch devices
+//
+// Edit + delete have no time limit on local-only drafts — the WhatsApp
+// "delete-for-everyone" window only makes sense when the message has
+// been transmitted to a recipient. These drafts live on this device
+// until the engineer joins, so the customer can always edit/delete.
+function DraftBubble({
+  message, menuOpen, editing, editText, onEditTextChange,
+  onOpenMenu, onCloseMenu, onStartEdit, onSaveEdit, onCancelEdit, onDelete,
+}: {
+  message: LocalDraftMessage;
+  menuOpen: boolean;
+  editing: boolean;
+  editText: string;
+  onEditTextChange: (text: string) => void;
+  onOpenMenu: () => void;
+  onCloseMenu: () => void;
+  onStartEdit: () => void;
+  onSaveEdit: () => void;
+  onCancelEdit: () => void;
+  onDelete: () => void;
+}) {
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const editRef = useRef<HTMLTextAreaElement>(null);
+
+  // Focus the textarea when edit mode opens.
+  useEffect(() => {
+    if (editing && editRef.current) {
+      editRef.current.focus();
+      // Move caret to end of existing text — same UX as WhatsApp's
+      // "Edit message" tap: the user can start typing immediately
+      // without re-positioning the caret manually.
+      const len = editRef.current.value.length;
+      editRef.current.setSelectionRange(len, len);
+    }
+  }, [editing]);
+
+  const startHold = () => {
+    if (editing) return;
+    holdTimer.current = setTimeout(() => {
+      onOpenMenu();
+      holdTimer.current = null;
+    }, 450);
+  };
+  const cancelHold = () => {
+    if (holdTimer.current) {
+      clearTimeout(holdTimer.current);
+      holdTimer.current = null;
+    }
+  };
+
+  return (
+    <div
+      className="group relative flex items-start justify-end gap-1.5"
+      style={{ animation: editing ? undefined : "relay-bubble-in 180ms ease-out" }}
+      onTouchStart={startHold}
+      onTouchEnd={cancelHold}
+      onTouchCancel={cancelHold}
+    >
+      {/* Kebab button — lives OUTSIDE the bubble's left edge so it's
+          clearly its own affordance and doesn't fight the scrollbar
+          on the right. Always visible at opacity-70 (full on hover /
+          when its menu is open) so users can find it without guessing
+          there's a hover-only secret. h-7 makes it tappable on touch. */}
+      {!editing && (
+        <div className="relative mt-1 shrink-0">
           <button
             type="button"
-            onClick={() => setSidebarCollapsed((v) => !v)}
-            className={`flex h-7 w-7 items-center justify-center rounded-md opacity-70 transition-opacity hover:opacity-100 ${sidebarCollapsed ? "mx-auto" : ""}`}
-            style={{ color: "var(--text-muted)" }}
-            aria-label={sidebarCollapsed ? "Expand summary panel" : "Collapse summary panel"}
-            title={sidebarCollapsed ? "Expand" : "Collapse"}
-          >
-            {sidebarCollapsed ? <PanelRightOpen size={14} /> : <PanelRightClose size={14} />}
-          </button>
-        </div>
-
-        {!sidebarCollapsed && (
-          <div className="flex-1 overflow-y-auto px-5 py-5">
-            {showLoading ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <Loader2 size={16} className="animate-spin text-[var(--text-muted)]" />
-                <span className="mt-2 text-[11px] text-[var(--text-muted)]">
-                  Loading summary…
-                </span>
-              </div>
-            ) : panelSummaryOverview || panelSummaryTitle ? (
-              <div className="space-y-4 max-w-prose">
-                {panelSummaryTitle ? (
-                  <h2 className="font-serif text-lg font-medium leading-tight tracking-tight text-[var(--text)]">
-                    {panelSummaryTitle}
-                  </h2>
-                ) : null}
-                {panelSummaryOverview ? (
-                  <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-[var(--text)]">
-                    {panelSummaryOverview}
-                  </p>
-                ) : null}
-                {Array.isArray(panelNextSteps) && panelNextSteps.length > 0 ? (
-                  <div>
-                    <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                      Next steps
-                    </h3>
-                    <ul className="space-y-2">
-                      {panelNextSteps.map((step, i) => (
-                        <li
-                          key={i}
-                          className="flex gap-2 text-[13px] leading-relaxed text-[var(--text)]"
-                        >
-                          <ChevronRight
-                            size={14}
-                            className="mt-0.5 shrink-0 text-[var(--primary)]"
-                          />
-                          <span>{step}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-              </div>
-            ) : (
-              <EmptyState
-                compact
-                icon={<Sparkles size={20} className="text-[var(--primary)]" />}
-                title="No summary yet"
-                body={panelEmptyHint}
-              />
+            onClick={(e) => {
+              e.stopPropagation();
+              menuOpen ? onCloseMenu() : onOpenMenu();
+            }}
+            aria-label="Message options"
+            title="Edit / delete"
+            className={cn(
+              "flex h-7 w-7 items-center justify-center rounded-full border transition-opacity",
+              menuOpen ? "opacity-100" : "opacity-70 group-hover:opacity-100 focus:opacity-100",
             )}
+            style={{
+              backgroundColor: "var(--surface)",
+              borderColor: "var(--border)",
+              color: "var(--text-muted)",
+            }}
+          >
+            <MoreHorizontal size={14} />
+          </button>
+          {menuOpen && (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="absolute right-0 top-full z-20 mt-1 min-w-[150px] overflow-hidden rounded-lg border shadow-xl"
+              style={{
+                borderColor: "var(--border)",
+                backgroundColor: "var(--surface)",
+                boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+              }}
+            >
+              <button
+                type="button"
+                onClick={onStartEdit}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                style={{ color: "var(--text)" }}
+              >
+                <Pencil size={12} />
+                Edit message
+              </button>
+              <button
+                type="button"
+                onClick={onDelete}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                style={{ color: "var(--accent-red)" }}
+              >
+                <X size={12} />
+                Delete message
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div
+        className="relative max-w-[78%] rounded-2xl px-3 py-2 text-[13px] leading-snug"
+        style={{
+          backgroundColor: "var(--primary-tint)",
+          color: "var(--text)",
+          borderTopRightRadius: 4,
+        }}
+      >
+        {editing ? (
+          // Inline edit mode — textarea replaces the static text.
+          // Enter saves (Shift+Enter inserts newline, Esc cancels);
+          // explicit Save / Cancel buttons mirror WhatsApp's
+          // edit-message footer for users who'd rather click.
+          <>
+            <textarea
+              ref={editRef}
+              value={editText}
+              onChange={(e) => onEditTextChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  onSaveEdit();
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  onCancelEdit();
+                }
+              }}
+              rows={Math.min(8, Math.max(1, editText.split("\n").length))}
+              className="block w-full resize-none rounded-md border bg-transparent px-2 py-1 text-[13px] leading-snug outline-none"
+              style={{
+                borderColor: "var(--border)",
+                color: "var(--text)",
+                backgroundColor: "color-mix(in srgb, var(--surface) 60%, transparent)",
+                minWidth: 180,
+              }}
+            />
+            <div className="mt-1.5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={onCancelEdit}
+                className="rounded-full px-2 py-0.5 text-[11px] font-medium transition-opacity hover:opacity-80"
+                style={{ color: "var(--text-muted)" }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={onSaveEdit}
+                className="flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-opacity hover:opacity-90"
+                style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+              >
+                <Check size={10} /> Save
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="whitespace-pre-wrap break-words pr-1">{message.text}</div>
+            <div
+              className="mt-0.5 flex items-center justify-end gap-1 text-[9px]"
+              style={{ color: "var(--text-muted)" }}
+            >
+              {/* "edited" badge appears once the bubble has been edited.
+                  WhatsApp uses the same word in the same place. */}
+              {message.editedAt && (
+                <span className="italic opacity-70">edited</span>
+              )}
+              <span>
+                {new Date(message.createdAt).toLocaleTimeString("en-US", {
+                  hour: "numeric", minute: "2-digit",
+                })}
+              </span>
+              {/* Single tick = saved locally. We'll show ✓✓ in green once
+                  the engineer actually receives + reads the message in a
+                  future live-sync wire-up. */}
+              <Check size={10} style={{ opacity: 0.75 }} />
+            </div>
+          </>
+        )}
+
+      </div>
+    </div>
+  );
+}
+
+function ChatPanelStub({
+  sidebarCollapsed, onToggleCollapsed,
+}: {
+  sidebarCollapsed: boolean;
+  onToggleCollapsed: () => void;
+}) {
+  const [messages, setMessages] = useState<LocalDraftMessage[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = window.sessionStorage.getItem(STUB_DRAFT_STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw) as LocalDraftMessage[];
+      return Array.isArray(parsed) ? parsed.slice(-200) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [draftText, setDraftText] = useState("");
+  const [voiceMode, setVoiceMode] = useState<"idle" | "transcribing">("idle");
+  const [voiceMsg, setVoiceMsg] = useState<string | null>(null);
+  // Undo window: tracks the message id that's still inside its 5-second
+  // delete-after-send grace period. WhatsApp's "Delete for everyone"
+  // window is hours-long because the message has been relayed to other
+  // devices; ours is short because the message is just sitting in local
+  // sessionStorage and there's no recipient to "unsend" from.
+  const [undoableId, setUndoableId] = useState<string | null>(null);
+  // Open-on-hover/click menu — which message has its kebab menu open.
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  // Pending undo timer ref so a fresh send replaces the previous timer.
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Inline edit state: which bubble is in edit mode + its draft text.
+  // Only one bubble can be in edit at a time so the customer doesn't
+  // lose track of partial-edit context across multiple messages.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText]   = useState("");
+
+  const recognitionRef = useRef<{
+    abort: () => void;
+    stop: () => void;
+  } | null>(null);
+  const transcribeBaseRef = useRef<string>("");
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Persist messages so a tab refresh doesn't erase the draft buffer.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.sessionStorage.setItem(
+        STUB_DRAFT_STORAGE_KEY,
+        JSON.stringify(messages.slice(-200)),
+      );
+    } catch { /* quota / privacy mode — local-only, swallow */ }
+  }, [messages]);
+
+  // Auto-scroll the message area to the bottom when a new message arrives.
+  // Only auto-scrolls when the user is already near the bottom — if they've
+  // scrolled up to read history, a new incoming message shouldn't yank them
+  // back down. ~120px from bottom is the heuristic threshold.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const dist = el.scrollHeight - el.clientHeight - el.scrollTop;
+    if (dist < 120) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [messages.length]);
+
+  const handleSendDraft = useCallback(() => {
+    const trimmed = draftText.trim();
+    if (!trimmed) return;
+    const newId = crypto.randomUUID();
+    setMessages((prev) => [
+      ...prev,
+      { id: newId, text: trimmed, createdAt: Date.now() },
+    ]);
+    setDraftText("");
+
+    // Start the 5-second undo window. Any pending earlier timer gets
+    // cleared so the most recently-sent message is the one that's
+    // undoable — the snackbar always reflects the latest send.
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    setUndoableId(newId);
+    undoTimerRef.current = setTimeout(() => {
+      setUndoableId((prev) => (prev === newId ? null : prev));
+      undoTimerRef.current = null;
+    }, 5000);
+  }, [draftText]);
+
+  // Per-message delete via the kebab menu. Always allowed — these are
+  // local drafts on the customer's device with no recipient yet, so the
+  // WhatsApp-style "can't unsend after the other side has seen it"
+  // limit doesn't apply. The snackbar undo (5s) remains as a faster
+  // path for the most recent send; the kebab covers everything else.
+  const handleDeleteMessage = useCallback((id: string) => {
+    setMessages((prev) => prev.filter((m) => m.id !== id));
+    setOpenMenuId(null);
+    setUndoableId((prev) => (prev === id ? null : prev));
+    // If the user was editing this same bubble, cancel that too.
+    setEditingId((prev) => (prev === id ? null : prev));
+  }, []);
+
+  // Edit flow: open the bubble's text into an inline textarea, save on
+  // enter or Save button, cancel via Esc / Cancel button. Always
+  // allowed for the same reason as delete — there's no recipient yet,
+  // so there's nothing to "lock" once typed.
+  const handleStartEdit = useCallback((id: string, currentText: string) => {
+    setEditingId(id);
+    setEditText(currentText);
+    setOpenMenuId(null);
+  }, []);
+
+  const handleSaveEdit = useCallback(() => {
+    if (!editingId) return;
+    const trimmed = editText.trim();
+    if (!trimmed) {
+      // Empty edit = same as delete (matches WhatsApp behaviour: editing
+      // to empty + save deletes the message).
+      setMessages((prev) => prev.filter((m) => m.id !== editingId));
+      setEditingId(null);
+      setEditText("");
+      return;
+    }
+    setMessages((prev) => prev.map((m) =>
+      m.id === editingId
+        ? { ...m, text: trimmed, editedAt: Date.now() }
+        : m,
+    ));
+    setEditingId(null);
+    setEditText("");
+  }, [editingId, editText]);
+
+  const handleCancelEdit = useCallback(() => {
+    setEditingId(null);
+    setEditText("");
+  }, []);
+
+  // Snackbar "Undo" — yanks the most recent send and clears the timer.
+  const handleUndoSend = useCallback(() => {
+    if (!undoableId) return;
+    setMessages((prev) => prev.filter((m) => m.id !== undoableId));
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    undoTimerRef.current = null;
+    setUndoableId(null);
+  }, [undoableId]);
+
+  // Close the kebab menu on outside-click; without this an opened menu
+  // would persist after the user navigates with their pointer.
+  useEffect(() => {
+    if (!openMenuId) return;
+    const handler = () => setOpenMenuId(null);
+    // Use a microtask delay so the click that OPENED the menu doesn't
+    // immediately close it again.
+    const t = setTimeout(() => document.addEventListener("click", handler), 0);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener("click", handler);
+    };
+  }, [openMenuId]);
+
+  // Clean up the undo timer on unmount so it doesn't fire after teardown.
+  useEffect(() => () => {
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+  }, []);
+
+  // Voice-to-text using the Web Speech API. Same shape as ChatComposer's
+  // implementation but local to the stub since we don't import the full
+  // composer here. (We could refactor to share, but the stub composer is
+  // intentionally a thinner experience — no attachments, no mention of
+  // file size caps — so duplicating ~30 lines is the cleaner trade.)
+  const startTranscribe = useCallback(async () => {
+    if (voiceMode !== "idle") return;
+    if (typeof window === "undefined") return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const Ctor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!Ctor) {
+      setVoiceMsg("Voice-to-text isn't supported in this browser. Try Chrome or Edge.");
+      return;
+    }
+    setVoiceMsg(null);
+
+    // Permissions API first — when state is "denied", the browser will
+    // not re-prompt from JS and we'd silently get a NotAllowedError
+    // with no UI. Better to tell the user up-front that they need to
+    // change it in site-settings.
+    const permState = await queryMicPermission();
+    if (permState === "denied") {
+      setVoiceMsg("Microphone is blocked for this site. Click the lock / info icon at the very left of the address bar → Site settings → Microphone → Allow → reload the page.");
+      return;
+    }
+    // Only call getUserMedia when state is "granted" or "prompt".
+    // Stopping the stream right after is intentional — we just need the
+    // grant on record so SpeechRecognition can reuse it.
+    if (navigator.mediaDevices?.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((t) => t.stop());
+      } catch (e) {
+        if (e instanceof Error && e.name === "NotAllowedError") {
+          setVoiceMsg("You dismissed the microphone prompt. Click the mic icon again and choose Allow when your browser asks.");
+        } else if (e instanceof Error && e.name === "NotFoundError") {
+          setVoiceMsg("No microphone detected. Check that one is plugged in and not being used by another app.");
+        } else {
+          setVoiceMsg("Couldn't access your microphone.");
+        }
+        return;
+      }
+    }
+    const r = new Ctor();
+    transcribeBaseRef.current = draftText;
+    r.lang = navigator.language || "en-US";
+    r.continuous = true;
+    r.interimResults = true;
+    r.onresult = (event: { results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }> }) => {
+      let finalText = "";
+      let interim = "";
+      for (let i = 0; i < event.results.length; i++) {
+        const res = event.results[i];
+        if (res.isFinal) finalText += res[0].transcript;
+        else interim += res[0].transcript;
+      }
+      const composed = [transcribeBaseRef.current, finalText, interim]
+        .filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+      setDraftText(composed);
+    };
+    r.onerror = (e: { error: string }) => {
+      // Same actionable-error translation as the live ChatComposer —
+      // shared helper keeps both surfaces in sync (e.g. "Microphone
+      // access blocked. Click the lock icon…" instead of the raw
+      // "not-allowed" identifier).
+      if (e.error !== "no-speech" && e.error !== "aborted") {
+        setVoiceMsg(speechRecognitionErrorMessage(e.error));
+      }
+      setVoiceMode("idle");
+    };
+    r.onend = () => {
+      setVoiceMode("idle");
+      recognitionRef.current = null;
+    };
+    recognitionRef.current = r;
+    setVoiceMode("transcribing");
+    try { r.start(); } catch {
+      setVoiceMsg("Voice recognition couldn't start — try again in a moment.");
+      setVoiceMode("idle");
+    }
+  }, [voiceMode, draftText]);
+
+  const stopTranscribe = useCallback(() => {
+    try { recognitionRef.current?.stop(); } catch { /* noop */ }
+  }, []);
+
+  // Tear-down on unmount so an abandoned mic stream doesn't keep listening.
+  useEffect(() => () => {
+    try { recognitionRef.current?.abort(); } catch { /* noop */ }
+  }, []);
+
+  return (
+    <aside
+      className="flex h-full shrink-0 flex-col border-l transition-[width] duration-200"
+      style={{
+        width: sidebarCollapsed ? 48 : "min(30%, 420px)",
+        minWidth: sidebarCollapsed ? 48 : 280,
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface)",
+      }}
+    >
+      {/* Header — engineer-chat style. Collapsed rail shows just the
+          expand toggle so the customer can recover the panel. */}
+      <div
+        className="flex shrink-0 items-center gap-2 border-b px-3 py-2.5"
+        style={{ borderColor: "var(--border)" }}
+      >
+        {!sidebarCollapsed && (
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <div
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold"
+              style={{
+                backgroundColor: "var(--surface-raised)",
+                color: "var(--text-muted)",
+              }}
+            >
+              <MessageSquare size={14} />
+            </div>
+            <div className="flex min-w-0 flex-col">
+              <span
+                className="truncate text-[13px] font-medium"
+                style={{ color: "var(--text)" }}
+              >
+                Engineer chat
+              </span>
+              <span
+                className="truncate text-[10px]"
+                style={{ color: "var(--text-muted)" }}
+              >
+                No active session
+              </span>
+            </div>
           </div>
         )}
-      </aside>
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          className={cn(
+            "flex h-7 w-7 items-center justify-center rounded-md opacity-70 transition-opacity hover:opacity-100",
+            sidebarCollapsed && "mx-auto",
+          )}
+          style={{ color: "var(--text-muted)" }}
+          aria-label={sidebarCollapsed ? "Expand chat panel" : "Collapse chat panel"}
+          title={sidebarCollapsed ? "Expand" : "Collapse"}
+        >
+          {sidebarCollapsed ? <PanelRightOpen size={14} /> : <PanelRightClose size={14} />}
+        </button>
+      </div>
+
+      {!sidebarCollapsed && (
+        <>
+          {/* Conversation area — when messages exist, render the WhatsApp-
+              style bubble list with scroll. Empty buffer falls back to the
+              "waiting for engineer" hint so first-time users still know
+              what's going on. The same dotted-overlay background is kept
+              in both states so the panel reads as one consistent surface.
+
+              The outer wrapper is `relative` so the undo-snackbar can
+              pin to its viewport bottom (not the scrolled content). The
+              inner div is the actual scroll viewport with overflow-y-auto
+              + a ref for the auto-scroll-to-bottom effect above. */}
+          <div className="relative min-h-0 flex-1">
+          <div
+            ref={scrollRef}
+            className="h-full overflow-y-auto px-3 py-4"
+            style={{
+              backgroundColor: "var(--background)",
+              backgroundImage:
+                "radial-gradient(circle, color-mix(in srgb, var(--text) 4%, transparent) 1px, transparent 1px)",
+              backgroundSize: "16px 16px",
+            }}
+          >
+            {messages.length === 0 ? (
+              <div className="flex h-full flex-col items-center justify-center px-3 text-center">
+                <div
+                  className="mb-3 flex h-10 w-10 items-center justify-center rounded-full"
+                  style={{
+                    backgroundColor: "color-mix(in srgb, var(--text) 5%, transparent)",
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  <Lock size={18} />
+                </div>
+                <p
+                  className="max-w-[220px] text-[12px] leading-relaxed"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  Drop in your thoughts here — your engineer sees them as
+                  soon as the call connects.
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1.5 pb-2">
+                {/* Sticky system note at the top reminds the user that
+                    these messages haven't reached an engineer yet — they
+                    flush once the call goes live. */}
+                <div
+                  className="mx-auto mb-1 rounded-full border px-2.5 py-1 text-[10px]"
+                  style={{
+                    borderColor: "var(--border)",
+                    backgroundColor: "var(--surface)",
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  Waiting for engineer · drafts saved on this device
+                </div>
+                {/* Render with date separators between days. WhatsApp shows
+                    a centred pill ("TODAY" / "YESTERDAY" / "16 May") any
+                    time the day flips — we mirror that so a long-running
+                    draft buffer reads cleanly across multiple sessions. */}
+                {messages.map((m, idx) => {
+                  const prev = idx > 0 ? messages[idx - 1] : null;
+                  const showSeparator = !prev || !sameDay(prev.createdAt, m.createdAt);
+                  return (
+                    <div key={m.id}>
+                      {showSeparator && <DateSeparatorPill ts={m.createdAt} />}
+                      <DraftBubble
+                        message={m}
+                        menuOpen={openMenuId === m.id}
+                        editing={editingId === m.id}
+                        editText={editText}
+                        onEditTextChange={setEditText}
+                        onOpenMenu={() => setOpenMenuId(m.id)}
+                        onCloseMenu={() => setOpenMenuId(null)}
+                        onStartEdit={() => handleStartEdit(m.id, m.text)}
+                        onSaveEdit={handleSaveEdit}
+                        onCancelEdit={handleCancelEdit}
+                        onDelete={() => handleDeleteMessage(m.id)}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Undo snackbar — WhatsApp/Gmail-style. Floats above the
+              composer for 5 seconds after a send, pinned to the
+              VIEWPORT bottom of the scroll area (not the scrolled
+              content) by living outside the scroll div. Auto-dismisses
+              after the timer; after that the bubble can still be
+              deleted via its kebab menu — undo just becomes implicit. */}
+          {undoableId && (
+            <div
+              className="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center px-4"
+              style={{ animation: "relay-toast-in 200ms ease-out" }}
+            >
+              <div
+                className="pointer-events-auto flex items-center gap-3 rounded-full border px-4 py-2"
+                style={{
+                  borderColor: "var(--border)",
+                  backgroundColor: "var(--surface)",
+                  boxShadow: "0 10px 28px rgba(0,0,0,0.35)",
+                }}
+              >
+                <Check size={12} style={{ color: BRAND_GREEN }} />
+                <span className="text-[12px]" style={{ color: "var(--text)" }}>
+                  Message sent
+                </span>
+                <button
+                  type="button"
+                  onClick={handleUndoSend}
+                  className="rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                  style={{ color: BRAND_GREEN }}
+                >
+                  Undo
+                </button>
+              </div>
+            </div>
+          )}
+          </div>
+
+          {/* Composer — large card-style block matching the reference:
+              multi-line textarea on top, action row underneath with
+              paperclip (attach), mic (voice → text or voice message),
+              and a labelled Send pill on the right.
+              Fully disabled in this placeholder state — wakes up when
+              a live engineer is on a call. */}
+          <div
+            className="shrink-0 border-t px-3 py-5"
+            style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+          >
+            {voiceMsg && (
+              <div
+                className="mb-2 flex items-center justify-between gap-2 rounded-md border px-3 py-1.5 text-[11px]"
+                style={{
+                  borderColor: "var(--border)",
+                  backgroundColor: "var(--surface-raised)",
+                  color: "var(--text-muted)",
+                }}
+              >
+                <span>{voiceMsg}</span>
+                <button
+                  type="button"
+                  onClick={() => setVoiceMsg(null)}
+                  className="opacity-60 transition-opacity hover:opacity-100"
+                  aria-label="Dismiss"
+                >
+                  <X size={11} />
+                </button>
+              </div>
+            )}
+            <div
+              className="rounded-2xl border p-5"
+              style={{
+                borderColor: "var(--border)",
+                backgroundColor: "var(--surface-raised)",
+                boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+              }}
+            >
+              <textarea
+                rows={14}
+                value={draftText}
+                onChange={(e) => setDraftText(e.target.value)}
+                onKeyDown={(e) => {
+                  // Plain Enter sends — matches the live ChatComposer
+                  // (app/_components/ChatComposer.tsx) so users build
+                  // the same muscle memory in both surfaces.
+                  // Shift+Enter inserts a newline for multi-paragraph
+                  // drafts. IME composition (Asian languages) gets a
+                  // pass — committing a character via Enter shouldn't
+                  // accidentally fire the send.
+                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    handleSendDraft();
+                  }
+                }}
+                placeholder="Message your engineer…"
+                className="block w-full resize-none bg-transparent text-[13px] leading-relaxed outline-none placeholder:opacity-60"
+                style={{ color: "var(--text)" }}
+              />
+              <div className="mt-2 flex items-center gap-1">
+                {/* Paperclip stays disabled in the stub — uploads need a
+                    real session id to bind attachments to (chat_attachments
+                    has FK to guest_messages). When the engineer joins,
+                    the real ChatComposer mounts and that's where files
+                    actually get sent. */}
+                <button
+                  type="button"
+                  disabled
+                  aria-label="Attach file"
+                  title="Attaching files needs an active session — it'll wake up when your engineer joins."
+                  className="flex h-8 w-8 shrink-0 cursor-not-allowed items-center justify-center rounded-full opacity-50"
+                  style={{
+                    color: "var(--text-muted)",
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  <Paperclip size={14} />
+                </button>
+                {/* Voice-to-text dictation — works locally without a
+                    session (Web Speech API in-browser), so this DOES
+                    function in the stub. Click to start/stop. */}
+                <button
+                  type="button"
+                  onClick={voiceMode === "transcribing" ? stopTranscribe : () => void startTranscribe()}
+                  aria-label="Dictate"
+                  title={voiceMode === "transcribing" ? "Stop dictating" : "Dictate — voice to text"}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors"
+                  style={{
+                    color: voiceMode === "transcribing" ? BRAND_GREEN : "var(--text-muted)",
+                    backgroundColor: voiceMode === "transcribing"
+                      ? "color-mix(in srgb, var(--primary) 14%, transparent)"
+                      : "transparent",
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  <Mic size={14} />
+                </button>
+                {/* Voice-recording — disabled in the stub because there's
+                    no recipient until an engineer joins. Mirrors the real
+                    ChatComposer's affordance so the customer sees the
+                    full surface they'll get during a live call. */}
+                <button
+                  type="button"
+                  disabled
+                  aria-label="Record voice message"
+                  title="Voice messages need an active session — wakes up when your engineer joins."
+                  className="flex h-8 w-8 shrink-0 cursor-not-allowed items-center justify-center rounded-full opacity-50"
+                  style={{
+                    color: "var(--text-muted)",
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  <AudioLines size={14} />
+                </button>
+                <div className="flex-1" />
+                <button
+                  type="button"
+                  onClick={handleSendDraft}
+                  disabled={!draftText.trim()}
+                  aria-label="Send"
+                  className="flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                  style={{
+                    backgroundColor: BRAND_GREEN,
+                    color: "#fff",
+                  }}
+                >
+                  <Send size={12} />
+                  Send
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </aside>
+  );
+}
+
+// Just-ended live session — same shape as PastSessionReview but with the
+// session + messages already in memory (no fetch needed). Centre summary
+// (70%) + inactive WhatsApp chat stub (30%). Kept as a thin wrapper so the
+// MainPane switch reads naturally.
+function EndedSessionReview({
+  session,
+  messages,
+}: {
+  session: GuestCall;
+  messages: GuestMessage[];
+}) {
+  const [chatCollapsed, setChatCollapsed] = useState(false);
+  return (
+    <div className="flex h-full w-full">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <SummaryPanel session={session} messages={messages} />
+      </div>
+      <ChatPanelStub
+        sidebarCollapsed={chatCollapsed}
+        onToggleCollapsed={() => setChatCollapsed((v) => !v)}
+      />
     </div>
   );
 }
 
 // Past session view — split layout owned by this component:
-//   • Left  → read-only chat with the past session's messages (composer
-//             disabled; meeting cards render inline same as live chat).
-//   • Right → AI summary only (no Chat-history tab; the chat lives in
-//             the main pane now, so duplicating it in the sidebar would
-//             just add clutter).
+//   • Center (70%) → AI summary (title, overview, next steps, zoom call
+//                    summaries). The summary IS the session's read-out;
+//                    the raw event timeline is redundant once we have
+//                    the AI rollup, so we don't surface it separately.
+//   • Right (30%)  → WhatsApp-style chat panel. Inactive until a live
+//                    engineer is on a call — for past sessions there's
+//                    no active call, so it sits as the same placeholder
+//                    the landing shows. Keeps the visual register
+//                    consistent across "no session" and "past session"
+//                    states so the customer always knows where chat
+//                    lives.
 function PastSessionReview({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
   const [row, setRow] = useState<GuestCall | null>(null);
   const [msgs, setMsgs] = useState<GuestMessage[]>([]);
   const [loading, setLoading] = useState(true);
+  const [chatCollapsed, setChatCollapsed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -1349,22 +2691,25 @@ function PastSessionReview({ sessionId, onClose }: { sessionId: string; onClose:
   }
 
   return (
-    <PanelGroup direction="horizontal" autoSaveId="relay-room-past" className="h-full">
-      <Panel defaultSize={60} minSize={40} order={1}>
-        <ReadOnlyChatPane messages={msgs} session={row} />
-      </Panel>
-      <Resizer />
-      <Panel defaultSize={40} minSize={28} order={2}>
+    <div className="flex h-full w-full">
+      <div className="flex min-w-0 flex-1 flex-col">
         <SummaryPanel session={row} messages={msgs} onClose={onClose} />
-      </Panel>
-    </PanelGroup>
+      </div>
+      <ChatPanelStub
+        sidebarCollapsed={chatCollapsed}
+        onToggleCollapsed={() => setChatCollapsed((v) => !v)}
+      />
+    </div>
   );
 }
 
-// Read-only chat pane used for past + just-ended sessions where there's
-// nothing to send. Renders messages the same way as the live ChatPane
-// (with inline MeetingChatEntry cards) and shows a locked-state hint in
-// place of the composer.
+// Read-only chat pane — used to render the past-session timeline on the
+// left of PastSessionReview. Currently NOT mounted in any render path
+// (the post-session review surfaces the AI summary 70% + inactive
+// WhatsApp chat stub 30% instead). Kept here in case we want to bring
+// back an inline event timeline as an opt-in tab later.
+//
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function ReadOnlyChatPane({
   messages,
   session,
@@ -1948,7 +3293,15 @@ function pillConfig(status: SessionStatus, urgency: Urgency) {
 // ── Sidebar (claude.ai style, collapsible) ────────────────────────────────
 type PastSession = {
   id: string;
+  /** Display name with date+time appended (e.g., "Stripe webhook · May 26, 1:23 AM").
+   *  Used in project-grouped view where the surrounding folder gives
+   *  the project context so the date stamp helps disambiguate same-day
+   *  sessions. */
   title: string;
+  /** Just the topic — no date. Used in flat-session view where the
+   *  meta line carries the date separately. Falls back to project name
+   *  or "Session" when no AI summary / intake / first message exists. */
+  topic: string;
   agent: string | null;
   minutes: number | null;
   date: string;
@@ -1981,7 +3334,7 @@ type ProjectGroup = {
 
 const Sidebar = memo(function Sidebar({
   email, customerUserId, session, entitlement, employment, viewingPastId, projects,
-  selectedProjectId, onViewPast, onNewSession, onNewChat, onStartInProject, onRenameProject, onSelectProject, onWalletClick,
+  selectedProjectId, onViewPast, onNewSession, onNewChat, onStartInProject, onRenameProject, onStartNewProject, onCreateProjectWithMetadata, onSelectProject, onWalletClick, onOpenProfile, onOpenBilling, onOpenLegal, onGoHome,
 }: {
   email: string;
   customerUserId: string | null;
@@ -2005,10 +3358,44 @@ const Sidebar = memo(function Sidebar({
   /** Inline rename on a project row. Updates projects.name + any active
    *  guest_calls.project_name in flight. */
   onRenameProject: (projectId: string, newName: string) => Promise<void>;
+  /** Connect-flow new-project submit. Creates project with the chosen name
+   *  + persists stack/project-type into the intake, then starts a session
+   *  bound to it. End-to-end: form submit → project + intake + ring. */
+  onStartNewProject: (opts: {
+    name: string;
+    projectType: string;
+    aiTools: string[];
+    backend: string[];
+    frontend: string[];
+  }) => Promise<void>;
+  /** "+ Create New Project" submit. Creates the project + writes its
+   *  metadata, but does NOT start a session. The customer rings the
+   *  engineer separately via the phone button on the project row or
+   *  the top-of-sidebar Connect button. */
+  onCreateProjectWithMetadata: (opts: {
+    name: string;
+    projectType: string;
+    aiTools: string[];
+    backend: string[];
+    frontend: string[];
+  }) => Promise<void>;
   /** Click on a project header — toggle that project as the current
    *  context for the no-session landing. Same id toggles off. */
   onSelectProject: (projectId: string | null) => void;
   onWalletClick: () => void;
+  /** Open the in-pane Account view on the Profile tab. Used by the
+   *  user menu's "Profile & settings" entry. */
+  onOpenProfile: () => void;
+  /** Open the in-pane Account view directly on the Billing tab.
+   *  Quick shortcut from the user-menu list — saves the customer a
+   *  click from "Profile & settings → Billing". */
+  onOpenBilling: () => void;
+  /** Open the in-pane legal viewer for Privacy or Terms. Triggered
+   *  from the user menu's Learn more section. */
+  onOpenLegal: (kind: LegalKind) => void;
+  /** Return to the BrandedLanding from any side-track view. Clears
+   *  account / legal / past-session / project-picker selection. */
+  onGoHome: () => void;
 }) {
   // Sidebar starts EXPANDED by default (Order 1 of the Commander brief —
   // Projects expanded, every action labelled, no mystery icons). User can
@@ -2021,6 +3408,126 @@ const Sidebar = memo(function Sidebar({
   const [past, setPast] = useState<PastSession[]>([]);
   // Global search — filters both project names and session titles/agents.
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Filter + sort state for the new sidebar controls.
+  //   statusFilter — defaults to "active" so the user sees live + recent
+  //     work first. "all" includes ended/abandoned sessions; "ended" is
+  //     a focused historical view.
+  //   groupBy — toggles between project-grouped (default) and date-
+  //     grouped views. v1 only wires the state; the date-grouped layout
+  //     itself is TODO (see comment at the render site).
+  //   pinnedIds — session ids the user has pinned. Persisted to
+  //     localStorage so the choice survives reloads; promoting to Supabase
+  //     is a follow-up that needs a guest_calls.pinned_at column.
+  // Default to "all" — a fresh customer wants to see ALL their history,
+  // not just active sessions. Filter chip lets them narrow down.
+  const [statusFilter, setStatusFilter] = useState<"active" | "all" | "ended">("all");
+  const [groupBy, setGroupBy] = useState<"project" | "date">("project");
+  const [sortBy, setSortBy] = useState<"recent" | "oldest" | "title">("recent");
+  // Sort/filter popover open state — single boolean. Click the SlidersHorizontal
+  // button to toggle; click outside or the X to close.
+  const [sortPanelOpen, setSortPanelOpen] = useState(false);
+  // Which row inside the popover is currently expanded (showing its
+  // submenu of options). Only one row can be expanded at a time so the
+  // panel doesn't balloon vertically.
+  const [expandedSortRow, setExpandedSortRow] = useState<
+    null | "status" | "groupBy" | "sortBy"
+  >(null);
+  const sortPanelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!sortPanelOpen) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (!sortPanelRef.current?.contains(e.target as Node)) {
+        setSortPanelOpen(false);
+        setExpandedSortRow(null);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        // Esc collapses the inner submenu first, then the whole panel.
+        if (expandedSortRow !== null) setExpandedSortRow(null);
+        else setSortPanelOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [sortPanelOpen, expandedSortRow]);
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const stored = window.localStorage.getItem("relay_pinned_session_ids");
+      return new Set<string>(stored ? (JSON.parse(stored) as string[]) : []);
+    } catch {
+      return new Set();
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        "relay_pinned_session_ids",
+        JSON.stringify([...pinnedIds]),
+      );
+    } catch {
+      /* localStorage unavailable (private window, quota, etc.) — silent */
+    }
+  }, [pinnedIds]);
+  const togglePin = useCallback((sessionId: string) => {
+    setPinnedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(sessionId)) next.delete(sessionId);
+      else next.add(sessionId);
+      return next;
+    });
+  }, []);
+
+  // Engineer presence — v1 PLACEHOLDER. Flip ENGINEER_ONLINE to false to
+  // preview the offline-widget variant. In v2, wire to a real Supabase
+  // engineer_presence subscription keyed by the last engineer's id (or
+  // call a /api/engineer-status endpoint).
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const ENGINEER_ONLINE_DEFAULT = true;
+  const [engineerOnline] = useState<boolean>(ENGINEER_ONLINE_DEFAULT);
+
+  // Connect-flow modal state. null = closed.
+  //   "choose"          — new vs existing
+  //   "existing"        — pick from existing projects (→ "engineerPicker")
+  //   "engineerPicker"  — choose which engineer to connect with for the picked project
+  //   "details"         — compact form: project type + stack (new project)
+  //   "name"            — pick a name; submit creates project + (optionally) starts session
+  const [connectFlow, setConnectFlow] = useState<
+    null | "choose" | "existing" | "engineerPicker" | "details" | "name"
+  >(null);
+  // The project the user picked in step "existing" (or that came from a
+  // per-project phone button shortcut). Drives what the "engineerPicker"
+  // step shows.
+  const [pickerProjectId, setPickerProjectId] = useState<string | null>(null);
+  // Mode toggle for the form steps. "connect" (default) = submit creates
+  // project + rings engineer. "create-only" = submit only creates the
+  // project (called from the "+ Create New Project" button). The form
+  // UI is identical; only the submit handler + button label differ.
+  const [connectFlowMode, setConnectFlowMode] = useState<"connect" | "create-only">("connect");
+  // Form state for the new-project flow. Lives at the Sidebar level so it
+  // survives back/forward navigation between the "details" and "name" steps.
+  const [newProjectType, setNewProjectType] = useState<string>("");
+  const [newProjectTypeOther, setNewProjectTypeOther] = useState<string>("");
+  const [newProjectAiTools, setNewProjectAiTools] = useState<string[]>([]);
+  const [newProjectBackend, setNewProjectBackend] = useState<string[]>([]);
+  const [newProjectFrontend, setNewProjectFrontend] = useState<string[]>([]);
+  const [newProjectName, setNewProjectName] = useState<string>("");
+  const [newProjectSubmitting, setNewProjectSubmitting] = useState(false);
+  const resetNewProjectForm = () => {
+    setNewProjectType("");
+    setNewProjectTypeOther("");
+    setNewProjectAiTools([]);
+    setNewProjectBackend([]);
+    setNewProjectFrontend([]);
+    setNewProjectName("");
+    setNewProjectSubmitting(false);
+  };
 
   useEffect(() => {
     if (!customerUserId) return;
@@ -2146,16 +3653,25 @@ const Sidebar = memo(function Sidebar({
           const text = cut.length <= max ? cut : `${cut.slice(0, max).trim()}…`;
           return text.charAt(0).toUpperCase() + text.slice(1);
         };
-        const autoName =
+        // Session names are formatted as `{topic} · {date}, {time}` so a
+        // datestamp + timestamp always anchors the name and same-day
+        // sessions are distinguishable in the sidebar. Topic priority
+        // falls through ai_summary_title → intake_summary → first user
+        // message → project name → generic "Session". Date format is
+        // short month + day ("May 26"), time is locale-formatted h:mm
+        // with am/pm ("3:42 PM").
+        const topic =
           aiTitle ||
           cleanLead(intakeHeadline) ||
           cleanLead(firstMsgRaw) ||
           (projectNameRaw && projectNameRaw !== "Project"
-            ? `${projectNameRaw} · ${friendlyDate}, ${friendlyTime}`
-            : `Session · ${friendlyDate}, ${friendlyTime}`);
+            ? projectNameRaw
+            : "Session");
+        const autoName = `${topic} · ${friendlyDate}, ${friendlyTime}`;
         return {
           id:          row.id as string,
           title:       autoName,
+          topic,
           agent:       row.agent_name as string | null,
           minutes:     row.duration_minutes != null ? Math.round(Number(row.duration_minutes)) : null,
           date:        created,
@@ -2171,9 +3687,21 @@ const Sidebar = memo(function Sidebar({
   // table (authoritative) and any session that has a project_id but is
   // missing from the table (defensive — e.g., orphan rows from a prior
   // migration state). Sessions with no project_id all bucket into "General".
+  //
+  // Filters applied in order: status filter (drops sessions outside the
+  // chosen status bucket), search query (substring match across title /
+  // agent / project name / status), then pin-aware sort (pinned sessions
+  // float to the top of each group, then date-desc).
   const projectGroups = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
+    const matchStatus = (s: PastSession) => {
+      if (statusFilter === "all") return true;
+      if (statusFilter === "ended") return s.status === "ended";
+      // "active" — anything not in a terminal state
+      return !["ended", "cancelled", "abandoned"].includes(s.status);
+    };
     const matchSession = (s: PastSession) => {
+      if (!matchStatus(s)) return false;
       if (!q) return true;
       const hay = [s.title, s.agent ?? "", s.projectName ?? ""].join(" ").toLowerCase();
       return hay.includes(q);
@@ -2214,22 +3742,50 @@ const Sidebar = memo(function Sidebar({
     }
     if (general.sessions.length > 0) map.set("general", general);
 
-    // Apply search filter: include a group if its name matches OR any of
-    // its sessions match. Hide groups that have no surviving content.
+    // Pin-aware session sort — pinned to the top of each group, then
+    // applying the user's chosen sortBy (recent / oldest / title) within
+    // each pin tier. Pinned-state always wins over sort order so a pinned
+    // ancient session still floats to the top.
+    const sortSessions = (sessions: PastSession[]) =>
+      [...sessions].sort((a, b) => {
+        const aPin = pinnedIds.has(a.id) ? 1 : 0;
+        const bPin = pinnedIds.has(b.id) ? 1 : 0;
+        if (aPin !== bPin) return bPin - aPin;
+        if (sortBy === "title") return a.title.localeCompare(b.title);
+        const aT = new Date(a.date).getTime();
+        const bT = new Date(b.date).getTime();
+        return sortBy === "oldest" ? aT - bT : bT - aT;
+      });
+
+    // Apply status + search filters. Status filter applies unconditionally;
+    // search filter only when there's a query.
     const groups = Array.from(map.values()).map((g) => {
       const nameHit = matchProjectName(g.name);
-      const sessions = g.sessions.filter(matchSession);
-      // Empty project with name match → keep it visible (lets you start a
-      // session in it even when there's no history yet).
-      if (!q) return g;
+      const sessions = sortSessions(g.sessions.filter(matchSession));
+      if (!q) {
+        // No search — keep the project but with status-filtered sessions.
+        return { ...g, sessions };
+      }
       if (nameHit && sessions.length === 0 && g.sessions.length === 0) return { ...g, sessions };
       if (sessions.length > 0) return { ...g, sessions };
-      if (nameHit) return g; // name hit, show all its sessions
+      if (nameHit) return { ...g, sessions: sortSessions(g.sessions) }; // name hit, show all (filtered) sessions
       return null;
     }).filter((g): g is ProjectGroup => g !== null);
 
-    return groups.sort((a, b) => b.latestDate - a.latestDate);
-  }, [projects, past, searchQuery]);
+    // Suppress ALL "Try Relay" projects from the sidebar (regardless of
+    // session count). The marketing-site Try Relay funnel auto-creates
+    // these on guest entry, but they're not part of the customer's
+    // real workflow — which is: create project with metadata → ring
+    // engineer. Any Try-Relay projects from the funnel are legacy noise.
+    // The underlying Supabase rows are untouched; this is a display-
+    // only filter so the data hygiene side stays user-controlled.
+    const cleaned = groups.filter((g) => {
+      const name = g.name.trim().toLowerCase();
+      return name !== "try relay" && name !== "try-relay";
+    });
+
+    return cleaned.sort((a, b) => b.latestDate - a.latestDate);
+  }, [projects, past, searchQuery, statusFilter, pinnedIds, sortBy]);
 
   const hasActiveSession = session && !["ended", "cancelled", "abandoned"].includes(session.status);
 
@@ -2250,15 +3806,22 @@ const Sidebar = memo(function Sidebar({
           <PanelLeftOpen size={18} />
         </button>
 
-        {/* New session */}
+        {/* Home — same affordance as the expanded sidebar so the
+            customer can always return to the landing surface without
+            having to expand the sidebar first. */}
         <button
-          onClick={onNewSession}
-          title="New session"
-          className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-          style={{ color: BRAND_GREEN }}
+          onClick={onGoHome}
+          title="Home"
+          aria-label="Home"
+          className="mb-1 flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          style={{ color: "var(--text-muted)" }}
         >
-          <Plus size={18} />
+          <Home size={16} />
         </button>
+
+        {/* "+ New session" button removed — the new "Get your engineer"
+            widget lives only in the expanded sidebar. Users on collapsed
+            mode click the expand toggle above to reveal it. */}
 
         {/* Search — expanding the rail makes the input focusable */}
         <button
@@ -2319,6 +3882,9 @@ const Sidebar = memo(function Sidebar({
               entitlement={entitlement}
               employment={employment}
               onRecharge={() => { setUserMenuOpen(false); onWalletClick(); }}
+              onOpenProfile={() => { setUserMenuOpen(false); onOpenProfile(); }}
+              onOpenBilling={() => { setUserMenuOpen(false); onOpenBilling(); }}
+              onOpenLegal={(kind) => { setUserMenuOpen(false); onOpenLegal(kind); }}
               onClose={() => setUserMenuOpen(false)}
               collapsed
             />
@@ -2334,9 +3900,34 @@ const Sidebar = memo(function Sidebar({
       className="flex h-full w-[260px] shrink-0 flex-col"
       style={{ borderRight: "1px solid var(--border)", backgroundColor: "var(--surface)" }}
     >
-      {/* Brand row + collapse toggle */}
-      <div className="flex h-12 items-center justify-between px-3">
-        <Wordmark size="md" />
+      {/* Brand row — wordmark (clickable, returns home) + theme
+          triplet + explicit Home icon + flex spacer + collapse toggle.
+          Two ways to go home so the affordance is unambiguous: the
+          logo follows the universal "click logo to return to landing"
+          convention, and the explicit Home icon is for users who
+          don't intuit that the wordmark is interactive. */}
+      <div className="flex h-12 items-center gap-2 px-3">
+        <button
+          type="button"
+          onClick={onGoHome}
+          title="Return to the home landing"
+          aria-label="Home"
+          className="rounded-md transition-opacity hover:opacity-80"
+        >
+          <Wordmark size="md" />
+        </button>
+        <ThemeTriplet />
+        <button
+          type="button"
+          onClick={onGoHome}
+          title="Home"
+          aria-label="Home"
+          className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          style={{ color: "var(--text-muted)" }}
+        >
+          <Home size={15} />
+        </button>
+        <div className="flex-1" />
         <button
           onClick={() => toggleCollapsed(true)}
           title="Collapse sidebar"
@@ -2365,29 +3956,107 @@ const Sidebar = memo(function Sidebar({
         </span>
       </div>
 
-      {/* Primary CTA — loud green "New session" + secondary "New chat". The
-          plus icon stays, but the button itself is the most prominent
-          control in the sidebar. Order 1 of the Commander brief. */}
+      {/* "Connect to Relay Engineer" — the top entry point into the
+          connect flow. A circular brand-green ball with the call-to-
+          action text centered inside. Heartbeat animation on the ball
+          + a pulsing green aura behind it (lub-dub rhythm via the
+          rk-connect-* keyframes defined in <style jsx> below). The aura
+          is its own absolute element sized 1.4× the ball — z-index
+          ordering keeps it BEHIND the button.
+
+          Because the customer can have multiple projects with different
+          engineers per project, this top button is intentionally
+          engineer-agnostic — clicking it always opens the New-vs-Existing
+          chooser. */}
       <div className="flex flex-col gap-2 px-2 py-1">
-        <div className="flex gap-1.5">
-          <Button
-            variant="primary"
-            size="md"
-            onClick={onNewSession}
-            className="flex-1 justify-center"
-            iconLeft={<Plus size={15} />}
+        <div className="relative flex flex-col items-center gap-2 py-2">
+        {/* Pulsing aura — sits behind the ball, scaled larger via inset
+            negative + opacity-pulses with the heartbeat rhythm. */}
+        <span
+          aria-hidden="true"
+          className="rk-connect-aura pointer-events-none absolute"
+          style={{
+            top: 8,
+            width: 140,
+            height: 140,
+            borderRadius: "50%",
+            background: "radial-gradient(circle, rgba(77,200,109,0.55) 0%, rgba(77,200,109,0.22) 32%, rgba(77,200,109,0) 65%)",
+            filter: "blur(8px)",
+            zIndex: 0,
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => setConnectFlow("choose")}
+          aria-label="Connect to a Relay engineer"
+          className="rk-connect-ball relative flex h-[140px] w-[140px] flex-col items-center justify-center rounded-full text-center transition-transform hover:scale-[1.03] active:scale-[0.97] focus-visible:outline-none focus-visible:ring-4"
+          style={{
+            background:
+              "radial-gradient(circle at 30% 25%, rgba(255,255,255,0.32) 0%, rgba(255,255,255,0) 38%), radial-gradient(circle at 70% 75%, rgba(20,30,15,0.22) 0%, rgba(20,30,15,0) 55%), radial-gradient(circle at 50% 50%, #4d6b40 30%, #3f5c34 100%)",
+            boxShadow:
+              "0 18px 32px rgba(58, 82, 48, 0.32), 0 6px 12px rgba(58, 82, 48, 0.22), inset 0 -8px 14px rgba(20, 30, 15, 0.22), inset 0 8px 14px rgba(255, 255, 255, 0.12)",
+            zIndex: 1,
+          }}
+        >
+          <Phone size={20} style={{ color: "#fff", opacity: 0.9, marginBottom: 6 }} />
+          <span
+            className="px-3 text-[13px] font-semibold leading-tight"
+            style={{ color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,0.25)" }}
           >
-            New session
-          </Button>
-          <IconButton
-            aria-label="More session options"
-            title="More options"
-            variant="secondary"
-            size="md"
-            onClick={onNewSession}
-          >
-            <ChevronDown size={14} />
-          </IconButton>
+            Connect to
+            <br />
+            Relay Engineer
+          </span>
+        </button>
+        {/* Scoped keyframes for the heartbeat + aura. lub-dub rhythm: two
+            beats per 1.6s cycle (14% peak, 28% relax, 42% bigger peak,
+            then long rest). Aura scales + opacity in lockstep; ball does
+            a more subtle scale to avoid fighting the hover/active
+            transforms. Respects prefers-reduced-motion. */}
+        <style jsx>{`
+          .rk-connect-aura {
+            animation: rk-connect-aura 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+            transform-origin: center;
+          }
+          .rk-connect-ball {
+            animation: rk-connect-ball 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+            transform-origin: center;
+          }
+          .rk-connect-ball:hover,
+          .rk-connect-ball:active {
+            animation-play-state: paused;
+          }
+          @keyframes rk-connect-aura {
+            0%   { transform: scale(1);    opacity: 0.45; }
+            14%  { transform: scale(1.12); opacity: 0.85; }
+            28%  { transform: scale(1.04); opacity: 0.55; }
+            42%  { transform: scale(1.22); opacity: 0.95; }
+            70%, 100% { transform: scale(1); opacity: 0.45; }
+          }
+          @keyframes rk-connect-ball {
+            0%, 70%, 100% { transform: scale(1); }
+            14%           { transform: scale(1.04); }
+            42%           { transform: scale(1.06); }
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .rk-connect-aura,
+            .rk-connect-ball {
+              animation: none;
+            }
+            .rk-connect-aura {
+              opacity: 0.6;
+              transform: scale(1.05);
+            }
+          }
+        `}</style>
+        <p
+          className="text-center text-[11px]"
+          style={{ color: "var(--text-muted)" }}
+        >
+          {past.some((s) => !!s.agent)
+            ? "Pick a project to see your engineers"
+            : "Your first engineer pairs on this call"}
+        </p>
         </div>
 
         {/* Search across all past sessions (title / engineer / project). */}
@@ -2400,7 +4069,7 @@ const Sidebar = memo(function Sidebar({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search sessions"
+            placeholder="Search sessions and projects"
             className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:opacity-60"
             style={{ color: "var(--text)" }}
           />
@@ -2442,46 +4111,254 @@ const Sidebar = memo(function Sidebar({
         </div>
       )}
 
-      {/* Projects (each is a folder containing sessions) */}
+      {/* Projects (each is a folder containing sessions). The "+ Create
+          New Project" button below opens the same compact form as the
+          connect-flow new-project path, but in "create-only" mode — it
+          stores name + project type + stack metadata against the new
+          project WITHOUT starting an engineer session. Customer rings
+          separately via the per-project phone button or the top
+          Connect button, both of which use the per-project metadata
+          to drive engineer skill matching. */}
       <div className="flex-1 overflow-y-auto px-2 pb-2 pt-3">
-        <div className="mb-1 flex items-center justify-between px-2.5 py-1">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--text-muted)" }}>
-            Projects
-          </span>
+        <div className="mb-1 px-2.5 py-1">
           <button
-            onClick={onNewSession}
-            title="Start a new project"
-            aria-label="Start a new project"
-            className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium transition-colors hover:bg-[var(--surface-raised)]"
+            onClick={() => {
+              setConnectFlowMode("create-only");
+              setConnectFlow("details");
+            }}
+            title="Create a project with name + stack metadata (no engineer call yet)"
+            aria-label="Create a project with name and stack metadata"
+            className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-medium transition-colors hover:bg-[var(--surface-raised)]"
             style={{ color: "var(--primary-hover)" }}
           >
-            <Plus size={11} />
-            New project
+            <Plus size={12} />
+            Create New Project
           </button>
         </div>
 
-        {projectGroups.length > 0
-          ? projectGroups.map((group) => (
-              <ProjectAccordion
-                key={group.key}
-                group={group}
-                viewingPastId={viewingPastId}
-                currentSessionId={session?.id ?? null}
-                selectedProjectId={selectedProjectId}
-                onViewPast={onViewPast}
-                onStartInProject={onStartInProject}
-                onRenameProject={onRenameProject}
-                onSelectProject={onSelectProject}
+        {/* Separator between the create-project action and the filter
+            popover + project list. */}
+        <div
+          className="mx-2.5 my-1.5 h-px"
+          style={{ backgroundColor: "var(--border)" }}
+          aria-hidden="true"
+        />
+
+        {/* Sort/filter popover — modeled on the Claude reference. A single
+            SlidersHorizontal icon button opens an inline panel with three
+            rows (Status / Group by / Sort by). Each row shows label on the
+            left, current value on the right, with a chevron-right that
+            cycles the value on click. Click outside or Escape to close. */}
+        <div ref={sortPanelRef} className="relative mb-1.5 px-2.5">
+          <div className="flex items-center justify-between">
+            <span
+              className="text-[10px] font-semibold uppercase tracking-[0.1em]"
+              style={{ color: "var(--text-muted)" }}
+            >
+              {statusFilter === "all" ? "All sessions" : statusFilter === "active" ? "Active" : "Ended"}
+              {" · "}
+              {groupBy === "project" ? "by project" : "by date"}
+            </span>
+            <button
+              type="button"
+              onClick={() => setSortPanelOpen((v) => !v)}
+              title="Filter and sort"
+              aria-label="Filter and sort"
+              aria-expanded={sortPanelOpen}
+              className={cn(
+                "inline-flex h-6 w-6 items-center justify-center rounded-md transition-colors",
+                sortPanelOpen
+                  ? "bg-[var(--surface-raised)]"
+                  : "hover:bg-[var(--surface-raised)]",
+              )}
+              style={{ color: "var(--text-muted)" }}
+            >
+              <SlidersHorizontal size={13} />
+            </button>
+          </div>
+
+          {sortPanelOpen && (
+            <div
+              className="absolute right-2 top-7 z-30 w-[228px] rounded-lg border shadow-xl"
+              style={{
+                backgroundColor: "var(--surface)",
+                borderColor: "var(--border)",
+              }}
+            >
+              <SortRow
+                label="Status"
+                value={
+                  statusFilter === "all" ? "All" : statusFilter === "active" ? "Active" : "Ended"
+                }
+                highlight={statusFilter !== "all"}
+                options={[
+                  { value: "all",    label: "All" },
+                  { value: "active", label: "Active" },
+                  { value: "ended",  label: "Ended" },
+                ]}
+                expanded={expandedSortRow === "status"}
+                onToggle={() =>
+                  setExpandedSortRow((v) => (v === "status" ? null : "status"))
+                }
+                onSelect={(v) => {
+                  setStatusFilter(v as "all" | "active" | "ended");
+                  setExpandedSortRow(null);
+                }}
               />
-            ))
-          : (
-            <p className="px-2 py-4 text-[11px]" style={{ color: "var(--text-muted)" }}>
-              {searchQuery
-                ? `No projects or sessions match "${searchQuery}".`
-                : "Start your first project to get going."}
-            </p>
-          )
-        }
+              <SortRow
+                label="Group by"
+                value={groupBy === "project" ? "Project" : "Date"}
+                highlight={groupBy !== "project"}
+                options={[
+                  { value: "project", label: "Project" },
+                  { value: "date",    label: "Date" },
+                ]}
+                expanded={expandedSortRow === "groupBy"}
+                onToggle={() =>
+                  setExpandedSortRow((v) => (v === "groupBy" ? null : "groupBy"))
+                }
+                onSelect={(v) => {
+                  setGroupBy(v as "project" | "date");
+                  setExpandedSortRow(null);
+                }}
+              />
+              <SortRow
+                label="Sort by"
+                value={
+                  sortBy === "recent" ? "Recent" : sortBy === "oldest" ? "Oldest" : "Title"
+                }
+                highlight={sortBy !== "recent"}
+                options={[
+                  { value: "recent", label: "Recent" },
+                  { value: "oldest", label: "Oldest" },
+                  { value: "title",  label: "Title (A→Z)" },
+                ]}
+                expanded={expandedSortRow === "sortBy"}
+                onToggle={() =>
+                  setExpandedSortRow((v) => (v === "sortBy" ? null : "sortBy"))
+                }
+                onSelect={(v) => {
+                  setSortBy(v as "recent" | "oldest" | "title");
+                  setExpandedSortRow(null);
+                }}
+                last
+              />
+            </div>
+          )}
+        </div>
+
+        {(() => {
+          // Default state = All / Project / Recent. Any non-default
+          // setting flips the sidebar from project-grouped accordions
+          // to a flat session list — the user has clearly asked
+          // "show me sessions across projects" rather than "show me
+          // projects". When groupBy is "date", the flat list is
+          // additionally bucketed by Today / Yesterday / This week /
+          // Earlier.
+          const isSessionView =
+            statusFilter !== "all" || groupBy === "date" || sortBy !== "recent";
+
+          if (!isSessionView) {
+            // Default view — project accordions (unchanged behavior).
+            return projectGroups.length > 0
+              ? projectGroups.map((group) => (
+                  <ProjectAccordion
+                    key={group.key}
+                    group={group}
+                    viewingPastId={viewingPastId}
+                    currentSessionId={session?.id ?? null}
+                    selectedProjectId={selectedProjectId}
+                    onViewPast={onViewPast}
+                    onStartInProject={(projectId) => {
+                      if (projectId === null) {
+                        onStartInProject(null);
+                        return;
+                      }
+                      // Count distinct engineers for the project.
+                      //   0 engineers (cold) → skill-match a new engineer
+                      //     via the existing intake flow.
+                      //   1+ engineers (warm) → engineerPicker step, which
+                      //     shows the engineer(s) by name + availability
+                      //     state (Available/Busy/Offline) with state-
+                      //     appropriate actions: Connect / Request /
+                      //     Schedule. The picker also exposes the
+                      //     "Request a different engineer" fallback so
+                      //     the client in a rush can route around a busy
+                      //     or offline engineer.
+                      const distinctEngineers = new Set<string>();
+                      for (const s of past) {
+                        if (s.projectId === projectId && s.agent) {
+                          distinctEngineers.add(s.agent);
+                        }
+                      }
+                      if (distinctEngineers.size >= 1) {
+                        setPickerProjectId(projectId);
+                        setConnectFlow("engineerPicker");
+                      } else {
+                        onStartInProject(projectId);
+                      }
+                    }}
+                    onRenameProject={onRenameProject}
+                    onSelectProject={onSelectProject}
+                    pinnedIds={pinnedIds}
+                    onTogglePin={togglePin}
+                  />
+                ))
+              : (
+                <p className="px-2 py-4 text-[11px]" style={{ color: "var(--text-muted)" }}>
+                  {searchQuery
+                    ? `No projects or sessions match "${searchQuery}".`
+                    : "Start your first project to get going."}
+                </p>
+              );
+          }
+
+          // ── Session view: flatten across all projects ───────────
+          // projectGroups already applied status filter + search filter
+          // + pin-aware sort. We just flatten and (optionally) bucket
+          // by date. Each session row carries its project name so the
+          // user doesn't lose project context.
+          const allSessions = projectGroups.flatMap((g) => g.sessions);
+          if (allSessions.length === 0) {
+            return (
+              <p className="px-2 py-4 text-[11px]" style={{ color: "var(--text-muted)" }}>
+                {searchQuery
+                  ? `No sessions match "${searchQuery}".`
+                  : statusFilter === "active"
+                    ? "No active sessions."
+                    : statusFilter === "ended"
+                      ? "No ended sessions yet."
+                      : "No sessions yet."}
+              </p>
+            );
+          }
+
+          // Flat chronological list — no bucket headers. The rows already
+          // carry their own date in the meta line, so explicit Today /
+          // Yesterday / This week / Earlier headers were just noise. The
+          // sortBy chip (Recent / Oldest / Title) handles ordering; the
+          // groupBy chip is mostly redundant in session view (kept for
+          // future re-introduction of buckets if useful).
+          return (
+            <div className="flex flex-col gap-0.5">
+              {allSessions.map((s) => (
+                <SessionRowFlat
+                  key={s.id}
+                  session={s}
+                  isPinned={pinnedIds.has(s.id)}
+                  isViewing={viewingPastId === s.id}
+                  isCurrent={
+                    !!session
+                    && s.id === session.id
+                    && !["ended", "cancelled", "abandoned"].includes(s.status)
+                  }
+                  onClick={() => onViewPast(s.id)}
+                  onTogglePin={() => togglePin(s.id)}
+                />
+              ))}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Profile (bottom) */}
@@ -2513,13 +4390,1229 @@ const Sidebar = memo(function Sidebar({
             entitlement={entitlement}
             employment={employment}
             onRecharge={() => { setUserMenuOpen(false); onWalletClick(); }}
+            onOpenProfile={() => { setUserMenuOpen(false); onOpenProfile(); }}
+            onOpenBilling={() => { setUserMenuOpen(false); onOpenBilling(); }}
+            onOpenLegal={(kind) => { setUserMenuOpen(false); onOpenLegal(kind); }}
             onClose={() => setUserMenuOpen(false)}
           />
         )}
       </div>
+      {/* Connect-flow modal — 5-step micro-flow now. */}
+      {connectFlow !== null && (
+        <ConnectFlowModal
+          step={connectFlow}
+          mode={connectFlowMode}
+          projects={projectGroups.filter((g) => g.key !== "general")}
+          // ── engineerPicker context: which project was picked + the
+          //    engineers who've worked on it (derived from past sessions).
+          pickerProjectId={pickerProjectId}
+          pickerProjectName={
+            pickerProjectId
+              ? projectGroups.find((g) => g.key === pickerProjectId)?.name ?? null
+              : null
+          }
+          pickerEngineers={(() => {
+            if (!pickerProjectId) return [];
+            // Distinct engineer names for this project (most-recent first).
+            const seen = new Map<string, { name: string; lastDate: string }>();
+            for (const s of past) {
+              if (s.projectId !== pickerProjectId || !s.agent) continue;
+              const existing = seen.get(s.agent);
+              if (!existing || new Date(s.date) > new Date(existing.lastDate)) {
+                seen.set(s.agent, { name: s.agent, lastDate: s.date });
+              }
+            }
+            return Array.from(seen.values()).sort(
+              (a, b) => new Date(b.lastDate).getTime() - new Date(a.lastDate).getTime(),
+            );
+          })()}
+          newProjectType={newProjectType}
+          setNewProjectType={setNewProjectType}
+          newProjectTypeOther={newProjectTypeOther}
+          setNewProjectTypeOther={setNewProjectTypeOther}
+          newProjectAiTools={newProjectAiTools}
+          setNewProjectAiTools={setNewProjectAiTools}
+          newProjectBackend={newProjectBackend}
+          setNewProjectBackend={setNewProjectBackend}
+          newProjectFrontend={newProjectFrontend}
+          setNewProjectFrontend={setNewProjectFrontend}
+          newProjectName={newProjectName}
+          setNewProjectName={setNewProjectName}
+          submitting={newProjectSubmitting}
+          onChooseNew={() => setConnectFlow("details")}
+          onChooseExisting={() => setConnectFlow("existing")}
+          onPickProject={(projectId) => {
+            // Route into engineerPicker for that project. If the
+            // project has zero engineer history, jump straight into
+            // intake (no one to pick between).
+            const hasEngineers = past.some(
+              (s) => s.projectId === projectId && !!s.agent,
+            );
+            if (hasEngineers) {
+              setPickerProjectId(projectId);
+              setConnectFlow("engineerPicker");
+            } else {
+              setConnectFlow(null);
+              onStartInProject(projectId);
+            }
+          }}
+          onEngineerConnect={(_engineerName) => {
+            // v1: route through the existing intake flow for this
+            // project. v2 TODO: pass _preferred_agent_id to
+            // match_engineer so the picked engineer is routed first.
+            const pid = pickerProjectId;
+            setConnectFlow(null);
+            setPickerProjectId(null);
+            if (pid) onStartInProject(pid);
+          }}
+          onEngineerRequest={(engineerName) => {
+            // v1 STUB: real flow needs an engineer_connect_requests
+            // table + realtime delivery to engineer's /inbox. For now
+            // we just toast and close. See deferred-tasks list.
+            console.info(`[connect-flow] Request-to-connect stub fired for ${engineerName}`);
+            window.alert(
+              `Request sent to ${engineerName}. ` +
+              `(v1 stub — engineer notification system not yet wired. ` +
+              `See engineer-side TODOs.)`,
+            );
+            setConnectFlow(null);
+            setPickerProjectId(null);
+          }}
+          onEngineerSchedule={(engineerName) => {
+            // v1 STUB: real flow needs engineer_profiles.calendar_url
+            // + per-engineer calendar pages.
+            console.info(`[connect-flow] Schedule stub fired for ${engineerName}`);
+            window.alert(
+              `${engineerName}'s calendar is not yet linked. ` +
+              `(v1 stub — engineer calendar setup not yet wired. ` +
+              `See engineer-side TODOs.)`,
+            );
+          }}
+          onPickerRequestDifferent={() => {
+            // "Request a different engineer" — fall through to a fresh
+            // intake on the same project. The match_engineer RPC will
+            // pick any engineer with the right skills, biased away
+            // from the ones already shown.
+            const pid = pickerProjectId;
+            setConnectFlow(null);
+            setPickerProjectId(null);
+            if (pid) onStartInProject(pid);
+          }}
+          onPickerBack={() => setConnectFlow("existing")}
+          onDetailsNext={() => setConnectFlow("name")}
+          onNameBack={() => setConnectFlow("details")}
+          onSubmitNewProject={async () => {
+            setNewProjectSubmitting(true);
+            const projectType =
+              newProjectType === "Other"
+                ? newProjectTypeOther.trim() || "Other"
+                : newProjectType;
+            const payload = {
+              name: newProjectName.trim(),
+              projectType,
+              aiTools: newProjectAiTools,
+              backend: newProjectBackend,
+              frontend: newProjectFrontend,
+            };
+            try {
+              if (connectFlowMode === "create-only") {
+                await onCreateProjectWithMetadata(payload);
+              } else {
+                await onStartNewProject(payload);
+              }
+              setConnectFlow(null);
+              setConnectFlowMode("connect");
+              resetNewProjectForm();
+            } catch (err) {
+              console.warn("[connect-flow] submit failed:", err);
+              setNewProjectSubmitting(false);
+            }
+          }}
+          onBack={() => setConnectFlow("choose")}
+          onClose={() => {
+            setConnectFlow(null);
+            setConnectFlowMode("connect");
+            setPickerProjectId(null);
+            resetNewProjectForm();
+          }}
+        />
+      )}
     </aside>
   );
 });
+
+// ── Sort/filter row inside the popover panel ───────────────────────────────
+// One row per filter, with click-to-expand inline submenu. The header
+// row shows label + current value + chevron. Clicking the row toggles
+// its submenu open below; the submenu lists all available options. Click
+// an option to select it (auto-collapses the submenu). `highlight` shows
+// the value in brand green when an active (non-default) filter is set,
+// so the user sees at a glance which controls are doing work. `last`
+// drops the bottom border between rows.
+function SortRow({
+  label, value, options, expanded, onToggle, onSelect, highlight, last,
+}: {
+  label: string;
+  value: string;
+  options: { value: string; label: string }[];
+  expanded: boolean;
+  onToggle: () => void;
+  onSelect: (value: string) => void;
+  highlight?: boolean;
+  last?: boolean;
+}) {
+  return (
+    <div
+      className={cn(!last && "border-b")}
+      style={!last ? { borderColor: "var(--border)" } : undefined}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        className="flex w-full items-center justify-between px-3 py-2.5 text-left transition-colors hover:bg-[var(--surface-raised)]"
+      >
+        <span className="text-[13px]" style={{ color: "var(--text)" }}>
+          {label}
+        </span>
+        <span className="flex items-center gap-1">
+          <span
+            className="text-[12px]"
+            style={{ color: highlight ? BRAND_GREEN : "var(--text-muted)" }}
+          >
+            {value}
+          </span>
+          <ChevronRight
+            size={12}
+            style={{
+              color: "var(--text-muted)",
+              transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
+              transition: "transform 0.15s ease",
+            }}
+          />
+        </span>
+      </button>
+
+      {expanded && (
+        <div
+          className="border-t bg-[color-mix(in_srgb,var(--text)_3%,transparent)]"
+          style={{ borderColor: "var(--border)" }}
+        >
+          {options.map((opt) => {
+            const isSelected = opt.label === value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => onSelect(opt.value)}
+                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition-colors hover:bg-[var(--surface-raised)]"
+                aria-pressed={isSelected}
+              >
+                <span
+                  className="text-[12px]"
+                  style={{
+                    color: isSelected ? BRAND_GREEN : "var(--text)",
+                    fontWeight: isSelected ? 500 : 400,
+                  }}
+                >
+                  {opt.label}
+                </span>
+                {isSelected && (
+                  <Check size={12} style={{ color: BRAND_GREEN }} />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Connect-flow modal ─────────────────────────────────────────────────────
+// 4-step micro-flow that runs when the customer clicks Connect on the
+// Get-your-engineer widget:
+//   step="choose"   — new vs existing project
+//   step="existing" — pick from existing projects (skips to session start)
+//   step="details"  — compact form: project type + AI tool + backend + frontend
+//   step="name"     — enter a project name; submit creates + starts session
+
+// Project types — calibrated for the actual Relay audience: HR managers,
+// Finance/CFO, Product managers, Marketing/CMO, Sales, CEO/COO, L&D, and
+// other non-technical execs building with AI tools (Lovable, Cursor, v0,
+// Replit, etc.). The list is *what they ship*, not *what they call
+// themselves* — the same person often builds across categories.
+//
+// Order roughly by frequency observed in the early customer pool:
+// internal dashboards and landing pages lead; CRMs and storefronts trail.
+const NEW_PROJECT_TYPES: ReadonlyArray<{ value: string; emoji: string }> = [
+  { value: "Internal dashboard / KPI tracker", emoji: "📊" },
+  { value: "Marketing landing page",            emoji: "🌐" },
+  { value: "Customer portal / Web app",         emoji: "💻" },
+  { value: "Lead capture / Form tool",          emoji: "📋" },
+  { value: "Internal workflow / Automation",    emoji: "⚙️" },
+  { value: "Knowledge base / Wiki",             emoji: "📚" },
+  { value: "AI chatbot / Assistant",            emoji: "🤖" },
+  { value: "Reporting / Analytics tool",        emoji: "📈" },
+  { value: "CRM / Customer tracker",            emoji: "👥" },
+  { value: "Booking / Scheduling app",          emoji: "📅" },
+  { value: "Training / Course platform",        emoji: "🎓" },
+  { value: "E-commerce storefront",             emoji: "🛒" },
+  { value: "Mobile app",                        emoji: "📱" },
+  { value: "Other",                             emoji: "✨" },
+];
+
+// The `client_intakes.developing` column has a strict CHECK constraint
+// (Website | Mobile App | IoT System | AIML product). NEW_PROJECT_TYPES
+// is persona-driven (dashboards, CRMs, e-commerce, etc.) so we map every
+// persona type back to one of the four allowed buckets before writing
+// the row. Without this map, the upsert silently fails and the customer
+// gets bounced to /intake on their next phone-click instead of straight
+// to engineer matching.
+type DevelopingKind = "Website" | "Mobile App" | "IoT System" | "AIML product";
+function mapProjectTypeToDeveloping(projectType: string | null | undefined): DevelopingKind {
+  if (!projectType) return "Website";
+  const v = projectType.toLowerCase();
+  // Direct passthroughs for callers that already supply a valid value.
+  if (v === "website")        return "Website";
+  if (v === "mobile app")     return "Mobile App";
+  if (v === "iot system")     return "IoT System";
+  if (v === "aiml product")   return "AIML product";
+  // Persona mapping: mobile, AI, IoT, else everything web-ish → Website.
+  if (v.includes("mobile"))                                    return "Mobile App";
+  if (v.includes("ai ") || v.includes("chatbot") || v.includes("assistant") || v.includes("aiml")) return "AIML product";
+  if (v.includes("iot") || v.includes("device") || v.includes("hardware")) return "IoT System";
+  return "Website";
+}
+
+// AI tools the customer might be building with. Aligned with the homepage
+// "AI tools we support" pill row + the lib/relay/profile STACK_OPTIONS.
+const NEW_PROJECT_AI_TOOLS: ReadonlyArray<string> = [
+  "Claude", "ChatGPT", "Cursor", "Lovable", "v0", "Replit", "Bolt", "Windsurf", "Other",
+];
+const NEW_PROJECT_BACKENDS: ReadonlyArray<string> = [
+  "Supabase", "Firebase", "Vercel", "AWS", "Postgres", "MongoDB", "Node.js", "Python", "Not sure",
+];
+const NEW_PROJECT_FRONTENDS: ReadonlyArray<string> = [
+  "React", "Next.js", "Vue", "Plain HTML/CSS", "Tailwind", "React Native", "Flutter", "Not sure",
+];
+
+function ConnectFlowModal({
+  step, mode, projects,
+  pickerProjectId, pickerProjectName, pickerEngineers,
+  newProjectType, setNewProjectType,
+  newProjectTypeOther, setNewProjectTypeOther,
+  newProjectAiTools, setNewProjectAiTools,
+  newProjectBackend, setNewProjectBackend,
+  newProjectFrontend, setNewProjectFrontend,
+  newProjectName, setNewProjectName,
+  submitting,
+  onChooseNew, onChooseExisting, onPickProject,
+  onEngineerConnect, onEngineerRequest, onEngineerSchedule,
+  onPickerRequestDifferent, onPickerBack,
+  onDetailsNext, onNameBack, onSubmitNewProject,
+  onBack, onClose,
+}: {
+  step: "choose" | "existing" | "engineerPicker" | "details" | "name";
+  mode: "connect" | "create-only";
+  projects: ProjectGroup[];
+  pickerProjectId: string | null;
+  pickerProjectName: string | null;
+  /** Engineers who've worked on the picked project (deduped, most-recent
+   *  first). lastDate is the most recent session they had on this project. */
+  pickerEngineers: { name: string; lastDate: string }[];
+  newProjectType: string;
+  setNewProjectType: (s: string) => void;
+  newProjectTypeOther: string;
+  setNewProjectTypeOther: (s: string) => void;
+  newProjectAiTools: string[];
+  setNewProjectAiTools: React.Dispatch<React.SetStateAction<string[]>>;
+  newProjectBackend: string[];
+  setNewProjectBackend: React.Dispatch<React.SetStateAction<string[]>>;
+  newProjectFrontend: string[];
+  setNewProjectFrontend: React.Dispatch<React.SetStateAction<string[]>>;
+  newProjectName: string;
+  setNewProjectName: (s: string) => void;
+  submitting: boolean;
+  onChooseNew: () => void;
+  onChooseExisting: () => void;
+  onPickProject: (projectId: string) => void;
+  /** Picked-engineer actions (engineerPicker step). */
+  onEngineerConnect: (engineerName: string) => void;
+  onEngineerRequest: (engineerName: string) => void;
+  onEngineerSchedule: (engineerName: string) => void;
+  /** "Request a different engineer" fallback. */
+  onPickerRequestDifferent: () => void;
+  onPickerBack: () => void;
+  onDetailsNext: () => void;
+  onNameBack: () => void;
+  onSubmitNewProject: () => void;
+  onBack: () => void;
+  onClose: () => void;
+}) {
+  const toggleMultiSelect = (
+    setter: React.Dispatch<React.SetStateAction<string[]>>,
+    value: string,
+  ) => {
+    setter((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value],
+    );
+  };
+
+  // The "details" step requires ALL four sections to have at least one
+  // selection (project type + AI tool + backend + frontend). "Not sure"
+  // is a valid option in backend/frontend so the user always has a path
+  // forward — they don't need to know the answer, just acknowledge the
+  // question. Name step has a hard-required name.
+  const detailsValid =
+    newProjectType.trim().length > 0 &&
+    (newProjectType !== "Other" || newProjectTypeOther.trim().length > 0) &&
+    newProjectAiTools.length > 0 &&
+    newProjectBackend.length > 0 &&
+    newProjectFrontend.length > 0;
+  const nameValid = newProjectName.trim().length > 0;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6"
+      style={{ backgroundColor: "rgba(0, 0, 0, 0.55)", backdropFilter: "blur(4px)" }}
+      onClick={onClose}
+    >
+      <div
+        className={cn(
+          "relative w-full rounded-2xl border p-6 shadow-2xl",
+          // Wider modal for the details step (form is content-heavy);
+          // narrower for the lighter steps so they don't feel sparse.
+          step === "details" ? "max-w-xl" : "max-w-md",
+        )}
+        style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          onClick={onClose}
+          aria-label="Close"
+          className="absolute right-4 top-4 rounded-full p-1 opacity-60 transition-opacity hover:opacity-100"
+          style={{ color: "var(--text-muted)" }}
+        >
+          <X size={16} />
+        </button>
+
+        {step === "choose" && (
+          <>
+            <h2
+              className="text-[18px] font-semibold"
+              style={{ color: "var(--text)" }}
+            >
+              Is this for a new project or an existing one?
+            </h2>
+            <p
+              className="mt-2 text-[13px] leading-relaxed"
+              style={{ color: "var(--text-muted)" }}
+            >
+              We'll route your session to the right project so the context
+              stays together.
+            </p>
+            <div className="mt-5 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={onChooseExisting}
+                disabled={projects.length === 0}
+                className="flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left transition-colors hover:bg-[var(--surface-raised)] disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ borderColor: "var(--border)" }}
+              >
+                <div>
+                  <div className="text-[14px] font-medium" style={{ color: "var(--text)" }}>
+                    Existing project
+                  </div>
+                  <div className="mt-0.5 text-[12px]" style={{ color: "var(--text-muted)" }}>
+                    {projects.length === 0
+                      ? "You don't have any projects yet — start a new one."
+                      : `Pick from your ${projects.length} project${projects.length === 1 ? "" : "s"}.`}
+                  </div>
+                </div>
+                <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
+              </button>
+              <button
+                type="button"
+                onClick={onChooseNew}
+                className="flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left transition-colors hover:bg-[var(--surface-raised)]"
+                style={{ borderColor: "var(--border)" }}
+              >
+                <div>
+                  <div className="text-[14px] font-medium" style={{ color: "var(--text)" }}>
+                    New project
+                  </div>
+                  <div className="mt-0.5 text-[12px]" style={{ color: "var(--text-muted)" }}>
+                    Tell us what you're building, then we'll connect you.
+                  </div>
+                </div>
+                <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
+              </button>
+            </div>
+          </>
+        )}
+
+        {step === "existing" && (
+          <>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={onBack}
+                aria-label="Back"
+                className="rounded-md p-1 transition-opacity hover:opacity-80"
+                style={{ color: "var(--text-muted)" }}
+              >
+                <ChevronRight size={14} style={{ transform: "rotate(180deg)" }} />
+              </button>
+              <h2
+                className="text-[18px] font-semibold"
+                style={{ color: "var(--text)" }}
+              >
+                Pick a project
+              </h2>
+            </div>
+            <p
+              className="mt-2 text-[13px] leading-relaxed"
+              style={{ color: "var(--text-muted)" }}
+            >
+              The session will be filed under the project you choose.
+            </p>
+            <div className="mt-4 flex max-h-[60vh] flex-col gap-1 overflow-y-auto">
+              {projects.length === 0 ? (
+                <p className="px-2 py-4 text-[13px]" style={{ color: "var(--text-muted)" }}>
+                  No projects yet.
+                </p>
+              ) : (
+                projects.map((p) => (
+                  <button
+                    key={p.key}
+                    type="button"
+                    onClick={() => onPickProject(p.key)}
+                    className="flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left transition-colors hover:bg-[var(--surface-raised)]"
+                    style={{ borderColor: "var(--border)" }}
+                  >
+                    <div className="flex min-w-0 items-center gap-2">
+                      <Folder size={13} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+                      <span className="truncate text-[13px] font-medium" style={{ color: "var(--text)" }}>
+                        {p.name}
+                      </span>
+                    </div>
+                    <span className="ml-2 shrink-0 text-[11px] tabular-nums" style={{ color: "var(--text-muted)" }}>
+                      {p.sessions.length} {p.sessions.length === 1 ? "session" : "sessions"}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          </>
+        )}
+
+        {step === "engineerPicker" && (
+          <>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={onPickerBack}
+                aria-label="Back"
+                className="rounded-md p-1 transition-opacity hover:opacity-80"
+                style={{ color: "var(--text-muted)" }}
+              >
+                <ChevronRight size={14} style={{ transform: "rotate(180deg)" }} />
+              </button>
+              <h2
+                className="text-[18px] font-semibold"
+                style={{ color: "var(--text)" }}
+              >
+                Pick your engineer
+              </h2>
+            </div>
+            <p
+              className="mt-2 text-[13px] leading-relaxed"
+              style={{ color: "var(--text-muted)" }}
+            >
+              {pickerProjectName ? (
+                <>
+                  These engineers have worked with you on <strong style={{ color: "var(--text)" }}>{pickerProjectName}</strong>.
+                  Pick one to continue with — or request a different
+                  engineer if you need fresh eyes.
+                </>
+              ) : (
+                "Choose an engineer to connect with."
+              )}
+            </p>
+
+            <div className="mt-4 flex flex-col gap-2">
+              {pickerEngineers.map((eng, i) => {
+                // v1 placeholder availability — most recent engineer is
+                // "Available", next is "Busy", everyone else is "Offline".
+                // Replace with real engineer_presence subscription in v2.
+                const availability: "available" | "busy" | "offline" =
+                  i === 0 ? "available" : i === 1 ? "busy" : "offline";
+                return (
+                  <EngineerPickerRow
+                    key={eng.name}
+                    engineerName={eng.name}
+                    lastSessionDate={eng.lastDate}
+                    availability={availability}
+                    onConnect={() => onEngineerConnect(eng.name)}
+                    onRequest={() => onEngineerRequest(eng.name)}
+                    onSchedule={() => onEngineerSchedule(eng.name)}
+                  />
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              onClick={onPickerRequestDifferent}
+              className="mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-full border px-4 py-2.5 text-[13px] font-medium transition-colors hover:bg-[var(--surface-raised)]"
+              style={{ borderColor: "var(--border)", color: "var(--text)" }}
+            >
+              <UserPlus size={13} />
+              Request a different engineer
+            </button>
+          </>
+        )}
+
+        {step === "details" && (
+          <DetailsStep
+            onBack={onBack}
+            newProjectType={newProjectType}
+            setNewProjectType={setNewProjectType}
+            newProjectTypeOther={newProjectTypeOther}
+            setNewProjectTypeOther={setNewProjectTypeOther}
+            newProjectAiTools={newProjectAiTools}
+            setNewProjectAiTools={setNewProjectAiTools}
+            newProjectBackend={newProjectBackend}
+            setNewProjectBackend={setNewProjectBackend}
+            newProjectFrontend={newProjectFrontend}
+            setNewProjectFrontend={setNewProjectFrontend}
+            toggleMultiSelect={toggleMultiSelect}
+            detailsValid={detailsValid}
+            onDetailsNext={onDetailsNext}
+          />
+        )}
+
+        {step === "name" && (
+          <>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={onNameBack}
+                aria-label="Back"
+                className="rounded-md p-1 transition-opacity hover:opacity-80"
+                style={{ color: "var(--text-muted)" }}
+              >
+                <ChevronRight size={14} style={{ transform: "rotate(180deg)" }} />
+              </button>
+              <h2
+                className="text-[18px] font-semibold"
+                style={{ color: "var(--text)" }}
+              >
+                Name this project
+              </h2>
+            </div>
+            <p
+              className="mt-2 text-[13px] leading-relaxed"
+              style={{ color: "var(--text-muted)" }}
+            >
+              Pick a name you'll recognize when you come back. You can rename
+              it later.
+            </p>
+            <input
+              type="text"
+              value={newProjectName}
+              onChange={(e) => setNewProjectName(e.target.value)}
+              placeholder="e.g. ATLAS Project, Acme Landing, Mobile MVP"
+              maxLength={120}
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && nameValid && !submitting) onSubmitNewProject();
+              }}
+              className="mt-5 w-full rounded-md border px-3 py-2.5 text-[14px] outline-none focus:ring-2"
+              style={{
+                borderColor: "var(--border)",
+                backgroundColor: "var(--background)",
+                color: "var(--text)",
+              }}
+            />
+            <button
+              type="button"
+              onClick={onSubmitNewProject}
+              disabled={!nameValid || submitting}
+              className="mt-5 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-[13px] font-semibold transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+              style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+            >
+              {submitting ? (
+                <>
+                  <Loader2 size={13} className="animate-spin" />
+                  {mode === "create-only" ? "Creating…" : "Starting…"}
+                </>
+              ) : mode === "create-only" ? (
+                <>
+                  <Folder size={13} />
+                  Create project
+                </>
+              ) : (
+                <>
+                  <Phone size={13} />
+                  Create project &amp; connect engineer
+                </>
+              )}
+            </button>
+            {mode === "create-only" && (
+              <p
+                className="mt-3 text-center text-[11px]"
+                style={{ color: "var(--text-muted)" }}
+              >
+                You can call an engineer later from this project's row.
+              </p>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Date bucket helper for session-view ────────────────────────────────────
+// Groups a flat session list into Today / Yesterday / This week / Earlier
+// buckets. Empty buckets are dropped from the return value so the sidebar
+// doesn't render section headers with no content.
+function bucketSessionsByDate(sessions: PastSession[]): { label: string; sessions: PastSession[] }[] {
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const yesterdayStart = todayStart - 86_400_000;
+  const weekAgoStart = todayStart - 7 * 86_400_000;
+
+  const buckets: { label: string; sessions: PastSession[] }[] = [
+    { label: "Today",     sessions: [] },
+    { label: "Yesterday", sessions: [] },
+    { label: "This week", sessions: [] },
+    { label: "Earlier",   sessions: [] },
+  ];
+  for (const s of sessions) {
+    const t = new Date(s.date).getTime();
+    if (t >= todayStart) buckets[0].sessions.push(s);
+    else if (t >= yesterdayStart) buckets[1].sessions.push(s);
+    else if (t >= weekAgoStart) buckets[2].sessions.push(s);
+    else buckets[3].sessions.push(s);
+  }
+  return buckets.filter((b) => b.sessions.length > 0);
+}
+
+// ── Session row used in the flat session view ──────────────────────────────
+// Same visual register as the rows inside ProjectAccordion, but flatter
+// (no folder context) and with the project name surfaced in the meta line
+// (so the user doesn't lose project context when viewing across projects).
+// Pin button overlays the top-right just like in the accordion.
+function SessionRowFlat({
+  session, isPinned, isViewing, isCurrent, onClick, onTogglePin,
+}: {
+  session: PastSession;
+  isPinned: boolean;
+  isViewing: boolean;
+  isCurrent: boolean;
+  onClick: () => void;
+  onTogglePin: () => void;
+}) {
+  const isActive = !["ended", "abandoned", "cancelled"].includes(session.status);
+  const fmtRelDate = (d: Date) => {
+    const now = new Date();
+    const t = d.getTime();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const diffDays = Math.floor((today - t) / 86_400_000);
+    if (diffDays < 1) return "Today";
+    if (diffDays < 2) return "Yesterday";
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  };
+  return (
+    <div className="relative group/session">
+      <button
+        onClick={onClick}
+        className={cn(
+          "flex w-full items-start gap-2 rounded-lg border px-2.5 py-2 pr-7 text-left transition-colors",
+          isViewing
+            ? "border-[var(--primary)] bg-[var(--primary-tint)]"
+            : isCurrent
+              ? "border-[var(--primary)] bg-[var(--primary-tint)]/60"
+              : "border-transparent hover:border-[var(--border)] hover:bg-[var(--surface-raised)]",
+        )}
+      >
+        <span
+          className={cn(
+            "relative mt-1.5 flex h-2 w-2 shrink-0 rounded-full",
+            isActive ? "bg-[var(--primary)]" : "bg-[var(--text-faint)]",
+          )}
+          aria-hidden
+        >
+          {isActive && (
+            <span
+              className="absolute inset-0 inline-flex animate-ping rounded-full opacity-70"
+              style={{ backgroundColor: BRAND_GREEN }}
+            />
+          )}
+        </span>
+        <div className="min-w-0 flex-1">
+          {/* Top line: session topic (just the topic, no date suffix —
+              the meta line below carries the date). */}
+          <div
+            className={cn(
+              "truncate text-[13px]",
+              isViewing || isCurrent ? "font-medium" : "",
+            )}
+            style={{ color: "var(--text)" }}
+          >
+            {session.topic}
+          </div>
+          {/* Meta: first two words of the project name (compact context
+              reference), then the relative date, then the status pill
+              when terminal. The agent name was removed to keep the line
+              short — the user is in flat view to see across projects,
+              not to see engineer attributions per row. */}
+          <div
+            className="mt-0.5 flex items-center gap-1 text-[10px]"
+            style={{ color: "var(--text-muted)" }}
+          >
+            {session.projectName && (
+              <>
+                <span className="truncate">
+                  {session.projectName.split(/\s+/).slice(0, 2).join(" ")}
+                </span>
+                <span>·</span>
+              </>
+            )}
+            <span>{fmtRelDate(new Date(session.date))}</span>
+            {!isActive && (
+              <>
+                <span>·</span>
+                <span
+                  className={cn(
+                    "inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider",
+                    session.status === "ended"
+                      ? "bg-[var(--surface-raised)] text-[var(--text-muted)]"
+                      : session.status === "cancelled"
+                        ? "bg-[var(--warn-soft)] text-[var(--warn)]"
+                        : "bg-[var(--risk-soft)] text-[var(--risk)]",
+                  )}
+                >
+                  {session.status}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+      </button>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onTogglePin();
+        }}
+        title={isPinned ? "Unpin session" : "Pin session"}
+        aria-label={isPinned ? "Unpin session" : "Pin session"}
+        aria-pressed={isPinned}
+        className={cn(
+          "absolute right-1.5 top-1.5 inline-flex h-5 w-5 items-center justify-center rounded-md transition-all",
+          isPinned
+            ? "opacity-100"
+            : "opacity-0 group-hover/session:opacity-60 hover:opacity-100",
+        )}
+        style={{ color: isPinned ? BRAND_GREEN : "var(--text-muted)" }}
+      >
+        <Pin size={11} fill={isPinned ? BRAND_GREEN : "none"} strokeWidth={isPinned ? 2 : 1.8} />
+      </button>
+    </div>
+  );
+}
+
+// ── Engineer picker row (engineerPicker step) ──────────────────────────────
+// One row per engineer, showing avatar + name + availability state + the
+// state-appropriate action button (Connect / Request / Schedule). The
+// row's right edge gives the dominant action visual weight; secondary
+// state info (the date of the most recent session) sits as a small line
+// under the name.
+//
+// TODO(presence): availability is a v1 placeholder. Wire to real
+// engineer_presence subscriptions in v2 so Online/Busy/Offline flip
+// based on actual engineer activity.
+function EngineerPickerRow({
+  engineerName, lastSessionDate, availability,
+  onConnect, onRequest, onSchedule,
+}: {
+  engineerName: string;
+  lastSessionDate: string;
+  availability: "available" | "busy" | "offline";
+  onConnect: () => void;
+  onRequest: () => void;
+  onSchedule: () => void;
+}) {
+  const firstName = engineerName.split(" ")[0];
+  const lastDate = new Date(lastSessionDate).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+  const stateMeta = {
+    available: { dot: BRAND_GREEN, label: "Available now", ring: true },
+    busy:      { dot: "#f59e0b",   label: "Busy", ring: false },
+    offline:   { dot: "var(--text-faint)", label: "Offline", ring: false },
+  }[availability];
+
+  return (
+    <div
+      className="flex items-center gap-3 rounded-lg border px-3 py-2.5"
+      style={{ borderColor: "var(--border)" }}
+    >
+      {/* Avatar */}
+      <div
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[14px] font-semibold uppercase"
+        style={{
+          backgroundColor:
+            availability === "available" ? BRAND_GREEN_SOFT : "var(--surface-raised)",
+          color: availability === "available" ? BRAND_GREEN : "var(--text-muted)",
+        }}
+      >
+        {engineerName[0]}
+      </div>
+
+      {/* Name + status */}
+      <div className="min-w-0 flex-1">
+        <div
+          className="truncate text-[13px] font-medium"
+          style={{ color: "var(--text)" }}
+        >
+          {engineerName}
+        </div>
+        <div className="flex items-center gap-1.5 text-[11px]" style={{ color: "var(--text-muted)" }}>
+          <span className="relative inline-flex h-1.5 w-1.5">
+            {stateMeta.ring && (
+              <span
+                className="absolute inset-0 inline-flex animate-ping rounded-full opacity-60"
+                style={{ backgroundColor: stateMeta.dot as string }}
+              />
+            )}
+            <span
+              className="relative inline-flex h-1.5 w-1.5 rounded-full"
+              style={{ backgroundColor: stateMeta.dot as string }}
+            />
+          </span>
+          {stateMeta.label}
+          <span style={{ opacity: 0.6 }}> · last {lastDate}</span>
+        </div>
+      </div>
+
+      {/* State-appropriate action */}
+      {availability === "available" && (
+        <button
+          type="button"
+          onClick={onConnect}
+          className="inline-flex shrink-0 items-center justify-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-semibold transition-opacity hover:opacity-90"
+          style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+        >
+          <Phone size={11} />
+          Connect
+        </button>
+      )}
+      {availability === "busy" && (
+        <button
+          type="button"
+          onClick={onRequest}
+          title={`Send ${firstName} a request to connect when free`}
+          className="inline-flex shrink-0 items-center justify-center gap-1 rounded-full border px-3 py-1.5 text-[12px] font-semibold transition-colors hover:bg-[var(--surface-raised)]"
+          style={{ borderColor: "#f59e0b", color: "#b45309" }}
+        >
+          <Clock size={11} />
+          Request
+        </button>
+      )}
+      {availability === "offline" && (
+        <button
+          type="button"
+          onClick={onSchedule}
+          title={`Open ${firstName}'s calendar to schedule`}
+          className="inline-flex shrink-0 items-center justify-center gap-1 rounded-full border px-3 py-1.5 text-[12px] font-semibold transition-colors hover:bg-[var(--surface-raised)]"
+          style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+        >
+          <Clock size={11} />
+          Schedule
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── Details step (new-project form) ────────────────────────────────────────
+// Extracted from the modal body so the form gets its own component scope
+// and the modal stays readable. Visual treatment was reworked to reduce
+// the cluttered feel of the original 4-section flat layout:
+//
+//   - Each section sits in a soft panel with a subtle background tint
+//     and explicit padding, so the eye reads them as distinct groups
+//     instead of one long pile of chips.
+//   - Backend & Frontend (both optional) are grouped under a single
+//     collapsible "Stack details" panel so they don't compete for
+//     attention with the required fields above.
+//   - Section headers now show a small count chip ("3" or "—") next to
+//     the label so the user can see at a glance how many they've picked.
+//   - Chip padding bumped slightly (px-3 instead of px-2.5) for breathing
+//     room. Same color treatment as before — green outline + soft fill
+//     for selected.
+function DetailsStep({
+  onBack,
+  newProjectType, setNewProjectType,
+  newProjectTypeOther, setNewProjectTypeOther,
+  newProjectAiTools, setNewProjectAiTools,
+  newProjectBackend, setNewProjectBackend,
+  newProjectFrontend, setNewProjectFrontend,
+  toggleMultiSelect,
+  detailsValid, onDetailsNext,
+}: {
+  onBack: () => void;
+  newProjectType: string;
+  setNewProjectType: (s: string) => void;
+  newProjectTypeOther: string;
+  setNewProjectTypeOther: (s: string) => void;
+  newProjectAiTools: string[];
+  setNewProjectAiTools: React.Dispatch<React.SetStateAction<string[]>>;
+  newProjectBackend: string[];
+  setNewProjectBackend: React.Dispatch<React.SetStateAction<string[]>>;
+  newProjectFrontend: string[];
+  setNewProjectFrontend: React.Dispatch<React.SetStateAction<string[]>>;
+  toggleMultiSelect: (setter: React.Dispatch<React.SetStateAction<string[]>>, value: string) => void;
+  detailsValid: boolean;
+  onDetailsNext: () => void;
+}) {
+  // All four sections (project type, AI tool, backend, frontend) are
+  // required and always visible. The Stack Details accordion was removed
+  // — the form now reads as a flat checklist of 4 required panels.
+  return (
+    <>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onBack}
+          aria-label="Back"
+          className="rounded-md p-1 transition-opacity hover:opacity-80"
+          style={{ color: "var(--text-muted)" }}
+        >
+          <ChevronRight size={14} style={{ transform: "rotate(180deg)" }} />
+        </button>
+        <h2
+          className="text-[18px] font-semibold"
+          style={{ color: "var(--text)" }}
+        >
+          What are you building?
+        </h2>
+      </div>
+      <p
+        className="mt-2 text-[13px] leading-relaxed"
+        style={{ color: "var(--text-muted)" }}
+      >
+        Your engineer needs the shape of the project + the stack so they
+        can hit the ground running.
+      </p>
+
+      <div className="mt-5 flex flex-col gap-3">
+        {/* Project type */}
+        <FormPanel label="Project type" count={newProjectType ? 1 : 0} required>
+          <div className="flex flex-wrap gap-2">
+            {NEW_PROJECT_TYPES.map((t) => (
+              <ChoiceChip
+                key={t.value}
+                label={t.value}
+                emoji={t.emoji}
+                selected={newProjectType === t.value}
+                onClick={() => setNewProjectType(t.value)}
+              />
+            ))}
+          </div>
+          {newProjectType === "Other" && (
+            <input
+              type="text"
+              value={newProjectTypeOther}
+              onChange={(e) => setNewProjectTypeOther(e.target.value)}
+              placeholder="Describe what you're building"
+              maxLength={120}
+              autoFocus
+              className="mt-3 w-full rounded-md border px-3 py-2 text-[13px] outline-none focus:ring-2"
+              style={{
+                borderColor: "var(--border)",
+                backgroundColor: "var(--background)",
+                color: "var(--text)",
+              }}
+            />
+          )}
+        </FormPanel>
+
+        {/* AI tool */}
+        <FormPanel
+          label="AI tool you're building with"
+          count={newProjectAiTools.length}
+          required
+        >
+          <div className="flex flex-wrap gap-2">
+            {NEW_PROJECT_AI_TOOLS.map((t) => (
+              <ChoiceChip
+                key={t}
+                label={t}
+                selected={newProjectAiTools.includes(t)}
+                onClick={() => toggleMultiSelect(setNewProjectAiTools, t)}
+              />
+            ))}
+          </div>
+        </FormPanel>
+
+        {/* Backend & infra — always visible, required */}
+        <FormPanel
+          label="Backend & infra"
+          count={newProjectBackend.length}
+          required
+        >
+          <div className="flex flex-wrap gap-2">
+            {NEW_PROJECT_BACKENDS.map((t) => (
+              <ChoiceChip
+                key={t}
+                label={t}
+                selected={newProjectBackend.includes(t)}
+                onClick={() => toggleMultiSelect(setNewProjectBackend, t)}
+              />
+            ))}
+          </div>
+        </FormPanel>
+
+        {/* Frontend & UI — always visible, required */}
+        <FormPanel
+          label="Frontend & UI"
+          count={newProjectFrontend.length}
+          required
+        >
+          <div className="flex flex-wrap gap-2">
+            {NEW_PROJECT_FRONTENDS.map((t) => (
+              <ChoiceChip
+                key={t}
+                label={t}
+                selected={newProjectFrontend.includes(t)}
+                onClick={() => toggleMultiSelect(setNewProjectFrontend, t)}
+              />
+            ))}
+          </div>
+        </FormPanel>
+      </div>
+
+      <button
+        type="button"
+        onClick={onDetailsNext}
+        disabled={!detailsValid}
+        className="mt-6 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-[13px] font-semibold transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+        style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+      >
+        Next: Name your project
+        <ChevronRight size={14} />
+      </button>
+    </>
+  );
+}
+
+// ── Visual panel wrapper used by the details form ──────────────────────────
+// Lifts each section onto a soft tinted surface with consistent padding,
+// so the form reads as 3 discrete cards (Type / AI / Stack) instead of a
+// flat list of chips. count + required show a tiny status pill next to
+// the section label — green when satisfied, red when required-and-empty.
+function FormPanel({
+  label, children, count, required,
+}: {
+  label: string;
+  children: React.ReactNode;
+  count: number;
+  required?: boolean;
+}) {
+  const satisfied = count > 0;
+  const showRequiredAlert = required && !satisfied;
+  return (
+    <div
+      className="rounded-lg border px-4 py-3"
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface-raised)",
+      }}
+    >
+      <div className="mb-3 flex items-center gap-2">
+        <span
+          className="text-[12px] font-semibold uppercase tracking-[0.1em]"
+          style={{ color: "var(--text)" }}
+        >
+          {label}
+        </span>
+        {satisfied && (
+          <span
+            className="rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums"
+            style={{
+              backgroundColor: BRAND_GREEN_SOFT,
+              color: BRAND_GREEN,
+            }}
+          >
+            {count}
+          </span>
+        )}
+        {showRequiredAlert && (
+          <span
+            className="text-[10px] font-medium"
+            style={{ color: "var(--text-muted)" }}
+          >
+            pick one
+          </span>
+        )}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// ── Form helpers used inside ConnectFlowModal ──────────────────────────────
+function FormSectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      className="mb-2 text-[11px] font-semibold uppercase tracking-[0.1em]"
+      style={{ color: "var(--text-muted)" }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function ChoiceChip({
+  label, emoji, selected, onClick,
+}: {
+  label: string;
+  emoji?: string;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={selected}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] font-medium transition-colors",
+        selected
+          ? ""
+          : "hover:bg-[var(--surface-raised)]",
+      )}
+      style={{
+        borderColor: selected ? BRAND_GREEN : "var(--border)",
+        backgroundColor: selected ? BRAND_GREEN_SOFT : "transparent",
+        color: selected ? BRAND_GREEN : "var(--text)",
+      }}
+    >
+      {emoji && <span aria-hidden="true">{emoji}</span>}
+      {label}
+    </button>
+  );
+}
 
 type EntitlementShape = { free_consumed_at: string | null; free_minutes_used: number; paid_minutes_remaining: number };
 
@@ -2679,13 +5772,24 @@ const EmployeeInfoBlock = memo(function EmployeeInfoBlock({ info }: { info: Empl
 
 // ── User menu dropdown (Claude-style) ─────────────────────────────────────
 const UserMenu = memo(function UserMenu({
-  email, session, entitlement, employment, onRecharge, onClose, collapsed = false,
+  email, session, entitlement, employment, onRecharge, onOpenProfile, onOpenBilling, onOpenLegal, onClose, collapsed = false,
 }: {
   email: string;
   session: GuestCall | null;
   entitlement: EntitlementShape;
   employment: EmployeeInfo | null;
   onRecharge: () => void;
+  /** Open the in-pane Account view on the Profile tab. Replaces the
+   *  prior router.push("/account") — the customer never leaves /room. */
+  onOpenProfile: () => void;
+  /** Open the in-pane Account view on the Billing tab — quick shortcut
+   *  from the user-menu list, saves a click vs going through Profile
+   *  first. */
+  onOpenBilling: () => void;
+  /** Open the in-pane Privacy / Terms viewer. Replaces the prior
+   *  `<a target="_blank">` external links so the customer never
+   *  leaves /room — the legal page mounts inline in the centre. */
+  onOpenLegal: (kind: LegalKind) => void;
   onClose: () => void;
   collapsed?: boolean;
 }) {
@@ -2698,18 +5802,13 @@ const UserMenu = memo(function UserMenu({
     router.push("/login");
   };
 
-  const menuItems = [
-    {
-      icon: <Settings size={15} />,
-      label: "Profile & settings",
-      onClick: () => { onClose(); router.push("/account"); },
-    },
-    {
-      icon: <LogOut size={15} />,
-      label: "Log out",
-      onClick: () => void handleLogout(),
-      danger: true,
-    },
+  // Learn-more entries. Open the canonical legal pages inline in the
+  // /room central pane (LegalPane → iframe with ?embed=1). The
+  // standalone /legal/* routes still exist and are crawlable for SEO
+  // — this is just how the in-app menu reaches them.
+  const learnMoreLinks: { icon: React.ReactNode; label: string; kind: LegalKind }[] = [
+    { icon: <ShieldCheck size={15} />, label: "Privacy Policy", kind: "privacy" },
+    { icon: <FileText size={15} />,    label: "Terms of Use",   kind: "terms"   },
   ];
 
   return (
@@ -2717,15 +5816,21 @@ const UserMenu = memo(function UserMenu({
       {/* Backdrop */}
       <div className="fixed inset-0 z-40" onClick={onClose} />
 
-      {/* Menu panel */}
+      {/* Menu panel — uses --background (the darkest token) instead of
+          --surface so the popup sits visibly deeper than the sidebar.
+          In espresso that's #0d0703 (vs sidebar's #16100a); in dark
+          it's #14171a (vs sidebar's #1c1f23); in light it's #f7f9f8
+          (vs sidebar's #ffffff) — the menu is always one shade
+          darker than its anchor. Shadow is bumped to keep the panel
+          legible when it sits this deep on the dark themes. */}
       <div
         className="absolute z-50 w-64 rounded-xl border shadow-xl"
         style={{
           bottom: "calc(100% + 8px)",
           left: collapsed ? "48px" : "0px",
-          backgroundColor: "var(--surface)",
+          backgroundColor: "var(--background)",
           borderColor: "var(--border)",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
+          boxShadow: "0 10px 36px rgba(0,0,0,0.45)",
         }}
       >
         {/* Email header */}
@@ -2795,19 +5900,66 @@ const UserMenu = memo(function UserMenu({
           <EmployeeInfoBlock info={employment} />
         </div>
 
-        {/* Menu items */}
+        {/* Account actions — Profile & settings + Billing as siblings.
+            Both open the AccountPane (different tabs), but Billing gets
+            its own top-level entry so customers can jump straight to
+            the purchase history without first landing on Profile. */}
         <div className="px-2 py-1.5">
-          {menuItems.map((item) => (
+          <button
+            onClick={onOpenProfile}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            style={{ color: "var(--text)" }}
+          >
+            <span style={{ color: "var(--text-muted)" }}><Settings size={15} /></span>
+            Profile &amp; settings
+          </button>
+          <button
+            onClick={onOpenBilling}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            style={{ color: "var(--text)" }}
+          >
+            <span style={{ color: "var(--text-muted)" }}><Receipt size={15} /></span>
+            Billing
+          </button>
+        </div>
+
+        {/* Learn more — privacy + terms. Section header is non-interactive
+            (it's a label, not a button) so the section feels like a grouped
+            sub-list rather than three flat menu items. Links open in a new
+            tab via target="_blank" + rel="noopener noreferrer" so the
+            customer doesn't lose their /room session. */}
+        <div className="border-t px-2 py-1.5" style={{ borderColor: "var(--border)" }}>
+          <div
+            className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.08em]"
+            style={{ color: "var(--text-faint)" }}
+          >
+            Learn more
+          </div>
+          {learnMoreLinks.map((link) => (
             <button
-              key={item.label}
-              onClick={item.onClick}
+              key={link.label}
+              type="button"
+              onClick={() => onOpenLegal(link.kind)}
               className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-              style={{ color: item.danger ? "#e05c4b" : "var(--text)" }}
+              style={{ color: "var(--text)" }}
             >
-              <span style={{ color: item.danger ? "#e05c4b" : "var(--text-muted)" }}>{item.icon}</span>
-              {item.label}
+              <span style={{ color: "var(--text-muted)" }}>{link.icon}</span>
+              {link.label}
             </button>
           ))}
+        </div>
+
+        {/* Log out — sits in its own section so the danger color reads
+            as a separate decision from the read-only learn-more links. */}
+        <div className="border-t px-2 py-1.5" style={{ borderColor: "var(--border)" }}>
+          <button
+            onClick={() => void handleLogout()}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            style={{ color: "#e05c4b" }}
+          >
+            <span style={{ color: "#e05c4b" }}><LogOut size={15} /></span>
+            Log out
+          </button>
         </div>
       </div>
     </>
@@ -2845,6 +5997,7 @@ function fmtRelDate(d: Date): string {
 const ProjectAccordion = memo(function ProjectAccordion({
   group, viewingPastId, currentSessionId, selectedProjectId,
   onViewPast, onStartInProject, onRenameProject, onSelectProject,
+  pinnedIds, onTogglePin,
 }: {
   group: ProjectGroup;
   viewingPastId: string | null;
@@ -2863,6 +6016,12 @@ const ProjectAccordion = memo(function ProjectAccordion({
   /** Click on the project header → toggle this project as the landing
    *  CTA context. Not invoked for the General bucket. */
   onSelectProject: (projectId: string | null) => void;
+  /** Set of session ids currently pinned. Pinned sessions float to the
+   *  top of their group (sort is applied upstream in projectGroups) and
+   *  render with a filled pin icon. */
+  pinnedIds: Set<string>;
+  /** Toggle pin state for a session id. */
+  onTogglePin: (sessionId: string) => void;
 }) {
   const [open, setOpen] = useState(true);
   const [renaming, setRenaming] = useState(false);
@@ -2891,8 +6050,10 @@ const ProjectAccordion = memo(function ProjectAccordion({
 
   return (
     <div className="mb-1 group/proj">
-      {/* Project header */}
-      <div className="relative flex items-center">
+      {/* Project header. min-w-0 on the wrapper + button lets the long
+          name actually shrink/wrap within the flex column instead of
+          pushing the action buttons outside the sidebar's right edge. */}
+      <div className="relative flex min-w-0 items-center">
         <button
           onClick={() => {
             setOpen((v) => !v);
@@ -2900,7 +6061,7 @@ const ProjectAccordion = memo(function ProjectAccordion({
             // open/close, no selection state.
             if (!isGeneral) onSelectProject(group.key);
           }}
-          className="flex flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
           style={isSelected ? { backgroundColor: BRAND_GREEN_SOFT } : undefined}
         >
           <ChevronRight
@@ -2925,7 +6086,7 @@ const ProjectAccordion = memo(function ProjectAccordion({
                 if (e.key === "Enter")  (e.currentTarget as HTMLInputElement).blur();
                 if (e.key === "Escape") { setRenaming(false); setDraftName(group.name); }
               }}
-              className="min-w-0 flex-1 rounded-sm border px-1 py-0 text-[11px] font-semibold uppercase tracking-[0.08em] outline-none"
+              className="min-w-0 flex-1 rounded-sm border px-1 py-0 text-[15px] font-semibold tracking-tight outline-none"
               style={{
                 borderColor: BRAND_GREEN,
                 backgroundColor: "var(--background)",
@@ -2933,38 +6094,56 @@ const ProjectAccordion = memo(function ProjectAccordion({
               }}
             />
           ) : (
+            // text wraps onto multiple lines for long names instead of
+            // truncating + spilling. break-words lets a single absurdly
+            // long token break mid-word. leading-tight keeps the line-
+            // height tight when wrapped.
             <span
-              className="min-w-0 flex-1 truncate text-[11px] font-semibold uppercase tracking-[0.08em]"
-              style={{ color: isSelected ? BRAND_GREEN : "var(--text-muted)" }}
+              className="min-w-0 flex-1 break-words text-[15px] font-semibold leading-tight tracking-tight"
+              style={{ color: isSelected ? BRAND_GREEN : "var(--text)" }}
             >
               {group.name}
             </span>
           )}
-          <span
-            className="ml-1 shrink-0 rounded-full px-1.5 py-0 text-[9px] tabular-nums"
-            style={{
-              backgroundColor: "color-mix(in srgb, var(--text) 7%, transparent)",
-              color: "var(--text-muted)",
-            }}
-          >
-            {group.sessions.length}
-          </span>
+          {/* Session-count badge removed — the count was redundant with
+              expanding the project to see the sessions directly. */}
         </button>
         {!isGeneral && !renaming && (
           <>
-            {/* FIX 3 — LOUD FILLED GREEN CIRCLE call button. Larger than
-                the mock's thin glyph (~32px hit target), primary-feeling,
-                always visible. Confident "start a session in this
-                project" action. */}
-            <button
-              onClick={(e) => { e.stopPropagation(); onStartInProject(group.key); }}
-              title={`Start a session in ${group.name}`}
-              aria-label={`Start a session in ${group.name}`}
-              className="ml-1 inline-flex size-6 shrink-0 items-center justify-center rounded-full text-white shadow-sm transition-colors hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)]"
-              style={{ backgroundColor: BRAND_GREEN }}
-            >
-              <Phone size={11} strokeWidth={2.4} />
-            </button>
+            {/* Per-project call button. Color reflects engineer history:
+                BLACK when the project has never had an engineer session
+                (cold start — clicking triggers skill-match to find one);
+                GREEN once at least one engineer has worked on this
+                project (warm — the same engineer will be preferentially
+                rung, or a picker shown when multiple engineers exist).
+                Visual semantic: black = "find someone for this", green
+                = "call the team that's helped you here". */}
+            {(() => {
+              const distinctEngineers = new Set<string>();
+              for (const s of group.sessions) {
+                if (s.agent) distinctEngineers.add(s.agent);
+              }
+              const isWarm = distinctEngineers.size > 0;
+              const onlyName = distinctEngineers.size === 1
+                ? Array.from(distinctEngineers)[0]
+                : null;
+              const buttonTitle = isWarm
+                ? onlyName
+                  ? `Connect with ${onlyName.split(" ")[0]} again`
+                  : `Pick engineer for ${group.name} (${distinctEngineers.size} worked here)`
+                : `Find an engineer for ${group.name}`;
+              return (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onStartInProject(group.key); }}
+                  title={buttonTitle}
+                  aria-label={buttonTitle}
+                  className="ml-1 inline-flex size-6 shrink-0 items-center justify-center rounded-full text-white shadow-sm transition-colors hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)]"
+                  style={{ backgroundColor: isWarm ? BRAND_GREEN : "#0a0a0a" }}
+                >
+                  <Phone size={11} strokeWidth={2.4} />
+                </button>
+              );
+            })()}
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -2985,30 +6164,30 @@ const ProjectAccordion = memo(function ProjectAccordion({
         )}
       </div>
 
-      {/* Session rows */}
+      {/* Session rows. Empty-project placeholder removed — a session is
+          auto-created when the customer calls an engineer for the
+          project (via the green phone button on the row), so we don't
+          need a separate "start your first session" affordance inside
+          the expanded folder. */}
       {open && (
         <div className="ml-2 mt-0.5 space-y-0.5">
-          {group.sessions.length === 0 && !isGeneral ? (
-            <button
-              onClick={() => onStartInProject(group.key)}
-              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[11px] italic transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-              style={{ color: "var(--text-muted)" }}
-            >
-              <Plus size={11} style={{ color: BRAND_GREEN }} />
-              Start your first session here
-            </button>
-          ) : [...group.sessions]
-              .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+          {group.sessions.length === 0 && !isGeneral ? null : group.sessions
+              // Sorting (pin-aware + date-desc) is applied upstream in
+              // projectGroups so we can preserve it here.
               .map((s) => {
             const selected = viewingPastId === s.id;
             const isActive = !["ended", "abandoned", "cancelled"].includes(s.status);
             const isCurrent = isActive && s.id === currentSessionId;
+            const isPinned = pinnedIds.has(s.id);
             return (
+              // Session row container — relative so the pin button can
+              // overlay the top-right corner of the row without affecting
+              // the main button's hit target.
+              <div key={s.id} className="relative group/session">
               <button
-                key={s.id}
                 onClick={() => onViewPast(isCurrent ? null : s.id)}
                 className={cn(
-                  "flex w-full items-start gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors",
+                  "flex w-full items-start gap-2 rounded-lg border px-2.5 py-2 pr-7 text-left transition-colors",
                   // FIX 3 — selected session card gets a real green border
                   // + light-green tint (was just a faint fill before),
                   // matching the room-w.png "CORS error issues" card.
@@ -3102,6 +6281,37 @@ const ProjectAccordion = memo(function ProjectAccordion({
                   </div>
                 </div>
               </button>
+
+                {/* Pin toggle — overlays the top-right of the session row.
+                    Pinned sessions show a filled icon always; unpinned ones
+                    only reveal the outline icon on row hover. Click pins or
+                    unpins; localStorage persists the choice. */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onTogglePin(s.id);
+                  }}
+                  title={isPinned ? "Unpin session" : "Pin session"}
+                  aria-label={isPinned ? "Unpin session" : "Pin session"}
+                  aria-pressed={isPinned}
+                  className={cn(
+                    "absolute right-1.5 top-1.5 inline-flex h-5 w-5 items-center justify-center rounded-md transition-all",
+                    isPinned
+                      ? "opacity-100"
+                      : "opacity-0 group-hover/session:opacity-60 hover:opacity-100",
+                  )}
+                  style={{
+                    color: isPinned ? BRAND_GREEN : "var(--text-muted)",
+                  }}
+                >
+                  <Pin
+                    size={11}
+                    fill={isPinned ? BRAND_GREEN : "none"}
+                    strokeWidth={isPinned ? 2 : 1.8}
+                  />
+                </button>
+              </div>
             );
           })}
         </div>
@@ -3522,9 +6732,354 @@ function SummaryView({ session, messages }: { session: GuestCall; messages: Gues
               </div>
             </div>
           )}
+
+          {/* Session artifacts — files exchanged, AI summary, and chat
+              transcript. The 90-day retention window starts when the
+              project is marked completed; until then files persist
+              indefinitely. SessionDownloads renders the retention copy
+              from the project row it loads internally. */}
+          <SessionDownloads session={session} messages={messages} />
         </div>
       )}
     </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// SessionDownloads — bottom-of-summary section listing all files exchanged
+// during the session + downloadable AI summary + downloadable chat
+// transcript.
+//
+// Retention:
+//   • Project is 'active'    → files persist indefinitely.
+//   • Project is 'completed' → 90-day countdown; files purgeable any day
+//                              after completed_at + 90d.
+//   • Project is 'archived'  → files already purged; we render a
+//                              placeholder explaining when they expired.
+//
+// AI summary + chat transcript are generated client-side on click — no
+// server round-trip. Both fall back to "—" gracefully when the data
+// isn't populated (e.g. summary still generating).
+// ──────────────────────────────────────────────────────────────────────────
+function SessionDownloads({
+  session,
+  messages,
+}: {
+  session: GuestCall;
+  messages: GuestMessage[];
+}) {
+  // Project status fetch — drives the retention copy. Lazy: only fires
+  // when the section renders (already inside an "ended" branch). The
+  // project_id can be null for sessions created before Phase 4 — those
+  // get the "active" treatment (no retention copy).
+  type ProjectStatus = {
+    completion_status: "active" | "completed" | "archived";
+    completed_at: string | null;
+  } | null;
+  const [projectStatus, setProjectStatus] = useState<ProjectStatus>(null);
+
+  useEffect(() => {
+    if (!session.project_id) {
+      setProjectStatus(null);
+      return;
+    }
+    const sb = createClient();
+    let alive = true;
+    void (async () => {
+      const { data } = await sb
+        .from("projects")
+        .select("completion_status, completed_at")
+        .eq("id", session.project_id)
+        .maybeSingle();
+      if (!alive) return;
+      setProjectStatus((data as ProjectStatus) ?? null);
+    })();
+    return () => { alive = false; };
+  }, [session.project_id]);
+
+  // Pull every attachment from this session's messages into one flat list.
+  // We dedupe by id because supabase joins can occasionally yield the same
+  // row twice when the message-side join expands.
+  const attachments = useMemo(() => {
+    const seen = new Set<string>();
+    const out: GuestMessageAttachment[] = [];
+    for (const m of messages) {
+      if (!m.attachments) continue;
+      for (const a of m.attachments) {
+        if (seen.has(a.id)) continue;
+        seen.add(a.id);
+        out.push(a);
+      }
+    }
+    return out;
+  }, [messages]);
+
+  // Compute retention copy. "Available through {date}" once the project
+  // is completed; "Available while project is active" otherwise.
+  const retentionLine = useMemo(() => {
+    if (!projectStatus) return null;
+    if (projectStatus.completion_status === "archived") {
+      return {
+        tone: "muted" as const,
+        text: "Files have been removed (90 days after project completion).",
+      };
+    }
+    if (projectStatus.completion_status === "completed" && projectStatus.completed_at) {
+      const expiry = new Date(projectStatus.completed_at);
+      expiry.setDate(expiry.getDate() + 90);
+      return {
+        tone: "warn" as const,
+        text: `Available through ${expiry.toLocaleDateString("en-US", {
+          year: "numeric", month: "short", day: "numeric",
+        })} · 90 days after project completion.`,
+      };
+    }
+    return {
+      tone: "muted" as const,
+      text: "Files stay available while this project is active.",
+    };
+  }, [projectStatus]);
+
+  const downloadText = useCallback((filename: string, body: string) => {
+    const blob = new Blob([body], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }, []);
+
+  const summaryText = useMemo(() => {
+    const parts: string[] = [];
+    if (session.ai_summary_title) parts.push(session.ai_summary_title);
+    if (session.ai_summary_title) parts.push("");
+    const overview = session.ai_summary_overview ?? session.summary;
+    if (overview) {
+      parts.push(overview);
+      parts.push("");
+    }
+    const steps = Array.isArray(session.ai_next_steps as unknown)
+      ? (session.ai_next_steps as unknown as Array<string | { text?: string; description?: string }>)
+      : [];
+    if (steps.length > 0) {
+      parts.push("Next steps:");
+      for (const s of steps) {
+        const t = typeof s === "string" ? s : (s.text ?? s.description ?? "");
+        if (t) parts.push(`- ${t}`);
+      }
+      parts.push("");
+    }
+    if (session.duration_minutes != null) {
+      parts.push(`Session duration: ${Math.round(Number(session.duration_minutes))} min`);
+    }
+    parts.push(`Session id: ${session.id}`);
+    parts.push(`Generated: ${new Date().toISOString()}`);
+    return parts.join("\n").trim() + "\n";
+  }, [session]);
+
+  const transcriptText = useMemo(() => {
+    const lines: string[] = [];
+    lines.push(`Relay session transcript — ${session.id}`);
+    lines.push(`Generated ${new Date().toISOString()}`);
+    lines.push("");
+    for (const m of messages) {
+      if (m.sender_kind === "system") {
+        // Skip Zoom AI summary system messages — they live in their own
+        // download. System lines are still informative (joined/left,
+        // recording link) so we keep them with a [system] tag.
+        if (m.body && isAiSummaryMessageBody(m.body)) continue;
+        const ts = new Date(m.created_at).toISOString();
+        lines.push(`[${ts}] [system] ${m.body ?? ""}`);
+        continue;
+      }
+      const who = m.sender_name ?? (m.sender_kind === "guest" ? "Customer" : "Engineer");
+      const ts = new Date(m.created_at).toISOString();
+      lines.push(`[${ts}] ${who}: ${m.body ?? ""}`);
+      if (m.attachments && m.attachments.length > 0) {
+        for (const a of m.attachments) {
+          lines.push(`    — ${a.kind}: ${a.name} (${a.mime}, ${a.size_bytes} bytes)`);
+        }
+      }
+    }
+    return lines.join("\n") + "\n";
+  }, [session, messages]);
+
+  const summaryFilename = `relay-session-${session.id.slice(0, 8)}-summary.txt`;
+  const transcriptFilename = `relay-session-${session.id.slice(0, 8)}-transcript.txt`;
+
+  return (
+    <div className="pt-2">
+      <h3 className="mb-3 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+        Files &amp; downloads
+      </h3>
+
+      {/* Two-up download buttons for the generated artifacts. */}
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <DownloadButton
+          label="AI summary"
+          sub=".txt · generated"
+          onClick={() => downloadText(summaryFilename, summaryText)}
+          disabled={projectStatus?.completion_status === "archived"}
+        />
+        <DownloadButton
+          label="Chat transcript"
+          sub=".txt · all messages"
+          onClick={() => downloadText(transcriptFilename, transcriptText)}
+          disabled={projectStatus?.completion_status === "archived"}
+        />
+      </div>
+
+      {/* File attachments grouped under "Files exchanged". Purged rows
+          show as a stripped placeholder so the visual continuity stays
+          even after retention. */}
+      <div className="mt-4">
+        <div className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text-faint)" }}>
+          Files exchanged
+        </div>
+        {attachments.length === 0 ? (
+          <p className="px-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
+            No files were shared in this session.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-1.5">
+            {attachments.map((a) => (
+              <SessionAttachmentRow
+                key={a.id}
+                attachment={a}
+                archived={projectStatus?.completion_status === "archived"}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* Retention copy — bottom of section so it grounds the whole
+          downloads block in policy. Tone tracks the project status. */}
+      {retentionLine && (
+        <div
+          className="mt-4 rounded-lg border px-3 py-2 text-[11px]"
+          style={{
+            borderColor: retentionLine.tone === "warn"
+              ? "color-mix(in srgb, var(--warn) 30%, transparent)"
+              : "var(--border)",
+            backgroundColor: retentionLine.tone === "warn"
+              ? "color-mix(in srgb, var(--warn) 8%, transparent)"
+              : "var(--surface-raised)",
+            color: retentionLine.tone === "warn" ? "var(--warn)" : "var(--text-muted)",
+          }}
+        >
+          {retentionLine.text}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DownloadButton({
+  label, sub, onClick, disabled,
+}: {
+  label: string;
+  sub: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+    >
+      <span
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md"
+        style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
+      >
+        <FileText size={14} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="text-[12px] font-medium" style={{ color: "var(--text)" }}>{label}</div>
+        <div className="text-[10px]" style={{ color: "var(--text-muted)" }}>{sub}</div>
+      </div>
+    </button>
+  );
+}
+
+// One row in the "Files exchanged" list. Active rows fetch a signed
+// download URL on click; archived rows show a "removed after retention"
+// note. We don't pre-fetch URLs en-masse — only at click time — because
+// the session summary can have many attachments and minting N signed
+// URLs upfront wastes API calls.
+function SessionAttachmentRow({
+  attachment,
+  archived,
+}: {
+  attachment: GuestMessageAttachment;
+  archived: boolean;
+}) {
+  const [busy, setBusy] = useState(false);
+  const isPurged = attachment.purged === true || archived;
+
+  const onClick = async () => {
+    if (isPurged || busy) return;
+    setBusy(true);
+    try {
+      const sb = createClient();
+      const url = await signedDownloadUrl(sb, attachment.path, attachment.name);
+      if (url) window.location.href = url;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const Icon = attachment.kind === "image" ? FileText
+    : attachment.kind === "audio" ? Music
+    : FileText;
+
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => void onClick()}
+        disabled={isPurged || busy}
+        className="flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:cursor-not-allowed"
+        style={{
+          borderColor: "var(--border)",
+          backgroundColor: isPurged
+            ? "color-mix(in srgb, var(--surface-raised) 40%, transparent)"
+            : "var(--surface)",
+          opacity: isPurged ? 0.6 : 1,
+        }}
+      >
+        <span
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md"
+          style={{
+            backgroundColor: isPurged
+              ? "color-mix(in srgb, var(--text) 5%, transparent)"
+              : BRAND_GREEN_SOFT,
+            color: isPurged ? "var(--text-muted)" : BRAND_GREEN,
+          }}
+        >
+          <Icon size={13} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[12px] font-medium" style={{ color: "var(--text)" }}>
+            {attachment.name}
+          </div>
+          <div className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+            {isPurged
+              ? "Removed after 90-day retention window."
+              : `${attachment.kind} · ${Math.round(attachment.size_bytes / 1024)} KB`}
+          </div>
+        </div>
+        {!isPurged && (
+          <Download size={14} style={{ color: "var(--text-muted)" }} />
+        )}
+      </button>
+    </li>
   );
 }
 

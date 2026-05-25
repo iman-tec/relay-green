@@ -1,41 +1,65 @@
 "use client";
 
 /*
- * Theme provider — light (default) ↔ dark, persisted in localStorage.
+ * Theme provider — three themes:
+ *   - "light"    (default)     paper-cream + dark ink
+ *   - "dark"                   near-black + cream
+ *   - "espresso"               deep warm brown + cream (coffee mood)
  *
- * A small inline script in app/layout.tsx applies the saved class to
- * <html> before paint, so this provider only handles updates *after*
- * hydration. It also subscribes to cross-tab storage events so opening
- * the same app in a second window stays in sync.
+ * Persisted in localStorage. A small inline script in app/layout.tsx
+ * applies the saved class to <html> before paint, so this provider
+ * only handles updates *after* hydration. Also subscribes to cross-tab
+ * storage events so opening the same app in a second window stays in
+ * sync.
+ *
+ * DOM contract:
+ *   - light  → no class on <html>
+ *   - dark   → class="dark"
+ *   - espresso → class="espresso"
+ * (Only one of the optional classes is present at a time.)
  */
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 
-export type Theme = "light" | "dark";
+export type Theme = "light" | "dark" | "espresso";
 
 const STORAGE_KEY = "relay-theme";
-const DEFAULT_THEME: Theme = "light";
+// Dark is the new house default — most app surfaces feel right against
+// a dark canvas + the bright Relay green. First-visit users without a
+// stored preference land in dark; the Sun/Moon/Coffee triplet in the
+// sidebar lets them switch.
+const DEFAULT_THEME: Theme = "dark";
 
 type Ctx = {
   theme:       Theme;
   setTheme:    (t: Theme) => void;
+  /** Legacy 2-theme cycle, retained for callers that only know light/dark.
+   *  Cycles between light and dark; does NOT touch espresso. New callers
+   *  should prefer setTheme(...) directly. */
   toggleTheme: () => void;
 };
 
 const ThemeContext = createContext<Ctx | null>(null);
 
+function readThemeFromDOM(): Theme {
+  if (typeof document === "undefined") return DEFAULT_THEME;
+  const cl = document.documentElement.classList;
+  if (cl.contains("dark")) return "dark";
+  if (cl.contains("espresso")) return "espresso";
+  return "light";
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   // Read the class already applied by the pre-hydration script so the
   // first React render matches the DOM and avoids hydration mismatch.
-  const [theme, setThemeState] = useState<Theme>(() => {
-    if (typeof document === "undefined") return DEFAULT_THEME;
-    return document.documentElement.classList.contains("dark") ? "dark" : "light";
-  });
+  const [theme, setThemeState] = useState<Theme>(() => readThemeFromDOM());
 
   const applyTheme = useCallback((t: Theme) => {
     const html = document.documentElement;
+    html.classList.remove("dark", "espresso");
     if (t === "dark") html.classList.add("dark");
-    else              html.classList.remove("dark");
+    else if (t === "espresso") html.classList.add("espresso");
+    html.style.colorScheme = t === "espresso" ? "dark" : t;
   }, []);
 
   const setTheme = useCallback((t: Theme) => {
@@ -57,7 +81,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (e.key !== STORAGE_KEY) return;
-      const next = e.newValue === "dark" ? "dark" : "light";
+      const next: Theme =
+        e.newValue === "dark"     ? "dark"
+        : e.newValue === "espresso" ? "espresso"
+        : "light";
       setThemeState(next);
       applyTheme(next);
     };
@@ -87,22 +114,21 @@ export function useTheme(): Ctx {
 }
 
 /**
- * The pre-hydration script body. Keep this in lock-step with
- * STORAGE_KEY / DEFAULT_THEME above. Rendered inline in layout.tsx so
- * it runs before any paint — prevents the brief flash where the page
- * lands light and then snaps to dark (or vice versa) on load.
- *
- * Exported as a string so layout.tsx can drop it into
- * dangerouslySetInnerHTML without us re-implementing the logic.
+ * The pre-hydration script body. Keep this in lock-step with STORAGE_KEY
+ * / DEFAULT_THEME / the 3-theme set above. Rendered inline in layout.tsx
+ * so it runs before any paint — prevents the brief flash where the page
+ * lands in one theme and snaps to another on hydration.
  */
 export const THEME_INIT_SCRIPT = `
 (function() {
   try {
     var saved = localStorage.getItem("${STORAGE_KEY}");
-    var theme = (saved === "dark" || saved === "light") ? saved : "${DEFAULT_THEME}";
-    if (theme === "dark") document.documentElement.classList.add("dark");
-    else                  document.documentElement.classList.remove("dark");
-    document.documentElement.style.colorScheme = theme;
+    var theme = (saved === "dark" || saved === "light" || saved === "espresso") ? saved : "${DEFAULT_THEME}";
+    var cl = document.documentElement.classList;
+    cl.remove("dark", "espresso");
+    if (theme === "dark") cl.add("dark");
+    else if (theme === "espresso") cl.add("espresso");
+    document.documentElement.style.colorScheme = theme === "espresso" ? "dark" : theme;
   } catch (e) {
     /* localStorage unavailable; default theme applies via :root */
   }

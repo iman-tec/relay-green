@@ -51,7 +51,11 @@ function parseAiSummary(body: string): Parsed {
   let title: string | null = null;
   let overview: string | null = null;
   if (headerLines.length === 1) {
-    overview = headerLines[0];
+    // One line after the header is Zoom's AI Companion title (the webhook
+    // pushes `title` first, then `overview`, then `Next steps:`). Short
+    // calls often return only the title — treat it as such so the card
+    // renders with proper heading styling instead of body-text styling.
+    title = headerLines[0];
   } else if (headerLines.length > 1) {
     title = headerLines[0];
     overview = headerLines.slice(1).join("\n");
@@ -90,6 +94,19 @@ type CopyTarget = "url" | "passcode";
 export function MeetingSummaryEntry({ body, recordingBody }: { body: string; recordingBody?: string | null }) {
   const { title, overview, nextSteps } = parseAiSummary(body);
   const recording = recordingBody ? parseRecording(recordingBody) : null;
+
+  // Stub-only case: Zoom AI Companion sometimes returns just the generic
+  // title `"Meeting Summary for {topic} — {customer}"` with no overview
+  // and no next steps. This happens for very short calls (typically <2
+  // min) where there isn't enough audio to summarize. The card on its
+  // own says nothing useful, so we surface a clear explanation instead
+  // of letting it look like a rendering bug.
+  const hasRealContent =
+    !!overview ||
+    nextSteps.length > 0 ||
+    !!(recording && (recording.url || recording.passcode));
+  const isStubOnly =
+    !!title && !hasRealContent && /Meeting Summary for/i.test(title);
   // Tracks which value we most recently copied so each button gets its own
   // ✓ confirmation independently — copying the URL shouldn't flash the
   // passcode button's checkmark and vice versa.
@@ -138,7 +155,7 @@ export function MeetingSummaryEntry({ body, recordingBody }: { body: string; rec
           </span>
         </div>
 
-        {title ? (
+        {title && !isStubOnly ? (
           <h3
             className="mt-3 text-sm font-semibold leading-tight"
             style={{ color: "var(--text)", fontFamily: "var(--font-source-serif)" }}
@@ -153,6 +170,17 @@ export function MeetingSummaryEntry({ body, recordingBody }: { body: string; rec
             style={{ color: "var(--text)" }}
           >
             {overview}
+          </p>
+        ) : null}
+
+        {isStubOnly ? (
+          <p
+            className="mt-2 text-[12px] leading-relaxed"
+            style={{ color: "var(--text-muted)" }}
+          >
+            Zoom’s AI Companion didn’t generate a detailed summary for this call
+            — typically because it was too short to transcribe meaningfully.
+            The session summary above captures the key points.
           </p>
         ) : null}
 

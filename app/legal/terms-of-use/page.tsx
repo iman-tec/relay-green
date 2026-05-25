@@ -20,39 +20,42 @@ export const metadata: Metadata = {
   alternates: { canonical: "/legal/terms-of-use" },
 };
 
+// Typography — sized down + retuned to use platform tokens so the page
+// matches whatever theme (light / dark / espresso) the user is on. Was
+// h2≈26/h3=15/p=14.5; now 17/13/12 for a denser, internal-docs feel.
 const h2Style: React.CSSProperties = {
-  fontFamily: "var(--font-display)",
+  fontFamily: "var(--font-serif)",
   fontWeight: 500,
-  fontSize: "clamp(20px, 1.8vw, 26px)",
+  fontSize: 17,
   letterSpacing: "-0.012em",
-  lineHeight: 1.2,
-  color: "var(--ink)",
-  margin: "36px 0 14px",
+  lineHeight: 1.25,
+  color: "var(--text)",
+  margin: "24px 0 8px",
 };
 
 const h3Style: React.CSSProperties = {
   fontFamily: "var(--font-sans)",
   fontWeight: 600,
-  fontSize: 15,
+  fontSize: 13,
   letterSpacing: "-0.005em",
   lineHeight: 1.3,
-  color: "var(--ink)",
-  margin: "22px 0 8px",
+  color: "var(--text)",
+  margin: "16px 0 6px",
 };
 
 const pStyle: React.CSSProperties = {
-  fontSize: 14.5,
-  lineHeight: 1.65,
-  color: "var(--ink-soft)",
-  margin: "0 0 12px",
+  fontSize: 12.5,
+  lineHeight: 1.55,
+  color: "var(--text-muted)",
+  margin: "0 0 8px",
 };
 
 const ulStyle: React.CSSProperties = {
-  margin: "0 0 12px",
-  paddingLeft: 22,
-  color: "var(--ink-soft)",
-  fontSize: 14.5,
-  lineHeight: 1.65,
+  margin: "0 0 8px",
+  paddingLeft: 18,
+  color: "var(--text-muted)",
+  fontSize: 12.5,
+  lineHeight: 1.55,
 };
 
 export default async function TermsOfUsePage({
@@ -86,7 +89,7 @@ export default async function TermsOfUsePage({
               fontSize: 12,
               letterSpacing: "0.06em",
               textTransform: "uppercase",
-              color: "var(--ink-mute)",
+              color: "var(--text-muted)",
             }}
           >
             Last updated: May 2026
@@ -97,19 +100,18 @@ export default async function TermsOfUsePage({
       <section
         className="r-section"
         style={{
-          paddingTop: 48,
+          paddingTop: 32,
           borderTop: "none",
-          background: "#f5f5f7",
+          background: "var(--background)",
         }}
       >
         <div className="r-wrap-narrow">
           <div
             style={{
-              background: "#ffffff",
-              border: "1px solid #d2d2d7",
-              borderRadius: 8,
-              padding: "clamp(28px, 5vw, 52px)",
-              boxShadow: "0 22px 54px rgba(0, 0, 0, 0.05)",
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              borderRadius: 10,
+              padding: "clamp(20px, 3vw, 36px)",
             }}
           >
             <h2 style={{ ...h2Style, marginTop: 0 }}>1. Acceptance of terms</h2>
@@ -130,7 +132,7 @@ export default async function TermsOfUsePage({
               <a
                 href="/legal/privacy-policy"
                 style={{
-                  color: "var(--green-deep)",
+                  color: "var(--primary)",
                   textDecoration: "underline",
                 }}
               >
@@ -183,7 +185,7 @@ export default async function TermsOfUsePage({
               <a
                 href="mailto:support@relay.green"
                 style={{
-                  color: "var(--green-deep)",
+                  color: "var(--primary)",
                   textDecoration: "underline",
                 }}
               >
@@ -203,7 +205,7 @@ export default async function TermsOfUsePage({
               <a
                 href="/pricing"
                 style={{
-                  color: "var(--green-deep)",
+                  color: "var(--primary)",
                   textDecoration: "underline",
                 }}
               >
@@ -248,7 +250,7 @@ export default async function TermsOfUsePage({
               <a
                 href="/legal/privacy-policy"
                 style={{
-                  color: "var(--green-deep)",
+                  color: "var(--primary)",
                   textDecoration: "underline",
                 }}
               >
@@ -259,7 +261,7 @@ export default async function TermsOfUsePage({
               <a
                 href="/pricing"
                 style={{
-                  color: "var(--green-deep)",
+                  color: "var(--primary)",
                   textDecoration: "underline",
                 }}
               >
@@ -465,7 +467,7 @@ export default async function TermsOfUsePage({
               <a
                 href="mailto:support@relay.green"
                 style={{
-                  color: "var(--green-deep)",
+                  color: "var(--primary)",
                   textDecoration: "underline",
                 }}
               >

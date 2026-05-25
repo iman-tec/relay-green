@@ -24,16 +24,113 @@
  * state internally and surfaces a single onSend({ text, files }) callback.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Image as ImageIcon, FileText, FileSpreadsheet, FileType,
-  Loader2, Paperclip, Plus, SendHorizonal, X,
+  Loader2, Paperclip, Plus, SendHorizonal, X, Mic, Music, Square, AudioLines,
 } from "lucide-react";
 import {
   type ClassifiedFile, type AttachmentKind,
   FILE_INPUT_ACCEPT, MAX_BYTES, MAX_IMAGES_PER_MESSAGE,
   formatBytes, validateStagedFiles,
 } from "@/lib/relay/chatAttachments";
+
+// ── Web Speech API type narrowing ────────────────────────────────────────
+// SpeechRecognition is a browser-vendored type. We use a structural minimum
+// because TS' DOM lib doesn't ship the prefixed/webkit shape consistently
+// across versions.
+type SpeechRecognitionInstance = {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+  onresult: ((event: { results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }> }) => void) | null;
+  onerror: ((event: { error: string }) => void) | null;
+  onend: (() => void) | null;
+};
+function getSpeechRecognitionCtor(): (new () => SpeechRecognitionInstance) | null {
+  if (typeof window === "undefined") return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const w = window as any;
+  return w.SpeechRecognition || w.webkitSpeechRecognition || null;
+}
+
+// Pick the best MIME for MediaRecorder. Chrome/Firefox produce audio/webm
+// with opus; Safari produces audio/mp4 (m4a). We probe in priority order
+// and let the browser pick its default if neither hint is supported.
+function pickRecorderMime(): string | undefined {
+  if (typeof window === "undefined" || !("MediaRecorder" in window)) return undefined;
+  const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"];
+  for (const c of candidates) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if ((MediaRecorder as any).isTypeSupported?.(c)) return c;
+  }
+  return undefined;
+}
+
+function mimeToExt(mime: string): string {
+  if (mime.includes("webm")) return "webm";
+  if (mime.includes("mp4"))  return "m4a";
+  if (mime.includes("ogg"))  return "ogg";
+  if (mime.includes("mpeg")) return "mp3";
+  return "webm";
+}
+
+// Query the Permissions API for the microphone's current state. Returns:
+//   "granted"  — already allowed; getUserMedia will succeed without UI
+//   "prompt"   — first time / not decided; getUserMedia will show the prompt
+//   "denied"   — user previously blocked; the browser WILL NOT re-prompt
+//                from JS, the user must change it in site-settings
+//   "unknown"  — Permissions API unavailable or query failed; caller
+//                should proceed with getUserMedia and handle errors
+//
+// Why this matters: when a user has previously clicked "Block" on the
+// mic prompt, calling getUserMedia again rejects with NotAllowedError
+// without showing any UI — they think they've never been asked. Detecting
+// the "denied" state upfront lets us show actionable guidance instead.
+export async function queryMicPermission(): Promise<"granted" | "prompt" | "denied" | "unknown"> {
+  if (typeof navigator === "undefined" || !navigator.permissions?.query) {
+    return "unknown";
+  }
+  try {
+    const status = await navigator.permissions.query({ name: "microphone" as PermissionName });
+    return status.state;
+  } catch {
+    return "unknown";
+  }
+}
+
+// Translate raw SpeechRecognitionErrorEvent.error codes into messages the
+// customer can actually act on. The browser ships them as terse identifiers
+// ("not-allowed", "service-not-allowed", "audio-capture") that look like
+// raw API surface — wrapping them here keeps the UX consistent across all
+// the surfaces that use the Web Speech API (ChatComposer + ChatPanelStub).
+export function speechRecognitionErrorMessage(code: string): string {
+  switch (code) {
+    case "not-allowed":
+      // The vast-majority case: user clicked "Block" on the mic prompt,
+      // or the origin had a remembered block. Tell them WHERE to fix it
+      // — the lock icon in the address bar is the universal entry point.
+      return "Microphone access blocked. Click the lock icon in your browser's address bar, allow microphone, then try again.";
+    case "service-not-allowed":
+      // The browser-level (or OS-level) speech service is disabled.
+      // Common on hardened enterprise builds.
+      return "Voice recognition is disabled in this browser or by your organization.";
+    case "audio-capture":
+      // No mic detected, or the mic is in use by another tab/app.
+      return "No microphone detected. Check that one is plugged in and not being used by another app.";
+    case "network":
+      // The cloud speech service couldn't be reached. Chrome's
+      // SpeechRecognition relies on Google's servers under the hood.
+      return "Couldn't reach the voice recognition service. Check your network connection.";
+    case "language-not-supported":
+      return "Your browser doesn't support voice recognition for this language.";
+    default:
+      return `Voice recognition error: ${code}`;
+  }
+}
 
 const BRAND_GREEN = "var(--primary)";
 const BRAND_GREEN_SOFT = "rgba(63, 92, 46, 0.10)";
@@ -54,6 +151,32 @@ export function ChatComposer({
   const [error,   setError]   = useState<string | null>(null);
   const [menu,    setMenu]    = useState(false);
   const [hover,   setHover]   = useState(false);
+
+  // ── Voice state ──────────────────────────────────────────────────────
+  // The composer supports two voice modes via a single Mic button:
+  //   • Voice-to-text:   tap → start Web Speech API recognition; the
+  //                      live transcript streams into the textarea so
+  //                      the user can edit + send as a regular text
+  //                      message. Tap again to stop.
+  //   • Voice message:   long-press the same Mic button (>=300ms) → swap
+  //                      into MediaRecorder mode and capture audio;
+  //                      release to stop. The blob is staged as an
+  //                      attachment (kind="audio") which sends via the
+  //                      normal onSend flow.
+  // We pick by gesture: a quick tap = transcribe, a hold = record.
+  type VoiceMode = "idle" | "transcribing" | "recording";
+  const [voiceMode, setVoiceMode] = useState<VoiceMode>("idle");
+  const [voiceMsg, setVoiceMsg]   = useState<string | null>(null);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const recorderRef    = useRef<MediaRecorder | null>(null);
+  const recorderChunksRef = useRef<Blob[]>([]);
+  const recorderStreamRef = useRef<MediaStream | null>(null);
+  // Tracks the press timer that decides tap-vs-hold; cleared on release.
+  const pressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Snapshot of the text value BEFORE we start transcribing so the live
+  // transcript appends after the existing draft instead of replacing it.
+  const transcribeBaseRef = useRef<string>("");
+
   const fileDocsRef = useRef<HTMLInputElement>(null);
   const filePicsRef = useRef<HTMLInputElement>(null);
   const taRef       = useRef<HTMLTextAreaElement>(null);
@@ -90,6 +213,243 @@ export function ChatComposer({
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
   }, [menu]);
+
+  // ── Voice-to-text (Web Speech API) ────────────────────────────────────
+  // Browser support is patchy: Chrome + Edge ship it under the webkit
+  // prefix; Firefox/Safari either lack it or hide it behind a flag. We
+  // probe at call time and fall back to a clear message if it's missing.
+  const startTranscribing = useCallback(async () => {
+    if (disabled || voiceMode !== "idle") return;
+    const Ctor = getSpeechRecognitionCtor();
+    if (!Ctor) {
+      setVoiceMsg("Voice-to-text isn't supported in this browser. Try Chrome or Edge.");
+      return;
+    }
+    setVoiceMsg(null);
+    setError(null);
+
+    // Two-step permission check. First, query the Permissions API to see
+    // if Chrome already has a "denied" verdict on record — if so, there
+    // is NO way to re-prompt from JavaScript (browsers refuse to
+    // re-show the prompt for security reasons); we have to send the
+    // user to site-settings manually. Second, only if state is "prompt"
+    // or "granted", call getUserMedia to actually trigger the prompt /
+    // confirm the grant. This avoids the silent-fail case where
+    // getUserMedia rejects with NotAllowedError but no prompt appears.
+    const permState = await queryMicPermission();
+    if (permState === "denied") {
+      setVoiceMsg("Microphone is blocked for this site. Click the lock / info icon at the very left of the address bar → Site settings → Microphone → Allow → reload the page.");
+      return;
+    }
+    if (navigator.mediaDevices?.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((t) => t.stop());
+      } catch (e) {
+        if (e instanceof Error && e.name === "NotAllowedError") {
+          // Fell into NotAllowedError despite permState !== "denied" —
+          // typically means the user dismissed the prompt this session.
+          // Same fix path but slightly different copy so they know to
+          // try again rather than dig through settings.
+          setVoiceMsg("You dismissed the microphone prompt. Click the mic icon again and choose Allow when your browser asks.");
+        } else if (e instanceof Error && e.name === "NotFoundError") {
+          setVoiceMsg("No microphone detected. Check that one is plugged in and not being used by another app.");
+        } else {
+          setVoiceMsg("Couldn't access your microphone.");
+        }
+        return;
+      }
+    }
+
+    let r: SpeechRecognitionInstance;
+    try {
+      r = new Ctor();
+    } catch {
+      setVoiceMsg("Couldn't start voice recognition.");
+      return;
+    }
+
+    transcribeBaseRef.current = text; // append, don't overwrite
+    r.lang = navigator.language || "en-US";
+    r.continuous = true;
+    r.interimResults = true;
+
+    r.onresult = (event) => {
+      let finalText = "";
+      let interim = "";
+      for (let i = 0; i < event.results.length; i++) {
+        const res = event.results[i];
+        if (res.isFinal) finalText += res[0].transcript;
+        else interim += res[0].transcript;
+      }
+      // Combine: base draft + final phrases + the still-changing interim.
+      const composed = [transcribeBaseRef.current, finalText, interim]
+        .filter(Boolean)
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim();
+      setText(composed);
+    };
+    r.onerror = (event) => {
+      // Quiet cases: "no-speech" fires when the user didn't say anything
+      // in a window, "aborted" is normal teardown. Neither is a real
+      // error to surface.
+      if (event.error === "no-speech" || event.error === "aborted") {
+        setVoiceMode("idle");
+        return;
+      }
+      // Translate the raw SpeechRecognitionErrorEvent.error codes into
+      // actionable messages. The default browser strings ("not-allowed")
+      // mean nothing to a customer — they need to know HOW to fix it.
+      setVoiceMsg(speechRecognitionErrorMessage(event.error));
+      setVoiceMode("idle");
+    };
+    r.onend = () => {
+      // The API auto-stops after silence; we honour that by leaving
+      // voiceMode === "idle" so the next tap can restart cleanly.
+      setVoiceMode("idle");
+      recognitionRef.current = null;
+    };
+
+    recognitionRef.current = r;
+    setVoiceMode("transcribing");
+    try { r.start(); } catch (e) {
+      // start() throws if called too quickly back-to-back. Recover by
+      // resetting and letting the user tap again.
+      setVoiceMsg("Voice recognition couldn't start — try again in a moment.");
+      setVoiceMode("idle");
+      recognitionRef.current = null;
+    }
+  }, [disabled, voiceMode, text]);
+
+  const stopTranscribing = useCallback(() => {
+    const r = recognitionRef.current;
+    if (!r) {
+      setVoiceMode("idle");
+      return;
+    }
+    try { r.stop(); } catch { /* already stopping */ }
+    // onend will flip state back to "idle".
+  }, []);
+
+  // ── Voice-recording (MediaRecorder → staged audio attachment) ─────────
+  const startRecording = useCallback(async () => {
+    if (disabled || voiceMode !== "idle") return;
+    if (typeof window === "undefined" || !("MediaRecorder" in window)) {
+      setVoiceMsg("Voice recording isn't supported in this browser.");
+      return;
+    }
+    setVoiceMsg(null);
+    setError(null);
+
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      // getUserMedia rejects on permission denial or absent mic. Mirror
+      // the SpeechRecognition error copy so the customer sees the same
+      // fix path regardless of which voice mode they tried.
+      if (e instanceof Error && e.name === "NotAllowedError") {
+        setVoiceMsg("Microphone access blocked. Click the lock icon in your browser's address bar, allow microphone, then try again.");
+      } else if (e instanceof Error && e.name === "NotFoundError") {
+        setVoiceMsg("No microphone detected. Check that one is plugged in and not being used by another app.");
+      } else {
+        setVoiceMsg("Couldn't access your microphone.");
+      }
+      return;
+    }
+    recorderStreamRef.current = stream;
+
+    const mime = pickRecorderMime();
+    const rec = mime
+      ? new MediaRecorder(stream, { mimeType: mime })
+      : new MediaRecorder(stream);
+
+    recorderChunksRef.current = [];
+    rec.ondataavailable = (e: BlobEvent) => {
+      if (e.data && e.data.size > 0) recorderChunksRef.current.push(e.data);
+    };
+    rec.onstop = () => {
+      const blob = new Blob(
+        recorderChunksRef.current,
+        { type: rec.mimeType || "audio/webm" },
+      );
+      recorderChunksRef.current = [];
+      // Tear down the mic track so the browser indicator turns off.
+      recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
+      recorderStreamRef.current = null;
+      recorderRef.current = null;
+      setVoiceMode("idle");
+
+      // Stage the recording as a normal audio attachment. validateStagedFiles
+      // will accept it (we extended classify() to recognize audio/*).
+      const ext = mimeToExt(rec.mimeType || "audio/webm");
+      const name = `voice-${new Date().toISOString().replace(/[:.]/g, "-")}.${ext}`;
+      const file = new File([blob], name, { type: blob.type });
+      const v = validateStagedFiles([file], staged);
+      if (!v.ok) {
+        setError(v.error);
+        return;
+      }
+      setStaged((prev) => [...prev, ...v.classified]);
+    };
+    rec.onerror = () => {
+      setVoiceMsg("Recording failed — try again.");
+      setVoiceMode("idle");
+      recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
+      recorderStreamRef.current = null;
+      recorderRef.current = null;
+    };
+
+    recorderRef.current = rec;
+    setVoiceMode("recording");
+    rec.start();
+  }, [disabled, voiceMode, staged]);
+
+  const stopRecording = useCallback(() => {
+    const r = recorderRef.current;
+    if (!r) {
+      setVoiceMode("idle");
+      return;
+    }
+    try { r.stop(); } catch { /* already stopping */ }
+    // onstop handler will stage the blob + flip voiceMode back to "idle".
+  }, []);
+
+  // Tap-vs-hold gesture on the Mic button. Quick tap = voice-to-text;
+  // hold (>=300 ms) = start recording. Release ends recording.
+  const handleMicPointerDown = useCallback(() => {
+    if (disabled || voiceMode !== "idle") return;
+    pressTimerRef.current = setTimeout(() => {
+      pressTimerRef.current = null;
+      void startRecording();
+    }, 300);
+  }, [disabled, voiceMode, startRecording]);
+
+  const handleMicPointerUp = useCallback(() => {
+    // Timer still pending → it was a tap → toggle transcription.
+    if (pressTimerRef.current) {
+      clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
+      startTranscribing();
+      return;
+    }
+    // Otherwise we were already recording; release stops it.
+    if (voiceMode === "recording") stopRecording();
+  }, [voiceMode, startTranscribing, stopRecording]);
+
+  const handleMicClickWhileTranscribing = useCallback(() => {
+    stopTranscribing();
+  }, [stopTranscribing]);
+
+  // Clean up on unmount so a navigation doesn't leave a hot mic stream.
+  useEffect(() => {
+    return () => {
+      try { recognitionRef.current?.abort(); } catch { /* noop */ }
+      try { recorderRef.current?.stop(); } catch { /* noop */ }
+      recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
 
   const stage = (incoming: File[]) => {
     if (incoming.length === 0) return;
@@ -195,6 +555,28 @@ export function ChatComposer({
           {error}
         </div>
       )}
+      {voiceMsg && (
+        <div
+          className="mb-1.5 flex items-center justify-between gap-2 rounded-md border px-3 py-1.5 text-[12px]"
+          style={{
+            borderColor: "var(--border)",
+            backgroundColor: "var(--surface-raised)",
+            color: "var(--text-muted)",
+          }}
+        >
+          <span className="flex items-center gap-2">
+            <Music size={11} /> {voiceMsg}
+          </span>
+          <button
+            type="button"
+            onClick={() => setVoiceMsg(null)}
+            className="opacity-60 transition-opacity hover:opacity-100"
+            aria-label="Dismiss"
+          >
+            <X size={11} />
+          </button>
+        </div>
+      )}
 
       <div
         className="flex flex-col gap-2 rounded-2xl border px-3 py-2 transition-colors"
@@ -264,6 +646,61 @@ export function ChatComposer({
             )}
           </div>
 
+          {/* Two voice buttons, split for discoverability:
+                • Mic     → voice-to-text dictation (transcript fills the
+                            textarea, user edits + sends as text)
+                • AudioLines → record a voice message (audio attachment
+                            sent through the normal onSend pipeline)
+              Each button is a clean click — no tap-vs-hold gesture — so
+              the behavior is obvious without trial and error. */}
+          <div className="flex shrink-0 items-center gap-1">
+            {/* Voice-to-text */}
+            <div className="relative">
+              <button
+                type="button"
+                disabled={disabled || voiceMode === "recording"}
+                onClick={voiceMode === "transcribing" ? stopTranscribing : () => void startTranscribing()}
+                className="flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+                style={{
+                  color: voiceMode === "transcribing" ? BRAND_GREEN : "var(--text-muted)",
+                  backgroundColor: voiceMode === "transcribing" ? BRAND_GREEN_SOFT : "transparent",
+                }}
+                title={voiceMode === "transcribing" ? "Stop dictating" : "Dictate — voice to text"}
+                aria-label="Dictate"
+                aria-pressed={voiceMode === "transcribing"}
+              >
+                <Mic size={14} />
+              </button>
+              {voiceMode === "transcribing" && (
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0 rounded-full"
+                  style={{
+                    boxShadow: `0 0 0 0 ${BRAND_GREEN}`,
+                    animation: "relay-pulse-ok 1800ms ease-in-out infinite",
+                  }}
+                />
+              )}
+            </div>
+
+            {/* Voice-recording */}
+            <button
+              type="button"
+              disabled={disabled || voiceMode === "transcribing"}
+              onClick={voiceMode === "recording" ? stopRecording : () => void startRecording()}
+              className="flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+              style={{
+                color: voiceMode === "recording" ? "#fff" : "var(--text-muted)",
+                backgroundColor: voiceMode === "recording" ? "var(--accent-red)" : "transparent",
+              }}
+              title={voiceMode === "recording" ? "Stop & attach voice message" : "Record voice message"}
+              aria-label="Record voice message"
+              aria-pressed={voiceMode === "recording"}
+            >
+              {voiceMode === "recording" ? <Square size={12} /> : <AudioLines size={14} />}
+            </button>
+          </div>
+
           {/* Textarea */}
           <textarea
             ref={taRef}
@@ -274,7 +711,11 @@ export function ChatComposer({
             onChange={(e) => setText(e.target.value)}
             onPaste={onPaste}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              // Plain Enter sends; Shift+Enter inserts newline. IME
+              // composition (Japanese/Chinese/Korean input) gets a
+              // pass — pressing Enter to commit a candidate shouldn't
+              // accidentally fire the send.
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 void handleSend();
               }
@@ -363,6 +804,14 @@ function StagedChip({
           alt={name}
           className="h-9 w-9 rounded-md object-cover"
         />
+      ) : kind === "audio" ? (
+        <span
+          className="flex h-9 w-9 items-center justify-center rounded-md"
+          style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
+          title="Voice message"
+        >
+          <Mic size={14} />
+        </span>
       ) : (
         <span
           className="flex h-9 w-9 items-center justify-center rounded-md"

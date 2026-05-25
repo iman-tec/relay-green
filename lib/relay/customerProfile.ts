@@ -45,6 +45,11 @@ export interface CustomerProfileRow {
   fields_of_interest: string[];
   interest_other: string | null;
   avatar_url: string | null;
+  /** Email opt-in. Defaults TRUE at signup (covered by ToS) — flipping
+   *  FALSE suppresses all transactional + marketing email for this user.
+   *  Migration 20260526120000_customer_notification_prefs added the column. */
+  email_notifications_enabled?: boolean;
+  email_notifications_updated_at?: string | null;
   created_at?: string;
   updated_at?: string;
 }
