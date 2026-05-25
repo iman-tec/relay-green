@@ -17,7 +17,6 @@ export type Badge = {
 export function DetailCard({
   title,
   subtitle,
-  code,
   badges,
   description,
   minutes,
@@ -27,7 +26,8 @@ export function DetailCard({
 }: {
   title:    string;
   subtitle?: string;
-  /** Mono pill (department_code / enterprise_code / etc). */
+  /** Deprecated: reseller/enterprise/department codes are no longer surfaced
+   *  in the UI. Prop kept so existing callers compile; it is not rendered. */
   code?:    string;
   badges?:  readonly Badge[];
   description?: string;
@@ -58,17 +58,6 @@ export function DetailCard({
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
             {subtitle && (
               <span style={{ color: "var(--text-muted)" }}>{subtitle}</span>
-            )}
-            {code && (
-              <code
-                className="rounded px-1.5 py-0.5 font-mono text-[11px]"
-                style={{
-                  background:  "color-mix(in srgb, var(--text-muted) 12%, transparent)",
-                  color:       "var(--text)",
-                }}
-              >
-                {code}
-              </code>
             )}
             {(badges ?? []).map((b) => (
               <BadgePill key={b.label} {...b} />

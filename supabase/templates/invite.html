@@ -15,14 +15,10 @@
                           reseller, employee, client
                         (also tolerates legacy: pod_lead, ops_manager, admin)
     display_name        recipient's full name
-    reseller_code       RLC-… shown when the user must enter it at first
-                        login (inorganic enterprise admin) or when the
-                        invitee IS the reseller themselves
-    enterprise_code     {slug}-… shown to enterprise admins (their org)
-                        and to department admins (parent enterprise)
-    department_code     DLC-… shown to department admins (their dept)
-                        and to employees (their parent department)
     allocated_minutes   initial minutes allocation, when applicable
+
+  Note: reseller/enterprise/department codes are intentionally NOT shown —
+  no code is required to sign in anywhere.
 -->
 <!doctype html>
 <html>
@@ -55,33 +51,13 @@
           <p>Your account is ready to set up.</p>
         {{ end }}
 
-        {{/* ── Onboarding details box: code(s) + allocated minutes ──── */}}
-        {{ if or .Data.reseller_code (or .Data.enterprise_code (or .Data.department_code .Data.allocated_minutes)) }}
+        {{/* ── Onboarding details box: allocated minutes only ────────── */}}
+        {{ if .Data.allocated_minutes }}
           <div style="background:#f6f7f5;border:1px solid #e6e9e2;border-radius:8px;padding:16px;margin:20px 0;">
             <p style="margin:0 0 8px;font-weight:600;color:#3f5c2e;">Your onboarding details</p>
-            {{ if .Data.allocated_minutes }}
-              <p style="margin:4px 0;color:#444;">
-                Allocated minutes: <strong>{{ .Data.allocated_minutes }}</strong>
-              </p>
-            {{ end }}
-            {{ if .Data.reseller_code }}
-              <p style="margin:4px 0;color:#444;">
-                {{ if eq .Data.role_label "enterprise_admin" }}Reseller code (enter on first sign-in):{{ else }}Reseller code:{{ end }}
-                <code style="background:#fff;padding:2px 6px;border-radius:4px;font-size:13px;">{{ .Data.reseller_code }}</code>
-              </p>
-            {{ end }}
-            {{ if .Data.enterprise_code }}
-              <p style="margin:4px 0;color:#444;">
-                {{ if eq .Data.role_label "department_admin" }}Enterprise code (enter on first sign-in):{{ else }}Enterprise code:{{ end }}
-                <code style="background:#fff;padding:2px 6px;border-radius:4px;font-size:13px;">{{ .Data.enterprise_code }}</code>
-              </p>
-            {{ end }}
-            {{ if .Data.department_code }}
-              <p style="margin:4px 0;color:#444;">
-                {{ if eq .Data.role_label "employee" }}Department code (enter on first sign-in):{{ else }}Department code:{{ end }}
-                <code style="background:#fff;padding:2px 6px;border-radius:4px;font-size:13px;">{{ .Data.department_code }}</code>
-              </p>
-            {{ end }}
+            <p style="margin:4px 0;color:#444;">
+              Allocated minutes: <strong>{{ .Data.allocated_minutes }}</strong>
+            </p>
           </div>
         {{ end }}
 

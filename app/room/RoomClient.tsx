@@ -379,6 +379,17 @@ export function RoomClient() {
     accepted,
   ]);
 
+  // Once the engineer picks up — the session enters an active/timer-running
+  // state — the async "relay chat" panel has done its job. Auto-close it so
+  // the customer drops straight into the live session (Zoom card) instead of
+  // the chat lingering over a connected call.
+  useEffect(() => {
+    const s = state.session;
+    if (s && (ACTIVE_TIMER_STATES as readonly string[]).includes(s.status)) {
+      setAsyncChatMode(false);
+    }
+  }, [state.session?.status]);
+
   // Clear past-session preview as soon as the customer starts a new session
   useEffect(() => {
     if (state.session && !["ended","cancelled","abandoned"].includes(state.session.status)) {

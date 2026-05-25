@@ -126,7 +126,7 @@ export function EmployeesTab() {
         <DetailCard
           title={dept.name}
           code={dept.departmentCode}
-          subtitle={ent ? `${ent.name} · ${ent.enterpriseCode}` : undefined}
+          subtitle={ent ? ent.name : undefined}
           badges={[{
             label: dept.status === "active" ? "Active" : "Suspended",
             tone:  dept.status === "active" ? "success" : "warning",

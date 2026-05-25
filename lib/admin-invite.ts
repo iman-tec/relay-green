@@ -99,8 +99,16 @@ export async function sendInvitationEmail(
   }
 
   const tempPassword = generateTempPassword();
+  // Reseller/enterprise/department codes are no longer surfaced anywhere (no
+  // code is entered at sign-in). Strip them here so they never land in
+  // user_metadata or render in the invite email, regardless of which caller
+  // route passed them.
+  const metaWithoutCodes: Record<string, unknown> = { ...(payload.metadata ?? {}) };
+  delete metaWithoutCodes.reseller_code;
+  delete metaWithoutCodes.enterprise_code;
+  delete metaWithoutCodes.department_code;
   const userMeta: Record<string, unknown> = {
-    ...(payload.metadata ?? {}),
+    ...metaWithoutCodes,
     ...(payload.displayName ? { display_name: payload.displayName } : {}),
     temp_password: tempPassword,
   };
