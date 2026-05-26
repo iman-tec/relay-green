@@ -6739,7 +6739,7 @@ const ProjectAccordion = memo(function ProjectAccordion({
             // long token break mid-word. leading-tight keeps the line-
             // height tight when wrapped.
             <span
-              className="min-w-0 flex-1 break-words text-[15px] font-semibold leading-tight tracking-tight"
+              className="min-w-0 flex-1 break-words text-[15px] font-normal leading-tight tracking-tight"
               style={{ color: isSelected ? BRAND_GREEN : "var(--text)" }}
             >
               {group.name}
