@@ -3,10 +3,39 @@
 // LLM for a tight engineer-ready brief, and writes it back to
 // client_intakes.intake_summary.
 //
+// Also extracts three structured signals the matcher reads
+// (20260527120000_match_engineer_v2.sql):
+//   - issues        text[]   what's broken (e.g. 'memory-leak', 'auth-flow')
+//   - environments  text[]   stack/OS/framework (e.g. 'next.js', 'macos')
+//   - urgency       text     'urgent' | 'standard' | 'later'
+//
 // Invoked from the customer's MatchingClient the moment an engineer accepts
 // (before redirecting to /room). Safe to call directly with { intake_id }.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+
+// Sanitize a list of free-text tags from the LLM: lowercase, trim, dedupe,
+// drop empties, cap at 8 items, cap each at 40 chars. Matches the shape the
+// matcher's set-intersection expects.
+function sanitizeTags(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of raw) {
+    if (typeof item !== "string") continue;
+    const clean = item.trim().toLowerCase().slice(0, 40);
+    if (!clean || seen.has(clean)) continue;
+    seen.add(clean);
+    out.push(clean);
+    if (out.length >= 8) break;
+  }
+  return out;
+}
+
+function sanitizeUrgency(raw: unknown): "urgent" | "standard" | "later" {
+  if (raw === "urgent" || raw === "later") return raw;
+  return "standard";
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -107,6 +136,9 @@ Deno.serve(async (req) => {
 
     const apiKey = Deno.env.get("OPENAI_API_KEY");
     let summary = "";
+    let issues: string[] = [];
+    let environments: string[] = [];
+    let urgency: "urgent" | "standard" | "later" = "standard";
 
     if (apiKey) {
       const ai = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -125,11 +157,15 @@ Deno.serve(async (req) => {
                 "You read a customer's intake conversation with a bot, plus their wizard answers, " +
                 "and write a tight brief for the engineer who is about to join the call. " +
                 "Respond with strict JSON only: " +
-                "{\"headline\": string, \"summary\": string, \"key_points\": string[], \"next_steps\": string[]}. " +
+                "{\"headline\": string, \"summary\": string, \"key_points\": string[], \"next_steps\": string[], " +
+                "\"issues\": string[], \"environments\": string[], \"urgency\": \"urgent\" | \"standard\" | \"later\"}. " +
                 "`headline` = 6-10 words, the customer's core ask in plain language. No period. " +
                 "`summary` = 2-3 sentences. Lead with what they're building and what's broken. Use the customer's own phrasing. " +
                 "`key_points` = 3-6 short bullets the engineer needs in the first 30 seconds (error text verbatim if any, stack, AI tools, environment). " +
                 "`next_steps` = 2-4 short imperative items the engineer should consider first. " +
+                "`issues` = up to 6 short lowercase-kebab tags describing what's broken (e.g. 'memory-leak', 'auth-loop', 'build-fail', 'dependency-conflict'). Use the same canonical kebab tags engineers self-declare. Empty array if unclear. " +
+                "`environments` = up to 6 short lowercase tags for stack/OS/framework (e.g. 'next.js', 'react-native', 'macos', 'node-20', 'docker'). Empty array if unclear. " +
+                "`urgency` = 'urgent' if blocking production / customer demo / clock is ticking; 'later' if exploratory / refactor / learn; otherwise 'standard'. " +
                 "Output JSON only, no markdown.",
             },
             {
@@ -160,8 +196,14 @@ Deno.serve(async (req) => {
           }
           summary = parts.join("\n").trim();
           if (!summary) summary = raw;
+          // Matcher signals (best-effort; tolerant of missing or malformed fields).
+          issues       = sanitizeTags(parsed.issues);
+          environments = sanitizeTags(parsed.environments);
+          urgency      = sanitizeUrgency(parsed.urgency);
         } catch {
           summary = raw;
+          // Leave issues/environments/urgency at their defaults so the DB row
+          // keeps its current values (the UPDATE below only writes if non-empty).
         }
       } else {
         const errText = await ai.text().catch(() => "");
@@ -173,12 +215,20 @@ Deno.serve(async (req) => {
       summary = `${wizardBlock}\n\n${transcript.slice(0, 1500)}`;
     }
 
+    // Write summary + matcher signals together. Only set issues/environments
+    // when the LLM gave us something — empty arrays from a failed parse would
+    // clobber any prior good extraction.
+    const update: Record<string, unknown> = {
+      intake_summary: summary,
+      intake_summary_updated_at: new Date().toISOString(),
+      urgency,
+    };
+    if (issues.length)       update.issues       = issues;
+    if (environments.length) update.environments = environments;
+
     await supabase
       .from("client_intakes")
-      .update({
-        intake_summary: summary,
-        intake_summary_updated_at: new Date().toISOString(),
-      })
+      .update(update)
       .eq("id", intake_id);
 
     return new Response(
@@ -186,6 +236,9 @@ Deno.serve(async (req) => {
         ok: true,
         user_turns: userTurns.length,
         attachments: attachmentCount,
+        issues_extracted: issues.length,
+        environments_extracted: environments.length,
+        urgency,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );

@@ -37,6 +37,7 @@ import { ROLE, type Role } from "@/lib/relay/roles";
 // import + mount below to bring it back.
 // import { EngineerIncomingRequest } from "./EngineerIncomingRequest";
 import { EngineerIncomingMatch } from "./EngineerIncomingMatch";
+import { useEngineerHeartbeat } from "@/lib/relay/useEngineerHeartbeat";
 import { createClient } from "@/lib/supabase/browser";
 import type { GuestCall } from "@/lib/supabase/types";
 
@@ -112,6 +113,10 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   const homeHref = isEnterpriseAdmin ? "/enterprise" : engineer ? "/dashboard" : "/supervise";
 
   const [collapsed, setCollapsed] = useState(false);
+
+  // Presence heartbeat — engineers only. The RPC self-gates with NOT_AN_ENGINEER
+  // so non-engineer staff who incidentally render this shell are no-ops.
+  useEngineerHeartbeat(engineer);
 
   // Restore sidebar state from localStorage on mount.
   useEffect(() => {

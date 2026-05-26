@@ -1257,7 +1257,6 @@ export function RoomClient() {
             preparingDraftId={preparingDraftId}
             onClosePrepare={handleClosePrepare}
             onDraftsChanged={bumpDrafts}
-            projects={projects}
           />
           )}
         </main>

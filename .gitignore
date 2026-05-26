@@ -58,3 +58,5 @@ supabase/.temp
 supabase/.branches
 
 certificates
+# Local DB dumps — never commit
+backups/
