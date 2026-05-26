@@ -412,7 +412,7 @@ function RingingHero({
           Sized so it's clearly the focal point but doesn't crowd the
           page — ~240px on desktop, scales down on mobile via the
           responsive class. */}
-      <div className="relative flex items-center justify-center" style={{ width: 280, height: 280 }}>
+      <div className="relay-ringing-hero relative flex items-center justify-center" style={{ width: 280, height: 280 }}>
         {/* Halo rings — three concentric circles fading outward. The
             keyframe scales 1→1.8 + opacity 0.6→0; -0.6s and -1.2s
             negative delays stagger them so a new ring expands every
@@ -438,7 +438,7 @@ function RingingHero({
         {/* The ball. Heartbeat scale animation lives in globals.css under
             @keyframes relay-ringing-ball. Phone icon centered. */}
         <div
-          className="relay-ringing-ball relative flex items-center justify-center rounded-full"
+          className="relay-ringing-ball relay-ringing-ball-wrap relative flex items-center justify-center rounded-full"
           style={{
             width: 200,
             height: 200,

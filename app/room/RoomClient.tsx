@@ -31,7 +31,7 @@ import {
   Wallet, RefreshCw, Settings, LogOut, Check, Folder, Pencil, PanelRightOpen, PanelRightClose,
   Building2, FileText, Clock, Video, MoreHorizontal, UserPlus, Pin, SlidersHorizontal,
   Paperclip, Mic, Download, Music, AudioLines, ShieldCheck, Receipt, Home,
-  Trash2, Rocket, Wrench,
+  Trash2, Rocket, Wrench, Menu, MessageCircle,
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { ThemeTriplet } from "@/app/_components/ThemeTriplet";
@@ -291,6 +291,12 @@ export function RoomClient() {
   const searchParams = useSearchParams();
   const newChatParam = searchParams.get("newchat");
   const [asyncChatMode, setAsyncChatMode] = useState(false);
+  // Mobile-only state. The sidebar + chat panel are hidden by default
+  // at viewports < md (768px). A hamburger button opens the sidebar as
+  // a fixed-position drawer; a FAB opens the chat panel as a bottom
+  // sheet. Desktop layout is untouched (md:flex on each).
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [mobileChatOpen, setMobileChatOpen] = useState(false);
   useEffect(() => {
     if (newChatParam === "1") {
       setAsyncChatMode(true);
@@ -1304,6 +1310,88 @@ export function RoomClient() {
       className="flex h-screen w-screen overflow-hidden"
       style={{ backgroundColor: "var(--background)", color: "var(--text)" }}
     >
+      {/* Mobile hamburger — fixed top-left, only visible below md.
+          Opens the sidebar as a slide-in drawer. Sits above the main
+          pane so it's reachable even when the central pane scrolls. */}
+      <button
+        type="button"
+        onClick={() => setMobileSidebarOpen(true)}
+        aria-label="Open sidebar"
+        className="fixed left-3 top-3 z-30 flex h-11 w-11 items-center justify-center rounded-full border shadow-sm transition-transform hover:scale-105 md:hidden"
+        style={{
+          backgroundColor: "var(--surface)",
+          borderColor: "var(--border)",
+          color: "var(--text)",
+        }}
+      >
+        <Menu size={18} />
+      </button>
+
+      {/* Mobile sidebar drawer — scrim + slide-in panel from the left.
+          Renders the same Sidebar component as desktop so feature
+          parity is automatic. Tapping the scrim or any nav action
+          closes it (the scrim onClick handles the easy path; for the
+          nav actions, each handler in Sidebar already closes the
+          flow it opens — the drawer state just needs to follow). */}
+      {mobileSidebarOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-40 md:hidden"
+            style={{ backgroundColor: "var(--scrim, rgba(0,0,0,0.55))" }}
+            onClick={() => setMobileSidebarOpen(false)}
+          />
+          <div
+            className="fixed inset-y-0 left-0 z-50 flex w-[min(85vw,320px)] flex-col shadow-2xl md:hidden"
+            style={{ backgroundColor: "var(--surface)" }}
+            onClickCapture={(e) => {
+              // Close the drawer when the user taps any actionable
+              // element inside it (so navigating somewhere doesn't
+              // leave the scrim covering the destination). We use
+              // capture-phase so we observe clicks BEFORE the
+              // sidebar's own handlers — that way close-state
+              // updates before navigation, avoiding a flash where
+              // the drawer briefly re-renders over the new view.
+              const t = e.target as HTMLElement;
+              if (t.closest("button, a")) setMobileSidebarOpen(false);
+            }}
+          >
+            <Sidebar
+              email={sidebarEmail}
+              customerUserId={sidebarCustomerUserId}
+              session={state.session}
+              entitlement={state.entitlement}
+              employment={employment}
+              viewingPastId={viewingPastId}
+              projects={projects}
+              selectedProjectId={selectedProjectId}
+              onViewPast={handleViewPast}
+              onNewSession={handleNewSession}
+              onNewChat={() => setNewChatModalOpen(true)}
+              onStartInProject={handleStartInProject}
+              onRenameProject={handleRenameProject}
+              onStartNewProject={handleStartNewProject}
+              onCreateProjectWithMetadata={handleCreateProjectWithMetadata}
+              onSelectProject={handleSelectProject}
+              onWalletClick={handleWalletClick}
+              onOpenProfile={handleOpenProfile}
+              onOpenBilling={handleOpenBilling}
+              onOpenLegal={handleOpenLegal}
+              onGoHome={handleGoHome}
+              onPrepareSession={handlePrepareSession}
+              draftsTick={draftsTick}
+              onDeleteProject={handleOpenDeleteProject}
+              onPickerToast={(msg) => {
+                setPaidToast(msg);
+                window.setTimeout(() => setPaidToast(null), 5000);
+              }}
+              onMarkProjectComplete={handleMarkProjectComplete}
+            />
+          </div>
+        </>
+      )}
+
+      {/* Desktop sidebar — hidden below md, always-in-flow above. */}
+      <div className="hidden md:flex">
       <Sidebar
         email={sidebarEmail}
         customerUserId={sidebarCustomerUserId}
@@ -1339,6 +1427,7 @@ export function RoomClient() {
         }}
         onMarkProjectComplete={handleMarkProjectComplete}
       />
+      </div>
 
       <div className="relative flex min-w-0 flex-1 flex-col">
         {/* Floating status / timer chip + end-meeting button (top-right) */}
@@ -1458,6 +1547,73 @@ export function RoomClient() {
 
       {/* ScheduleEngineerModal is mounted inside Sidebar since the schedule
           target state lives there (driven by the connect-flow modal). */}
+
+      {/* Mobile chat FAB — bottom-right circular button. Opens the
+          ChatPanelStub as a slide-up sheet (~80vh). Only shown when
+          there's no active live session UI taking over the screen
+          (we don't want to overlap the in-call chrome). Hidden at
+          md+ since the chat panel is already in-flow on desktop. */}
+      {!asyncChatMode && (
+        <button
+          type="button"
+          onClick={() => setMobileChatOpen(true)}
+          aria-label="Open chat"
+          className="fixed bottom-4 right-4 z-30 flex h-12 w-12 items-center justify-center rounded-full shadow-lg transition-transform hover:scale-105 md:hidden"
+          style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+        >
+          <MessageCircle size={20} />
+        </button>
+      )}
+
+      {/* Mobile chat bottom sheet. Re-uses ChatPanelStub so the stub
+          composer (paperclip + dictate + record + send) gets the
+          same behavior as desktop. The sheet wrapper provides the
+          slide-up affordance + scrim + close handle. */}
+      {mobileChatOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-40 md:hidden"
+            style={{ backgroundColor: "var(--scrim, rgba(0,0,0,0.55))" }}
+            onClick={() => setMobileChatOpen(false)}
+          />
+          <div
+            className="fixed inset-x-0 bottom-0 z-50 flex h-[85vh] flex-col rounded-t-2xl shadow-2xl md:hidden"
+            style={{ backgroundColor: "var(--surface)" }}
+          >
+            {/* Drag handle + close. The handle is decorative (it's
+                pleasing to look at + signals "this can slide") and
+                the explicit close button is what actually dismisses. */}
+            <div className="flex shrink-0 items-center justify-between px-3 py-2 border-b" style={{ borderColor: "var(--border)" }}>
+              <span aria-hidden className="mx-auto h-1 w-10 rounded-full" style={{ backgroundColor: "var(--border-strong, var(--border))" }} />
+              <button
+                type="button"
+                onClick={() => setMobileChatOpen(false)}
+                aria-label="Close chat"
+                className="absolute right-3 top-2 flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                style={{ color: "var(--text-muted)" }}
+              >
+                <X size={14} />
+              </button>
+            </div>
+            {/* The stub is normally hidden on mobile (via the md:flex
+                class on its own outer aside). We need to FORCE it
+                visible inside the sheet — wrapping with a div that
+                resets the hidden state via an inline className mod
+                isn't possible from outside, so we just bypass the
+                hidden class by mounting ChatPanelStub here in a
+                container that's always-flex. ChatPanelStub's outer
+                aside has `hidden md:flex`; the wrapper class below
+                gives it `flex` via the !flex utility. */}
+            <div className="relative flex min-h-0 flex-1 [&>aside]:!flex">
+              <ChatPanelStub
+                sidebarCollapsed={false}
+                onToggleCollapsed={() => { /* no-op on mobile */ }}
+                session={state.session}
+              />
+            </div>
+          </div>
+        </>
+      )}
 
     </div>
   );
@@ -2987,7 +3143,7 @@ function ChatPanelStub({
 
   return (
     <aside
-      className="flex h-full shrink-0 flex-col border-l transition-[width] duration-200"
+      className="hidden h-full shrink-0 flex-col border-l transition-[width] duration-200 md:flex"
       style={{
         width: sidebarCollapsed ? 48 : "min(30%, 420px)",
         minWidth: sidebarCollapsed ? 48 : 280,
@@ -3843,14 +3999,16 @@ const FloatingStatus = memo(function FloatingStatus({
        *  by it. A subtle bottom border keeps it visually separate from the
        *  content without needing a backdrop blur. */}
       <div
-        className="flex shrink-0 items-center gap-3 border-b px-4 py-2"
+        className="flex shrink-0 items-center gap-3 border-b py-2 pl-16 pr-4 md:px-4"
         style={{
           backgroundColor: "var(--surface)",
           borderColor: "var(--border)",
         }}
       >
         {/* Session title (left) — picks the AI-summary title or a friendly
-            fallback so the chat header always has a clear identity. */}
+            fallback so the chat header always has a clear identity. The
+            left padding is wider on mobile (pl-16 = 64px) to clear the
+            fixed hamburger button at top-left. */}
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <h2 className="truncate font-serif text-base font-medium text-[var(--text)]">
             {session?.ai_summary_title || (session?.status === "queued" ? "Finding your engineer…" : "Session")}
@@ -8766,7 +8924,7 @@ function ConnectingModal({
         if (e.target === e.currentTarget) setMinimized(true);
       }}
     >
-      <div className="relative w-full max-w-sm rounded-2xl border p-8 shadow-xl"
+      <div className="relative w-[calc(100vw-1.5rem)] max-w-sm max-h-[calc(100vh-2rem)] overflow-y-auto rounded-2xl border p-6 sm:p-8 shadow-xl"
         style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
 
         {/* Close (minimize) — top-right. Esc + click-outside do the same. */}
