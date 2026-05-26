@@ -38,7 +38,12 @@ import {
   Building2, Camera, Check, CreditCard, KeyRound, Loader2, Mail,
   ShieldCheck, Trash2, Wallet, User, Bell, X, Sparkles, AlertTriangle,
   ChevronRight, Receipt, Clock, Monitor, Download as DownloadIcon, BellRing,
+  Plus,
 } from "lucide-react";
+import { loadStripe, type Stripe as StripeJs } from "@stripe/stripe-js";
+import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
+import { buildStripeAppearance } from "@/lib/stripe/appearance";
+import { useTheme } from "@/app/_components/ThemeProvider";
 import {
   Avatar, Button, Chip, ChipGroup, Input, Toast, cn,
 } from "@/app/_components/ui";
@@ -55,6 +60,49 @@ import {
 } from "@/lib/relay/customerProfile";
 
 const OTHER = "Other";
+
+// Single Stripe.js loader for the whole app — Stripe recommends not
+// re-loading on every modal open. Mirrors the pattern in PaywallModal.
+const STRIPE_PUBLISHABLE_KEY =
+  (typeof process !== "undefined" && process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) || "";
+let _stripePromise: Promise<StripeJs | null> | null = null;
+function getStripePromise(): Promise<StripeJs | null> | null {
+  if (!STRIPE_PUBLISHABLE_KEY) return null;
+  if (!_stripePromise) _stripePromise = loadStripe(STRIPE_PUBLISHABLE_KEY);
+  return _stripePromise;
+}
+
+// Saved payment method shape — matches the normalized response from
+// /api/billing/payment-methods (Stripe PaymentMethod flattened + the
+// default-card flag derived from Customer.invoice_settings).
+type SavedPaymentMethod = {
+  id:        string;
+  brand:     string;
+  last4:     string;
+  expMonth:  number | null;
+  expYear:   number | null;
+  isDefault: boolean;
+};
+
+// Pretty brand label for the card row. Stripe returns lowercase
+// codes ("visa", "mastercard", "amex"); we capitalize for display.
+function brandLabel(brand: string): string {
+  switch (brand.toLowerCase()) {
+    case "visa":       return "Visa";
+    case "mastercard": return "Mastercard";
+    case "amex":
+    case "american_express": return "Amex";
+    case "discover":   return "Discover";
+    case "diners":     return "Diners";
+    case "jcb":        return "JCB";
+    case "unionpay":   return "UnionPay";
+    default: return brand.charAt(0).toUpperCase() + brand.slice(1);
+  }
+}
+function formatExp(month: number | null, year: number | null): string {
+  if (!month || !year) return "";
+  return `${String(month).padStart(2, "0")}/${String(year).slice(-2)}`;
+}
 
 // ── Tab identity ──────────────────────────────────────────────────────────
 export type AccountTab = "profile" | "wallet" | "billing" | "security" | "notifications";
@@ -681,9 +729,14 @@ export function AccountPane({
         </div>
       </div>
 
-      {/* Save bar — only on Profile tab when dirty. Floats above the
-          tab content (sticky to the pane bottom). */}
-      {tab === "profile" && isDirty && (
+      {/* Save bar — always visible on the Profile tab so the customer
+          knows the page is editable from the moment they land on it.
+          The button itself is disabled until there are unsaved changes
+          (isDirty), so an idle visit doesn't show an actionable Save
+          on a clean profile. Previously this whole bar was hidden when
+          !isDirty, which made the page look read-only and the user
+          had no obvious "edit option" to discover. */}
+      {tab === "profile" && (
         <div
           className="shrink-0 border-t px-6 py-3"
           style={{
@@ -694,12 +747,15 @@ export function AccountPane({
         >
           <div className="mx-auto flex max-w-2xl items-center justify-between gap-3">
             <p className="text-[12px]" style={{ color: "var(--text-muted)" }}>
-              You have unsaved changes.
+              {isDirty
+                ? "You have unsaved changes."
+                : "Edit any field above — click Save changes when you're done."}
             </p>
             <Button
               iconLeft={saving ? undefined : <Check className="size-4" />}
               loading={saving}
               onClick={onSave}
+              disabled={!isDirty || saving}
             >
               {saving ? "Saving…" : "Save changes"}
             </Button>
@@ -1181,6 +1237,13 @@ function BillingTab({
         title="Billing"
         blurb="Every recharge you've made, with receipts."
       />
+
+      {/* Payment methods — saved cards live above the purchase history
+          since they're the "what's set up today" view; purchases are
+          the "what happened in the past." Card list + Add button +
+          remove per row. Empty state encourages adding a card so
+          future recharges are one-click. */}
+      <PaymentMethodsCard />
 
       {/* Top-line stats — three small cards in a row. Numbers come from
           authoritative cumulative columns, not summed-from-purchases,
@@ -1746,6 +1809,383 @@ function ComingSoonRow({ title, body }: { title: string; body: string }) {
         <p className="mt-0.5 text-[12px]" style={{ color: "var(--text-muted)" }}>
           {body}
         </p>
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Payment methods (saved cards)
+// ──────────────────────────────────────────────────────────────────────
+// Customer's saved Stripe cards. The list lives in the BillingTab
+// above the lifetime stats. Adding a card opens a modal that wraps
+// the Stripe PaymentElement in SetupIntent mode — no charge happens,
+// just card-on-file attachment.
+function PaymentMethodsCard() {
+  const [items, setItems]     = useState<SavedPaymentMethod[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState<string | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/billing/payment-methods", { cache: "no-store" });
+      const json = await res.json() as { paymentMethods?: SavedPaymentMethod[]; error?: string };
+      if (!res.ok) throw new Error(json.error ?? "Failed to load payment methods");
+      setItems(json.paymentMethods ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't load payment methods.");
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const handleRemove = useCallback(async (id: string) => {
+    if (removingId) return;
+    if (typeof window !== "undefined" && !window.confirm("Remove this card?")) return;
+    setRemovingId(id);
+    try {
+      const res = await fetch(`/api/billing/payment-methods?id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      const json = await res.json().catch(() => ({})) as { error?: string };
+      if (!res.ok) throw new Error(json.error ?? "Failed to remove card");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't remove card.");
+    } finally {
+      setRemovingId(null);
+    }
+  }, [removingId, load]);
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3
+            className="text-[15px] font-semibold tracking-tight"
+            style={{ color: "var(--text)" }}
+          >
+            Payment methods
+          </h3>
+          <p className="mt-0.5 text-[12px]" style={{ color: "var(--text-muted)" }}>
+            Saved cards skip checkout entry on future top-ups.
+          </p>
+        </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          iconLeft={<Plus className="size-4" />}
+          onClick={() => setShowAdd(true)}
+        >
+          Add payment method
+        </Button>
+      </div>
+
+      {error && (
+        <div
+          className="rounded-md border px-3 py-2 text-[12px]"
+          style={{
+            borderColor: "color-mix(in srgb, var(--accent-red) 30%, transparent)",
+            backgroundColor: "color-mix(in srgb, var(--accent-red) 8%, transparent)",
+            color: "var(--accent-red)",
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      {loading && !items && (
+        <div
+          className="rounded-2xl border p-4 text-[13px]"
+          style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)", color: "var(--text-muted)" }}
+        >
+          <Loader2 className="mr-2 inline-block size-4 animate-spin" />
+          Loading saved cards…
+        </div>
+      )}
+
+      {items && items.length === 0 && !loading && (
+        <div
+          className="rounded-2xl border p-4 text-[13px]"
+          style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)", color: "var(--text-muted)" }}
+        >
+          No saved cards yet. Add one to make future recharges one-click.
+        </div>
+      )}
+
+      {items && items.length > 0 && (
+        <ul className="flex flex-col gap-2">
+          {items.map((pm) => (
+            <li
+              key={pm.id}
+              className="flex items-center gap-3 rounded-2xl border p-3"
+              style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)" }}
+            >
+              <div
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md"
+                style={{
+                  backgroundColor: "var(--primary-soft)",
+                  color: "var(--primary)",
+                }}
+              >
+                <CreditCard className="size-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-[13px] font-medium" style={{ color: "var(--text)" }}>
+                    {brandLabel(pm.brand)} •••• {pm.last4}
+                  </span>
+                  {pm.isDefault && (
+                    <span
+                      className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider"
+                      style={{
+                        backgroundColor: "color-mix(in srgb, var(--primary) 14%, transparent)",
+                        color: "var(--primary)",
+                      }}
+                    >
+                      Default
+                    </span>
+                  )}
+                </div>
+                <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                  Expires {formatExp(pm.expMonth, pm.expYear) || "—"}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => void handleRemove(pm.id)}
+                disabled={removingId === pm.id}
+                aria-label={`Remove ${brandLabel(pm.brand)} ending ${pm.last4}`}
+                title="Remove"
+                className="flex h-8 w-8 items-center justify-center rounded-full transition-opacity hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-white/5"
+                style={{ color: "var(--text-muted)" }}
+              >
+                {removingId === pm.id ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {showAdd && (
+        <AddPaymentMethodModal
+          onClose={() => setShowAdd(false)}
+          onAdded={() => {
+            setShowAdd(false);
+            void load();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Modal wrapper. Fetches the SetupIntent client_secret, then mounts
+// Stripe's <Elements> with the appropriate theme. Inner form does the
+// confirmSetup call.
+function AddPaymentMethodModal({
+  onClose,
+  onAdded,
+}: {
+  onClose: () => void;
+  onAdded: () => void;
+}) {
+  const { theme } = useTheme();
+  const stripePromise = getStripePromise();
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const res = await fetch("/api/billing/payment-methods/setup-intent", {
+          method: "POST",
+        });
+        const json = await res.json() as { clientSecret?: string; error?: string };
+        if (!alive) return;
+        if (!res.ok || !json.clientSecret) {
+          throw new Error(json.error ?? "Couldn't initialize card setup.");
+        }
+        setClientSecret(json.clientSecret);
+      } catch (e) {
+        if (!alive) return;
+        setFetchError(e instanceof Error ? e.message : "Couldn't initialize card setup.");
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // Theme-aware Elements appearance. The key={theme} on <Elements>
+  // forces a remount on theme switch so the appearance re-resolves.
+  const appearance = useMemo(() => buildStripeAppearance(), [theme]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <>
+      <div
+        className="fixed inset-0 z-[60]"
+        style={{ backgroundColor: "var(--scrim)" }}
+        onClick={onClose}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="fixed left-1/2 top-1/2 z-[61] w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border shadow-2xl"
+        style={{
+          borderColor: "var(--border)",
+          backgroundColor: "var(--surface)",
+          boxShadow: "0 24px 64px rgba(0, 0, 0, 0.5)",
+        }}
+      >
+        <div className="flex items-start gap-3 border-b px-5 py-4" style={{ borderColor: "var(--border)" }}>
+          <div
+            className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+            style={{
+              backgroundColor: "var(--primary-soft)",
+              color: "var(--primary)",
+            }}
+          >
+            <CreditCard size={16} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-[15px] font-semibold" style={{ color: "var(--text)" }}>
+              Add a payment method
+            </h2>
+            <p className="mt-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
+              Your card is securely saved with Stripe. No charge happens now — we just
+              keep it on file so future top-ups skip card entry.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-8 w-8 items-center justify-center rounded-md transition-opacity hover:bg-black/5 dark:hover:bg-white/5"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="px-5 py-4">
+          {fetchError && (
+            <div
+              className="rounded-md border px-3 py-2 text-[12px]"
+              style={{
+                borderColor: "color-mix(in srgb, var(--accent-red) 30%, transparent)",
+                backgroundColor: "color-mix(in srgb, var(--accent-red) 8%, transparent)",
+                color: "var(--accent-red)",
+              }}
+            >
+              {fetchError}
+            </div>
+          )}
+          {!fetchError && !clientSecret && (
+            <div className="flex items-center gap-2 py-6 text-[13px]" style={{ color: "var(--text-muted)" }}>
+              <Loader2 className="size-4 animate-spin" /> Preparing the card form…
+            </div>
+          )}
+          {!fetchError && clientSecret && stripePromise && (
+            <Elements
+              key={theme}
+              stripe={stripePromise}
+              options={{ clientSecret, appearance }}
+            >
+              <AddPaymentMethodForm onCancel={onClose} onSuccess={onAdded} />
+            </Elements>
+          )}
+          {!fetchError && clientSecret && !stripePromise && (
+            <div
+              className="rounded-md border px-3 py-2 text-[12px]"
+              style={{
+                borderColor: "color-mix(in srgb, var(--warn) 30%, transparent)",
+                backgroundColor: "color-mix(in srgb, var(--warn) 8%, transparent)",
+                color: "var(--warn)",
+              }}
+            >
+              Stripe publishable key isn&apos;t configured for this build.
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// Inner form — runs inside <Elements>. Uses Stripe's PaymentElement +
+// confirmSetup to attach the card to the customer.
+function AddPaymentMethodForm({
+  onCancel,
+  onSuccess,
+}: {
+  onCancel: () => void;
+  onSuccess: () => void;
+}) {
+  const stripe   = useStripe();
+  const elements = useElements();
+  const [submitting, setSubmitting] = useState(false);
+  const [errMsg, setErrMsg] = useState<string | null>(null);
+
+  const handleSave = useCallback(async () => {
+    if (!stripe || !elements || submitting) return;
+    setSubmitting(true);
+    setErrMsg(null);
+    const { error } = await stripe.confirmSetup({
+      elements,
+      // No redirect — we want to stay on the page. Stripe only redirects
+      // for 3DS / wallet methods where it's required.
+      redirect: "if_required",
+    });
+    if (error) {
+      setErrMsg(error.message ?? "Couldn't save the card.");
+      setSubmitting(false);
+      return;
+    }
+    onSuccess();
+  }, [stripe, elements, submitting, onSuccess]);
+
+  return (
+    <div className="flex flex-col gap-3">
+      <PaymentElement options={{ layout: { type: "tabs", defaultCollapsed: false } }} />
+      {errMsg && (
+        <div
+          className="rounded-md border px-3 py-2 text-[12px]"
+          style={{
+            borderColor: "color-mix(in srgb, var(--accent-red) 30%, transparent)",
+            backgroundColor: "color-mix(in srgb, var(--accent-red) 8%, transparent)",
+            color: "var(--accent-red)",
+          }}
+        >
+          {errMsg}
+        </div>
+      )}
+      <div className="mt-1 flex items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={submitting}
+          className="rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-colors hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-white/5"
+          style={{ color: "var(--text-muted)" }}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() => void handleSave()}
+          disabled={!stripe || !elements || submitting}
+          className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          style={{ backgroundColor: "var(--primary)" }}
+        >
+          {submitting ? <Loader2 className="size-3.5 animate-spin" /> : null}
+          {submitting ? "Saving…" : "Save card"}
+        </button>
       </div>
     </div>
   );

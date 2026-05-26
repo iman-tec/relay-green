@@ -30,6 +30,12 @@ type Booking = {
   slotEnd: string;
 };
 
+type Holiday = {
+  date: string;            // ISO yyyy-mm-dd in the engineer's local clock
+  label: string | null;
+  kind: string;
+};
+
 type Slot = { start: Date; end: Date };
 
 const SLOT_MIN = 30;
@@ -46,6 +52,7 @@ export function ScheduleEngineerModal({
 }) {
   const [windows, setWindows] = useState<Window[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeDay, setActiveDay] = useState<Date>(() => {
@@ -65,7 +72,7 @@ export function ScheduleEngineerModal({
         const to = new Date(from);
         to.setDate(to.getDate() + DAYS_AHEAD + 1);
 
-        const [wRes, bRes] = await Promise.all([
+        const [wRes, bRes, hRes] = await Promise.all([
           sb.from("engineer_availability_windows")
             .select("weekday, start_minute, end_minute, timezone")
             .eq("engineer_user_id", engineerUserId),
@@ -75,10 +82,16 @@ export function ScheduleEngineerModal({
             .eq("status", "booked")
             .gte("slot_start", from.toISOString())
             .lt("slot_start", to.toISOString()),
+          sb.from("engineer_holidays")
+            .select("holiday_date, label, kind")
+            .eq("engineer_user_id", engineerUserId)
+            .gte("holiday_date", from.toISOString().slice(0, 10))
+            .lt("holiday_date", to.toISOString().slice(0, 10)),
         ]);
         if (!alive) return;
         if (wRes.error) throw new Error(wRes.error.message);
         if (bRes.error) throw new Error(bRes.error.message);
+        if (hRes.error) throw new Error(hRes.error.message);
         setWindows(((wRes.data ?? []) as Array<{
           weekday: number;
           start_minute: number;
@@ -94,6 +107,11 @@ export function ScheduleEngineerModal({
           slotStart: r.slot_start,
           slotEnd: r.slot_end,
         })));
+        setHolidays(((hRes.data ?? []) as Array<{ holiday_date: string; label: string | null; kind: string }>).map((r) => ({
+          date: r.holiday_date,
+          label: r.label,
+          kind: r.kind,
+        })));
       } catch (err) {
         if (!alive) return;
         setError(err instanceof Error ? err.message : "Couldn't load calendar.");
@@ -106,9 +124,17 @@ export function ScheduleEngineerModal({
 
   const engineerTz = windows[0]?.timezone ?? "UTC";
 
+  // Check if the active day is a holiday for this engineer. Holidays
+  // wipe out all slots regardless of the weekly pattern.
+  const activeHoliday = useMemo(() => {
+    const dayKey = `${activeDay.getFullYear()}-${String(activeDay.getMonth() + 1).padStart(2, "0")}-${String(activeDay.getDate()).padStart(2, "0")}`;
+    return holidays.find((h) => h.date === dayKey) ?? null;
+  }, [activeDay, holidays]);
+
   // Compute open slots for the active day.
   const slots: Slot[] = useMemo(() => {
     if (windows.length === 0) return [];
+    if (activeHoliday) return [];
     const weekday = activeDay.getDay();
     const dayWindows = windows.filter((w) => w.weekday === weekday);
     if (dayWindows.length === 0) return [];
@@ -133,7 +159,12 @@ export function ScheduleEngineerModal({
       }
     }
     return out;
-  }, [windows, bookings, activeDay]);
+  }, [windows, bookings, activeDay, activeHoliday]);
+
+  // Pre-compute holiday dates as a Set for fast day-picker rendering.
+  const holidayDates = useMemo(() => new Set(holidays.map((h) => h.date)), [holidays]);
+  const dayKeyOf = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
   const dayList: Date[] = useMemo(() => {
     const out: Date[] = [];
@@ -228,14 +259,16 @@ export function ScheduleEngineerModal({
                 {dayList.map((d) => {
                   const active = d.toDateString() === activeDay.toDateString();
                   const dayWindows = windows.filter((w) => w.weekday === d.getDay());
-                  const hasAvailability = dayWindows.length > 0;
+                  const isHoliday = holidayDates.has(dayKeyOf(d));
+                  const hasAvailability = dayWindows.length > 0 && !isHoliday;
                   return (
                     <button
                       key={d.toISOString()}
                       type="button"
                       onClick={() => setActiveDay(d)}
                       disabled={!hasAvailability}
-                      className="flex shrink-0 flex-col items-center gap-0.5 rounded-lg border px-3 py-2 transition-colors disabled:opacity-40"
+                      title={isHoliday ? "Engineer is off this day" : undefined}
+                      className="relative flex shrink-0 flex-col items-center gap-0.5 rounded-lg border px-3 py-2 transition-colors disabled:opacity-40"
                       style={{
                         borderColor: active ? "var(--primary)" : "var(--border)",
                         backgroundColor: active
@@ -246,16 +279,40 @@ export function ScheduleEngineerModal({
                       <span className="text-[9px] uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
                         {d.toLocaleDateString([], { weekday: "short" })}
                       </span>
-                      <span className="text-[14px] font-semibold" style={{ color: "var(--text)" }}>
+                      <span
+                        className="text-[14px] font-semibold"
+                        style={{
+                          color: "var(--text)",
+                          textDecoration: isHoliday ? "line-through" : "none",
+                        }}
+                      >
                         {d.getDate()}
                       </span>
+                      {isHoliday && (
+                        <span
+                          aria-hidden
+                          className="absolute -top-1 right-0 h-1.5 w-1.5 rounded-full"
+                          style={{ backgroundColor: "var(--accent-red)" }}
+                        />
+                      )}
                     </button>
                   );
                 })}
               </div>
             </div>
             <div className="max-h-[260px] overflow-y-auto px-5 py-4">
-              {slots.length === 0 ? (
+              {activeHoliday ? (
+                <div className="flex flex-col items-center gap-1 py-6 text-center">
+                  <p className="text-[13px] font-medium" style={{ color: "var(--text)" }}>
+                    {engineerName} is off this day
+                  </p>
+                  {activeHoliday.label && (
+                    <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                      {activeHoliday.label}
+                    </p>
+                  )}
+                </div>
+              ) : slots.length === 0 ? (
                 <p className="py-6 text-center text-[12px]" style={{ color: "var(--text-muted)" }}>
                   No open slots on this day.
                 </p>

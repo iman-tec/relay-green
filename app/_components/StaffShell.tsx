@@ -31,6 +31,7 @@ import {
 import { Wordmark } from "./Wordmark";
 import { ThemeTriplet } from "./ThemeTriplet";
 import { EngineerProfilePane } from "./EngineerProfilePane";
+import { EngineerPresenceBadge } from "./EngineerPresenceBadge";
 import { LegalPane, type LegalKind } from "./LegalPane";
 import { useStaffGuard } from "@/lib/relay/useStaffGuard";
 import { highestRoleLabel, highestRoleSummary, formatRole } from "@/lib/relay/role-labels";
@@ -173,6 +174,16 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
     }
   }, [guard.kind, engineer, inEngineerOnlyArea, router]);
 
+  // Auto-open the Profile pane when the user lands on /settings (preserves
+  // deep-link entry into Profile & settings). Must sit ABOVE the early
+  // returns so the hook count is stable across loading/anonymous/staff
+  // renders — React enforces same-order hooks every render.
+  useEffect(() => {
+    if (pathname === "/settings" && engineer && !profilePaneOpen) {
+      setProfilePaneOpen(true);
+    }
+  }, [pathname, engineer, profilePaneOpen]);
+
   if (guard.kind === "loading") {
     return (
       <div
@@ -218,15 +229,6 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
-
-  // Auto-open the Profile pane when the user lands on /settings (preserves
-  // deep-link entry into Profile & settings). The pane manages its own
-  // close — clicking X pops the user back to the dashboard.
-  useEffect(() => {
-    if (pathname === "/settings" && engineer && !profilePaneOpen) {
-      setProfilePaneOpen(true);
-    }
-  }, [pathname, engineer, profilePaneOpen]);
 
   // Bare mode — render children full-viewport with no shell chrome.
   // Used by the v2 panels where each panel owns its own navigation
@@ -393,6 +395,13 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
           children
         )}
       </main>
+
+      {/* Always-visible presence pill for engineers. Realtime-subscribed
+          so cross-tab + deep-pane changes mirror here. Other staff
+          roles don't render this (no engineer_profiles row to read). */}
+      {engineer && guard.kind === "staff" && (
+        <EngineerPresenceBadge userId={guard.userId} />
+      )}
 
       {/* Full-screen incoming-call popup for anyone who can take calls
        *  (engineer role). The modal self-gates: it only renders when

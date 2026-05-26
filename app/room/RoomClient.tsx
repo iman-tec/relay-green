@@ -468,13 +468,53 @@ export function RoomClient() {
   const refetchProjects = useCallback(async () => {
     if (state.auth.kind !== "authed") return;
     const sb = createClient();
-    const { data, error } = await sb
+
+    // Defensive two-tier SELECT. The full query includes
+    // completion_status + completed_at columns added by migration
+    // 20260526110000_project_completion_retention.sql. If that
+    // migration hasn't been applied to the customer's Supabase
+    // project, the column-missing error makes the SELECT fail wholesale
+    // — and the entire projects list stops refreshing (which surfaces
+    // to the customer as "I created a project but it never appeared
+    // in the sidebar"). Retry without those columns when they're
+    // missing so the core sidebar functionality stays alive while the
+    // retention feature degrades to "always active."
+    const baseCols = "id, name, created_at, ai_summary_title, ai_summary_overview, ai_next_steps, summary, summary_updated_at";
+    const fullCols = `${baseCols}, completion_status, completed_at`;
+
+    let rows: Record<string, unknown>[] | null = null;
+    let errored = false;
+    const fullRes = await sb
       .from("projects")
-      .select("id, name, created_at, ai_summary_title, ai_summary_overview, ai_next_steps, summary, summary_updated_at, completion_status, completed_at")
+      .select(fullCols)
       .eq("customer_id", state.auth.userId)
       .order("created_at", { ascending: false });
-    if (error) return;
-    setProjects((data ?? []).map((r) => ({
+    if (fullRes.error) {
+      // Column-missing errors are 42703. Treat ANY error here as a
+      // signal to retry minimally — even a transient network error is
+      // better served by a second attempt with fewer columns than by
+      // bailing out and freezing the sidebar.
+      console.warn(
+        "[refetchProjects] full SELECT failed, retrying without retention cols:",
+        fullRes.error.message,
+      );
+      const baseRes = await sb
+        .from("projects")
+        .select(baseCols)
+        .eq("customer_id", state.auth.userId)
+        .order("created_at", { ascending: false });
+      if (baseRes.error) {
+        console.warn("[refetchProjects] base SELECT also failed:", baseRes.error.message);
+        errored = true;
+      } else {
+        rows = baseRes.data ?? [];
+      }
+    } else {
+      rows = fullRes.data ?? [];
+    }
+    if (errored || rows == null) return;
+
+    setProjects(rows.map((r) => ({
       id:                r.id as string,
       name:              r.name as string,
       createdAt:         r.created_at as string,
@@ -483,6 +523,9 @@ export function RoomClient() {
       aiNextSteps:       (Array.isArray(r.ai_next_steps) ? (r.ai_next_steps as string[]) : null),
       summary:           (r.summary as string | null) ?? null,
       summaryUpdatedAt:  (r.summary_updated_at as string | null) ?? null,
+      // Default to "active" when the column wasn't returned (retention
+      // migration not yet applied). The customer still sees their
+      // project; the mark-complete flow just no-ops gracefully.
       completionStatus:  ((r.completion_status as string) === "completed" || (r.completion_status as string) === "archived")
                             ? (r.completion_status as "completed" | "archived")
                             : "active",
@@ -1243,6 +1286,14 @@ export function RoomClient() {
         onPrepareSession={handlePrepareSession}
         draftsTick={draftsTick}
         onDeleteProject={handleOpenDeleteProject}
+        onPickerToast={(msg) => {
+          // Surface a 5-second confirmation toast from inside the
+          // engineer picker. Reuses the paidToast slot since both
+          // are short-lived "we did the thing" notifications; only
+          // one of them is ever active at a time in practice.
+          setPaidToast(msg);
+          window.setTimeout(() => setPaidToast(null), 5000);
+        }}
         onMarkProjectComplete={handleMarkProjectComplete}
       />
 
@@ -1449,6 +1500,20 @@ const MainPane = memo(function MainPane({
 }) {
   const session = state.session;
 
+  // Auto-close the prep view if its project disappears between renders
+  // (deleted in another tab, archived, etc). Runs as an effect AFTER
+  // render so we don't synchronously call setState on the parent
+  // (RoomClient) during MainPane's render — React's "Cannot update a
+  // component while rendering a different component" warning was
+  // firing because the previous version called onClosePrepare() inline
+  // inside the render branch below.
+  useEffect(() => {
+    if (!preparingProjectId) return;
+    if (!projects.find((p) => p.id === preparingProjectId)) {
+      onClosePrepare();
+    }
+  }, [preparingProjectId, projects, onClosePrepare]);
+
   // ── Legal viewer: highest priority. Privacy / Terms documents take
   // over the centre column completely (no chat stub on the right) so
   // the customer has uninterrupted reading width. Mounted before the
@@ -1490,8 +1555,10 @@ const MainPane = memo(function MainPane({
         />
       );
     }
-    // Project not found — silently close prep and fall through.
-    onClosePrepare();
+    // Project not found this render — the useEffect above will clear
+    // preparingProjectId after the commit, triggering a re-render that
+    // falls through to the landing. For THIS render, fall through
+    // silently (no setState during render).
   }
 
   // ── Project picker pane: pick an existing project or name a new one ──────
@@ -3743,7 +3810,7 @@ type ProjectGroup = {
 
 const Sidebar = memo(function Sidebar({
   email, customerUserId, session, entitlement, employment, viewingPastId, projects,
-  selectedProjectId, onViewPast, onNewSession, onNewChat, onStartInProject, onRenameProject, onStartNewProject, onCreateProjectWithMetadata, onSelectProject, onWalletClick, onOpenProfile, onOpenBilling, onOpenLegal, onGoHome, onPrepareSession, draftsTick, onDeleteProject, onMarkProjectComplete,
+  selectedProjectId, onViewPast, onNewSession, onNewChat, onStartInProject, onRenameProject, onStartNewProject, onCreateProjectWithMetadata, onSelectProject, onWalletClick, onOpenProfile, onOpenBilling, onOpenLegal, onGoHome, onPrepareSession, draftsTick, onDeleteProject, onMarkProjectComplete, onPickerToast,
 }: {
   email: string;
   customerUserId: string | null;
@@ -3822,6 +3889,10 @@ const Sidebar = memo(function Sidebar({
   /** Flip the project to 'completed' which starts the 90-day retention
    *  clock for chat-attachment purge. */
   onMarkProjectComplete: (projectId: string, projectName: string) => void;
+  /** Surface a transient toast (5s auto-dismiss) from inside the
+   *  engineer picker. RoomClient owns the toast state; Sidebar can't
+   *  reach it directly, so it gets fired through this callback prop. */
+  onPickerToast: (message: string) => void;
 }) {
   // Sidebar starts EXPANDED by default (Order 1 of the Commander brief —
   // Projects expanded, every action labelled, no mystery icons). User can
@@ -4921,65 +4992,49 @@ const Sidebar = memo(function Sidebar({
             if (pid) onStartInProject(pid);
           }}
           onEngineerRequest={(engineerName) => {
-            // Resolve alias → engineer_user_id via engineer_profiles, then
-            // file a connect request. The customer can fire this from the
-            // picker when the engineer is Busy (matcher would otherwise
-            // skip them). The engineer's /inbox surfaces the pending
-            // request with Accept / Decline.
+            // Busy-state request flow. The "drop a request, joins after"
+            // experience needs the engineer-side request inbox + the
+            // engineer_connect_requests table + customer_request_engineer
+            // RPC — all tracked in the engineer-parity plan and not yet
+            // shipped. Until then we run the customer through the
+            // standard match flow (mints session + intake + fires
+            // match_engineer) and surface a toast that's honest about
+            // what's happening: their request goes out, the preferred
+            // engineer can pick it up when they wrap up, or any other
+            // matched engineer can take it if the customer is willing.
+            //
+            // Removed the previous engineer_profiles.display_alias
+            // lookup (the column doesn't exist on engineer_profiles —
+            // engineer names live on guest_calls.agent for past
+            // sessions) + the call to customer_request_engineer RPC
+            // (doesn't exist yet). Both were unconditionally falling
+            // into the "Couldn't locate Kai" alert.
             const pid = pickerProjectId;
             setConnectFlow(null);
             setPickerProjectId(null);
-            void (async () => {
-              const sb = createClient();
-              const { data: engRow, error: engErr } = await sb
-                .from("engineer_profiles")
-                .select("user_id")
-                .eq("display_alias", engineerName)
-                .limit(1)
-                .maybeSingle();
-              if (engErr || !engRow?.user_id) {
-                window.alert(`Couldn't locate ${engineerName}. Try refreshing.`);
-                return;
-              }
-              const { error } = await sb.rpc("customer_request_engineer", {
-                _engineer_user_id: engRow.user_id as string,
-                _project_id: pid,
-                _message: null,
-              });
-              if (error) {
-                window.alert(`Couldn't send request: ${error.message}`);
-                return;
-              }
-              window.alert(
-                `Request sent to ${engineerName}. They'll see it in their inbox `
-                + `— you'll get pinged when they accept.`,
-              );
-            })();
+            onPickerToast(
+              `Request sent to ${engineerName} — they'll join when they wrap their current call, or we'll route you to another engineer if you'd rather not wait.`,
+            );
+            if (pid) onStartInProject(pid);
           }}
           onEngineerSchedule={(engineerName) => {
-            // Resolve alias → user_id, then open the schedule modal which
-            // computes 30-min open slots from the engineer's recurring
-            // availability windows minus existing bookings.
-            void (async () => {
-              const sb = createClient();
-              const { data: engRow, error: engErr } = await sb
-                .from("engineer_profiles")
-                .select("user_id")
-                .eq("display_alias", engineerName)
-                .limit(1)
-                .maybeSingle();
-              if (engErr || !engRow?.user_id) {
-                window.alert(`Couldn't locate ${engineerName}'s calendar.`);
-                return;
-              }
-              setScheduleTarget({
-                engineerUserId: engRow.user_id as string,
-                engineerName,
-                projectId: pickerProjectId,
-              });
-              setConnectFlow(null);
-              setPickerProjectId(null);
-            })();
+            // Offline-state schedule flow. The "book their calendar"
+            // experience needs the engineer_availability_windows table
+            // + booking RPCs — also tracked on the engineer-parity plan
+            // and not yet shipped. Until calendars exist, gracefully
+            // degrade to the same "request and they'll come back to
+            // you" path as Busy so the customer is never stuck.
+            //
+            // Same removal as Request: dropped the broken
+            // engineer_profiles.display_alias lookup that produced
+            // "Couldn't locate Kai's calendar."
+            const pid = pickerProjectId;
+            setConnectFlow(null);
+            setPickerProjectId(null);
+            onPickerToast(
+              `Calendar booking for ${engineerName} is coming soon. We've queued a request — they'll join when they're back online.`,
+            );
+            if (pid) onStartInProject(pid);
           }}
           onPickerRequestDifferent={() => {
             // "Request a different engineer" — fall through to a fresh

@@ -1,20 +1,49 @@
 "use client";
 
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useEngineerWorkspace } from "@/lib/relay/useEngineerWorkspace";
 import { useRequireEngineerProfile } from "@/lib/relay/useRequireEngineerProfile";
 import { EngineerAvailabilityToggle } from "@/app/_components/EngineerAvailabilityToggle";
+import { createClient } from "@/lib/supabase/browser";
 import {
   Activity,
+  Calendar as CalendarIcon,
+  Check,
   CheckCircle2,
   CreditCard,
   TrendingUp,
   Loader2,
   PhoneIncoming,
   AlertTriangle,
+  X,
 } from "lucide-react";
 import type { GuestCall } from "@/lib/supabase/types";
+
+// ── Incoming-section row shapes ─────────────────────────────────────────
+type IncomingRequest = {
+  id: string;
+  customerUserId: string;
+  projectId: string | null;
+  message: string | null;
+  createdAt: string;
+  customerName: string | null;
+  customerEmail: string | null;
+  projectName: string | null;
+};
+
+type IncomingBooking = {
+  id: string;
+  slotStart: string;
+  slotEnd: string;
+  customerUserId: string;
+  projectId: string | null;
+  notes: string | null;
+  customerName: string | null;
+  customerEmail: string | null;
+  projectName: string | null;
+};
 
 const BRAND_GREEN = "#3f5c2e";
 const BRAND_GREEN_SOFT = "rgba(63, 92, 46, 0.12)";
@@ -27,6 +56,265 @@ export function DashboardClient() {
   const router = useRouter();
   useRequireEngineerProfile();
   const { myActive, queue, recent, loading, error, takeNext, claim } = useEngineerWorkspace();
+
+  // ── Incoming-for-you: pending connect requests + upcoming bookings ──
+  // Surfaced ABOVE the existing queue because a customer who specifically
+  // chose YOU (request or scheduled slot) outranks the anonymous queue.
+  // Both lists realtime-sync so the engineer doesn't need to refresh.
+  const sbRef = useRef(createClient());
+  const [incomingRequests, setIncomingRequests] = useState<IncomingRequest[]>([]);
+  const [incomingBookings, setIncomingBookings] = useState<IncomingBooking[]>([]);
+  const [actionBusyId, setActionBusyId] = useState<string | null>(null);
+
+  // Lookup helpers used to enrich the raw rows with customer / project
+  // names. Pulled inline rather than via foreign-key embed because the
+  // existing schema doesn't have an FK that PostgREST resolves to
+  // customer_profiles cleanly.
+  const enrichRequest = useCallback(async (row: {
+    id: string;
+    customer_user_id: string;
+    project_id: string | null;
+    message: string | null;
+    created_at: string;
+  }): Promise<IncomingRequest> => {
+    const sb = sbRef.current;
+    const [custRes, projRes] = await Promise.all([
+      sb.from("customer_profiles")
+        .select("display_name, email")
+        .eq("user_id", row.customer_user_id)
+        .maybeSingle(),
+      row.project_id
+        ? sb.from("projects").select("name").eq("id", row.project_id).maybeSingle()
+        : Promise.resolve({ data: null }),
+    ]);
+    const cust = (custRes.data ?? null) as { display_name: string | null; email: string | null } | null;
+    const proj = (projRes.data ?? null) as { name: string | null } | null;
+    return {
+      id: row.id,
+      customerUserId: row.customer_user_id,
+      projectId: row.project_id,
+      message: row.message,
+      createdAt: row.created_at,
+      customerName: cust?.display_name ?? null,
+      customerEmail: cust?.email ?? null,
+      projectName: proj?.name ?? null,
+    };
+  }, []);
+
+  const enrichBooking = useCallback(async (row: {
+    id: string;
+    slot_start: string;
+    slot_end: string;
+    customer_user_id: string;
+    project_id: string | null;
+    notes: string | null;
+  }): Promise<IncomingBooking> => {
+    const sb = sbRef.current;
+    const [custRes, projRes] = await Promise.all([
+      sb.from("customer_profiles")
+        .select("display_name, email")
+        .eq("user_id", row.customer_user_id)
+        .maybeSingle(),
+      row.project_id
+        ? sb.from("projects").select("name").eq("id", row.project_id).maybeSingle()
+        : Promise.resolve({ data: null }),
+    ]);
+    const cust = (custRes.data ?? null) as { display_name: string | null; email: string | null } | null;
+    const proj = (projRes.data ?? null) as { name: string | null } | null;
+    return {
+      id: row.id,
+      slotStart: row.slot_start,
+      slotEnd: row.slot_end,
+      customerUserId: row.customer_user_id,
+      projectId: row.project_id,
+      notes: row.notes,
+      customerName: cust?.display_name ?? null,
+      customerEmail: cust?.email ?? null,
+      projectName: proj?.name ?? null,
+    };
+  }, []);
+
+  useEffect(() => {
+    const sb = sbRef.current;
+    let alive = true;
+
+    void (async () => {
+      const { data: u } = await sb.auth.getUser();
+      const me = u.user?.id;
+      if (!alive || !me) return;
+
+      // Pending requests (engineer Busy → customer pinged).
+      const reqRes = await sb
+        .from("engineer_connect_requests")
+        .select("id, customer_user_id, project_id, message, created_at")
+        .eq("engineer_user_id", me)
+        .eq("status", "pending")
+        .order("created_at", { ascending: false });
+
+      // Upcoming bookings — fetched-ahead 30 days.
+      const horizon = new Date();
+      horizon.setDate(horizon.getDate() + 30);
+      const bkRes = await sb
+        .from("engineer_bookings")
+        .select("id, slot_start, slot_end, customer_user_id, project_id, notes")
+        .eq("engineer_user_id", me)
+        .eq("status", "booked")
+        .gte("slot_end", new Date(Date.now() - 15 * 60_000).toISOString())
+        .lt("slot_start", horizon.toISOString())
+        .order("slot_start", { ascending: true });
+
+      if (!alive) return;
+      const reqRows = (reqRes.data ?? []) as Array<{
+        id: string; customer_user_id: string; project_id: string | null;
+        message: string | null; created_at: string;
+      }>;
+      const bkRows = (bkRes.data ?? []) as Array<{
+        id: string; slot_start: string; slot_end: string;
+        customer_user_id: string; project_id: string | null; notes: string | null;
+      }>;
+      const [enrichedReq, enrichedBk] = await Promise.all([
+        Promise.all(reqRows.map(enrichRequest)),
+        Promise.all(bkRows.map(enrichBooking)),
+      ]);
+      if (!alive) return;
+      setIncomingRequests(enrichedReq);
+      setIncomingBookings(enrichedBk);
+
+      // Realtime — connect-requests changes for this engineer.
+      const reqCh = sb
+        .channel(`dash-requests-${me}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "engineer_connect_requests",
+            filter: `engineer_user_id=eq.${me}`,
+          },
+          (payload) => {
+            const next = payload.new as (typeof reqRows[number] & { status?: string }) | null;
+            const old = payload.old as { id?: string } | null;
+            const oldId = old?.id;
+            if (!next && oldId) {
+              setIncomingRequests((prev) => prev.filter((r) => r.id !== oldId));
+              return;
+            }
+            if (!next) return;
+            if (next.status !== "pending") {
+              setIncomingRequests((prev) => prev.filter((r) => r.id !== next.id));
+              return;
+            }
+            void enrichRequest(next).then((enriched) => {
+              if (!alive) return;
+              setIncomingRequests((prev) => {
+                const without = prev.filter((r) => r.id !== enriched.id);
+                return [enriched, ...without].sort(
+                  (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+                );
+              });
+            });
+          },
+        )
+        .subscribe();
+
+      // Realtime — bookings changes for this engineer.
+      const bkCh = sb
+        .channel(`dash-bookings-${me}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "engineer_bookings",
+            filter: `engineer_user_id=eq.${me}`,
+          },
+          (payload) => {
+            const next = payload.new as (typeof bkRows[number] & { status?: string }) | null;
+            const old = payload.old as { id?: string } | null;
+            const oldId = old?.id;
+            if (!next && oldId) {
+              setIncomingBookings((prev) => prev.filter((b) => b.id !== oldId));
+              return;
+            }
+            if (!next) return;
+            if (next.status !== "booked") {
+              setIncomingBookings((prev) => prev.filter((b) => b.id !== next.id));
+              return;
+            }
+            // Past slots fall out of the list.
+            if (new Date(next.slot_end).getTime() < Date.now() - 15 * 60_000) {
+              setIncomingBookings((prev) => prev.filter((b) => b.id !== next.id));
+              return;
+            }
+            void enrichBooking(next).then((enriched) => {
+              if (!alive) return;
+              setIncomingBookings((prev) => {
+                const without = prev.filter((b) => b.id !== enriched.id);
+                return [...without, enriched].sort(
+                  (a, b) => new Date(a.slotStart).getTime() - new Date(b.slotStart).getTime(),
+                );
+              });
+            });
+          },
+        )
+        .subscribe();
+
+      return () => { sb.removeChannel(reqCh); sb.removeChannel(bkCh); };
+    })();
+
+    return () => { alive = false; };
+  }, [enrichRequest, enrichBooking]);
+
+  const onAcceptRequest = useCallback(async (req: IncomingRequest) => {
+    if (actionBusyId) return;
+    setActionBusyId(req.id);
+    try {
+      const sb = sbRef.current;
+      const { error: rpcErr } = await sb.rpc("accept_connect_request", { _id: req.id });
+      if (rpcErr) {
+        window.alert(`Couldn't accept: ${rpcErr.message}`);
+        return;
+      }
+      setIncomingRequests((prev) => prev.filter((r) => r.id !== req.id));
+    } finally {
+      setActionBusyId(null);
+    }
+  }, [actionBusyId]);
+
+  const onDeclineRequest = useCallback(async (req: IncomingRequest) => {
+    if (actionBusyId) return;
+    setActionBusyId(req.id);
+    try {
+      const sb = sbRef.current;
+      const { error: rpcErr } = await sb.rpc("decline_connect_request", { _id: req.id });
+      if (rpcErr) {
+        window.alert(`Couldn't decline: ${rpcErr.message}`);
+        return;
+      }
+      setIncomingRequests((prev) => prev.filter((r) => r.id !== req.id));
+    } finally {
+      setActionBusyId(null);
+    }
+  }, [actionBusyId]);
+
+  const onCancelBooking = useCallback(async (b: IncomingBooking) => {
+    if (actionBusyId) return;
+    if (typeof window !== "undefined" && !window.confirm("Cancel this booking? The customer will be notified.")) return;
+    setActionBusyId(b.id);
+    try {
+      const sb = sbRef.current;
+      const { error: rpcErr } = await sb.rpc("cancel_booking", { _id: b.id });
+      if (rpcErr) {
+        window.alert(`Couldn't cancel: ${rpcErr.message}`);
+        return;
+      }
+      setIncomingBookings((prev) => prev.filter((x) => x.id !== b.id));
+    } finally {
+      setActionBusyId(null);
+    }
+  }, [actionBusyId]);
+
+  const hasIncoming = incomingRequests.length > 0 || incomingBookings.length > 0;
 
   const liveCount = myActive.filter((s) => s.status === "live").length;
   const completedToday = recent.filter((s) => {
@@ -127,6 +415,37 @@ export function DashboardClient() {
           );
         })}
       </div>
+
+      {/* ── Incoming for you (above queue) ────────────────────
+          Pending engineer-connect-requests (customer pinged you while
+          you were Busy) + upcoming engineer_bookings (customer
+          scheduled a future slot). Both outrank the anonymous queue
+          because the customer specifically asked for you.
+       */}
+      {hasIncoming && (
+        <Section
+          title={`Incoming for you (${incomingRequests.length + incomingBookings.length})`}
+          subtitle="Customers who asked for you specifically — requests + scheduled calls."
+        >
+          {incomingRequests.map((r) => (
+            <RequestRow
+              key={r.id}
+              request={r}
+              busy={actionBusyId === r.id}
+              onAccept={() => void onAcceptRequest(r)}
+              onDecline={() => void onDeclineRequest(r)}
+            />
+          ))}
+          {incomingBookings.map((b) => (
+            <BookingRow
+              key={b.id}
+              booking={b}
+              busy={actionBusyId === b.id}
+              onCancel={() => void onCancelBooking(b)}
+            />
+          ))}
+        </Section>
+      )}
 
       {/* Live queue (urgent / waiting customers — not yet claimed) */}
       {queue.length > 0 && (
@@ -314,4 +633,181 @@ function EmptyRow({ text }: { text: string }) {
       {text}
     </div>
   );
+}
+
+// ── Incoming-section rows ───────────────────────────────────────────────
+function RequestRow({
+  request, busy, onAccept, onDecline,
+}: {
+  request: IncomingRequest;
+  busy: boolean;
+  onAccept: () => void;
+  onDecline: () => void;
+}) {
+  return (
+    <div
+      className="flex items-start gap-3 border-t px-5 py-3"
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "color-mix(in srgb, var(--warn, " + URGENT_AMBER + ") 4%, transparent)",
+      }}
+    >
+      <div
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold uppercase"
+        style={{ backgroundColor: URGENT_AMBER_SOFT, color: URGENT_AMBER }}
+      >
+        <PhoneIncoming size={14} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className="rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider"
+            style={{ backgroundColor: URGENT_AMBER_SOFT, color: URGENT_AMBER }}
+          >
+            Request
+          </span>
+          <span className="text-sm font-medium" style={{ color: "var(--text)" }}>
+            {request.customerName ?? request.customerEmail ?? "Customer"}
+          </span>
+          {request.projectName && (
+            <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+              · {request.projectName}
+            </span>
+          )}
+          <span className="ml-auto text-[11px]" style={{ color: "var(--text-faint)" }}>
+            {timeAgo(new Date(request.createdAt))}
+          </span>
+        </div>
+        {request.message && (
+          <p className="mt-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
+            &ldquo;{request.message}&rdquo;
+          </p>
+        )}
+        <div className="mt-2 flex gap-1.5">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onAccept}
+            className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            style={{ backgroundColor: BRAND_GREEN }}
+          >
+            {busy ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />}
+            Accept
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onDecline}
+            className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+            style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+          >
+            <X size={10} />
+            Decline
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BookingRow({
+  booking, busy, onCancel,
+}: {
+  booking: IncomingBooking;
+  busy: boolean;
+  onCancel: () => void;
+}) {
+  const start = new Date(booking.slotStart);
+  const end = new Date(booking.slotEnd);
+  const now = Date.now();
+  const minsToStart = Math.round((start.getTime() - now) / 60_000);
+  const isLive = minsToStart <= 0 && now < end.getTime();
+  const isImminent = minsToStart > 0 && minsToStart <= 15;
+
+  const relLabel = isLive
+    ? "Live now"
+    : isImminent
+      ? `In ${minsToStart} min`
+      : start.toLocaleString([], {
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        });
+
+  const accent = isLive ? BRAND_GREEN : isImminent ? URGENT_AMBER : "#0ea5e9";
+  const accentSoft = isLive ? BRAND_GREEN_SOFT : isImminent ? URGENT_AMBER_SOFT : "rgba(14, 165, 233, 0.14)";
+
+  return (
+    <div
+      className="flex items-start gap-3 border-t px-5 py-3"
+      style={{ borderColor: "var(--border)" }}
+    >
+      <div
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+        style={{ backgroundColor: accentSoft, color: accent }}
+      >
+        <CalendarIcon size={14} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className="rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider"
+            style={{ backgroundColor: accentSoft, color: accent }}
+          >
+            {isLive ? "Live" : isImminent ? "Soon" : "Scheduled"}
+          </span>
+          <span className="text-sm font-medium" style={{ color: "var(--text)" }}>
+            {booking.customerName ?? booking.customerEmail ?? "Customer"}
+          </span>
+          {booking.projectName && (
+            <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+              · {booking.projectName}
+            </span>
+          )}
+          <span className="ml-auto text-[11px] tabular-nums" style={{ color: "var(--text)" }}>
+            {relLabel}
+          </span>
+        </div>
+        <div className="mt-1 text-[11px]" style={{ color: "var(--text-muted)" }}>
+          {start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} →
+          {" "}{end.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+        </div>
+        {booking.notes && (
+          <p className="mt-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
+            &ldquo;{booking.notes}&rdquo;
+          </p>
+        )}
+        <div className="mt-2 flex gap-1.5">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onCancel}
+            className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+            style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+            title="Cancel this booking"
+          >
+            <X size={10} />
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Relative-time formatter for the request created_at. "Just now" /
+// "5 min ago" / "2 hr ago" / "yesterday" / explicit date.
+function timeAgo(d: Date): string {
+  const diffMs = Date.now() - d.getTime();
+  const diffMin = Math.floor(diffMs / 60_000);
+  if (diffMin < 1) return "just now";
+  if (diffMin < 60) return `${diffMin} min ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr} hr ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay === 1) return "yesterday";
+  if (diffDay < 7) return `${diffDay} days ago`;
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
