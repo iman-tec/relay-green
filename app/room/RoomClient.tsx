@@ -65,6 +65,7 @@ import { IntakeAssistant } from "@/app/_components/intake/IntakeAssistant";
 import { GlobalNewChatModal } from "@/app/_components/GlobalNewChatModal";
 import { EditableSummary } from "@/app/_components/EditableSummary";
 import { QuoteRequestModal } from "@/app/_components/QuoteRequestModal";
+import { useRingtone } from "@/lib/relay/useRingtone";
 import type { GuestCall, GuestMessage, GuestMessageAttachment, SessionStatus, Urgency } from "@/lib/supabase/types";
 import { signedDownloadUrl, validateStagedFiles } from "@/lib/relay/chatAttachments";
 import {
@@ -8672,16 +8673,13 @@ function ConnectingModal({
   const mins      = Math.floor(remaining / 60);
   const secs      = remaining % 60;
 
-  // Ring geometry — change RADIUS only; SIZE and CENTER follow so the
-  // outer canvas always fits the full stroke with breathing room.
-  const RADIUS = 68;
-  const STROKE = 6;
-  const PADDING = 8;
-  const SIZE   = 2 * (RADIUS + STROKE / 2 + PADDING); // = 160 for r=68
-  const CENTER = SIZE / 2;
-  const CIRC   = 2 * Math.PI * RADIUS;
-  // Ring drains as time passes; sits at fully-empty when expired.
-  const dashOffset = CIRC * (1 - remaining / QUEUE_TIMEOUT_S);
+  // Elapsed shown as mm:ss counting up — honest waiting clock instead
+  // of the old draining countdown ring. The 90s anchor is still used
+  // by `expired` to surface the "Call again" CTA, but the UI just
+  // shows how long you've been waiting.
+  const eMin = Math.floor(elapsed / 60);
+  const eSec = elapsed % 60;
+  const elapsedClock = `${String(eMin).padStart(2, "0")}:${String(eSec).padStart(2, "0")}`;
 
   const ringColor = session.urgency === "critical" ? CRIT_RED
     : session.urgency === "urgent" ? URGENT_AMBER
@@ -8689,6 +8687,12 @@ function ConnectingModal({
   const ringSoft = session.urgency === "critical" ? CRIT_RED_SOFT
     : session.urgency === "urgent" ? URGENT_AMBER_SOFT
     : BRAND_GREEN_SOFT;
+
+  // Play the warm "tring tring" mechanical bell while the modal is
+  // open + not minimized + not expired. Shared synthesis with the
+  // full-page ringing screen (lib/relay/useRingtone.ts) so both
+  // surfaces sound identical.
+  useRingtone(!minimized && !expired);
 
   const handleCallAgain = async () => {
     setRecalling(true);
@@ -8794,51 +8798,83 @@ function ConnectingModal({
           </div>
         )}
 
-        {/* Timer ring */}
+        {/* Ringing hero — pulsing green ball + expanding halo rings +
+            soft under-glow, same visual register as the full-page
+            ringing screen (app/intake/matching/[id]/MatchingClient.tsx
+            → RingingHero). Sized down (~140px ball) to fit the modal.
+            Color follows urgency: green normal / amber urgent / red
+            critical. Animations are gated behind the existing
+            prefers-reduced-motion query in globals.css. */}
         <div className="mb-5 flex justify-center">
-          <div className="relative" style={{ height: SIZE, width: SIZE }}>
-            <svg
-              width={SIZE}
-              height={SIZE}
-              viewBox={`0 0 ${SIZE} ${SIZE}`}
-              className="-rotate-90"
+          <div
+            className="relative flex items-center justify-center"
+            style={{ width: 200, height: 200, ["--primary" as string]: ringColor }}
+          >
+            {/* Halo rings — 3 concentric, staggered. */}
+            <span aria-hidden className="relay-ringing-halo absolute inset-0 rounded-full" style={{ animationDelay: "0s" }} />
+            <span aria-hidden className="relay-ringing-halo absolute inset-0 rounded-full" style={{ animationDelay: "-0.6s" }} />
+            <span aria-hidden className="relay-ringing-halo absolute inset-0 rounded-full" style={{ animationDelay: "-1.2s" }} />
+
+            {/* Under-glow — blurred radial behind the ball. */}
+            <span
+              aria-hidden
+              className="absolute rounded-full"
+              style={{
+                width: 160,
+                height: 160,
+                background: `radial-gradient(circle, color-mix(in srgb, ${ringColor} 55%, transparent) 0%, transparent 70%)`,
+                filter: "blur(16px)",
+              }}
+            />
+
+            {/* The ball. Heartbeat scale + radial gradient give it
+                weight + a "lit from within" feel. Phone icon centered. */}
+            <div
+              className="relay-ringing-ball relative flex items-center justify-center rounded-full"
+              style={{
+                width: 140,
+                height: 140,
+                background: `radial-gradient(circle at 50% 35%, color-mix(in srgb, ${ringColor} 90%, white) 0%, ${ringColor} 55%, color-mix(in srgb, ${ringColor} 65%, #000) 100%)`,
+                boxShadow:
+                  `0 16px 36px color-mix(in srgb, ${ringColor} 32%, transparent), ` +
+                  `0 6px 12px color-mix(in srgb, ${ringColor} 22%, transparent), ` +
+                  `inset 0 -8px 16px rgba(0, 0, 0, 0.22), ` +
+                  `inset 0 8px 16px rgba(255, 255, 255, 0.14)`,
+                opacity: expired ? 0.55 : 1,
+              }}
             >
-              <circle cx={CENTER} cy={CENTER} r={RADIUS} fill="none" strokeWidth={STROKE}
-                style={{ stroke: ringSoft }} />
-              <circle cx={CENTER} cy={CENTER} r={RADIUS} fill="none" strokeWidth={STROKE} strokeLinecap="round"
-                style={{
-                  stroke: expired ? "var(--text-muted)" : ringColor,
-                  strokeDasharray: CIRC,
-                  strokeDashoffset: dashOffset,
-                  transition: "stroke-dashoffset 1s linear",
-                }} />
-            </svg>
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <div className="text-3xl font-medium tabular-nums"
-                style={{
-                  fontFamily: "var(--font-inter)",
-                  color: expired ? "var(--text-muted)" : ringColor,
-                }}>
-                {String(mins).padStart(2, "0")}:{String(secs).padStart(2, "0")}
-              </div>
-              <div className="mt-0.5 text-[9px] font-semibold uppercase tracking-[0.15em]"
-                style={{ color: "var(--text-muted)" }}>
-                {expired ? "No answer" : "Avg wait"}
-              </div>
+              <Phone size={48} className="relay-ringing-icon" style={{ color: "#fff" }} strokeWidth={1.6} />
             </div>
           </div>
         </div>
 
-        {/* Heading + subtitle — flip when the 3-min window has elapsed */}
-        <div className="mb-6 text-center">
-          <h2 className="mb-2 text-xl font-medium"
+        {/* Elapsed clock — counts up from the moment the call started.
+            Honest "you've been waiting this long" instead of the old
+            countdown-to-expiry. */}
+        <div className="mb-4 text-center">
+          <div
+            className="font-mono text-2xl tabular-nums tracking-[0.05em]"
+            style={{
+              color: expired ? "var(--text-muted)" : "var(--text)",
+              fontFeatureSettings: '"tnum"',
+            }}
+            aria-live="polite"
+          >
+            {elapsedClock}
+          </div>
+        </div>
+
+        {/* Heading + subtitle — flips when the 90s window has elapsed
+            so the customer knows we're still trying and can recall. */}
+        <div className="mb-5 text-center">
+          <h2 className="mb-1.5 text-xl font-medium"
             style={{ fontFamily: "var(--font-source-serif)", color: "var(--text)" }}>
-            {expired ? "Still searching…" : "Calling engineer…"}
+            {expired ? "Still searching…" : "Ringing your engineer"}
           </h2>
           <p className="text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
             {expired
               ? "No one's picked up just yet. Try calling again — we'll page the next available engineer."
-              : "We're matching you with the right engineer."}
+              : "Hang tight — we'll connect you the moment someone picks up."}
           </p>
         </div>
 

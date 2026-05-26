@@ -45,6 +45,7 @@ import { Loader2, Home, Phone, Volume2, VolumeX } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { Button, Card, CardBody } from "@/app/_components/ui";
 import { createClient } from "@/lib/supabase/browser";
+import { useRingtone } from "@/lib/relay/useRingtone";
 
 // How often to re-check session + offer state. Belt-and-braces in case a
 // realtime event drops.
@@ -499,101 +500,5 @@ function RingingHero({
   );
 }
 
-// ── useRingtone ──────────────────────────────────────────────────────
-// Synthesizes a classic mechanical "tring tring" phone-bell trill via
-// the Web Audio API — the warm UK/India ringer everyone grew up with,
-// not the cold US dual-tone ringback (which the customer found
-// "scary"). Pattern: two short trills ~450ms each separated by a
-// ~200ms gap, then ~2s silence, repeat. Each trill is a 440Hz + 660Hz
-// (perfect-fifth) sine pair amplitude-modulated at ~20Hz to mimic the
-// clapper striking alternate bells. Soft fade-in / fade-out envelope
-// on each trill so it never spikes.
-//
-// We ship zero audio asset bytes — the whole thing is synthesized in
-// real time. Returns { available } so the caller can dim the speaker
-// icon if AudioContext started suspended (autoplay policy block).
-// Stops + cleans up when `enabled` goes false or the component
-// unmounts.
-function useRingtone(enabled: boolean): { available: boolean } {
-  const [available, setAvailable] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ctxRef = useRef<any>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    if (!enabled || typeof window === "undefined") return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const AC = (window.AudioContext || (window as any).webkitAudioContext) as
-      typeof AudioContext | undefined;
-    if (!AC) return;
-    let ctx: AudioContext;
-    try { ctx = new AC(); } catch { return; }
-    ctxRef.current = ctx;
-    setAvailable(ctx.state === "running");
-    if (ctx.state === "suspended") {
-      void ctx.resume().then(() => setAvailable(ctx.state === "running"));
-    }
-
-    // Play one "tring" — a 450ms trilled bell tone. The tremolo LFO
-    // at ~20Hz modulates the wet gain around a base level, giving the
-    // signature mechanical-bell "rrr" feel without any harshness.
-    const playTrill = (t0: number, dur = 0.45) => {
-      // Master envelope — soft attack + soft release on the whole trill.
-      const master = ctx.createGain();
-      master.gain.setValueAtTime(0, t0);
-      master.gain.linearRampToValueAtTime(0.13, t0 + 0.03);
-      master.gain.setValueAtTime(0.13, t0 + dur - 0.05);
-      master.gain.linearRampToValueAtTime(0, t0 + dur);
-      master.connect(ctx.destination);
-
-      // Tremolo — clapper striking the bell ~20× per second.
-      // Base wet gain 0.5, LFO modulates ±0.5 → effective range 0…1.
-      const trem = ctx.createGain();
-      trem.gain.setValueAtTime(0.5, t0);
-      const lfo = ctx.createOscillator();
-      lfo.type = "sine";
-      lfo.frequency.value = 20;
-      const lfoDepth = ctx.createGain();
-      lfoDepth.gain.value = 0.5;
-      lfo.connect(lfoDepth);
-      lfoDepth.connect(trem.gain);
-      trem.connect(master);
-
-      // Two tones a perfect-fifth apart — gives the warm dual-bell
-      // character without inharmonic partials (which would sound
-      // metallic/alarming). 440Hz feels like a real phone bell;
-      // 660Hz adds body.
-      for (const freq of [440, 660]) {
-        const osc = ctx.createOscillator();
-        osc.type = "sine";
-        osc.frequency.value = freq;
-        osc.connect(trem);
-        osc.start(t0);
-        osc.stop(t0 + dur + 0.05);
-      }
-      lfo.start(t0);
-      lfo.stop(t0 + dur + 0.05);
-    };
-
-    // One full "tring tring" cycle = two trills with a 200ms gap.
-    const playRing = () => {
-      const t0 = ctx.currentTime;
-      playTrill(t0);          // tring 1
-      playTrill(t0 + 0.65);   // tring 2 (450ms trill + 200ms gap → next starts at +0.65)
-    };
-
-    // First cycle now, then every 3s. Each cycle is ~1.1s of audio
-    // followed by ~1.9s of silence — restful gap between rings.
-    playRing();
-    intervalRef.current = setInterval(playRing, 3000);
-
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      intervalRef.current = null;
-      try { void ctx.close(); } catch { /* noop */ }
-      ctxRef.current = null;
-    };
-  }, [enabled]);
-
-  return { available };
-}
+// useRingtone moved to lib/relay/useRingtone.ts — shared with the
+// CallingModal in RoomClient so both surfaces ring identically.
