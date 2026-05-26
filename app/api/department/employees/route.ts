@@ -14,8 +14,10 @@
  */
 
 import { NextResponse } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireDepartmentAdmin } from "@/lib/department-auth";
 import { sendInvitationEmail } from "@/lib/admin-invite";
+import { recordInvite } from "@/lib/relay/invites";
 import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
@@ -98,28 +100,27 @@ export async function GET() {
   });
 }
 
-export async function POST(request: Request) {
-  const gate = await requireDepartmentAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
-  const { admin, user: actor, departmentId, orgId } = gate;
+type EmpInput = { name?: string; email?: string; allocatedMinutes?: number | string };
+type EmpResult =
+  | { ok: true; userId: string; email: string; name: string; departmentCode: string; mode: "invited" | "attached_existing" }
+  | { ok: false; status: number; error: string };
 
-  const { name, email, allocatedMinutes } =
-    (await request.json().catch(() => ({}))) as {
-      name?: string;
-      email?: string;
-      allocatedMinutes?: number | string;
-    };
+/** Invite + provision ONE employee into the department. Shared by single + bulk POST. */
+async function provisionEmployee(
+  admin: SupabaseClient, departmentId: string, orgId: string, actorId: string, input: EmpInput,
+): Promise<EmpResult> {
+  const { name, email, allocatedMinutes } = input;
 
   if (!name?.trim() || !email?.trim()) {
-    return NextResponse.json({ error: "Need name and email." }, { status: 400 });
+    return { ok: false, status: 400, error: "Need name and email." };
   }
   const trimmedEmail = email.trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmedEmail)) {
-    return NextResponse.json({ error: "Invalid email." }, { status: 400 });
+    return { ok: false, status: 400, error: "Invalid email." };
   }
   const allocNum = Number(allocatedMinutes ?? 0);
   if (Number.isNaN(allocNum) || allocNum < 0) {
-    return NextResponse.json({ error: "Allocation must be non-negative." }, { status: 400 });
+    return { ok: false, status: 400, error: "Allocation must be non-negative." };
   }
 
   // Pre-flight: dept must be active and have enough remaining.
@@ -128,16 +129,13 @@ export async function POST(request: Request) {
     .select("id, name, department_code, status, remaining_minutes")
     .eq("id", departmentId)
     .maybeSingle();
-  if (!deptRow) return NextResponse.json({ error: "department missing" }, { status: 500 });
+  if (!deptRow) return { ok: false, status: 500, error: "department missing" };
   const dept = deptRow as { id: string; name: string; department_code: string; status: string; remaining_minutes: number };
   if (dept.status !== "active") {
-    return NextResponse.json({ error: "Department is not active." }, { status: 403 });
+    return { ok: false, status: 403, error: "Department is not active." };
   }
   if (allocNum > Number(dept.remaining_minutes ?? 0)) {
-    return NextResponse.json(
-      { error: `Allocation exceeds the department's remaining minutes (${dept.remaining_minutes}).` },
-      { status: 400 },
-    );
+    return { ok: false, status: 400, error: `Allocation exceeds the department's remaining minutes (${dept.remaining_minutes}).` };
   }
 
   // Lookup enterprise (for the invite metadata).
@@ -161,11 +159,11 @@ export async function POST(request: Request) {
       department_id:     dept.id,
       department_code:   dept.department_code,
       allocated_minutes: allocNum,
-      created_by:        actor.id,
+      created_by:        actorId,
     },
   });
   if (!invite.ok) {
-    return NextResponse.json({ error: invite.error }, { status: 400 });
+    return { ok: false, status: 400, error: invite.error ?? "Invite failed." };
   }
 
   let userId = invite.userId ?? null;
@@ -176,10 +174,7 @@ export async function POST(request: Request) {
     )?.id ?? null;
   }
   if (!userId) {
-    return NextResponse.json(
-      { error: "Employee invited but auth row not yet visible — try again in a moment." },
-      { status: 500 },
-    );
+    return { ok: false, status: 500, error: "Employee invited but auth row not yet visible — try again in a moment." };
   }
 
   // Resolve client role_id (employees reuse the client surface per spec).
@@ -190,7 +185,7 @@ export async function POST(request: Request) {
     .maybeSingle();
   const roleId = (roleRow as { id: string } | null)?.id;
   if (!roleId) {
-    return NextResponse.json({ error: "client role not seeded" }, { status: 500 });
+    return { ok: false, status: 500, error: "client role not seeded" };
   }
 
   // Enforce 'one department per employee': if the email already belongs
@@ -209,10 +204,7 @@ export async function POST(request: Request) {
     primary_role_id: string | null;
   } | null;
   if (ep?.department_id && ep.department_id !== departmentId) {
-    return NextResponse.json(
-      { error: "This employee already belongs to another department." },
-      { status: 409 },
-    );
+    return { ok: false, status: 409, error: "This employee already belongs to another department." };
   }
 
   await admin
@@ -250,17 +242,53 @@ export async function POST(request: Request) {
 
   const mode = invite.mode === "invited" ? "invited" : "attached_existing";
 
+  return { ok: true, userId, email: trimmedEmail, name: name.trim(), departmentCode: dept.department_code, mode };
+}
+
+export async function POST(request: Request) {
+  const gate = await requireDepartmentAdmin();
+  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  const { admin, user: actor, departmentId, orgId } = gate;
+
+  const body = (await request.json().catch(() => ({}))) as
+    & EmpInput
+    & { recipients?: Array<{ email?: string; name?: string; displayName?: string; allocatedMinutes?: number | string }> };
+
+  // Record a department-scoped invite row so the shared status table tracks it.
+  const track = async (email: string, name: string) => {
+    await recordInvite(admin, {
+      email, name, role: ROLE.client,
+      scopeType: "department", scopeId: departmentId,
+      departmentId, invitedBy: actor.id,
+    }).catch(() => {});
+  };
+
+  // Bulk path — shared InviteFlow posts { recipients: [...] }. Bulk invites
+  // carry no per-employee allocation (managers refill from the pool later).
+  if (Array.isArray(body.recipients)) {
+    const recipients = body.recipients.filter((r) => r.email && r.email.includes("@"));
+    if (recipients.length === 0) return NextResponse.json({ error: "No valid recipients." }, { status: 400 });
+    if (recipients.length > 500) return NextResponse.json({ error: "Max 500 recipients per batch." }, { status: 400 });
+
+    const results: Array<{ email: string; ok: boolean; error?: string }> = [];
+    for (const rec of recipients) {
+      const email = rec.email!.trim().toLowerCase();
+      const name = (rec.displayName ?? rec.name ?? email.split("@")[0]).trim();
+      const res = await provisionEmployee(admin, departmentId, orgId, actor.id, { name, email, allocatedMinutes: 0 });
+      if (res.ok) { await track(email, name); results.push({ email, ok: true }); }
+      else results.push({ email, ok: false, error: res.error });
+    }
+    return NextResponse.json({ sent: results.filter((r) => r.ok).length, total: recipients.length, results });
+  }
+
+  // Legacy single path — { name, email, allocatedMinutes? }.
+  const res = await provisionEmployee(admin, departmentId, orgId, actor.id, body);
+  if (!res.ok) return NextResponse.json({ error: res.error }, { status: res.status });
+  await track(res.email, res.name);
   return NextResponse.json({
-    employee: {
-      id:           userId,
-      displayName:  name.trim(),
-      email:        trimmedEmail,
-    },
-    department: {
-      id:             dept.id,
-      departmentCode: dept.department_code,
-    },
-    invited:          mode === "invited",
-    attachedExisting: mode === "attached_existing",
+    employee:   { id: res.userId, displayName: res.name, email: res.email },
+    department: { id: departmentId, departmentCode: res.departmentCode },
+    invited:          res.mode === "invited",
+    attachedExisting: res.mode === "attached_existing",
   });
 }

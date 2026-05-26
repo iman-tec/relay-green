@@ -16,16 +16,18 @@ import { ThemeTriplet } from "@/app/_components/ThemeTriplet";
 import { DashboardTab } from "./DashboardTab";
 import { DepartmentsTab } from "./DepartmentsTab";
 import { MembersTab } from "./MembersTab";
+import { WalletTab } from "./WalletTab";
 import { UsageTab } from "./UsageTab";
 import { BillingTab } from "./BillingTab";
 import { SettingsTab } from "./SettingsTab";
 
-type TabKey = "dashboard" | "departments" | "members" | "usage" | "billing" | "settings";
+type TabKey = "dashboard" | "departments" | "members" | "wallet" | "usage" | "billing" | "settings";
 
 const TABS: readonly Tab<TabKey>[] = [
   { key: "dashboard",   label: "Dashboard" },
   { key: "departments", label: "Departments" },
   { key: "members",     label: "Members" },
+  { key: "wallet",      label: "Wallet" },
   { key: "usage",       label: "Usage" },
   { key: "billing",     label: "Billing" },
   { key: "settings",    label: "Settings" },
@@ -59,6 +61,7 @@ export function PanelClient({ me }: { me: { email: string; roleLabel: string } }
         {active === "dashboard"   && <DashboardTab />}
         {active === "departments" && <DepartmentsTab />}
         {active === "members"     && <MembersTab />}
+        {active === "wallet"      && <WalletTab />}
         {active === "usage"       && <UsageTab />}
         {active === "billing"     && <BillingTab />}
         {active === "settings"    && <SettingsTab />}

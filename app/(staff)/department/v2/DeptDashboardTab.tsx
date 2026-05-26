@@ -5,8 +5,10 @@
  * cards (members, minutes) + recent sessions (PII-minimized).
  */
 
-import { Users, Timer, Gauge, Activity } from "lucide-react";
-import { StatusBadge, EmptyState } from "@/app/_components/ui";
+import { useState } from "react";
+import { Users, Timer, Gauge, Activity, Sparkles, ArrowRight } from "lucide-react";
+import { Button, StatusBadge, EmptyState } from "@/app/_components/ui";
+import { DeptSetupWizard } from "./DeptSetupWizard";
 import {
   useApiData, num, TabBody, StatCard, LoadingState, ErrorState,
 } from "@/app/(staff)/enterprise/v2/_shared";
@@ -30,11 +32,13 @@ const TONE: Record<string, "ok" | "warn" | "risk" | "neutral" | "info"> = {
 export function DeptDashboardTab() {
   const emp = useApiData<Employees>("/api/department/employees");
   const sess = useApiData<{ sessions: Session[] }>("/api/department/sessions?limit=8");
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   if (emp.loading) return <TabBody><LoadingState /></TabBody>;
   if (emp.error) return <TabBody><ErrorState message={emp.error} onRetry={emp.reload} /></TabBody>;
   const d = emp.data?.department;
   const members = emp.data?.employees ?? [];
+  const needsSetup = members.length === 0;
 
   return (
     <TabBody>
@@ -44,6 +48,30 @@ export function DeptDashboardTab() {
       <p className="mb-6 text-sm" style={{ color: "var(--text-muted)" }}>
         {emp.data?.enterprise.name} · {num(members.length)} members
       </p>
+
+      {needsSetup && (
+        <div className="mb-6 flex flex-col items-start gap-3 rounded-2xl border p-5 sm:flex-row sm:items-center sm:justify-between"
+          style={{ borderColor: "var(--primary)", background: "var(--primary-tint)" }}>
+          <div className="flex items-start gap-3">
+            <span className="inline-flex size-10 items-center justify-center rounded-xl" style={{ background: "var(--surface)", color: "var(--primary-hover)" }}>
+              <Sparkles size={18} />
+            </span>
+            <div>
+              <div className="text-sm font-semibold" style={{ color: "var(--text)" }}>Set up {d?.name ?? "your department"}</div>
+              <div className="text-xs" style={{ color: "var(--text-muted)" }}>Invite your team and start allocating minutes.</div>
+            </div>
+          </div>
+          <Button iconLeft={<ArrowRight size={14} />} onClick={() => setWizardOpen(true)}>Invite your team</Button>
+        </div>
+      )}
+
+      <DeptSetupWizard
+        open={wizardOpen}
+        onClose={() => setWizardOpen(false)}
+        deptName={d?.name ?? "your department"}
+        allocatedMinutes={d?.allocatedMinutes ?? 0}
+        onChanged={() => { emp.reload(); }}
+      />
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <StatCard icon={<Users size={16} />} value={num(members.length)} label="Members" />

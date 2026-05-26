@@ -17,6 +17,7 @@
 import { NextResponse } from "next/server";
 import { requireReseller } from "@/lib/reseller-auth";
 import { sendInvitationEmail } from "@/lib/admin-invite";
+import { recordInvite } from "@/lib/relay/invites";
 import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
@@ -203,6 +204,19 @@ export async function POST(request: Request) {
   }
 
   const mode = invite.mode === "invited" ? "invited" : "attached_existing";
+
+  // Record the company-admin onboarding in the unified invites table so the
+  // partner's invite status table tracks it (sent → accepted), uniform with
+  // every other invite. Best-effort.
+  void recordInvite(admin, {
+    email: trimmedEmail,
+    name: adminDisplayName.trim(),
+    role: ROLE.enterprise_admin,
+    scopeType: "partner",
+    scopeId: resellerId,
+    companyName: org.name,
+    invitedBy: actor.id,
+  });
 
   return NextResponse.json({
     enterprise: {
