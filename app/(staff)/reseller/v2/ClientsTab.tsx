@@ -1,28 +1,28 @@
 "use client";
 
 /*
- * Clients — the enterprises this Channel Partner manages. ENTERPRISE-LEVEL
- * AGGREGATES ONLY (GDPR): no department breakdown, no member list, no names,
- * no emails, no individual usage. Sourced from /api/reseller/dashboard
- * (org-level only) + a department COUNT from /api/reseller/orgs.
+ * Clients — the companies this Channel Partner has onboarded. The partner
+ * sees WHO they onboarded and HOW MUCH each company is spending (money), plus
+ * their own commission. They do NOT see allocation (minute pools), departments
+ * or members — a company manages its own people internally.
  *
- * If the partner needs to act on a member-level issue, the detail panel
- * surfaces an "ask the enterprise admin" escalation — never direct access.
+ * Onboarding: the partner provisions a company by naming the individual who
+ * becomes its enterprise admin (invited by email). That person then builds out
+ * departments + members.
  */
 
 import { useMemo, useState } from "react";
-import { Building2, ShieldCheck, ArrowUpRight } from "lucide-react";
-import { StatusBadge, EmptyState } from "@/app/_components/ui";
+import { Building2, UserPlus, Mail } from "lucide-react";
+import { Button, Input, Modal, StatusBadge, EmptyState } from "@/app/_components/ui";
 import {
   useApiData, eur, num, TabBody, LoadingState, ErrorState,
 } from "@/app/(staff)/enterprise/v2/_shared";
 
 type Enterprise = {
   id: string; name: string; enterpriseCode: string; status: string;
-  allocatedMinutes: number; usedMinutes: number; remainingMinutes: number; createdAt: string;
+  usedMinutes: number; createdAt: string;
 };
 type Dashboard = { reseller: { commission: number }; enterprises: Enterprise[] };
-type Org = { id: string; departmentCount: number };
 
 const CENTS_PER_MINUTE = 300;
 const TONE: Record<string, "ok" | "warn" | "neutral"> = {
@@ -31,27 +31,48 @@ const TONE: Record<string, "ok" | "warn" | "neutral"> = {
 
 export function ClientsTab() {
   const dash = useApiData<Dashboard>("/api/reseller/dashboard");
-  const orgs = useApiData<{ orgs: Org[] }>("/api/reseller/orgs");
   const [selId, setSelId] = useState<string | null>(null);
 
   const ents = dash.data?.enterprises ?? [];
-  const deptCountById = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const o of orgs.data?.orgs ?? []) m.set(o.id, o.departmentCount);
-    return m;
-  }, [orgs.data]);
-  const sel = ents.find((e) => e.id === selId) ?? null;
   const commissionPct = (dash.data?.reseller.commission ?? 0) / 100;
+  const sel = ents.find((e) => e.id === selId) ?? null;
+  const spend = (e: Enterprise) => e.usedMinutes * CENTS_PER_MINUTE;
+
+  // Onboarding
+  const [open, setOpen] = useState(false);
+  const [co, setCo] = useState(""); const [adminName, setAdminName] = useState(""); const [adminEmail, setAdminEmail] = useState("");
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<string | null>(null);
+  const onboard = async () => {
+    if (!co.trim() || !adminName.trim() || !adminEmail.trim()) { setErr("Company name, admin name and email are required."); return; }
+    setBusy(true); setErr(null);
+    try {
+      const r = await fetch("/api/reseller/enterprises", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: co.trim(), adminDisplayName: adminName.trim(), adminEmail: adminEmail.trim().toLowerCase(), allocatedMinutes: 0 }),
+      });
+      const b = (await r.json().catch(() => ({}))) as { error?: string };
+      if (!r.ok) throw new Error(b.error || "Could not onboard company");
+      setOpen(false); setCo(""); setAdminName(""); setAdminEmail(""); dash.reload();
+    } catch (e) { setErr(e instanceof Error ? e.message : "Could not onboard company"); }
+    finally { setBusy(false); }
+  };
+
+  const totalSpend = useMemo(() => ents.reduce((s, e) => s + spend(e), 0), [ents]);
 
   if (dash.loading) return <TabBody><LoadingState /></TabBody>;
   if (dash.error) return <TabBody><ErrorState message={dash.error} onRetry={dash.reload} /></TabBody>;
 
   return (
     <TabBody>
-      <h1 className="mb-6 font-serif text-2xl font-medium" style={{ color: "var(--text)" }}>Clients</h1>
+      <div className="mb-6 flex items-center justify-between gap-3">
+        <h1 className="font-serif text-2xl font-medium" style={{ color: "var(--text)" }}>Clients</h1>
+        <Button iconLeft={<UserPlus size={15} />} onClick={() => setOpen(true)}>Onboard a company</Button>
+      </div>
 
       {ents.length === 0 ? (
-        <EmptyState icon={<Building2 size={20} />} title="No clients yet" body="Enterprises you provision will appear here." />
+        <EmptyState icon={<Building2 size={20} />} title="No companies yet"
+          body="Onboard your first company — name the person who'll run their Relay account."
+          action={<Button onClick={() => setOpen(true)}>Onboard a company</Button>} />
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           {/* List */}
@@ -59,17 +80,12 @@ export function ClientsTab() {
             <ul>
               {ents.map((e) => (
                 <li key={e.id}>
-                  <button
-                    type="button"
-                    onClick={() => setSelId(e.id)}
+                  <button type="button" onClick={() => setSelId(e.id)}
                     className="flex w-full items-center gap-3 border-t px-4 py-3 text-left transition-colors first:border-t-0 hover:bg-[var(--surface-raised)]"
-                    style={{ borderColor: "var(--border)", background: selId === e.id ? "var(--primary-tint)" : undefined }}
-                  >
+                    style={{ borderColor: "var(--border)", background: selId === e.id ? "var(--primary-tint)" : undefined }}>
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm" style={{ color: "var(--text)" }}>{e.name}</div>
-                      <div className="text-xs tabular-nums" style={{ color: "var(--text-muted)" }}>
-                        {num(e.usedMinutes)}/{num(e.allocatedMinutes)}m
-                      </div>
+                      <div className="text-xs tabular-nums" style={{ color: "var(--text-muted)" }}>{eur(spend(e))} spent</div>
                     </div>
                     <StatusBadge compact tone={TONE[e.status] ?? "neutral"}>{e.status}</StatusBadge>
                   </button>
@@ -78,11 +94,11 @@ export function ClientsTab() {
             </ul>
           </div>
 
-          {/* Aggregate detail */}
+          {/* Detail — spend + commission, no allocation/departments/members */}
           <div className="lg:col-span-2">
             {!sel ? (
               <div className="rounded-2xl border p-8" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
-                <EmptyState compact title="Select a client" body="Pick an enterprise to see its aggregate usage and contract." />
+                <EmptyState compact title="Select a company" body="See spend, commission and account status." />
               </div>
             ) : (
               <div className="rounded-2xl border p-5" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
@@ -93,31 +109,37 @@ export function ClientsTab() {
                   </div>
                   <StatusBadge tone={TONE[sel.status] ?? "neutral"}>{sel.status}</StatusBadge>
                 </div>
-
                 <dl className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
-                  <Metric label="Minutes used" value={`${num(sel.usedMinutes)}m`} />
-                  <Metric label="Allocated" value={`${num(sel.allocatedMinutes)}m`} />
-                  <Metric label="Remaining" value={`${num(sel.remainingMinutes)}m`} />
-                  <Metric label="Departments" value={num(deptCountById.get(sel.id) ?? 0)} />
-                  <Metric label="Your commission (est.)" value={eur(Math.round(sel.usedMinutes * CENTS_PER_MINUTE * commissionPct))} />
+                  <Metric label="Spend to date" value={eur(spend(sel))} />
+                  <Metric label="Your commission" value={eur(Math.round(spend(sel) * commissionPct))} />
                   <Metric label="Client since" value={new Date(sel.createdAt).toLocaleDateString()} />
                 </dl>
-
-                <div className="mt-5 flex items-start gap-2 rounded-xl border p-3" style={{ borderColor: "var(--border)", background: "var(--primary-tint)" }}>
-                  <ShieldCheck size={15} className="mt-0.5" style={{ color: "var(--primary-hover)" }} />
-                  <p className="text-xs leading-relaxed" style={{ color: "var(--text)" }}>
-                    Department breakdowns, member names, emails and individual usage are
-                    not available to Channel Partners. To act on a member-level issue,
-                    <a href="mailto:support@relay.green" className="ml-1 inline-flex items-center gap-0.5 underline" style={{ color: "var(--primary-hover)" }}>
-                      ask the enterprise admin <ArrowUpRight size={11} />
-                    </a>.
-                  </p>
-                </div>
+                <p className="mt-5 text-xs leading-relaxed" style={{ color: "var(--text-faint)" }}>
+                  This company manages its own departments and people. You see spend and
+                  commission — not their internal teams or member details.
+                </p>
               </div>
             )}
           </div>
         </div>
       )}
+
+      {ents.length > 0 && (
+        <p className="mt-4 text-xs" style={{ color: "var(--text-muted)" }}>
+          Portfolio spend to date: <strong style={{ color: "var(--text)" }}>{eur(totalSpend)}</strong> across {num(ents.length)} companies.
+        </p>
+      )}
+
+      <Modal open={open} onClose={() => setOpen(false)} title="Onboard a company"
+        description="Name the person who'll run this company's Relay account — they'll be invited as the enterprise admin and set up their own departments and team."
+        footer={<div className="flex justify-end gap-2"><Button variant="ghost" onClick={() => setOpen(false)} disabled={busy}>Cancel</Button><Button onClick={onboard} loading={busy} iconLeft={<Mail size={14} />}>Send invite</Button></div>}>
+        <div className="flex flex-col gap-3">
+          <Input label="Company name" value={co} onChange={(e) => setCo(e.target.value)} placeholder="Acme Inc." />
+          <Input label="Admin full name" value={adminName} onChange={(e) => setAdminName(e.target.value)} placeholder="Jordan Reed" />
+          <Input label="Admin email" type="email" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} placeholder="jordan@acme.com" />
+          {err && <p className="text-xs" style={{ color: "var(--risk)" }}>{err}</p>}
+        </div>
+      </Modal>
     </TabBody>
   );
 }
