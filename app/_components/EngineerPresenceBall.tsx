@@ -41,6 +41,13 @@ type PendingCallback = {
 // explicitly asked for "after 30 seconds" so this is a hard 30000ms.
 const CALLBACK_AUTO_RING_MS = 30_000;
 
+// Idle threshold for auto-flipping the engineer to "offline" / grey
+// when no input activity is detected. 5 minutes matches Slack/Discord's
+// "auto-away" default — long enough that a focused engineer reading
+// docs isn't yanked away, short enough that a step-away-from-PC is
+// reflected promptly.
+const IDLE_MS = 5 * 60_000;
+
 function isPresence(v: unknown): v is Presence {
   return v === "online" || v === "busy" || v === "offline";
 }
@@ -217,6 +224,122 @@ export function EngineerPresenceBall({
     })();
     return () => { alive = false; };
   }, [userId]);
+
+  // ── Auto-presence: on-call detection + idle detection ─────────────
+  // The user asked for the ball to reflect reality automatically:
+  //   • on a live call         → orange / busy
+  //   • free at the PC         → green  / online
+  //   • away from PC > 5 min   → grey   / offline
+  //
+  // Implementation: two refs track the two auto-signals (isOnCall,
+  // isIdle); a `recompute()` callback combines them into the desired
+  // presence and writes via the existing set_engineer_presence RPC iff
+  // the desired AUTO state changed since the last AUTO write. This
+  // makes manual picks (via the popup) sticky until the auto signal
+  // itself changes, e.g. the engineer manually picks "Busy" then takes
+  // a call — busy was already manually set, auto stays busy; when the
+  // call ends and no idle, auto flips to online and overrides the manual
+  // busy. That's the right behaviour: auto reflects ground truth.
+  const isOnCallRef = useRef(false);
+  const isIdleRef = useRef(false);
+  // Tracks the last value we (auto) wrote to the DB. We compare against
+  // this — NOT against the current `presence` state — so a manual user
+  // pick doesn't fool the auto-detector into a redundant write.
+  const lastAutoWriteRef = useRef<Presence | null>(null);
+
+  const recompute = useCallback(async () => {
+    const desired: Presence = isOnCallRef.current
+      ? "busy"
+      : isIdleRef.current
+        ? "offline"
+        : "online";
+    if (lastAutoWriteRef.current === desired) return;
+    lastAutoWriteRef.current = desired;
+    try {
+      const sb = sbRef.current;
+      const { error } = await sb.rpc("set_engineer_presence", { _state: desired });
+      if (error) console.warn("[presence-auto] set failed:", error.message);
+    } catch (err) {
+      console.warn("[presence-auto] set threw:", err);
+    }
+  }, []);
+
+  // On-call detection — subscribe to my active claimed sessions. Any
+  // session in assigned/joining/live/grace counts as "on a call".
+  useEffect(() => {
+    const sb = sbRef.current;
+    let alive = true;
+
+    const refreshOnCall = async () => {
+      const { data, error } = await sb
+        .from("guest_calls")
+        .select("id")
+        .eq("claimed_by", userId)
+        .in("status", ["assigned", "joining", "live", "grace"])
+        .limit(1);
+      if (!alive) return;
+      if (error) { return; }
+      const onCall = (data?.length ?? 0) > 0;
+      if (onCall !== isOnCallRef.current) {
+        isOnCallRef.current = onCall;
+        void recompute();
+      }
+    };
+
+    void refreshOnCall();
+
+    const suffix = typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const ch = sb
+      .channel(`presence-auto-call-${userId}-${suffix}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "guest_calls", filter: `claimed_by=eq.${userId}` },
+        () => { void refreshOnCall(); },
+      )
+      .subscribe();
+
+    return () => { alive = false; sb.removeChannel(ch); };
+  }, [userId, recompute]);
+
+  // Idle detection — any mousemove / keypress / touch / window-focus
+  // resets the timer. Tab visibility change also counts as activity
+  // when the tab becomes visible.
+  useEffect(() => {
+    let idleTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const markActive = () => {
+      if (isIdleRef.current) {
+        isIdleRef.current = false;
+        void recompute();
+      }
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        if (!isIdleRef.current) {
+          isIdleRef.current = true;
+          void recompute();
+        }
+      }, IDLE_MS);
+    };
+
+    const onVisibility = () => {
+      if (!document.hidden) markActive();
+    };
+
+    // Initial arm — counts mount as activity.
+    markActive();
+
+    const events: Array<keyof WindowEventMap> = ["mousemove", "keydown", "touchstart", "focus"];
+    events.forEach((ev) => window.addEventListener(ev, markActive, { passive: true }));
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      events.forEach((ev) => window.removeEventListener(ev, markActive));
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [recompute]);
 
   // ── Pending-callback tracking ─────────────────────────────────────
   // Load + realtime-subscribe to engineer_connect_requests for THIS
