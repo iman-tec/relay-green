@@ -2166,6 +2166,31 @@ function BrandedLanding({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const hasProject = !!selectedProject;
 
+  // "HOW RELAY WORKS" collapsible explainer.
+  //
+  // First-visit gate: customers who haven't seen the explainer get it
+  // expanded automatically; everyone else gets it collapsed. The
+  // dismiss is sticky via localStorage so a returning customer doesn't
+  // have to scroll past the same explainer every landing visit.
+  //
+  // We default to FALSE during SSR / first paint (no window) and flip
+  // to TRUE inside an effect if the flag is missing — this prevents
+  // a layout flash where the explainer briefly appears expanded for
+  // returning customers. The effect also writes the flag immediately
+  // on first-time open so the very next render of this component on
+  // the same browser defaults to collapsed (intentional one-shot).
+  const [explainerOpen, setExplainerOpen] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const seen = window.localStorage.getItem("relay:explainer-seen");
+      if (!seen) {
+        setExplainerOpen(true);
+        window.localStorage.setItem("relay:explainer-seen", "1");
+      }
+    } catch { /* private mode / quota — fall through to collapsed */ }
+  }, []);
+
   // Customer-level summary (only used when no project is selected).
   type CustomerSummary = {
     aiSummaryTitle: string | null;
@@ -2291,12 +2316,57 @@ function BrandedLanding({
             </div>
           )}
 
-          {/* Horizontal separator between the wordmark/tagline pair
-              (above) and the explainer below. Quiet visual break only —
-              the explainer that follows is intentionally chrome-light. */}
+          {/* "HOW RELAY WORKS" toggle. Collapsed-by-default for
+              returning customers; auto-expanded on first visit (see
+              the effect at the top of this component). The big +/–
+              and the uppercase label sit centred so they read as a
+              single CTA when the explainer is closed; the chrome
+              stays quiet so the wordmark+tagline still own the
+              vertical centre of the landing. */}
+          <button
+            type="button"
+            onClick={() => setExplainerOpen((v) => !v)}
+            aria-expanded={explainerOpen}
+            aria-controls="relay-landing-explainer"
+            className="group/explainer mt-10 inline-flex items-center gap-2.5 rounded-full border px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] transition-all duration-200 ease-out hover:scale-[1.02] hover:bg-[var(--surface-raised)]"
+            style={{
+              color: "var(--text-muted)",
+              borderColor: "var(--border)",
+              backgroundColor: "var(--surface)",
+            }}
+          >
+            <span>How Relay works</span>
+            {/* +/– sign morph. Two short bars; the vertical one fades
+                + rotates out when expanded so the symbol reads as a
+                minus. Cleaner than swapping two icons. */}
+            <span
+              aria-hidden
+              className="relative inline-flex h-5 w-5 items-center justify-center"
+              style={{ color: "var(--primary)" }}
+            >
+              <span
+                className="absolute h-[2px] w-3 rounded-full transition-transform duration-200 ease-out"
+                style={{ backgroundColor: "currentColor" }}
+              />
+              <span
+                className="absolute h-3 w-[2px] rounded-full transition-all duration-200 ease-out"
+                style={{
+                  backgroundColor: "currentColor",
+                  transform: explainerOpen ? "scaleY(0) rotate(90deg)" : "scaleY(1) rotate(0deg)",
+                  opacity: explainerOpen ? 0 : 1,
+                }}
+              />
+            </span>
+          </button>
+
+          {/* Horizontal separator + explainer body. Both share the
+              same conditional render so closing the toggle hides
+              everything cleanly (no orphaned divider line). */}
+          {explainerOpen && (
+            <>
           <div
             aria-hidden
-            className="mt-8 h-px w-full max-w-md"
+            className="mt-6 h-px w-full max-w-md"
             style={{ backgroundColor: "var(--border)" }}
           />
 
@@ -2307,7 +2377,7 @@ function BrandedLanding({
               rhythm with one 2-column moment for the spatial
               left↔right reference. Reads like a polished spec page,
               not a dashboard widget. */}
-          <div className="mt-8 w-full text-left text-[15px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
+          <div id="relay-landing-explainer" className="mt-8 w-full text-left text-[15px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
 
             {/* ── 1. Phone icon legend — two clean rows, no card chrome ── */}
             <div className="flex flex-col gap-4">
@@ -2456,6 +2526,8 @@ function BrandedLanding({
               Pay per minute. No subscription, no auto-renew.
             </p>
           </div>
+            </>
+          )}
         </div>
       </div>
 
