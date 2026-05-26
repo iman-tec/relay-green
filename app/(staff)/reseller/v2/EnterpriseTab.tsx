@@ -71,6 +71,8 @@ export function EnterpriseTab() {
   const [editDept,      setEditDept]      = useState(false);
 
   const [employees, setEmployees]       = useState<Employee[]>([]);
+  const [memberCount, setMemberCount]   = useState(0);
+  const [usageSuppressed, setUsageSuppressed] = useState(false);
   const [deptAdmin, setDeptAdmin]       = useState<Employee | null>(null);
   const [empLoading, setEmpLoading]     = useState(false);
   const [empError,   setEmpError]       = useState<string | null>(null);
@@ -128,16 +130,21 @@ export function EnterpriseTab() {
           `/api/reseller/orgs/${selectedEntId}/departments/${selectedDeptId}/employees`,
           { cache: "no-store" },
         );
+        // GDPR: partner endpoint returns aggregate-only — member count +
+        // dept usage, NO member roster / names / emails.
         const body = (await res.json().catch(() => ({}))) as {
-          employees?: Employee[]; admin?: Employee | null; error?: string;
+          memberCount?: number; usageSuppressed?: boolean;
+          suppressedLabel?: string | null; error?: string;
         };
         if (cancelled) return;
-        if (!res.ok || !body.employees) {
-          setEmpError(body.error ?? "Couldn't load employees.");
+        if (!res.ok) {
+          setEmpError(body.error ?? "Couldn't load department.");
           return;
         }
-        setEmployees(body.employees);
-        setDeptAdmin(body.admin ?? null);
+        setMemberCount(body.memberCount ?? 0);
+        setUsageSuppressed(Boolean(body.usageSuppressed));
+        setEmployees([]);
+        setDeptAdmin(null);
       } catch (e) {
         if (!cancelled) setEmpError(e instanceof Error ? e.message : "Couldn't load employees.");
       } finally {
@@ -410,13 +417,34 @@ export function EnterpriseTab() {
                 </button>
               }
             />
-            <DepartmentAdminCard admin={deptAdmin} />
-            <EmployeeTable
-              loading={empLoading}
-              error={empError}
-              employees={employees}
-              totals={employeeTotals}
-            />
+            {/* GDPR: Channel Partners see aggregate-only — no member roster,
+                names, emails, or individual usage. */}
+            <div
+              className="rounded-xl border p-4"
+              style={{ borderColor: "var(--border)", background: "var(--surface)" }}
+            >
+              {empLoading ? (
+                <p className="text-sm" style={{ color: "var(--text-muted)" }}>Loading…</p>
+              ) : empError ? (
+                <p className="text-sm" style={{ color: "var(--text-muted)" }}>{empError}</p>
+              ) : (
+                <>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-sm font-medium" style={{ color: "var(--text)" }}>Members</span>
+                    <span className="font-serif text-xl tabular-nums" style={{ color: "var(--text)" }}>
+                      {memberCount}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>
+                    Member names, emails and individual usage are not available to
+                    Channel Partners. {usageSuppressed ? "Department usage is suppressed for privacy (small team)." : ""}
+                  </p>
+                  <p className="mt-2 text-xs" style={{ color: "var(--text-faint)" }}>
+                    Need to act on a member-level issue? Ask the enterprise admin to handle it.
+                  </p>
+                </>
+              )}
+            </div>
           </div>
         )}
       </main>
