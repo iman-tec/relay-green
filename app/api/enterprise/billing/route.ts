@@ -72,9 +72,12 @@ export async function GET() {
   const orFilter = profileIds.length > 0
     ? `organization_id.eq.${orgId},customer_user_id.in.(${profileIds.join(",")})`
     : `organization_id.eq.${orgId}`;
+  // GDPR minimization: the billing feed must not carry customer names or AI
+  // summary content. Transactions are labelled generically by date, not by
+  // who/what the session was about. See docs/gdpr-data-access-matrix.md.
   const { data: rows } = await admin
     .from("guest_calls")
-    .select("id, status, created_at, ended_at, duration_minutes, guest_name, ai_summary_title")
+    .select("id, status, created_at, ended_at, duration_minutes")
     .or(orFilter)
     .gte("created_at", since90.toISOString())
     .order("created_at", { ascending: false });
@@ -82,7 +85,6 @@ export async function GET() {
   const sessions = (rows ?? []) as Array<{
     id: string; status: string; created_at: string;
     ended_at: string | null; duration_minutes: number | null;
-    guest_name: string | null; ai_summary_title: string | null;
   }>;
 
   let thisMonth = 0;
@@ -104,7 +106,8 @@ export async function GET() {
     .map((s) => ({
       id:           s.id,
       occurredAt:   s.ended_at ?? s.created_at,
-      label:        s.ai_summary_title || `Session with ${s.guest_name ?? "customer"}`,
+      // Generic label — no customer name, no AI summary (PII minimization).
+      label:        "Engineering session",
       durationMin:  Number(s.duration_minutes),
       amountCents:  Math.round(Number(s.duration_minutes) * CENTS_PER_MINUTE),
       kind:         "session_revenue" as const,
@@ -127,8 +130,8 @@ export async function GET() {
       features:              planDef.features,
       status:                orgRow.plan_status,
       currentPeriodEnd:      orgRow.plan_current_period_end,
-      stripeCustomerId:      orgRow.stripe_customer_id,
-      stripeSubscriptionId:  orgRow.stripe_subscription_id,
+      // stripeCustomerId / stripeSubscriptionId intentionally NOT returned to
+      // the browser — sensitive billing identifiers, never needed client-side.
     },
     recentTransactions,
   });

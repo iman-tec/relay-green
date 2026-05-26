@@ -1,42 +1,67 @@
 "use client";
 
 /*
- * Top-level container for the redesigned Enterprise Admin Panel.
- * Single tab for now (Departments). Top bar shows wordmark + tab +
- * user chip + sign-out.
+ * Top-level container for the redesigned Enterprise Admin Panel. Six tabs,
+ * all themed (light/dark/espresso) + responsive. Active tab reflected in the
+ * URL via ?tab= (TabsHeader). Renders in StaffShell "bare mode" — owns its
+ * own header.
  */
 
+import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { TabsHeader, type Tab } from "@/app/_components/admin-v2/TabsHeader";
 import { SignOutButton } from "@/app/_components/admin-v2/SignOutButton";
 import { UserChip } from "@/app/_components/admin-v2/UserChip";
+import { ThemeTriplet } from "@/app/_components/ThemeTriplet";
+import { DashboardTab } from "./DashboardTab";
 import { DepartmentsTab } from "./DepartmentsTab";
+import { MembersTab } from "./MembersTab";
+import { UsageTab } from "./UsageTab";
+import { BillingTab } from "./BillingTab";
+import { SettingsTab } from "./SettingsTab";
 
-type TabKey = "departments";
+type TabKey = "dashboard" | "departments" | "members" | "usage" | "billing" | "settings";
 
 const TABS: readonly Tab<TabKey>[] = [
+  { key: "dashboard",   label: "Dashboard" },
   { key: "departments", label: "Departments" },
+  { key: "members",     label: "Members" },
+  { key: "usage",       label: "Usage" },
+  { key: "billing",     label: "Billing" },
+  { key: "settings",    label: "Settings" },
 ];
 
-export function PanelClient({
-  me,
-}: {
-  me: { email: string; roleLabel: string };
-}) {
+const VALID = new Set<TabKey>(TABS.map((t) => t.key));
+
+export function PanelClient({ me }: { me: { email: string; roleLabel: string } }) {
+  const params = useSearchParams();
+  const initial = params?.get("tab");
+  const [active, setActive] = useState<TabKey>(
+    initial && VALID.has(initial as TabKey) ? (initial as TabKey) : "dashboard",
+  );
+
   return (
-    <div className="flex h-[calc(100vh-0px)] min-h-0 flex-col">
+    <div className="flex h-screen min-h-0 flex-col">
       <TabsHeader
         tabs={TABS}
-        active="departments"
-        onChange={() => { /* only one tab — no-op */ }}
+        active={active}
+        onChange={setActive}
+        subtitle="Enterprise"
         rightSlot={
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <ThemeTriplet />
             <UserChip email={me.email} roleLabel={me.roleLabel} />
             <SignOutButton />
           </div>
         }
       />
       <div className="min-h-0 flex-1 overflow-hidden">
-        <DepartmentsTab />
+        {active === "dashboard"   && <DashboardTab />}
+        {active === "departments" && <DepartmentsTab />}
+        {active === "members"     && <MembersTab />}
+        {active === "usage"       && <UsageTab />}
+        {active === "billing"     && <BillingTab />}
+        {active === "settings"    && <SettingsTab />}
       </div>
     </div>
   );

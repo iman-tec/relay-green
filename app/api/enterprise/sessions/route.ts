@@ -33,13 +33,17 @@ export async function GET(request: Request) {
 
   if (profileIds.length === 0) return NextResponse.json({ sessions: [] });
 
+  // GDPR data-minimization: the enterprise mgmt dashboard does NOT receive
+  // customer email or AI summary content (session content). We select only
+  // what the management views render — names are allowed for the admin's own
+  // org, email + summary are not. See docs/gdpr-data-access-matrix.md.
   type SessionRow = {
     id: string; status: string; urgency: string | null; recall_count: number | null;
     created_at: string; joined_at: string | null; ended_at: string | null;
     duration_minutes: number | null;
     customer_user_id: string | null; claimed_by: string | null;
-    guest_name: string | null; guest_email: string | null;
-    project_name: string | null; ai_summary_title: string | null;
+    guest_name: string | null;
+    project_name: string | null;
   };
 
   const orFilter = profileIds.length > 0
@@ -47,7 +51,7 @@ export async function GET(request: Request) {
     : `organization_id.eq.${orgId}`;
   let q = admin
     .from("guest_calls")
-    .select("id,status,urgency,recall_count,created_at,joined_at,ended_at,duration_minutes,customer_user_id,claimed_by,guest_name,guest_email,project_name,ai_summary_title")
+    .select("id,status,urgency,recall_count,created_at,joined_at,ended_at,duration_minutes,customer_user_id,claimed_by,guest_name,project_name")
     .or(orFilter)
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -85,10 +89,9 @@ export async function GET(request: Request) {
     durationMinutes:r.duration_minutes,
     chargeCents:    r.duration_minutes ? Math.round(Number(r.duration_minutes) * CENTS_PER_MINUTE) : null,
     customerName:   r.guest_name || nameById.get(r.customer_user_id ?? "") || "",
-    customerEmail:  r.guest_email ?? "",
     engineerName:   r.claimed_by ? engineerNames.get(r.claimed_by) ?? "" : "",
     projectName:    r.project_name ?? null,
-    summaryTitle:   r.ai_summary_title ?? null,
+    // customerEmail + summaryTitle intentionally omitted — GDPR minimization.
   }));
 
   return NextResponse.json({ sessions });

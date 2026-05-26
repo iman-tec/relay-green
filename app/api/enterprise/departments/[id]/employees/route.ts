@@ -16,6 +16,7 @@
 import { NextResponse } from "next/server";
 import { requireEnterpriseAdmin } from "@/lib/enterprise-auth";
 import { sendInvitationEmail } from "@/lib/admin-invite";
+import { writeAccessAudit } from "@/lib/relay/accessAudit";
 import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
@@ -120,6 +121,15 @@ export async function GET(_request: Request, { params }: RouteCtx) {
     }
   }
   const employees = profiles.filter((p) => p.id !== dept.admin_user_id).map(toRow);
+
+  // GDPR Art. 30: record that an org admin read these members' PII.
+  void writeAccessAudit(admin, {
+    actorUserId: gate.user.id,
+    actorRole:   ROLE.enterprise_admin,
+    tenantScope: `org:${orgId}`,
+    resource:    "enterprise.department.employees",
+    memberIds:   profiles.map((p) => p.id),
+  });
 
   return NextResponse.json({
     department: {
