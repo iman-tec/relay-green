@@ -66,7 +66,14 @@ import { GlobalNewChatModal } from "@/app/_components/GlobalNewChatModal";
 import { EditableSummary } from "@/app/_components/EditableSummary";
 import { QuoteRequestModal } from "@/app/_components/QuoteRequestModal";
 import type { GuestCall, GuestMessage, GuestMessageAttachment, SessionStatus, Urgency } from "@/lib/supabase/types";
-import { signedDownloadUrl } from "@/lib/relay/chatAttachments";
+import { signedDownloadUrl, validateStagedFiles } from "@/lib/relay/chatAttachments";
+import {
+  addAttachment as stubAddAttachment,
+  listAttachments as stubListAttachments,
+  removeAttachment as stubRemoveAttachment,
+  flushAttachmentsToSession as flushStubAttachments,
+  type StubAttachmentMeta,
+} from "@/lib/relay/stubDraftAttachments";
 
 // Re-pointed to design-system CSS vars after the white-theme transformation.
 // Kept as named constants so existing call-sites (style={{ color: BRAND_GREEN }})
@@ -217,6 +224,38 @@ export function RoomClient() {
     bridge.setSessionActive(active);
     return () => { bridge.setSessionActive?.(false); };
   }, [state.session?.status]);
+
+  // ── Auto-flush stub draft attachments ────────────────────────────
+  // When the session transitions to a live-ish state and the customer
+  // has files/voice notes staged in IndexedDB (via the ChatPanelStub
+  // paperclip + record buttons), upload them now and bind them to a
+  // single system message in the new thread. One-shot: a ref-flag
+  // gates the call per session id so a status oscillation doesn't
+  // re-flush. See lib/relay/stubDraftAttachments.ts for the queue.
+  const flushedForSessionRef = useRef<string | null>(null);
+  useEffect(() => {
+    const s = state.session;
+    if (!s) return;
+    const live = ["assigned", "joining", "live", "grace"].includes(s.status);
+    if (!live) return;
+    if (flushedForSessionRef.current === s.id) return;
+    flushedForSessionRef.current = s.id;
+    void (async () => {
+      try {
+        const sb = createClient();
+        const n = await flushStubAttachments({ sb, sessionId: s.id });
+        if (n > 0) {
+          // Refresh the messages list so the engineer + customer both
+          // see the new prep-attachments message immediately.
+          await state.refresh();
+        }
+      } catch (err) {
+        // Don't reset the ref so we don't loop on a failing flush —
+        // the customer can re-attach + re-trigger by leaving + rejoining.
+        console.warn("[stub-flush] failed:", err instanceof Error ? err.message : err);
+      }
+    })();
+  }, [state.session?.id, state.session?.status, state]);
 
   // Local: customer has acknowledged the incoming call. Kept around because
   // the auto-join effect below uses it as the latch that calls mark_joined()
@@ -2522,11 +2561,40 @@ function DraftBubble({
 }
 
 function ChatPanelStub({
-  sidebarCollapsed, onToggleCollapsed,
+  sidebarCollapsed, onToggleCollapsed, session,
 }: {
   sidebarCollapsed: boolean;
   onToggleCollapsed: () => void;
+  /**
+   * Optional session context — when set, the header shows the engineer's
+   * name + a live/ended subtitle instead of the generic "Engineer chat /
+   * No active session" copy. Used by EndedSessionReview and
+   * PastSessionReview to give the right panel a real identity.
+   *
+   * Live sessions never use this component (ChatPane renders instead),
+   * so the live/joining/assigned/grace cases here only get hit if a
+   * future caller wires the stub against an active session.
+   */
+  session?: GuestCall | null;
 }) {
+  // Derive the header copy from session state. Three branches:
+  //   • live-ish + engineer named  → "Chatting with X" / "Live now"
+  //   • ended-ish + engineer named → "You chatted with X" / "Session ended"
+  //   • no session OR no name yet  → "Engineer chat" / "No active session"
+  // The "no name yet" fallback is important during the assigned→joining
+  // window when claimed_by is set but agent_name hasn't synced down.
+  const engineerName = session?.agent_name?.trim() || null;
+  const status = session?.status ?? null;
+  const isLiveish = !!status && ["assigned", "joining", "live", "grace"].includes(status);
+  const isEndedish = !!status && ["ended", "cancelled", "abandoned"].includes(status);
+  const headerTitle =
+    isLiveish && engineerName ? `Chatting with ${engineerName}` :
+    isEndedish && engineerName ? `You chatted with ${engineerName}` :
+    "Engineer chat";
+  const headerSubtitle =
+    isLiveish ? "Live now" :
+    isEndedish ? "Session ended" :
+    "No active session";
   const [messages, setMessages] = useState<LocalDraftMessage[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -2557,12 +2625,37 @@ function ChatPanelStub({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText]   = useState("");
 
+  // Pending attachments (files picked + voice notes recorded BEFORE a
+  // session exists). Persisted to IndexedDB via stubDraftAttachments
+  // so a tab refresh keeps them around. We hold only metadata in
+  // React state — the actual Blob bytes live in IDB. flushed to the
+  // first session that goes live by the parent's auto-flush effect.
+  const [stubAttachments, setStubAttachments] = useState<StubAttachmentMeta[]>([]);
+  const attachInputRef = useRef<HTMLInputElement>(null);
+
+  // Voice-recording state: idle | recording. Mirrors the real
+  // ChatComposer's tap-to-record affordance without the tap-vs-hold
+  // gesture (this is a separate button from dictate, not the same one).
+  const [recState, setRecState] = useState<"idle" | "recording">("idle");
+  const recorderRef       = useRef<MediaRecorder | null>(null);
+  const recorderChunksRef = useRef<Blob[]>([]);
+  const recorderStreamRef = useRef<MediaStream | null>(null);
+
   const recognitionRef = useRef<{
     abort: () => void;
     stop: () => void;
   } | null>(null);
   const transcribeBaseRef = useRef<string>("");
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Hydrate the pending-attachments tray on mount.
+  useEffect(() => {
+    let alive = true;
+    void stubListAttachments().then((items) => {
+      if (alive) setStubAttachments(items);
+    });
+    return () => { alive = false; };
+  }, []);
 
   // Persist messages so a tab refresh doesn't erase the draft buffer.
   useEffect(() => {
@@ -2771,9 +2864,124 @@ function ChatPanelStub({
     try { recognitionRef.current?.stop(); } catch { /* noop */ }
   }, []);
 
+  // ── Attachment picker (paperclip) ─────────────────────────────────
+  // Opens the OS file picker. Files are validated client-side (mime
+  // whitelist + 50 MB cap), then persisted to IndexedDB via
+  // stubDraftAttachments. The auto-flush in the parent RoomClient
+  // moves them into the real session when one goes live.
+  const handlePickFiles = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+    // Clear the input so picking the same file twice in a row still fires onChange.
+    e.target.value = "";
+    setVoiceMsg(null);
+    const v = validateStagedFiles(files, []);
+    if (!v.ok) {
+      setVoiceMsg(v.error);
+      return;
+    }
+    try {
+      const fresh: StubAttachmentMeta[] = [];
+      for (const c of v.classified) {
+        const meta = await stubAddAttachment(c.file);
+        fresh.push(meta);
+      }
+      setStubAttachments((prev) => [...fresh, ...prev]);
+    } catch (err) {
+      setVoiceMsg(err instanceof Error ? err.message : "Couldn't stage the file.");
+    }
+  }, []);
+
+  const handleRemoveAttachment = useCallback(async (id: string) => {
+    setStubAttachments((prev) => prev.filter((a) => a.id !== id));
+    try { await stubRemoveAttachment(id); } catch { /* swallow — UI already updated */ }
+  }, []);
+
+  // ── Voice recording (record button) ───────────────────────────────
+  // MediaRecorder → Blob → IDB. Mirrors the real ChatComposer's
+  // record flow (see app/_components/ChatComposer.tsx:335) but stages
+  // to IDB instead of an immediate upload. Tap to start, tap again to
+  // stop. The button shows a pulsing dot while recording.
+  const startStubRecording = useCallback(async () => {
+    if (recState !== "idle") return;
+    if (typeof window === "undefined" || !("MediaRecorder" in window)) {
+      setVoiceMsg("Voice recording isn't supported in this browser.");
+      return;
+    }
+    setVoiceMsg(null);
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      if (e instanceof Error && e.name === "NotAllowedError") {
+        setVoiceMsg("Microphone access blocked. Click the lock icon in your browser's address bar, allow microphone, then try again.");
+      } else if (e instanceof Error && e.name === "NotFoundError") {
+        setVoiceMsg("No microphone detected. Check that one is plugged in and not being used by another app.");
+      } else {
+        setVoiceMsg("Couldn't access your microphone.");
+      }
+      return;
+    }
+    recorderStreamRef.current = stream;
+
+    // MediaRecorder MIME pick — Chrome/Firefox produce webm/opus,
+    // Safari produces audio/mp4. Probe in priority order; let the
+    // browser pick its default if neither hint is supported.
+    const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"];
+    let mime: string | undefined;
+    for (const c of candidates) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if ((MediaRecorder as any).isTypeSupported?.(c)) { mime = c; break; }
+    }
+    const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+
+    recorderChunksRef.current = [];
+    rec.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) recorderChunksRef.current.push(e.data);
+    };
+    rec.onstop = async () => {
+      const blob = new Blob(recorderChunksRef.current, { type: rec.mimeType || "audio/webm" });
+      recorderChunksRef.current = [];
+      recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
+      recorderStreamRef.current = null;
+      recorderRef.current = null;
+      setRecState("idle");
+      // Save to IDB as a normal file. mimeToExt-style suffix derived
+      // from the recorder's actual MIME so download names stay sensible.
+      const t = rec.mimeType || "audio/webm";
+      const ext = t.includes("webm") ? "webm" : t.includes("mp4") ? "m4a" : t.includes("ogg") ? "ogg" : "webm";
+      const name = `voice-${new Date().toISOString().replace(/[:.]/g, "-")}.${ext}`;
+      const file = new File([blob], name, { type: blob.type });
+      try {
+        const meta = await stubAddAttachment(file);
+        setStubAttachments((prev) => [meta, ...prev]);
+      } catch (err) {
+        setVoiceMsg(err instanceof Error ? err.message : "Couldn't save the recording.");
+      }
+    };
+    rec.onerror = () => {
+      setVoiceMsg("Recording failed — try again.");
+      setRecState("idle");
+      recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
+      recorderStreamRef.current = null;
+      recorderRef.current = null;
+    };
+    recorderRef.current = rec;
+    setRecState("recording");
+    rec.start();
+  }, [recState]);
+
+  const stopStubRecording = useCallback(() => {
+    const r = recorderRef.current;
+    if (!r) { setRecState("idle"); return; }
+    try { r.stop(); } catch { /* already stopping */ }
+  }, []);
+
   // Tear-down on unmount so an abandoned mic stream doesn't keep listening.
   useEffect(() => () => {
     try { recognitionRef.current?.abort(); } catch { /* noop */ }
+    try { recorderRef.current?.stop(); } catch { /* noop */ }
+    recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
   }, []);
 
   return (
@@ -2797,24 +3005,37 @@ function ChatPanelStub({
             <div
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold"
               style={{
-                backgroundColor: "var(--surface-raised)",
-                color: "var(--text-muted)",
+                // Live sessions get a green-tinted avatar; otherwise the
+                // muted surface-raised. Matches the "live now" subtitle
+                // color so the header reads as one element.
+                backgroundColor: isLiveish ? BRAND_GREEN_SOFT : "var(--surface-raised)",
+                color: isLiveish ? BRAND_GREEN : "var(--text-muted)",
               }}
             >
-              <MessageSquare size={14} />
+              {/* Show the engineer's initial when we have a name + are
+                  live-ish; otherwise the generic chat icon. */}
+              {engineerName && (isLiveish || isEndedish)
+                ? engineerName[0].toUpperCase()
+                : <MessageSquare size={14} />}
             </div>
             <div className="flex min-w-0 flex-col">
               <span
                 className="truncate text-[13px] font-medium"
                 style={{ color: "var(--text)" }}
               >
-                Engineer chat
+                {headerTitle}
               </span>
               <span
-                className="truncate text-[10px]"
-                style={{ color: "var(--text-muted)" }}
+                className="inline-flex items-center gap-1 truncate text-[10px]"
+                style={{ color: isLiveish ? BRAND_GREEN : "var(--text-muted)" }}
               >
-                No active session
+                {isLiveish && (
+                  <span aria-hidden className="relative inline-flex h-1.5 w-1.5">
+                    <span className="absolute inset-0 inline-flex animate-ping rounded-full opacity-60" style={{ backgroundColor: BRAND_GREEN }} />
+                    <span className="relative h-1.5 w-1.5 rounded-full" style={{ backgroundColor: BRAND_GREEN }} />
+                  </span>
+                )}
+                {headerSubtitle}
               </span>
             </div>
           </div>
@@ -3016,18 +3237,88 @@ function ChatPanelStub({
                 className="block w-full resize-none bg-transparent text-[13px] leading-relaxed outline-none placeholder:opacity-60"
                 style={{ color: "var(--text)" }}
               />
+
+              {/* Pending-attachments tray — files + voice recordings staged
+                  via the paperclip / record buttons. Sits between the
+                  textarea and the button row so it's clearly part of
+                  the same draft. Each chip has a remove-X. The whole
+                  block disappears when the queue empties. Per-row icon
+                  is keyed off the chatAttachments kind classification
+                  (image/document/audio). */}
+              {stubAttachments.length > 0 && (
+                <div className="mt-2 flex flex-col gap-1.5">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+                    Will be delivered when your engineer joins
+                  </div>
+                  <ul className="flex flex-col gap-1">
+                    {stubAttachments.map((a) => {
+                      const Icon = a.kind === "audio" ? Music : a.kind === "image" ? FileText : FileText;
+                      return (
+                        <li
+                          key={a.id}
+                          className="flex items-center gap-2 rounded-md border px-2 py-1.5 text-[11.5px]"
+                          style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+                        >
+                          <span
+                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md"
+                            style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
+                          >
+                            <Icon size={11} />
+                          </span>
+                          <span className="min-w-0 flex-1 truncate" style={{ color: "var(--text)" }}>{a.name}</span>
+                          <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+                            {a.size < 1024 * 1024 ? `${Math.round(a.size / 1024)} KB` : `${(a.size / (1024 * 1024)).toFixed(1)} MB`}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => void handleRemoveAttachment(a.id)}
+                            aria-label={`Remove ${a.name}`}
+                            className="flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                            style={{ color: "var(--text-muted)" }}
+                          >
+                            <X size={11} />
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
+
+              {/* voiceMsg renders ONCE in the pre-existing toast above
+                  the composer (see ~3191 — dismissable, sits above the
+                  textarea). We don't re-render it here. The record-state
+                  pulse below is a transient "currently recording" tell
+                  that's separate from error state. */}
+              {recState === "recording" && (
+                <p className="mt-2 inline-flex items-center gap-1 text-[11px]" style={{ color: BRAND_GREEN }}>
+                  <span className="relative inline-flex h-1.5 w-1.5">
+                    <span className="absolute inset-0 inline-flex animate-ping rounded-full opacity-60" style={{ backgroundColor: BRAND_GREEN }} />
+                    <span className="relative h-1.5 w-1.5 rounded-full" style={{ backgroundColor: BRAND_GREEN }} />
+                  </span>
+                  Recording — tap mic again to finish.
+                </p>
+              )}
               <div className="mt-2 flex items-center gap-1">
-                {/* Paperclip stays disabled in the stub — uploads need a
-                    real session id to bind attachments to (chat_attachments
-                    has FK to guest_messages). When the engineer joins,
-                    the real ChatComposer mounts and that's where files
-                    actually get sent. */}
+                {/* Paperclip — picks files into the IDB-backed staging
+                    queue. They sit there until a session goes live; the
+                    parent's auto-flush effect (flushAttachmentsToSession)
+                    handles the upload + guest_message_attachments insert
+                    once a guest_calls row exists. */}
+                <input
+                  ref={attachInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  accept=".pdf,.txt,.xlsx,.docx,image/*,audio/*"
+                  onChange={(e) => void handlePickFiles(e)}
+                />
                 <button
                   type="button"
-                  disabled
+                  onClick={() => attachInputRef.current?.click()}
                   aria-label="Attach file"
-                  title="Attaching files needs an active session — it'll wake up when your engineer joins."
-                  className="flex h-8 w-8 shrink-0 cursor-not-allowed items-center justify-center rounded-full opacity-50"
+                  title="Attach a file — it'll be delivered when your engineer joins."
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/5"
                   style={{
                     color: "var(--text-muted)",
                     border: "1px solid var(--border)",
@@ -3054,22 +3345,23 @@ function ChatPanelStub({
                 >
                   <Mic size={14} />
                 </button>
-                {/* Voice-recording — disabled in the stub because there's
-                    no recipient until an engineer joins. Mirrors the real
-                    ChatComposer's affordance so the customer sees the
-                    full surface they'll get during a live call. */}
+                {/* Voice-recording — MediaRecorder writes the blob to
+                    IDB. Same flush path as paperclip-staged files. */}
                 <button
                   type="button"
-                  disabled
-                  aria-label="Record voice message"
-                  title="Voice messages need an active session — wakes up when your engineer joins."
-                  className="flex h-8 w-8 shrink-0 cursor-not-allowed items-center justify-center rounded-full opacity-50"
+                  onClick={recState === "recording" ? stopStubRecording : () => void startStubRecording()}
+                  aria-label={recState === "recording" ? "Stop recording" : "Record voice message"}
+                  title={recState === "recording"
+                    ? "Tap to finish recording"
+                    : "Record a voice message — it'll be delivered when your engineer joins."}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors"
                   style={{
-                    color: "var(--text-muted)",
+                    color: recState === "recording" ? "#fff" : "var(--text-muted)",
+                    backgroundColor: recState === "recording" ? BRAND_GREEN : "transparent",
                     border: "1px solid var(--border)",
                   }}
                 >
-                  <AudioLines size={14} />
+                  <AudioLines size={14} className={recState === "recording" ? "animate-pulse" : undefined} />
                 </button>
                 <div className="flex-1" />
                 <button
@@ -3117,6 +3409,7 @@ function EndedSessionReview({
       <ChatPanelStub
         sidebarCollapsed={chatCollapsed}
         onToggleCollapsed={() => setChatCollapsed((v) => !v)}
+        session={session}
       />
     </div>
   );
@@ -3181,6 +3474,7 @@ function PastSessionReview({
       <ChatPanelStub
         sidebarCollapsed={chatCollapsed}
         onToggleCollapsed={() => setChatCollapsed((v) => !v)}
+        session={row}
       />
     </div>
   );
@@ -4330,7 +4624,7 @@ const Sidebar = memo(function Sidebar({
         <button
           onClick={() => toggleCollapsed(false)}
           title="Expand sidebar"
-          className="mb-1 flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          className="mb-1 flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-150 ease-out hover:scale-110 hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5"
           style={{ color: "var(--text-muted)" }}
         >
           <PanelLeftOpen size={18} />
@@ -4343,7 +4637,7 @@ const Sidebar = memo(function Sidebar({
           onClick={onGoHome}
           title="Home"
           aria-label="Home"
-          className="mb-1 flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          className="mb-1 flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-150 ease-out hover:scale-110 hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5"
           style={{ color: "var(--text-muted)" }}
         >
           <Home size={16} />
@@ -4357,7 +4651,7 @@ const Sidebar = memo(function Sidebar({
         <button
           onClick={() => toggleCollapsed(false)}
           title="Search sessions"
-          className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          className="flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-150 ease-out hover:scale-110 hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5"
           style={{ color: "var(--text-muted)" }}
         >
           <Search size={16} />
@@ -4366,7 +4660,7 @@ const Sidebar = memo(function Sidebar({
         {/* Sessions */}
         <button
           title="Sessions"
-          className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          className="flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-150 ease-out hover:scale-110 hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5"
           style={{ color: "var(--text-muted)" }}
         >
           <MessageSquare size={16} />
@@ -4396,7 +4690,7 @@ const Sidebar = memo(function Sidebar({
           <button
             onClick={() => setUserMenuOpen((v) => !v)}
             title={email.split("@")[0]}
-            className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            className="flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-150 ease-out hover:scale-110 hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5"
           >
             <div
               className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold uppercase"
@@ -4452,7 +4746,7 @@ const Sidebar = memo(function Sidebar({
           onClick={onGoHome}
           title="Home"
           aria-label="Home"
-          className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          className="flex h-7 w-7 items-center justify-center rounded-md transition-all duration-150 ease-out hover:scale-110 hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5"
           style={{ color: "var(--text-muted)" }}
         >
           <Home size={15} />
@@ -4461,7 +4755,7 @@ const Sidebar = memo(function Sidebar({
         <button
           onClick={() => toggleCollapsed(true)}
           title="Collapse sidebar"
-          className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          className="flex h-7 w-7 items-center justify-center rounded-md transition-all duration-150 ease-out hover:scale-110 hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5"
           style={{ color: "var(--text-muted)" }}
         >
           <PanelLeftClose size={16} />
@@ -4678,10 +4972,10 @@ const Sidebar = memo(function Sidebar({
             }}
             title="Create a project with name + stack metadata (no engineer call yet)"
             aria-label="Create a project with name and stack metadata"
-            className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-medium transition-colors hover:bg-[var(--surface-raised)]"
+            className="group/cta inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-medium transition-all duration-150 ease-out hover:translate-x-0.5 hover:bg-[var(--surface-raised)]"
             style={{ color: "var(--primary-hover)" }}
           >
-            <Plus size={12} />
+            <Plus size={12} className="transition-transform duration-150 ease-out group-hover/cta:rotate-90" />
             Create New Project
           </button>
         </div>
@@ -4922,16 +5216,23 @@ const Sidebar = memo(function Sidebar({
             • Maintain — ongoing maintenance / enhancement
           Both open the same QuoteRequestModal, distinguished by kind.
           Suppressed for employees: their org runs on a separate billing
-          relationship; the quote flow is for direct-billed customers. */}
-      {!employment && (
+          relationship; the quote flow is for direct-billed customers.
+          NB: the /api/customer/me-employment route returns an EmployeeInfo
+          object even for non-employees (with isEmployee: false), so we
+          gate on the explicit boolean instead of `!employment` — see the
+          isEmployee derivation at the top of the parent RoomClient. */}
+      {!employment?.isEmployee && (
         <div className="border-t px-2 pt-2 pb-1" style={{ borderColor: "var(--border)" }}>
+          {/* group/quote class lets us drive the icon's hover state from the
+              row, not just the icon itself. translateX + icon-color flip
+              gives the row a small "lean in" tell on hover without yelling. */}
           <button
             type="button"
             onClick={() => setQuoteFlow("golive")}
-            className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            className="group/quote flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-all duration-150 ease-out hover:translate-x-0.5 hover:bg-black/5 dark:hover:bg-white/5"
           >
             <span
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-all duration-150 ease-out group-hover/quote:scale-110 group-hover/quote:bg-[var(--primary)] group-hover/quote:text-white group-hover/quote:shadow-[0_0_0_3px_color-mix(in_srgb,var(--primary)_18%,transparent)]"
               style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
             >
               <Rocket size={13} />
@@ -4945,13 +5246,20 @@ const Sidebar = memo(function Sidebar({
               </span>
             </span>
           </button>
+
+          {/* Hairline separator — lighter than the section's outer border
+              so the two rows still read as a group, just clearly distinct.
+              mx-2 indents past the buttons' left padding so it doesn't
+              touch the icons. */}
+          <div className="mx-2 my-1 h-px" style={{ backgroundColor: "color-mix(in srgb, var(--border) 60%, transparent)" }} />
+
           <button
             type="button"
             onClick={() => setQuoteFlow("maintain")}
-            className="mt-1 flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            className="group/quote flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-all duration-150 ease-out hover:translate-x-0.5 hover:bg-black/5 dark:hover:bg-white/5"
           >
             <span
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-all duration-150 ease-out group-hover/quote:scale-110 group-hover/quote:bg-[var(--primary)] group-hover/quote:text-white group-hover/quote:shadow-[0_0_0_3px_color-mix(in_srgb,var(--primary)_18%,transparent)]"
               style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
             >
               <Wrench size={13} />
@@ -4968,14 +5276,16 @@ const Sidebar = memo(function Sidebar({
         </div>
       )}
 
-      {/* Profile (bottom) */}
-      <div className="relative border-t p-2" style={{ borderColor: "var(--border)" }}>
+      {/* Profile (bottom) — extra bottom padding lifts the user pill +
+          quote shortcuts off the very edge of the viewport so the
+          eye doesn't read them as "stuck at the bottom." */}
+      <div className="relative border-t p-2 pb-6" style={{ borderColor: "var(--border)" }}>
         <button
           onClick={() => setUserMenuOpen((v) => !v)}
-          className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          className="group/userpill flex w-full items-center gap-2.5 rounded-lg px-2 py-2 transition-all duration-150 ease-out hover:translate-x-0.5 hover:bg-black/5 dark:hover:bg-white/5"
         >
           <div
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold uppercase"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold uppercase transition-transform duration-150 ease-out group-hover/userpill:scale-110"
             style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
           >
             {(email || "?")[0]}
@@ -4988,7 +5298,11 @@ const Sidebar = memo(function Sidebar({
               <WalletBalance session={session} entitlement={entitlement} employment={employment} />
             </div>
           </div>
-          <ChevronDown size={12} style={{ color: "var(--text-muted)" }} />
+          <ChevronDown
+            size={12}
+            className={`transition-transform duration-150 ease-out group-hover/userpill:translate-y-0.5 ${userMenuOpen ? "rotate-180" : ""}`}
+            style={{ color: "var(--text-muted)" }}
+          />
         </button>
         {userMenuOpen && (
           <UserMenu
@@ -6764,7 +7078,7 @@ const ProjectAccordion = memo(function ProjectAccordion({
             // open/close, no selection state.
             if (!isGeneral) onSelectProject(group.key);
           }}
-          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 text-left transition-all duration-150 ease-out hover:translate-x-0.5 hover:bg-black/5 dark:hover:bg-white/5"
           style={isSelected ? { backgroundColor: BRAND_GREEN_SOFT } : undefined}
         >
           <ChevronRight
@@ -7039,7 +7353,7 @@ const ProjectAccordion = memo(function ProjectAccordion({
               <button
                 onClick={() => onViewPast(isCurrent ? null : s.id)}
                 className={cn(
-                  "flex w-full items-start gap-2 rounded-lg border px-2.5 py-2 pr-7 text-left transition-colors",
+                  "flex w-full items-start gap-2 rounded-lg border px-2.5 py-2 pr-7 text-left transition-all duration-150 ease-out hover:translate-x-0.5",
                   // FIX 3 — selected session card gets a real green border
                   // + light-green tint (was just a faint fill before),
                   // matching the room-w.png "CORS error issues" card.
