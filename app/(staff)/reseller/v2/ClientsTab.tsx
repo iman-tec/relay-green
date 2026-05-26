@@ -48,10 +48,7 @@ export function ClientsTab() {
 
   return (
     <TabBody>
-      <h1 className="mb-1 font-serif text-2xl font-medium" style={{ color: "var(--text)" }}>Clients</h1>
-      <p className="mb-6 text-sm" style={{ color: "var(--text-muted)" }}>
-        Enterprise-level aggregates only — no department or member detail.
-      </p>
+      <h1 className="mb-6 font-serif text-2xl font-medium" style={{ color: "var(--text)" }}>Clients</h1>
 
       {ents.length === 0 ? (
         <EmptyState icon={<Building2 size={20} />} title="No clients yet" body="Enterprises you provision will appear here." />
