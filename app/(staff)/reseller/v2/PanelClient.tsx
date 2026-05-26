@@ -18,15 +18,15 @@ import { UserChip } from "@/app/_components/admin-v2/UserChip";
 import { ThemeTriplet } from "@/app/_components/ThemeTriplet";
 import { PartnerDashboardTab } from "./PartnerDashboardTab";
 import { ClientsTab } from "./ClientsTab";
-import { RevenueTab } from "./RevenueTab";
+import { SalesTab } from "./SalesTab";
 import { PartnerSettingsTab } from "./PartnerSettingsTab";
 
-type TabKey = "dashboard" | "clients" | "revenue" | "settings";
+type TabKey = "dashboard" | "clients" | "sales" | "settings";
 
 const TABS: readonly Tab<TabKey>[] = [
   { key: "dashboard", label: "Dashboard" },
   { key: "clients",   label: "Clients" },
-  { key: "revenue",   label: "Revenue" },
+  { key: "sales",     label: "Sales" },
   { key: "settings",  label: "Settings" },
 ];
 
@@ -57,7 +57,7 @@ export function PanelClient({ me }: { me: { email: string; roleLabel: string } }
       <div className="min-h-0 flex-1 overflow-hidden">
         {tab === "dashboard" && <PartnerDashboardTab />}
         {tab === "clients"   && <ClientsTab />}
-        {tab === "revenue"   && <RevenueTab />}
+        {tab === "sales"     && <SalesTab />}
         {tab === "settings"  && <PartnerSettingsTab />}
       </div>
     </div>
