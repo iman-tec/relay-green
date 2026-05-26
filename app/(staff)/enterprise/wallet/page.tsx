@@ -1,10 +1,7 @@
-import type { Metadata } from "next";
-import { WalletClient } from "./WalletClient";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Wallet — Relay.green",
-};
-
+// Legacy wallet console retired — billing lives in the redesigned panel at
+// /enterprise/v2 (Billing tab).
 export default function WalletPage() {
-  return <WalletClient />;
+  redirect("/enterprise/v2?tab=billing");
 }

@@ -113,7 +113,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   const roles    = guard.kind === "staff" ? guard.roles : [];
   const engineer = isEngineer(roles);
   const isEnterpriseAdmin = roles.includes(ROLE.enterprise_admin) && !roles.includes(ROLE.super_admin);
-  const homeHref = isEnterpriseAdmin ? "/enterprise" : engineer ? "/dashboard" : "/supervise";
+  const homeHref = isEnterpriseAdmin ? "/enterprise/v2" : engineer ? "/dashboard" : "/supervise";
 
   const [collapsed, setCollapsed] = useState(false);
 
@@ -595,7 +595,7 @@ function ProfileButton({
           )}
           {roles.includes("enterprise_admin") && (
             <Link
-              href="/enterprise/wallet"
+              href="/enterprise/v2?tab=billing"
               onClick={() => setOpen(false)}
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm no-underline transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
               style={{ color: "var(--text)" }}

@@ -1,10 +1,7 @@
-import type { Metadata } from "next";
-import { EnterpriseClient } from "./EnterpriseClient";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Enterprise — Relay.green",
-};
-
+// Legacy enterprise console retired — the redesigned panel lives at
+// /enterprise/v2. Redirect so old links + the StaffShell home land there.
 export default function EnterprisePage() {
-  return <EnterpriseClient />;
+  redirect("/enterprise/v2");
 }
