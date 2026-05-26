@@ -20,7 +20,7 @@
  */
 
 import { useState } from "react";
-import { Sparkles, Video, KeyRound, Copy, Check } from "lucide-react";
+import { Sparkles, Video, KeyRound, Copy, Check, Pencil, Trash2, Loader2, X } from "lucide-react";
 
 const BRAND_GREEN = "var(--primary)";
 const BRAND_GREEN_SOFT = "var(--primary-soft)";
@@ -91,9 +91,69 @@ function parseRecording(body: string): { url: string | null; passcode: string | 
 
 type CopyTarget = "url" | "passcode";
 
-export function MeetingSummaryEntry({ body, recordingBody }: { body: string; recordingBody?: string | null }) {
+export function MeetingSummaryEntry({
+  body,
+  recordingBody,
+  canEdit = false,
+  onEdit,
+  onDelete,
+}: {
+  body: string;
+  recordingBody?: string | null;
+  /** Show the edit + delete affordances. False for read-only viewers. */
+  canEdit?: boolean;
+  /** Persist a rewritten body. Receives the raw text (no parsing applied). */
+  onEdit?: (newBody: string) => Promise<void>;
+  /** Drop the underlying guest_messages row entirely. */
+  onDelete?: () => Promise<void>;
+}) {
   const { title, overview, nextSteps } = parseAiSummary(body);
   const recording = recordingBody ? parseRecording(recordingBody) : null;
+
+  // Edit mode is local — we hold the draft in state, and on Save the
+  // parent component performs the RPC. The realtime sub on guest_messages
+  // then delivers the new body back and the read view re-parses.
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(body);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [errMsg, setErrMsg] = useState<string | null>(null);
+
+  const handleSave = async () => {
+    if (!onEdit || saving) return;
+    const trimmed = draft.trim();
+    if (!trimmed) {
+      setErrMsg("The card can't be empty — use Delete to remove it instead.");
+      return;
+    }
+    setSaving(true);
+    setErrMsg(null);
+    try {
+      await onEdit(trimmed);
+      setEditing(false);
+    } catch (e) {
+      setErrMsg(e instanceof Error ? e.message : "Couldn't save the changes.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!onDelete || deleting) return;
+    if (typeof window !== "undefined" && !window.confirm("Delete this AI Companion summary card?")) {
+      return;
+    }
+    setDeleting(true);
+    setErrMsg(null);
+    try {
+      await onDelete();
+      // Parent unmounts us once the realtime sub removes the row; no
+      // local state to reset.
+    } catch (e) {
+      setErrMsg(e instanceof Error ? e.message : "Couldn't delete the card.");
+      setDeleting(false);
+    }
+  };
 
   // Stub-only case: Zoom AI Companion sometimes returns just the generic
   // title `"Meeting Summary for {topic} — {customer}"` with no overview
@@ -131,15 +191,131 @@ export function MeetingSummaryEntry({ body, recordingBody }: { body: string; rec
     setTimeout(() => setCopied((c) => (c === which ? null : c)), 1500);
   };
 
+  // Edit mode replaces the parsed body with a single rewriteable textarea.
+  // We do NOT try to round-trip back through parseAiSummary because the
+  // user may want to write free-form text — the parser will just degrade
+  // gracefully (no "Next steps" section if they don't include one).
+  if (editing) {
+    return (
+      <div className="flex justify-center">
+        <div
+          className="w-full max-w-md rounded-2xl border p-4 shadow-sm"
+          style={{
+            borderColor: BRAND_GREEN_BORDER,
+            backgroundColor: BRAND_GREEN_SOFT,
+          }}
+        >
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl"
+                style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+              >
+                <Sparkles size={13} />
+              </div>
+              <span
+                className="text-[10px] font-semibold uppercase tracking-wider"
+                style={{ color: BRAND_GREEN }}
+              >
+                Editing summary
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => { setEditing(false); setDraft(body); setErrMsg(null); }}
+              aria-label="Cancel"
+              className="rounded-md p-1 transition-opacity hover:bg-black/5 dark:hover:bg-white/5"
+              style={{ color: "var(--text-muted)" }}
+            >
+              <X size={12} />
+            </button>
+          </div>
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            disabled={saving}
+            rows={8}
+            className="block w-full rounded-md border bg-transparent p-2 text-[13px] leading-relaxed outline-none focus:ring-2"
+            style={{
+              borderColor: "var(--border)",
+              color: "var(--text)",
+              ["--tw-ring-color" as string]: "color-mix(in srgb, var(--primary) 35%, transparent)",
+            }}
+          />
+          {errMsg && (
+            <p className="mt-1.5 text-[11px]" style={{ color: "var(--accent-red)" }}>{errMsg}</p>
+          )}
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void handleSave()}
+              disabled={saving}
+              className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[11px] font-medium disabled:opacity-50"
+              style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+            >
+              {saving ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />}
+              {saving ? "Saving" : "Save"}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setEditing(false); setDraft(body); setErrMsg(null); }}
+              disabled={saving}
+              className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[11px] hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+              style={{ color: "var(--text-muted)" }}
+            >
+              Cancel
+            </button>
+            <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+              Free-form text — bullet list under <code>Next steps:</code> auto-renders.
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex justify-center">
       <div
-        className="w-full max-w-md rounded-2xl border p-4 shadow-sm"
+        className="group relative w-full max-w-md rounded-2xl border p-4 shadow-sm"
         style={{
           borderColor: BRAND_GREEN_BORDER,
           backgroundColor: BRAND_GREEN_SOFT,
         }}
       >
+        {/* Edit / delete kebab — hover-revealed in the top-right corner so
+            it doesn't compete with the AI Companion label. canEdit gates
+            visibility; supervisors / observers never see it. */}
+        {canEdit && (onEdit || onDelete) && (
+          <div className="absolute right-2 top-2 flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+            {onEdit && (
+              <button
+                type="button"
+                onClick={() => { setDraft(body); setEditing(true); setErrMsg(null); }}
+                aria-label="Edit summary"
+                className="rounded-md p-1 transition-colors hover:bg-black/10 dark:hover:bg-white/10"
+                style={{ color: "var(--text-muted)" }}
+              >
+                <Pencil size={11} />
+              </button>
+            )}
+            {onDelete && (
+              <button
+                type="button"
+                onClick={() => void handleDelete()}
+                disabled={deleting}
+                aria-label="Delete summary"
+                className="rounded-md p-1 transition-colors hover:bg-black/10 disabled:opacity-50 dark:hover:bg-white/10"
+                style={{ color: "var(--text-muted)" }}
+              >
+                {deleting ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
+              </button>
+            )}
+          </div>
+        )}
+        {errMsg && !editing && (
+          <p className="mb-2 text-[11px]" style={{ color: "var(--accent-red)" }}>{errMsg}</p>
+        )}
         <div className="flex items-center gap-2">
           <div
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl"

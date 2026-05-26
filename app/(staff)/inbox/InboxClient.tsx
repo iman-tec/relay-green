@@ -19,12 +19,24 @@
  * The legacy "Chats" tab was removed — the queue lives on /dashboard.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, Search, Sparkles } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Loader2, PhoneIncoming, Search, Sparkles, X } from "lucide-react";
 import { useEngineerWorkspace } from "@/lib/relay/useEngineerWorkspace";
 import { useRequireEngineerProfile } from "@/lib/relay/useRequireEngineerProfile";
+import { createClient } from "@/lib/supabase/browser";
 import type { GuestCall } from "@/lib/supabase/types";
+
+type ConnectRequest = {
+  id: string;
+  customerUserId: string;
+  projectId: string | null;
+  message: string | null;
+  createdAt: string;
+  customerName: string | null;
+  customerEmail: string | null;
+  projectName: string | null;
+};
 
 const BRAND_GREEN      = "#3f5c2e";
 const BRAND_GREEN_SOFT = "rgba(63, 92, 46, 0.12)";
@@ -42,6 +54,146 @@ export function InboxClient() {
   const router = useRouter();
   useRequireEngineerProfile();
   const { queue, recent, myActive, loading, error } = useEngineerWorkspace();
+
+  // ── Pending connect requests (engineer is Busy → customer pinged) ────
+  // Real-time subscribed so a new request appears without refresh; rows
+  // disappear from the list when the engineer accepts / declines or the
+  // customer cancels.
+  const [requests, setRequests] = useState<ConnectRequest[]>([]);
+  const [reqBusyId, setReqBusyId] = useState<string | null>(null);
+  const sbRef = useRef(createClient());
+
+  const enrichRequest = useCallback(async (row: {
+    id: string;
+    customer_user_id: string;
+    project_id: string | null;
+    message: string | null;
+    created_at: string;
+  }): Promise<ConnectRequest> => {
+    const sb = sbRef.current;
+    const [custRes, projRes] = await Promise.all([
+      sb.from("customer_profiles")
+        .select("display_name, email")
+        .eq("user_id", row.customer_user_id)
+        .maybeSingle(),
+      row.project_id
+        ? sb.from("projects").select("name").eq("id", row.project_id).maybeSingle()
+        : Promise.resolve({ data: null }),
+    ]);
+    const cust = (custRes.data ?? null) as { display_name: string | null; email: string | null } | null;
+    const proj = (projRes.data ?? null) as { name: string | null } | null;
+    return {
+      id: row.id,
+      customerUserId: row.customer_user_id,
+      projectId: row.project_id,
+      message: row.message,
+      createdAt: row.created_at,
+      customerName: cust?.display_name ?? null,
+      customerEmail: cust?.email ?? null,
+      projectName: proj?.name ?? null,
+    };
+  }, []);
+
+  useEffect(() => {
+    const sb = sbRef.current;
+    let alive = true;
+    void (async () => {
+      const { data: u } = await sb.auth.getUser();
+      const me = u.user?.id;
+      if (!alive || !me) return;
+      const { data } = await sb
+        .from("engineer_connect_requests")
+        .select("id, customer_user_id, project_id, message, created_at")
+        .eq("engineer_user_id", me)
+        .eq("status", "pending")
+        .order("created_at", { ascending: false });
+      if (!alive) return;
+      const rows = (data ?? []) as Array<{
+        id: string;
+        customer_user_id: string;
+        project_id: string | null;
+        message: string | null;
+        created_at: string;
+      }>;
+      const enriched = await Promise.all(rows.map(enrichRequest));
+      if (!alive) return;
+      setRequests(enriched);
+
+      // Realtime — fan-in inserts and status updates so the list mirrors
+      // the database without polling.
+      const ch = sb
+        .channel(`inbox-requests-${me}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "engineer_connect_requests",
+            filter: `engineer_user_id=eq.${me}`,
+          },
+          (payload) => {
+            const next = payload.new as typeof rows[number] & { status?: string } | null;
+            const old = payload.old as { id?: string; status?: string } | null;
+            const oldId = old?.id;
+            if (!next && oldId) {
+              setRequests((prev) => prev.filter((r) => r.id !== oldId));
+              return;
+            }
+            if (!next) return;
+            if (next.status !== "pending") {
+              setRequests((prev) => prev.filter((r) => r.id !== next.id));
+              return;
+            }
+            void enrichRequest(next).then((enrichedRow) => {
+              if (!alive) return;
+              setRequests((prev) => {
+                const without = prev.filter((r) => r.id !== enrichedRow.id);
+                return [enrichedRow, ...without].sort(
+                  (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+                );
+              });
+            });
+          },
+        )
+        .subscribe();
+
+      return () => { sb.removeChannel(ch); };
+    })();
+    return () => { alive = false; };
+  }, [enrichRequest]);
+
+  const onAccept = useCallback(async (req: ConnectRequest) => {
+    if (reqBusyId) return;
+    setReqBusyId(req.id);
+    try {
+      const sb = sbRef.current;
+      const { error } = await sb.rpc("accept_connect_request", { _id: req.id });
+      if (error) {
+        window.alert(`Couldn't accept: ${error.message}`);
+        return;
+      }
+      // Realtime will remove the row from the list when status flips.
+      setRequests((prev) => prev.filter((r) => r.id !== req.id));
+    } finally {
+      setReqBusyId(null);
+    }
+  }, [reqBusyId]);
+
+  const onDecline = useCallback(async (req: ConnectRequest) => {
+    if (reqBusyId) return;
+    setReqBusyId(req.id);
+    try {
+      const sb = sbRef.current;
+      const { error } = await sb.rpc("decline_connect_request", { _id: req.id });
+      if (error) {
+        window.alert(`Couldn't decline: ${error.message}`);
+        return;
+      }
+      setRequests((prev) => prev.filter((r) => r.id !== req.id));
+    } finally {
+      setReqBusyId(null);
+    }
+  }, [reqBusyId]);
 
   // ── People list (left rail) ───────────────────────────────────────────
   const [peopleSearch, setPeopleSearch] = useState("");
@@ -234,9 +386,18 @@ export function InboxClient() {
           </div>
         )}
 
+        {requests.length > 0 && (
+          <PendingRequests
+            requests={requests}
+            busyId={reqBusyId}
+            onAccept={onAccept}
+            onDecline={onDecline}
+          />
+        )}
+
         {selectedPerson ? (
           <PersonHistory person={selectedPerson} onOpen={(id) => router.push(`/staff/session/${id}`)} />
-        ) : (
+        ) : requests.length === 0 ? (
           <div className="flex flex-1 items-center justify-center px-6 text-center">
             <div className="flex max-w-md flex-col items-center gap-5">
               <div
@@ -255,7 +416,7 @@ export function InboxClient() {
               </div>
             </div>
           </div>
-        )}
+        ) : null}
       </section>
 
       {/* ── Right rail: Call log ───────────────────────────────────── */}
@@ -439,6 +600,98 @@ function PersonHistory({
 
 function EmptyHint({ text }: { text: string }) {
   return <p className="px-5 py-8 text-center text-xs" style={{ color: "var(--text-muted)" }}>{text}</p>;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// PendingRequests — list of customer-initiated connect requests at the top
+// of the center pane. Realtime-driven; rows clear on Accept / Decline /
+// customer-cancel. Accept flips status → customer-side picks up the change
+// and routes the customer into a session via the normal new-session flow.
+// ──────────────────────────────────────────────────────────────────────────
+function PendingRequests({
+  requests, busyId, onAccept, onDecline,
+}: {
+  requests: ConnectRequest[];
+  busyId: string | null;
+  onAccept: (req: ConnectRequest) => void;
+  onDecline: (req: ConnectRequest) => void;
+}) {
+  return (
+    <section
+      className="shrink-0 border-b px-5 py-4"
+      style={{ borderColor: "var(--border)", backgroundColor: "color-mix(in srgb, var(--warn) 5%, var(--surface))" }}
+    >
+      <header className="mb-3 flex items-center gap-2">
+        <PhoneIncoming size={14} style={{ color: URGENT_AMBER }} />
+        <h2 className="text-[12px] font-semibold uppercase tracking-wider" style={{ color: "var(--text)" }}>
+          Pending requests · {requests.length}
+        </h2>
+      </header>
+      <ul className="flex flex-col gap-2">
+        {requests.map((r) => {
+          const busy = busyId === r.id;
+          return (
+            <li
+              key={r.id}
+              className="flex items-start gap-3 rounded-lg border bg-[var(--surface)] px-3 py-2.5"
+              style={{ borderColor: "var(--border)" }}
+            >
+              <div
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold uppercase"
+                style={{ backgroundColor: URGENT_AMBER_SOFT, color: URGENT_AMBER }}
+              >
+                {(r.customerName || r.customerEmail || "?")[0]}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-[13px] font-medium" style={{ color: "var(--text)" }}>
+                    {r.customerName ?? r.customerEmail ?? "Customer"}
+                  </span>
+                  {r.projectName && (
+                    <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                      · {r.projectName}
+                    </span>
+                  )}
+                </div>
+                {r.message && (
+                  <p className="mt-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
+                    &ldquo;{r.message}&rdquo;
+                  </p>
+                )}
+                <div className="mt-1 text-[10px]" style={{ color: "var(--text-faint)" }}>
+                  {new Date(r.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                </div>
+              </div>
+              <div className="flex shrink-0 gap-1.5">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => onAccept(r)}
+                  className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                  style={{ backgroundColor: BRAND_GREEN }}
+                  title="Accept request"
+                >
+                  {busy ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />}
+                  Accept
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => onDecline(r)}
+                  className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+                  style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+                  title="Decline request"
+                >
+                  <X size={10} />
+                  Decline
+                </button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
 }
 
 function StatusBadge({ status }: { status: string }) {

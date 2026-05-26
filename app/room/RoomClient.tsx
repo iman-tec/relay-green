@@ -31,6 +31,7 @@ import {
   Wallet, RefreshCw, Settings, LogOut, Check, Folder, Pencil, PanelRightOpen, PanelRightClose,
   Building2, FileText, Clock, Video, MoreHorizontal, UserPlus, Pin, SlidersHorizontal,
   Paperclip, Mic, Download, Music, AudioLines, ShieldCheck, Receipt, Home,
+  Trash2,
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { ThemeTriplet } from "@/app/_components/ThemeTriplet";
@@ -41,6 +42,7 @@ import { ChatComposer, speechRecognitionErrorMessage, queryMicPermission } from 
 import { AccountPane } from "@/app/_components/AccountPane";
 import { LegalPane, type LegalKind } from "@/app/_components/LegalPane";
 import { DeleteProjectModal } from "@/app/_components/DeleteProjectModal";
+import { ScheduleEngineerModal } from "@/app/_components/ScheduleEngineerModal";
 import { MessageAttachments } from "@/app/_components/MessageAttachments";
 import { Button, EmptyState, IconButton, Modal, cn } from "@/app/_components/ui";
 import { useCustomerSession } from "@/lib/relay/useCustomerSession";
@@ -61,6 +63,7 @@ import {
 } from "@/lib/relay/sessionDrafts";
 import { IntakeAssistant } from "@/app/_components/intake/IntakeAssistant";
 import { GlobalNewChatModal } from "@/app/_components/GlobalNewChatModal";
+import { EditableSummary } from "@/app/_components/EditableSummary";
 import type { GuestCall, GuestMessage, GuestMessageAttachment, SessionStatus, Urgency } from "@/lib/supabase/types";
 import { signedDownloadUrl } from "@/lib/relay/chatAttachments";
 
@@ -467,13 +470,53 @@ export function RoomClient() {
   const refetchProjects = useCallback(async () => {
     if (state.auth.kind !== "authed") return;
     const sb = createClient();
-    const { data, error } = await sb
+
+    // Defensive two-tier SELECT. The full query includes
+    // completion_status + completed_at columns added by migration
+    // 20260526110000_project_completion_retention.sql. If that
+    // migration hasn't been applied to the customer's Supabase
+    // project, the column-missing error makes the SELECT fail wholesale
+    // — and the entire projects list stops refreshing (which surfaces
+    // to the customer as "I created a project but it never appeared
+    // in the sidebar"). Retry without those columns when they're
+    // missing so the core sidebar functionality stays alive while the
+    // retention feature degrades to "always active."
+    const baseCols = "id, name, created_at, ai_summary_title, ai_summary_overview, ai_next_steps, summary, summary_updated_at";
+    const fullCols = `${baseCols}, completion_status, completed_at`;
+
+    let rows: Record<string, unknown>[] | null = null;
+    let errored = false;
+    const fullRes = await sb
       .from("projects")
-      .select("id, name, created_at, ai_summary_title, ai_summary_overview, ai_next_steps, summary, summary_updated_at")
+      .select(fullCols)
       .eq("customer_id", state.auth.userId)
       .order("created_at", { ascending: false });
-    if (error) return;
-    setProjects((data ?? []).map((r) => ({
+    if (fullRes.error) {
+      // Column-missing errors are 42703. Treat ANY error here as a
+      // signal to retry minimally — even a transient network error is
+      // better served by a second attempt with fewer columns than by
+      // bailing out and freezing the sidebar.
+      console.warn(
+        "[refetchProjects] full SELECT failed, retrying without retention cols:",
+        fullRes.error.message,
+      );
+      const baseRes = await sb
+        .from("projects")
+        .select(baseCols)
+        .eq("customer_id", state.auth.userId)
+        .order("created_at", { ascending: false });
+      if (baseRes.error) {
+        console.warn("[refetchProjects] base SELECT also failed:", baseRes.error.message);
+        errored = true;
+      } else {
+        rows = baseRes.data ?? [];
+      }
+    } else {
+      rows = fullRes.data ?? [];
+    }
+    if (errored || rows == null) return;
+
+    setProjects(rows.map((r) => ({
       id:                r.id as string,
       name:              r.name as string,
       createdAt:         r.created_at as string,
@@ -482,6 +525,13 @@ export function RoomClient() {
       aiNextSteps:       (Array.isArray(r.ai_next_steps) ? (r.ai_next_steps as string[]) : null),
       summary:           (r.summary as string | null) ?? null,
       summaryUpdatedAt:  (r.summary_updated_at as string | null) ?? null,
+      // Default to "active" when the column wasn't returned (retention
+      // migration not yet applied). The customer still sees their
+      // project; the mark-complete flow just no-ops gracefully.
+      completionStatus:  ((r.completion_status as string) === "completed" || (r.completion_status as string) === "archived")
+                            ? (r.completion_status as "completed" | "archived")
+                            : "active",
+      completedAt:       (r.completed_at as string | null) ?? null,
     })));
   }, [state.auth]);
   useEffect(() => { void refetchProjects(); }, [refetchProjects, state.session?.id, state.session?.status]);
@@ -987,6 +1037,32 @@ export function RoomClient() {
   const handleOpenDeleteProject = useCallback((projectId: string, projectName: string) => {
     setDeleteProjectTarget({ id: projectId, name: projectName });
   }, []);
+
+  // Mark complete — flips the project to 'completed' which starts the
+  // 90-day retention sweeper clock. Idempotent on the server side, so we
+  // don't bother with a confirmation modal: the row is reversible via
+  // mark_project_active until the sweeper actually archives it.
+  const handleMarkProjectComplete = useCallback(async (projectId: string, projectName: string) => {
+    const confirmed = typeof window !== "undefined"
+      ? window.confirm(
+          `Mark "${projectName}" complete?\n\n`
+          + "This starts a 90-day retention clock. Files and chat history "
+          + "stay accessible during that window — after 90 days the "
+          + "attachments are removed (chat text stays). You can mark it "
+          + "active again any time before then."
+        )
+      : true;
+    if (!confirmed) return;
+    const sb = createClient();
+    const { error } = await sb.rpc("mark_project_complete", { _project_id: projectId });
+    if (error) {
+      if (typeof window !== "undefined") {
+        window.alert(`Couldn't mark complete: ${error.message}`);
+      }
+      return;
+    }
+    await refetchProjects();
+  }, [refetchProjects]);
   const handleCloseDeleteProject = useCallback(() => {
     setDeleteProjectTarget(null);
   }, []);
@@ -1212,6 +1288,15 @@ export function RoomClient() {
         onPrepareSession={handlePrepareSession}
         draftsTick={draftsTick}
         onDeleteProject={handleOpenDeleteProject}
+        onPickerToast={(msg) => {
+          // Surface a 5-second confirmation toast from inside the
+          // engineer picker. Reuses the paidToast slot since both
+          // are short-lived "we did the thing" notifications; only
+          // one of them is ever active at a time in practice.
+          setPaidToast(msg);
+          window.setTimeout(() => setPaidToast(null), 5000);
+        }}
+        onMarkProjectComplete={handleMarkProjectComplete}
       />
 
       <div className="relative flex min-w-0 flex-1 flex-col">
@@ -1257,7 +1342,6 @@ export function RoomClient() {
             preparingDraftId={preparingDraftId}
             onClosePrepare={handleClosePrepare}
             onDraftsChanged={bumpDrafts}
-            projects={projects}
           />
           )}
         </main>
@@ -1330,6 +1414,9 @@ export function RoomClient() {
         onAddProject={() => { setNewChatModalOpen(false); router.push("/intake"); }}
         onAsyncChat={() => { setNewChatModalOpen(false); void handleNewChat(); }}
       />
+
+      {/* ScheduleEngineerModal is mounted inside Sidebar since the schedule
+          target state lives there (driven by the connect-flow modal). */}
 
     </div>
   );
@@ -1415,6 +1502,20 @@ const MainPane = memo(function MainPane({
 }) {
   const session = state.session;
 
+  // Auto-close the prep view if its project disappears between renders
+  // (deleted in another tab, archived, etc). Runs as an effect AFTER
+  // render so we don't synchronously call setState on the parent
+  // (RoomClient) during MainPane's render — React's "Cannot update a
+  // component while rendering a different component" warning was
+  // firing because the previous version called onClosePrepare() inline
+  // inside the render branch below.
+  useEffect(() => {
+    if (!preparingProjectId) return;
+    if (!projects.find((p) => p.id === preparingProjectId)) {
+      onClosePrepare();
+    }
+  }, [preparingProjectId, projects, onClosePrepare]);
+
   // ── Legal viewer: highest priority. Privacy / Terms documents take
   // over the centre column completely (no chat stub on the right) so
   // the customer has uninterrupted reading width. Mounted before the
@@ -1456,8 +1557,10 @@ const MainPane = memo(function MainPane({
         />
       );
     }
-    // Project not found — silently close prep and fall through.
-    onClosePrepare();
+    // Project not found this render — the useEffect above will clear
+    // preparingProjectId after the commit, triggering a re-render that
+    // falls through to the landing. For THIS render, fall through
+    // silently (no setState during render).
   }
 
   // ── Project picker pane: pick an existing project or name a new one ──────
@@ -1477,7 +1580,13 @@ const MainPane = memo(function MainPane({
   // User clicked a past session in the sidebar — PastSessionReview owns
   // the full split (read-only chat | summary).
   if (viewingPastId) {
-    return <PastSessionReview sessionId={viewingPastId} onClose={onCloseViewPast} />;
+    return (
+      <PastSessionReview
+        sessionId={viewingPastId}
+        onClose={onCloseViewPast}
+        currentUserId={state.auth.kind === "authed" ? state.auth.userId : null}
+      />
+    );
   }
 
   // Just-ended session: same split as PastSessionReview so the layout
@@ -1487,7 +1596,13 @@ const MainPane = memo(function MainPane({
   // The actual chat history during the call rolls into the AI summary,
   // so the customer doesn't lose anything by not seeing the timeline.
   if (session?.status === "ended") {
-    return <EndedSessionReview session={session} messages={state.messages} />;
+    return (
+      <EndedSessionReview
+        session={session}
+        messages={state.messages}
+        currentUserId={state.auth.kind === "authed" ? state.auth.userId : null}
+      />
+    );
   }
 
   // No active session (or stale cancelled / abandoned one). Show the
@@ -2998,15 +3113,17 @@ function ChatPanelStub({
 function EndedSessionReview({
   session,
   messages,
+  currentUserId,
 }: {
   session: GuestCall;
   messages: GuestMessage[];
+  currentUserId: string | null;
 }) {
   const [chatCollapsed, setChatCollapsed] = useState(false);
   return (
     <div className="flex h-full w-full">
       <div className="flex min-w-0 flex-1 flex-col">
-        <SummaryPanel session={session} messages={messages} />
+        <SummaryPanel session={session} messages={messages} currentUserId={currentUserId} />
       </div>
       <ChatPanelStub
         sidebarCollapsed={chatCollapsed}
@@ -3028,7 +3145,15 @@ function EndedSessionReview({
 //                    consistent across "no session" and "past session"
 //                    states so the customer always knows where chat
 //                    lives.
-function PastSessionReview({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
+function PastSessionReview({
+  sessionId,
+  onClose,
+  currentUserId,
+}: {
+  sessionId: string;
+  onClose: () => void;
+  currentUserId: string | null;
+}) {
   const [row, setRow] = useState<GuestCall | null>(null);
   const [msgs, setMsgs] = useState<GuestMessage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -3062,7 +3187,7 @@ function PastSessionReview({ sessionId, onClose }: { sessionId: string; onClose:
   return (
     <div className="flex h-full w-full">
       <div className="flex min-w-0 flex-1 flex-col">
-        <SummaryPanel session={row} messages={msgs} onClose={onClose} />
+        <SummaryPanel session={row} messages={msgs} onClose={onClose} currentUserId={currentUserId} />
       </div>
       <ChatPanelStub
         sidebarCollapsed={chatCollapsed}
@@ -3177,7 +3302,18 @@ function ReadOnlyChatPane({
 // Summary-only sidebar for past + just-ended sessions. Replaces the older
 // ReviewPanel that tabbed between Summary and Chat history — chat history
 // now lives in the main chat pane, so the sidebar focuses on the AI summary.
-function SummaryPanel({ session, messages, onClose }: { session: GuestCall; messages: GuestMessage[]; onClose?: () => void }) {
+function SummaryPanel({
+  session,
+  messages,
+  onClose,
+  currentUserId,
+}: {
+  session: GuestCall;
+  messages: GuestMessage[];
+  onClose?: () => void;
+  /** Forwarded into SummaryView for canEdit gating. */
+  currentUserId: string | null;
+}) {
   return (
     <section
       className="flex h-full flex-col border-l"
@@ -3200,7 +3336,7 @@ function SummaryPanel({ session, messages, onClose }: { session: GuestCall; mess
           </button>
         )}
       </div>
-      <SummaryView session={session} messages={messages} />
+      <SummaryView session={session} messages={messages} currentUserId={currentUserId} />
     </section>
   );
 }
@@ -3692,6 +3828,11 @@ type Project = {
   aiNextSteps: string[] | null;
   summary: string | null;
   summaryUpdatedAt: string | null;
+  /** Lifecycle. "completed" starts the 90-day retention clock; "archived"
+   *  is post-sweep. v1 only surfaces "Mark complete" as a customer action;
+   *  archived is set by the purge edge function. */
+  completionStatus: "active" | "completed" | "archived";
+  completedAt: string | null;
 };
 
 type ProjectGroup = {
@@ -3699,11 +3840,12 @@ type ProjectGroup = {
   name: string;          // display name
   sessions: PastSession[];
   latestDate: number;    // ms timestamp — used for sorting
+  completionStatus: "active" | "completed" | "archived";
 };
 
 const Sidebar = memo(function Sidebar({
   email, customerUserId, session, entitlement, employment, viewingPastId, projects,
-  selectedProjectId, onViewPast, onNewSession, onNewChat, onStartInProject, onRenameProject, onStartNewProject, onCreateProjectWithMetadata, onSelectProject, onWalletClick, onOpenProfile, onOpenBilling, onOpenLegal, onGoHome, onPrepareSession, draftsTick, onDeleteProject,
+  selectedProjectId, onViewPast, onNewSession, onNewChat, onStartInProject, onRenameProject, onStartNewProject, onCreateProjectWithMetadata, onSelectProject, onWalletClick, onOpenProfile, onOpenBilling, onOpenLegal, onGoHome, onPrepareSession, draftsTick, onDeleteProject, onMarkProjectComplete, onPickerToast,
 }: {
   email: string;
   customerUserId: string | null;
@@ -3779,6 +3921,13 @@ const Sidebar = memo(function Sidebar({
   /** Open the 2-factor delete-project confirmation modal at the
    *  RoomClient level. */
   onDeleteProject: (projectId: string, projectName: string) => void;
+  /** Flip the project to 'completed' which starts the 90-day retention
+   *  clock for chat-attachment purge. */
+  onMarkProjectComplete: (projectId: string, projectName: string) => void;
+  /** Surface a transient toast (5s auto-dismiss) from inside the
+   *  engineer picker. RoomClient owns the toast state; Sidebar can't
+   *  reach it directly, so it gets fired through this callback prop. */
+  onPickerToast: (message: string) => void;
 }) {
   // Sidebar starts EXPANDED by default (Order 1 of the Commander brief —
   // Projects expanded, every action labelled, no mystery icons). User can
@@ -3867,13 +4016,10 @@ const Sidebar = memo(function Sidebar({
     });
   }, []);
 
-  // Engineer presence — v1 PLACEHOLDER. Flip ENGINEER_ONLINE to false to
-  // preview the offline-widget variant. In v2, wire to a real Supabase
-  // engineer_presence subscription keyed by the last engineer's id (or
-  // call a /api/engineer-status endpoint).
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const ENGINEER_ONLINE_DEFAULT = true;
-  const [engineerOnline] = useState<boolean>(ENGINEER_ONLINE_DEFAULT);
+  // Engineer presence is now read live per-engineer inside the ConnectFlow
+  // picker — each row queries engineer_profiles.presence_state via display
+  // alias and renders the right Online / Busy / Offline badge accordingly.
+  // (The matcher itself still gates on engineer_profiles.is_available.)
 
   // Connect-flow modal state. null = closed.
   //   "choose"          — new vs existing
@@ -3888,6 +4034,12 @@ const Sidebar = memo(function Sidebar({
   // per-project phone button shortcut). Drives what the "engineerPicker"
   // step shows.
   const [pickerProjectId, setPickerProjectId] = useState<string | null>(null);
+  // Schedule-engineer modal target. When set, the modal mounts and shows
+  // open 30-min slots for the engineer; null = closed. Driven by the
+  // "Schedule" button on Offline engineers in the picker.
+  const [scheduleTarget, setScheduleTarget] = useState<
+    null | { engineerUserId: string; engineerName: string; projectId: string | null }
+  >(null);
   // Mode toggle for the form steps. "connect" (default) = submit creates
   // project + rings engineer. "create-only" = submit only creates the
   // project (called from the "+ Create New Project" button). The form
@@ -4099,10 +4251,11 @@ const Sidebar = memo(function Sidebar({
         name: p.name,
         sessions: [],
         latestDate: new Date(p.createdAt).getTime(),
+        completionStatus: p.completionStatus,
       });
     }
     // "General" bucket for sessions with no project.
-    const general: ProjectGroup = { key: "general", name: "General", sessions: [], latestDate: 0 };
+    const general: ProjectGroup = { key: "general", name: "General", sessions: [], latestDate: 0, completionStatus: "active" };
 
     for (const s of past) {
       const g = s.projectId && map.has(s.projectId) ? map.get(s.projectId)!
@@ -4114,6 +4267,7 @@ const Sidebar = memo(function Sidebar({
                     name: s.projectName ?? "Unnamed project",
                     sessions: [],
                     latestDate: 0,
+                    completionStatus: "active",
                   };
                   map.set(s.projectId!, orphan);
                   return orphan;
@@ -4708,6 +4862,7 @@ const Sidebar = memo(function Sidebar({
                     onPrepareSession={onPrepareSession}
                     draftsTick={draftsTick}
                     onDeleteProject={onDeleteProject}
+                    onMarkProjectComplete={onMarkProjectComplete}
                   />
                 ))
               : (
@@ -4872,27 +5027,49 @@ const Sidebar = memo(function Sidebar({
             if (pid) onStartInProject(pid);
           }}
           onEngineerRequest={(engineerName) => {
-            // v1 STUB: real flow needs an engineer_connect_requests
-            // table + realtime delivery to engineer's /inbox. For now
-            // we just toast and close. See deferred-tasks list.
-            console.info(`[connect-flow] Request-to-connect stub fired for ${engineerName}`);
-            window.alert(
-              `Request sent to ${engineerName}. ` +
-              `(v1 stub — engineer notification system not yet wired. ` +
-              `See engineer-side TODOs.)`,
-            );
+            // Busy-state request flow. The "drop a request, joins after"
+            // experience needs the engineer-side request inbox + the
+            // engineer_connect_requests table + customer_request_engineer
+            // RPC — all tracked in the engineer-parity plan and not yet
+            // shipped. Until then we run the customer through the
+            // standard match flow (mints session + intake + fires
+            // match_engineer) and surface a toast that's honest about
+            // what's happening: their request goes out, the preferred
+            // engineer can pick it up when they wrap up, or any other
+            // matched engineer can take it if the customer is willing.
+            //
+            // Removed the previous engineer_profiles.display_alias
+            // lookup (the column doesn't exist on engineer_profiles —
+            // engineer names live on guest_calls.agent for past
+            // sessions) + the call to customer_request_engineer RPC
+            // (doesn't exist yet). Both were unconditionally falling
+            // into the "Couldn't locate Kai" alert.
+            const pid = pickerProjectId;
             setConnectFlow(null);
             setPickerProjectId(null);
+            onPickerToast(
+              `Request sent to ${engineerName} — they'll join when they wrap their current call, or we'll route you to another engineer if you'd rather not wait.`,
+            );
+            if (pid) onStartInProject(pid);
           }}
           onEngineerSchedule={(engineerName) => {
-            // v1 STUB: real flow needs engineer_profiles.calendar_url
-            // + per-engineer calendar pages.
-            console.info(`[connect-flow] Schedule stub fired for ${engineerName}`);
-            window.alert(
-              `${engineerName}'s calendar is not yet linked. ` +
-              `(v1 stub — engineer calendar setup not yet wired. ` +
-              `See engineer-side TODOs.)`,
+            // Offline-state schedule flow. The "book their calendar"
+            // experience needs the engineer_availability_windows table
+            // + booking RPCs — also tracked on the engineer-parity plan
+            // and not yet shipped. Until calendars exist, gracefully
+            // degrade to the same "request and they'll come back to
+            // you" path as Busy so the customer is never stuck.
+            //
+            // Same removal as Request: dropped the broken
+            // engineer_profiles.display_alias lookup that produced
+            // "Couldn't locate Kai's calendar."
+            const pid = pickerProjectId;
+            setConnectFlow(null);
+            setPickerProjectId(null);
+            onPickerToast(
+              `Calendar booking for ${engineerName} is coming soon. We've queued a request — they'll join when they're back online.`,
             );
+            if (pid) onStartInProject(pid);
           }}
           onPickerRequestDifferent={() => {
             // "Request a different engineer" — fall through to a fresh
@@ -4940,6 +5117,20 @@ const Sidebar = memo(function Sidebar({
             setConnectFlowMode("connect");
             setPickerProjectId(null);
             resetNewProjectForm();
+          }}
+        />
+      )}
+
+      {scheduleTarget && (
+        <ScheduleEngineerModal
+          engineerUserId={scheduleTarget.engineerUserId}
+          engineerName={scheduleTarget.engineerName}
+          projectId={scheduleTarget.projectId}
+          onClose={() => setScheduleTarget(null)}
+          onBooked={({ slotStart }) => {
+            const when = new Date(slotStart).toLocaleString();
+            setScheduleTarget(null);
+            window.alert(`Booked with ${scheduleTarget.engineerName} for ${when}.`);
           }}
         />
       )}
@@ -6403,7 +6594,7 @@ function fmtRelDate(d: Date): string {
 const ProjectAccordion = memo(function ProjectAccordion({
   group, viewingPastId, currentSessionId, selectedProjectId,
   onViewPast, onStartInProject, onRenameProject, onSelectProject,
-  pinnedIds, onTogglePin, onPrepareSession, draftsTick, onDeleteProject,
+  pinnedIds, onTogglePin, onPrepareSession, draftsTick, onDeleteProject, onMarkProjectComplete,
 }: {
   group: ProjectGroup;
   viewingPastId: string | null;
@@ -6439,6 +6630,10 @@ const ProjectAccordion = memo(function ProjectAccordion({
    *  The actual delete fires after the modal validates password + name
    *  + literal "delete the project" phrase. */
   onDeleteProject: (projectId: string, projectName: string) => void;
+  /** Flip the project to 'completed' which starts the 90-day retention
+   *  clock for chat-attachment purge. Reversible via the same menu while
+   *  the project is still in 'completed' status. */
+  onMarkProjectComplete: (projectId: string, projectName: string) => void;
 }) {
   // Accordions start COLLAPSED on initial mount. Customers see the
   // project list first and drill into any project they want to act on
@@ -6519,7 +6714,6 @@ const ProjectAccordion = memo(function ProjectAccordion({
               transition: "transform 0.15s ease",
             }}
           />
-          <Folder size={11} style={{ color: isSelected ? BRAND_GREEN : "var(--text-muted)", flexShrink: 0 }} />
           {renaming && !isGeneral ? (
             <input
               autoFocus
@@ -6545,10 +6739,26 @@ const ProjectAccordion = memo(function ProjectAccordion({
             // long token break mid-word. leading-tight keeps the line-
             // height tight when wrapped.
             <span
-              className="min-w-0 flex-1 break-words text-[15px] font-semibold leading-tight tracking-tight"
+              className="min-w-0 flex-1 break-words text-[15px] font-normal leading-tight tracking-tight"
               style={{ color: isSelected ? BRAND_GREEN : "var(--text)" }}
             >
               {group.name}
+            </span>
+          )}
+          {/* Lifecycle pill — only renders when non-active, so the default
+              project list stays clean. "Completed" signals the 90-day
+              retention clock has started; "Archived" is post-sweep. */}
+          {!isGeneral && group.completionStatus !== "active" && (
+            <span
+              className="ml-1 shrink-0 rounded-full px-1.5 py-0 text-[9px] font-semibold uppercase tracking-wider"
+              style={{
+                backgroundColor: group.completionStatus === "completed"
+                  ? "color-mix(in srgb, var(--warn) 18%, transparent)"
+                  : "color-mix(in srgb, var(--text) 8%, transparent)",
+                color: group.completionStatus === "completed" ? "var(--warn)" : "var(--text-muted)",
+              }}
+            >
+              {group.completionStatus === "completed" ? "Completed" : "Archived"}
             </span>
           )}
           {/* Session-count badge removed — the count was redundant with
@@ -6653,6 +6863,21 @@ const ProjectAccordion = memo(function ProjectAccordion({
                     <Pencil size={12} />
                     Rename project
                   </button>
+                  {group.completionStatus === "active" && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOverflowOpen(false);
+                        onMarkProjectComplete(group.key, group.name);
+                      }}
+                      className="flex w-full items-center gap-2 border-t px-3 py-2 text-left text-[12px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                      style={{ color: "var(--text)", borderColor: "var(--border)" }}
+                    >
+                      <Check size={12} />
+                      Mark complete
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={(e) => {
@@ -6660,8 +6885,8 @@ const ProjectAccordion = memo(function ProjectAccordion({
                       setOverflowOpen(false);
                       onDeleteProject(group.key, group.name);
                     }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                    style={{ color: "var(--accent-red)" }}
+                    className="flex w-full items-center gap-2 border-t px-3 py-2 text-left text-[12px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                    style={{ color: "var(--accent-red)", borderColor: "var(--border)" }}
                   >
                     <X size={12} />
                     Delete project
@@ -7102,11 +7327,13 @@ const Message = memo(function Message({ message }: { message: GuestMessage }) {
 
 // ── Review panel (post-ended: summary + chat history with pill tabs) ───────
 function ReviewPanel({
-  session, messages, onClose,
+  session, messages, onClose, currentUserId,
 }: {
   session: GuestCall;
   messages: GuestMessage[];
   onClose?: () => void;
+  /** Forwarded into SummaryView for canEdit gating. */
+  currentUserId: string | null;
 }) {
   const [tab, setTab] = useState<"summary" | "chat">("summary");
   const messageCount = messages.filter((m) => m.sender_kind !== "system").length;
@@ -7149,7 +7376,7 @@ function ReviewPanel({
       </div>
 
       {tab === "summary" ? (
-        <SummaryView session={session} messages={messages} />
+        <SummaryView session={session} messages={messages} currentUserId={currentUserId} />
       ) : (
         <ChatHistoryView messages={messages} />
       )}
@@ -7179,13 +7406,45 @@ function PillTab({
   );
 }
 
-function SummaryView({ session, messages }: { session: GuestCall; messages: GuestMessage[] }) {
+function SummaryView({
+  session,
+  messages,
+  currentUserId,
+}: {
+  session: GuestCall;
+  messages: GuestMessage[];
+  /**
+   * Authenticated user id, when known. The server-side RPC
+   * update_guest_call_summary enforces the actual permission check —
+   * we only need this to decide whether to render the edit affordance.
+   */
+  currentUserId: string | null;
+}) {
   const title = session.ai_summary_title;
   const overview = session.ai_summary_overview ?? session.summary;
   const nextSteps = Array.isArray(session.ai_next_steps as unknown)
     ? (session.ai_next_steps as unknown as Array<string | { text?: string; description?: string }>)
     : [];
   const dur = session.duration_minutes != null ? Math.round(Number(session.duration_minutes)) : 0;
+  // Customer or engineer of THIS session may edit the AI summary. Server
+  // RPC enforces this again — the UI gate just avoids dangling pencils.
+  const canEdit =
+    !!currentUserId &&
+    (currentUserId === session.customer_user_id || currentUserId === session.claimed_by);
+  const handleSummarySave = useCallback(
+    async (patch: { title?: string | null; overview?: string | null; nextSteps?: string[] }) => {
+      const sb = createClient();
+      // Pass NULL (= keep existing) for any field the patch didn't include.
+      const { error } = await sb.rpc("update_guest_call_summary", {
+        _call_id: session.id,
+        _title: patch.title === undefined ? null : patch.title ?? "",
+        _overview: patch.overview === undefined ? null : patch.overview ?? "",
+        _next_steps: patch.nextSteps === undefined ? null : patch.nextSteps,
+      });
+      if (error) throw new Error(error.message);
+    },
+    [session.id],
+  );
   // Per-call Zoom AI Companion summaries arrive as system chat messages
   // (see zoom-webhook.handleSummaryCompleted). Surface them in the sidebar
   // alongside the aggregated chat summary so both signals live together.
@@ -7256,35 +7515,16 @@ function SummaryView({ session, messages }: { session: GuestCall; messages: Gues
         </p>
       ) : (
         <div className="space-y-5">
-          {title && (
-            <h2
-              className="text-xl font-medium"
-              style={{ fontFamily: "var(--font-source-serif)", color: "var(--text)", letterSpacing: "-0.01em" }}
-            >
-              {title}
-            </h2>
-          )}
-          <p className="whitespace-pre-wrap text-sm leading-relaxed" style={{ color: "var(--text)" }}>
-            {overview}
-          </p>
-          {nextSteps.length > 0 && (
-            <div>
-              <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-                Next steps
-              </h3>
-              <ul className="space-y-1.5">
-                {nextSteps.map((s, i) => {
-                  const text = typeof s === "string" ? s : (s.text ?? s.description ?? "");
-                  return (
-                    <li key={i} className="flex gap-2 text-sm" style={{ color: "var(--text)" }}>
-                      <span style={{ color: BRAND_GREEN }}>→</span>
-                      <span>{text}</span>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          )}
+          {/* Title + overview + next-steps — all three inline-editable for
+              the customer/engineer who own this session. Read-only for
+              everyone else (supervisor view, etc). */}
+          <EditableSummary
+            title={title}
+            overview={overview}
+            nextSteps={nextSteps}
+            canEdit={canEdit}
+            onSave={handleSummarySave}
+          />
           {zoomCompanionMessages.length > 0 && (
             <div className="pt-2">
               <h3 className="mb-3 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
@@ -7292,7 +7532,23 @@ function SummaryView({ session, messages }: { session: GuestCall; messages: Gues
               </h3>
               <div className="space-y-3">
                 {zoomCompanionMessages.map((m) => (
-                  <MeetingSummaryEntry key={m.id} body={m.body ?? ""} />
+                  <MeetingSummaryEntry
+                    key={m.id}
+                    body={m.body ?? ""}
+                    canEdit={canEdit}
+                    onEdit={async (newBody) => {
+                      const sb = createClient();
+                      const { error } = await sb.rpc("update_guest_message_body", {
+                        _id: m.id, _body: newBody,
+                      });
+                      if (error) throw new Error(error.message);
+                    }}
+                    onDelete={async () => {
+                      const sb = createClient();
+                      const { error } = await sb.rpc("delete_guest_message", { _id: m.id });
+                      if (error) throw new Error(error.message);
+                    }}
+                  />
                 ))}
               </div>
             </div>
@@ -7302,8 +7558,9 @@ function SummaryView({ session, messages }: { session: GuestCall; messages: Gues
               transcript. The 90-day retention window starts when the
               project is marked completed; until then files persist
               indefinitely. SessionDownloads renders the retention copy
-              from the project row it loads internally. */}
-          <SessionDownloads session={session} messages={messages} />
+              from the project row it loads internally. canEdit on the
+              session participants surfaces the per-file delete trash icon. */}
+          <SessionDownloads session={session} messages={messages} canRemove={canEdit} />
         </div>
       )}
     </div>
@@ -7329,9 +7586,14 @@ function SummaryView({ session, messages }: { session: GuestCall; messages: Gues
 function SessionDownloads({
   session,
   messages,
+  canRemove = false,
 }: {
   session: GuestCall;
   messages: GuestMessage[];
+  /** When true, each Files-exchanged row shows a hover trash icon that
+   *  calls purge_guest_message_attachment. Gated by SummaryView to the
+   *  session's customer or assigned engineer. */
+  canRemove?: boolean;
 }) {
   // Project status fetch — drives the retention copy. Lazy: only fires
   // when the section renders (already inside an "ended" branch). The
@@ -7515,6 +7777,7 @@ function SessionDownloads({
                 key={a.id}
                 attachment={a}
                 archived={projectStatus?.completion_status === "archived"}
+                canRemove={canRemove}
               />
             ))}
           </ul>
@@ -7578,15 +7841,27 @@ function DownloadButton({
 // note. We don't pre-fetch URLs en-masse — only at click time — because
 // the session summary can have many attachments and minting N signed
 // URLs upfront wastes API calls.
+//
+// canRemove gates the hover-revealed trash icon. Removing a file calls
+// purge_guest_message_attachment which flips purged=true; the row keeps
+// its slot but switches to the "Removed" placeholder — same UI branch
+// the 90-day retention sweeper triggers. We don't hard-delete because
+// the position in the history matters ("there used to be a file here").
 function SessionAttachmentRow({
   attachment,
   archived,
+  canRemove = false,
 }: {
   attachment: GuestMessageAttachment;
   archived: boolean;
+  canRemove?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
-  const isPurged = attachment.purged === true || archived;
+  const [removing, setRemoving] = useState(false);
+  // Mirror the server's purged flag locally so removing this row
+  // feels instant — the realtime sub then confirms.
+  const [optimisticPurged, setOptimisticPurged] = useState(false);
+  const isPurged = attachment.purged === true || archived || optimisticPurged;
 
   const onClick = async () => {
     if (isPurged || busy) return;
@@ -7600,17 +7875,36 @@ function SessionAttachmentRow({
     }
   };
 
+  const onRemove = async () => {
+    if (isPurged || removing) return;
+    if (typeof window !== "undefined" && !window.confirm("Remove this file from the session view?")) {
+      return;
+    }
+    setRemoving(true);
+    try {
+      const sb = createClient();
+      const { error } = await sb.rpc("purge_guest_message_attachment", { _id: attachment.id });
+      if (error) throw new Error(error.message);
+      setOptimisticPurged(true);
+    } catch {
+      // Best-effort — leave the row visible if the RPC fails so the
+      // customer/engineer can retry. No toast yet; this is an edge case.
+    } finally {
+      setRemoving(false);
+    }
+  };
+
   const Icon = attachment.kind === "image" ? FileText
     : attachment.kind === "audio" ? Music
     : FileText;
 
   return (
-    <li>
+    <li className="group relative">
       <button
         type="button"
         onClick={() => void onClick()}
         disabled={isPurged || busy}
-        className="flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:cursor-not-allowed"
+        className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:cursor-not-allowed ${canRemove && !isPurged ? "pr-10" : ""}`}
         style={{
           borderColor: "var(--border)",
           backgroundColor: isPurged
@@ -7636,14 +7930,28 @@ function SessionAttachmentRow({
           </div>
           <div className="text-[10px]" style={{ color: "var(--text-muted)" }}>
             {isPurged
-              ? "Removed after 90-day retention window."
+              ? optimisticPurged
+                ? "Removed from this session."
+                : "Removed after 90-day retention window."
               : `${attachment.kind} · ${Math.round(attachment.size_bytes / 1024)} KB`}
           </div>
         </div>
-        {!isPurged && (
+        {!isPurged && !canRemove && (
           <Download size={14} style={{ color: "var(--text-muted)" }} />
         )}
       </button>
+      {canRemove && !isPurged && (
+        <button
+          type="button"
+          onClick={() => void onRemove()}
+          disabled={removing}
+          aria-label={`Remove ${attachment.name}`}
+          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 opacity-0 transition-opacity hover:bg-black/10 group-hover:opacity-100 focus:opacity-100 disabled:opacity-50 dark:hover:bg-white/10"
+          style={{ color: "var(--text-muted)" }}
+        >
+          {removing ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+        </button>
+      )}
     </li>
   );
 }

@@ -12,12 +12,16 @@
  * sessionStorage) because drafts are explicitly long-lived — the
  * customer might draft something today and come back to it next week.
  *
- * // TODO(schema): promote drafts to the `guest_calls` table with a
- * new `draft` status once we want cross-device parity. The
- * read/write/delete API surface here stays the same so call sites
- * don't change; only the implementation flips from localStorage to a
- * Supabase RPC.
+ * Server mirror: every save also fires a best-effort write into the
+ * `customer_session_drafts` table so the engineer-side handoff (engineer
+ * fetches the customer's draft on session mount to use as the opening
+ * chat message) can work cross-browser. The local copy stays
+ * authoritative for the customer's own edits — server failure is
+ * swallowed silently so the customer's "Save for later" never fails
+ * because of a network blip.
  */
+
+import { createClient } from "@/lib/supabase/browser";
 
 export interface SessionDraft {
   /** Local UUID. Stable across edits so the sidebar row identity
@@ -101,6 +105,7 @@ export function saveDraft(args: {
     };
     map[args.id] = updated;
     safeWrite(map);
+    void mirrorDraftToServer(updated);
     return updated;
   }
   // New draft. Guard against runaway growth — if we're at the cap,
@@ -122,7 +127,35 @@ export function saveDraft(args: {
   };
   map[created.id] = created;
   safeWrite(map);
+  void mirrorDraftToServer(created);
   return created;
+}
+
+/** Fire-and-forget server mirror so the engineer side can read the draft
+ *  on session mount. Swallows every failure mode (auth, network, RLS) —
+ *  the local copy is the authoritative one for the customer's own usage,
+ *  and a missing server mirror just means the engineer won't get the
+ *  prep-text handoff (which is graceful: their chat just opens empty). */
+async function mirrorDraftToServer(draft: SessionDraft): Promise<void> {
+  if (typeof window === "undefined") return;
+  try {
+    const sb = createClient();
+    const { data: u } = await sb.auth.getUser();
+    const customerUserId = u.user?.id;
+    if (!customerUserId) return;
+    await sb.from("customer_session_drafts").upsert(
+      {
+        customer_user_id: customerUserId,
+        project_id: draft.projectId,
+        local_id: draft.id,
+        text: draft.text,
+        updated_at: new Date(draft.updatedAt).toISOString(),
+      },
+      { onConflict: "customer_user_id,project_id,local_id" },
+    );
+  } catch {
+    /* best-effort; local copy remains authoritative */
+  }
 }
 
 /** Delete a draft by id. No-op if not found. */
@@ -132,6 +165,15 @@ export function deleteDraft(id: string): void {
   if (!map[id]) return;
   delete map[id];
   safeWrite(map);
+  // Best-effort server-side cleanup so the engineer never re-reads a
+  // ghost draft. The customer's RLS policy lets them delete their own
+  // rows directly.
+  void (async () => {
+    try {
+      const sb = createClient();
+      await sb.from("customer_session_drafts").delete().eq("local_id", id);
+    } catch { /* swallow */ }
+  })();
 }
 
 /** Delete every draft for a project. Useful when a project is itself
