@@ -59,7 +59,7 @@ export default function DpaPage() {
             <em>Data Processing Addendum.</em>
           </h1>
           <p className="r-lede" style={{ marginTop: 24, maxWidth: "60ch" }}>
-            Last updated: May 2026. Updated quarterly.
+            Last updated: June 2026. Updated quarterly.
           </p>
         </div>
       </section>
@@ -119,12 +119,12 @@ export default function DpaPage() {
           <h4 style={h4Style}>Security</h4>
           <p className="r-body" style={bodyStyle}>
             Technical and organisational measures are described in Annex II and
-            align with the security posture published at{" "}
+            align with the security posture published at the{" "}
             <Link
-              href="/trust/security"
+              href="/trust"
               style={{ borderBottom: "1px solid currentColor" }}
             >
-              /trust/security
+              Trust center
             </Link>
             .
           </p>
@@ -167,7 +167,7 @@ export default function DpaPage() {
             </Link>
             ,{" "}
             <Link
-              href="/legal/sub-processors"
+              href="/trust/subprocessors"
               style={{ borderBottom: "1px solid currentColor" }}
             >
               Sub-Processors

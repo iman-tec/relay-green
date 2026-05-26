@@ -123,7 +123,7 @@ export default function TrustIndex() {
                 href={s.href}
                 key={s.num}
                 style={{
-                  background: "#ffffff",
+                  background: "var(--paper)",
                   padding: "32px 28px",
                   display: "flex",
                   flexDirection: "column",
@@ -179,7 +179,7 @@ export default function TrustIndex() {
               className="r-num"
               style={{ color: "rgba(244,242,238,0.5)", marginBottom: 18 }}
             >
-              State of compliance · May 2026
+              State of compliance · June 2026
             </div>
             <h3
               className="r-h-2"
@@ -346,7 +346,7 @@ export default function TrustIndex() {
       <section className="r-section">
         <div className="r-wrap-narrow" style={{ textAlign: "center" }}>
           <p className="r-small" style={{ marginBottom: 24 }}>
-            Last updated: May 2026
+            Last updated: June 2026
           </p>
           <TryRelayButton />
         </div>

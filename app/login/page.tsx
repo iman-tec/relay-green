@@ -8,23 +8,34 @@ import { createClient } from "@/lib/supabase/server";
 import { landingForRoles } from "@/lib/relay/role-labels";
 
 export const metadata: Metadata = {
-  title: "Sign in — Relay.green",
-  description: "Sign in to Relay.green with a magic link. No password needed.",
+  title: "Sign in, Relay.green",
+  description: "Sign in to Relay.green.",
+  alternates: { canonical: "/login" },
 };
 
 // Server-side bounce: an already-signed-in user that lands on /login shouldn't
 // see the form again — send them to wherever their highest role lives.
+//
+// `redirect()` itself throws a sentinel error that the framework catches, so
+// the try/catch only wraps the Supabase calls — the actual redirect runs
+// after. If Supabase isn't reachable (e.g. env not provisioned locally), we
+// just render the form; the form's own submission surfaces the real error.
 async function redirectIfSignedIn(): Promise<void> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return;
-  const { data: roleRows } = await supabase
-    .from("user_role_names")
-    .select("role")
-    .eq("user_id", user.id);
-  const roles = (roleRows ?? []).map((r: { role: string }) => r.role);
+  let roles: string[];
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data: roleRows } = await supabase
+      .from("user_role_names")
+      .select("role")
+      .eq("user_id", user.id);
+    roles = (roleRows ?? []).map((r: { role: string }) => r.role);
+  } catch {
+    return;
+  }
   redirect(landingForRoles(roles));
 }
 
@@ -67,7 +78,7 @@ export default async function LoginPage() {
           <p className="text-xs text-[var(--text-muted)]">
             New to Relay?{" "}
             <Link
-              href="/#try"
+              href="/product"
               className="text-[var(--text)] underline-offset-2 hover:underline"
             >
               Learn how it works

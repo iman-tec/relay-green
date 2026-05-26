@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { TryRelayButton } from "./TryRelayButton";
 import { RelayLogo } from "./RelayLogo";
 import { MobileNavDrawer } from "./MobileNavDrawer";
+import { ThemeSwitcher } from "./ThemeSwitcher";
 
 type NavItem =
   | {
@@ -93,8 +94,11 @@ export function Nav() {
           }}
         >
           {/* Canonical RelayLogo component, sans, uppercase, animated
-              green dot. The single source of truth for the brand mark. */}
-          <RelayLogo size={22} color="var(--ink)" />
+              green dot. The single source of truth for the brand mark.
+              Color intentionally inherits from .r-nav-brand so the CSS
+              theme cascade (cream = ink, dark/espresso/klm = white) can
+              win without fighting an inline style. */}
+          <RelayLogo size={22} />
         </Link>
         <div className="r-nav-links">
           {NAV_ITEMS.map((item) => {
@@ -126,6 +130,7 @@ export function Nav() {
           })}
         </div>
         <div className="r-nav-cta">
+          <ThemeSwitcher />
           <Link href="/login" className="r-nav-link">
             Sign in
           </Link>

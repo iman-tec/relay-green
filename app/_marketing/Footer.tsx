@@ -70,7 +70,7 @@ export function Footer() {
               {/* Canonical RelayLogo component, sans, uppercase,
                   animated dot. Locks the brand mark to sans even though
                   surrounding footer copy renders in serif. */}
-              <RelayLogo size={28} color="var(--cream)" />
+              <RelayLogo size={28} color="var(--text-on-dark)" />
             </Link>
             <div className="r-footer-tag" style={{ marginTop: 14 }}>
               Press once. A real engineer joins your AI build.

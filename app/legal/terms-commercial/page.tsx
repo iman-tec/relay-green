@@ -59,7 +59,7 @@ export default function TermsCommercialPage() {
             <em>Terms (Commercial).</em>
           </h1>
           <p className="r-lede" style={{ marginTop: 24, maxWidth: "60ch" }}>
-            Last updated: May 2026. The master agreement for teams and companies
+            Last updated: June 2026. The master agreement for teams and companies
             on a paid plan.
           </p>
         </div>
@@ -149,7 +149,7 @@ export default function TermsCommercialPage() {
             </Link>
             , and{" "}
             <Link
-              href="/legal/sub-processors"
+              href="/trust/subprocessors"
               style={{ borderBottom: "1px solid currentColor" }}
             >
               Sub-Processors

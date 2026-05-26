@@ -31,6 +31,9 @@ const STAFF_PREFIXES = [
   // /room has its own 3-theme triplet next to the wordmark — the
   // floating pill would be a duplicate control there.
   "/room",
+  // /login has its own 4-icon picker (LoginThemeSwitcher) above the
+  // sign-in card; the floating pill would be a duplicate.
+  "/login",
 ];
 
 // Marketing/landing surface (cream `.mk-root` theme, fixed light — it doesn't

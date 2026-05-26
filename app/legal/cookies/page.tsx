@@ -45,7 +45,7 @@ const tableStyle = {
   marginTop: 24,
   marginBottom: 28,
   fontSize: 14,
-  background: "#ffffff",
+  background: "var(--paper)",
   border: "1px solid #d2d2d7",
   borderRadius: 8,
   overflow: "hidden",
@@ -56,7 +56,7 @@ const thStyle = {
   textAlign: "left" as const,
   padding: "15px 18px",
   borderBottom: "1px solid #d2d2d7",
-  background: "#f5f5f7",
+  background: "var(--cream-2)",
   fontFamily: "var(--font-sans)",
   fontWeight: 600,
   fontSize: 12,
@@ -68,7 +68,7 @@ const thStyle = {
 const tdStyle = {
   padding: "18px",
   borderBottom: "1px solid #d2d2d7",
-  background: "#ffffff",
+  background: "var(--paper)",
   verticalAlign: "top" as const,
   lineHeight: 1.55,
   color: "#424245",
@@ -150,14 +150,14 @@ export default function CookiesPage() {
             <em>Cookie Notice.</em>
           </h1>
           <p className="r-lede" style={{ marginTop: 24, maxWidth: "60ch" }}>
-            Last updated: May 2026
+            Last updated: June 2026
           </p>
         </div>
       </section>
 
       <section
         className="r-section"
-        style={{ paddingTop: 0, borderTop: "none", background: "#f5f5f7" }}
+        style={{ paddingTop: 0, borderTop: "none", background: "var(--cream-2)" }}
       >
         <div className="r-wrap-narrow">
           <p className="r-body" style={bodyStyle}>

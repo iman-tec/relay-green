@@ -12,7 +12,10 @@
 
 const SITE_URL = "https://www.relay.green";
 const SITE_NAME = "Relay";
-const ORG_LEGAL_NAME = "Relay.green, Inc.";
+// Canonical legal entity name. Matches the wording used in /public/llms.txt
+// and /public/llms-full.txt so AI crawlers and search engines see the same
+// company name across structured data and the LLM-facing site index.
+const ORG_LEGAL_NAME = "Relay TechnoForge, Inc.";
 
 export type JsonLdObject = Record<string, unknown>;
 

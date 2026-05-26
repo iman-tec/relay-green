@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Source_Serif_4, Inter, JetBrains_Mono } from "next/font/google";
+import { cookies } from "next/headers";
 import "./globals.css";
 import { JsonLd } from "./_marketing/JsonLd";
 import { AnalyticsGate } from "./_marketing/AnalyticsGate";
@@ -133,14 +134,26 @@ export const viewport: Viewport = {
   maximumScale: 5,
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Read theme cookies on the server so the first painted HTML already
+  // carries the correct data-theme attribute — eliminating the FOUC where
+  // the default Sun theme briefly renders before the client effect swaps
+  // in the user's saved theme. Priority: explicit user choice > geo
+  // default > Sun. Sun is represented by the absence of the attribute.
+  const cookieStore = await cookies();
+  const userTheme = cookieStore.get("relay-theme-user")?.value;
+  const geoTheme = cookieStore.get("relay-theme-geo")?.value;
+  const initialTheme = userTheme || geoTheme || "cream";
+  const themeAttr = initialTheme !== "cream" ? initialTheme : undefined;
+
   return (
     <html
       lang="en"
+      data-theme={themeAttr}
       className={`${sourceSerif.variable} ${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >

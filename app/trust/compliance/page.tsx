@@ -17,7 +17,12 @@ export const metadata: Metadata = {
   alternates: { canonical: "/trust/compliance" },
 };
 
-const ROWS = [
+const ROWS: {
+  framework: string;
+  status: string;
+  period: string;
+  detail: React.ReactNode;
+}[] = [
   {
     framework: "SOC 2 Type II",
     status: "In progress",
@@ -29,8 +34,20 @@ const ROWS = [
     framework: "GDPR",
     status: "In place",
     period: "Continuous",
-    detail:
-      "EU data residency option. Consent, access, deletion, and cross-border transfer controls are documented in the Privacy Policy. Data Protection Officer: dpo@relay.green.",
+    detail: (
+      <>
+        EU data residency option. Consent, access, deletion, and cross-border
+        transfer controls are documented in the Privacy Policy. Data Protection
+        Officer:{" "}
+        <a
+          href="mailto:dpo@relay.green"
+          style={{ borderBottom: "1px solid currentColor" }}
+        >
+          dpo@relay.green
+        </a>
+        .
+      </>
+    ),
   },
   {
     framework: "HIPAA",
@@ -98,7 +115,7 @@ export default function TrustCompliancePage() {
                 border: "1px solid #d2d2d7",
                 borderRadius: 8,
                 overflow: "hidden",
-                background: "#ffffff",
+                background: "var(--paper)",
                 minWidth: 720,
                 boxShadow: "0 22px 54px rgba(0, 0, 0, 0.05)",
               }}
@@ -108,7 +125,7 @@ export default function TrustCompliancePage() {
                   display: "grid",
                   gridTemplateColumns: "1.2fr 1fr 1.2fr 2.2fr",
                   gap: 0,
-                  background: "#f5f5f7",
+                  background: "var(--cream-2)",
                   borderBottom: "1px solid #d2d2d7",
                   fontFamily: "var(--font-sans)",
                   fontSize: 11,

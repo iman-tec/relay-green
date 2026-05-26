@@ -144,6 +144,84 @@
   color-scheme: dark;
 }
 
+/* Cloud (klm) theme — applied by ThemeProvider via `.klm` on <html>.
+ * Inspired by the marketing site's `data-theme="klm"`: navy→cyan vertical
+ * gradient canvas, translucent navy surfaces with backdrop-blur, silver
+ * text, and a brighter neon-green primary that pops on blue. Tokens stay
+ * structurally identical so the existing components (Input, Button,
+ * Toast, etc.) pick up the look without per-file edits.
+ *
+ * Color reference:
+ *   #001340 → #00a1de — KLM blue gradient (vertical, fixed)
+ *   rgba(0, 30, 76, 0.55) — translucent navy paper
+ *   #e8eaed — silver text
+ *   #c4c8cc — silver muted
+ *   #1eff7a — neon Relay green
+ */
+:root.klm {
+  --background: #001340;
+  --surface: rgba(0, 30, 76, 0.62);
+  --surface-raised: rgba(0, 43, 107, 0.72);
+  --border: rgba(255, 255, 255, 0.18);
+  --border-strong: rgba(255, 255, 255, 0.32);
+
+  --text: #e8eaed;
+  --text-muted: #c4c8cc;
+  --text-faint: #9aa0a6;
+
+  --primary: #1eff7a;
+  --primary-hover: #0fd866;
+  --primary-tint: rgba(30, 255, 122, 0.14);
+
+  --accent-red: #ff6b6b;
+  --warn: #ffd166;
+  --risk: #ff6b6b;
+  --warn-soft: color-mix(in srgb, #ffd166 20%, transparent);
+  --risk-soft: color-mix(in srgb, #ff6b6b 20%, transparent);
+
+  --scrim: rgba(0, 19, 64, 0.75);
+
+  color-scheme: dark;
+
+  /* Fixed vertical gradient — flows behind the entire app like the
+     marketing KLM theme's canvas. background-attachment: fixed keeps it
+     anchored to the viewport so scrolling doesn't reveal a hard cut at
+     the bottom of long pages. */
+  background:
+    linear-gradient(
+      180deg,
+      #001340 0%,
+      #002b6b 24%,
+      #0058a6 52%,
+      #0079c2 76%,
+      #00a1de 100%
+    )
+    fixed;
+}
+
+/* Surfaces that use --surface inherit the translucent navy automatically.
+ * Add backdrop-blur so cards over the gradient read as frosted glass
+ * rather than flat tinted rectangles. Scoped to .klm so it costs nothing
+ * in the other themes. */
+:root.klm [class*="bg-[var(--surface)"],
+:root.klm [class*="bg-[color-mix(in_srgb,var(--surface)"] {
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+/* The default `body { background: var(--background) }` rule below paints
+ * a solid colour over the gradient set on :root.klm. Drop the body to
+ * transparent in klm so the html gradient flows through, and also clear
+ * the `<main>` background since the /login page sets bg-[var(--background)]
+ * on it directly. !important is needed because the Tailwind arbitrary
+ * value class compiles to a high-specificity utility. */
+:root.klm body {
+  background: transparent !important;
+}
+:root.klm main {
+  background-color: transparent !important;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

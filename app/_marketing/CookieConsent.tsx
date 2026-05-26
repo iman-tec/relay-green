@@ -55,9 +55,14 @@ export function CookieConsent() {
   const [visible, setVisible] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [legalDoc, setLegalDoc] = useState<null | "privacy" | "terms">(null);
+  // GDPR / DPDP / CCPA: non-essential cookies require explicit opt-in. The
+  // settings panel therefore defaults every non-essential category to false;
+  // the user must tick a box (or click "Accept & Continue", which sets every
+  // category to true via handleAccept) before any non-essential cookie is
+  // persisted. Strictly-necessary cookies are always on and not user-settable.
   const [preferences, setPreferences] = useState({
-    functional: true,
-    analytics: true,
+    functional: false,
+    analytics: false,
     marketing: false,
   });
   const pathname = usePathname();

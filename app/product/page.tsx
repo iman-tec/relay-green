@@ -546,7 +546,7 @@ export default function ProductPage() {
       <section
         className="r-product-hero"
         style={{
-          background: "#ffffff",
+          background: "var(--paper)",
           padding: "76px 0 58px",
           textAlign: "left",
         }}
@@ -808,7 +808,7 @@ export default function ProductPage() {
                       color: "var(--ink-soft)",
                       padding: "4px 12px 4px 10px",
                       borderRadius: 999,
-                      background: "#f5f5f7",
+                      background: "var(--cream-2)",
                       border: "1px solid var(--rule)",
                       display: "inline-flex",
                       alignItems: "center",
@@ -898,7 +898,7 @@ export default function ProductPage() {
                       color: "var(--ink-soft)",
                       padding: "4px 12px 4px 10px",
                       borderRadius: 999,
-                      background: "#f5f5f7",
+                      background: "var(--cream-2)",
                       border: "1px solid var(--rule)",
                       display: "inline-flex",
                       alignItems: "center",
@@ -979,7 +979,7 @@ export default function ProductPage() {
                   className="product-card-surface"
                   style={{
                     flex: 1,
-                    background: "#ffffff",
+                    background: "var(--paper)",
                     border: "1px solid var(--rule)",
                     borderRadius: 8,
                     padding: "26px 30px",
@@ -1175,7 +1175,7 @@ export default function ProductPage() {
                 key={card.phase}
                 className="product-card-surface enterprise-card-surface"
                 style={{
-                  background: "#ffffff",
+                  background: "var(--paper)",
                   border: "1px solid var(--rule)",
                   borderRadius: 8,
                   padding: 32,
@@ -1188,7 +1188,7 @@ export default function ProductPage() {
                     width: 36,
                     height: 36,
                     borderRadius: 8,
-                    background: "#ffffff",
+                    background: "var(--paper)",
                     border: "1px solid var(--rule)",
                     display: "flex",
                     alignItems: "center",

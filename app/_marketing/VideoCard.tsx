@@ -79,7 +79,7 @@ export function VideoCard({
         justifyContent: "space-between",
         textAlign: "left",
         fontFamily: "inherit",
-        color: "var(--cream)",
+        color: "var(--text-on-dark)",
         transition:
           "transform 250ms cubic-bezier(0.22, 1, 0.36, 1), border-color 250ms ease, box-shadow 250ms ease",
       }}
@@ -133,7 +133,7 @@ export function VideoCard({
             fontSize: "clamp(18px, 2vw, 22px)",
             lineHeight: 1.3,
             fontWeight: 500,
-            color: "var(--cream)",
+            color: "var(--text-on-dark)",
             maxWidth: "34ch",
             letterSpacing: "-0.005em",
           }}

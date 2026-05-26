@@ -64,7 +64,7 @@ export function HowItWorks() {
               fontFamily: "var(--font-display)",
               fontSize: "clamp(26px, 3vw, 38px)",
               fontWeight: 400,
-              color: "var(--cream)",
+              color: "var(--text-on-dark)",
               lineHeight: 1.2,
               margin: 0,
               letterSpacing: "-0.015em",
@@ -120,7 +120,7 @@ export function HowItWorks() {
                 fontFamily="var(--font-sans)"
                 fontSize="15"
                 fontWeight="600"
-                fill="var(--cream)"
+                fill="var(--text-on-dark)"
               >
                 {s.label}
               </text>

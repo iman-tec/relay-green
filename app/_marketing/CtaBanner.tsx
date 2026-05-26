@@ -45,7 +45,7 @@ export function CtaBanner({
             <>
               AI changed <em>who</em> can build.
               <br />
-              <RelayLogo size="0.82em" color="var(--cream)" /> changes{" "}
+              <RelayLogo size="0.82em" color="var(--text-on-dark)" /> changes{" "}
               <em>the way</em> they ship.
             </>
           )}

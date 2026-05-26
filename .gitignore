@@ -58,3 +58,19 @@ supabase/.temp
 supabase/.branches
 
 certificates
+
+# Local QA artifacts (screenshots, lighthouse reports) — never commit.
+/qa/
+
+# Nested worktree-style checkout used during pre-launch redesign. Has its
+# own node_modules and .next; must never be deployed.
+/relay-green/
+
+# Scratch dir used by Claude Code tools.
+/.claude-tmp/
+
+# Claude Code local runtime artifacts (preview server config, scheduled task
+# lockfile). Project-tracked .claude/ files like agents/skills/settings can
+# still be committed by explicit `git add` if needed.
+/.claude/launch.json
+/.claude/scheduled_tasks.lock

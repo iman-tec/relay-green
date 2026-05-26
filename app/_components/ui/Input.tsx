@@ -35,6 +35,13 @@ export interface InputProps
   prefix?: ReactNode;
   suffix?: ReactNode;
   size?: "md" | "lg";
+  /**
+   * Show the red asterisk after the label when `required` is true. Default
+   * true. Set to false when the field is HTML-required but the label
+   * already conveys requirement (e.g. login forms where every field is
+   * obviously required and the label hosts other content).
+   */
+  requiredMark?: boolean;
 }
 
 const FIELD_CLASS =
@@ -56,6 +63,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
     id: idProp,
     className,
     required,
+    requiredMark = true,
     ...rest
   },
   ref,
@@ -82,7 +90,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
           className="text-sm font-medium text-[var(--text)] flex items-center gap-1"
         >
           {label}
-          {required && (
+          {required && requiredMark && (
             <span aria-hidden className="text-[var(--risk)]">
               *
             </span>

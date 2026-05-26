@@ -16,7 +16,7 @@ import { Shell } from "../../_marketing/Shell";
 export const metadata: Metadata = {
   title: "Terms of Use",
   description:
-    "Terms governing access to and use of the Relay.green platform — prepaid engineering support sessions, account responsibilities, payment terms, intellectual property, confidentiality, acceptable use, and liability.",
+    "Terms governing access to and use of the Relay.green platform: prepaid engineering support sessions, account responsibilities, payment terms, intellectual property, confidentiality, acceptable use, and liability.",
   alternates: { canonical: "/legal/terms-of-use" },
 };
 
@@ -92,7 +92,7 @@ export default async function TermsOfUsePage({
               color: "var(--text-muted)",
             }}
           >
-            Last updated: May 2026
+            Last updated: June 2026
           </p>
         </div>
       </section>

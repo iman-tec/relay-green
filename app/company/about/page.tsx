@@ -41,7 +41,7 @@ export default function ContactPage() {
         className="r-company-hero"
         style={{
           padding: "76px 0 58px",
-          background: "#ffffff",
+          background: "var(--paper)",
           borderBottom: "1px solid #d2d2d7",
         }}
       >
@@ -108,7 +108,7 @@ export default function ContactPage() {
         className="r-section r-contact-section"
         style={{
           padding: "72px 0 96px",
-          background: "#f5f5f7",
+          background: "var(--cream-2)",
           borderTop: "none",
         }}
       >

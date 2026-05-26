@@ -5,12 +5,13 @@
  */
 
 import type { ReactNode } from "react";
+import { cookies } from "next/headers";
 import "./marketing.css";
 import { Nav } from "./Nav";
 import { Footer } from "./Footer";
-import { TryRelayProvider } from "./TryRelayProvider";
+import { TryRelayProvider, TryRelayModal } from "./TryRelayProvider";
 
-export function Shell({
+export async function Shell({
   children,
   bare = false,
 }: {
@@ -25,19 +26,33 @@ export function Shell({
    */
   bare?: boolean;
 }) {
+  // Server-side theme resolution mirrors RootLayout so the .mk-root div
+  // paints with the correct data-theme on the very first frame. The CSS
+  // selectors in marketing.css (`.mk-root[data-theme="..."]`) match this
+  // attribute directly, so no client-side flash before ThemeSwitcher's
+  // effect runs. Priority: user choice > geo > Sun (no attribute).
+  const cookieStore = await cookies();
+  const userTheme = cookieStore.get("relay-theme-user")?.value;
+  const geoTheme = cookieStore.get("relay-theme-geo")?.value;
+  const initialTheme = userTheme || geoTheme || "cream";
+  const themeAttr = initialTheme !== "cream" ? initialTheme : undefined;
+
   if (bare) {
     return (
-      <div className="mk-root">
+      <div className="mk-root" data-theme={themeAttr}>
         <main>{children}</main>
       </div>
     );
   }
   return (
     <TryRelayProvider>
-      <div className="mk-root" id="top">
+      <div className="mk-root" id="top" data-theme={themeAttr}>
         <Nav />
         <main>{children}</main>
         <Footer />
+        {/* Modal must render INSIDE .mk-root so it inherits the
+            theme cascade (data-theme attribute). */}
+        <TryRelayModal />
       </div>
     </TryRelayProvider>
   );

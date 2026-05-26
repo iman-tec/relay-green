@@ -506,5 +506,67 @@ Generated metadata routes:
   /pricing/opengraph-image  /for/[tool]/opengraph-image
 
 ================================================================================
+14. PRE-LAUNCH QA ADDENDUM  (added 2026-05-27)
+================================================================================
+
+Known issues (verified during pre-launch QA pass):
+  - app/login/page.tsx:85          "/#try" anchor target did NOT exist.
+                                   FIXED -> changed to /product.
+  - public/llms.txt                 /company/contact URL did NOT exist.
+                                    FIXED -> /company/about#contact.
+  - public/llms-full.txt            same broken URL as above.
+                                    FIXED -> /company/about#contact.
+  - .gitignore                      qa/, relay-green/, .claude-tmp/ not
+                                    ignored. FIXED.
+
+Approved + applied (changes made; see PRE_LAUNCH_QA_REPORT.md section 4b):
+  - lib/seo/schema.ts        ORG_LEGAL_NAME -> "Relay TechnoForge, Inc."
+                              to match llms.txt and llms-full.txt.
+  - app/login/page.tsx        description simplified (drops "magic link");
+                              title em-dash -> comma; canonical added.
+  - app/trust/compliance      dpo@relay.green is now a mailto link.
+  - app/legal/terms-of-use    metadata description em-dash -> colon.
+  - 10 trust/legal pages      "Last updated: May 2026" -> "June 2026".
+  - app/_marketing/CookieConsent.tsx
+                              Default cookie preferences flipped from
+                              {functional:true, analytics:true} to
+                              {functional:false, analytics:false} so the
+                              banner is opt-in by default.
+  - REMOVED route             app/trust/security  (was noindex stub).
+                              References in llms.txt, llms-full.txt, and
+                              app/legal/dpa/page.tsx redirected to /trust.
+  - REMOVED route             app/legal/sub-processors  (was noindex
+                              stub). References in llms.txt, llms-full.txt,
+                              app/legal/dpa/page.tsx, and
+                              app/legal/terms-commercial/page.tsx
+                              redirected to /trust/subprocessors.
+  - DELETED from public/      next.svg, vercel.svg, file.svg, globe.svg,
+                              window.svg (Next.js scaffold defaults);
+                              Relay-Explainer-90s-Production-Storyboard
+                              -v1.2.docx (internal storyboard);
+                              room-w.png + theeme-w.png (design mocks).
+
+Known + shipping as-is (per approval):
+  - Nav + Footer "About" link continues to point to "/" (homepage IS the
+    company story).
+  - Em-dashes in /SplineHero hero copy remain.
+  - TryRelayFunnel.tsx TODO(auth) / TODO(api) markers deferred to a
+    post-launch sprint.
+
+Verification performed:
+  - Live tested at 375px mobile: /, /product, /for-enterprise, /trust, /login.
+    All 5 pages: 1 H1, no horizontal overflow, correct page title.
+  - No console.log/warn/error/debug in app/_marketing/**.
+  - No localhost / 127.0.0.1 / 10.0.1.207 anywhere in app/.
+  - No <img> tags in any in-scope marketing page; no empty alt attributes
+    in app/_marketing/**.
+  - No target="_blank" external links in marketing scope.
+  - All schemas in lib/seo/schema.ts compile and render correctly.
+
+Go-live verdict: READY WITH MINOR RISKS.
+See PRE_LAUNCH_QA_REPORT.md sections 11 (Remaining risks), 12 (Go-live
+checklist), and 13 (Google Search Console checklist).
+
+================================================================================
 END OF FILE
 ================================================================================

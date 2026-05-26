@@ -64,8 +64,21 @@ export function TryRelayProvider({ children }: { children: ReactNode }) {
   return (
     <TryRelayCtx.Provider value={{ isOpen, open, close }}>
       {children}
-      {isOpen && <TryRelayFunnel onClose={close} />}
     </TryRelayCtx.Provider>
   );
+}
+
+/*
+ * Modal render slot. Mount this INSIDE the .mk-root div in Shell.tsx so
+ * the modal participates in the theme cascade (data-theme attribute on
+ * .mk-root governs --paper, --ink, --green-deep etc. for the modal too).
+ * Previously the funnel was rendered as a sibling to .mk-root inside
+ * TryRelayProvider — that placed it outside the theme scope, so it
+ * always fell back to globals.css's OS-driven prefers-color-scheme.
+ */
+export function TryRelayModal() {
+  const { isOpen, close } = useTryRelay();
+  if (!isOpen) return null;
+  return <TryRelayFunnel onClose={close} />;
 }
 
