@@ -38,7 +38,7 @@ import {
   Building2, Camera, Check, CreditCard, KeyRound, Loader2, Mail,
   ShieldCheck, Trash2, Wallet, User, Bell, X, Sparkles, AlertTriangle,
   ChevronRight, Receipt, Clock, Monitor, Download as DownloadIcon, BellRing,
-  Plus,
+  Plus, Lock,
 } from "lucide-react";
 import { loadStripe, type Stripe as StripeJs } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
@@ -1123,6 +1123,31 @@ function WalletTab({
         </SectionCard>
       )}
 
+      {/* Saved payment methods — sits between the highlights and the
+          Past-purchases pivot so it's adjacent to the Recharge button.
+          Card-on-file is set up via a Stripe SetupIntent with
+          usage="off_session" (see /api/billing/payment-methods/setup-intent),
+          which makes future top-ups merchant-initiated (no re-3DS prompt
+          for SCA-region cards).
+
+          Suppressed for employees — their wallet runs on org-billed
+          minutes, not personal cards. */}
+      {!isEmployee && (
+        <SectionCard>
+          <div className="mb-3 flex items-baseline justify-between gap-3">
+            <div>
+              <h3 className="text-[13px] font-semibold" style={{ color: "var(--text)" }}>
+                Payment methods
+              </h3>
+              <p className="mt-0.5 text-[11px]" style={{ color: "var(--text-muted)" }}>
+                Saved with Stripe so future top-ups skip card entry.
+              </p>
+            </div>
+          </div>
+          <PaymentMethodsCard />
+        </SectionCard>
+      )}
+
       {/* Pivot to Billing — wallet shows current balance; for the full
           purchase history (dates, amounts, receipts) the customer jumps
           to the dedicated Billing tab. Keeps the Wallet card lean. */}
@@ -1238,12 +1263,10 @@ function BillingTab({
         blurb="Every recharge you've made, with receipts."
       />
 
-      {/* Payment methods — saved cards live above the purchase history
-          since they're the "what's set up today" view; purchases are
-          the "what happened in the past." Card list + Add button +
-          remove per row. Empty state encourages adding a card so
-          future recharges are one-click. */}
-      <PaymentMethodsCard />
+      {/* Payment methods used to live here; they were promoted to the
+          Wallet tab in commit feat(wallet): saved payment methods on
+          Wallet + mandate disclosure. The Billing tab is now purely
+          "what happened in the past" — recharges + receipts. */}
 
       {/* Top-line stats — three small cards in a row. Numbers come from
           authoritative cumulative columns, not summed-from-purchases,
@@ -1974,6 +1997,21 @@ function PaymentMethodsCard() {
         </ul>
       )}
 
+      {/* Trust strip — the explicit "where your card lives" line. Shown
+          regardless of whether the customer has cards yet so the framing
+          is set BEFORE they add one. Lock icon + plain prose; no
+          color-shouting (this is reassurance, not a CTA). */}
+      <div
+        className="mt-1 flex items-start gap-1.5 px-1 text-[10.5px] leading-snug"
+        style={{ color: "var(--text-muted)" }}
+      >
+        <Lock className="mt-0.5 size-3 shrink-0" />
+        <span>
+          Cards are held by Stripe (PCI DSS Level&nbsp;1) — Relay never sees the
+          full card number. You can remove a card any time.
+        </span>
+      </div>
+
       {showAdd && (
         <AddPaymentMethodModal
           onClose={() => setShowAdd(false)}
@@ -2059,8 +2097,9 @@ function AddPaymentMethodModal({
               Add a payment method
             </h2>
             <p className="mt-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
-              Your card is securely saved with Stripe. No charge happens now — we just
-              keep it on file so future top-ups skip card entry.
+              No charge happens now — your card is held on file so future top-ups skip
+              card entry. Downloadable receipts land in Account → Billing after every
+              recharge.
             </p>
           </div>
           <button
@@ -2075,6 +2114,35 @@ function AddPaymentMethodModal({
         </div>
 
         <div className="px-5 py-4">
+          {/* Card-on-file mandate disclosure. Submitting the form is the
+              consent act — this is the PSD2-compliant pattern Stripe
+              itself recommends for "save card for future use" flows. The
+              India/Brazil caveat warns users whose issuers don't permit
+              cross-border tokenization (RBI etc.); without it they'd
+              hit a confusing Stripe-side decline at confirm-time. */}
+          <div
+            className="mb-4 rounded-lg border px-3 py-2.5 text-[11.5px] leading-relaxed"
+            style={{
+              borderColor: "var(--border)",
+              backgroundColor: "var(--surface-raised)",
+              color: "var(--text-muted)",
+            }}
+          >
+            By saving this card, you authorize{" "}
+            <span style={{ color: "var(--text)", fontWeight: 600 }}>Relay</span>{" "}
+            to charge it for top-ups you confirm in your Wallet. We never store
+            your full card number — your card is held by Stripe (PCI DSS
+            Level&nbsp;1). You can remove the card at any time.
+            <br />
+            <span style={{ display: "block", marginTop: 6 }}>
+              Card-on-file rules vary by country. Cards issued in{" "}
+              <span style={{ color: "var(--text)", fontWeight: 500 }}>India, Brazil</span>{" "}
+              and a few other markets may need to be re-entered each top-up due
+              to local regulator (e.g. RBI) tokenization rules — your card
+              issuer will decline the save if so.
+            </span>
+          </div>
+
           {fetchError && (
             <div
               className="rounded-md border px-3 py-2 text-[12px]"
