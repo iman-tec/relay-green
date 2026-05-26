@@ -40,6 +40,7 @@ import { PaywallModal } from "@/app/_components/PaywallModal";
 import { ChatComposer, speechRecognitionErrorMessage, queryMicPermission } from "@/app/_components/ChatComposer";
 import { AccountPane } from "@/app/_components/AccountPane";
 import { LegalPane, type LegalKind } from "@/app/_components/LegalPane";
+import { DeleteProjectModal } from "@/app/_components/DeleteProjectModal";
 import { MessageAttachments } from "@/app/_components/MessageAttachments";
 import { Button, EmptyState, IconButton, Modal, cn } from "@/app/_components/ui";
 import { useCustomerSession } from "@/lib/relay/useCustomerSession";
@@ -48,7 +49,16 @@ import { useSessionTimer } from "@/lib/relay/useSessionTimer";
 import { computeSessionClock } from "@/lib/relay/sessionClock";
 import { createClient } from "@/lib/supabase/browser";
 import { patchProfile, readProfile, writeStack } from "@/lib/relay/profile";
-import { readProjectMetadata, writeProjectMetadata } from "@/lib/relay/projectMetadata";
+import { readProjectMetadata, writeProjectMetadata, deleteProjectMetadata } from "@/lib/relay/projectMetadata";
+import {
+  readDraft as readSessionDraft,
+  saveDraft as saveSessionDraft,
+  deleteDraft as deleteSessionDraft,
+  deleteDraftsForProject,
+  listDraftsForProject,
+  deriveDraftTitle,
+  type SessionDraft,
+} from "@/lib/relay/sessionDrafts";
 import { IntakeAssistant } from "@/app/_components/intake/IntakeAssistant";
 import { GlobalNewChatModal } from "@/app/_components/GlobalNewChatModal";
 import type { GuestCall, GuestMessage, GuestMessageAttachment, SessionStatus, Urgency } from "@/lib/supabase/types";
@@ -293,6 +303,25 @@ export function RoomClient() {
   // accountTab, this is a side-track view that clears as soon as the
   // customer navigates to a session/project/new-session.
   const [legalView, setLegalView] = useState<null | LegalKind>(null);
+
+  // "Prepare a session" view — customer clicks the + next to a project
+  // and drafts their problem (text, files, voice) BEFORE calling an
+  // engineer. The draft stays on this device until they hit the
+  // project's phone button to actually ring; the engineer then walks
+  // in with the prepared context. Null = no prep view active.
+  //
+  // preparingDraftId: when non-null, the prep view is editing an
+  // already-saved draft (sidebar row → click → re-open). When null
+  // but preparingProjectId is set, it's a fresh unsaved prep.
+  const [preparingProjectId, setPreparingProjectId] = useState<string | null>(null);
+  const [preparingDraftId,   setPreparingDraftId]   = useState<string | null>(null);
+  // 2-factor delete-project modal target. null = modal closed.
+  // { id, name } when the modal is open for a specific project.
+  const [deleteProjectTarget, setDeleteProjectTarget] = useState<{ id: string; name: string } | null>(null);
+  // Bumped whenever a draft is saved / deleted so the sidebar
+  // re-reads from localStorage and re-renders the draft rows.
+  const [draftsTick, setDraftsTick] = useState(0);
+  const bumpDrafts = useCallback(() => setDraftsTick((t) => t + 1), []);
 
   // Explicit ?paywall= entry — e.g. the guest Try-RELAY funnel sends a
   // visitor here when their free 10 minutes are already used
@@ -696,10 +725,13 @@ export function RoomClient() {
   const handleSelectProject = useCallback((projectId: string | null) => {
     setSelectedProjectId((prev) => (prev === projectId ? null : projectId));
     // Selecting a project means the customer wants to see that project's
-    // context — auto-close the Account pane / legal viewer if either
-    // was open so navigation feels natural.
+    // context — auto-close every side-track view so navigation feels
+    // natural. Prep is included: clicking a different project's header
+    // should drop the in-flight prep view, not silently keep it open.
     setAccountTab(null);
     setLegalView(null);
+    setPreparingProjectId(null);
+    setPreparingDraftId(null);
   }, []);
 
   // ── Stable handlers for the Sidebar / MainPane subtrees ──────────────────
@@ -717,6 +749,8 @@ export function RoomClient() {
     // Opening / closing a past session: leave any side-track view behind.
     setAccountTab(null);
     setLegalView(null);
+    setPreparingProjectId(null);
+    setPreparingDraftId(null);
   }, []);
 
   const handleNewSession = useCallback(() => {
@@ -732,6 +766,7 @@ export function RoomClient() {
     // Starting a new session — exit any side-track view that was open.
     setAccountTab(null);
     setLegalView(null);
+    setPreparingProjectId(null);
     setPendingDraft(null);
     // "New session" — LIVE engineer path. Intake → ring → engineer joins
     // in seconds. Same as before; this is the "I'm stuck, ring someone
@@ -924,6 +959,52 @@ export function RoomClient() {
     setLegalView(null);
   }, []);
 
+  // Prepare-session flow — open the central prep pane for a given
+  // project so the customer can draft text / drop files / record
+  // voice before ringing an engineer. Clears side-track views so the
+  // central pane is fully theirs to draft in. The phone button next
+  // to the project (handleStartInProject) is what actually rings.
+  // Pass a draftId to re-open an existing saved draft for editing.
+  const handlePrepareSession = useCallback((projectId: string, draftId?: string | null) => {
+    setPreparingProjectId(projectId);
+    setPreparingDraftId(draftId ?? null);
+    setSelectedProjectId(projectId);
+    setAccountTab(null);
+    setLegalView(null);
+    setViewingPastId(null);
+  }, []);
+  const handleClosePrepare = useCallback(() => {
+    setPreparingProjectId(null);
+    setPreparingDraftId(null);
+  }, []);
+
+  // Delete-project flow — opens the 2-factor confirmation modal.
+  // The modal itself handles password verification, name confirmation,
+  // and the literal "delete the project" phrase check before firing
+  // the actual delete. Sessions whose project_id pointed at the
+  // deleted row become orphaned (project_id → NULL via the FK's
+  // ON DELETE SET NULL) and end up in the General bucket.
+  const handleOpenDeleteProject = useCallback((projectId: string, projectName: string) => {
+    setDeleteProjectTarget({ id: projectId, name: projectName });
+  }, []);
+  const handleCloseDeleteProject = useCallback(() => {
+    setDeleteProjectTarget(null);
+  }, []);
+  const handleProjectDeleted = useCallback(async (projectId: string) => {
+    // Clean up local-only state tied to the project: drafts in the
+    // sidebar, project metadata (skills/aiTools/etc), any in-flight
+    // prep view, selection. Then refetch projects to drop the row
+    // from the sidebar.
+    try { deleteDraftsForProject(projectId); } catch { /* swallow */ }
+    try { deleteProjectMetadata(projectId); } catch { /* swallow */ }
+    setSelectedProjectId((prev) => (prev === projectId ? null : prev));
+    setPreparingProjectId((prev) => (prev === projectId ? null : prev));
+    setPreparingDraftId(null);
+    setDeleteProjectTarget(null);
+    bumpDrafts();
+    await refetchProjects();
+  }, [refetchProjects, bumpDrafts]);
+
   // Home — return to the landing surface from anywhere in /room.
   // Clears every side-track view (account, legal, past-session
   // review, project picker) and any project selection so the
@@ -940,6 +1021,8 @@ export function RoomClient() {
     setProjectFormOpen(false);
     setSelectedProjectId(null);
     setPendingDraft(null);
+    setPreparingProjectId(null);
+    setPreparingDraftId(null);
   }, []);
 
   const handleCloseViewPast = useCallback(() => setViewingPastId(null), []);
@@ -1126,6 +1209,9 @@ export function RoomClient() {
         onOpenBilling={handleOpenBilling}
         onOpenLegal={handleOpenLegal}
         onGoHome={handleGoHome}
+        onPrepareSession={handlePrepareSession}
+        draftsTick={draftsTick}
+        onDeleteProject={handleOpenDeleteProject}
       />
 
       <div className="relative flex min-w-0 flex-1 flex-col">
@@ -1167,6 +1253,11 @@ export function RoomClient() {
             onCloseAccount={handleCloseAccount}
             legalView={legalView}
             onCloseLegal={handleCloseLegal}
+            preparingProjectId={preparingProjectId}
+            preparingDraftId={preparingDraftId}
+            onClosePrepare={handleClosePrepare}
+            onDraftsChanged={bumpDrafts}
+            projects={projects}
           />
           )}
         </main>
@@ -1201,6 +1292,35 @@ export function RoomClient() {
         reason={paywallOpen ?? "manual"}
         onClose={() => setPaywallOpen(null)}
       />
+
+      {/* 2-factor delete-project confirmation. The modal does the
+          password verification + name + literal-phrase checks; the
+          actual destructive work runs in onConfirm here. */}
+      {deleteProjectTarget && state.auth.kind === "authed" && (
+        <DeleteProjectModal
+          projectId={deleteProjectTarget.id}
+          projectName={deleteProjectTarget.name}
+          customerEmail={state.auth.email}
+          onClose={handleCloseDeleteProject}
+          onConfirm={async (projectId) => {
+            // 1. Delete the project row. The FK on guest_calls.project_id
+            //    is ON DELETE SET NULL, so sessions get orphaned to the
+            //    General bucket rather than cascade-deleted. RLS guards
+            //    that the customer owns the project (customer_id =
+            //    auth.uid()), so this only succeeds for their own rows.
+            const sb = createClient();
+            const { error: delErr } = await sb
+              .from("projects")
+              .delete()
+              .eq("id", projectId);
+            if (delErr) throw new Error(delErr.message);
+
+            // 2. Local-only cleanup (drafts, project metadata, any
+            //    in-flight selection / prep view).
+            await handleProjectDeleted(projectId);
+          }}
+        />
+      )}
 
       <GlobalNewChatModal
         open={newChatModalOpen}
@@ -1246,6 +1366,7 @@ const MainPane = memo(function MainPane({
   onProjectConfirmNew, onProjectConfirmPick, onProjectCancel, onNeedProject,
   onNewSession, selectedProjectId, onSelectProject, onStartInProject,
   accountTab, onCloseAccount, legalView, onCloseLegal,
+  preparingProjectId, preparingDraftId, onClosePrepare, onDraftsChanged,
 }: {
   state: ReturnType<typeof useCustomerSession>;
   accepted: boolean;
@@ -1280,6 +1401,17 @@ const MainPane = memo(function MainPane({
   legalView: LegalKind | null;
   /** Close the legal viewer — falls back to the prior view. */
   onCloseLegal: () => void;
+  /** Project id whose "Prepare a session" pane is being drafted in the
+   *  centre. Null = no prep view active. */
+  preparingProjectId: string | null;
+  /** When re-opening an existing saved draft, the draft's id. Null
+   *  for a fresh new-draft session. */
+  preparingDraftId: string | null;
+  /** Close the prep view — falls back to the landing. */
+  onClosePrepare: () => void;
+  /** Notify the parent that the drafts list changed so the sidebar
+   *  re-reads from localStorage. */
+  onDraftsChanged: () => void;
 }) {
   const session = state.session;
 
@@ -1305,6 +1437,27 @@ const MainPane = memo(function MainPane({
         onClose={onCloseAccount}
       />
     );
+  }
+
+  // ── Session prep: customer clicked + next to a project. Takes over
+  // the central pane so they have room to draft their problem before
+  // ringing the engineer. Falls back gracefully (closes prep) if the
+  // project disappears (e.g., archived in another tab). */
+  if (preparingProjectId) {
+    const prepProject = projects.find((p) => p.id === preparingProjectId);
+    if (prepProject) {
+      return (
+        <SessionPrepView
+          project={prepProject}
+          draftId={preparingDraftId}
+          onCallEngineer={() => onStartInProject(preparingProjectId)}
+          onClose={onClosePrepare}
+          onDraftsChanged={onDraftsChanged}
+        />
+      );
+    }
+    // Project not found — silently close prep and fall through.
+    onClosePrepare();
   }
 
   // ── Project picker pane: pick an existing project or name a new one ──────
@@ -1367,109 +1520,265 @@ const MainPane = memo(function MainPane({
   return <ChatPane state={state} fullWidth employment={employment} onNeedsCredits={onNeedsCredits} onNeedProject={onNeedProject} />;
 });
 
-// ── Landing-explainer building blocks ─────────────────────────────────
-// Small, single-purpose cards used by BrandedLanding's how-it-works
-// explainer. Defined at module scope so React.memo / re-render cost is
-// minimal — they take no closure-bound state from BrandedLanding.
+// (Earlier iterations of BrandedLanding had a set of card helper
+//  components — LegendCard / StateCard / SpatialCard / FlowStep — that
+//  wrapped each explainer row in its own bordered box. Removed in
+//  favor of inline, chrome-light rendering directly in BrandedLanding
+//  so the page reads less like a dashboard widget and more like a
+//  polished spec page.)
 
-// LegendCard — a phone-icon badge + bold label + descriptive blurb.
-// One per icon color (black / green) in the legend strip.
-function LegendCard({
-  bg, fg, label, blurb,
-}: { bg: string; fg: string; label: string; blurb: string }) {
+// ── Session prep view ─────────────────────────────────────────────────
+// Customer hit the + next to a project in the sidebar. Drafts persist
+// to localStorage via lib/relay/sessionDrafts so they survive across
+// browser sessions and show up under the project in the sidebar as
+// distinctive "DRAFT" rows.
+//
+// Two entry modes:
+//   • New draft   — preparingDraftId is null. Local text held in state;
+//                   "Save for later" promotes it into a stored draft row.
+//   • Edit saved  — preparingDraftId points at an existing stored row.
+//                   Edits update the row in-place (autosave on debounce);
+//                   "Call engineer" deletes the draft + rings.
+//
+// TODO[engineer-prep-handoff]: when "Call engineer" mints the live
+// session, post the prep text as the opening guest_message so the
+// engineer walks in with the context already in front of them. The
+// draft entry then gets deleted (it's been promoted).
+function SessionPrepView({
+  project,
+  draftId,
+  onCallEngineer,
+  onClose,
+  onDraftsChanged,
+}: {
+  project: Project;
+  /** Stored draft id when re-opening an existing draft; null for a
+   *  fresh new-draft session. */
+  draftId: string | null;
+  /** Ring the engineer — wires to handleStartInProject(project.id).
+   *  Same routing as the project's sidebar phone button. Caller should
+   *  also delete the underlying draft (we do this in onCallEngineer
+   *  inside the prep view itself so the side effect is local). */
+  onCallEngineer: () => void;
+  /** Close the prep view, back to the landing. */
+  onClose: () => void;
+  /** Notify the parent that the drafts list changed so the sidebar
+   *  re-reads from localStorage. Fired on save + delete. */
+  onDraftsChanged: () => void;
+}) {
+  // Seed text from the stored draft if we're editing one, else blank.
+  const [draft, setDraft] = useState<string>(() => {
+    if (!draftId) return "";
+    return readSessionDraft(draftId)?.text ?? "";
+  });
+  // Tracks the id of the currently-saved draft (null until first save).
+  const [savedId, setSavedId] = useState<string | null>(draftId);
+  const [savedAt, setSavedAt] = useState<number | null>(() => {
+    if (!draftId) return null;
+    return readSessionDraft(draftId)?.updatedAt ?? null;
+  });
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Autosave: any time draft text changes and we have a saved id,
+  // push the update to localStorage on a 400ms debounce so we don't
+  // hammer storage on every keystroke. New (unsaved) drafts wait for
+  // the explicit Save click — autosave is opt-in.
+  useEffect(() => {
+    if (!savedId) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      const updated = saveSessionDraft({
+        id: savedId,
+        projectId: project.id,
+        text: draft,
+      });
+      setSavedAt(updated.updatedAt);
+      onDraftsChanged();
+    }, 400);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [draft, savedId, project.id, onDraftsChanged]);
+
+  // Promote an unsaved draft into the saved list, OR force a save of
+  // the current debounce buffer if the row already exists. After
+  // this fires the draft shows up in the sidebar under its project.
+  const handleSaveForLater = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    const trimmed = draft.trim();
+    if (!trimmed) {
+      // Empty save = no-op (don't create empty rows in the sidebar).
+      return;
+    }
+    const row = saveSessionDraft({
+      id: savedId,
+      projectId: project.id,
+      text: draft,
+    });
+    setSavedId(row.id);
+    setSavedAt(row.updatedAt);
+    onDraftsChanged();
+    onClose();
+  }, [draft, savedId, project.id, onDraftsChanged, onClose]);
+
+  // Call engineer = ring + consume the draft. We delete the draft row
+  // first (since it's about to become a live session), then trigger
+  // the actual ring via the parent callback. If the parent flow fails
+  // partway, the draft is gone — that's a trade-off for keeping the
+  // sidebar clean and not leaving stale "draft of an active session"
+  // rows behind. TODO: flush the draft text into the live session's
+  // first message in the parent handler (engineer-prep-handoff).
+  const handleCall = useCallback(() => {
+    if (savedId) {
+      deleteSessionDraft(savedId);
+      onDraftsChanged();
+    }
+    onCallEngineer();
+  }, [savedId, onDraftsChanged, onCallEngineer]);
+
+  const handleDeleteDraft = useCallback(() => {
+    if (savedId) {
+      deleteSessionDraft(savedId);
+      onDraftsChanged();
+    }
+    setDraft("");
+    setSavedId(null);
+    setSavedAt(null);
+    onClose();
+  }, [savedId, onDraftsChanged, onClose]);
+
+  const isExisting = !!savedId;
+  const lastSavedLabel = savedAt
+    ? `Saved ${new Date(savedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
+    : "Not saved yet — hit Save for later to keep this draft.";
+
   return (
-    <div
-      className="flex items-start gap-3 rounded-xl border p-4"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)" }}
-    >
-      <span
-        className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
-        style={{ backgroundColor: bg, color: fg }}
+    <div className="flex h-full w-full flex-col" style={{ backgroundColor: "var(--surface)" }}>
+      {/* Header — project name + close. */}
+      <header
+        className="flex shrink-0 items-center gap-3 border-b px-6 py-4"
+        style={{ borderColor: "var(--border)" }}
       >
-        <Phone size={13} />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="text-[14px] font-semibold" style={{ color: "var(--text)" }}>
-          {label}
+        <div className="flex flex-1 items-center gap-3 min-w-0">
+          <Folder size={14} style={{ color: "var(--primary)" }} />
+          <div className="min-w-0">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text-faint)" }}>
+              {isExisting ? "Editing draft in" : "Preparing a session in"}
+            </div>
+            <div className="truncate text-[15px] font-semibold" style={{ color: "var(--text)" }}>
+              {project.name}
+            </div>
+          </div>
         </div>
-        <div className="mt-1 text-[13px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
-          {blurb}
-        </div>
-      </div>
-    </div>
-  );
-}
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close prep"
+          title="Close"
+          className="flex h-8 w-8 items-center justify-center rounded-md transition-opacity hover:bg-black/5 dark:hover:bg-white/5"
+          style={{ color: "var(--text-muted)" }}
+        >
+          <X size={16} />
+        </button>
+      </header>
 
-// StateCard — a status dot + label + blurb, used for the Online/Busy/
-// Offline three-up under the "when you tap a green icon" header.
-function StateCard({
-  dot, label, blurb,
-}: { dot: string; label: string; blurb: string }) {
-  return (
-    <div
-      className="rounded-lg border p-3"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
-    >
-      <div className="flex items-center gap-2">
-        <span aria-hidden className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: dot }} />
-        <span className="text-[13px] font-semibold" style={{ color: "var(--text)" }}>{label}</span>
-      </div>
-      <div className="mt-1 text-[12px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
-        {blurb}
-      </div>
-    </div>
-  );
-}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-2xl px-6 py-6">
+          <h2
+            className="text-[20px] font-semibold tracking-tight"
+            style={{ color: "var(--text)", fontFamily: "var(--font-source-serif)" }}
+          >
+            Tell the engineer what you&apos;re working on.
+          </h2>
+          <p className="mt-2 text-[13px]" style={{ color: "var(--text-muted)" }}>
+            Take your time. Drop the context, the bug, the goal — whatever helps. When
+            you&apos;re ready, hit <strong style={{ color: "var(--text)" }}>Call engineer</strong>{" "}
+            and they&apos;ll walk in with this in front of them. Or save it for later and
+            come back any time — your drafts live under the project in the sidebar.
+          </p>
 
-// SpatialCard — left/right orientation cards. Arrow points back into
-// the actual UI region the card describes (← for sidebar, → for chat).
-function SpatialCard({
-  arrow, tag, title, blurb,
-}: { arrow: string; tag: string; title: string; blurb: string }) {
-  return (
-    <div
-      className="rounded-xl border p-4"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)" }}
-    >
-      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text-faint)" }}>
-        <span aria-hidden style={{ color: "var(--primary)" }}>{arrow}</span>
-        <span>{tag}</span>
-      </div>
-      <div className="mt-1.5 text-[15px] font-semibold" style={{ color: "var(--text)" }}>
-        {title}
-      </div>
-      <div className="mt-1.5 text-[13px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
-        {blurb}
-      </div>
-    </div>
-  );
-}
+          <div
+            className="mt-5 rounded-2xl border p-4"
+            style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)" }}
+          >
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              rows={14}
+              placeholder={"What are you trying to do?\nWhat's going wrong?\nAny files / repos / screenshots you want them to see?"}
+              className="block w-full resize-none bg-transparent text-[14px] leading-relaxed outline-none placeholder:opacity-50"
+              style={{ color: "var(--text)" }}
+            />
 
-// FlowStep — numbered lifecycle card (Connect / Build / Ship). The
-// large numeral on the left anchors the eye to the step ordering.
-function FlowStep({
-  n, title, blurb,
-}: { n: string; title: string; blurb: string }) {
-  return (
-    <div
-      className="flex items-start gap-3 rounded-xl border p-4"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)" }}
-    >
-      <div
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold"
-        style={{
-          backgroundColor: "var(--primary-soft)",
-          color: "var(--primary)",
-        }}
-      >
-        {n}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="text-[14px] font-semibold" style={{ color: "var(--text)" }}>
-          {title}
-        </div>
-        <div className="mt-1 text-[13px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
-          {blurb}
+            <div className="mt-3 flex items-center gap-1.5">
+              <button
+                type="button"
+                disabled
+                aria-label="Attach file"
+                title="Attachments will travel with the call (coming soon)"
+                className="flex h-8 w-8 shrink-0 cursor-not-allowed items-center justify-center rounded-full opacity-50"
+                style={{ color: "var(--text-muted)", border: "1px solid var(--border)" }}
+              >
+                <Paperclip size={14} />
+              </button>
+              <button
+                type="button"
+                disabled
+                aria-label="Record voice"
+                title="Voice notes will travel with the call (coming soon)"
+                className="flex h-8 w-8 shrink-0 cursor-not-allowed items-center justify-center rounded-full opacity-50"
+                style={{ color: "var(--text-muted)", border: "1px solid var(--border)" }}
+              >
+                <Mic size={14} />
+              </button>
+              <div className="flex-1" />
+              {isExisting && (
+                <button
+                  type="button"
+                  onClick={handleDeleteDraft}
+                  className="text-[11px] underline-offset-2 hover:underline"
+                  style={{ color: "var(--accent-red)" }}
+                >
+                  Delete draft
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Action row — Save for later (secondary) on the left,
+              Call engineer (primary) on the right. The status text
+              between them tells the customer whether anything has been
+              persisted yet so they don't accidentally close on an
+              unsaved draft. */}
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-[12px]" style={{ color: "var(--text-faint)" }}>
+              {lastSavedLabel}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleSaveForLater}
+                disabled={!draft.trim()}
+                className="inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[12px] font-medium transition-colors hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-white/5"
+                style={{
+                  borderColor: "var(--border)",
+                  color: "var(--text)",
+                }}
+              >
+                <Pencil size={11} />
+                Save for later
+              </button>
+              <button
+                type="button"
+                onClick={handleCall}
+                className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-[13px] font-semibold transition-opacity hover:opacity-90"
+                style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+              >
+                <Phone size={13} strokeWidth={2.4} />
+                Call engineer
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -1629,119 +1938,179 @@ function BrandedLanding({
           )}
 
           {/* Horizontal separator between the wordmark/tagline pair
-              (above) and the how-it-works explainer (below). Gives the
-              brand introduction a clean visual break from the
-              instructional content underneath. */}
+              (above) and the explainer below. Quiet visual break only —
+              the explainer that follows is intentionally chrome-light. */}
           <div
             aria-hidden
             className="mt-8 h-px w-full max-w-md"
             style={{ backgroundColor: "var(--border)" }}
           />
 
-          {/* How-it-works explainer — wider redesign, wrapped in its
-              own bordered card so the whole instructional block reads
-              as one cohesive panel rather than a stack of orphaned
-              sub-cards. Sections inside the panel:
-                1. Phone icon legend (2-column card grid)
-                2. Three-up availability state cards
-                3. Two-up spatial UI orientation (← left / right →)
-                4. Three numbered lifecycle steps
-                5. Pricing footnote
-              The grid layouts let the eye absorb each section in one
-              glance instead of reading top-to-bottom. */}
-          <div
-            className="mt-6 w-full rounded-2xl border p-5 text-left text-[15px] leading-relaxed"
-            style={{
-              borderColor: "var(--border)",
-              backgroundColor: "color-mix(in srgb, var(--surface) 70%, transparent)",
-              color: "var(--text-muted)",
-            }}
-          >
+          {/* How-it-works explainer — chrome-light redesign. Same
+              content as the prior card-heavy version, but the visual
+              weight comes from typography + whitespace + tiny color
+              accents rather than nested bordered boxes. Single-column
+              rhythm with one 2-column moment for the spatial
+              left↔right reference. Reads like a polished spec page,
+              not a dashboard widget. */}
+          <div className="mt-8 w-full text-left text-[15px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
 
-            {/* ── 1. Phone icon legend ───────────────────────────────── */}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <LegendCard
-                bg="#0a0a0a"
-                fg="#ffffff"
-                label="Black"
-                blurb="No engineer has worked on this project yet. The first tap routes through our matching engine — a stack-suitable engineer is on the call typically within thirty seconds."
-              />
-              <LegendCard
-                bg={BRAND_GREEN}
-                fg="#ffffff"
-                label="Green"
-                blurb="An engineer has already worked on this project before. They get priority routing when you tap, but you're never locked in — any other available engineer can step in seamlessly."
-              />
-            </div>
-
-            {/* ── 2. Availability states — three-up card row ─────────── */}
-            <div
-              className="mt-3 rounded-xl border p-4"
-              style={{ borderColor: "var(--border)", backgroundColor: "color-mix(in srgb, var(--surface-raised) 60%, transparent)" }}
-            >
-              <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text-faint)" }}>
-                When you tap a green icon
+            {/* ── 1. Phone icon legend — two clean rows, no card chrome ── */}
+            <div className="flex flex-col gap-4">
+              <div className="flex items-start gap-3">
+                <span
+                  className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+                  style={{
+                    backgroundColor: "#0a0a0a",
+                    color: "#ffffff",
+                    // Thin white ring keeps the black circle legible on
+                    // dark + espresso themes (otherwise it disappears
+                    // into the canvas). Low-alpha so it doesn't shout
+                    // on the light theme either.
+                    boxShadow: "inset 0 0 0 1px rgba(255, 255, 255, 0.45)",
+                  }}
+                >
+                  <Phone size={13} />
+                </span>
+                <div>
+                  <span style={{ color: "var(--text)", fontWeight: 600 }}>Black</span>
+                  {" — "}
+                  No engineer has worked on this project yet. The first tap routes through
+                  our matching engine — a stack-suitable engineer is on the call typically
+                  within thirty seconds.
+                </div>
               </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <StateCard
-                  dot={BRAND_GREEN}
-                  label="Online"
-                  blurb="They pick up. Average connection time is under a minute."
-                />
-                <StateCard
-                  dot="var(--warn)"
-                  label="Busy"
-                  blurb="Drop a request and they'll join the moment they wrap their current session."
-                />
-                <StateCard
-                  dot="var(--text-faint)"
-                  label="Offline"
-                  blurb="Pick a slot on their calendar — they'll be back at the scheduled time."
-                />
+              <div className="flex items-start gap-3">
+                <span
+                  className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+                  style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+                >
+                  <Phone size={13} />
+                </span>
+                <div>
+                  <span style={{ color: "var(--text)", fontWeight: 600 }}>Green</span>
+                  {" — "}
+                  An engineer has already worked on this project before. They get priority
+                  routing when you tap, but you're never locked in — any other available
+                  engineer can step in seamlessly.
+                </div>
               </div>
-              <p className="mt-3 text-[13px]" style={{ color: "var(--text-muted)" }}>
-                Don't want to wait? Pick any other engineer instead — they all arrive with the
-                full project memory plus an AI-generated brief, so context handoff is instant.
-              </p>
             </div>
 
-            {/* ── 3. Spatial UI orientation — left / right ──────────── */}
-            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <SpatialCard
-                arrow="←"
-                tag="Left sidebar"
-                title="Project memory"
-                blurb="Every session, every file, every voice note, and every AI-generated summary stays with the project — not the call. When an engineer joins, they have the full history; no &quot;let me get up to speed&quot; delay."
-              />
-              <SpatialCard
-                arrow="→"
-                tag="Right panel"
-                title="Live chat"
-                blurb="Type messages, drop files, send voice notes. The panel wakes the moment your engineer joins; anything you write before that is saved as drafts for them to read on arrival."
-              />
+            {/* Hairline divider between sections — much lighter than a card border */}
+            <div className="my-6 h-px w-full" style={{ backgroundColor: "color-mix(in srgb, var(--border) 50%, transparent)" }} />
+
+            {/* ── 2. Availability states — small section header + inline pills ── */}
+            <div className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text-faint)" }}>
+              When you tap a green icon
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-2 text-[14px]">
+              <span className="inline-flex items-center gap-1.5">
+                <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: BRAND_GREEN }} />
+                <span style={{ color: "var(--text)", fontWeight: 600 }}>Online</span>
+                <span style={{ color: "var(--text-muted)" }}>— instant call, under a minute</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: "var(--warn)" }} />
+                <span style={{ color: "var(--text)", fontWeight: 600 }}>Busy</span>
+                <span style={{ color: "var(--text-muted)" }}>— drop a request, joins after</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: "var(--text-faint)" }} />
+                <span style={{ color: "var(--text)", fontWeight: 600 }}>Offline</span>
+                <span style={{ color: "var(--text-muted)" }}>— book their calendar</span>
+              </span>
+            </div>
+            <p className="mt-3 text-[14px]">
+              Don't want to wait? Pick any other engineer instead — they all arrive with the
+              full project memory plus an AI-generated brief, so context handoff is instant.
+            </p>
+
+            <div className="my-6 h-px w-full" style={{ backgroundColor: "color-mix(in srgb, var(--border) 50%, transparent)" }} />
+
+            {/* ── 3. Spatial UI orientation — two columns, no boxes ─── */}
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--primary)" }}>
+                  ← Left sidebar
+                </div>
+                <div className="mt-1.5 text-[16px] font-semibold" style={{ color: "var(--text)" }}>
+                  Project memory
+                </div>
+                <p className="mt-1.5 text-[14px]">
+                  Every session, every file, every voice note, and every AI-generated summary
+                  stays with the project — not the call. When an engineer joins, they have
+                  the full history; no &ldquo;let me get up to speed&rdquo; delay.
+                </p>
+              </div>
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--primary)" }}>
+                  Right panel →
+                </div>
+                <div className="mt-1.5 text-[16px] font-semibold" style={{ color: "var(--text)" }}>
+                  Live chat
+                </div>
+                <p className="mt-1.5 text-[14px]">
+                  Type messages, drop files, send voice notes. The panel wakes the moment
+                  your engineer joins; anything you write before that is saved as drafts for
+                  them to read on arrival.
+                </p>
+              </div>
             </div>
 
-            {/* ── 4. Lifecycle — three numbered steps ───────────────── */}
-            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <FlowStep
-                n="1"
-                title="Connect"
-                blurb="Tap a phone icon. Once an engineer accepts, a Zoom call opens automatically — voice, chat, and screen share all on at once."
-              />
-              <FlowStep
-                n="2"
-                title="Build"
-                blurb="Work together through the live call. Everything stays searchable in the chat panel afterwards — no notes lost."
-              />
-              <FlowStep
-                n="3"
-                title="Ship"
-                blurb="When you're ready to go live, hand the project off. Your engineer keeps maintaining and enhancing it for as long as you need."
-              />
+            <div className="my-6 h-px w-full" style={{ backgroundColor: "color-mix(in srgb, var(--border) 50%, transparent)" }} />
+
+            {/* ── 4. Numbered lifecycle — single column, simple rows ── */}
+            <div className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text-faint)" }}>
+              How it works
+            </div>
+            <div className="mt-3 flex flex-col gap-3">
+              <div className="flex items-start gap-3">
+                <span
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
+                  style={{ backgroundColor: "var(--primary-soft)", color: "var(--primary)" }}
+                >
+                  1
+                </span>
+                <div>
+                  <span style={{ color: "var(--text)", fontWeight: 600 }}>Connect</span>
+                  {" — "}
+                  Tap a phone icon. Once an engineer accepts, a Zoom call opens automatically:
+                  voice, chat, and screen share all on at once.
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <span
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
+                  style={{ backgroundColor: "var(--primary-soft)", color: "var(--primary)" }}
+                >
+                  2
+                </span>
+                <div>
+                  <span style={{ color: "var(--text)", fontWeight: 600 }}>Build</span>
+                  {" — "}
+                  Work together through the live call. Everything stays searchable in the chat
+                  panel afterwards — no notes lost.
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <span
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
+                  style={{ backgroundColor: "var(--primary-soft)", color: "var(--primary)" }}
+                >
+                  3
+                </span>
+                <div>
+                  <span style={{ color: "var(--text)", fontWeight: 600 }}>Ship</span>
+                  {" — "}
+                  When you're ready to go live, hand the project off. Your engineer keeps
+                  maintaining and enhancing it for as long as you need.
+                </div>
+              </div>
             </div>
 
-            {/* ── 5. Pricing footnote ───────────────────────────────── */}
-            <p className="mt-4 text-center text-[13px]" style={{ color: "var(--text-faint)" }}>
+            {/* ── 5. Pricing footnote ─────────────────────────────── */}
+            <p className="mt-8 text-center text-[13px]" style={{ color: "var(--text-faint)" }}>
               Pay per minute. No subscription, no auto-renew.
             </p>
           </div>
@@ -3334,7 +3703,7 @@ type ProjectGroup = {
 
 const Sidebar = memo(function Sidebar({
   email, customerUserId, session, entitlement, employment, viewingPastId, projects,
-  selectedProjectId, onViewPast, onNewSession, onNewChat, onStartInProject, onRenameProject, onStartNewProject, onCreateProjectWithMetadata, onSelectProject, onWalletClick, onOpenProfile, onOpenBilling, onOpenLegal, onGoHome,
+  selectedProjectId, onViewPast, onNewSession, onNewChat, onStartInProject, onRenameProject, onStartNewProject, onCreateProjectWithMetadata, onSelectProject, onWalletClick, onOpenProfile, onOpenBilling, onOpenLegal, onGoHome, onPrepareSession, draftsTick, onDeleteProject,
 }: {
   email: string;
   customerUserId: string | null;
@@ -3396,6 +3765,20 @@ const Sidebar = memo(function Sidebar({
   /** Return to the BrandedLanding from any side-track view. Clears
    *  account / legal / past-session / project-picker selection. */
   onGoHome: () => void;
+  /** Open the central "Prepare a session" pane for a given project so
+   *  the customer can draft text / drop files / record voice before
+   *  ringing the engineer. Fired from the + button on each project
+   *  header in the accordion, and from clicks on saved draft rows
+   *  (in which case the second arg points at an existing draft id). */
+  onPrepareSession: (projectId: string, draftId?: string | null) => void;
+  /** Incremented every time the drafts list changes (save / delete /
+   *  promote). The ProjectAccordion uses this to invalidate its
+   *  localStorage read so newly-saved drafts appear immediately
+   *  without a route change. */
+  draftsTick: number;
+  /** Open the 2-factor delete-project confirmation modal at the
+   *  RoomClient level. */
+  onDeleteProject: (projectId: string, projectName: string) => void;
 }) {
   // Sidebar starts EXPANDED by default (Order 1 of the Commander brief —
   // Projects expanded, every action labelled, no mystery icons). User can
@@ -3410,17 +3793,17 @@ const Sidebar = memo(function Sidebar({
   const [searchQuery, setSearchQuery] = useState("");
 
   // Filter + sort state for the new sidebar controls.
-  //   statusFilter — defaults to "active" so the user sees live + recent
-  //     work first. "all" includes ended/abandoned sessions; "ended" is
-  //     a focused historical view.
-  //   groupBy — toggles between project-grouped (default) and date-
-  //     grouped views. v1 only wires the state; the date-grouped layout
-  //     itself is TODO (see comment at the render site).
+  //   statusFilter — defaults to "all" so a fresh customer sees their
+  //     full history. "active" narrows to live + recent; "ended" is a
+  //     focused historical view.
+  //   groupBy — "project" is the default: customers think in projects
+  //     first, sessions second. The accordion view shows the project
+  //     list with sessions tucked away under each header; expanding a
+  //     project reveals its sessions for drill-down. "date" flattens
+  //     into a single time-sorted feed across projects.
   //   pinnedIds — session ids the user has pinned. Persisted to
   //     localStorage so the choice survives reloads; promoting to Supabase
   //     is a follow-up that needs a guest_calls.pinned_at column.
-  // Default to "all" — a fresh customer wants to see ALL their history,
-  // not just active sessions. Filter chip lets them narrow down.
   const [statusFilter, setStatusFilter] = useState<"active" | "all" | "ended">("all");
   const [groupBy, setGroupBy] = useState<"project" | "date">("project");
   const [sortBy, setSortBy] = useState<"recent" | "oldest" | "title">("recent");
@@ -3971,7 +4354,11 @@ const Sidebar = memo(function Sidebar({
       <div className="flex flex-col gap-2 px-2 py-1">
         <div className="relative flex flex-col items-center gap-2 py-2">
         {/* Pulsing aura — sits behind the ball, scaled larger via inset
-            negative + opacity-pulses with the heartbeat rhythm. */}
+            negative + opacity-pulses with the heartbeat rhythm. Color
+            derived from var(--primary) via color-mix so the aura
+            matches whichever brand-green the active theme resolves to
+            (was hardcoded rgba(77,200,109) — a muted forest green
+            that didn't match the platform palette). */}
         <span
           aria-hidden="true"
           className="rk-connect-aura pointer-events-none absolute"
@@ -3980,7 +4367,11 @@ const Sidebar = memo(function Sidebar({
             width: 140,
             height: 140,
             borderRadius: "50%",
-            background: "radial-gradient(circle, rgba(77,200,109,0.55) 0%, rgba(77,200,109,0.22) 32%, rgba(77,200,109,0) 65%)",
+            background:
+              "radial-gradient(circle, " +
+              "color-mix(in srgb, var(--primary) 55%, transparent) 0%, " +
+              "color-mix(in srgb, var(--primary) 22%, transparent) 32%, " +
+              "color-mix(in srgb, var(--primary) 0%, transparent) 65%)",
             filter: "blur(8px)",
             zIndex: 0,
           }}
@@ -3991,10 +4382,22 @@ const Sidebar = memo(function Sidebar({
           aria-label="Connect to a Relay engineer"
           className="rk-connect-ball relative flex h-[140px] w-[140px] flex-col items-center justify-center rounded-full text-center transition-transform hover:scale-[1.03] active:scale-[0.97] focus-visible:outline-none focus-visible:ring-4"
           style={{
+            // Ball gradient now keyed off var(--primary) — same green
+            // family as every other brand element on the page. Was the
+            // muted #4d6b40/#3f5c34 forest pair which read as a
+            // separate, dated color. The two overlay highlight/shadow
+            // gradients stay the same to keep the 3D-button look.
             background:
-              "radial-gradient(circle at 30% 25%, rgba(255,255,255,0.32) 0%, rgba(255,255,255,0) 38%), radial-gradient(circle at 70% 75%, rgba(20,30,15,0.22) 0%, rgba(20,30,15,0) 55%), radial-gradient(circle at 50% 50%, #4d6b40 30%, #3f5c34 100%)",
+              "radial-gradient(circle at 30% 25%, rgba(255,255,255,0.32) 0%, rgba(255,255,255,0) 38%), " +
+              "radial-gradient(circle at 70% 75%, rgba(0,0,0,0.20) 0%, rgba(0,0,0,0) 55%), " +
+              "radial-gradient(circle at 50% 50%, " +
+              "var(--primary) 30%, " +
+              "color-mix(in srgb, var(--primary) 70%, #000) 100%)",
             boxShadow:
-              "0 18px 32px rgba(58, 82, 48, 0.32), 0 6px 12px rgba(58, 82, 48, 0.22), inset 0 -8px 14px rgba(20, 30, 15, 0.22), inset 0 8px 14px rgba(255, 255, 255, 0.12)",
+              "0 18px 32px color-mix(in srgb, var(--primary) 32%, transparent), " +
+              "0 6px 12px color-mix(in srgb, var(--primary) 22%, transparent), " +
+              "inset 0 -8px 14px rgba(0, 0, 0, 0.22), " +
+              "inset 0 8px 14px rgba(255, 255, 255, 0.12)",
             zIndex: 1,
           }}
         >
@@ -4302,6 +4705,9 @@ const Sidebar = memo(function Sidebar({
                     onSelectProject={onSelectProject}
                     pinnedIds={pinnedIds}
                     onTogglePin={togglePin}
+                    onPrepareSession={onPrepareSession}
+                    draftsTick={draftsTick}
+                    onDeleteProject={onDeleteProject}
                   />
                 ))
               : (
@@ -5997,7 +6403,7 @@ function fmtRelDate(d: Date): string {
 const ProjectAccordion = memo(function ProjectAccordion({
   group, viewingPastId, currentSessionId, selectedProjectId,
   onViewPast, onStartInProject, onRenameProject, onSelectProject,
-  pinnedIds, onTogglePin,
+  pinnedIds, onTogglePin, onPrepareSession, draftsTick, onDeleteProject,
 }: {
   group: ProjectGroup;
   viewingPastId: string | null;
@@ -6022,8 +6428,24 @@ const ProjectAccordion = memo(function ProjectAccordion({
   pinnedIds: Set<string>;
   /** Toggle pin state for a session id. */
   onTogglePin: (sessionId: string) => void;
+  /** Open the central "Prepare a session" pane for this project. The
+   *  second arg is an optional draft id — pass it to re-open an
+   *  existing saved draft for editing. */
+  onPrepareSession: (projectId: string, draftId?: string | null) => void;
+  /** Bumped when any draft is saved / deleted. Forces a fresh
+   *  localStorage read so newly-saved drafts surface immediately. */
+  draftsTick: number;
+  /** Open the 2-factor confirmation modal for deleting this project.
+   *  The actual delete fires after the modal validates password + name
+   *  + literal "delete the project" phrase. */
+  onDeleteProject: (projectId: string, projectName: string) => void;
 }) {
-  const [open, setOpen] = useState(true);
+  // Accordions start COLLAPSED on initial mount. Customers see the
+  // project list first and drill into any project they want to act on
+  // — either to start a new session or browse past sessions. This is
+  // the "filing cabinet" mental model: the drawers stay closed until
+  // you choose to pull one open.
+  const [open, setOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [draftName, setDraftName] = useState(group.name);
   const [renameBusy, setRenameBusy] = useState(false);
@@ -6031,6 +6453,30 @@ const ProjectAccordion = memo(function ProjectAccordion({
   // "started in" — sessions go there only as a fallback.
   const isGeneral = group.key === "general";
   const isSelected = !isGeneral && selectedProjectId === group.key;
+
+  // Saved drafts for this project (from localStorage). Re-read whenever
+  // draftsTick bumps (parent fires this after any save/delete) so newly
+  // saved drafts surface in the sidebar immediately. The General bucket
+  // doesn't carry drafts (drafts always belong to a real project id).
+  const drafts = useMemo<SessionDraft[]>(() => {
+    if (isGeneral) return [];
+    return listDraftsForProject(group.key);
+    // draftsTick included to invalidate the cache on save/delete.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [group.key, draftsTick, isGeneral]);
+
+  // Overflow menu state (… button) — Rename + Delete actions.
+  const [overflowOpen, setOverflowOpen] = useState(false);
+  // Close on outside-click.
+  useEffect(() => {
+    if (!overflowOpen) return;
+    const t = setTimeout(() => {
+      const handler = () => setOverflowOpen(false);
+      document.addEventListener("click", handler);
+      return () => document.removeEventListener("click", handler);
+    }, 0);
+    return () => clearTimeout(t);
+  }, [overflowOpen]);
 
   const commitRename = async () => {
     const trimmed = draftName.trim();
@@ -6110,6 +6556,20 @@ const ProjectAccordion = memo(function ProjectAccordion({
         </button>
         {!isGeneral && !renaming && (
           <>
+            {/* + button — opens the central "Prepare a session" pane
+                for this project. Customer drafts the problem (text,
+                files, voice) BEFORE calling. When ready, they hit the
+                phone button next door to ring the engineer who walks
+                in with the prepared context. */}
+            <button
+              onClick={(e) => { e.stopPropagation(); onPrepareSession(group.key); }}
+              title={`Prepare a new session in ${group.name}`}
+              aria-label={`Prepare a new session in ${group.name}`}
+              className="inline-flex size-6 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-[var(--surface-raised)]"
+              style={{ color: "var(--text-muted)" }}
+            >
+              <Plus size={14} />
+            </button>
             {/* Per-project call button. Color reflects engineer history:
                 BLACK when the project has never had an engineer session
                 (cold start — clicking triggers skill-match to find one);
@@ -6138,28 +6598,77 @@ const ProjectAccordion = memo(function ProjectAccordion({
                   title={buttonTitle}
                   aria-label={buttonTitle}
                   className="ml-1 inline-flex size-6 shrink-0 items-center justify-center rounded-full text-white shadow-sm transition-colors hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)]"
-                  style={{ backgroundColor: isWarm ? BRAND_GREEN : "#0a0a0a" }}
+                  style={{
+                    backgroundColor: isWarm ? BRAND_GREEN : "#0a0a0a",
+                    // Cold (black) button gets a thin white ring so it
+                    // stays visible against the dark / espresso sidebar.
+                    // The green button doesn't need it — green on dark
+                    // already has plenty of contrast.
+                    boxShadow: isWarm
+                      ? undefined
+                      : "inset 0 0 0 1px rgba(255, 255, 255, 0.45)",
+                  }}
                 >
                   <Phone size={11} strokeWidth={2.4} />
                 </button>
               );
             })()}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                // Lightweight overflow — for now this opens the rename
-                // affordance. Future: a popover menu with rename / new
-                // session / archive.
-                setDraftName(group.name);
-                setRenaming(true);
-              }}
-              title={`More actions for ${group.name}`}
-              aria-label={`More actions for ${group.name}`}
-              className="ml-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-raised)]"
-              style={{ color: "var(--text-muted)" }}
-            >
-              <MoreHorizontal size={14} />
-            </button>
+            {/* Overflow menu — Rename + Delete actions. Delete opens
+                a 2-factor confirmation modal at the RoomClient level
+                (password + project name + literal "delete the project"
+                phrase) before any destructive action runs. */}
+            <div className="relative" onClick={(e) => e.stopPropagation()}>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOverflowOpen((v) => !v);
+                }}
+                title={`More actions for ${group.name}`}
+                aria-label={`More actions for ${group.name}`}
+                className="ml-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-raised)]"
+                style={{ color: "var(--text-muted)" }}
+              >
+                <MoreHorizontal size={14} />
+              </button>
+              {overflowOpen && (
+                <div
+                  className="absolute right-0 top-full z-30 mt-1 min-w-[160px] overflow-hidden rounded-lg border shadow-xl"
+                  style={{
+                    borderColor: "var(--border)",
+                    backgroundColor: "var(--surface)",
+                    boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOverflowOpen(false);
+                      setDraftName(group.name);
+                      setRenaming(true);
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                    style={{ color: "var(--text)" }}
+                  >
+                    <Pencil size={12} />
+                    Rename project
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOverflowOpen(false);
+                      onDeleteProject(group.key, group.name);
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                    style={{ color: "var(--accent-red)" }}
+                  >
+                    <X size={12} />
+                    Delete project
+                  </button>
+                </div>
+              )}
+            </div>
           </>
         )}
       </div>
@@ -6168,9 +6677,65 @@ const ProjectAccordion = memo(function ProjectAccordion({
           auto-created when the customer calls an engineer for the
           project (via the green phone button on the row), so we don't
           need a separate "start your first session" affordance inside
-          the expanded folder. */}
+          the expanded folder.
+
+          When the project has saved drafts, they render ABOVE the
+          session rows with distinctive amber styling so the customer
+          can tell at a glance "this isn't a real session yet — it's
+          something I prepared." Clicking a draft re-opens the prep
+          view loaded with that draft. */}
       {open && (
         <div className="ml-2 mt-0.5 space-y-0.5">
+          {drafts.length > 0 && (
+            <>
+              {drafts.map((d) => (
+                <button
+                  key={d.id}
+                  onClick={() => onPrepareSession(group.key, d.id)}
+                  title={`Resume draft · last saved ${new Date(d.updatedAt).toLocaleString()}`}
+                  className="flex w-full items-start gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors hover:bg-[color-mix(in_srgb,var(--warn)_8%,transparent)]"
+                  style={{
+                    // Amber accent — same colour family the rest of the
+                    // app uses for the Busy engineer state, intentional
+                    // overlap (both mean "in flight, not yet committed").
+                    // Dashed border keeps the "not a real session"
+                    // visual at a glance.
+                    borderColor: "color-mix(in srgb, var(--warn) 40%, transparent)",
+                    borderStyle: "dashed",
+                    backgroundColor: "color-mix(in srgb, var(--warn) 5%, transparent)",
+                  }}
+                >
+                  <Pencil
+                    size={12}
+                    className="mt-0.5 shrink-0"
+                    style={{ color: "var(--warn)" }}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className="rounded-full px-1 py-0 text-[8px] font-semibold uppercase tracking-wider"
+                        style={{
+                          backgroundColor: "color-mix(in srgb, var(--warn) 18%, transparent)",
+                          color: "var(--warn)",
+                        }}
+                      >
+                        Draft
+                      </span>
+                      <span
+                        className="truncate text-[12px] font-medium"
+                        style={{ color: "var(--text)" }}
+                      >
+                        {deriveDraftTitle(d)}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 text-[10px]" style={{ color: "var(--text-muted)" }}>
+                      Saved {fmtRelDate(new Date(d.updatedAt))}
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </>
+          )}
           {group.sessions.length === 0 && !isGeneral ? null : group.sessions
               // Sorting (pin-aware + date-desc) is applied upstream in
               // projectGroups so we can preserve it here.
