@@ -15,7 +15,7 @@ import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-
 import { Button, EmptyState } from "@/app/_components/ui";
 import { useTheme } from "@/app/_components/ThemeProvider";
 import { buildStripeAppearance } from "@/lib/stripe/appearance";
-import { useApiData, eur, num, TabBody, StatCard, LoadingState, ErrorState } from "./_shared";
+import { useApiData, eur, num, StatCard, LoadingState, ErrorState } from "./_shared";
 
 const STRIPE_PUBLISHABLE_KEY =
   (typeof process !== "undefined" && process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) || "";
@@ -44,15 +44,15 @@ export function WalletTab() {
   const { data, loading, error, reload } = useApiData<WalletData>("/api/enterprise/wallet");
   const [buying, setBuying] = useState<Bundle | null>(null);
 
-  if (loading) return <TabBody><LoadingState /></TabBody>;
-  if (error) return <TabBody><ErrorState message={error} onRetry={reload} /></TabBody>;
-  if (!data) return <TabBody><ErrorState message="No wallet data" onRetry={reload} /></TabBody>;
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState message={error} onRetry={reload} />;
+  if (!data) return <ErrorState message="No wallet data" onRetry={reload} />;
 
   const free = Math.max(0, data.remainingMinutes - data.distributedMinutes);
   const low = data.remainingMinutes <= LOW_BALANCE_MIN;
 
   return (
-    <TabBody>
+    <section>
       <h1 className="mb-1 font-serif text-2xl font-medium" style={{ color: "var(--text)" }}>Wallet</h1>
       <p className="mb-6 text-sm" style={{ color: "var(--text-muted)" }}>
         Prepaid minutes · pay-per-minute, no subscription. Buy minutes once — they never expire.
@@ -108,7 +108,7 @@ export function WalletTab() {
           onCredited={() => { setBuying(null); reload(); }}
         />
       )}
-    </TabBody>
+    </section>
   );
 }
 
