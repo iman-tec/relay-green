@@ -31,7 +31,7 @@ import {
   Wallet, RefreshCw, Settings, LogOut, Check, Folder, Pencil, PanelRightOpen, PanelRightClose,
   Building2, FileText, Clock, Video, MoreHorizontal, UserPlus, Pin, SlidersHorizontal,
   Paperclip, Mic, Download, Music, AudioLines, ShieldCheck, Receipt, Home,
-  Trash2,
+  Trash2, Rocket, Wrench,
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { ThemeTriplet } from "@/app/_components/ThemeTriplet";
@@ -64,6 +64,7 @@ import {
 import { IntakeAssistant } from "@/app/_components/intake/IntakeAssistant";
 import { GlobalNewChatModal } from "@/app/_components/GlobalNewChatModal";
 import { EditableSummary } from "@/app/_components/EditableSummary";
+import { QuoteRequestModal } from "@/app/_components/QuoteRequestModal";
 import type { GuestCall, GuestMessage, GuestMessageAttachment, SessionStatus, Urgency } from "@/lib/supabase/types";
 import { signedDownloadUrl } from "@/lib/relay/chatAttachments";
 
@@ -2090,9 +2091,7 @@ function BrandedLanding({
                 <div>
                   <span style={{ color: "var(--text)", fontWeight: 600 }}>Black</span>
                   {" — "}
-                  No engineer has worked on this project yet. The first tap routes through
-                  our matching engine — a stack-suitable engineer is on the call typically
-                  within thirty seconds.
+                  No engineer yet. Tap to match a stack-fit engineer; on the call in under a minute.
                 </div>
               </div>
               <div className="flex items-start gap-3">
@@ -2105,9 +2104,7 @@ function BrandedLanding({
                 <div>
                   <span style={{ color: "var(--text)", fontWeight: 600 }}>Green</span>
                   {" — "}
-                  An engineer has already worked on this project before. They get priority
-                  routing when you tap, but you're never locked in — any other available
-                  engineer can step in seamlessly.
+                  Worked here before. Priority routes to them — swap to any other engineer any time.
                 </div>
               </div>
             </div>
@@ -2137,8 +2134,7 @@ function BrandedLanding({
               </span>
             </div>
             <p className="mt-3 text-[14px]">
-              Don't want to wait? Pick any other engineer instead — they all arrive with the
-              full project memory plus an AI-generated brief, so context handoff is instant.
+              Don't want to wait? Pick anyone else — every engineer arrives with full project memory and an AI brief. Zero ramp-up.
             </p>
 
             <div className="my-6 h-px w-full" style={{ backgroundColor: "color-mix(in srgb, var(--border) 50%, transparent)" }} />
@@ -2153,9 +2149,7 @@ function BrandedLanding({
                   Project memory
                 </div>
                 <p className="mt-1.5 text-[14px]">
-                  Every session, every file, every voice note, and every AI-generated summary
-                  stays with the project — not the call. When an engineer joins, they have
-                  the full history; no &ldquo;let me get up to speed&rdquo; delay.
+                  Every session, file, voice note, and AI summary stays with the project — not the call. New engineers join with full history. No catch-up.
                 </p>
               </div>
               <div>
@@ -2166,9 +2160,7 @@ function BrandedLanding({
                   Live chat
                 </div>
                 <p className="mt-1.5 text-[14px]">
-                  Type messages, drop files, send voice notes. The panel wakes the moment
-                  your engineer joins; anything you write before that is saved as drafts for
-                  them to read on arrival.
+                  Type, attach files, record voice notes. The panel goes live when your engineer joins — anything written before is saved as a draft for them.
                 </p>
               </div>
             </div>
@@ -2190,8 +2182,7 @@ function BrandedLanding({
                 <div>
                   <span style={{ color: "var(--text)", fontWeight: 600 }}>Connect</span>
                   {" — "}
-                  Tap a phone icon. Once an engineer accepts, a Zoom call opens automatically:
-                  voice, chat, and screen share all on at once.
+                  Tap a phone icon. Engineer accepts → Zoom opens with voice, chat, and screen share in one shot.
                 </div>
               </div>
               <div className="flex items-start gap-3">
@@ -2204,8 +2195,7 @@ function BrandedLanding({
                 <div>
                   <span style={{ color: "var(--text)", fontWeight: 600 }}>Build</span>
                   {" — "}
-                  Work together through the live call. Everything stays searchable in the chat
-                  panel afterwards — no notes lost.
+                  Work together live. Everything stays searchable in the chat panel afterwards — no notes lost.
                 </div>
               </div>
               <div className="flex items-start gap-3">
@@ -2218,8 +2208,7 @@ function BrandedLanding({
                 <div>
                   <span style={{ color: "var(--text)", fontWeight: 600 }}>Ship</span>
                   {" — "}
-                  When you're ready to go live, hand the project off. Your engineer keeps
-                  maintaining and enhancing it for as long as you need.
+                  Hand the project off when you're ready. Your engineer keeps maintaining and enhancing it for as long as you need.
                 </div>
               </div>
             </div>
@@ -3937,6 +3926,10 @@ const Sidebar = memo(function Sidebar({
   const toggleCollapsed = (next: boolean) => setCollapsed(next);
 
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  // Quote-request flow: null = closed; "golive" = ship-it lead;
+  // "maintain" = ongoing maintenance/enhancement lead. Both kinds use
+  // the same QuoteRequestModal component, distinguished by the prop.
+  const [quoteFlow, setQuoteFlow] = useState<"golive" | "maintain" | null>(null);
   const [past, setPast] = useState<PastSession[]>([]);
   // Global search — filters both project names and session titles/agents.
   const [searchQuery, setSearchQuery] = useState("");
@@ -4922,6 +4915,59 @@ const Sidebar = memo(function Sidebar({
         })()}
       </div>
 
+      {/* Quote-request shortcuts — sit directly above the user pill so
+          they're always reachable but visually quieter than the primary
+          session/project nav. Two leads:
+            • GoLive   — customer wants to ship the project
+            • Maintain — ongoing maintenance / enhancement
+          Both open the same QuoteRequestModal, distinguished by kind.
+          Suppressed for employees: their org runs on a separate billing
+          relationship; the quote flow is for direct-billed customers. */}
+      {!employment && (
+        <div className="border-t px-2 pt-2 pb-1" style={{ borderColor: "var(--border)" }}>
+          <button
+            type="button"
+            onClick={() => setQuoteFlow("golive")}
+            className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          >
+            <span
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+              style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
+            >
+              <Rocket size={13} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[12px]" style={{ color: "var(--text)" }}>
+                Quote to GoLive
+              </span>
+              <span className="block text-[10px]" style={{ color: "var(--text-muted)" }}>
+                Ship this project — get a quote
+              </span>
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setQuoteFlow("maintain")}
+            className="mt-1 flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          >
+            <span
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+              style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
+            >
+              <Wrench size={13} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[12px]" style={{ color: "var(--text)" }}>
+                Quote to Maintain / Enhance
+              </span>
+              <span className="block text-[10px]" style={{ color: "var(--text-muted)" }}>
+                Ongoing work — get an estimate
+              </span>
+            </span>
+          </button>
+        </div>
+      )}
+
       {/* Profile (bottom) */}
       <div className="relative border-t p-2" style={{ borderColor: "var(--border)" }}>
         <button
@@ -4958,6 +5004,22 @@ const Sidebar = memo(function Sidebar({
           />
         )}
       </div>
+
+      {/* Quote-request modal — same component for both GoLive and
+          Maintain leads; the `kind` prop drives the copy + the RPC
+          payload. We feed it the existing project list (filtered to
+          real projects, not the synthetic "general" bucket). If a
+          project was already selected when the customer opened the
+          modal, pre-fill it so they skip step 1. */}
+      {quoteFlow !== null && (
+        <QuoteRequestModal
+          kind={quoteFlow}
+          projects={projects.map((p) => ({ id: p.id, name: p.name }))}
+          initialProjectId={selectedProjectId}
+          onClose={() => setQuoteFlow(null)}
+        />
+      )}
+
       {/* Connect-flow modal — 5-step micro-flow now. */}
       {connectFlow !== null && (
         <ConnectFlowModal
