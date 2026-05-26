@@ -62,6 +62,7 @@ import {
 } from "@/lib/relay/sessionDrafts";
 import { IntakeAssistant } from "@/app/_components/intake/IntakeAssistant";
 import { GlobalNewChatModal } from "@/app/_components/GlobalNewChatModal";
+import { EditableSummary } from "@/app/_components/EditableSummary";
 import type { GuestCall, GuestMessage, GuestMessageAttachment, SessionStatus, Urgency } from "@/lib/supabase/types";
 import { signedDownloadUrl } from "@/lib/relay/chatAttachments";
 
@@ -1578,7 +1579,13 @@ const MainPane = memo(function MainPane({
   // User clicked a past session in the sidebar — PastSessionReview owns
   // the full split (read-only chat | summary).
   if (viewingPastId) {
-    return <PastSessionReview sessionId={viewingPastId} onClose={onCloseViewPast} />;
+    return (
+      <PastSessionReview
+        sessionId={viewingPastId}
+        onClose={onCloseViewPast}
+        currentUserId={state.auth.kind === "authed" ? state.auth.userId : null}
+      />
+    );
   }
 
   // Just-ended session: same split as PastSessionReview so the layout
@@ -1588,7 +1595,13 @@ const MainPane = memo(function MainPane({
   // The actual chat history during the call rolls into the AI summary,
   // so the customer doesn't lose anything by not seeing the timeline.
   if (session?.status === "ended") {
-    return <EndedSessionReview session={session} messages={state.messages} />;
+    return (
+      <EndedSessionReview
+        session={session}
+        messages={state.messages}
+        currentUserId={state.auth.kind === "authed" ? state.auth.userId : null}
+      />
+    );
   }
 
   // No active session (or stale cancelled / abandoned one). Show the
@@ -3099,15 +3112,17 @@ function ChatPanelStub({
 function EndedSessionReview({
   session,
   messages,
+  currentUserId,
 }: {
   session: GuestCall;
   messages: GuestMessage[];
+  currentUserId: string | null;
 }) {
   const [chatCollapsed, setChatCollapsed] = useState(false);
   return (
     <div className="flex h-full w-full">
       <div className="flex min-w-0 flex-1 flex-col">
-        <SummaryPanel session={session} messages={messages} />
+        <SummaryPanel session={session} messages={messages} currentUserId={currentUserId} />
       </div>
       <ChatPanelStub
         sidebarCollapsed={chatCollapsed}
@@ -3129,7 +3144,15 @@ function EndedSessionReview({
 //                    consistent across "no session" and "past session"
 //                    states so the customer always knows where chat
 //                    lives.
-function PastSessionReview({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
+function PastSessionReview({
+  sessionId,
+  onClose,
+  currentUserId,
+}: {
+  sessionId: string;
+  onClose: () => void;
+  currentUserId: string | null;
+}) {
   const [row, setRow] = useState<GuestCall | null>(null);
   const [msgs, setMsgs] = useState<GuestMessage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -3163,7 +3186,7 @@ function PastSessionReview({ sessionId, onClose }: { sessionId: string; onClose:
   return (
     <div className="flex h-full w-full">
       <div className="flex min-w-0 flex-1 flex-col">
-        <SummaryPanel session={row} messages={msgs} onClose={onClose} />
+        <SummaryPanel session={row} messages={msgs} onClose={onClose} currentUserId={currentUserId} />
       </div>
       <ChatPanelStub
         sidebarCollapsed={chatCollapsed}
@@ -3278,7 +3301,18 @@ function ReadOnlyChatPane({
 // Summary-only sidebar for past + just-ended sessions. Replaces the older
 // ReviewPanel that tabbed between Summary and Chat history — chat history
 // now lives in the main chat pane, so the sidebar focuses on the AI summary.
-function SummaryPanel({ session, messages, onClose }: { session: GuestCall; messages: GuestMessage[]; onClose?: () => void }) {
+function SummaryPanel({
+  session,
+  messages,
+  onClose,
+  currentUserId,
+}: {
+  session: GuestCall;
+  messages: GuestMessage[];
+  onClose?: () => void;
+  /** Forwarded into SummaryView for canEdit gating. */
+  currentUserId: string | null;
+}) {
   return (
     <section
       className="flex h-full flex-col border-l"
@@ -3301,7 +3335,7 @@ function SummaryPanel({ session, messages, onClose }: { session: GuestCall; mess
           </button>
         )}
       </div>
-      <SummaryView session={session} messages={messages} />
+      <SummaryView session={session} messages={messages} currentUserId={currentUserId} />
     </section>
   );
 }
@@ -7293,11 +7327,13 @@ const Message = memo(function Message({ message }: { message: GuestMessage }) {
 
 // ── Review panel (post-ended: summary + chat history with pill tabs) ───────
 function ReviewPanel({
-  session, messages, onClose,
+  session, messages, onClose, currentUserId,
 }: {
   session: GuestCall;
   messages: GuestMessage[];
   onClose?: () => void;
+  /** Forwarded into SummaryView for canEdit gating. */
+  currentUserId: string | null;
 }) {
   const [tab, setTab] = useState<"summary" | "chat">("summary");
   const messageCount = messages.filter((m) => m.sender_kind !== "system").length;
@@ -7340,7 +7376,7 @@ function ReviewPanel({
       </div>
 
       {tab === "summary" ? (
-        <SummaryView session={session} messages={messages} />
+        <SummaryView session={session} messages={messages} currentUserId={currentUserId} />
       ) : (
         <ChatHistoryView messages={messages} />
       )}
@@ -7370,13 +7406,45 @@ function PillTab({
   );
 }
 
-function SummaryView({ session, messages }: { session: GuestCall; messages: GuestMessage[] }) {
+function SummaryView({
+  session,
+  messages,
+  currentUserId,
+}: {
+  session: GuestCall;
+  messages: GuestMessage[];
+  /**
+   * Authenticated user id, when known. The server-side RPC
+   * update_guest_call_summary enforces the actual permission check —
+   * we only need this to decide whether to render the edit affordance.
+   */
+  currentUserId: string | null;
+}) {
   const title = session.ai_summary_title;
   const overview = session.ai_summary_overview ?? session.summary;
   const nextSteps = Array.isArray(session.ai_next_steps as unknown)
     ? (session.ai_next_steps as unknown as Array<string | { text?: string; description?: string }>)
     : [];
   const dur = session.duration_minutes != null ? Math.round(Number(session.duration_minutes)) : 0;
+  // Customer or engineer of THIS session may edit the AI summary. Server
+  // RPC enforces this again — the UI gate just avoids dangling pencils.
+  const canEdit =
+    !!currentUserId &&
+    (currentUserId === session.customer_user_id || currentUserId === session.claimed_by);
+  const handleSummarySave = useCallback(
+    async (patch: { title?: string | null; overview?: string | null; nextSteps?: string[] }) => {
+      const sb = createClient();
+      // Pass NULL (= keep existing) for any field the patch didn't include.
+      const { error } = await sb.rpc("update_guest_call_summary", {
+        _call_id: session.id,
+        _title: patch.title === undefined ? null : patch.title ?? "",
+        _overview: patch.overview === undefined ? null : patch.overview ?? "",
+        _next_steps: patch.nextSteps === undefined ? null : patch.nextSteps,
+      });
+      if (error) throw new Error(error.message);
+    },
+    [session.id],
+  );
   // Per-call Zoom AI Companion summaries arrive as system chat messages
   // (see zoom-webhook.handleSummaryCompleted). Surface them in the sidebar
   // alongside the aggregated chat summary so both signals live together.
@@ -7447,35 +7515,16 @@ function SummaryView({ session, messages }: { session: GuestCall; messages: Gues
         </p>
       ) : (
         <div className="space-y-5">
-          {title && (
-            <h2
-              className="text-xl font-medium"
-              style={{ fontFamily: "var(--font-source-serif)", color: "var(--text)", letterSpacing: "-0.01em" }}
-            >
-              {title}
-            </h2>
-          )}
-          <p className="whitespace-pre-wrap text-sm leading-relaxed" style={{ color: "var(--text)" }}>
-            {overview}
-          </p>
-          {nextSteps.length > 0 && (
-            <div>
-              <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-                Next steps
-              </h3>
-              <ul className="space-y-1.5">
-                {nextSteps.map((s, i) => {
-                  const text = typeof s === "string" ? s : (s.text ?? s.description ?? "");
-                  return (
-                    <li key={i} className="flex gap-2 text-sm" style={{ color: "var(--text)" }}>
-                      <span style={{ color: BRAND_GREEN }}>→</span>
-                      <span>{text}</span>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          )}
+          {/* Title + overview + next-steps — all three inline-editable for
+              the customer/engineer who own this session. Read-only for
+              everyone else (supervisor view, etc). */}
+          <EditableSummary
+            title={title}
+            overview={overview}
+            nextSteps={nextSteps}
+            canEdit={canEdit}
+            onSave={handleSummarySave}
+          />
           {zoomCompanionMessages.length > 0 && (
             <div className="pt-2">
               <h3 className="mb-3 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>

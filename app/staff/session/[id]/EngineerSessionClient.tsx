@@ -29,6 +29,7 @@ import { MeetingChatEntry } from "@/app/_components/MeetingChatEntry";
 import { MeetingSummaryEntry, isAiSummaryMessageBody } from "@/app/_components/MeetingSummaryEntry";
 import { ChatComposer } from "@/app/_components/ChatComposer";
 import { MessageAttachments } from "@/app/_components/MessageAttachments";
+import { EditableSummary } from "@/app/_components/EditableSummary";
 import { createClient } from "@/lib/supabase/browser";
 import { useEngineerSession } from "@/lib/relay/useEngineerSession";
 import { useIsSupervisor, isSupervisorOnlyMessage } from "@/lib/relay/useIsSupervisor";
@@ -330,7 +331,11 @@ function MainPane({
         </Panel>
         <Resizer />
         <Panel defaultSize={40} minSize={28} order={2}>
-          <ReviewPanel session={session} messages={state.messages} />
+          <ReviewPanel
+            session={session}
+            messages={state.messages}
+            currentUserId={state.viewerUserId}
+          />
         </Panel>
       </PanelGroup>
     );
@@ -1252,7 +1257,16 @@ function DateSeparator({ iso }: { iso: string }) {
 // Matches the customer-side SummaryPanel in RoomClient — single SUMMARY
 // header + SummaryView. The Chat-history tab was dropped because the full
 // chat already lives in the main pane on the left.
-function ReviewPanel({ session, messages }: { session: GuestCall; messages: GuestMessage[] }) {
+function ReviewPanel({
+  session,
+  messages,
+  currentUserId,
+}: {
+  session: GuestCall;
+  messages: GuestMessage[];
+  /** Engineer's auth user id — forwarded to SummaryView for canEdit gating. */
+  currentUserId: string | null;
+}) {
   return (
     <section
       className="flex h-full flex-col border-l"
@@ -1264,18 +1278,50 @@ function ReviewPanel({ session, messages }: { session: GuestCall; messages: Gues
           Summary
         </span>
       </div>
-      <SummaryView session={session} messages={messages} />
+      <SummaryView session={session} messages={messages} currentUserId={currentUserId} />
     </section>
   );
 }
 
-function SummaryView({ session, messages }: { session: GuestCall; messages: GuestMessage[] }) {
+function SummaryView({
+  session,
+  messages,
+  currentUserId,
+}: {
+  session: GuestCall;
+  messages: GuestMessage[];
+  /**
+   * Engineer's auth.uid. Server RPC update_guest_call_summary enforces the
+   * actual ownership check — this is only the UI gate on the pencil icons.
+   * Either the assigned engineer or the customer of the session may edit.
+   */
+  currentUserId: string | null;
+}) {
   const title = session.ai_summary_title;
   const overview = session.ai_summary_overview ?? session.summary;
   const nextSteps = Array.isArray(session.ai_next_steps as unknown)
     ? (session.ai_next_steps as unknown as Array<string | { text?: string; description?: string }>)
     : [];
   const dur = session.duration_minutes != null ? Math.round(Number(session.duration_minutes)) : 0;
+  // Engineer who claimed the session OR the customer who owns it may edit.
+  // Supervisors don't have an entry here — they hit the read-only branch.
+  const canEdit =
+    !!currentUserId &&
+    (currentUserId === session.customer_user_id || currentUserId === session.claimed_by);
+  const handleSummarySave = async (patch: {
+    title?: string | null;
+    overview?: string | null;
+    nextSteps?: string[];
+  }) => {
+    const sb = createClient();
+    const { error } = await sb.rpc("update_guest_call_summary", {
+      _call_id: session.id,
+      _title: patch.title === undefined ? null : patch.title ?? "",
+      _overview: patch.overview === undefined ? null : patch.overview ?? "",
+      _next_steps: patch.nextSteps === undefined ? null : patch.nextSteps,
+    });
+    if (error) throw new Error(error.message);
+  };
   // Per-call Zoom AI Companion summaries arrive as system chat messages
   // (zoom-webhook.handleSummaryCompleted). Show them in the sidebar
   // alongside the aggregated chat summary so both signals live together.
@@ -1340,32 +1386,16 @@ function SummaryView({ session, messages }: { session: GuestCall; messages: Gues
         <p className="py-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>No summary available.</p>
       ) : (
         <div className="space-y-5">
-          {title && (
-            <h2 className="text-xl font-medium"
-              style={{ fontFamily: "var(--font-source-serif)", color: "var(--text)", letterSpacing: "-0.01em" }}>
-              {title}
-            </h2>
-          )}
-          <p className="whitespace-pre-wrap text-sm leading-relaxed" style={{ color: "var(--text)" }}>
-            {overview}
-          </p>
-          {nextSteps.length > 0 && (
-            <div>
-              <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-                Next steps
-              </h3>
-              <ul className="space-y-1.5">
-                {nextSteps.map((s, i) => {
-                  const text = typeof s === "string" ? s : (s.text ?? s.description ?? "");
-                  return (
-                    <li key={i} className="flex gap-2 text-sm" style={{ color: "var(--text)" }}>
-                      <span style={{ color: BRAND_GREEN }}>→</span><span>{text}</span>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          )}
+          {/* Inline-editable title / overview / next-steps. The assigned
+              engineer and the customer of this session both get the edit
+              pencil; everyone else (supervisors, observers) sees read-only. */}
+          <EditableSummary
+            title={title}
+            overview={overview}
+            nextSteps={nextSteps}
+            canEdit={canEdit}
+            onSave={handleSummarySave}
+          />
           {zoomCompanionMessages.length > 0 && (
             <div className="pt-2">
               <h3 className="mb-3 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
