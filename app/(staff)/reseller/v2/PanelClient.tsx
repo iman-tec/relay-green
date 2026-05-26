@@ -17,7 +17,7 @@ import { SignOutButton } from "@/app/_components/admin-v2/SignOutButton";
 import { UserChip } from "@/app/_components/admin-v2/UserChip";
 import { ThemeTriplet } from "@/app/_components/ThemeTriplet";
 import { PartnerDashboardTab } from "./PartnerDashboardTab";
-import { EnterpriseTab } from "./EnterpriseTab";
+import { ClientsTab } from "./ClientsTab";
 import { RevenueTab } from "./RevenueTab";
 import { PartnerSettingsTab } from "./PartnerSettingsTab";
 
@@ -56,7 +56,7 @@ export function PanelClient({ me }: { me: { email: string; roleLabel: string } }
       />
       <div className="min-h-0 flex-1 overflow-hidden">
         {tab === "dashboard" && <PartnerDashboardTab />}
-        {tab === "clients"   && <EnterpriseTab />}
+        {tab === "clients"   && <ClientsTab />}
         {tab === "revenue"   && <RevenueTab />}
         {tab === "settings"  && <PartnerSettingsTab />}
       </div>

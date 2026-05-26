@@ -61,40 +61,19 @@ export async function GET() {
 
   const orgIds = orgRows.map((o) => o.id);
 
-  // Departments scoped to the reseller's orgs.
-  const { data: deptRows } = await admin
-    .from("departments")
-    .select("id, enterprise_id, name, department_code, admin_user_id, status, allocated_minutes, used_minutes, remaining_minutes, created_at")
-    .in("enterprise_id", orgIds)
-    .order("created_at", { ascending: false });
-
-  type DeptRow = {
-    id: string; enterprise_id: string; name: string; department_code: string;
-    admin_user_id: string | null; status: string;
-    allocated_minutes: number; used_minutes: number; remaining_minutes: number;
-    created_at: string;
-  };
-  const depts = (deptRows ?? []) as DeptRow[];
-
-  // Employee count per department (only employees, not admins).
-  const deptIds = depts.map((d) => d.id);
-  const memberCountByDept = new Map<string, number>();
-  if (deptIds.length > 0) {
-    const { data: empRows } = await admin
-      .from("profiles")
-      .select("department_id")
-      .in("department_id", deptIds)
-      .eq("client_type", "employee");
-    for (const e of (empRows ?? []) as { department_id: string }[]) {
-      memberCountByDept.set(e.department_id, (memberCountByDept.get(e.department_id) ?? 0) + 1);
+  // GDPR: a Channel Partner gets enterprise-level aggregates ONLY — no
+  // department breakdown (names, per-department usage, dept-admin ids are all
+  // withheld). We expose just a department COUNT per org. See
+  // docs/gdpr-data-access-matrix.md.
+  const departmentCountByOrg = new Map<string, number>();
+  if (orgIds.length > 0) {
+    const { data: deptRows } = await admin
+      .from("departments")
+      .select("enterprise_id")
+      .in("enterprise_id", orgIds);
+    for (const d of (deptRows ?? []) as { enterprise_id: string }[]) {
+      departmentCountByOrg.set(d.enterprise_id, (departmentCountByOrg.get(d.enterprise_id) ?? 0) + 1);
     }
-  }
-
-  const departmentsByOrg = new Map<string, ReturnType<typeof formatDepartment>[]>();
-  for (const d of depts) {
-    const list = departmentsByOrg.get(d.enterprise_id) ?? [];
-    list.push(formatDepartment(d, memberCountByDept.get(d.id) ?? 0));
-    departmentsByOrg.set(d.enterprise_id, list);
   }
 
   return NextResponse.json({
@@ -110,7 +89,8 @@ export async function GET() {
       usedMinutes:       Number(o.used_minutes ?? 0),
       remainingMinutes:  Number(o.remaining_minutes ?? 0),
       createdAt:         o.created_at,
-      departments:       departmentsByOrg.get(o.id) ?? [],
+      departmentCount:   departmentCountByOrg.get(o.id) ?? 0,
+      // No department breakdown (names / per-dept usage / dept-admin) — GDPR.
     })),
   });
 }
