@@ -31,7 +31,7 @@ import {
   Wallet, RefreshCw, Settings, LogOut, Check, Folder, Pencil, PanelRightOpen, PanelRightClose,
   Building2, FileText, Clock, Video, MoreHorizontal, UserPlus, Pin, SlidersHorizontal,
   Paperclip, Mic, Download, Music, AudioLines, ShieldCheck, Receipt, Home,
-  Trash2,
+  Trash2, Rocket, Wrench,
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { ThemeTriplet } from "@/app/_components/ThemeTriplet";
@@ -64,6 +64,7 @@ import {
 import { IntakeAssistant } from "@/app/_components/intake/IntakeAssistant";
 import { GlobalNewChatModal } from "@/app/_components/GlobalNewChatModal";
 import { EditableSummary } from "@/app/_components/EditableSummary";
+import { QuoteRequestModal } from "@/app/_components/QuoteRequestModal";
 import type { GuestCall, GuestMessage, GuestMessageAttachment, SessionStatus, Urgency } from "@/lib/supabase/types";
 import { signedDownloadUrl } from "@/lib/relay/chatAttachments";
 
@@ -3925,6 +3926,10 @@ const Sidebar = memo(function Sidebar({
   const toggleCollapsed = (next: boolean) => setCollapsed(next);
 
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  // Quote-request flow: null = closed; "golive" = ship-it lead;
+  // "maintain" = ongoing maintenance/enhancement lead. Both kinds use
+  // the same QuoteRequestModal component, distinguished by the prop.
+  const [quoteFlow, setQuoteFlow] = useState<"golive" | "maintain" | null>(null);
   const [past, setPast] = useState<PastSession[]>([]);
   // Global search — filters both project names and session titles/agents.
   const [searchQuery, setSearchQuery] = useState("");
@@ -4910,6 +4915,59 @@ const Sidebar = memo(function Sidebar({
         })()}
       </div>
 
+      {/* Quote-request shortcuts — sit directly above the user pill so
+          they're always reachable but visually quieter than the primary
+          session/project nav. Two leads:
+            • GoLive   — customer wants to ship the project
+            • Maintain — ongoing maintenance / enhancement
+          Both open the same QuoteRequestModal, distinguished by kind.
+          Suppressed for employees: their org runs on a separate billing
+          relationship; the quote flow is for direct-billed customers. */}
+      {!employment && (
+        <div className="border-t px-2 pt-2 pb-1" style={{ borderColor: "var(--border)" }}>
+          <button
+            type="button"
+            onClick={() => setQuoteFlow("golive")}
+            className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          >
+            <span
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+              style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
+            >
+              <Rocket size={13} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[12px]" style={{ color: "var(--text)" }}>
+                Quote to GoLive
+              </span>
+              <span className="block text-[10px]" style={{ color: "var(--text-muted)" }}>
+                Ship this project — get a quote
+              </span>
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setQuoteFlow("maintain")}
+            className="mt-1 flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          >
+            <span
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+              style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
+            >
+              <Wrench size={13} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[12px]" style={{ color: "var(--text)" }}>
+                Quote to Maintain / Enhance
+              </span>
+              <span className="block text-[10px]" style={{ color: "var(--text-muted)" }}>
+                Ongoing work — get an estimate
+              </span>
+            </span>
+          </button>
+        </div>
+      )}
+
       {/* Profile (bottom) */}
       <div className="relative border-t p-2" style={{ borderColor: "var(--border)" }}>
         <button
@@ -4946,6 +5004,22 @@ const Sidebar = memo(function Sidebar({
           />
         )}
       </div>
+
+      {/* Quote-request modal — same component for both GoLive and
+          Maintain leads; the `kind` prop drives the copy + the RPC
+          payload. We feed it the existing project list (filtered to
+          real projects, not the synthetic "general" bucket). If a
+          project was already selected when the customer opened the
+          modal, pre-fill it so they skip step 1. */}
+      {quoteFlow !== null && (
+        <QuoteRequestModal
+          kind={quoteFlow}
+          projects={projects.map((p) => ({ id: p.id, name: p.name }))}
+          initialProjectId={selectedProjectId}
+          onClose={() => setQuoteFlow(null)}
+        />
+      )}
+
       {/* Connect-flow modal — 5-step micro-flow now. */}
       {connectFlow !== null && (
         <ConnectFlowModal
