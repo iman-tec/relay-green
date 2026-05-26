@@ -26,9 +26,12 @@ import {
   Loader2, LogOut, ChevronDown, AlertTriangle, X,
   PanelLeftClose, PanelLeftOpen, LayoutDashboard,
   Eye, Users as UsersIcon, Wallet as WalletIcon, Table as TableIcon, Inbox as InboxIcon,
+  Settings, ShieldCheck, FileText,
 } from "lucide-react";
 import { Wordmark } from "./Wordmark";
-import { ThemeToggle } from "./ThemeToggle";
+import { ThemeTriplet } from "./ThemeTriplet";
+import { EngineerProfilePane } from "./EngineerProfilePane";
+import { LegalPane, type LegalKind } from "./LegalPane";
 import { useStaffGuard } from "@/lib/relay/useStaffGuard";
 import { highestRoleLabel, highestRoleSummary, formatRole } from "@/lib/relay/role-labels";
 import { ROLE, type Role } from "@/lib/relay/roles";
@@ -113,6 +116,33 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
 
   const [collapsed, setCollapsed] = useState(false);
 
+  // In-pane overlays — Profile & settings (engineer-only) and the Privacy/
+  // Terms viewer. When open, the corresponding pane renders IN PLACE OF
+  // the route's <main> children so the customer's mental model of "pane
+  // takes over the centre, sidebar stays put" carries over to staff.
+  const [profilePaneOpen, setProfilePaneOpen] = useState(false);
+  const [legalKind, setLegalKind] = useState<LegalKind | null>(null);
+  const closeAllPanes = useCallback(() => {
+    setProfilePaneOpen(false);
+    setLegalKind(null);
+  }, []);
+
+  // Auth row pulled once at the shell level so both the user-menu trigger
+  // and the EngineerProfilePane can share it without duplicate getUser()
+  // round-trips. Empty string until the first fetch settles.
+  const [meEmail, setMeEmail] = useState<string>("");
+  useEffect(() => {
+    if (guard.kind !== "staff") return;
+    if (meEmail) return;
+    let cancelled = false;
+    void (async () => {
+      const sb = (await import("@/lib/supabase/browser")).createClient();
+      const { data } = await sb.auth.getUser();
+      if (!cancelled && data.user?.email) setMeEmail(data.user.email);
+    })();
+    return () => { cancelled = true; };
+  }, [guard.kind, meEmail]);
+
   // Restore sidebar state from localStorage on mount.
   useEffect(() => {
     try {
@@ -188,6 +218,15 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
+
+  // Auto-open the Profile pane when the user lands on /settings (preserves
+  // deep-link entry into Profile & settings). The pane manages its own
+  // close — clicking X pops the user back to the dashboard.
+  useEffect(() => {
+    if (pathname === "/settings" && engineer && !profilePaneOpen) {
+      setProfilePaneOpen(true);
+    }
+  }, [pathname, engineer, profilePaneOpen]);
 
   // Bare mode — render children full-viewport with no shell chrome.
   // Used by the v2 panels where each panel owns its own navigation
@@ -316,17 +355,44 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
           <div
             className={`mb-1 flex ${collapsed ? "justify-center" : "justify-end"}`}
           >
-            <ThemeToggle showLabel={!collapsed} />
+            <ThemeTriplet />
           </div>
           <ProfileButton
-            email={guardEmail(guard)}
+            email={meEmail}
+            onEmailResolved={setMeEmail}
             roles={roles}
             collapsed={collapsed}
+            engineer={engineer}
+            onOpenProfile={() => {
+              closeAllPanes();
+              setProfilePaneOpen(true);
+            }}
+            onOpenLegal={(kind) => {
+              closeAllPanes();
+              setLegalKind(kind);
+            }}
           />
         </div>
       </aside>
 
-      <main className="flex-1 min-w-0">{children}</main>
+      <main className="flex-1 min-w-0">
+        {profilePaneOpen && engineer && guard.kind === "staff" ? (
+          <EngineerProfilePane
+            userId={guard.userId}
+            email={meEmail}
+            onClose={() => {
+              setProfilePaneOpen(false);
+              // If we landed via /settings, send the user home so the URL
+              // and the pane state stop disagreeing.
+              if (pathname === "/settings") router.push("/dashboard");
+            }}
+          />
+        ) : legalKind ? (
+          <LegalPane kind={legalKind} onClose={() => setLegalKind(null)} />
+        ) : (
+          children
+        )}
+      </main>
 
       {/* Full-screen incoming-call popup for anyone who can take calls
        *  (engineer role). The modal self-gates: it only renders when
@@ -351,14 +417,6 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
 
 /* ────────────────────────────────────────────────────────────────────────── */
 
-type GuardLike = ReturnType<typeof useStaffGuard>;
-
-function guardEmail(g: GuardLike): string {
-  // We don't store email in the guard yet; fetch lazily via supabase
-  // inside the profile button. Returning "" here keeps the API simple.
-  return "";
-}
-
 function DotOnly() {
   return (
     <span
@@ -376,30 +434,37 @@ function DotOnly() {
 
 function ProfileButton({
   email,
+  onEmailResolved,
   roles,
   collapsed,
+  engineer,
+  onOpenProfile,
+  onOpenLegal,
 }: {
   email: string;
+  onEmailResolved: (email: string) => void;
   roles: string[];
   collapsed: boolean;
+  engineer: boolean;
+  onOpenProfile: () => void;
+  onOpenLegal: (kind: LegalKind) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [me, setMe] = useState<{ email: string } | null>(email ? { email } : null);
   const ref = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const supabaseRef = useRef(createClient());
 
   useEffect(() => {
-    if (me) return;
+    if (email) return;
     let cancelled = false;
     (async () => {
       const { data } = await supabaseRef.current.auth.getUser();
       if (!cancelled && data.user?.email) {
-        setMe({ email: data.user.email });
+        onEmailResolved(data.user.email);
       }
     })();
     return () => { cancelled = true; };
-  }, [me]);
+  }, [email, onEmailResolved]);
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
@@ -426,7 +491,7 @@ function ProfileButton({
     router.push("/staff/login");
   };
 
-  const userEmail = me?.email ?? "";
+  const userEmail = email;
   const userInitials = initials(userEmail || "??");
   // Chip shows the *top* role per the hierarchy with a "+N" hint when the
   // user holds more than one. The full list lives on the hover tooltip
@@ -508,6 +573,17 @@ function ProfileButton({
               {roles.length > 1 ? allRolesLabel : roleText}
             </div>
           </div>
+          {engineer && (
+            <button
+              type="button"
+              onClick={() => { setOpen(false); onOpenProfile(); }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
+              style={{ color: "var(--text)" }}
+            >
+              <Settings size={14} />
+              Profile &amp; settings
+            </button>
+          )}
           {roles.includes("enterprise_admin") && (
             <Link
               href="/enterprise/wallet"
@@ -519,11 +595,38 @@ function ProfileButton({
               Wallet
             </Link>
           )}
+          {/* Learn more section — Privacy + Terms open in-pane (no new tab),
+             same pattern the customer side uses to keep legal docs scrollable
+             alongside the shell. */}
+          <div
+            className="border-t px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.08em]"
+            style={{ borderColor: "var(--border)", color: "var(--text-faint)" }}
+          >
+            Learn more
+          </div>
+          <button
+            type="button"
+            onClick={() => { setOpen(false); onOpenLegal("privacy"); }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
+            style={{ color: "var(--text)" }}
+          >
+            <ShieldCheck size={14} />
+            Privacy Policy
+          </button>
+          <button
+            type="button"
+            onClick={() => { setOpen(false); onOpenLegal("terms"); }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
+            style={{ color: "var(--text)" }}
+          >
+            <FileText size={14} />
+            Terms of Use
+          </button>
           <button
             type="button"
             onClick={handleSignOut}
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
-            style={{ color: "var(--text)" }}
+            className="flex w-full items-center gap-2 border-t px-3 py-2 text-left text-sm transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
+            style={{ color: "var(--text)", borderColor: "var(--border)" }}
           >
             <LogOut size={14} />
             Sign out
