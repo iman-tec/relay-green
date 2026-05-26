@@ -41,6 +41,7 @@ import { ChatComposer, speechRecognitionErrorMessage, queryMicPermission } from 
 import { AccountPane } from "@/app/_components/AccountPane";
 import { LegalPane, type LegalKind } from "@/app/_components/LegalPane";
 import { DeleteProjectModal } from "@/app/_components/DeleteProjectModal";
+import { ScheduleEngineerModal } from "@/app/_components/ScheduleEngineerModal";
 import { MessageAttachments } from "@/app/_components/MessageAttachments";
 import { Button, EmptyState, IconButton, Modal, cn } from "@/app/_components/ui";
 import { useCustomerSession } from "@/lib/relay/useCustomerSession";
@@ -469,7 +470,7 @@ export function RoomClient() {
     const sb = createClient();
     const { data, error } = await sb
       .from("projects")
-      .select("id, name, created_at, ai_summary_title, ai_summary_overview, ai_next_steps, summary, summary_updated_at")
+      .select("id, name, created_at, ai_summary_title, ai_summary_overview, ai_next_steps, summary, summary_updated_at, completion_status, completed_at")
       .eq("customer_id", state.auth.userId)
       .order("created_at", { ascending: false });
     if (error) return;
@@ -482,6 +483,10 @@ export function RoomClient() {
       aiNextSteps:       (Array.isArray(r.ai_next_steps) ? (r.ai_next_steps as string[]) : null),
       summary:           (r.summary as string | null) ?? null,
       summaryUpdatedAt:  (r.summary_updated_at as string | null) ?? null,
+      completionStatus:  ((r.completion_status as string) === "completed" || (r.completion_status as string) === "archived")
+                            ? (r.completion_status as "completed" | "archived")
+                            : "active",
+      completedAt:       (r.completed_at as string | null) ?? null,
     })));
   }, [state.auth]);
   useEffect(() => { void refetchProjects(); }, [refetchProjects, state.session?.id, state.session?.status]);
@@ -987,6 +992,32 @@ export function RoomClient() {
   const handleOpenDeleteProject = useCallback((projectId: string, projectName: string) => {
     setDeleteProjectTarget({ id: projectId, name: projectName });
   }, []);
+
+  // Mark complete — flips the project to 'completed' which starts the
+  // 90-day retention sweeper clock. Idempotent on the server side, so we
+  // don't bother with a confirmation modal: the row is reversible via
+  // mark_project_active until the sweeper actually archives it.
+  const handleMarkProjectComplete = useCallback(async (projectId: string, projectName: string) => {
+    const confirmed = typeof window !== "undefined"
+      ? window.confirm(
+          `Mark "${projectName}" complete?\n\n`
+          + "This starts a 90-day retention clock. Files and chat history "
+          + "stay accessible during that window — after 90 days the "
+          + "attachments are removed (chat text stays). You can mark it "
+          + "active again any time before then."
+        )
+      : true;
+    if (!confirmed) return;
+    const sb = createClient();
+    const { error } = await sb.rpc("mark_project_complete", { _project_id: projectId });
+    if (error) {
+      if (typeof window !== "undefined") {
+        window.alert(`Couldn't mark complete: ${error.message}`);
+      }
+      return;
+    }
+    await refetchProjects();
+  }, [refetchProjects]);
   const handleCloseDeleteProject = useCallback(() => {
     setDeleteProjectTarget(null);
   }, []);
@@ -1212,6 +1243,7 @@ export function RoomClient() {
         onPrepareSession={handlePrepareSession}
         draftsTick={draftsTick}
         onDeleteProject={handleOpenDeleteProject}
+        onMarkProjectComplete={handleMarkProjectComplete}
       />
 
       <div className="relative flex min-w-0 flex-1 flex-col">
@@ -1257,7 +1289,6 @@ export function RoomClient() {
             preparingDraftId={preparingDraftId}
             onClosePrepare={handleClosePrepare}
             onDraftsChanged={bumpDrafts}
-            projects={projects}
           />
           )}
         </main>
@@ -1330,6 +1361,9 @@ export function RoomClient() {
         onAddProject={() => { setNewChatModalOpen(false); router.push("/intake"); }}
         onAsyncChat={() => { setNewChatModalOpen(false); void handleNewChat(); }}
       />
+
+      {/* ScheduleEngineerModal is mounted inside Sidebar since the schedule
+          target state lives there (driven by the connect-flow modal). */}
 
     </div>
   );
@@ -3692,6 +3726,11 @@ type Project = {
   aiNextSteps: string[] | null;
   summary: string | null;
   summaryUpdatedAt: string | null;
+  /** Lifecycle. "completed" starts the 90-day retention clock; "archived"
+   *  is post-sweep. v1 only surfaces "Mark complete" as a customer action;
+   *  archived is set by the purge edge function. */
+  completionStatus: "active" | "completed" | "archived";
+  completedAt: string | null;
 };
 
 type ProjectGroup = {
@@ -3699,11 +3738,12 @@ type ProjectGroup = {
   name: string;          // display name
   sessions: PastSession[];
   latestDate: number;    // ms timestamp — used for sorting
+  completionStatus: "active" | "completed" | "archived";
 };
 
 const Sidebar = memo(function Sidebar({
   email, customerUserId, session, entitlement, employment, viewingPastId, projects,
-  selectedProjectId, onViewPast, onNewSession, onNewChat, onStartInProject, onRenameProject, onStartNewProject, onCreateProjectWithMetadata, onSelectProject, onWalletClick, onOpenProfile, onOpenBilling, onOpenLegal, onGoHome, onPrepareSession, draftsTick, onDeleteProject,
+  selectedProjectId, onViewPast, onNewSession, onNewChat, onStartInProject, onRenameProject, onStartNewProject, onCreateProjectWithMetadata, onSelectProject, onWalletClick, onOpenProfile, onOpenBilling, onOpenLegal, onGoHome, onPrepareSession, draftsTick, onDeleteProject, onMarkProjectComplete,
 }: {
   email: string;
   customerUserId: string | null;
@@ -3779,6 +3819,9 @@ const Sidebar = memo(function Sidebar({
   /** Open the 2-factor delete-project confirmation modal at the
    *  RoomClient level. */
   onDeleteProject: (projectId: string, projectName: string) => void;
+  /** Flip the project to 'completed' which starts the 90-day retention
+   *  clock for chat-attachment purge. */
+  onMarkProjectComplete: (projectId: string, projectName: string) => void;
 }) {
   // Sidebar starts EXPANDED by default (Order 1 of the Commander brief —
   // Projects expanded, every action labelled, no mystery icons). User can
@@ -3867,13 +3910,10 @@ const Sidebar = memo(function Sidebar({
     });
   }, []);
 
-  // Engineer presence — v1 PLACEHOLDER. Flip ENGINEER_ONLINE to false to
-  // preview the offline-widget variant. In v2, wire to a real Supabase
-  // engineer_presence subscription keyed by the last engineer's id (or
-  // call a /api/engineer-status endpoint).
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const ENGINEER_ONLINE_DEFAULT = true;
-  const [engineerOnline] = useState<boolean>(ENGINEER_ONLINE_DEFAULT);
+  // Engineer presence is now read live per-engineer inside the ConnectFlow
+  // picker — each row queries engineer_profiles.presence_state via display
+  // alias and renders the right Online / Busy / Offline badge accordingly.
+  // (The matcher itself still gates on engineer_profiles.is_available.)
 
   // Connect-flow modal state. null = closed.
   //   "choose"          — new vs existing
@@ -3888,6 +3928,12 @@ const Sidebar = memo(function Sidebar({
   // per-project phone button shortcut). Drives what the "engineerPicker"
   // step shows.
   const [pickerProjectId, setPickerProjectId] = useState<string | null>(null);
+  // Schedule-engineer modal target. When set, the modal mounts and shows
+  // open 30-min slots for the engineer; null = closed. Driven by the
+  // "Schedule" button on Offline engineers in the picker.
+  const [scheduleTarget, setScheduleTarget] = useState<
+    null | { engineerUserId: string; engineerName: string; projectId: string | null }
+  >(null);
   // Mode toggle for the form steps. "connect" (default) = submit creates
   // project + rings engineer. "create-only" = submit only creates the
   // project (called from the "+ Create New Project" button). The form
@@ -4099,10 +4145,11 @@ const Sidebar = memo(function Sidebar({
         name: p.name,
         sessions: [],
         latestDate: new Date(p.createdAt).getTime(),
+        completionStatus: p.completionStatus,
       });
     }
     // "General" bucket for sessions with no project.
-    const general: ProjectGroup = { key: "general", name: "General", sessions: [], latestDate: 0 };
+    const general: ProjectGroup = { key: "general", name: "General", sessions: [], latestDate: 0, completionStatus: "active" };
 
     for (const s of past) {
       const g = s.projectId && map.has(s.projectId) ? map.get(s.projectId)!
@@ -4114,6 +4161,7 @@ const Sidebar = memo(function Sidebar({
                     name: s.projectName ?? "Unnamed project",
                     sessions: [],
                     latestDate: 0,
+                    completionStatus: "active",
                   };
                   map.set(s.projectId!, orphan);
                   return orphan;
@@ -4708,6 +4756,7 @@ const Sidebar = memo(function Sidebar({
                     onPrepareSession={onPrepareSession}
                     draftsTick={draftsTick}
                     onDeleteProject={onDeleteProject}
+                    onMarkProjectComplete={onMarkProjectComplete}
                   />
                 ))
               : (
@@ -4872,27 +4921,65 @@ const Sidebar = memo(function Sidebar({
             if (pid) onStartInProject(pid);
           }}
           onEngineerRequest={(engineerName) => {
-            // v1 STUB: real flow needs an engineer_connect_requests
-            // table + realtime delivery to engineer's /inbox. For now
-            // we just toast and close. See deferred-tasks list.
-            console.info(`[connect-flow] Request-to-connect stub fired for ${engineerName}`);
-            window.alert(
-              `Request sent to ${engineerName}. ` +
-              `(v1 stub — engineer notification system not yet wired. ` +
-              `See engineer-side TODOs.)`,
-            );
+            // Resolve alias → engineer_user_id via engineer_profiles, then
+            // file a connect request. The customer can fire this from the
+            // picker when the engineer is Busy (matcher would otherwise
+            // skip them). The engineer's /inbox surfaces the pending
+            // request with Accept / Decline.
+            const pid = pickerProjectId;
             setConnectFlow(null);
             setPickerProjectId(null);
+            void (async () => {
+              const sb = createClient();
+              const { data: engRow, error: engErr } = await sb
+                .from("engineer_profiles")
+                .select("user_id")
+                .eq("display_alias", engineerName)
+                .limit(1)
+                .maybeSingle();
+              if (engErr || !engRow?.user_id) {
+                window.alert(`Couldn't locate ${engineerName}. Try refreshing.`);
+                return;
+              }
+              const { error } = await sb.rpc("customer_request_engineer", {
+                _engineer_user_id: engRow.user_id as string,
+                _project_id: pid,
+                _message: null,
+              });
+              if (error) {
+                window.alert(`Couldn't send request: ${error.message}`);
+                return;
+              }
+              window.alert(
+                `Request sent to ${engineerName}. They'll see it in their inbox `
+                + `— you'll get pinged when they accept.`,
+              );
+            })();
           }}
           onEngineerSchedule={(engineerName) => {
-            // v1 STUB: real flow needs engineer_profiles.calendar_url
-            // + per-engineer calendar pages.
-            console.info(`[connect-flow] Schedule stub fired for ${engineerName}`);
-            window.alert(
-              `${engineerName}'s calendar is not yet linked. ` +
-              `(v1 stub — engineer calendar setup not yet wired. ` +
-              `See engineer-side TODOs.)`,
-            );
+            // Resolve alias → user_id, then open the schedule modal which
+            // computes 30-min open slots from the engineer's recurring
+            // availability windows minus existing bookings.
+            void (async () => {
+              const sb = createClient();
+              const { data: engRow, error: engErr } = await sb
+                .from("engineer_profiles")
+                .select("user_id")
+                .eq("display_alias", engineerName)
+                .limit(1)
+                .maybeSingle();
+              if (engErr || !engRow?.user_id) {
+                window.alert(`Couldn't locate ${engineerName}'s calendar.`);
+                return;
+              }
+              setScheduleTarget({
+                engineerUserId: engRow.user_id as string,
+                engineerName,
+                projectId: pickerProjectId,
+              });
+              setConnectFlow(null);
+              setPickerProjectId(null);
+            })();
           }}
           onPickerRequestDifferent={() => {
             // "Request a different engineer" — fall through to a fresh
@@ -4940,6 +5027,20 @@ const Sidebar = memo(function Sidebar({
             setConnectFlowMode("connect");
             setPickerProjectId(null);
             resetNewProjectForm();
+          }}
+        />
+      )}
+
+      {scheduleTarget && (
+        <ScheduleEngineerModal
+          engineerUserId={scheduleTarget.engineerUserId}
+          engineerName={scheduleTarget.engineerName}
+          projectId={scheduleTarget.projectId}
+          onClose={() => setScheduleTarget(null)}
+          onBooked={({ slotStart }) => {
+            const when = new Date(slotStart).toLocaleString();
+            setScheduleTarget(null);
+            window.alert(`Booked with ${scheduleTarget.engineerName} for ${when}.`);
           }}
         />
       )}
@@ -6403,7 +6504,7 @@ function fmtRelDate(d: Date): string {
 const ProjectAccordion = memo(function ProjectAccordion({
   group, viewingPastId, currentSessionId, selectedProjectId,
   onViewPast, onStartInProject, onRenameProject, onSelectProject,
-  pinnedIds, onTogglePin, onPrepareSession, draftsTick, onDeleteProject,
+  pinnedIds, onTogglePin, onPrepareSession, draftsTick, onDeleteProject, onMarkProjectComplete,
 }: {
   group: ProjectGroup;
   viewingPastId: string | null;
@@ -6439,6 +6540,10 @@ const ProjectAccordion = memo(function ProjectAccordion({
    *  The actual delete fires after the modal validates password + name
    *  + literal "delete the project" phrase. */
   onDeleteProject: (projectId: string, projectName: string) => void;
+  /** Flip the project to 'completed' which starts the 90-day retention
+   *  clock for chat-attachment purge. Reversible via the same menu while
+   *  the project is still in 'completed' status. */
+  onMarkProjectComplete: (projectId: string, projectName: string) => void;
 }) {
   // Accordions start COLLAPSED on initial mount. Customers see the
   // project list first and drill into any project they want to act on
@@ -6551,6 +6656,22 @@ const ProjectAccordion = memo(function ProjectAccordion({
               {group.name}
             </span>
           )}
+          {/* Lifecycle pill — only renders when non-active, so the default
+              project list stays clean. "Completed" signals the 90-day
+              retention clock has started; "Archived" is post-sweep. */}
+          {!isGeneral && group.completionStatus !== "active" && (
+            <span
+              className="ml-1 shrink-0 rounded-full px-1.5 py-0 text-[9px] font-semibold uppercase tracking-wider"
+              style={{
+                backgroundColor: group.completionStatus === "completed"
+                  ? "color-mix(in srgb, var(--warn) 18%, transparent)"
+                  : "color-mix(in srgb, var(--text) 8%, transparent)",
+                color: group.completionStatus === "completed" ? "var(--warn)" : "var(--text-muted)",
+              }}
+            >
+              {group.completionStatus === "completed" ? "Completed" : "Archived"}
+            </span>
+          )}
           {/* Session-count badge removed — the count was redundant with
               expanding the project to see the sessions directly. */}
         </button>
@@ -6653,6 +6774,21 @@ const ProjectAccordion = memo(function ProjectAccordion({
                     <Pencil size={12} />
                     Rename project
                   </button>
+                  {group.completionStatus === "active" && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOverflowOpen(false);
+                        onMarkProjectComplete(group.key, group.name);
+                      }}
+                      className="flex w-full items-center gap-2 border-t px-3 py-2 text-left text-[12px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                      style={{ color: "var(--text)", borderColor: "var(--border)" }}
+                    >
+                      <Check size={12} />
+                      Mark complete
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={(e) => {
@@ -6660,8 +6796,8 @@ const ProjectAccordion = memo(function ProjectAccordion({
                       setOverflowOpen(false);
                       onDeleteProject(group.key, group.name);
                     }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                    style={{ color: "var(--accent-red)" }}
+                    className="flex w-full items-center gap-2 border-t px-3 py-2 text-left text-[12px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                    style={{ color: "var(--accent-red)", borderColor: "var(--border)" }}
                   >
                     <X size={12} />
                     Delete project
