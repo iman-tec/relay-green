@@ -5188,6 +5188,21 @@ const Sidebar = memo(function Sidebar({
           <Wordmark size="md" />
         </button>
         <ThemeTriplet />
+        {/* Explicit Home icon — restored per user request. Sits next to
+            the ThemeTriplet so the two "global affordances" (theme +
+            home) cluster together. The wordmark to the left also
+            navigates home (universal convention), so this is a
+            redundant-but-discoverable second path. */}
+        <button
+          type="button"
+          onClick={onGoHome}
+          title="Home"
+          aria-label="Home"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-all duration-150 ease-out hover:scale-110 hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5"
+          style={{ color: "var(--text-muted)" }}
+        >
+          <Home size={15} />
+        </button>
         <div className="flex-1" />
         <button
           onClick={() => toggleCollapsed(true)}
