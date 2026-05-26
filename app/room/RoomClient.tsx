@@ -226,13 +226,26 @@ export function RoomClient() {
     return () => { bridge.setSessionActive?.(false); };
   }, [state.session?.status]);
 
-  // ── Auto-flush stub draft attachments ────────────────────────────
-  // When the session transitions to a live-ish state and the customer
-  // has files/voice notes staged in IndexedDB (via the ChatPanelStub
-  // paperclip + record buttons), upload them now and bind them to a
-  // single system message in the new thread. One-shot: a ref-flag
-  // gates the call per session id so a status oscillation doesn't
-  // re-flush. See lib/relay/stubDraftAttachments.ts for the queue.
+  // ── Auto-flush stub draft (text + attachments) on session ring ───
+  // When a session transitions to a live-ish state, the customer's
+  // pre-session draft for that project needs to land inside the new
+  // thread so the engineer arrives to a populated conversation:
+  //
+  //   1. Every draft chat line goes in as guest_messages rows
+  //      (sender_kind="guest"), preserving the customer's typed
+  //      order so the engineer reads exactly what the customer
+  //      prepared. Then the scoped sessionStorage bucket is
+  //      cleared so the draft doesn't re-flush on re-renders.
+  //
+  //   2. Every staged attachment in the IndexedDB queue for the
+  //      same scope flushes via flushStubAttachments — one system
+  //      message ("📎 Customer prepared these files before the
+  //      call:") with each blob attached. Same do-once gate.
+  //
+  // Scope = session.project_id when present, else "general" so the
+  // projectless landing's scratch still flushes into the session it
+  // actually started. One-shot: a ref-flag gates the call per
+  // session id so a status oscillation doesn't re-flush.
   const flushedForSessionRef = useRef<string | null>(null);
   useEffect(() => {
     const s = state.session;
@@ -244,10 +257,40 @@ export function RoomClient() {
     void (async () => {
       try {
         const sb = createClient();
-        const n = await flushStubAttachments({ sb, sessionId: s.id });
-        if (n > 0) {
-          // Refresh the messages list so the engineer + customer both
-          // see the new prep-attachments message immediately.
+        const scope = s.project_id || "general";
+
+        // Step 1: flush draft chat lines as guest messages.
+        let postedCount = 0;
+        if (typeof window !== "undefined") {
+          try {
+            const raw = window.sessionStorage.getItem(stubDraftStorageKey(scope));
+            const parsed = raw ? (JSON.parse(raw) as Array<{ text?: string }>) : [];
+            const lines = Array.isArray(parsed)
+              ? parsed.map((m) => (m.text ?? "").trim()).filter((t) => t.length > 0)
+              : [];
+            if (lines.length > 0) {
+              const guestName = s.guest_name ?? "Customer";
+              const rows = lines.map((body) => ({
+                guest_call_id: s.id,
+                sender_kind: "guest" as const,
+                sender_name: guestName,
+                body,
+              }));
+              const { error } = await sb.from("guest_messages").insert(rows);
+              if (error) throw new Error(error.message);
+              postedCount = rows.length;
+              window.sessionStorage.removeItem(stubDraftStorageKey(scope));
+            }
+          } catch (e) {
+            // Fail-soft — don't block the attachment flush below.
+            console.warn("[stub-flush] message post failed:", e instanceof Error ? e.message : e);
+          }
+        }
+
+        // Step 2: flush attachments queued under the same scope.
+        const n = await flushStubAttachments({ sb, sessionId: s.id, scope });
+
+        if (postedCount > 0 || n > 0) {
           await state.refresh();
         }
       } catch (err) {
@@ -1609,6 +1652,7 @@ export function RoomClient() {
                 sidebarCollapsed={false}
                 onToggleCollapsed={() => { /* no-op on mobile */ }}
                 session={state.session}
+                scopeKey={state.session?.project_id || selectedProjectId || "general"}
               />
             </div>
           </div>
@@ -2430,6 +2474,7 @@ function BrandedLanding({
       <ChatPanelStub
         sidebarCollapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((v) => !v)}
+        scopeKey={selectedProject?.id || "general"}
       />
     </div>
   );
@@ -2460,7 +2505,16 @@ type LocalDraftMessage = {
   editedAt?: number | null;
 };
 
-const STUB_DRAFT_STORAGE_KEY = "relay-chat-stub-draft-v1";
+// Storage-key prefix for the ChatPanelStub local draft buffer. Each
+// project gets its own bucket so switching projects in the sidebar
+// shows different draft content (per the customer's expectation:
+// "for each session the chat is unique"). The "general" suffix is
+// the bucket used when no project is selected — a scratchpad that
+// doesn't belong to any specific session.
+const STUB_DRAFT_STORAGE_PREFIX = "relay-chat-stub-draft-v1:";
+function stubDraftStorageKey(scopeKey: string): string {
+  return `${STUB_DRAFT_STORAGE_PREFIX}${scopeKey || "general"}`;
+}
 
 // (Edit + Delete are always available on local-only stub drafts —
 //  there's no recipient yet, so the WhatsApp-style "you can't unsend
@@ -2716,9 +2770,18 @@ function DraftBubble({
 }
 
 function ChatPanelStub({
-  sidebarCollapsed, onToggleCollapsed, session,
+  sidebarCollapsed, onToggleCollapsed, session, scopeKey = "general",
 }: {
   sidebarCollapsed: boolean;
+  /**
+   * Scope key for local draft persistence + attachment staging.
+   * Typically the customer's currently-selected project id; falls
+   * back to "general" when no project is selected so brainstorm
+   * scratch isn't lost. Switching projects in the sidebar should
+   * pass a different scopeKey here and the stub will load that
+   * scope's messages + pending attachments.
+   */
+  scopeKey?: string;
   onToggleCollapsed: () => void;
   /**
    * Optional session context — when set, the header shows the engineer's
@@ -2750,17 +2813,15 @@ function ChatPanelStub({
     isLiveish ? "Live now" :
     isEndedish ? "Session ended" :
     "No active session";
-  const [messages, setMessages] = useState<LocalDraftMessage[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const raw = window.sessionStorage.getItem(STUB_DRAFT_STORAGE_KEY);
-      if (!raw) return [];
-      const parsed = JSON.parse(raw) as LocalDraftMessage[];
-      return Array.isArray(parsed) ? parsed.slice(-200) : [];
-    } catch {
-      return [];
-    }
-  });
+  // Start empty; the scope-load effect below populates from storage on
+  // mount and on every scopeKey change. Initial state can't read from
+  // storage directly because we don't know the right key until we have
+  // scopeKey, and React doesn't let useState initializer re-run.
+  const [messages, setMessages] = useState<LocalDraftMessage[]>([]);
+  // Track which scope's content is currently mounted in `messages` so
+  // the persist effect doesn't save the old scope's content to the new
+  // scope's key during the swap window.
+  const loadedScopeRef = useRef<string | null>(null);
   const [draftText, setDraftText] = useState("");
   const [voiceMode, setVoiceMode] = useState<"idle" | "transcribing">("idle");
   const [voiceMsg, setVoiceMsg] = useState<string | null>(null);
@@ -2803,25 +2864,48 @@ function ChatPanelStub({
   const transcribeBaseRef = useRef<string>("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Hydrate the pending-attachments tray on mount.
-  useEffect(() => {
-    let alive = true;
-    void stubListAttachments().then((items) => {
-      if (alive) setStubAttachments(items);
-    });
-    return () => { alive = false; };
-  }, []);
-
-  // Persist messages so a tab refresh doesn't erase the draft buffer.
+  // Load messages from the scoped sessionStorage bucket on mount and
+  // on every scopeKey change. The customer's expectation is "switch
+  // projects in the sidebar → see THIS project's draft chat" — so
+  // when the parent passes a new scopeKey we drop the old bucket's
+  // content and hydrate the new one.
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
+      const raw = window.sessionStorage.getItem(stubDraftStorageKey(scopeKey));
+      const parsed = raw ? (JSON.parse(raw) as LocalDraftMessage[]) : [];
+      setMessages(Array.isArray(parsed) ? parsed.slice(-200) : []);
+    } catch {
+      setMessages([]);
+    }
+    loadedScopeRef.current = scopeKey;
+  }, [scopeKey]);
+
+  // Hydrate the pending-attachments tray on mount, scoped to the
+  // current project bucket. Re-runs when scopeKey changes so the
+  // tray flips with the project.
+  useEffect(() => {
+    let alive = true;
+    void stubListAttachments(scopeKey).then((items) => {
+      if (alive) setStubAttachments(items);
+    });
+    return () => { alive = false; };
+  }, [scopeKey]);
+
+  // Persist messages so a tab refresh doesn't erase the draft buffer.
+  // Skip until the load effect above has hydrated the current scope —
+  // otherwise the first tick after a scopeKey change would overwrite
+  // the new scope's bucket with the old scope's React state.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (loadedScopeRef.current !== scopeKey) return;
+    try {
       window.sessionStorage.setItem(
-        STUB_DRAFT_STORAGE_KEY,
+        stubDraftStorageKey(scopeKey),
         JSON.stringify(messages.slice(-200)),
       );
     } catch { /* quota / privacy mode — local-only, swallow */ }
-  }, [messages]);
+  }, [messages, scopeKey]);
 
   // Auto-scroll the message area to the bottom when a new message arrives.
   // Only auto-scrolls when the user is already near the bottom — if they've
@@ -3038,7 +3122,7 @@ function ChatPanelStub({
     try {
       const fresh: StubAttachmentMeta[] = [];
       for (const c of v.classified) {
-        const meta = await stubAddAttachment(c.file);
+        const meta = await stubAddAttachment(c.file, scopeKey);
         fresh.push(meta);
       }
       setStubAttachments((prev) => [...fresh, ...prev]);
@@ -3108,7 +3192,7 @@ function ChatPanelStub({
       const name = `voice-${new Date().toISOString().replace(/[:.]/g, "-")}.${ext}`;
       const file = new File([blob], name, { type: blob.type });
       try {
-        const meta = await stubAddAttachment(file);
+        const meta = await stubAddAttachment(file, scopeKey);
         setStubAttachments((prev) => [meta, ...prev]);
       } catch (err) {
         setVoiceMsg(err instanceof Error ? err.message : "Couldn't save the recording.");
@@ -3565,6 +3649,7 @@ function EndedSessionReview({
         sidebarCollapsed={chatCollapsed}
         onToggleCollapsed={() => setChatCollapsed((v) => !v)}
         session={session}
+        scopeKey={session.project_id || "general"}
       />
     </div>
   );
@@ -3630,6 +3715,7 @@ function PastSessionReview({
         sidebarCollapsed={chatCollapsed}
         onToggleCollapsed={() => setChatCollapsed((v) => !v)}
         session={row}
+        scopeKey={row.project_id || "general"}
       />
     </div>
   );
