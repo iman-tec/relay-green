@@ -26,7 +26,7 @@ export async function GET() {
 
   const { data: org, error: orgErr } = await admin
     .from("organizations")
-    .select("id, name, primary_domain, status, enterprise_code, created_at, reseller_id")
+    .select("id, name, primary_domain, status, enterprise_code, created_at, reseller_id, discount_pct, discount_until")
     .eq("id", orgId)
     .single();
   if (orgErr || !org) {
@@ -143,6 +143,8 @@ export async function GET() {
       status:         org.status,
       enterpriseCode: org.enterprise_code,
       createdAt:      org.created_at,
+      discountPct:    Number((org as { discount_pct?: number }).discount_pct ?? 0),
+      discountUntil:  (org as { discount_until?: string | null }).discount_until ?? null,
     },
     channelPartner,
     kpis: {

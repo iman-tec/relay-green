@@ -17,7 +17,7 @@ import { useApiData, num, TabBody, LoadingState, ErrorState } from "./_shared";
 import { SettingsSection, EditableField, CopyRow, SettingsToggle, IdentityBlock } from "./settingsKit";
 
 type Me = {
-  org: { id: string; name: string; status: string; enterpriseCode?: string; primaryDomain?: string | null };
+  org: { id: string; name: string; status: string; enterpriseCode?: string; primaryDomain?: string | null; discountPct?: number; discountUntil?: string | null };
   channelPartner?: { name: string; discountPct: number } | null;
 };
 type Member = { id: string; displayName: string; email: string; primaryRole: string; status: string };
@@ -74,6 +74,14 @@ export function SettingsTab() {
               <EditableField label="Channel Partner" value={me.data.channelPartner.name} readOnly hint="The partner who onboarded your organization." />
               <EditableField label="Partner discount" value={`${me.data.channelPartner.discountPct}%`} readOnly hint="Discount applied to your usage through this partner." />
             </>
+          ) : null}
+          {org?.discountPct ? (
+            <EditableField
+              label="Promo discount"
+              value={`${org.discountPct}%${org.discountUntil ? ` until ${new Date(org.discountUntil).toLocaleDateString()}` : ""}`}
+              readOnly
+              hint="A promotional discount on your usage."
+            />
           ) : null}
         </SettingsSection>
 

@@ -27,13 +27,15 @@ export async function POST(request: Request) {
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin, user: actor, resellerId } = gate;
 
-  const { name, primaryDomain, adminEmail, adminDisplayName, allocatedMinutes } =
+  const { name, primaryDomain, adminEmail, adminDisplayName, allocatedMinutes, discountPct, discountMonths } =
     (await request.json().catch(() => ({}))) as {
       name?: string;
       primaryDomain?: string;
       adminEmail?: string;
       adminDisplayName?: string;
       allocatedMinutes?: number | string;
+      discountPct?: number | string;
+      discountMonths?: number | string;
     };
 
   if (!name?.trim() || !adminEmail?.trim() || !adminDisplayName?.trim()) {
@@ -83,6 +85,18 @@ export async function POST(request: Request) {
     created_by_user_id: actor.id,
   };
   if (primaryDomain?.trim()) orgInsert.primary_domain = primaryDomain.trim();
+
+  // Promo discount granted by the partner (e.g. 10% for 12 months).
+  const discPct = Math.max(0, Math.min(100, Number(discountPct ?? 0)));
+  const discMonths = Math.max(0, Number(discountMonths ?? 0));
+  if (discPct > 0) {
+    orgInsert.discount_pct = discPct;
+    if (discMonths > 0) {
+      const until = new Date();
+      until.setMonth(until.getMonth() + discMonths);
+      orgInsert.discount_until = until.toISOString();
+    }
+  }
 
   const { data: orgRow, error: orgErr } = await admin
     .from("organizations")
