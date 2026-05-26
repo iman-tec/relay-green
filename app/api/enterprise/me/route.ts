@@ -26,11 +26,28 @@ export async function GET() {
 
   const { data: org, error: orgErr } = await admin
     .from("organizations")
-    .select("id, name, primary_domain, status, enterprise_code, created_at")
+    .select("id, name, primary_domain, status, enterprise_code, created_at, reseller_id")
     .eq("id", orgId)
     .single();
   if (orgErr || !org) {
     return NextResponse.json({ error: orgErr?.message ?? "Org not found." }, { status: 404 });
+  }
+
+  // Channel Partner who onboarded this org (non-editable, shown in Settings).
+  let channelPartner: { name: string; discountPct: number } | null = null;
+  const resellerId = (org as { reseller_id?: string | null }).reseller_id;
+  if (resellerId) {
+    const { data: res } = await admin
+      .from("resellers")
+      .select("name, commission")
+      .eq("id", resellerId)
+      .maybeSingle();
+    if (res) {
+      channelPartner = {
+        name: (res as { name: string }).name,
+        discountPct: Number((res as { commission: number }).commission ?? 0),
+      };
+    }
   }
 
   // Users + staff in this org. profiles.organization_id is the bind.
@@ -127,6 +144,7 @@ export async function GET() {
       enterpriseCode: org.enterprise_code,
       createdAt:      org.created_at,
     },
+    channelPartner,
     kpis: {
       staffCount,
       userCount,

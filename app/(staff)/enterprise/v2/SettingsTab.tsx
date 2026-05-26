@@ -16,7 +16,10 @@ import { Button, Input, Modal, Avatar, StatusBadge, EmptyState } from "@/app/_co
 import { useApiData, num, TabBody, LoadingState, ErrorState } from "./_shared";
 import { SettingsSection, EditableField, CopyRow, SettingsToggle, IdentityBlock } from "./settingsKit";
 
-type Me = { org: { id: string; name: string; status: string; enterpriseCode?: string; primaryDomain?: string | null } };
+type Me = {
+  org: { id: string; name: string; status: string; enterpriseCode?: string; primaryDomain?: string | null };
+  channelPartner?: { name: string; discountPct: number } | null;
+};
 type Member = { id: string; displayName: string; email: string; primaryRole: string; status: string };
 
 const RETENTION = [
@@ -66,6 +69,12 @@ export function SettingsTab() {
           <EditableField label="Organization name" value={org?.name ?? ""} onSave={async () => setNote("TODO(api): org-name PATCH not wired yet.")} />
           <EditableField label="Primary domain" value={org?.primaryDomain ?? ""} placeholder="acme.com" onSave={async () => setNote("TODO(api): domain PATCH not wired yet.")} hint="Used to auto-match new members by email." />
           <CopyRow label="Enterprise code" value={org?.enterpriseCode ?? ""} />
+          {me.data?.channelPartner ? (
+            <>
+              <EditableField label="Channel Partner" value={me.data.channelPartner.name} readOnly hint="The partner who onboarded your organization." />
+              <EditableField label="Partner discount" value={`${me.data.channelPartner.discountPct}%`} readOnly hint="Discount applied to your usage through this partner." />
+            </>
+          ) : null}
         </SettingsSection>
 
         <SettingsSection icon={<Users size={16} />} title="Internal team" desc="Admins who manage this organization.">

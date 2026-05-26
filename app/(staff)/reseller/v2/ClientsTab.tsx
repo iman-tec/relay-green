@@ -12,11 +12,13 @@
  */
 
 import { useMemo, useState } from "react";
-import { Building2, UserPlus, Mail } from "lucide-react";
+import { Building2, UserPlus, Copy, Check, Share2 } from "lucide-react";
 import { Button, Input, Modal, StatusBadge, EmptyState } from "@/app/_components/ui";
 import {
   useApiData, eur, num, TabBody, LoadingState, ErrorState,
 } from "@/app/(staff)/enterprise/v2/_shared";
+
+const BRAND = (typeof process !== "undefined" && process.env.NEXT_PUBLIC_BRAND_DOMAIN) || "relay.green";
 
 type Enterprise = {
   id: string; name: string; enterpriseCode: string; status: string;
@@ -41,20 +43,46 @@ export function ClientsTab() {
   // Onboarding
   const [open, setOpen] = useState(false);
   const [co, setCo] = useState(""); const [adminName, setAdminName] = useState(""); const [adminEmail, setAdminEmail] = useState("");
+  // Configurable promo discount granted to the onboarded company.
+  const [discountPct, setDiscountPct] = useState(10);
+  const [discountMonths, setDiscountMonths] = useState(12);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<string | null>(null);
+  // After provisioning, we hold the shareable onboarding link the partner
+  // hands to the enterprise individual (click → sign up → enterprise admin).
+  const [created, setCreated] = useState<{ company: string; email: string; url: string; discountPct: number; discountMonths: number } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const resetModal = () => { setOpen(false); setCreated(null); setCo(""); setAdminName(""); setAdminEmail(""); setErr(null); setCopied(false); };
+
   const onboard = async () => {
     if (!co.trim() || !adminName.trim() || !adminEmail.trim()) { setErr("Company name, admin name and email are required."); return; }
     setBusy(true); setErr(null);
     try {
       const r = await fetch("/api/reseller/enterprises", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: co.trim(), adminDisplayName: adminName.trim(), adminEmail: adminEmail.trim().toLowerCase(), allocatedMinutes: 0 }),
+        // discountPct/discountMonths captured for the company's promo. // TODO(api):
+        // persist on the org (no column yet) — UI-configurable in the meantime.
+        body: JSON.stringify({ name: co.trim(), adminDisplayName: adminName.trim(), adminEmail: adminEmail.trim().toLowerCase(), allocatedMinutes: 0, discountPct, discountMonths }),
       });
-      const b = (await r.json().catch(() => ({}))) as { error?: string };
+      const b = (await r.json().catch(() => ({}))) as { error?: string; enterprise?: { enterpriseCode?: string } };
       if (!r.ok) throw new Error(b.error || "Could not onboard company");
-      setOpen(false); setCo(""); setAdminName(""); setAdminEmail(""); dash.reload();
+      const code = b.enterprise?.enterpriseCode ?? "";
+      const email = adminEmail.trim().toLowerCase();
+      // Verified onboarding link, also sent to the company email by the invite.
+      // Signing up via it binds the individual as this company's enterprise
+      // admin (carried by the org code) and confirms the email.
+      const url = `https://${BRAND}/staff/login?onboard=${encodeURIComponent(code)}&email=${encodeURIComponent(email)}`;
+      setCreated({ company: co.trim(), email, url, discountPct, discountMonths });
+      dash.reload();
     } catch (e) { setErr(e instanceof Error ? e.message : "Could not onboard company"); }
     finally { setBusy(false); }
+  };
+
+  const shareLink = async () => {
+    if (!created) return;
+    const nav = navigator as Navigator & { share?: (d: { title: string; text: string; url: string }) => Promise<void> };
+    if (nav.share) { try { await nav.share({ title: `Set up ${created.company} on Relay`, text: "Click to set up your company's Relay account.", url: created.url }); } catch { /* cancelled */ } }
+    else { navigator.clipboard?.writeText(created.url); setCopied(true); setTimeout(() => setCopied(false), 1500); }
   };
 
   const totalSpend = useMemo(() => ents.reduce((s, e) => s + spend(e), 0), [ents]);
@@ -130,15 +158,65 @@ export function ClientsTab() {
         </p>
       )}
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Onboard a company"
-        description="Name the person who'll run this company's Relay account — they'll be invited as the enterprise admin and set up their own departments and team."
-        footer={<div className="flex justify-end gap-2"><Button variant="ghost" onClick={() => setOpen(false)} disabled={busy}>Cancel</Button><Button onClick={onboard} loading={busy} iconLeft={<Mail size={14} />}>Send invite</Button></div>}>
-        <div className="flex flex-col gap-3">
-          <Input label="Company name" value={co} onChange={(e) => setCo(e.target.value)} placeholder="Acme Inc." />
-          <Input label="Admin full name" value={adminName} onChange={(e) => setAdminName(e.target.value)} placeholder="Jordan Reed" />
-          <Input label="Admin email" type="email" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} placeholder="jordan@acme.com" />
-          {err && <p className="text-xs" style={{ color: "var(--risk)" }}>{err}</p>}
-        </div>
+      <Modal open={open} onClose={resetModal}
+        title={created ? "Share the onboarding link" : "Onboard a company"}
+        description={created
+          ? `${created.company} is set up. Share this link or QR with ${created.email} — when they sign up they become the company's enterprise admin.`
+          : "Name the person who'll run this company's Relay account. They become the enterprise admin and set up their own departments and team."}
+        footer={created
+          ? <div className="flex justify-end"><Button onClick={resetModal}>Done</Button></div>
+          : <div className="flex justify-end gap-2"><Button variant="ghost" onClick={resetModal} disabled={busy}>Cancel</Button><Button onClick={onboard} loading={busy} iconLeft={<UserPlus size={14} />}>Create & generate link</Button></div>}>
+        {created ? (
+          <div className="flex flex-col items-center gap-4">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=190x190&margin=0&data=${encodeURIComponent(created.url)}`}
+              alt="Onboarding QR code" width={190} height={190}
+              className="rounded-lg border" style={{ borderColor: "var(--border)" }}
+            />
+            <div className="w-full rounded-lg border p-2.5" style={{ borderColor: "var(--border)", background: "var(--surface-raised)" }}>
+              <p className="break-all text-center text-[11px]" style={{ color: "var(--text-muted)" }}>{created.url}</p>
+            </div>
+            <div className="flex w-full gap-2">
+              <Button full variant="secondary" iconLeft={copied ? <Check size={14} /> : <Copy size={14} />}
+                onClick={() => { navigator.clipboard?.writeText(created.url); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>
+                {copied ? "Copied" : "Copy link"}
+              </Button>
+              <Button full iconLeft={<Share2 size={14} />} onClick={() => void shareLink()}>Share</Button>
+            </div>
+            <div className="w-full rounded-lg border p-2.5 text-center text-xs" style={{ borderColor: "var(--primary)", background: "var(--primary-tint)", color: "var(--text)" }}>
+              {created.discountPct}% discount for {created.discountMonths} months applied to {created.company}.
+            </div>
+            <p className="text-center text-[11px]" style={{ color: "var(--text-faint)" }}>
+              A verified invite link was also emailed to {created.email}.
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <Input label="Company name" value={co} onChange={(e) => setCo(e.target.value)} placeholder="Acme Inc." />
+            <Input label="Admin full name" value={adminName} onChange={(e) => setAdminName(e.target.value)} placeholder="Jordan Reed" />
+            <Input label="Admin email" type="email" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} placeholder="jordan@acme.com" />
+            <div className="grid grid-cols-2 gap-3">
+              <label className="flex flex-col gap-1 text-xs" style={{ color: "var(--text-muted)" }}>
+                Company discount
+                <div className="flex items-center gap-1.5">
+                  <input type="number" min={0} max={100} value={discountPct} onChange={(e) => setDiscountPct(Number(e.target.value))}
+                    className="h-10 w-full rounded-lg border px-3 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
+                  <span className="text-sm" style={{ color: "var(--text-muted)" }}>%</span>
+                </div>
+              </label>
+              <label className="flex flex-col gap-1 text-xs" style={{ color: "var(--text-muted)" }}>
+                For
+                <div className="flex items-center gap-1.5">
+                  <input type="number" min={1} max={36} value={discountMonths} onChange={(e) => setDiscountMonths(Number(e.target.value))}
+                    className="h-10 w-full rounded-lg border px-3 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
+                  <span className="text-sm" style={{ color: "var(--text-muted)" }}>months</span>
+                </div>
+              </label>
+            </div>
+            {err && <p className="text-xs" style={{ color: "var(--risk)" }}>{err}</p>}
+          </div>
+        )}
       </Modal>
     </TabBody>
   );
