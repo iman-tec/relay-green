@@ -24,16 +24,17 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Loader2, LogOut, ChevronDown, AlertTriangle, X,
-  PanelLeftClose, PanelLeftOpen, LayoutDashboard,
+  PanelLeftClose, PanelLeftOpen, LayoutDashboard, Home, Calendar,
   Eye, Users as UsersIcon, Wallet as WalletIcon, Table as TableIcon, Inbox as InboxIcon,
   Settings, ShieldCheck, FileText,
 } from "lucide-react";
 import { Wordmark } from "./Wordmark";
 import { ThemeTriplet } from "./ThemeTriplet";
 import { EngineerProfilePane } from "./EngineerProfilePane";
-import { EngineerPresenceBadge } from "./EngineerPresenceBadge";
+import { EngineerPresenceBall } from "./EngineerPresenceBall";
 import { LegalPane, type LegalKind } from "./LegalPane";
 import { useStaffGuard } from "@/lib/relay/useStaffGuard";
+import { registerDeviceAndEnforceLimit } from "@/lib/relay/deviceTracking";
 import { highestRoleLabel, highestRoleSummary, formatRole } from "@/lib/relay/role-labels";
 import { ROLE, type Role } from "@/lib/relay/roles";
 // TEMP 2026-05-18: legacy first-come-first-served ring disabled while
@@ -42,6 +43,7 @@ import { ROLE, type Role } from "@/lib/relay/roles";
 // import { EngineerIncomingRequest } from "./EngineerIncomingRequest";
 import { EngineerIncomingMatch } from "./EngineerIncomingMatch";
 import { createClient } from "@/lib/supabase/browser";
+import { useEngineerWorkspace } from "@/lib/relay/useEngineerWorkspace";
 import type { GuestCall } from "@/lib/supabase/types";
 
 const BRAND_GREEN       = "#3f5c2e";
@@ -69,6 +71,10 @@ const NAV: Nav[] = [
   { href: "/dashboard",            label: "Dashboard", icon: LayoutDashboard, roles: [ROLE.engineer] },
   // Engineer-only. People + per-customer session history + call log.
   { href: "/inbox",                label: "Inbox",     icon: InboxIcon,       roles: [ROLE.engineer] },
+  // Engineer-only. Weekly pattern, holidays, monthly per-date editor.
+  // Was previously a tab inside the Profile pane; promoted to a top-level
+  // destination so engineers reach it in one click.
+  { href: "/calendar",             label: "Calendar",  icon: Calendar,        roles: [ROLE.engineer] },
   // /supervise renders the platform-wide grid for super_admin + supervisor,
   // and the org-scoped grid for enterprise + department admins — see
   // app/(staff)/supervise/page.tsx.
@@ -91,7 +97,7 @@ const NAV: Nav[] = [
   { href: "/operations",           label: "Operations", icon: TableIcon,       roles: [ROLE.supervisor] },
 ];
 
-const ENGINEER_ONLY_PATHS = ["/dashboard", "/inbox", "/staff/session"];
+const ENGINEER_ONLY_PATHS = ["/dashboard", "/inbox", "/calendar", "/staff/session"];
 
 function isEngineer(roles: readonly Role[]): boolean {
   return roles.includes(ROLE.engineer);
@@ -183,6 +189,15 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
       setProfilePaneOpen(true);
     }
   }, [pathname, engineer, profilePaneOpen]);
+
+  // Device tracking — registers this browser as a device and auto-revokes
+  // the oldest device when the user is over the 3-device cap. Best-effort:
+  // failures are logged but never block the user. Runs once per shell
+  // mount after auth resolves.
+  useEffect(() => {
+    if (guard.kind !== "staff") return;
+    void registerDeviceAndEnforceLimit();
+  }, [guard.kind]);
 
   if (guard.kind === "loading") {
     return (
@@ -282,28 +297,46 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
           backgroundColor: "var(--surface)",
         }}
       >
-        {/* Top: wordmark + toggle */}
+        {/* Top: wordmark + theme triplet + home + collapse toggle.
+            The triplet + home button only show when the sidebar is
+            expanded — they need horizontal room. In collapsed mode the
+            Wordmark dot remains the home affordance and theme is changed
+            by expanding the sidebar (one extra click; rare action). */}
         <div
-          className="flex items-center justify-between border-b px-3 py-3"
+          className="flex items-center gap-2 border-b px-3 py-3"
           style={{ borderColor: "var(--border)" }}
         >
           <Link
             href={homeHref}
             className="flex items-center no-underline"
             aria-label="Home"
+            title="Home"
           >
             {collapsed ? <DotOnly /> : <Wordmark size="md" />}
           </Link>
           {!collapsed && (
-            <button
-              type="button"
-              onClick={toggle}
-              className="rounded-md p-1.5 transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
-              aria-label="Collapse sidebar"
-              style={{ color: "var(--text-muted)" }}
-            >
-              <PanelLeftClose size={16} />
-            </button>
+            <>
+              <ThemeTriplet />
+              <Link
+                href={homeHref}
+                className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
+                style={{ color: "var(--text-muted)" }}
+                aria-label="Go to dashboard"
+                title="Dashboard"
+              >
+                <Home size={14} />
+              </Link>
+              <span className="flex-1" />
+              <button
+                type="button"
+                onClick={toggle}
+                className="rounded-md p-1.5 transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
+                aria-label="Collapse sidebar"
+                style={{ color: "var(--text-muted)" }}
+              >
+                <PanelLeftClose size={16} />
+              </button>
+            </>
           )}
         </div>
 
@@ -345,20 +378,52 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
             );
           })}
 
+          {/* Engineer presence ball — sits directly under the Calendar
+              nav item, sandwiched between hairline separators so it
+              reads as its own zone. Ring + audio fire here when a match
+              offer lands via realtime. */}
+          {engineer && guard.kind === "staff" && (
+            <>
+              <div
+                className="mx-1 my-2 h-px"
+                style={{ backgroundColor: "var(--border)" }}
+                aria-hidden
+              />
+              <EngineerPresenceBall userId={guard.userId} collapsed={collapsed} />
+              <div
+                className="mx-1 my-2 h-px"
+                style={{ backgroundColor: "var(--border)" }}
+                aria-hidden
+              />
+            </>
+          )}
+
           {/* Spacer pushes alerts + profile to bottom */}
           <div className="flex-1" />
         </nav>
 
-        {/* Bottom: theme toggle + profile */}
+        {/* FIFO auto-ring — 30s after the engineer's session ends, if
+            there's still a queue and they're online, claim the next
+            customer. Empty render — pure side-effect. */}
+        {engineer && guard.kind === "staff" && (
+          <FifoAutoRing />
+        )}
+
+        {/* Bottom: profile. Theme triplet moved to the top (next to
+            wordmark + home button). When collapsed, we keep a single
+            ThemeTriplet here as a fallback so the user isn't locked out
+            of switching themes.
+            mb-4 lifts the chip clear of the bottom edge so it doesn't
+            kiss the viewport on short screens. */}
         <div
-          className="border-t px-2 py-2"
+          className="mb-4 border-t px-2 py-2"
           style={{ borderColor: "var(--border)" }}
         >
-          <div
-            className={`mb-1 flex ${collapsed ? "justify-center" : "justify-end"}`}
-          >
-            <ThemeTriplet />
-          </div>
+          {collapsed && (
+            <div className="mb-1 flex justify-center">
+              <ThemeTriplet />
+            </div>
+          )}
           <ProfileButton
             email={meEmail}
             onEmailResolved={setMeEmail}
@@ -395,13 +460,6 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
           children
         )}
       </main>
-
-      {/* Always-visible presence pill for engineers. Realtime-subscribed
-          so cross-tab + deep-pane changes mirror here. Other staff
-          roles don't render this (no engineer_profiles row to read). */}
-      {engineer && guard.kind === "staff" && (
-        <EngineerPresenceBadge userId={guard.userId} />
-      )}
 
       {/* Full-screen incoming-call popup for anyone who can take calls
        *  (engineer role). The modal self-gates: it only renders when
@@ -646,6 +704,85 @@ function ProfileButton({
   );
 }
 
+// ── FIFO auto-ring ──────────────────────────────────────────────────────
+// 30 seconds after the engineer's active session transitions to "ended",
+// check the queue; if there's a waiting customer AND the engineer is
+// still online (presence_state='online'), claim the next one.
+//
+// Watches `myActive` from useEngineerWorkspace for the ended transition
+// (vs. tailing guest_calls directly) because that hook already does the
+// realtime subscription and dedupes. Auto-ring fires once per ended
+// session — a ref tracks which session ids we've already armed for.
+//
+// Render-side this component is invisible; it just owns the effect.
+function FifoAutoRing() {
+  const sbRef = useRef(createClient());
+  const router = useRouter();
+  const { myActive, queue, takeNext, userId } = useEngineerWorkspace();
+  const armedRef = useRef<Set<string>>(new Set());
+  const lastActiveRef = useRef<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    // Build a map of session_id → status for the current active set.
+    const currentMap = new Map<string, string>();
+    for (const s of myActive) currentMap.set(s.id, s.status);
+
+    // Detect sessions that transitioned to "ended" since the last render.
+    for (const [id, prevStatus] of lastActiveRef.current.entries()) {
+      const nowStatus = currentMap.get(id);
+      const wasLive = ["assigned", "joining", "live", "grace", "expired_free"].includes(prevStatus);
+      const nowEnded = nowStatus === "ended" || !currentMap.has(id);
+      if (wasLive && nowEnded && !armedRef.current.has(id)) {
+        armedRef.current.add(id);
+        // 30s grace, then re-check the queue + presence and claim.
+        setTimeout(async () => {
+          try {
+            const sb = sbRef.current;
+            if (!userId) return;
+            // Check presence — only auto-claim when the engineer is
+            // explicitly online (busy / offline / unset = skip).
+            const { data: prof } = await sb
+              .from("engineer_profiles")
+              .select("presence_state, is_available")
+              .eq("user_id", userId)
+              .maybeSingle();
+            const presenceRow = (prof ?? null) as {
+              presence_state: string | null; is_available: boolean | null;
+            } | null;
+            const isOnline = presenceRow
+              ? (presenceRow.presence_state === "online" || (presenceRow.presence_state == null && presenceRow.is_available === true))
+              : false;
+            if (!isOnline) return;
+
+            // Check queue afresh — it may have drained while we waited.
+            const { data: liveQueue } = await sb
+              .from("guest_calls")
+              .select("id")
+              .eq("status", "queued")
+              .order("created_at", { ascending: true })
+              .limit(1);
+            if (!liveQueue || liveQueue.length === 0) return;
+
+            const claimed = await takeNext();
+            if (claimed) {
+              // Land the engineer in the session room for the auto-claimed
+              // call. Same destination as the manual "Take next call".
+              router.push(`/staff/session/${claimed.id}`);
+            }
+          } catch (err) {
+            console.warn("[fifo-auto-ring] failed:", err);
+          }
+        }, 30_000);
+      }
+    }
+
+    // Snapshot current status for the next render comparison.
+    lastActiveRef.current = currentMap;
+  }, [myActive, queue.length, userId, takeNext, router]);
+
+  return null;
+}
+
 /* ──────── Supervisor toast alerts (same logic as legacy shell) ──────── */
 
 type AlertToast = { id: string; sessionId: string; name: string; urgency: string };
@@ -665,8 +802,16 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
   useEffect(() => {
     if (!isSupervisor) return;
     const sb = supabaseRef.current;
+    // Per-mount UUID suffix on the channel name. The previous fixed name
+    // ("supervisor-alerts-shell") was the worst case for Supabase's
+    // name-based dedupe — every supervisor load reused it, so a stale
+    // subscription from a previous render would refuse the new .on()
+    // with "cannot add postgres_changes after subscribe()".
+    const suffix = typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     const ch = sb
-      .channel("supervisor-alerts-shell")
+      .channel(`supervisor-alerts-shell-${suffix}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "guest_calls" },

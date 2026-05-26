@@ -25,18 +25,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Bell, BellRing, Calendar as CalendarIcon, Check, ChevronRight,
-  Clock, Copy, Download as DownloadIcon, Globe, Home, KeyRound, Loader2, Mail,
+  Bell, BellRing, Calendar as CalendarIcon, Check, CheckCircle2, ChevronRight,
+  Clock, Copy, CreditCard, Download as DownloadIcon, Globe, Home, KeyRound, Loader2, Mail,
   Monitor, Plus, ShieldCheck, Sparkles, Trash2,
-  TrendingUp, User, Wallet, X, Zap,
+  TrendingUp, User, Wallet, Wrench, X, Zap,
 } from "lucide-react";
 import { Button, Input, Toast, cn } from "@/app/_components/ui";
 import { createClient } from "@/lib/supabase/browser";
+import {
+  listMyDevices, revokeDevice, getOrCreateFingerprint, type UserDevice,
+} from "@/lib/relay/deviceTracking";
 
 // ── Tab identity ──────────────────────────────────────────────────────────
+// Calendar moved to its own top-level sidebar destination (/calendar) so
+// it stops being buried in the deep profile-pane tab list.
 export type EngineerTab =
   | "profile"
-  | "calendar"
   | "payouts"
   | "security"
   | "notifications";
@@ -50,7 +54,6 @@ type TabDef = {
 
 const TABS: readonly TabDef[] = [
   { id: "profile",       label: "Profile",       description: "Alias, expertise, presence",  Icon: User },
-  { id: "calendar",      label: "Calendar",      description: "Weekly availability windows", Icon: CalendarIcon },
   { id: "payouts",       label: "Payouts",       description: "Sessions, minutes, earnings", Icon: Wallet },
   { id: "security",      label: "Security",      description: "Password and account safety", Icon: ShieldCheck },
   { id: "notifications", label: "Notifications", description: "Email and in-app prefs",      Icon: Bell },
@@ -69,6 +72,12 @@ type EngineerProfile = {
   isAvailable: boolean;
   presenceState: Presence;
   emailNotifications: boolean;
+  // Customer-aligned axes — added in 20260527200000. Optional because
+  // existing engineers won't have these populated until re-onboarding.
+  projectTypes: string[];
+  aiTools: string[];
+  backendStacks: string[];
+  frontendStacks: string[];
 };
 
 // ── Calendar shape ────────────────────────────────────────────────────────
@@ -102,13 +111,16 @@ const INDIA_2026_HOLIDAYS: Array<{ date: string; label: string }> = [
 ];
 
 // ── Earnings shape ────────────────────────────────────────────────────────
-type EarningsSummary = {
+type ContractType = "build" | "golive" | "maintain";
+const CONTRACT_TYPES: readonly ContractType[] = ["build", "golive", "maintain"] as const;
+
+type ContractRollup = {
+  contractType: ContractType;
+  paidSessions: number;
   totalSessions: number;
-  endedSessions: number;
   totalMinutes: number;
   billableMinutes: number;
-  lifetimeEarningsCents: number | null;
-  mostRecentSessionAt: string | null;
+  distinctProjects: number;
 };
 
 type RecentSession = {
@@ -118,7 +130,32 @@ type RecentSession = {
   status: string;
   createdAt: string;
   projectName: string | null;
+  projectId: string | null;
+  contractType: ContractType | null;
+  paidExtensionAt: string | null;
 };
+
+type DateRangePresetId = "7d" | "30d" | "90d" | "ytd" | "all" | "custom";
+
+type DateRange = {
+  presetId: DateRangePresetId;
+  from: string | null;   // ISO yyyy-mm-dd; null = no lower bound
+  to: string | null;     // ISO yyyy-mm-dd; null = no upper bound
+};
+
+function rangeFromPreset(id: Exclude<DateRangePresetId, "custom">): DateRange {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  if (id === "all") return { presetId: "all", from: null, to: null };
+  if (id === "ytd") {
+    return { presetId: "ytd", from: `${today.getFullYear()}-01-01`, to: iso(today) };
+  }
+  const days = id === "7d" ? 7 : id === "30d" ? 30 : 90;
+  const from = new Date(today);
+  from.setDate(from.getDate() - days);
+  return { presetId: id, from: iso(from), to: iso(today) };
+}
 
 type Banner = { tone: "ok" | "risk" | "info"; text: string } | null;
 
@@ -237,7 +274,7 @@ export function EngineerProfilePane({
       const { data, error } = await sb
         .from("engineer_profiles")
         .select(
-          "user_id, display_alias, expertise, technologies, experience_level, is_available, presence_state, email_notifications_enabled"
+          "user_id, display_alias, expertise, technologies, experience_level, is_available, presence_state, email_notifications_enabled, project_types, ai_tools, backend_stacks, frontend_stacks"
         )
         .eq("user_id", userId)
         .maybeSingle();
@@ -252,6 +289,10 @@ export function EngineerProfilePane({
           isAvailable: false,
           presenceState: "offline",
           emailNotifications: true,
+          projectTypes: [],
+          aiTools: [],
+          backendStacks: [],
+          frontendStacks: [],
         });
       } else {
         const row = data as {
@@ -263,6 +304,12 @@ export function EngineerProfilePane({
           is_available: boolean;
           presence_state: string | null;
           email_notifications_enabled: boolean | null;
+          // New customer-aligned axes — nullable because old rows may
+          // not have them populated until the engineer re-onboards.
+          project_types: string[] | null;
+          ai_tools: string[] | null;
+          backend_stacks: string[] | null;
+          frontend_stacks: string[] | null;
         };
         setProfile({
           userId: row.user_id,
@@ -276,34 +323,16 @@ export function EngineerProfilePane({
               ? (row.presence_state as Presence)
               : row.is_available ? "online" : "offline",
           emailNotifications: row.email_notifications_enabled !== false,
+          projectTypes: row.project_types ?? [],
+          aiTools: row.ai_tools ?? [],
+          backendStacks: row.backend_stacks ?? [],
+          frontendStacks: row.frontend_stacks ?? [],
         });
       }
       setLoading(false);
     })();
     return () => { alive = false; };
   }, [userId]);
-
-  // ── Presence change ─────────────────────────────────────────────────────
-  // Optimistic update + RPC. Rolls back on error so the UI never lies about
-  // what the matcher actually sees.
-  const onSetPresence = useCallback(async (next: Presence) => {
-    if (!profile) return;
-    const previous = profile.presenceState;
-    if (previous === next) return;
-    setProfile({ ...profile, presenceState: next, isAvailable: next === "online" });
-    try {
-      const sb = sbRef.current;
-      const { error } = await sb.rpc("set_engineer_presence", { _state: next });
-      if (error) throw new Error(error.message);
-      showBanner({ tone: "ok", text: `Presence set to ${next}.` });
-    } catch (err) {
-      setProfile({ ...profile, presenceState: previous, isAvailable: previous === "online" });
-      showBanner({
-        tone: "risk",
-        text: err instanceof Error ? err.message : "Couldn't update presence.",
-      });
-    }
-  }, [profile, showBanner]);
 
   // ── Email-notifications toggle ──────────────────────────────────────────
   const [emailSaving, setEmailSaving] = useState(false);
@@ -426,11 +455,7 @@ export function EngineerProfilePane({
               <ProfileTab
                 profile={profile}
                 email={email}
-                onSetPresence={onSetPresence}
               />
-            )}
-            {tab === "calendar" && (
-              <CalendarTab userId={userId} showBanner={showBanner} />
             )}
             {tab === "payouts" && (
               <PayoutsTab userId={userId} />
@@ -520,11 +545,10 @@ function SubNav({
 // Profile tab
 // ──────────────────────────────────────────────────────────────────────────
 function ProfileTab({
-  profile, email, onSetPresence,
+  profile, email,
 }: {
   profile: EngineerProfile;
   email: string;
-  onSetPresence: (p: Presence) => Promise<void>;
 }) {
   return (
     <div className="flex flex-col gap-6">
@@ -574,100 +598,75 @@ function ProfileTab({
         </div>
       </SectionCard>
 
-      <SectionHead
-        title="Presence"
-        blurb="What customers see when they hover your phone icon."
-      />
-
-      <SectionCard>
-        <div className="grid grid-cols-3 gap-2">
-          <PresenceOption
-            value="online"
-            label="Online"
-            blurb="Matcher rings me. Customers see green + instant-call."
-            color="var(--primary)"
-            current={profile.presenceState}
-            onClick={() => void onSetPresence("online")}
-          />
-          <PresenceOption
-            value="busy"
-            label="Busy"
-            blurb="Matcher skips me. Customers can drop a request."
-            color="var(--warn)"
-            current={profile.presenceState}
-            onClick={() => void onSetPresence("busy")}
-          />
-          <PresenceOption
-            value="offline"
-            label="Offline"
-            blurb="Matcher skips me. Customers see calendar booking."
-            color="var(--text-faint)"
-            current={profile.presenceState}
-            onClick={() => void onSetPresence("offline")}
-          />
-        </div>
-      </SectionCard>
+      {/* Presence picker moved to the Dashboard — engineers flip presence
+          from the top-right pill or the dashboard's Presence card, not
+          from deep in the profile pane. */}
 
       <SectionHead
         title="Expertise"
-        blurb="What you onboarded with. Drives the matcher's routing."
+        blurb="What you onboarded with. The customer-aligned axes are what the matcher scores against."
       />
 
       <SectionCard>
         <div className="flex flex-col gap-4">
+          {/* High-level expertise area + experience level — your own
+              self-declared category, separate from the customer-axis
+              capabilities below. */}
           <ReadOnlyChips label="Expertise areas" values={profile.expertise} />
-          <ReadOnlyChips label="Technologies" values={profile.technologies} />
           {profile.experienceLevel && (
             <div className="flex items-center gap-2 text-[12px]" style={{ color: "var(--text-muted)" }}>
               <span style={{ color: "var(--text-faint)" }}>Experience level:</span>
               <span style={{ color: "var(--text)" }}>{profile.experienceLevel}</span>
             </div>
           )}
+        </div>
+      </SectionCard>
+
+      {/* Customer-aligned axes — these four match the exact options
+          customers pick from when starting a new project, so the
+          matcher can score capability overlap directly. Empty arrays
+          mean the engineer hasn't re-onboarded since these fields were
+          added — surface that gently. */}
+      <SectionCard>
+        <div className="mb-3 flex items-center gap-2">
+          <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--primary)" }}>
+            Customer-brief alignment
+          </span>
+          <span className="text-[10px]" style={{ color: "var(--text-faint)" }}>
+            · same options customers pick from
+          </span>
+        </div>
+        <div className="flex flex-col gap-4">
+          <ReadOnlyChips label="Project types you support" values={profile.projectTypes} />
+          <ReadOnlyChips label="AI tools you've worked with" values={profile.aiTools} />
+          <ReadOnlyChips label="Backend / infra" values={profile.backendStacks} />
+          <ReadOnlyChips label="Frontend / UI" values={profile.frontendStacks} />
+          {(profile.projectTypes.length + profile.aiTools.length + profile.backendStacks.length + profile.frontendStacks.length === 0) && (
+            <p className="rounded-md border px-3 py-2 text-[11px]" style={{
+              borderColor: "color-mix(in srgb, var(--warn) 30%, transparent)",
+              backgroundColor: "color-mix(in srgb, var(--warn) 5%, transparent)",
+              color: "var(--text-muted)",
+            }}>
+              These four axes are new — your profile predates them. Re-run engineer onboarding to populate them so the matcher can route the right work to you.
+            </p>
+          )}
+        </div>
+      </SectionCard>
+
+      <SectionCard>
+        <div className="flex flex-col gap-3">
+          {/* Legacy technologies array — auto-populated from backend +
+              frontend on re-onboard. Hidden when empty so the engineer
+              isn't confronted with a dead section. */}
+          {profile.technologies.length > 0 && (
+            <ReadOnlyChips label="Technologies (legacy)" values={profile.technologies} />
+          )}
           <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-            To change these, run through engineer onboarding again — or ask a supervisor to override.
+            To change any of these, run through engineer onboarding again — or ask a supervisor to override.
           </p>
         </div>
       </SectionCard>
     </div>
-  );
-}
-
-function PresenceOption({
-  value, label, blurb, color, current, onClick,
-}: {
-  value: Presence;
-  label: string;
-  blurb: string;
-  color: string;
-  current: Presence;
-  onClick: () => void;
-}) {
-  const isActive = current === value;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex flex-col items-start gap-2 rounded-xl border p-3 text-left transition-all hover:border-[var(--primary)]"
-      style={{
-        borderColor: isActive ? color : "var(--border)",
-        backgroundColor: isActive ? `color-mix(in srgb, ${color} 8%, var(--surface-raised))` : "var(--surface-raised)",
-      }}
-      aria-pressed={isActive}
-    >
-      <div className="flex items-center gap-2">
-        <span
-          className="inline-block h-2 w-2 rounded-full"
-          style={{ backgroundColor: color }}
-        />
-        <span className="text-[13px] font-semibold" style={{ color: "var(--text)" }}>
-          {label}
-        </span>
-        {isActive && <Check size={11} style={{ color }} />}
-      </div>
-      <p className="text-[11px] leading-snug" style={{ color: "var(--text-muted)" }}>
-        {blurb}
-      </p>
-    </button>
   );
 }
 
@@ -748,7 +747,10 @@ const PRESETS: Preset[] = [
   },
 ];
 
-function CalendarTab({
+// Exported so the new /calendar route can mount it standalone. The
+// internal helpers (MonthView, DateSlotsPopup, HolidaysSection, etc.)
+// stay file-local — only the entry point needs to be addressable.
+export function CalendarTab({
   userId, showBanner,
 }: {
   userId: string;
@@ -1088,6 +1090,7 @@ function CalendarTab({
           userId={userId}
           windows={windows}
           sourceTz={tz}
+          selectedZones={selectedZones}
         />
       )}
 
@@ -1211,12 +1214,19 @@ type MonthBooking = {
   customerUserId: string;
 };
 
+type DateWindow = {
+  date: string;          // ISO yyyy-mm-dd
+  startMinute: number;
+  endMinute: number;
+};
+
 function MonthView({
-  userId, windows, sourceTz,
+  userId, windows, sourceTz, selectedZones,
 }: {
   userId: string;
   windows: AvailabilityWindow[];
   sourceTz: string;
+  selectedZones: TzOption[];
 }) {
   const sbRef = useRef(createClient());
   const [cursor, setCursor] = useState(() => {
@@ -1225,7 +1235,11 @@ function MonthView({
   });
   const [holidaysAll, setHolidaysAll] = useState<EngineerHoliday[]>([]);
   const [bookings, setBookings] = useState<MonthBooking[]>([]);
-  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [dateWindows, setDateWindows] = useState<DateWindow[]>([]);
+  const [popupDate, setPopupDate] = useState<string | null>(null);
+  const [multiSelect, setMultiSelect] = useState(false);
+  const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
@@ -1239,7 +1253,11 @@ function MonthView({
       fromKey.setHours(0, 0, 0, 0);
       const toKey = new Date(fromKey);
       toKey.setFullYear(toKey.getFullYear() + 1);
-      const [hRes, bRes] = await Promise.all([
+      // engineer_date_windows is best-effort — the table is added in a
+      // later migration and may not be applied on this environment yet.
+      // We catch the 4xx silently so the calendar still renders, just
+      // without override badges.
+      const [hRes, bRes, dwRes] = await Promise.all([
         sb.from("engineer_holidays")
           .select("holiday_date, label, kind")
           .eq("engineer_user_id", userId)
@@ -1251,6 +1269,11 @@ function MonthView({
           .eq("status", "booked")
           .gte("slot_start", fromKey.toISOString())
           .lt("slot_start", toKey.toISOString()),
+        sb.from("engineer_date_windows")
+          .select("the_date, start_minute, end_minute")
+          .eq("engineer_user_id", userId)
+          .gte("the_date", fromKey.toISOString().slice(0, 10))
+          .lte("the_date", toKey.toISOString().slice(0, 10)),
       ]);
       if (!alive) return;
       const hRows = (hRes.data ?? []) as Array<{ holiday_date: string; label: string | null; kind: string }>;
@@ -1269,9 +1292,58 @@ function MonthView({
         slotEnd: r.slot_end,
         customerUserId: r.customer_user_id,
       })));
+      // date_windows may 404 if the migration isn't applied — degrade
+      // silently to "no overrides anywhere."
+      if (!dwRes.error) {
+        const dwRows = (dwRes.data ?? []) as Array<{ the_date: string; start_minute: number; end_minute: number }>;
+        setDateWindows(dwRows.map((r) => ({
+          date: r.the_date, startMinute: r.start_minute, endMinute: r.end_minute,
+        })));
+      }
       setLoading(false);
     })();
     return () => { alive = false; };
+  }, [userId]);
+
+  // Re-fetch date_windows after a popup save — keeps the override badges
+  // in sync without a full page reload.
+  const refreshDateWindows = useCallback(async () => {
+    const sb = sbRef.current;
+    const fromKey = new Date();
+    fromKey.setHours(0, 0, 0, 0);
+    const toKey = new Date(fromKey);
+    toKey.setFullYear(toKey.getFullYear() + 1);
+    const { data, error } = await sb
+      .from("engineer_date_windows")
+      .select("the_date, start_minute, end_minute")
+      .eq("engineer_user_id", userId)
+      .gte("the_date", fromKey.toISOString().slice(0, 10))
+      .lte("the_date", toKey.toISOString().slice(0, 10));
+    if (error) return;
+    setDateWindows(((data ?? []) as Array<{ the_date: string; start_minute: number; end_minute: number }>).map((r) => ({
+      date: r.the_date, startMinute: r.start_minute, endMinute: r.end_minute,
+    })));
+  }, [userId]);
+
+  const refreshHolidays = useCallback(async () => {
+    const sb = sbRef.current;
+    const fromKey = new Date();
+    fromKey.setHours(0, 0, 0, 0);
+    const toKey = new Date(fromKey);
+    toKey.setFullYear(toKey.getFullYear() + 1);
+    const { data, error } = await sb
+      .from("engineer_holidays")
+      .select("holiday_date, label, kind")
+      .eq("engineer_user_id", userId)
+      .gte("holiday_date", fromKey.toISOString().slice(0, 10))
+      .lte("holiday_date", toKey.toISOString().slice(0, 10));
+    if (error) return;
+    setHolidaysAll(((data ?? []) as Array<{ holiday_date: string; label: string | null; kind: string }>).map((r) => ({
+      date: r.holiday_date,
+      label: r.label,
+      kind: (["holiday", "vacation", "sick", "personal", "other"].includes(r.kind)
+        ? r.kind : "holiday") as EngineerHoliday["kind"],
+    })));
   }, [userId]);
 
   // Computed lookups so the cell renderer stays O(1).
@@ -1280,6 +1352,18 @@ function MonthView({
     for (const h of holidaysAll) m.set(h.date, h);
     return m;
   }, [holidaysAll]);
+
+  // date → date_windows[] map. Cells with a non-empty entry are
+  // "custom" — they diverge from the recurring weekly pattern.
+  const dateWindowsByDate = useMemo(() => {
+    const m = new Map<string, DateWindow[]>();
+    for (const dw of dateWindows) {
+      const arr = m.get(dw.date) ?? [];
+      arr.push(dw);
+      m.set(dw.date, arr);
+    }
+    return m;
+  }, [dateWindows]);
 
   const bookingsByDate = useMemo(() => {
     const m = new Map<string, MonthBooking[]>();
@@ -1360,51 +1444,107 @@ function MonthView({
   };
   const goToday = () => {
     setCursor({ year: today.getFullYear(), month: today.getMonth() });
-    setSelectedDay(isoDateInTz(today, sourceTz));
+    // Open the popup for today so the engineer can immediately edit slots
+    // — same UX as clicking the today cell in non-multi-select mode.
+    if (!multiSelect) {
+      setPopupDate(isoDateInTz(today, sourceTz));
+    }
   };
 
-  // Per-cell render helpers.
+  // Per-cell render helpers. Resolution order (matches the customer-side
+  // ScheduleEngineerModal): holiday → date_windows → weekly pattern.
   const cellMinutes = (date: Date): number => {
     if (date.getMonth() !== cursor.month) return 0; // grey out non-month cells
     const dayKey = isoDateInTz(date, sourceTz);
     if (holidayByDate.has(dayKey)) return 0;
+    const overrides = dateWindowsByDate.get(dayKey);
+    if (overrides && overrides.length > 0) {
+      return overrides.reduce((s, w) => s + (w.endMinute - w.startMinute), 0);
+    }
     return minutesPerWeekday[date.getDay()];
   };
 
-  const toggleHoliday = useCallback(async (dayKey: string) => {
-    if (busy) return;
-    setBusy(true);
+  // Cell-click behaviour depends on mode. Single-mode opens the popup
+  // editor for that date; multi-select mode toggles membership in the
+  // selectedDates set so the engineer can batch-apply a template.
+  const handleCellClick = (date: Date) => {
+    if (date.getMonth() !== cursor.month) return;
+    const dayKey = isoDateInTz(date, sourceTz);
+    if (multiSelect) {
+      setSelectedDates((prev) => {
+        const next = new Set(prev);
+        if (next.has(dayKey)) next.delete(dayKey);
+        else next.add(dayKey);
+        return next;
+      });
+    } else {
+      setPopupDate(dayKey);
+    }
+  };
+
+  // Bulk operations — fan out the set of selected dates through the
+  // dedicated bulk RPCs so the network cost stays one round-trip
+  // regardless of how many dates the engineer ticked.
+  const applyBulkTemplate = useCallback(async (slots: Array<[number, number]>) => {
+    if (bulkBusy || selectedDates.size === 0) return;
+    setBulkBusy(true);
     try {
       const sb = sbRef.current;
-      const existing = holidayByDate.get(dayKey);
-      if (existing) {
-        const { error } = await sb.rpc("remove_engineer_holiday", { _date: dayKey });
-        if (error) throw new Error(error.message);
-        setHolidaysAll((prev) => prev.filter((h) => h.date !== dayKey));
-      } else {
-        const { error } = await sb.rpc("add_engineer_holiday", {
-          _date: dayKey, _label: null, _kind: "personal",
-        });
-        if (error) throw new Error(error.message);
-        setHolidaysAll((prev) => [
-          ...prev,
-          { date: dayKey, label: null, kind: "personal" as const },
-        ].sort((a, b) => a.date.localeCompare(b.date)));
-      }
+      const { error } = await sb.rpc("apply_date_template_bulk", {
+        _dates: Array.from(selectedDates),
+        _slots: slots.map(([s, e]) => ({ start_minute: s, end_minute: e })),
+      });
+      if (error) throw new Error(error.message);
+      await refreshDateWindows();
+      setSelectedDates(new Set());
+      setMultiSelect(false);
     } catch (err) {
-      // Surface via console — MonthView has no toast lane of its own.
-      console.warn("[month-view] toggle holiday failed:", err);
+      console.warn("[month-view] bulk template failed:", err);
     } finally {
-      setBusy(false);
+      setBulkBusy(false);
     }
-  }, [busy, holidayByDate]);
+  }, [bulkBusy, selectedDates, refreshDateWindows]);
 
-  const selectedDate = selectedDay ? new Date(`${selectedDay}T12:00:00`) : null;
-  const selectedHoliday = selectedDay ? holidayByDate.get(selectedDay) : undefined;
-  const selectedBookings = selectedDay ? (bookingsByDate.get(selectedDay) ?? []) : [];
-  const selectedProjectedMinutes = selectedDate && selectedDate.getMonth() === cursor.month
-    ? cellMinutes(selectedDate)
-    : selectedDate ? (holidayByDate.has(selectedDay!) ? 0 : minutesPerWeekday[selectedDate.getDay()]) : 0;
+  const bulkBlockDates = useCallback(async () => {
+    if (bulkBusy || selectedDates.size === 0) return;
+    setBulkBusy(true);
+    try {
+      const sb = sbRef.current;
+      const { error } = await sb.rpc("add_engineer_holidays_bulk", {
+        _rows: Array.from(selectedDates).map((d) => ({ date: d, label: null, kind: "personal" })),
+      });
+      if (error) throw new Error(error.message);
+      await refreshHolidays();
+      setSelectedDates(new Set());
+      setMultiSelect(false);
+    } catch (err) {
+      console.warn("[month-view] bulk block failed:", err);
+    } finally {
+      setBulkBusy(false);
+    }
+  }, [bulkBusy, selectedDates, refreshHolidays]);
+
+  const bulkResetDates = useCallback(async () => {
+    if (bulkBusy || selectedDates.size === 0) return;
+    setBulkBusy(true);
+    try {
+      const sb = sbRef.current;
+      const { error } = await sb.rpc("clear_date_overrides_bulk", {
+        _dates: Array.from(selectedDates),
+      });
+      if (error) throw new Error(error.message);
+      await refreshDateWindows();
+      setSelectedDates(new Set());
+      setMultiSelect(false);
+    } catch (err) {
+      console.warn("[month-view] bulk reset failed:", err);
+    } finally {
+      setBulkBusy(false);
+    }
+  }, [bulkBusy, selectedDates, refreshDateWindows]);
+
+  const popupDateWindows = popupDate ? (dateWindowsByDate.get(popupDate) ?? []) : [];
+  const popupHoliday = popupDate ? holidayByDate.get(popupDate) : undefined;
 
   return (
     <div className="flex flex-col gap-4">
@@ -1440,14 +1580,37 @@ function MonthView({
             <ChevronRight size={14} />
           </button>
         </div>
-        <button
-          type="button"
-          onClick={goToday}
-          className="rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--primary-soft)]"
-          style={{ borderColor: "var(--border)", color: "var(--text)" }}
-        >
-          Today
-        </button>
+        <div className="flex items-center gap-1.5">
+          {/* Multi-select toggle — flips the grid into batch mode where
+              clicking dates accumulates them into the selectedDates set
+              and a bottom action bar offers bulk Apply / Block / Reset
+              operations through the dedicated jsonb RPCs. */}
+          <button
+            type="button"
+            onClick={() => {
+              setMultiSelect((v) => !v);
+              if (multiSelect) setSelectedDates(new Set());
+            }}
+            aria-pressed={multiSelect}
+            title={multiSelect ? "Exit select-multiple" : "Select multiple dates"}
+            className="rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors"
+            style={{
+              borderColor: multiSelect ? "var(--primary)" : "var(--border)",
+              backgroundColor: multiSelect ? "color-mix(in srgb, var(--primary) 14%, transparent)" : "transparent",
+              color: multiSelect ? "var(--primary)" : "var(--text-muted)",
+            }}
+          >
+            {multiSelect ? "Selecting…" : "Select multiple"}
+          </button>
+          <button
+            type="button"
+            onClick={goToday}
+            className="rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--primary-soft)]"
+            style={{ borderColor: "var(--border)", color: "var(--text)" }}
+          >
+            Today
+          </button>
+        </div>
       </div>
 
       {/* Grid */}
@@ -1481,25 +1644,29 @@ function MonthView({
               const inMonth = d.getMonth() === cursor.month;
               const isToday = d.getTime() === today.getTime();
               const dayKey = isoDateInTz(d, sourceTz);
-              const isSelected = dayKey === selectedDay;
+              const isMultiPicked = multiSelect && selectedDates.has(dayKey);
               const holiday = holidayByDate.get(dayKey);
               const bks = bookingsByDate.get(dayKey) ?? [];
               const projMin = inMonth ? cellMinutes(d) : 0;
               const projHours = Math.floor(projMin / 60);
               const projRem = projMin % 60;
               const isPast = d.getTime() < today.getTime();
+              const hasOverride = (dateWindowsByDate.get(dayKey) ?? []).length > 0;
               return (
                 <button
                   key={dayKey}
                   type="button"
-                  onClick={() => setSelectedDay(isSelected ? null : dayKey)}
+                  onClick={() => handleCellClick(d)}
                   className="relative flex min-h-[68px] flex-col items-start gap-1 border-b border-r p-1.5 text-left transition-colors last:border-r-0 hover:bg-black/5 dark:hover:bg-white/5"
                   style={{
                     borderColor: "var(--border)",
-                    backgroundColor: isSelected
-                      ? "color-mix(in srgb, var(--primary) 10%, transparent)"
+                    backgroundColor: isMultiPicked
+                      ? "color-mix(in srgb, var(--primary) 18%, transparent)"
                       : "transparent",
                     opacity: !inMonth ? 0.35 : isPast ? 0.55 : 1,
+                    boxShadow: isMultiPicked
+                      ? "inset 0 0 0 2px var(--primary)"
+                      : "none",
                   }}
                 >
                   <div className="flex w-full items-center justify-between">
@@ -1560,6 +1727,19 @@ function MonthView({
                       )}
                     </div>
                   )}
+                  {/* "Custom" override badge — appears when the date has
+                      its own engineer_date_windows rows replacing the
+                      weekly pattern for just this date. Top-right corner
+                      so it doesn't compete with the hour badge / Today
+                      marker. */}
+                  {hasOverride && inMonth && !holiday && (
+                    <span
+                      aria-hidden
+                      className="absolute right-1 top-1 inline-flex h-1.5 w-1.5 rounded-full"
+                      style={{ backgroundColor: "#a855f7" }}
+                      title="Custom slots for this date"
+                    />
+                  )}
                 </button>
               );
             })}
@@ -1567,7 +1747,7 @@ function MonthView({
         )}
       </div>
 
-      {/* Legend + detail panel */}
+      {/* Legend */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px]" style={{ color: "var(--text-muted)" }}>
         <span className="inline-flex items-center gap-1.5">
           <span className="size-2 rounded-full" style={{ backgroundColor: "var(--primary)" }} />
@@ -1581,105 +1761,527 @@ function MonthView({
           <span className="size-2 rounded-full" style={{ backgroundColor: "#0ea5e9" }} />
           Booking
         </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="size-2 rounded-full" style={{ backgroundColor: "#a855f7" }} />
+          Custom slots (differs from weekly pattern)
+        </span>
       </div>
 
-      {/* Day detail panel — appears below the grid when a date is clicked */}
-      {selectedDay && selectedDate && (
+      {/* Multi-select action bar — appears at the bottom only when the
+          engineer is in select-multiple mode and has at least one date
+          picked. Bulk operations fan out via the dedicated jsonb RPCs. */}
+      {multiSelect && selectedDates.size > 0 && (
         <div
-          className="rounded-xl border p-4"
-          style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)" }}
+          className="sticky bottom-0 flex flex-wrap items-center gap-2 rounded-xl border p-3 shadow-lg"
+          style={{
+            borderColor: "var(--primary)",
+            backgroundColor: "color-mix(in srgb, var(--primary) 10%, var(--surface))",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+          }}
         >
-          <div className="mb-3 flex items-start justify-between gap-2">
-            <div>
-              <div className="text-[13px] font-semibold" style={{ color: "var(--text)" }}>
-                {selectedDate.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
-              </div>
-              <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-                {selectedHoliday
-                  ? `Off — ${selectedHoliday.label ?? selectedHoliday.kind}`
-                  : selectedProjectedMinutes > 0
-                    ? `Projected ${Math.floor(selectedProjectedMinutes / 60)}h${selectedProjectedMinutes % 60 > 0 ? ` ${selectedProjectedMinutes % 60}m` : ""} from your weekly pattern`
-                    : "No availability from your weekly pattern"}
+          <span className="text-[12px] font-semibold" style={{ color: "var(--text)" }}>
+            {selectedDates.size} date{selectedDates.size === 1 ? "" : "s"} selected
+          </span>
+          <span className="flex-1" />
+          <button
+            type="button"
+            disabled={bulkBusy}
+            onClick={() => void applyBulkTemplate([[9 * 60, 17 * 60]])}
+            className="rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--primary-soft)] disabled:opacity-50"
+            style={{ borderColor: "var(--border)", color: "var(--text)" }}
+          >
+            9am–5pm
+          </button>
+          <button
+            type="button"
+            disabled={bulkBusy}
+            onClick={() => void applyBulkTemplate([[9 * 60, 13 * 60]])}
+            className="rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--primary-soft)] disabled:opacity-50"
+            style={{ borderColor: "var(--border)", color: "var(--text)" }}
+          >
+            Mornings (9–1)
+          </button>
+          <button
+            type="button"
+            disabled={bulkBusy}
+            onClick={() => void applyBulkTemplate([[18 * 60, 22 * 60]])}
+            className="rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--primary-soft)] disabled:opacity-50"
+            style={{ borderColor: "var(--border)", color: "var(--text)" }}
+          >
+            Evenings (6–10)
+          </button>
+          <button
+            type="button"
+            disabled={bulkBusy}
+            onClick={() => void bulkBlockDates()}
+            className="rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+            style={{
+              borderColor: "color-mix(in srgb, var(--accent-red) 40%, transparent)",
+              color: "var(--accent-red)",
+            }}
+          >
+            Block all
+          </button>
+          <button
+            type="button"
+            disabled={bulkBusy}
+            onClick={() => void bulkResetDates()}
+            className="rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+            style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+          >
+            Reset to pattern
+          </button>
+          <button
+            type="button"
+            disabled={bulkBusy}
+            onClick={() => {
+              setSelectedDates(new Set());
+              setMultiSelect(false);
+            }}
+            className="rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+            style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {/* Per-date editor popup — replaces the inline detail panel. Lets
+          the engineer set custom slots for a specific date, reset to the
+          weekly pattern, or block the date entirely. */}
+      {popupDate && (
+        <DateSlotsPopup
+          date={popupDate}
+          weeklyWindows={windows}
+          dateOverrides={popupDateWindows}
+          holiday={popupHoliday ?? null}
+          bookingsToday={bookingsByDate.get(popupDate) ?? []}
+          sourceTz={sourceTz}
+          selectedZones={selectedZones}
+          onClose={() => setPopupDate(null)}
+          onAnyChange={async () => {
+            await Promise.all([refreshDateWindows(), refreshHolidays()]);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// DateSlotsPopup — edits a single date's availability. Pre-fills from the
+// weekly pattern (per UX preference) when no overrides exist; saving any
+// slots creates engineer_date_windows rows that REPLACE the pattern for
+// that date. Reset-to-pattern wipes the overrides; Block-this-date adds
+// a holiday row.
+// ──────────────────────────────────────────────────────────────────────────
+function DateSlotsPopup({
+  date, weeklyWindows, dateOverrides, holiday, bookingsToday,
+  sourceTz, selectedZones, onClose, onAnyChange,
+}: {
+  date: string;
+  weeklyWindows: AvailabilityWindow[];
+  dateOverrides: DateWindow[];
+  holiday: EngineerHoliday | null;
+  bookingsToday: MonthBooking[];
+  sourceTz: string;
+  selectedZones: TzOption[];
+  onClose: () => void;
+  onAnyChange: () => Promise<void> | void;
+}) {
+  const sbRef = useRef(createClient());
+  const dateObj = new Date(`${date}T12:00:00`);
+  const weekday = dateObj.getDay();
+  const dayWeeklyWindows = weeklyWindows
+    .filter((w) => w.weekday === weekday)
+    .sort((a, b) => a.startMinute - b.startMinute);
+  const hasOverrides = dateOverrides.length > 0;
+
+  // Editor state — pre-filled from overrides if any, else from the weekly
+  // pattern for this weekday (per the chosen UX). Each slot is a tuple
+  // [startMin, endMin]; the editor renders one row per tuple.
+  type SlotDraft = { start: number; end: number };
+  const initialSlots: SlotDraft[] = hasOverrides
+    ? dateOverrides.map((d) => ({ start: d.startMinute, end: d.endMinute }))
+    : dayWeeklyWindows.map((w) => ({ start: w.startMinute, end: w.endMinute }));
+  const [slots, setSlots] = useState<SlotDraft[]>(initialSlots);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const sortedSlots = useMemo(
+    () => [...slots].sort((a, b) => a.start - b.start),
+    [slots],
+  );
+
+  const addSlot = () => {
+    // Find next non-overlapping slot.
+    const lastEnd = slots.reduce((m, s) => Math.max(m, s.end), 0);
+    const start = Math.min(lastEnd > 0 ? lastEnd + 60 : 9 * 60, 21 * 60);
+    setSlots([...slots, { start, end: Math.min(start + 120, 23 * 60) }]);
+  };
+  const updateSlot = (i: number, patch: Partial<SlotDraft>) => {
+    setSlots(slots.map((s, idx) => idx === i ? { ...s, ...patch } : s));
+  };
+  const removeSlot = (i: number) => {
+    setSlots(slots.filter((_, idx) => idx !== i));
+  };
+
+  const handleSave = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const sb = sbRef.current;
+      // Validate
+      for (const s of slots) {
+        if (s.start >= s.end) throw new Error("Each slot's end must be after its start.");
+        if (s.start < 0 || s.end > 1440) throw new Error("Slots must be within a single day.");
+      }
+      const { error: rpcErr } = await sb.rpc("apply_date_template_bulk", {
+        _dates: [date],
+        _slots: slots.map((s) => ({ start_minute: s.start, end_minute: s.end })),
+      });
+      if (rpcErr) throw new Error(rpcErr.message);
+      await onAnyChange();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't save slots.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleResetToPattern = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const sb = sbRef.current;
+      const { error: rpcErr } = await sb.rpc("clear_date_overrides", { _date: date });
+      if (rpcErr) throw new Error(rpcErr.message);
+      await onAnyChange();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't reset.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleToggleHoliday = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const sb = sbRef.current;
+      if (holiday) {
+        const { error: rpcErr } = await sb.rpc("remove_engineer_holiday", { _date: date });
+        if (rpcErr) throw new Error(rpcErr.message);
+      } else {
+        const { error: rpcErr } = await sb.rpc("add_engineer_holiday", {
+          _date: date, _label: null, _kind: "personal",
+        });
+        if (rpcErr) throw new Error(rpcErr.message);
+      }
+      await onAnyChange();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't update holiday.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center px-6"
+      style={{ backgroundColor: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div
+        className="relative w-full max-w-lg overflow-hidden rounded-2xl border shadow-xl"
+        style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)", maxHeight: "85vh" }}
+      >
+        {/* Header */}
+        <header
+          className="flex items-start gap-3 border-b px-5 py-4"
+          style={{
+            borderColor: "var(--border)",
+            backgroundColor: "color-mix(in srgb, var(--primary) 6%, transparent)",
+          }}
+        >
+          <CalendarIcon size={16} style={{ color: "var(--primary)" }} className="mt-0.5 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <h2 className="text-[15px] font-semibold" style={{ color: "var(--text)" }}>
+              {dateObj.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
+            </h2>
+            <p className="mt-0.5 text-[11px]" style={{ color: "var(--text-muted)" }}>
+              {holiday
+                ? `Off · ${holiday.label ?? holiday.kind}`
+                : hasOverrides
+                  ? "Custom slots for this date (overrides weekly pattern)"
+                  : `Inherits from your weekly ${WEEKDAYS[weekday]} pattern`}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="inline-flex size-8 items-center justify-center rounded-md transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <X size={14} />
+          </button>
+        </header>
+
+        {/* Body */}
+        <div className="overflow-y-auto px-5 py-4" style={{ maxHeight: "calc(85vh - 120px)" }}>
+          {holiday ? (
+            <div
+              className="flex items-start gap-3 rounded-lg border p-3"
+              style={{
+                borderColor: "color-mix(in srgb, var(--accent-red) 40%, transparent)",
+                backgroundColor: "color-mix(in srgb, var(--accent-red) 6%, transparent)",
+              }}
+            >
+              <Trash2 size={14} style={{ color: "var(--accent-red)" }} className="mt-0.5 shrink-0" />
+              <div className="flex-1 text-[12px]" style={{ color: "var(--text)" }}>
+                This date is blocked. Customers can&apos;t book any slot, even if the weekly pattern would normally allow it.
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => setSelectedDay(null)}
-              aria-label="Close"
-              className="inline-flex size-7 items-center justify-center rounded-md transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-              style={{ color: "var(--text-muted)" }}
-            >
-              <X size={12} />
-            </button>
-          </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              <div>
+                <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+                  Slots for this date
+                </h3>
+                <div className="flex flex-col gap-2">
+                  {slots.length === 0 ? (
+                    <p className="text-[12px]" style={{ color: "var(--text-faint)" }}>
+                      No slots. Customers will see this day as unavailable. Add one, or hit &ldquo;Reset to pattern&rdquo; below.
+                    </p>
+                  ) : (
+                    sortedSlots.map((s) => {
+                      // Find the original index in the unsorted slots list
+                      // so update/remove targets the right entry.
+                      const originalIndex = slots.findIndex(
+                        (x) => x.start === s.start && x.end === s.end,
+                      );
+                      return (
+                        <SlotEditorRow
+                          key={`${s.start}-${s.end}-${originalIndex}`}
+                          slot={s}
+                          disabled={busy}
+                          sourceTz={sourceTz}
+                          selectedZones={selectedZones}
+                          onChange={(patch) => updateSlot(originalIndex, patch)}
+                          onRemove={() => removeSlot(originalIndex)}
+                        />
+                      );
+                    })
+                  )}
+                </div>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={addSlot}
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-dashed px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--primary-soft)] disabled:opacity-50"
+                  style={{
+                    borderColor: "color-mix(in srgb, var(--primary) 40%, transparent)",
+                    color: "var(--primary)",
+                  }}
+                >
+                  <Plus size={11} />
+                  Add another slot
+                </button>
+              </div>
 
-          {/* Projected windows for the day */}
-          {!selectedHoliday && (
-            <div className="mb-3 flex flex-wrap gap-1.5">
-              {windows
-                .filter((w) => w.weekday === selectedDate.getDay())
-                .sort((a, b) => a.startMinute - b.startMinute)
-                .map((w) => (
-                  <span
-                    key={w.startMinute}
-                    className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium"
-                    style={{
-                      borderColor: "color-mix(in srgb, var(--primary) 35%, transparent)",
-                      backgroundColor: "color-mix(in srgb, var(--primary) 12%, transparent)",
-                      color: "var(--primary)",
-                    }}
-                  >
-                    <span className="size-1.5 rounded-full" style={{ backgroundColor: "var(--primary)" }} />
-                    {fmt12h(w.startMinute)} → {fmt12h(w.endMinute)}
-                  </span>
-                ))}
-              {windows.filter((w) => w.weekday === selectedDate.getDay()).length === 0 && (
-                <span className="text-[11px]" style={{ color: "var(--text-faint)" }}>
-                  No windows on {WEEKDAYS[selectedDate.getDay()]}s.
-                </span>
+              {/* Reference: weekly pattern for this weekday */}
+              {!hasOverrides && dayWeeklyWindows.length > 0 && (
+                <div className="rounded-lg border p-3" style={{
+                  borderColor: "var(--border)",
+                  backgroundColor: "color-mix(in srgb, var(--text) 3%, transparent)",
+                }}>
+                  <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
+                    Your normal {WEEKDAYS[weekday]}
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {dayWeeklyWindows.map((w) => (
+                      <span
+                        key={w.startMinute}
+                        className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
+                        style={{
+                          borderColor: "var(--border)",
+                          color: "var(--text-muted)",
+                        }}
+                      >
+                        {fmt12h(w.startMinute)} → {fmt12h(w.endMinute)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Bookings on this date — informational */}
+              {bookingsToday.length > 0 && (
+                <div>
+                  <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+                    Customer bookings on this date
+                  </h3>
+                  <div className="flex flex-col gap-1">
+                    {bookingsToday.map((b) => (
+                      <div
+                        key={b.id}
+                        className="flex items-center gap-2 rounded-md border px-2 py-1.5 text-[12px]"
+                        style={{ borderColor: "var(--border)", color: "var(--text)" }}
+                      >
+                        <span className="size-1.5 rounded-full" style={{ backgroundColor: "#0ea5e9" }} />
+                        <span className="tabular-nums">
+                          {new Date(b.slotStart).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                          {" → "}
+                          {new Date(b.slotEnd).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
           )}
 
-          {/* Bookings on this day */}
-          {selectedBookings.length > 0 && (
-            <div className="mb-3 flex flex-col gap-1">
-              <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-                Customer bookings
-              </span>
-              {selectedBookings.map((b) => (
-                <div
-                  key={b.id}
-                  className="flex items-center gap-2 rounded-md border px-2 py-1.5 text-[12px]"
-                  style={{ borderColor: "var(--border)", color: "var(--text)" }}
-                >
-                  <span className="size-1.5 rounded-full" style={{ backgroundColor: "#0ea5e9" }} />
-                  <span className="tabular-nums">
-                    {new Date(b.slotStart).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
-                    {" → "}
-                    {new Date(b.slotEnd).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Quick action — only allow blocking future dates (past is moot) */}
-          {selectedDate.getTime() >= today.getTime() && (
-            <button
-              type="button"
-              onClick={() => void toggleHoliday(selectedDay)}
-              disabled={busy}
-              className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-colors disabled:opacity-50"
-              style={{
-                borderColor: selectedHoliday ? "var(--border)" : "color-mix(in srgb, var(--accent-red) 40%, transparent)",
-                color: selectedHoliday ? "var(--text)" : "var(--accent-red)",
-              }}
-            >
-              {selectedHoliday ? "Unblock this date" : "Block this date"}
-            </button>
+          {error && (
+            <p className="mt-3 text-[12px]" style={{ color: "var(--accent-red)" }}>{error}</p>
           )}
         </div>
+
+        {/* Footer actions */}
+        <footer
+          className="flex flex-wrap items-center gap-2 border-t px-5 py-3"
+          style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)" }}
+        >
+          {!holiday && (
+            <>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void handleResetToPattern()}
+                className="rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+                style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+              >
+                Reset to weekly pattern
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void handleToggleHoliday()}
+                className="rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+                style={{
+                  borderColor: "color-mix(in srgb, var(--accent-red) 40%, transparent)",
+                  color: "var(--accent-red)",
+                }}
+              >
+                Block this date
+              </button>
+            </>
+          )}
+          {holiday && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void handleToggleHoliday()}
+              className="rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+              style={{ borderColor: "var(--border)", color: "var(--text)" }}
+            >
+              Unblock this date
+            </button>
+          )}
+          <span className="flex-1" />
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onClose}
+            className="rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+            style={{ borderColor: "var(--border)", color: "var(--text)" }}
+          >
+            Cancel
+          </button>
+          {!holiday && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void handleSave()}
+              className="rounded-md px-3 py-1 text-[11px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              style={{ backgroundColor: "var(--primary)" }}
+            >
+              {busy ? <Loader2 size={11} className="inline animate-spin" /> : <Check size={11} className="inline" />}
+              {" "}Save
+            </button>
+          )}
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+function SlotEditorRow({
+  slot, disabled, sourceTz, selectedZones, onChange, onRemove,
+}: {
+  slot: { start: number; end: number };
+  disabled: boolean;
+  sourceTz: string;
+  selectedZones: TzOption[];
+  onChange: (patch: Partial<{ start: number; end: number }>) => void;
+  onRemove: () => void;
+}) {
+  const [startStr, setStartStr] = useState(minutesToHHMM(slot.start));
+  const [endStr, setEndStr] = useState(minutesToHHMM(slot.end));
+  useEffect(() => { setStartStr(minutesToHHMM(slot.start)); }, [slot.start]);
+  useEffect(() => { setEndStr(minutesToHHMM(slot.end)); }, [slot.end]);
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-1.5">
+        <input
+          type="time"
+          value={startStr}
+          disabled={disabled}
+          onChange={(e) => {
+            setStartStr(e.target.value);
+            const m = hhmmToMinutes(e.target.value);
+            if (m != null) onChange({ start: m });
+          }}
+          className="rounded-md border px-2 py-1 text-[12px] outline-none"
+          style={{ borderColor: "var(--border)", backgroundColor: "var(--background)", color: "var(--text)" }}
+        />
+        <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>→</span>
+        <input
+          type="time"
+          value={endStr}
+          disabled={disabled}
+          onChange={(e) => {
+            setEndStr(e.target.value);
+            const m = hhmmToMinutes(e.target.value);
+            if (m != null) onChange({ end: m });
+          }}
+          className="rounded-md border px-2 py-1 text-[12px] outline-none"
+          style={{ borderColor: "var(--border)", backgroundColor: "var(--background)", color: "var(--text)" }}
+        />
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={onRemove}
+          title="Remove slot"
+          aria-label="Remove slot"
+          className="ml-auto inline-flex size-7 items-center justify-center rounded-md transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+          style={{ color: "var(--text-muted)" }}
+        >
+          <Trash2 size={12} />
+        </button>
+      </div>
+      {selectedZones.length > 0 && (
+        <TzConversionLine
+          start={slot.start}
+          end={slot.end}
+          sourceTz={sourceTz}
+          zones={selectedZones}
+        />
       )}
     </div>
   );
@@ -2469,10 +3071,16 @@ function TzConversionLine({
   sourceTz: string;
   zones: TzOption[];
 }) {
+  // Bumped this whole row from text-[10px] / text-faint to text-[13px] /
+  // text-(default). The point of the row is to make customer-zone times
+  // immediately readable while planning availability — at 10px / muted it
+  // was technically present but psychologically inert. Same compositional
+  // shape (zone code + start–end times, separated by gap-x-3) so the layout
+  // is unchanged; only the typography gets the volume knob turned up.
   return (
     <div
-      className="ml-2 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[10px]"
-      style={{ color: "var(--text-faint)" }}
+      className="ml-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] font-medium"
+      style={{ color: "var(--text)" }}
     >
       {zones.map((z) => {
         const cs = convertMinutes(start, sourceTz, z.iana);
@@ -2485,11 +3093,21 @@ function TzConversionLine({
           ? `${ce.hh12}${ce.period}`
           : `${ce.hh12}:${String(ce.mm).padStart(2, "0")}${ce.period}`;
         return (
-          <span key={z.id} className="inline-flex items-center gap-1 whitespace-nowrap">
-            <span className="font-semibold" style={{ color: "var(--text-muted)" }}>
+          <span
+            key={z.id}
+            className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2 py-0.5"
+            style={{
+              borderColor: "var(--border)",
+              backgroundColor: "var(--surface-raised)",
+            }}
+          >
+            <span
+              className="text-[12px] font-bold uppercase tracking-wider"
+              style={{ color: "var(--text-muted)" }}
+            >
               {z.id}
             </span>
-            <span className="tabular-nums">
+            <span className="tabular-nums" style={{ color: "var(--text)" }}>
               {startLabel}–{endLabel}
             </span>
           </span>
@@ -2677,79 +3295,118 @@ function hhmmToMinutes(s: string): number | null {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Payouts tab
+// Payouts tab — date-range × contract-category view
+//
+// Filter model:
+//   • Top: date range presets (7d / 30d / 90d / YTD / All / Custom) +
+//     two date inputs for the custom case
+//   • Tabs: All / Build / Golive / Maintain
+//
+// What each category shows:
+//   • Build      → paid sessions count, total minutes, billable minutes
+//                  (minutes are the unit of value here — per-minute work)
+//   • Golive     → count of distinct projects that the engineer worked on
+//                  whose project.contract_type='golive'
+//   • Maintain   → count of distinct projects currently being maintained
+//                  (project.contract_type='maintain' + activity in range)
+//
+// No revenue display — per the user, value is implicit in the categories.
+// The data sources are the new engineer_contract_summary view (rollup) and
+// engineer_session_history view (per-row, joined to projects.contract_type).
 // ──────────────────────────────────────────────────────────────────────────
+
 function PayoutsTab({ userId }: { userId: string }) {
   const sbRef = useRef(createClient());
-  const [summary, setSummary] = useState<EarningsSummary | null>(null);
+  const [range, setRange] = useState<DateRange>(() => rangeFromPreset("30d"));
+  const [category, setCategory] = useState<"all" | ContractType>("all");
+  const [contractRollups, setContractRollups] = useState<ContractRollup[]>([]);
   const [recent, setRecent] = useState<RecentSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Fetch on userId + range changes. The view + history table are filtered
+  // by date here so the engineer sees totals for the selected window.
   useEffect(() => {
     const sb = sbRef.current;
     let alive = true;
     void (async () => {
+      setLoading(true);
+      setError(null);
       try {
-        const [sumRes, recentRes] = await Promise.all([
-          sb.from("engineer_earnings_summary")
-            .select("*")
-            .eq("engineer_user_id", userId)
-            .maybeSingle(),
-          sb.from("engineer_session_history")
-            .select("id, guest_name, duration_minutes, status, created_at, project_name")
-            .eq("engineer_user_id", userId)
-            .order("created_at", { ascending: false })
-            .limit(20),
-        ]);
+        // History query is the most flexible source — we can roll it up
+        // client-side per contract_type AND get the recent-rows list in
+        // one round-trip.
+        let q = sb
+          .from("engineer_session_history")
+          .select("id, guest_name, duration_minutes, status, created_at, project_name, project_id, paid_extension_at, contract_type")
+          .eq("engineer_user_id", userId)
+          .order("created_at", { ascending: false });
+        if (range.from) q = q.gte("created_at", `${range.from}T00:00:00.000Z`);
+        if (range.to)   q = q.lte("created_at", `${range.to}T23:59:59.999Z`);
+        const histRes = await q.limit(500);
         if (!alive) return;
-        if (sumRes.error) throw new Error(sumRes.error.message);
-        if (recentRes.error) throw new Error(recentRes.error.message);
+        if (histRes.error) throw new Error(histRes.error.message);
 
-        const s = (sumRes.data ?? null) as null | {
-          total_sessions: number;
-          ended_sessions: number;
-          total_minutes: number;
-          billable_minutes: number;
-          lifetime_earnings_cents: number | null;
-          most_recent_session_at: string | null;
-        };
-        setSummary(
-          s
-            ? {
-                totalSessions: Number(s.total_sessions ?? 0),
-                endedSessions: Number(s.ended_sessions ?? 0),
-                totalMinutes: Number(s.total_minutes ?? 0),
-                billableMinutes: Number(s.billable_minutes ?? 0),
-                lifetimeEarningsCents: s.lifetime_earnings_cents,
-                mostRecentSessionAt: s.most_recent_session_at,
-              }
-            : {
-                totalSessions: 0,
-                endedSessions: 0,
-                totalMinutes: 0,
-                billableMinutes: 0,
-                lifetimeEarningsCents: null,
-                mostRecentSessionAt: null,
-              }
-        );
-        setRecent(
-          ((recentRes.data ?? []) as Array<{
-            id: string;
-            guest_name: string | null;
-            duration_minutes: number | null;
-            status: string;
-            created_at: string;
-            project_name: string | null;
-          }>).map((r) => ({
+        const rows = ((histRes.data ?? []) as Array<{
+          id: string;
+          guest_name: string | null;
+          duration_minutes: number | null;
+          status: string;
+          created_at: string;
+          project_name: string | null;
+          project_id: string | null;
+          paid_extension_at: string | null;
+          contract_type: string | null;
+        }>).map((r) => {
+          const ct: ContractType | null = r.contract_type === "build" || r.contract_type === "golive" || r.contract_type === "maintain"
+            ? r.contract_type
+            : null;
+          return {
             id: r.id,
             guestName: r.guest_name,
             durationMinutes: r.duration_minutes != null ? Number(r.duration_minutes) : null,
             status: r.status,
             createdAt: r.created_at,
             projectName: r.project_name,
-          }))
-        );
+            projectId: r.project_id,
+            contractType: ct,
+            paidExtensionAt: r.paid_extension_at,
+          };
+        });
+
+        if (!alive) return;
+        setRecent(rows);
+
+        // Roll up per contract_type. Sessions with no project / no
+        // contract_type fall into 'build' as a sensible default.
+        const buckets = new Map<ContractType, ContractRollup>();
+        for (const t of CONTRACT_TYPES) {
+          buckets.set(t, {
+            contractType: t,
+            paidSessions: 0,
+            totalSessions: 0,
+            totalMinutes: 0,
+            billableMinutes: 0,
+            distinctProjects: 0,
+          });
+        }
+        const projectSets = new Map<ContractType, Set<string>>();
+        for (const t of CONTRACT_TYPES) projectSets.set(t, new Set());
+        for (const r of rows) {
+          const ct: ContractType = r.contractType ?? "build";
+          const b = buckets.get(ct)!;
+          b.totalSessions += 1;
+          if (r.paidExtensionAt) b.paidSessions += 1;
+          if (r.durationMinutes != null) {
+            b.totalMinutes += r.durationMinutes;
+            if (r.status === "ended") b.billableMinutes += r.durationMinutes;
+          }
+          if (r.projectId) projectSets.get(ct)!.add(r.projectId);
+        }
+        for (const t of CONTRACT_TYPES) {
+          buckets.get(t)!.distinctProjects = projectSets.get(t)!.size;
+        }
+        setContractRollups(Array.from(buckets.values()));
       } catch (err) {
         if (!alive) return;
         setError(err instanceof Error ? err.message : "Couldn't load earnings.");
@@ -2758,119 +3415,352 @@ function PayoutsTab({ userId }: { userId: string }) {
       }
     })();
     return () => { alive = false; };
-  }, [userId]);
+  }, [userId, range]);
 
-  if (loading) {
-    return (
-      <div className="flex items-center gap-2 text-sm" style={{ color: "var(--text-muted)" }}>
-        <Loader2 className="size-4 animate-spin" /> Loading earnings…
-      </div>
-    );
-  }
-  if (error || !summary) {
-    return (
-      <div className="flex flex-col gap-6">
-        <SectionHead title="Payouts" blurb="Sessions and minutes." />
-        <SectionCard>
-          <p className="text-sm" style={{ color: "var(--accent-red)" }}>{error ?? "No data."}</p>
-        </SectionCard>
-      </div>
-    );
-  }
+  const totalSummary = useMemo(() => {
+    let totalMinutes = 0;
+    let paidSessions = 0;
+    let golives = 0;
+    let maintains = 0;
+    for (const r of contractRollups) {
+      if (r.contractType === "build") {
+        totalMinutes += r.totalMinutes;
+        paidSessions += r.paidSessions;
+      } else if (r.contractType === "golive") {
+        golives += r.distinctProjects;
+      } else if (r.contractType === "maintain") {
+        maintains += r.distinctProjects;
+      }
+    }
+    return { totalMinutes, paidSessions, golives, maintains };
+  }, [contractRollups]);
 
-  const lifetimeLabel = summary.lifetimeEarningsCents == null
-    ? "Setup pending"
-    : `$${(summary.lifetimeEarningsCents / 100).toFixed(2)}`;
+  const visibleRows = useMemo(() => {
+    if (category === "all") return recent.slice(0, 50);
+    return recent.filter((r) => (r.contractType ?? "build") === category).slice(0, 50);
+  }, [recent, category]);
+
+  const rollupByCategory = useMemo(() => {
+    const m = new Map<ContractType, ContractRollup>();
+    for (const r of contractRollups) m.set(r.contractType, r);
+    return m;
+  }, [contractRollups]);
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-5">
       <SectionHead
         title="Payouts"
-        blurb="Sessions, minutes, lifetime earnings. Stripe Connect payout link arrives in v2."
+        blurb="Your work, grouped by contract phase. Build counts minutes; Go-live and Maintain count projects."
       />
 
-      <div
-        className="relative overflow-hidden rounded-2xl border p-6"
-        style={{
-          borderColor: "var(--border)",
-          background:
-            "linear-gradient(135deg, color-mix(in srgb, var(--primary) 10%, var(--surface-raised)) 0%, var(--surface-raised) 60%)",
-        }}
-      >
-        <div className="flex items-start gap-4">
-          <div
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full"
-            style={{ backgroundColor: "var(--primary-soft)", color: "var(--primary)" }}
-          >
-            <Wallet className="size-6" />
-          </div>
-          <div className="flex-1">
-            <div className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-              Lifetime earnings
-            </div>
-            <div
-              className="mt-1 text-[28px] font-semibold leading-tight"
-              style={{ color: "var(--text)", fontFamily: "var(--font-source-serif)" }}
-            >
-              {lifetimeLabel}
-            </div>
-            <div className="mt-1 text-[13px]" style={{ color: "var(--text-muted)" }}>
-              {summary.lifetimeEarningsCents == null
-                ? "Connect a payout method to see this populate."
-                : "Lifetime credited"}
-            </div>
-          </div>
+      {/* Date range picker */}
+      <DateRangePicker value={range} onChange={setRange} />
+
+      {/* Category tabs */}
+      <CategoryTabs active={category} onChange={setCategory} rollup={rollupByCategory} />
+
+      {/* Top-line summary across all categories */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatCard label="Build minutes" value={fmtMinutes(totalSummary.totalMinutes)} Icon={Clock} />
+        <StatCard label="Paid sessions" value={String(totalSummary.paidSessions)} Icon={CreditCard} />
+        <StatCard label="Go-lives" value={String(totalSummary.golives)} Icon={CheckCircle2} />
+        <StatCard label="Maintaining" value={String(totalSummary.maintains)} Icon={Wrench} />
+      </div>
+
+      {/* Category-specific detail */}
+      {!loading && !error && (
+        <CategoryDetail category={category} rollup={rollupByCategory} />
+      )}
+
+      {/* Recent sessions list (filtered by category) */}
+      <SectionHead
+        title={category === "all" ? "Recent sessions" : `Recent ${category} sessions`}
+        blurb={`Last ${Math.min(visibleRows.length, 50)} sessions in the selected window${category === "all" ? "" : ` for ${category}`}.`}
+      />
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm" style={{ color: "var(--text-muted)" }}>
+          <Loader2 className="size-4 animate-spin" /> Loading sessions…
         </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatCard label="Sessions" value={String(summary.totalSessions)} Icon={CalendarIcon} />
-        <StatCard label="Total minutes" value={`${Math.round(summary.totalMinutes).toLocaleString()} min`} Icon={Clock} />
-        <StatCard label="Billable minutes" value={`${Math.round(summary.billableMinutes).toLocaleString()} min`} Icon={TrendingUp} />
-      </div>
-
-      <SectionHead title="Recent sessions" blurb="Last 20 sessions you ran." />
-
-      {recent.length === 0 ? (
+      ) : error ? (
+        <SectionCard>
+          <p className="text-sm" style={{ color: "var(--accent-red)" }}>{error}</p>
+        </SectionCard>
+      ) : visibleRows.length === 0 ? (
         <SectionCard>
           <p className="text-[12px]" style={{ color: "var(--text-muted)" }}>
-            No sessions yet — once you accept a call it shows up here.
+            No sessions in this window. Try widening the date range or picking another category.
           </p>
         </SectionCard>
       ) : (
         <div className="overflow-hidden rounded-2xl border" style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)" }}>
-          {recent.map((r, i) => (
-            <div
-              key={r.id}
-              className="flex items-center gap-3 px-4 py-3"
-              style={{ borderBottom: i === recent.length - 1 ? "none" : "1px solid var(--border)" }}
-            >
+          {visibleRows.map((r, i) => {
+            const ct: ContractType = r.contractType ?? "build";
+            const ctColor = ct === "build" ? "var(--primary)" : ct === "golive" ? "#0ea5e9" : "#a855f7";
+            return (
               <div
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
-                style={{ backgroundColor: "var(--primary-soft)", color: "var(--primary)" }}
+                key={r.id}
+                className="flex items-center gap-3 px-4 py-3"
+                style={{ borderBottom: i === visibleRows.length - 1 ? "none" : "1px solid var(--border)" }}
               >
-                <CalendarIcon size={14} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-[13px] font-medium" style={{ color: "var(--text)" }}>
-                  {r.guestName ?? "Guest"}
-                  {r.projectName ? <span className="ml-1 text-[11px]" style={{ color: "var(--text-muted)" }}>· {r.projectName}</span> : null}
+                <div
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+                  style={{
+                    backgroundColor: `color-mix(in srgb, ${ctColor} 14%, transparent)`,
+                    color: ctColor,
+                  }}
+                >
+                  <CalendarIcon size={14} />
                 </div>
-                <div className="mt-0.5 text-[11px]" style={{ color: "var(--text-muted)" }}>
-                  {new Date(r.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                  {" · "}
-                  <span className="lowercase">{r.status}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-[13px] font-medium" style={{ color: "var(--text)" }}>
+                      {r.guestName ?? "Guest"}
+                    </span>
+                    {r.projectName && (
+                      <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                        · {r.projectName}
+                      </span>
+                    )}
+                    <span
+                      className="rounded-full px-1.5 py-0 text-[9px] font-semibold uppercase tracking-wider"
+                      style={{
+                        backgroundColor: `color-mix(in srgb, ${ctColor} 14%, transparent)`,
+                        color: ctColor,
+                      }}
+                    >
+                      {ct}
+                    </span>
+                    {r.paidExtensionAt && (
+                      <span
+                        className="rounded-full px-1.5 py-0 text-[9px] font-semibold uppercase tracking-wider"
+                        style={{
+                          backgroundColor: "color-mix(in srgb, var(--primary) 14%, transparent)",
+                          color: "var(--primary)",
+                        }}
+                      >
+                        Paid
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-0.5 text-[11px]" style={{ color: "var(--text-muted)" }}>
+                    {new Date(r.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                    {" · "}
+                    <span className="lowercase">{r.status}</span>
+                  </div>
+                </div>
+                <div className="text-[12px] tabular-nums" style={{ color: "var(--text)" }}>
+                  {r.durationMinutes != null ? `${Math.round(r.durationMinutes)}m` : "—"}
                 </div>
               </div>
-              <div className="text-[12px] tabular-nums" style={{ color: "var(--text)" }}>
-                {r.durationMinutes != null ? `${Math.round(r.durationMinutes)}m` : "—"}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
   );
+}
+
+// ── Date range picker ────────────────────────────────────────────────────
+function DateRangePicker({
+  value, onChange,
+}: {
+  value: DateRange;
+  onChange: (r: DateRange) => void;
+}) {
+  const presets: Array<{ id: Exclude<DateRangePresetId, "custom">; label: string }> = [
+    { id: "7d", label: "Last 7 days" },
+    { id: "30d", label: "Last 30 days" },
+    { id: "90d", label: "Last 90 days" },
+    { id: "ytd", label: "This year" },
+    { id: "all", label: "All time" },
+  ];
+  return (
+    <div
+      className="flex flex-wrap items-center gap-2 rounded-xl border p-3"
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "color-mix(in srgb, var(--text) 2%, var(--surface-raised))",
+      }}
+    >
+      <div className="flex flex-wrap gap-1.5">
+        {presets.map((p) => {
+          const isActive = value.presetId === p.id;
+          return (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => onChange(rangeFromPreset(p.id))}
+              aria-pressed={isActive}
+              className="rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors"
+              style={{
+                borderColor: isActive ? "var(--primary)" : "var(--border)",
+                backgroundColor: isActive
+                  ? "color-mix(in srgb, var(--primary) 14%, transparent)"
+                  : "var(--surface)",
+                color: isActive ? "var(--primary)" : "var(--text-muted)",
+              }}
+            >
+              {p.label}
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          onClick={() => onChange({ presetId: "custom", from: value.from, to: value.to })}
+          aria-pressed={value.presetId === "custom"}
+          className="rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors"
+          style={{
+            borderColor: value.presetId === "custom" ? "var(--primary)" : "var(--border)",
+            backgroundColor: value.presetId === "custom"
+              ? "color-mix(in srgb, var(--primary) 14%, transparent)"
+              : "var(--surface)",
+            color: value.presetId === "custom" ? "var(--primary)" : "var(--text-muted)",
+          }}
+        >
+          Custom
+        </button>
+      </div>
+      {value.presetId === "custom" && (
+        <div className="flex items-center gap-1.5">
+          <input
+            type="date"
+            value={value.from ?? ""}
+            onChange={(e) => onChange({ ...value, from: e.target.value || null })}
+            className="rounded-md border px-2 py-1 text-[12px] outline-none"
+            style={{ borderColor: "var(--border)", backgroundColor: "var(--background)", color: "var(--text)" }}
+          />
+          <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>→</span>
+          <input
+            type="date"
+            value={value.to ?? ""}
+            onChange={(e) => onChange({ ...value, to: e.target.value || null })}
+            className="rounded-md border px-2 py-1 text-[12px] outline-none"
+            style={{ borderColor: "var(--border)", backgroundColor: "var(--background)", color: "var(--text)" }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Category tabs ────────────────────────────────────────────────────────
+function CategoryTabs({
+  active, onChange, rollup,
+}: {
+  active: "all" | ContractType;
+  onChange: (c: "all" | ContractType) => void;
+  rollup: Map<ContractType, ContractRollup>;
+}) {
+  const tabs: Array<{ id: "all" | ContractType; label: string; meta: string }> = [
+    {
+      id: "all",
+      label: "All",
+      meta: "Everything in range",
+    },
+    {
+      id: "build",
+      label: "Build",
+      meta: `${fmtMinutes(rollup.get("build")?.totalMinutes ?? 0)}`,
+    },
+    {
+      id: "golive",
+      label: "Go-live",
+      meta: `${rollup.get("golive")?.distinctProjects ?? 0} project${(rollup.get("golive")?.distinctProjects ?? 0) === 1 ? "" : "s"}`,
+    },
+    {
+      id: "maintain",
+      label: "Maintain",
+      meta: `${rollup.get("maintain")?.distinctProjects ?? 0} project${(rollup.get("maintain")?.distinctProjects ?? 0) === 1 ? "" : "s"}`,
+    },
+  ];
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {tabs.map((t) => {
+        const isActive = active === t.id;
+        return (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => onChange(t.id)}
+            aria-pressed={isActive}
+            className="flex flex-col items-start gap-0.5 rounded-xl border px-3 py-2 text-left transition-all"
+            style={{
+              borderColor: isActive ? "var(--primary)" : "var(--border)",
+              backgroundColor: isActive
+                ? "color-mix(in srgb, var(--primary) 8%, var(--surface-raised))"
+                : "var(--surface-raised)",
+              minWidth: 110,
+            }}
+          >
+            <span
+              className="text-[11px] font-semibold uppercase tracking-wider"
+              style={{ color: isActive ? "var(--primary)" : "var(--text-muted)" }}
+            >
+              {t.label}
+            </span>
+            <span className="text-[12px] font-semibold" style={{ color: "var(--text)" }}>
+              {t.meta}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Category detail card — explains the active category ─────────────────
+function CategoryDetail({
+  category, rollup,
+}: {
+  category: "all" | ContractType;
+  rollup: Map<ContractType, ContractRollup>;
+}) {
+  if (category === "all") {
+    return (
+      <SectionCard>
+        <p className="text-[12px]" style={{ color: "var(--text-muted)" }}>
+          <strong style={{ color: "var(--text)" }}>Build</strong> tracks per-minute work — the unit of value is your time on the call.
+          {" "}
+          <strong style={{ color: "var(--text)" }}>Go-live</strong> and <strong style={{ color: "var(--text)" }}>Maintain</strong> track counts of distinct projects — the unit is &ldquo;how many you took to live&rdquo; or &ldquo;how many you keep alive.&rdquo;
+        </p>
+      </SectionCard>
+    );
+  }
+  const b = rollup.get(category);
+  if (!b) return null;
+  if (category === "build") {
+    return (
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <StatCard label="Paid sessions" value={String(b.paidSessions)} Icon={CreditCard} />
+        <StatCard label="Total minutes" value={fmtMinutes(b.totalMinutes)} Icon={Clock} />
+        <StatCard label="Billable minutes" value={fmtMinutes(b.billableMinutes)} Icon={TrendingUp} />
+      </div>
+    );
+  }
+  if (category === "golive") {
+    return (
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <StatCard label="Go-live projects" value={String(b.distinctProjects)} Icon={CheckCircle2} />
+        <StatCard label="Sessions involved" value={String(b.totalSessions)} Icon={CalendarIcon} />
+      </div>
+    );
+  }
+  // maintain
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <StatCard label="Projects maintained" value={String(b.distinctProjects)} Icon={Wrench} />
+      <StatCard label="Maintenance touches" value={String(b.totalSessions)} Icon={CalendarIcon} />
+    </div>
+  );
+}
+
+function fmtMinutes(min: number): string {
+  const m = Math.round(min);
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  const r = m % 60;
+  return r === 0 ? `${h}h` : `${h}h ${r}m`;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -2912,19 +3802,211 @@ function SecurityTab({
         </div>
       </SectionCard>
 
-      <SectionCard variant="muted">
-        <ComingSoonRow
-          title="Two-factor authentication"
-          body="Add a second step at sign-in via TOTP authenticator app."
-        />
-      </SectionCard>
+      <ActiveSessionsCard />
+    </div>
+  );
+}
 
-      <SectionCard variant="muted">
-        <ComingSoonRow
-          title="Active sessions"
-          body="See every device signed in. Sign out remotely from here."
-        />
-      </SectionCard>
+// ── Active sessions — real list with the 3-device sign-in cap ────────────
+// Reads from list_my_devices (the user_devices table). Per-row "Sign out"
+// hits revoke_my_device, which deletes the row + the underlying
+// auth.sessions / auth.refresh_tokens entries so the kicked browser
+// can't keep working. A banner explains the 3-device cap.
+function ActiveSessionsCard() {
+  const [devices, setDevices] = useState<UserDevice[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [myFingerprint, setMyFingerprint] = useState<string>("");
+
+  useEffect(() => {
+    setMyFingerprint(getOrCreateFingerprint());
+    let alive = true;
+    void (async () => {
+      const list = await listMyDevices();
+      if (!alive) return;
+      setDevices(list);
+      setLoading(false);
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  const refresh = useCallback(async () => {
+    const list = await listMyDevices();
+    setDevices(list);
+  }, []);
+
+  const handleRevoke = useCallback(async (deviceId: string) => {
+    if (busyId) return;
+    if (typeof window !== "undefined" && !window.confirm("Sign out from this device? It'll be logged out immediately.")) {
+      return;
+    }
+    setBusyId(deviceId);
+    try {
+      const ok = await revokeDevice(deviceId);
+      if (ok) {
+        setDevices((prev) => prev.filter((d) => d.id !== deviceId));
+      } else {
+        await refresh();
+      }
+    } finally {
+      setBusyId(null);
+    }
+  }, [busyId, refresh]);
+
+  const handleRevokeAllOthers = useCallback(async () => {
+    if (busyId) return;
+    const others = devices.filter((d) => d.device_fingerprint !== myFingerprint);
+    if (others.length === 0) return;
+    if (typeof window !== "undefined" && !window.confirm(`Sign out from ${others.length} other device${others.length === 1 ? "" : "s"}? They'll all be logged out immediately.`)) {
+      return;
+    }
+    setBusyId("__bulk__");
+    try {
+      await Promise.all(others.map((d) => revokeDevice(d.id)));
+      await refresh();
+    } finally {
+      setBusyId(null);
+    }
+  }, [busyId, devices, myFingerprint, refresh]);
+
+  const isAtCap = devices.length >= 3;
+
+  return (
+    <SectionCard>
+      <div className="flex items-start gap-4">
+        <div
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
+          style={{ backgroundColor: "var(--primary-soft)", color: "var(--primary)" }}
+        >
+          <Monitor className="size-5" />
+        </div>
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-medium" style={{ color: "var(--text)" }}>Active sessions</p>
+            <span
+              className="rounded-full px-1.5 py-0 text-[9px] font-semibold uppercase tracking-wider"
+              style={{
+                backgroundColor: isAtCap
+                  ? "color-mix(in srgb, var(--warn) 14%, transparent)"
+                  : "color-mix(in srgb, var(--primary) 14%, transparent)",
+                color: isAtCap ? "var(--warn)" : "var(--primary)",
+              }}
+            >
+              {devices.length} / 3
+            </span>
+          </div>
+          <p className="mt-0.5 text-[12px]" style={{ color: "var(--text-muted)" }}>
+            Up to 3 devices can be signed in at once. A 4th sign-in auto-kicks your oldest device.
+          </p>
+
+          {/* Device list */}
+          <div className="mt-3 flex flex-col gap-1.5">
+            {loading ? (
+              <div className="flex items-center gap-2 text-[12px]" style={{ color: "var(--text-muted)" }}>
+                <Loader2 className="size-3 animate-spin" /> Loading devices…
+              </div>
+            ) : devices.length === 0 ? (
+              <p className="text-[12px]" style={{ color: "var(--text-faint)" }}>
+                No registered devices. (You should see at least this one — refresh the page if it stays empty.)
+              </p>
+            ) : (
+              devices.map((d) => {
+                const isCurrent = d.device_fingerprint === myFingerprint;
+                return (
+                  <DeviceRow
+                    key={d.id}
+                    device={d}
+                    isCurrent={isCurrent}
+                    busy={busyId === d.id}
+                    onRevoke={() => void handleRevoke(d.id)}
+                  />
+                );
+              })
+            )}
+          </div>
+
+          {/* Bulk action — only shown when there's >1 device, since the
+              current device is excluded from "all others" */}
+          {devices.filter((d) => d.device_fingerprint !== myFingerprint).length > 0 && (
+            <button
+              type="button"
+              disabled={busyId === "__bulk__"}
+              onClick={() => void handleRevokeAllOthers()}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+              style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+            >
+              {busyId === "__bulk__" && <Loader2 size={10} className="animate-spin" />}
+              Sign out everywhere else
+            </button>
+          )}
+        </div>
+      </div>
+    </SectionCard>
+  );
+}
+
+function DeviceRow({
+  device, isCurrent, busy, onRevoke,
+}: {
+  device: UserDevice;
+  isCurrent: boolean;
+  busy: boolean;
+  onRevoke: () => void;
+}) {
+  const lastSeen = new Date(device.last_seen_at);
+  return (
+    <div
+      className="flex items-center gap-2.5 rounded-lg border px-3 py-2"
+      style={{
+        borderColor: isCurrent
+          ? "color-mix(in srgb, var(--primary) 40%, transparent)"
+          : "var(--border)",
+        backgroundColor: isCurrent
+          ? "color-mix(in srgb, var(--primary) 5%, transparent)"
+          : "transparent",
+      }}
+    >
+      <div
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+        style={{
+          backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)",
+          color: "var(--text-muted)",
+        }}
+      >
+        <Monitor className="size-3.5" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <span className="truncate text-[12px] font-medium" style={{ color: "var(--text)" }}>
+            {device.device_label ?? "Unknown device"}
+          </span>
+          {isCurrent && (
+            <span
+              className="rounded-full px-1 py-0 text-[8px] font-bold uppercase tracking-wider"
+              style={{ backgroundColor: "var(--primary)", color: "#fff" }}
+            >
+              This device
+            </span>
+          )}
+        </div>
+        <div className="text-[10px]" style={{ color: "var(--text-faint)" }}>
+          Last seen {lastSeen.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+        </div>
+      </div>
+      {!isCurrent && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onRevoke}
+          title="Sign out from this device"
+          aria-label="Sign out from this device"
+          className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+          style={{ color: "var(--accent-red)" }}
+        >
+          {busy ? <Loader2 size={10} className="animate-spin" /> : <X size={10} />}
+          Sign out
+        </button>
+      )}
     </div>
   );
 }

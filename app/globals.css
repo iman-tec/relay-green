@@ -412,6 +412,34 @@ textarea {
   100% { left: 100%;              opacity: 0; }
 }
 
+/* ──────── Incoming-call heartbeat ─────────────────────────────────────
+   `relay-heartbeat` — used by the engineer presence ball when a match
+   offer arrives. Double-beat pulse with an expanding glow ring. Cadence
+   tuned to read as "incoming call" without strobing. `currentColor`
+   inherits from the ball's fill so it adapts to the presence state. */
+@keyframes relay-heartbeat {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 currentColor;
+  }
+  20% {
+    transform: scale(1.18);
+    box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 30%, transparent);
+  }
+  40% {
+    transform: scale(1);
+    box-shadow: 0 0 0 8px color-mix(in srgb, currentColor 0%, transparent);
+  }
+  60% {
+    transform: scale(1.18);
+    box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 30%, transparent);
+  }
+  80% {
+    transform: scale(1);
+    box-shadow: 0 0 0 12px color-mix(in srgb, currentColor 0%, transparent);
+  }
+}
+
 /* ──────── Status / launcher pulse ─────────────────────────────────────
    `relay-pulse-ok` — gentle green halo for the launcher and ringing state.
    Calming, slow (1.8s), respects reduced-motion. Used by Button variant

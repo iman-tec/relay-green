@@ -128,4 +128,11 @@ export type GuestMessage = {
   visibility?: "all" | "supervisor";
   /** Populated by the join on guest_message_attachments. */
   attachments?: GuestMessageAttachment[];
+  /** Set by the author when they edit the body in place. Renders as
+   *  "(edited)" alongside the timestamp. */
+  edited_at?: string | null;
+  /** Soft-delete marker. The client filters rows where deleted_at IS NOT
+   *  NULL out of the chat view. Migration 20260527210000 adds the column
+   *  + author-only UPDATE/DELETE policies. */
+  deleted_at?: string | null;
 };

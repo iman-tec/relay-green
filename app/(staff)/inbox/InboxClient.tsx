@@ -21,7 +21,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ChevronLeft, ChevronRight, Loader2, PhoneIncoming, Search, Sparkles, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Folder, Loader2, PhoneIncoming, Search, Sparkles, X } from "lucide-react";
 import { useEngineerWorkspace } from "@/lib/relay/useEngineerWorkspace";
 import { useRequireEngineerProfile } from "@/lib/relay/useRequireEngineerProfile";
 import { createClient } from "@/lib/supabase/browser";
@@ -42,6 +42,18 @@ const BRAND_GREEN      = "#3f5c2e";
 const BRAND_GREEN_SOFT = "rgba(63, 92, 46, 0.12)";
 const URGENT_AMBER_SOFT = "rgba(212, 160, 23, 0.14)";
 const URGENT_AMBER      = "#d4a017";
+
+// "Guest" is the legacy DB default for customer rows that haven't set a
+// display name. Engineers asked us to surface these as "Customer" instead
+// — better mental model since these ARE customers, not anonymous guests.
+// This normalises at render time without touching the underlying data.
+function displayCustomerName(raw: string | null | undefined): string {
+  if (!raw) return "Customer";
+  const trimmed = raw.trim();
+  if (!trimmed) return "Customer";
+  if (trimmed.toLowerCase() === "guest") return "Customer";
+  return trimmed;
+}
 
 type Person = {
   key:      string;
@@ -97,6 +109,13 @@ export function InboxClient() {
   useEffect(() => {
     const sb = sbRef.current;
     let alive = true;
+    // Channel is hoisted to the effect scope so the useEffect cleanup
+    // (not the discarded async-IIFE return) can call removeChannel. Same
+    // pair-of-bugs that the dashboard had: IIFE-return cleanup was lost
+    // AND the channel name was stable per user, so Supabase's name-based
+    // dedupe yelled "cannot add postgres_changes after subscribe()" when
+    // a stale leaked channel collided with a fresh mount.
+    let ch: ReturnType<typeof sb.channel> | null = null;
     void (async () => {
       const { data: u } = await sb.auth.getUser();
       const me = u.user?.id;
@@ -119,10 +138,17 @@ export function InboxClient() {
       if (!alive) return;
       setRequests(enriched);
 
+      // Per-mount UUID suffix on the channel name — defends against
+      // Supabase's name-based dedupe when a leaked subscription from a
+      // previous mount is still hanging around.
+      const suffix = typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
       // Realtime — fan-in inserts and status updates so the list mirrors
       // the database without polling.
-      const ch = sb
-        .channel(`inbox-requests-${me}`)
+      ch = sb
+        .channel(`inbox-requests-${me}-${suffix}`)
         .on(
           "postgres_changes",
           {
@@ -156,10 +182,11 @@ export function InboxClient() {
           },
         )
         .subscribe();
-
-      return () => { sb.removeChannel(ch); };
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+      if (ch) sb.removeChannel(ch);
+    };
   }, [enrichRequest]);
 
   const onAccept = useCallback(async (req: ConnectRequest) => {
@@ -222,7 +249,7 @@ export function InboxClient() {
         map.set(k, {
           key:      k,
           email:    c.guest_email ?? "",
-          name:     c.guest_name ?? "Customer",
+          name:     displayCustomerName(c.guest_name),
           sessions: [c],
         });
       }
@@ -254,21 +281,55 @@ export function InboxClient() {
   const selectedPerson = selectedKey ? peopleMap.get(selectedKey) ?? null : null;
 
   // ── Call log (right rail) ─────────────────────────────────────────────
+  // Searches over two axes — customer (name/email) OR project (name).
+  // A "newest first" sort is the default (engineers asked); other sorts
+  // available via the dropdown. The default view shows the last 30 calls
+  // (engineer-side ask), with an optional from–to date range to dig
+  // further back. 90-day retention is a server-side concern handled by a
+  // separate sweeper edge function; from the UI we expose whatever the
+  // server returns.
   const [logSearch, setLogSearch] = useState("");
-  const [logSort, setLogSort]     = useState<"newest" | "oldest" | "name" | "status">("newest");
+  const [logSearchMode, setLogSearchMode] = useState<"customer" | "project">("customer");
+  const [logSort, setLogSort] = useState<"newest" | "oldest" | "name" | "status">("newest");
   const [logCollapsed, setLogCollapsed] = useState(false);
+  const [logFromDate, setLogFromDate] = useState<string>("");
+  const [logToDate, setLogToDate] = useState<string>("");
+  const [logShowAll, setLogShowAll] = useState(false);  // toggle: 30 default → all
+
+  // Default cap when no filters are applied — 30 most-recent calls.
+  const DEFAULT_LOG_CAP = 30;
 
   const logRows = useMemo(() => {
     const q = logSearch.trim().toLowerCase();
-    let arr = q
-      ? recent.filter((c) =>
-          (c.guest_name  ?? "").toLowerCase().includes(q) ||
-          (c.guest_email ?? "").toLowerCase().includes(q) ||
-          (c.status      ?? "").toLowerCase().includes(q),
-        )
-      : recent;
-    arr = [...arr];
-    arr.sort((a, b) => {
+    let arr: typeof recent = recent;
+
+    // Date range filter — interpret empty strings as "no bound."
+    if (logFromDate) {
+      const fromMs = new Date(`${logFromDate}T00:00:00`).getTime();
+      arr = arr.filter((c) => new Date(c.created_at).getTime() >= fromMs);
+    }
+    if (logToDate) {
+      const toMs = new Date(`${logToDate}T23:59:59.999`).getTime();
+      arr = arr.filter((c) => new Date(c.created_at).getTime() <= toMs);
+    }
+
+    // Search filter — split by axis. Customer mode looks at guest_name +
+    // guest_email; project mode looks at project_name.
+    if (q) {
+      if (logSearchMode === "customer") {
+        arr = arr.filter((c) =>
+          (c.guest_name ?? "").toLowerCase().includes(q) ||
+          (c.guest_email ?? "").toLowerCase().includes(q),
+        );
+      } else {
+        arr = arr.filter((c) =>
+          (c.project_name ?? "").toLowerCase().includes(q),
+        );
+      }
+    }
+
+    // Sort (defaults newest-first).
+    arr = [...arr].sort((a, b) => {
       switch (logSort) {
         case "oldest":
           return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
@@ -281,8 +342,34 @@ export function InboxClient() {
           return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       }
     });
+
+    // Apply default cap only when no filters are active and the engineer
+    // hasn't asked to see everything.
+    const hasFilters = q.length > 0 || logFromDate.length > 0 || logToDate.length > 0;
+    if (!hasFilters && !logShowAll && arr.length > DEFAULT_LOG_CAP) {
+      arr = arr.slice(0, DEFAULT_LOG_CAP);
+    }
+
     return arr;
-  }, [recent, logSearch, logSort]);
+  }, [recent, logSearch, logSearchMode, logSort, logFromDate, logToDate, logShowAll]);
+
+  const totalRecentCount = recent.length;
+  const hasAnyFilter = logSearch.length > 0 || logFromDate.length > 0 || logToDate.length > 0;
+
+  // Column-gradient palette — left → right increases in light, then drops
+  // back dark on the rightmost rail. Visual cue that the three lists are
+  // distinct surfaces, not one continuous panel.
+  //
+  //   Sidebar (left of inbox, owned by StaffShell)  → dark (var(--surface))
+  //   People (left aside)                           → light
+  //   Center (sessions)                             → lighter
+  //   Call log (right aside)                        → dark (matches sidebar)
+  //
+  // The shades are tinted from the canvas with low-alpha text mixes so
+  // they read correctly under all 3 themes (light / dark / espresso).
+  const COL_PEOPLE_BG  = "color-mix(in srgb, var(--text) 3%, var(--surface))";
+  const COL_CENTER_BG  = "color-mix(in srgb, var(--text) 6%, var(--surface))";
+  const COL_CALLLOG_BG = "var(--surface)";
 
   return (
     <div
@@ -292,14 +379,14 @@ export function InboxClient() {
         backgroundColor: "var(--surface)",
       }}
     >
-      {/* ── Left rail: People ──────────────────────────────────────── */}
+      {/* ── Left rail: People (light shade) ───────────────────────── */}
       <aside
         className="flex min-h-0 flex-col overflow-hidden border-r"
-        style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+        style={{ borderColor: "var(--border)", backgroundColor: COL_PEOPLE_BG }}
       >
         <div className="border-b p-3" style={{ borderColor: "var(--border)" }}>
           <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--text-muted)" }}>
-            People
+            Customer name
           </h3>
           <div
             className="flex items-center gap-2 rounded-md border px-3 py-2"
@@ -310,7 +397,7 @@ export function InboxClient() {
               type="text"
               value={peopleSearch}
               onChange={(e) => setPeopleSearch(e.target.value)}
-              placeholder="Search people…"
+              placeholder="Search customers…"
               className="w-full bg-transparent text-xs outline-none"
               style={{ color: "var(--text)" }}
             />
@@ -333,25 +420,49 @@ export function InboxClient() {
                   className="relative flex w-full items-start gap-3 border-b px-4 py-3 text-left transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
                   style={{
                     borderColor: "var(--border)",
-                    backgroundColor: active ? "color-mix(in srgb, var(--text) 4%, transparent)" : "transparent",
+                    // Strong selected-state tint — was too subtle (text 4%);
+                    // now uses the brand soft so the row visually pops out
+                    // and reads as "this is the row driving the right
+                    // pane's contents."
+                    backgroundColor: active ? BRAND_GREEN_SOFT : "transparent",
                   }}
                 >
                   {active && (
-                    <span
-                      aria-hidden
-                      className="absolute inset-y-2 left-0 w-[2px] rounded-r-sm"
-                      style={{ backgroundColor: BRAND_GREEN }}
-                    />
+                    <>
+                      {/* Left edge bar — wider + full-bleed for a clearer
+                          marker than the prior 2px inset bar. */}
+                      <span
+                        aria-hidden
+                        className="absolute inset-y-0 left-0 w-[3px]"
+                        style={{ backgroundColor: BRAND_GREEN }}
+                      />
+                      {/* Right-edge "tab" — visually bridges into the
+                          center pane so the eye reads "this row → that
+                          panel." Sticks out a hair past the column border. */}
+                      <span
+                        aria-hidden
+                        className="absolute right-0 top-1/2 h-3 w-1.5 -translate-y-1/2 translate-x-[3px] rounded-l-sm"
+                        style={{ backgroundColor: BRAND_GREEN }}
+                      />
+                    </>
                   )}
                   <div
                     className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold uppercase"
-                    style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
+                    style={{
+                      backgroundColor: active ? BRAND_GREEN : BRAND_GREEN_SOFT,
+                      color: active ? "#fff" : BRAND_GREEN,
+                    }}
                   >
                     {(p.name || "?")[0]}
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-sm font-medium" style={{ color: "var(--text)" }}>{p.name}</span>
+                      <span
+                        className="truncate text-sm font-medium"
+                        style={{ color: active ? BRAND_GREEN : "var(--text)" }}
+                      >
+                        {p.name}
+                      </span>
                       {hasQueued && (
                         <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: URGENT_AMBER }} />
                       )}
@@ -368,10 +479,10 @@ export function InboxClient() {
         </div>
       </aside>
 
-      {/* ── Center: Person's sessions ──────────────────────────────── */}
+      {/* ── Center: Person's sessions (lighter shade) ──────────────── */}
       <section
         className="flex min-h-0 flex-col overflow-hidden border-r"
-        style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+        style={{ borderColor: "var(--border)", backgroundColor: COL_CENTER_BG }}
       >
         {error && (
           <div
@@ -396,7 +507,7 @@ export function InboxClient() {
         )}
 
         {selectedPerson ? (
-          <PersonHistory person={selectedPerson} onOpen={(id) => router.push(`/staff/session/${id}`)} />
+          <PersonHistory person={selectedPerson} onOpen={(id) => router.push(`/session-review/${id}`)} />
         ) : requests.length === 0 ? (
           <div className="flex flex-1 items-center justify-center px-6 text-center">
             <div className="flex max-w-md flex-col items-center gap-5">
@@ -419,10 +530,10 @@ export function InboxClient() {
         ) : null}
       </section>
 
-      {/* ── Right rail: Call log ───────────────────────────────────── */}
+      {/* ── Right rail: Call log (dark, matches StaffShell sidebar) ── */}
       <aside
         className="flex min-h-0 flex-col overflow-hidden border-l"
-        style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+        style={{ borderColor: "var(--border)", backgroundColor: COL_CALLLOG_BG }}
       >
         {logCollapsed ? (
           /* Collapsed rail — narrow vertical strip with a toggle. */
@@ -463,6 +574,36 @@ export function InboxClient() {
                   </button>
                 </div>
               </div>
+              {/* Search axis toggle — Customer vs Project. */}
+              <div
+                className="mb-2 inline-flex rounded-md border p-0.5"
+                style={{ borderColor: "var(--border)", backgroundColor: "var(--background)" }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setLogSearchMode("customer")}
+                  aria-pressed={logSearchMode === "customer"}
+                  className="rounded px-2 py-0.5 text-[10px] font-semibold transition-colors"
+                  style={{
+                    backgroundColor: logSearchMode === "customer" ? BRAND_GREEN : "transparent",
+                    color: logSearchMode === "customer" ? "#fff" : "var(--text-muted)",
+                  }}
+                >
+                  Customer
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLogSearchMode("project")}
+                  aria-pressed={logSearchMode === "project"}
+                  className="rounded px-2 py-0.5 text-[10px] font-semibold transition-colors"
+                  style={{
+                    backgroundColor: logSearchMode === "project" ? BRAND_GREEN : "transparent",
+                    color: logSearchMode === "project" ? "#fff" : "var(--text-muted)",
+                  }}
+                >
+                  Project
+                </button>
+              </div>
               <div
                 className="mb-2 flex items-center gap-2 rounded-md border px-3 py-2"
                 style={{ borderColor: "var(--border)", backgroundColor: "var(--background)" }}
@@ -472,11 +613,44 @@ export function InboxClient() {
                   type="text"
                   value={logSearch}
                   onChange={(e) => setLogSearch(e.target.value)}
-                  placeholder="Search calls…"
+                  placeholder={logSearchMode === "customer" ? "Search by customer…" : "Search by project…"}
                   className="w-full bg-transparent text-xs outline-none"
                   style={{ color: "var(--text)" }}
                 />
               </div>
+
+              {/* Date range — dig deeper into history without scrolling. */}
+              <div className="mb-2 flex items-center gap-1.5">
+                <input
+                  type="date"
+                  value={logFromDate}
+                  onChange={(e) => setLogFromDate(e.target.value)}
+                  title="Start date"
+                  className="flex-1 rounded-md border px-2 py-1 text-[11px] outline-none"
+                  style={{ borderColor: "var(--border)", backgroundColor: "var(--background)", color: "var(--text)" }}
+                />
+                <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>→</span>
+                <input
+                  type="date"
+                  value={logToDate}
+                  onChange={(e) => setLogToDate(e.target.value)}
+                  title="End date"
+                  className="flex-1 rounded-md border px-2 py-1 text-[11px] outline-none"
+                  style={{ borderColor: "var(--border)", backgroundColor: "var(--background)", color: "var(--text)" }}
+                />
+                {(logFromDate || logToDate) && (
+                  <button
+                    type="button"
+                    onClick={() => { setLogFromDate(""); setLogToDate(""); }}
+                    title="Clear date range"
+                    className="rounded-md p-0.5"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    <X size={11} />
+                  </button>
+                )}
+              </div>
+
               <select
                 value={logSort}
                 onChange={(e) => setLogSort(e.target.value as typeof logSort)}
@@ -492,21 +666,41 @@ export function InboxClient() {
                 <option value="name">Sort: Customer name</option>
                 <option value="status">Sort: Status</option>
               </select>
+
+              {/* Show-all toggle — visible only when the default 30-cap
+                  is hiding more rows and the engineer hasn't already
+                  applied a filter to narrow things down. */}
+              {!hasAnyFilter && totalRecentCount > 30 && (
+                <button
+                  type="button"
+                  onClick={() => setLogShowAll((v) => !v)}
+                  className="mt-2 w-full rounded-md border px-2 py-1 text-[10px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                  style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+                >
+                  {logShowAll
+                    ? `Show last 30 only (currently ${totalRecentCount})`
+                    : `Show all ${totalRecentCount} calls`}
+                </button>
+              )}
             </div>
 
             <div className="hide-scrollbar flex-1 overflow-y-auto">
               {logRows.length === 0 ? (
-                <EmptyHint text={logSearch ? `No calls match "${logSearch}".` : "No calls yet."} />
+                <EmptyHint text={
+                  hasAnyFilter
+                    ? `No calls match the current filters.`
+                    : "No calls yet."
+                } />
               ) : (
                 logRows.map((c) => (
                   <button
                     key={c.id}
-                    onClick={() => router.push(`/staff/session/${c.id}`)}
+                    onClick={() => router.push(`/session-review/${c.id}`)}
                     className="flex w-full items-center justify-between gap-2 border-b px-5 py-3 text-left transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
                     style={{ borderColor: "var(--border)" }}
                   >
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-medium" style={{ color: "var(--text)" }}>{c.guest_name || "Customer"}</div>
+                      <div className="truncate text-sm font-medium" style={{ color: "var(--text)" }}>{displayCustomerName(c.guest_name)}</div>
                       <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
                         {new Date(c.created_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                       </div>
@@ -523,7 +717,20 @@ export function InboxClient() {
   );
 }
 
-/* ──────── Center pane: full session history for one person ─────────── */
+/* ──────── Center pane: project-grouped session history for one person ───
+ * Sessions are bucketed by project_id (with a fallback "No project"
+ * bucket for orphans). Each bucket renders as a collapsible accordion;
+ * expanded buckets show the sessions sorted newest-first. Clicking a
+ * session opens the full session detail view (AI summary + files +
+ * chat transcript) at /staff/session/<id>.
+ * ───────────────────────────────────────────────────────────────────── */
+
+type ProjectBucket = {
+  key: string;            // project_id or "__none__"
+  name: string;           // display name (project_name) or "No project"
+  sessions: GuestCall[];
+  latestAt: number;       // for sort
+};
 
 function PersonHistory({
   person, onOpen,
@@ -531,69 +738,209 @@ function PersonHistory({
   person: Person;
   onOpen: (sessionId: string) => void;
 }) {
-  // Newest first — same direction as the right-rail Call log, so the
-  // whole page reads consistently.
-  const ordered = useMemo(
-    () => [...person.sessions].sort(
-      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-    ),
-    [person.sessions],
-  );
+  // Bucket by project. Sessions without a project fall into a single
+  // "No project" group so they're not lost — but the bucket only
+  // renders when it has content, so a clean person with everything
+  // attached to a project never sees it.
+  const buckets = useMemo(() => {
+    const map = new Map<string, ProjectBucket>();
+    for (const s of person.sessions) {
+      const key = s.project_id ?? "__none__";
+      const name = s.project_name ?? "No project";
+      const bucket = map.get(key) ?? { key, name, sessions: [], latestAt: 0 };
+      bucket.sessions.push(s);
+      const t = new Date(s.created_at).getTime();
+      if (t > bucket.latestAt) bucket.latestAt = t;
+      map.set(key, bucket);
+    }
+    const arr = Array.from(map.values()).map((b) => ({
+      ...b,
+      sessions: [...b.sessions].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      ),
+    }));
+    arr.sort((a, b) => b.latestAt - a.latestAt);
+    return arr;
+  }, [person.sessions]);
+
+  // Track which projects are expanded. Default: the most-recent project
+  // is open on first render so the engineer doesn't have to click to see
+  // anything; other projects are collapsed.
+  const [openKeys, setOpenKeys] = useState<Set<string>>(() => {
+    const s = new Set<string>();
+    if (buckets[0]) s.add(buckets[0].key);
+    return s;
+  });
+  // Keep the "newest project open by default" behaviour stable when the
+  // person changes — re-open whatever the new newest is.
+  useEffect(() => {
+    if (buckets[0]) setOpenKeys(new Set([buckets[0].key]));
+    else setOpenKeys(new Set());
+  }, [person.key, buckets]);
+
+  const toggle = useCallback((key: string) => {
+    setOpenKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
 
   return (
     <div className="flex h-full flex-col">
+      {/* Context banner — visually announces "you're looking at this
+          customer's sessions" so the right column doesn't read as just
+          another list. Brand-tinted background + eyebrow label + a larger
+          avatar than the left column's row chip. The chevron at the
+          left edge points back to the People list as a visual bridge. */}
       <header
-        className="flex items-center gap-3 border-b px-5 py-3"
-        style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+        className="relative flex items-center gap-4 border-b px-6 py-5"
+        style={{
+          borderColor: "var(--border)",
+          backgroundColor: "color-mix(in srgb, var(--primary) 8%, transparent)",
+        }}
       >
+        {/* Leading brand bar — mirrors the active-row marker on the left
+            column so the eye reads continuity from selected row → banner. */}
+        <span
+          aria-hidden
+          className="absolute inset-y-0 left-0 w-[3px]"
+          style={{ backgroundColor: BRAND_GREEN }}
+        />
+        {/* Large avatar — bigger than the left-column chips so the
+            "this is the customer in focus" reading is automatic. */}
         <div
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold uppercase"
-          style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
+          className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-lg font-bold uppercase shadow-sm"
+          style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
         >
           {(person.name || "?")[0]}
         </div>
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-semibold" style={{ color: "var(--text)" }}>
+          <p
+            className="text-[10px] font-semibold uppercase tracking-[0.12em]"
+            style={{ color: BRAND_GREEN }}
+          >
+            Viewing sessions for
+          </p>
+          <h2
+            className="mt-0.5 truncate text-lg font-semibold"
+            style={{ color: "var(--text)", fontFamily: "var(--font-source-serif)" }}
+          >
             {person.name}
           </h2>
-          <p className="truncate text-[11px]" style={{ color: "var(--text-muted)" }}>
-            {person.email || "—"} · {person.sessions.length} session{person.sessions.length === 1 ? "" : "s"}
+          <p className="mt-0.5 truncate text-[12px]" style={{ color: "var(--text-muted)" }}>
+            {person.email || "—"}
+            <span className="mx-1.5" style={{ color: "var(--text-faint)" }}>·</span>
+            {person.sessions.length} session{person.sessions.length === 1 ? "" : "s"}
+            <span className="mx-1.5" style={{ color: "var(--text-faint)" }}>·</span>
+            {buckets.length} project{buckets.length === 1 ? "" : "s"}
           </p>
         </div>
       </header>
 
-      <ul className="hide-scrollbar flex-1 overflow-y-auto">
-        {ordered.map((s) => {
-          const summaryTitle = (s as { ai_summary_title?: string | null }).ai_summary_title;
+      <div className="hide-scrollbar flex-1 overflow-y-auto">
+        {buckets.map((b) => {
+          const open = openKeys.has(b.key);
           return (
-            <li key={s.id} className="border-b" style={{ borderColor: "var(--border)" }}>
-              <button
-                onClick={() => onOpen(s.id)}
-                className="flex w-full items-center justify-between gap-3 px-5 py-2.5 text-left transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm" style={{ color: "var(--text)" }}>
-                    {summaryTitle ?? s.project_name ?? "Session"}
-                  </div>
-                  <div className="mt-0.5 text-[11px]" style={{ color: "var(--text-muted)" }}>
-                    <span className="lowercase">{s.status}</span>
-                    {s.duration_minutes != null && <span> · {Math.round(Number(s.duration_minutes))}m</span>}
-                    {s.agent_name && <span> · w/ {s.agent_name}</span>}
-                  </div>
-                </div>
-                <span
-                  className="shrink-0 text-[11px] tabular-nums"
-                  style={{ color: "var(--text-muted)" }}
-                >
-                  {new Date(s.created_at).toLocaleString([], {
-                    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
-                  })}
-                </span>
-              </button>
-            </li>
+            <ProjectBucketRow
+              key={b.key}
+              bucket={b}
+              open={open}
+              onToggle={() => toggle(b.key)}
+              onOpenSession={onOpen}
+            />
           );
         })}
-      </ul>
+      </div>
+    </div>
+  );
+}
+
+function ProjectBucketRow({
+  bucket, open, onToggle, onOpenSession,
+}: {
+  bucket: ProjectBucket;
+  open: boolean;
+  onToggle: () => void;
+  onOpenSession: (sessionId: string) => void;
+}) {
+  return (
+    <div className="border-b" style={{ borderColor: "var(--border)" }}>
+      {/* Project header — clickable accordion toggle */}
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2.5 px-5 py-2.5 text-left transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
+      >
+        <ChevronRight
+          size={12}
+          style={{
+            color: "var(--text-muted)",
+            transform: open ? "rotate(90deg)" : "rotate(0deg)",
+            transition: "transform 0.15s ease",
+          }}
+        />
+        <Folder size={12} style={{ color: open ? BRAND_GREEN : "var(--text-muted)" }} />
+        <span className="flex-1 truncate text-[13px] font-semibold" style={{ color: "var(--text)" }}>
+          {bucket.name}
+        </span>
+        <span
+          className="rounded-full px-1.5 py-0 text-[9px] font-semibold uppercase tracking-wider"
+          style={{
+            backgroundColor: "color-mix(in srgb, var(--text) 8%, transparent)",
+            color: "var(--text-muted)",
+          }}
+        >
+          {bucket.sessions.length}
+        </span>
+        <span
+          className="shrink-0 text-[10px] tabular-nums"
+          style={{ color: "var(--text-faint)" }}
+        >
+          {new Date(bucket.latestAt).toLocaleDateString([], { month: "short", day: "numeric" })}
+        </span>
+      </button>
+
+      {/* Sessions under this project — only rendered when expanded so
+          collapsed groups don't pay layout cost. */}
+      {open && (
+        <ul>
+          {bucket.sessions.map((s) => {
+            const summaryTitle = (s as { ai_summary_title?: string | null }).ai_summary_title;
+            return (
+              <li key={s.id}>
+                <button
+                  type="button"
+                  onClick={() => onOpenSession(s.id)}
+                  className="flex w-full items-center justify-between gap-3 border-t px-8 py-2 text-left transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
+                  style={{ borderColor: "var(--border)" }}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[13px]" style={{ color: "var(--text)" }}>
+                      {summaryTitle ?? "Session"}
+                    </div>
+                    <div className="mt-0.5 text-[11px]" style={{ color: "var(--text-muted)" }}>
+                      <span className="lowercase">{s.status}</span>
+                      {s.duration_minutes != null && <span> · {Math.round(Number(s.duration_minutes))}m</span>}
+                      {s.agent_name && <span> · w/ {s.agent_name}</span>}
+                    </div>
+                  </div>
+                  <span
+                    className="shrink-0 text-[11px] tabular-nums"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {new Date(s.created_at).toLocaleString([], {
+                      month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+                    })}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }
