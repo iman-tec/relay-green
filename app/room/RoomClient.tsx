@@ -31,6 +31,7 @@ import {
   Wallet, RefreshCw, Settings, LogOut, Check, Folder, Pencil, PanelRightOpen, PanelRightClose,
   Building2, FileText, Clock, Video, MoreHorizontal, UserPlus, Pin, SlidersHorizontal,
   Paperclip, Mic, Download, Music, AudioLines, ShieldCheck, Receipt, Home,
+  Trash2,
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { ThemeTriplet } from "@/app/_components/ThemeTriplet";
@@ -6713,7 +6714,6 @@ const ProjectAccordion = memo(function ProjectAccordion({
               transition: "transform 0.15s ease",
             }}
           />
-          <Folder size={11} style={{ color: isSelected ? BRAND_GREEN : "var(--text-muted)", flexShrink: 0 }} />
           {renaming && !isGeneral ? (
             <input
               autoFocus
@@ -7532,7 +7532,23 @@ function SummaryView({
               </h3>
               <div className="space-y-3">
                 {zoomCompanionMessages.map((m) => (
-                  <MeetingSummaryEntry key={m.id} body={m.body ?? ""} />
+                  <MeetingSummaryEntry
+                    key={m.id}
+                    body={m.body ?? ""}
+                    canEdit={canEdit}
+                    onEdit={async (newBody) => {
+                      const sb = createClient();
+                      const { error } = await sb.rpc("update_guest_message_body", {
+                        _id: m.id, _body: newBody,
+                      });
+                      if (error) throw new Error(error.message);
+                    }}
+                    onDelete={async () => {
+                      const sb = createClient();
+                      const { error } = await sb.rpc("delete_guest_message", { _id: m.id });
+                      if (error) throw new Error(error.message);
+                    }}
+                  />
                 ))}
               </div>
             </div>
@@ -7542,8 +7558,9 @@ function SummaryView({
               transcript. The 90-day retention window starts when the
               project is marked completed; until then files persist
               indefinitely. SessionDownloads renders the retention copy
-              from the project row it loads internally. */}
-          <SessionDownloads session={session} messages={messages} />
+              from the project row it loads internally. canEdit on the
+              session participants surfaces the per-file delete trash icon. */}
+          <SessionDownloads session={session} messages={messages} canRemove={canEdit} />
         </div>
       )}
     </div>
@@ -7569,9 +7586,14 @@ function SummaryView({
 function SessionDownloads({
   session,
   messages,
+  canRemove = false,
 }: {
   session: GuestCall;
   messages: GuestMessage[];
+  /** When true, each Files-exchanged row shows a hover trash icon that
+   *  calls purge_guest_message_attachment. Gated by SummaryView to the
+   *  session's customer or assigned engineer. */
+  canRemove?: boolean;
 }) {
   // Project status fetch — drives the retention copy. Lazy: only fires
   // when the section renders (already inside an "ended" branch). The
@@ -7755,6 +7777,7 @@ function SessionDownloads({
                 key={a.id}
                 attachment={a}
                 archived={projectStatus?.completion_status === "archived"}
+                canRemove={canRemove}
               />
             ))}
           </ul>
@@ -7818,15 +7841,27 @@ function DownloadButton({
 // note. We don't pre-fetch URLs en-masse — only at click time — because
 // the session summary can have many attachments and minting N signed
 // URLs upfront wastes API calls.
+//
+// canRemove gates the hover-revealed trash icon. Removing a file calls
+// purge_guest_message_attachment which flips purged=true; the row keeps
+// its slot but switches to the "Removed" placeholder — same UI branch
+// the 90-day retention sweeper triggers. We don't hard-delete because
+// the position in the history matters ("there used to be a file here").
 function SessionAttachmentRow({
   attachment,
   archived,
+  canRemove = false,
 }: {
   attachment: GuestMessageAttachment;
   archived: boolean;
+  canRemove?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
-  const isPurged = attachment.purged === true || archived;
+  const [removing, setRemoving] = useState(false);
+  // Mirror the server's purged flag locally so removing this row
+  // feels instant — the realtime sub then confirms.
+  const [optimisticPurged, setOptimisticPurged] = useState(false);
+  const isPurged = attachment.purged === true || archived || optimisticPurged;
 
   const onClick = async () => {
     if (isPurged || busy) return;
@@ -7840,17 +7875,36 @@ function SessionAttachmentRow({
     }
   };
 
+  const onRemove = async () => {
+    if (isPurged || removing) return;
+    if (typeof window !== "undefined" && !window.confirm("Remove this file from the session view?")) {
+      return;
+    }
+    setRemoving(true);
+    try {
+      const sb = createClient();
+      const { error } = await sb.rpc("purge_guest_message_attachment", { _id: attachment.id });
+      if (error) throw new Error(error.message);
+      setOptimisticPurged(true);
+    } catch {
+      // Best-effort — leave the row visible if the RPC fails so the
+      // customer/engineer can retry. No toast yet; this is an edge case.
+    } finally {
+      setRemoving(false);
+    }
+  };
+
   const Icon = attachment.kind === "image" ? FileText
     : attachment.kind === "audio" ? Music
     : FileText;
 
   return (
-    <li>
+    <li className="group relative">
       <button
         type="button"
         onClick={() => void onClick()}
         disabled={isPurged || busy}
-        className="flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:cursor-not-allowed"
+        className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:cursor-not-allowed ${canRemove && !isPurged ? "pr-10" : ""}`}
         style={{
           borderColor: "var(--border)",
           backgroundColor: isPurged
@@ -7876,14 +7930,28 @@ function SessionAttachmentRow({
           </div>
           <div className="text-[10px]" style={{ color: "var(--text-muted)" }}>
             {isPurged
-              ? "Removed after 90-day retention window."
+              ? optimisticPurged
+                ? "Removed from this session."
+                : "Removed after 90-day retention window."
               : `${attachment.kind} · ${Math.round(attachment.size_bytes / 1024)} KB`}
           </div>
         </div>
-        {!isPurged && (
+        {!isPurged && !canRemove && (
           <Download size={14} style={{ color: "var(--text-muted)" }} />
         )}
       </button>
+      {canRemove && !isPurged && (
+        <button
+          type="button"
+          onClick={() => void onRemove()}
+          disabled={removing}
+          aria-label={`Remove ${attachment.name}`}
+          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 opacity-0 transition-opacity hover:bg-black/10 group-hover:opacity-100 focus:opacity-100 disabled:opacity-50 dark:hover:bg-white/10"
+          style={{ color: "var(--text-muted)" }}
+        >
+          {removing ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+        </button>
+      )}
     </li>
   );
 }

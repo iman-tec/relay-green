@@ -23,6 +23,7 @@ import {
 import {
   Send, Video, PhoneOff, Loader2, ArrowLeft, RotateCw, Sparkles, Lock, Eye, LogOut,
   PanelLeftOpen, PanelLeftClose, AlertTriangle, BookOpen, ChevronRight, Check,
+  Download,
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { MeetingChatEntry } from "@/app/_components/MeetingChatEntry";
@@ -1274,9 +1275,36 @@ function ReviewPanel({
     >
       <div className="flex items-center gap-2 border-b px-4 py-3" style={{ borderColor: "var(--border)" }}>
         <Sparkles size={12} style={{ color: BRAND_GREEN }} />
-        <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text)" }}>
+        <span className="flex-1 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text)" }}>
           Summary
         </span>
+        {/* Plain-text transcript export — useful when the engineer opens
+            an ended session from /inbox and wants the full conversation
+            as a file for their notes / docs / ticket attachment. */}
+        <button
+          type="button"
+          onClick={() => {
+            const text = buildTranscript(session, messages);
+            const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            const tsStamp = new Date(session.created_at).toISOString().slice(0, 10);
+            const slug = (session.guest_name ?? "session").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30);
+            a.download = `relay-transcript-${tsStamp}-${slug}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+          }}
+          title="Download chat transcript as .txt"
+          aria-label="Download chat transcript"
+          className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+        >
+          <Download size={11} />
+          Transcript
+        </button>
       </div>
       <SummaryView session={session} messages={messages} currentUserId={currentUserId} />
     </section>
@@ -1403,7 +1431,23 @@ function SummaryView({
               </h3>
               <div className="space-y-3">
                 {zoomCompanionMessages.map((m) => (
-                  <MeetingSummaryEntry key={m.id} body={m.body ?? ""} />
+                  <MeetingSummaryEntry
+                    key={m.id}
+                    body={m.body ?? ""}
+                    canEdit={canEdit}
+                    onEdit={async (newBody) => {
+                      const sb = createClient();
+                      const { error } = await sb.rpc("update_guest_message_body", {
+                        _id: m.id, _body: newBody,
+                      });
+                      if (error) throw new Error(error.message);
+                    }}
+                    onDelete={async () => {
+                      const sb = createClient();
+                      const { error } = await sb.rpc("delete_guest_message", { _id: m.id });
+                      if (error) throw new Error(error.message);
+                    }}
+                  />
                 ))}
               </div>
             </div>
@@ -1575,6 +1619,56 @@ function ProjectMemorySection({
       )}
     </div>
   );
+}
+
+// ── Transcript builder ───────────────────────────────────────────────────
+// Plain-text serialisation of the chat, suitable for engineer notes /
+// ticket-system attachments. Filters out Zoom-machinery system messages
+// ("meeting started" / "meeting ended" / cloud-recording stubs) and the
+// AI Companion summary blocks since those land in the summary card
+// already — keeping the transcript a clean conversation log.
+function buildTranscript(session: GuestCall, messages: GuestMessage[]): string {
+  const lines: string[] = [];
+  const projectLine = session.project_name ? ` · ${session.project_name}` : "";
+  lines.push(`Relay session transcript`);
+  lines.push(`Customer: ${session.guest_name ?? "Customer"}${projectLine}`);
+  lines.push(`Engineer: ${session.agent_name ?? "—"}`);
+  lines.push(`Date: ${new Date(session.created_at).toLocaleString()}`);
+  if (session.duration_minutes != null) {
+    lines.push(`Duration: ${Math.round(Number(session.duration_minutes))} min`);
+  }
+  lines.push(`Status: ${session.status}`);
+  lines.push("");
+  lines.push("--- conversation ---");
+  lines.push("");
+
+  for (const m of messages) {
+    if (m.sender_kind === "system") {
+      const body = m.body ?? "";
+      if (body.includes("Zoom meeting started")) continue;
+      if (body.includes("Zoom meeting ended")) continue;
+      if (body.includes("Recording available")) continue;
+      if (isAiSummaryMessageBody(body)) continue;
+    }
+    const ts = new Date(m.created_at).toLocaleString();
+    const who = m.sender_kind === "engineer"
+      ? `Engineer${m.sender_name ? ` (${m.sender_name})` : ""}`
+      : m.sender_kind === "guest"
+        ? `Customer${m.sender_name ? ` (${m.sender_name})` : ""}`
+        : "System";
+    lines.push(`[${ts}] ${who}:`);
+    if (m.body && m.body.trim()) {
+      for (const line of m.body.split(/\r?\n/)) lines.push(`  ${line}`);
+    }
+    if (m.attachments && m.attachments.length > 0) {
+      for (const a of m.attachments) {
+        lines.push(`  [attachment] ${a.name} · ${a.kind} · ${a.size_bytes ?? "?"} bytes`);
+      }
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n");
 }
 
 function groupByDate(past: PastSession[]): Array<[string, PastSession[]]> {
