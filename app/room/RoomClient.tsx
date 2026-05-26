@@ -1653,6 +1653,7 @@ export function RoomClient() {
                 onToggleCollapsed={() => { /* no-op on mobile */ }}
                 session={state.session}
                 scopeKey={state.session?.project_id || selectedProjectId || "general"}
+                enableResize={false}
               />
             </div>
           </div>
@@ -2265,14 +2266,14 @@ function BrandedLanding({
           surfaces below the logo as quiet context. */}
       <div className="relative flex flex-1 items-center justify-center px-6">
         <div className="flex max-w-3xl flex-col items-center text-center">
-          <Wordmark size="lg" />
+          <Wordmark size="xl" />
 
           {/* Brand tagline — "human layer" italicized + brand-green. The
               animated underline (relay-tagline-glow) was removed per
               request; tagline now reads as plain text without any
               underline treatment. */}
           <p
-            className="mt-5 text-[18px] leading-snug"
+            className="mt-5 text-[24px] leading-snug"
             style={{ color: "var(--text-muted)" }}
           >
             The{" "}
@@ -2337,19 +2338,19 @@ function BrandedLanding({
           >
             <span>How Relay works</span>
             {/* +/– sign morph. Two short bars; the vertical one fades
-                + rotates out when expanded so the symbol reads as a
-                minus. Cleaner than swapping two icons. */}
+                + scales to zero when expanded so the symbol reads as
+                a minus. Cleaner than swapping two icons. */}
             <span
               aria-hidden
-              className="relative inline-flex h-5 w-5 items-center justify-center"
-              style={{ color: "var(--primary)" }}
+              className="relative inline-flex h-5 w-5 items-center justify-center rounded-full border"
+              style={{ color: "var(--primary)", borderColor: "var(--primary)" }}
             >
               <span
-                className="absolute h-[2px] w-3 rounded-full transition-transform duration-200 ease-out"
+                className="absolute h-[2px] w-2.5 rounded-full transition-transform duration-200 ease-out"
                 style={{ backgroundColor: "currentColor" }}
               />
               <span
-                className="absolute h-3 w-[2px] rounded-full transition-all duration-200 ease-out"
+                className="absolute h-2.5 w-[2px] rounded-full transition-all duration-200 ease-out"
                 style={{
                   backgroundColor: "currentColor",
                   transform: explainerOpen ? "scaleY(0) rotate(90deg)" : "scaleY(1) rotate(0deg)",
@@ -2358,6 +2359,19 @@ function BrandedLanding({
               />
             </span>
           </button>
+
+          {/* Small italic hint shown only when collapsed — tells new
+              customers what the + does without competing with the
+              wordmark + tagline above. Disappears when expanded so
+              we don't shout the same instruction twice. */}
+          {!explainerOpen && (
+            <p
+              className="mt-3 text-[12px] italic"
+              style={{ color: "var(--text-faint)" }}
+            >
+              (click + to read features of this page)
+            </p>
+          )}
 
           {/* Horizontal separator + explainer body. Both share the
               same conditional render so closing the toggle hides
@@ -2842,7 +2856,7 @@ function DraftBubble({
 }
 
 function ChatPanelStub({
-  sidebarCollapsed, onToggleCollapsed, session, scopeKey = "general",
+  sidebarCollapsed, onToggleCollapsed, session, scopeKey = "general", enableResize = true,
 }: {
   sidebarCollapsed: boolean;
   /**
@@ -2854,6 +2868,14 @@ function ChatPanelStub({
    * scope's messages + pending attachments.
    */
   scopeKey?: string;
+  /**
+   * When true (default), the aside is fixed-width + drag-resizable
+   * from its left edge, with the chosen width persisted to
+   * localStorage. Set false when the stub is rendered inside a
+   * container that already controls width (e.g. the mobile bottom
+   * sheet, which wants the panel to fill its viewport-wide host).
+   */
+  enableResize?: boolean;
   onToggleCollapsed: () => void;
   /**
    * Optional session context — when set, the header shows the engineer's
@@ -3295,16 +3317,111 @@ function ChatPanelStub({
     recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
   }, []);
 
+  // ── Drag-to-resize state ─────────────────────────────────────────
+  // Customer can drag the left edge of the panel to widen/narrow it.
+  // Default width 360px, clamped [PANEL_MIN, PANEL_MAX] on every
+  // update so a runaway drag can't shrink it past usability or eat
+  // the central pane. Persisted to localStorage so the chosen width
+  // survives refresh + theme toggles.
+  const PANEL_MIN = 280;
+  const PANEL_MAX = 720;
+  const PANEL_DEFAULT = 360;
+  const [panelWidth, setPanelWidth] = useState<number>(PANEL_DEFAULT);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem("relay:chat-panel-width");
+      const parsed = raw ? Number(raw) : NaN;
+      if (Number.isFinite(parsed) && parsed >= PANEL_MIN && parsed <= PANEL_MAX) {
+        setPanelWidth(parsed);
+      }
+    } catch { /* localStorage unavailable — fall through to default */ }
+  }, []);
+
+  // Active-drag tracking: state (not ref) so the className recomputes
+  // and the width-transition is correctly suppressed while dragging.
+  // Without this gate, every pointermove would queue a 200ms width
+  // transition and the panel would lag the pointer.
+  const [isDragging, setIsDragging] = useState(false);
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    if (!enableResize || sidebarCollapsed) return;
+    e.preventDefault();
+    setIsDragging(true);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const onMove = (mv: PointerEvent) => {
+      // The panel hugs the right edge of the viewport, so the new
+      // width is simply viewportRight - pointerX. (Equivalent to
+      // dragging the LEFT edge outward = wider panel.)
+      const next = Math.max(PANEL_MIN, Math.min(PANEL_MAX, window.innerWidth - mv.clientX));
+      setPanelWidth(next);
+    };
+    const onUp = () => {
+      setIsDragging(false);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }, [enableResize, sidebarCollapsed]);
+
+  // Persist on every settled width change too (covers cases where the
+  // user releases outside the window — the up handler still runs but
+  // panelWidth might lag one tick behind).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem("relay:chat-panel-width", String(panelWidth));
+    } catch { /* swallow */ }
+  }, [panelWidth]);
+
+  // Width selection: collapsed rail = 48px; fill-parent (mobile sheet)
+  // = 100% so the bottom sheet's full viewport width is used; default
+  // desktop = the drag-resizable panelWidth value above. transition
+  // only on non-drag updates so the live drag stays buttery.
+  const computedWidth = sidebarCollapsed
+    ? 48
+    : enableResize
+      ? `${panelWidth}px`
+      : "100%";
+  const transitionClass = isDragging
+    ? "" // dragging — no transition or the panel will lag the pointer
+    : "transition-[width] duration-200";
+
   return (
     <aside
-      className="hidden h-full shrink-0 flex-col border-l transition-[width] duration-200 md:flex"
+      className={`relative hidden h-full shrink-0 flex-col border-l md:flex ${transitionClass}`}
       style={{
-        width: sidebarCollapsed ? 48 : "min(30%, 420px)",
-        minWidth: sidebarCollapsed ? 48 : 280,
+        width: computedWidth,
+        minWidth: sidebarCollapsed ? 48 : PANEL_MIN,
         borderColor: "var(--border)",
         backgroundColor: "var(--surface)",
       }}
     >
+      {/* Drag-to-resize handle on the LEFT edge. Only renders when
+          enableResize=true + the panel is expanded. A 6px-wide
+          invisible hit zone with a subtle accent stripe on hover so
+          the customer discovers the affordance. Cursor flips to
+          col-resize while hovering. */}
+      {enableResize && !sidebarCollapsed && (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize chat panel"
+          onPointerDown={handlePointerDown}
+          className="group/resize absolute left-0 top-0 z-20 h-full w-1.5 -translate-x-1/2 cursor-col-resize"
+        >
+          {/* Visible 1px line on hover/drag — green so it reads as the
+              app's accent rather than a generic resize ribbon. */}
+          <span
+            aria-hidden
+            className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 transition-colors group-hover/resize:bg-[var(--primary)]"
+          />
+        </div>
+      )}
       {/* Header — engineer-chat style. Collapsed rail shows just the
           expand toggle so the customer can recover the panel. */}
       <div
@@ -5053,37 +5170,29 @@ const Sidebar = memo(function Sidebar({
       style={{ borderRight: "1px solid var(--border)", backgroundColor: "var(--surface)" }}
     >
       {/* Brand row — wordmark (clickable, returns home) + theme
-          triplet + explicit Home icon + flex spacer + collapse toggle.
-          Two ways to go home so the affordance is unambiguous: the
-          logo follows the universal "click logo to return to landing"
-          convention, and the explicit Home icon is for users who
-          don't intuit that the wordmark is interactive. */}
+          triplet + flex spacer + collapse toggle. The wordmark is
+          itself the Home affordance (universal convention), so the
+          previous duplicate Home icon was removed: it stole ~28px
+          of header width and was forcing the wordmark to wrap on
+          narrow sidebars. The wordmark also gets `whitespace-nowrap`
+          + `shrink-0` from Wordmark.tsx so it stays atomic even
+          when squeezed. */}
       <div className="flex h-12 items-center gap-2 px-3">
         <button
           type="button"
           onClick={onGoHome}
           title="Return to the home landing"
           aria-label="Home"
-          className="rounded-md transition-opacity hover:opacity-80"
+          className="shrink-0 rounded-md transition-opacity hover:opacity-80"
         >
           <Wordmark size="md" />
         </button>
         <ThemeTriplet />
-        <button
-          type="button"
-          onClick={onGoHome}
-          title="Home"
-          aria-label="Home"
-          className="flex h-7 w-7 items-center justify-center rounded-md transition-all duration-150 ease-out hover:scale-110 hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5"
-          style={{ color: "var(--text-muted)" }}
-        >
-          <Home size={15} />
-        </button>
         <div className="flex-1" />
         <button
           onClick={() => toggleCollapsed(true)}
           title="Collapse sidebar"
-          className="flex h-7 w-7 items-center justify-center rounded-md transition-all duration-150 ease-out hover:scale-110 hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-all duration-150 ease-out hover:scale-110 hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5"
           style={{ color: "var(--text-muted)" }}
         >
           <PanelLeftClose size={16} />
