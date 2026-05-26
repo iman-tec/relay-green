@@ -2090,9 +2090,7 @@ function BrandedLanding({
                 <div>
                   <span style={{ color: "var(--text)", fontWeight: 600 }}>Black</span>
                   {" — "}
-                  No engineer has worked on this project yet. The first tap routes through
-                  our matching engine — a stack-suitable engineer is on the call typically
-                  within thirty seconds.
+                  No engineer yet. Tap to match a stack-fit engineer; on the call in under a minute.
                 </div>
               </div>
               <div className="flex items-start gap-3">
@@ -2105,9 +2103,7 @@ function BrandedLanding({
                 <div>
                   <span style={{ color: "var(--text)", fontWeight: 600 }}>Green</span>
                   {" — "}
-                  An engineer has already worked on this project before. They get priority
-                  routing when you tap, but you're never locked in — any other available
-                  engineer can step in seamlessly.
+                  Worked here before. Priority routes to them — swap to any other engineer any time.
                 </div>
               </div>
             </div>
@@ -2137,8 +2133,7 @@ function BrandedLanding({
               </span>
             </div>
             <p className="mt-3 text-[14px]">
-              Don't want to wait? Pick any other engineer instead — they all arrive with the
-              full project memory plus an AI-generated brief, so context handoff is instant.
+              Don't want to wait? Pick anyone else — every engineer arrives with full project memory and an AI brief. Zero ramp-up.
             </p>
 
             <div className="my-6 h-px w-full" style={{ backgroundColor: "color-mix(in srgb, var(--border) 50%, transparent)" }} />
@@ -2153,9 +2148,7 @@ function BrandedLanding({
                   Project memory
                 </div>
                 <p className="mt-1.5 text-[14px]">
-                  Every session, every file, every voice note, and every AI-generated summary
-                  stays with the project — not the call. When an engineer joins, they have
-                  the full history; no &ldquo;let me get up to speed&rdquo; delay.
+                  Every session, file, voice note, and AI summary stays with the project — not the call. New engineers join with full history. No catch-up.
                 </p>
               </div>
               <div>
@@ -2166,9 +2159,7 @@ function BrandedLanding({
                   Live chat
                 </div>
                 <p className="mt-1.5 text-[14px]">
-                  Type messages, drop files, send voice notes. The panel wakes the moment
-                  your engineer joins; anything you write before that is saved as drafts for
-                  them to read on arrival.
+                  Type, attach files, record voice notes. The panel goes live when your engineer joins — anything written before is saved as a draft for them.
                 </p>
               </div>
             </div>
@@ -2190,8 +2181,7 @@ function BrandedLanding({
                 <div>
                   <span style={{ color: "var(--text)", fontWeight: 600 }}>Connect</span>
                   {" — "}
-                  Tap a phone icon. Once an engineer accepts, a Zoom call opens automatically:
-                  voice, chat, and screen share all on at once.
+                  Tap a phone icon. Engineer accepts → Zoom opens with voice, chat, and screen share in one shot.
                 </div>
               </div>
               <div className="flex items-start gap-3">
@@ -2204,8 +2194,7 @@ function BrandedLanding({
                 <div>
                   <span style={{ color: "var(--text)", fontWeight: 600 }}>Build</span>
                   {" — "}
-                  Work together through the live call. Everything stays searchable in the chat
-                  panel afterwards — no notes lost.
+                  Work together live. Everything stays searchable in the chat panel afterwards — no notes lost.
                 </div>
               </div>
               <div className="flex items-start gap-3">
@@ -2218,8 +2207,7 @@ function BrandedLanding({
                 <div>
                   <span style={{ color: "var(--text)", fontWeight: 600 }}>Ship</span>
                   {" — "}
-                  When you're ready to go live, hand the project off. Your engineer keeps
-                  maintaining and enhancing it for as long as you need.
+                  Hand the project off when you're ready. Your engineer keeps maintaining and enhancing it for as long as you need.
                 </div>
               </div>
             </div>
