@@ -457,6 +457,61 @@ textarea {
   animation: relay-pulse-ok 1800ms ease-in-out infinite;
 }
 
+/* ──────── Ringing hero — big ball + concentric halo rings ─────────────
+   Used by app/intake/matching/[id]/MatchingClient.tsx → RingingHero.
+   The hero is the centred surface a customer stares at while the system
+   pages engineers; the animations are deliberately slow + soft so the
+   wait feels like meditation, not a slot machine. */
+@keyframes relay-ringing-halo {
+  0%   { transform: scale(0.9); opacity: 0.55; }
+  80%  { transform: scale(1.7); opacity: 0;    }
+  100% { transform: scale(1.7); opacity: 0;    }
+}
+.relay-ringing-halo {
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--primary) 35%, transparent) 0%,
+    color-mix(in srgb, var(--primary) 18%, transparent) 50%,
+    transparent 70%
+  );
+  animation: relay-ringing-halo 1800ms cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  transform-origin: center;
+}
+
+@keyframes relay-ringing-ball {
+  0%, 100% { transform: scale(1);    }
+  20%      { transform: scale(1.06); }
+  40%      { transform: scale(1);    }
+  60%      { transform: scale(1.06); }
+  80%      { transform: scale(1);    }
+}
+.relay-ringing-ball {
+  animation: relay-ringing-ball 1800ms cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  transform-origin: center;
+}
+
+/* Phone icon mirrors the ball's heartbeat with a subtler 3% scale so it
+   reads as part of the same beat without competing visually. */
+@keyframes relay-ringing-icon {
+  0%, 100% { transform: scale(1);    }
+  20%      { transform: scale(1.03); }
+  40%      { transform: scale(1);    }
+  60%      { transform: scale(1.03); }
+  80%      { transform: scale(1);    }
+}
+.relay-ringing-icon {
+  animation: relay-ringing-icon 1800ms cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  transform-origin: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .relay-ringing-halo,
+  .relay-ringing-ball,
+  .relay-ringing-icon {
+    animation: none !important;
+  }
+}
+
 /* Reduced-motion: kill every keyframe animation introduced for the
  * transformation. Existing `relay-page-in` and `[data-hover-lift]` already
  * have their own guards above; the rules below cover the new ones and the

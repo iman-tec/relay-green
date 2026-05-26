@@ -4240,7 +4240,7 @@ const Sidebar = memo(function Sidebar({
   //   pinnedIds — session ids the user has pinned. Persisted to
   //     localStorage so the choice survives reloads; promoting to Supabase
   //     is a follow-up that needs a guest_calls.pinned_at column.
-  const [statusFilter, setStatusFilter] = useState<"active" | "all" | "ended">("all");
+  const [statusFilter, setStatusFilter] = useState<"active" | "all" | "completed">("all");
   const [groupBy, setGroupBy] = useState<"project" | "date">("project");
   const [sortBy, setSortBy] = useState<"recent" | "oldest" | "title">("recent");
   // Sort/filter popover open state — single boolean. Click the SlidersHorizontal
@@ -4514,16 +4514,14 @@ const Sidebar = memo(function Sidebar({
   // chosen status bucket), search query (substring match across title /
   // agent / project name / status), then pin-aware sort (pinned sessions
   // float to the top of each group, then date-desc).
+  //
+  // NB: statusFilter applies at the PROJECT level (Active = not completed,
+  // Completed = completed/archived). It does NOT filter individual
+  // sessions, so a completed project's session history is preserved
+  // even when "Active" is selected. See the post-filter step below.
   const projectGroups = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    const matchStatus = (s: PastSession) => {
-      if (statusFilter === "all") return true;
-      if (statusFilter === "ended") return s.status === "ended";
-      // "active" — anything not in a terminal state
-      return !["ended", "cancelled", "abandoned"].includes(s.status);
-    };
     const matchSession = (s: PastSession) => {
-      if (!matchStatus(s)) return false;
       if (!q) return true;
       const hay = [s.title, s.agent ?? "", s.projectName ?? ""].join(" ").toLowerCase();
       return hay.includes(q);
@@ -4608,7 +4606,22 @@ const Sidebar = memo(function Sidebar({
       return name !== "try relay" && name !== "try-relay";
     });
 
-    return cleaned.sort((a, b) => b.latestDate - a.latestDate);
+    // ── Project-level status filter ──────────────────────────────────
+    // Applied AFTER session-level search filter so a search hit in a
+    // completed project still surfaces when "All" is selected. The
+    // "general" bucket (sessions with no project) has no completion
+    // status — show it in Active but not in Completed.
+    const statusFiltered = cleaned.filter((g) => {
+      if (statusFilter === "all") return true;
+      if (g.key === "general") return statusFilter === "active";
+      if (statusFilter === "active") {
+        return g.completionStatus !== "completed" && g.completionStatus !== "archived";
+      }
+      // statusFilter === "completed"
+      return g.completionStatus === "completed" || g.completionStatus === "archived";
+    });
+
+    return statusFiltered.sort((a, b) => b.latestDate - a.latestDate);
   }, [projects, past, searchQuery, statusFilter, pinnedIds, sortBy]);
 
   const hasActiveSession = session && !["ended", "cancelled", "abandoned"].includes(session.status);
@@ -4980,6 +4993,53 @@ const Sidebar = memo(function Sidebar({
           </button>
         </div>
 
+        {/* Pinned section — sessions the customer is actively working
+            on. Always renders the header in the same color register as
+            "Create New Project" (var(--primary-hover)) so it reads as
+            part of the same "things you reach for" cluster. Sessions
+            pin/unpin via the existing Pin icon on each row (kebab
+            inside SessionRowFlat + ProjectAccordion). Hidden when no
+            pins exist so we don't show an empty header. */}
+        {(() => {
+          const pinnedSessions = past
+            .filter((s) => pinnedIds.has(s.id))
+            // Preserve pin-insertion order via the Set iteration
+            // order so a freshly-pinned session bubbles to the top.
+            .sort((a, b) => {
+              const ids = [...pinnedIds];
+              return ids.indexOf(a.id) - ids.indexOf(b.id);
+            });
+          if (pinnedSessions.length === 0) return null;
+          return (
+            <div className="mb-1 px-2.5">
+              <div
+                className="mb-1 px-0.5 text-[10px] font-semibold uppercase tracking-[0.1em]"
+                style={{ color: "var(--primary-hover)" }}
+              >
+                Pinned
+              </div>
+              <div className="flex flex-col gap-0.5">
+                {pinnedSessions.map((s) => (
+                  <SessionRowFlat
+                    key={s.id}
+                    session={s}
+                    isPinned
+                    isViewing={viewingPastId === s.id}
+                    isCurrent={
+                      !!session
+                      && s.id === session.id
+                      && !["ended", "cancelled", "abandoned"].includes(s.status)
+                    }
+                    onClick={() => onViewPast(s.id)}
+                    onTogglePin={() => togglePin(s.id)}
+                    showProjectName
+                  />
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Separator between the create-project action and the filter
             popover + project list. */}
         <div
@@ -4999,7 +5059,7 @@ const Sidebar = memo(function Sidebar({
               className="text-[10px] font-semibold uppercase tracking-[0.1em]"
               style={{ color: "var(--text-muted)" }}
             >
-              {statusFilter === "all" ? "All sessions" : statusFilter === "active" ? "Active" : "Ended"}
+              {statusFilter === "all" ? "All sessions" : statusFilter === "active" ? "Active" : "Completed"}
               {" · "}
               {groupBy === "project" ? "by project" : "by date"}
             </span>
@@ -5032,20 +5092,20 @@ const Sidebar = memo(function Sidebar({
               <SortRow
                 label="Status"
                 value={
-                  statusFilter === "all" ? "All" : statusFilter === "active" ? "Active" : "Ended"
+                  statusFilter === "all" ? "All" : statusFilter === "active" ? "Active" : "Completed"
                 }
                 highlight={statusFilter !== "all"}
                 options={[
-                  { value: "all",    label: "All" },
-                  { value: "active", label: "Active" },
-                  { value: "ended",  label: "Ended" },
+                  { value: "all",       label: "All" },
+                  { value: "active",    label: "Active" },
+                  { value: "completed", label: "Completed" },
                 ]}
                 expanded={expandedSortRow === "status"}
                 onToggle={() =>
                   setExpandedSortRow((v) => (v === "status" ? null : "status"))
                 }
                 onSelect={(v) => {
-                  setStatusFilter(v as "all" | "active" | "ended");
+                  setStatusFilter(v as "all" | "active" | "completed");
                   setExpandedSortRow(null);
                 }}
               />
@@ -5092,15 +5152,12 @@ const Sidebar = memo(function Sidebar({
         </div>
 
         {(() => {
-          // Default state = All / Project / Recent. Any non-default
-          // setting flips the sidebar from project-grouped accordions
-          // to a flat session list — the user has clearly asked
-          // "show me sessions across projects" rather than "show me
-          // projects". When groupBy is "date", the flat list is
-          // additionally bucketed by Today / Yesterday / This week /
-          // Earlier.
-          const isSessionView =
-            statusFilter !== "all" || groupBy === "date" || sortBy !== "recent";
+          // ONLY "Group by: Date" flips the sidebar from project
+          // accordions to a flat session list. Status filter operates
+          // at the project level (Active = projects not completed,
+          // Completed = projects marked completed/archived) and keeps
+          // the accordion view. Sort order applies in either view.
+          const isSessionView = groupBy === "date";
 
           if (!isSessionView) {
             // Default view — project accordions (unchanged behavior).
@@ -5174,35 +5231,50 @@ const Sidebar = memo(function Sidebar({
                   ? `No sessions match "${searchQuery}".`
                   : statusFilter === "active"
                     ? "No active sessions."
-                    : statusFilter === "ended"
-                      ? "No ended sessions yet."
+                    : statusFilter === "completed"
+                      ? "No completed sessions yet."
                       : "No sessions yet."}
               </p>
             );
           }
 
-          // Flat chronological list — no bucket headers. The rows already
-          // carry their own date in the meta line, so explicit Today /
-          // Yesterday / This week / Earlier headers were just noise. The
-          // sortBy chip (Recent / Oldest / Title) handles ordering; the
-          // groupBy chip is mostly redundant in session view (kept for
-          // future re-introduction of buckets if useful).
+          // Date-bucketed flat list. Sessions get grouped under
+          // Today / Yesterday / This week / Earlier headers. Project
+          // names are hidden from each row (showProjectName=false)
+          // because the bucket header is doing the temporal work and
+          // the per-row project chip becomes noise in this view —
+          // the user picked Date specifically to see sessions across
+          // projects ordered by when they happened.
+          const bucketed = bucketSessionsByDate(allSessions);
           return (
-            <div className="flex flex-col gap-0.5">
-              {allSessions.map((s) => (
-                <SessionRowFlat
-                  key={s.id}
-                  session={s}
-                  isPinned={pinnedIds.has(s.id)}
-                  isViewing={viewingPastId === s.id}
-                  isCurrent={
-                    !!session
-                    && s.id === session.id
-                    && !["ended", "cancelled", "abandoned"].includes(s.status)
-                  }
-                  onClick={() => onViewPast(s.id)}
-                  onTogglePin={() => togglePin(s.id)}
-                />
+            <div className="flex flex-col gap-3">
+              {bucketed.map((bucket) => (
+                <div key={bucket.label}>
+                  <div
+                    className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-[0.08em]"
+                    style={{ color: "var(--text-faint)" }}
+                  >
+                    {bucket.label}
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    {bucket.sessions.map((s) => (
+                        <SessionRowFlat
+                          key={s.id}
+                          session={s}
+                          isPinned={pinnedIds.has(s.id)}
+                          isViewing={viewingPastId === s.id}
+                          isCurrent={
+                            !!session
+                            && s.id === session.id
+                            && !["ended", "cancelled", "abandoned"].includes(s.status)
+                          }
+                          onClick={() => onViewPast(s.id)}
+                          onTogglePin={() => togglePin(s.id)}
+                          showProjectName={false}
+                        />
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           );
@@ -6083,7 +6155,7 @@ function bucketSessionsByDate(sessions: PastSession[]): { label: string; session
 // (so the user doesn't lose project context when viewing across projects).
 // Pin button overlays the top-right just like in the accordion.
 function SessionRowFlat({
-  session, isPinned, isViewing, isCurrent, onClick, onTogglePin,
+  session, isPinned, isViewing, isCurrent, onClick, onTogglePin, showProjectName = true,
 }: {
   session: PastSession;
   isPinned: boolean;
@@ -6091,6 +6163,11 @@ function SessionRowFlat({
   isCurrent: boolean;
   onClick: () => void;
   onTogglePin: () => void;
+  /** Show the first-two-words project chip in the meta line. Hidden
+   *  when groupBy=date (the date bucket headers carry temporal
+   *  context; per-row project chips become noise). Defaults to true
+   *  so existing call sites continue rendering as before. */
+  showProjectName?: boolean;
 }) {
   const isActive = !["ended", "abandoned", "cancelled"].includes(session.status);
   const fmtRelDate = (d: Date) => {
@@ -6151,7 +6228,7 @@ function SessionRowFlat({
             className="mt-0.5 flex items-center gap-1 text-[10px]"
             style={{ color: "var(--text-muted)" }}
           >
-            {session.projectName && (
+            {showProjectName && session.projectName && (
               <>
                 <span className="truncate">
                   {session.projectName.split(/\s+/).slice(0, 2).join(" ")}
