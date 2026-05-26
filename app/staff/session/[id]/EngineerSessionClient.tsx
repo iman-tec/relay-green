@@ -22,7 +22,7 @@ import {
 } from "react-resizable-panels";
 import {
   Send, Video, PhoneOff, Loader2, ArrowLeft, RotateCw, Sparkles, Lock, Eye, LogOut,
-  PanelLeftOpen, PanelLeftClose, AlertTriangle,
+  PanelLeftOpen, PanelLeftClose, AlertTriangle, BookOpen, ChevronRight, Check,
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { MeetingChatEntry } from "@/app/_components/MeetingChatEntry";
@@ -76,6 +76,61 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
       setStarted(false);
     }
   }, [state.session?.id, state.session?.status]);
+
+  // ── Customer-prep handoff ───────────────────────────────────────────────
+  // When the engineer lands on the session room, look up the customer's
+  // most-recent saved draft for this session's project and post its text
+  // as the opening chat message. The server-side mirror in
+  // customer_session_drafts lets us bridge across browsers — the customer
+  // wrote it in their localStorage, we mirrored it on save, and now we
+  // pull it back via the engineer_fetch_customer_draft RPC.
+  //
+  // Once-per-session guard: a ref keyed by session id prevents re-renders
+  // from posting the prep text twice. We also call engineer_consume_draft
+  // so the next session on the same project doesn't see stale prep text.
+  const prepHandedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const s = state.session;
+    if (!s || !state.isAssignedEngineer || isSupervisor) return;
+    if (!["assigned", "joining", "live"].includes(s.status)) return;
+    if (prepHandedRef.current.has(s.id)) return;
+    if (!s.project_id) return;
+    prepHandedRef.current.add(s.id);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const sb = createClient();
+        const { data, error } = await sb.rpc("engineer_fetch_customer_draft", { _session_id: s.id });
+        if (cancelled || error || !data) return;
+        const draft = data as { id: string; text: string | null; customer_user_id: string };
+        const text = (draft.text ?? "").trim();
+        if (!text) return;
+        // System prelude lets the engineer see "this is prep, not a live
+        // message" at a glance.
+        await sb.from("guest_messages").insert([
+          {
+            guest_call_id: s.id,
+            sender_kind: "system",
+            sender_name: "Relay",
+            body: "💡 Customer prepared this before the call:",
+          },
+          {
+            guest_call_id: s.id,
+            sender_kind: "guest",
+            sender_name: s.guest_name ?? "Customer",
+            body: text,
+          },
+        ]);
+        // Consume the draft on the server so the next engineer joining
+        // this project doesn't re-replay it as opening prep.
+        await sb.rpc("engineer_consume_draft", { _draft_id: draft.id });
+        await state.refresh();
+      } catch {
+        /* best-effort handoff; chat still works without it */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [state.session?.id, state.session?.status, state.isAssignedEngineer, isSupervisor, state]);
 
   // Auto-start: mint Zoom (if needed) and mount the embed whenever the
   // engineer is pre-live (assigned/joining/grace). Idempotent — re-entries
@@ -521,6 +576,19 @@ function Sidebar({
             </div>
           ))
         )}
+
+        {/* Project memory — every session ever run on this project, regardless
+            of which engineer or thread. Collapsed by default per the engineer-
+            parity spec; expand when the engineer needs the full project
+            chronology with AI summaries to ground the current session. */}
+        {session.project_id && (
+          <ProjectMemorySection
+            projectId={session.project_id}
+            projectName={session.project_name ?? null}
+            currentSessionId={session.id}
+            onOpen={(id) => router.push(`/staff/session/${id}`)}
+          />
+        )}
       </div>
 
       {/* Viewer profile — engineer chrome or supervisor monitor chrome */}
@@ -949,6 +1017,41 @@ function ChatPane({
     }
   }
 
+  // Single-message renderer — split out so the date-separator loop below
+  // can stitch in DateSeparator pills between consecutive days while
+  // still routing through the existing Zoom / summary / system-line
+  // suppression rules.
+  const renderOneMessage = (m: GuestMessage): React.ReactNode[] => {
+    if (m.sender_kind === "system" && (m.body ?? "").includes("Zoom meeting started")) {
+      const ended = meetingEnded.get(m.id) ?? null;
+      const summary = meetingSummary.get(m.id) ?? null;
+      const recording = meetingRecording.get(m.id) ?? null;
+      const durationSec = ended
+        ? Math.floor((new Date(ended.created_at).getTime() - new Date(m.created_at).getTime()) / 1000)
+        : undefined;
+      return [
+        <MeetingChatEntry
+          key={m.id}
+          active={!ended}
+          durationSec={durationSec}
+          joinUrl={!ended ? zoomCardUrl : null}
+          onJoin={!ended && !readOnly ? () => void state.markJoined() : undefined}
+          selfJoined={!readOnly && !!session.engineer_joined_at}
+          onCancel={!ended && !readOnly ? handleCancelMeeting : undefined}
+          summaryBody={summary?.body ?? null}
+          recordingBody={isSupervisor ? recording?.body ?? null : null}
+        />,
+      ];
+    }
+    if (m.sender_kind === "system" && suppressedEndedIds.has(m.id)) return [];
+    if (m.sender_kind === "system" && suppressedSummaryIds.has(m.id)) return [];
+    if (m.sender_kind === "system" && suppressedRecordingIds.has(m.id)) return [];
+    if (m.sender_kind === "system" && m.body && isAiSummaryMessageBody(m.body)) {
+      return [<MeetingSummaryEntry key={m.id} body={m.body} />];
+    }
+    return [<Message key={m.id} message={m} />];
+  };
+
   return (
     <section className="flex h-full flex-col" style={{ backgroundColor: "var(--surface)" }}>
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6">
@@ -962,46 +1065,23 @@ function ChatPane({
             </div>
           ) : (
             <div className="space-y-3">
-              {state.messages.flatMap((m) => {
-                if (isSupervisorOnlyMessage(m) && !isSupervisor) return [];
-                if (m.sender_kind === "system" && (m.body ?? "").includes("Zoom meeting started")) {
-                  const ended = meetingEnded.get(m.id) ?? null;
-                  const summary = meetingSummary.get(m.id) ?? null;
-                  const recording = meetingRecording.get(m.id) ?? null;
-                  const durationSec = ended
-                    ? Math.floor((new Date(ended.created_at).getTime() - new Date(m.created_at).getTime()) / 1000)
-                    : undefined;
-                  return [
-                    <MeetingChatEntry
-                      key={m.id}
-                      active={!ended}
-                      durationSec={durationSec}
-                      joinUrl={!ended ? zoomCardUrl : null}
-                      onJoin={!ended && !readOnly ? () => void state.markJoined() : undefined}
-                      // A read-only supervisor can always drop into the call as
-                      // an observer — don't gate their Join button on the
-                      // engineer's join state (engineer_joined_at).
-                      selfJoined={!readOnly && !!session.engineer_joined_at}
-                      onCancel={!ended && !readOnly ? handleCancelMeeting : undefined}
-                      summaryBody={summary?.body ?? null}
-                      recordingBody={isSupervisor ? recording?.body ?? null : null}
-                    />,
-                  ];
+              {(() => {
+                // Date separator pills + bubble entries. Track the last
+                // rendered date so we can inject a pill whenever the day
+                // flips between consecutive messages.
+                let lastDateKey: string | null = null;
+                const out: React.ReactNode[] = [];
+                for (const m of state.messages) {
+                  if (isSupervisorOnlyMessage(m) && !isSupervisor) continue;
+                  const dateKey = new Date(m.created_at).toDateString();
+                  if (dateKey !== lastDateKey) {
+                    lastDateKey = dateKey;
+                    out.push(<DateSeparator key={`date-${m.id}`} iso={m.created_at} />);
+                  }
+                  out.push(...renderOneMessage(m));
                 }
-                if (m.sender_kind === "system" && suppressedEndedIds.has(m.id)) {
-                  return [];
-                }
-                if (m.sender_kind === "system" && suppressedSummaryIds.has(m.id)) {
-                  return [];
-                }
-                if (m.sender_kind === "system" && suppressedRecordingIds.has(m.id)) {
-                  return [];
-                }
-                if (m.sender_kind === "system" && m.body && isAiSummaryMessageBody(m.body)) {
-                  return [<MeetingSummaryEntry key={m.id} body={m.body} />];
-                }
-                return [<Message key={m.id} message={m} />];
-              })}
+                return out;
+              })()}
             </div>
           )}
         </div>
@@ -1102,8 +1182,14 @@ function Message({ message }: { message: GuestMessage }) {
   const mine = message.sender_kind === "engineer";
   const hasAttachments = !!message.attachments && message.attachments.length > 0;
   const hasText = !!message.body && message.body.length > 0;
+  const timeLabel = new Date(message.created_at).toLocaleTimeString([], {
+    hour: "numeric", minute: "2-digit",
+  });
   return (
-    <div className={`flex flex-col ${mine ? "items-end" : "items-start"}`}>
+    <div
+      className={`flex flex-col ${mine ? "items-end" : "items-start"}`}
+      style={{ animation: "relay-bubble-in 180ms ease-out" }}
+    >
       <div className="mb-0.5 px-1 text-[10px]" style={{ color: "var(--text-muted)" }}>
         {message.sender_name ?? (mine ? "You" : "Customer")}
       </div>
@@ -1117,7 +1203,47 @@ function Message({ message }: { message: GuestMessage }) {
       >
         {hasAttachments && <MessageAttachments attachments={message.attachments} />}
         {hasText && <div>{message.body}</div>}
+        {/* Meta footer — time + WhatsApp-style status tick on own messages.
+            We don't distinguish sent/delivered/read yet, so the single
+            tick stands for "sent + landed in DB" (guaranteed by the time
+            the row arrived here via realtime). */}
+        <div
+          className="-mb-0.5 flex items-center justify-end gap-1 pt-0.5 text-[10px]"
+          style={{ color: mine ? "rgba(255,255,255,0.78)" : "var(--text-faint)" }}
+        >
+          <span className="tabular-nums">{timeLabel}</span>
+          {mine && <Check size={11} strokeWidth={2.5} />}
+        </div>
       </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// DateSeparator — WhatsApp-style pill that appears between consecutive
+// messages on different calendar days. "Today" / "Yesterday" / a long-form
+// date for older.
+// ──────────────────────────────────────────────────────────────────────────
+function DateSeparator({ iso }: { iso: string }) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
+  const d = new Date(iso); d.setHours(0, 0, 0, 0);
+  const label = d.getTime() === today.getTime()
+    ? "Today"
+    : d.getTime() === yesterday.getTime()
+      ? "Yesterday"
+      : new Date(iso).toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" });
+  return (
+    <div className="flex justify-center py-1">
+      <span
+        className="rounded-full px-2.5 py-0.5 text-[10px] font-medium"
+        style={{
+          backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)",
+          color: "var(--text-muted)",
+        }}
+      >
+        {label}
+      </span>
     </div>
   );
 }
@@ -1287,6 +1413,139 @@ function ErrorToast({ message }: { message: string }) {
 
 // humanState moved to lib/relay/session-status.ts so SuperviseClient renders
 // identical status labels (bugs2.txt #2).
+
+// ──────────────────────────────────────────────────────────────────────────
+// Project memory — collapsible sidebar section listing every session that
+// has ever run on this project, with their AI summary overview inline.
+// Starts collapsed (per the engineer-parity spec) so the sidebar stays
+// scannable; clicking the header expands and lazily fetches the list.
+// ──────────────────────────────────────────────────────────────────────────
+type ProjectMemoryRow = {
+  id: string;
+  title: string;
+  overview: string | null;
+  agent: string | null;
+  minutes: number | null;
+  createdAt: string;
+  status: string;
+};
+
+function ProjectMemorySection({
+  projectId, projectName, currentSessionId, onOpen,
+}: {
+  projectId: string;
+  projectName: string | null;
+  currentSessionId: string;
+  onOpen: (sessionId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState<ProjectMemoryRow[] | null>(null);
+
+  useEffect(() => {
+    if (!open || rows) return;
+    let alive = true;
+    void (async () => {
+      const sb = createClient();
+      const { data } = await sb
+        .from("guest_calls")
+        .select("id, ai_summary_title, ai_summary_overview, agent_name, duration_minutes, created_at, status")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false })
+        .limit(40);
+      if (!alive) return;
+      setRows(
+        ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
+          id: r.id as string,
+          title: (r.ai_summary_title as string | null) ?? "Session",
+          overview: (r.ai_summary_overview as string | null) ?? null,
+          agent: (r.agent_name as string | null) ?? null,
+          minutes: r.duration_minutes != null ? Math.round(Number(r.duration_minutes)) : null,
+          createdAt: r.created_at as string,
+          status: r.status as string,
+        }))
+      );
+    })();
+    return () => { alive = false; };
+  }, [open, projectId, rows]);
+
+  return (
+    <div className="mt-5 border-t pt-3" style={{ borderColor: "var(--border)" }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+      >
+        <ChevronRight
+          size={11}
+          style={{
+            color: "var(--text-muted)",
+            transform: open ? "rotate(90deg)" : "rotate(0deg)",
+            transition: "transform 0.15s ease",
+          }}
+        />
+        <BookOpen size={11} style={{ color: "var(--text-muted)" }} />
+        <span className="flex-1 truncate text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+          Project memory{projectName ? ` · ${projectName}` : ""}
+        </span>
+      </button>
+      {open && (
+        <div className="ml-2 mt-1 space-y-1">
+          {rows === null ? (
+            <p className="px-2 py-3 text-[11px]" style={{ color: "var(--text-muted)" }}>
+              Loading project history…
+            </p>
+          ) : rows.length === 0 ? (
+            <p className="px-2 py-3 text-[11px]" style={{ color: "var(--text-muted)" }}>
+              No prior sessions on this project.
+            </p>
+          ) : (
+            rows.map((r) => {
+              const isCurrent = r.id === currentSessionId;
+              return (
+                <button
+                  key={r.id}
+                  type="button"
+                  disabled={isCurrent}
+                  onClick={() => onOpen(r.id)}
+                  className="flex w-full flex-col gap-0.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-60"
+                  aria-current={isCurrent ? "page" : undefined}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-[12px]" style={{ color: "var(--text)" }}>
+                      {r.title}
+                    </span>
+                    {isCurrent && (
+                      <span
+                        className="rounded-full px-1 text-[8px] font-semibold uppercase tracking-wider"
+                        style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
+                      >
+                        Current
+                      </span>
+                    )}
+                  </div>
+                  {r.overview && (
+                    <p
+                      className="line-clamp-2 text-[10px] leading-snug"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      {r.overview}
+                    </p>
+                  )}
+                  <div className="text-[9px]" style={{ color: "var(--text-faint)" }}>
+                    {r.agent ?? "Engineer"}
+                    {r.minutes != null ? ` · ${r.minutes}m` : ""}
+                    {" · "}
+                    {new Date(r.createdAt).toLocaleDateString([], { month: "short", day: "numeric" })}
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function groupByDate(past: PastSession[]): Array<[string, PastSession[]]> {
   const today = new Date(); today.setHours(0,0,0,0);
