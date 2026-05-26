@@ -29,6 +29,7 @@ import { Wordmark } from "@/app/_components/Wordmark";
 import { MeetingChatEntry } from "@/app/_components/MeetingChatEntry";
 import { MeetingSummaryEntry, isAiSummaryMessageBody } from "@/app/_components/MeetingSummaryEntry";
 import { ChatComposer } from "@/app/_components/ChatComposer";
+import { EngineerAiAsk } from "@/app/_components/EngineerAiAsk";
 import { MessageAttachments } from "@/app/_components/MessageAttachments";
 import { EditableSummary } from "@/app/_components/EditableSummary";
 import { createClient } from "@/lib/supabase/browser";
@@ -1167,6 +1168,20 @@ function ChatPane({
                 }}
               />
             </div>
+          )}
+
+          {/* Project AI assistant — slim bar that lets the engineer
+             *  query the customer's project history (past sessions, AI
+             *  summaries, intake, files). Always visible during a live
+             *  session; disabled in read-only / monitor mode and when
+             *  the session isn't linked to a project. Sits below the
+             *  composer so it doesn't compete with the live chat flow. */}
+          {session.status !== "ended" && (
+            <EngineerAiAsk
+              sessionId={session.id}
+              projectId={session.project_id ?? null}
+              customerName={session.guest_name ?? "this customer"}
+            />
           )}
         </div>
       </div>
