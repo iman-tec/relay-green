@@ -79,12 +79,37 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
   // When the flag is set, the engineer's Zoom join path becomes the
   // in-window <CallSurface> instead of the Meeting SDK embed.
   const [callOpen, setCallOpen] = useState(false);
+  // Timestamp of the most recent voluntary close. Used to gate the
+  // auto-mount effect — without it, leaving the call would re-mount the
+  // surface ~1 s later (engineer_joined_at gets cleared by
+  // zoom-video-sdk-end so the auto-mount guard reactivates). With it,
+  // we only re-auto-mount when a NEW "Zoom meeting started" arrives
+  // (i.e. customer or someone else restarted the call).
+  const [autoMountSuppressedUntilNewCycle, setAutoMountSuppressedUntilNewCycle] = useState(false);
   const launchCall: (() => void) | null = isVideoSdkEnabled()
-    ? () => setCallOpen(true)
+    ? () => {
+        setAutoMountSuppressedUntilNewCycle(false);
+        setCallOpen(true);
+      }
     : null;
   useEffect(() => {
     if (state.session?.status === "ended") setCallOpen(false);
   }, [state.session?.status]);
+
+  // Whenever a NEW "Zoom meeting started" lands AFTER our dismissal, drop
+  // the suppression so the auto-mount can fire again. Indexed by the
+  // newest started message's id so we don't loop on the same one.
+  const lastStartedSeenRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!autoMountSuppressedUntilNewCycle) return;
+    const latestStarted = state.messages
+      .filter((m) => m.sender_kind === "system" && (m.body ?? "").includes("Zoom meeting started"))
+      .pop();
+    if (latestStarted && latestStarted.id !== lastStartedSeenRef.current) {
+      lastStartedSeenRef.current = latestStarted.id;
+      setAutoMountSuppressedUntilNewCycle(false);
+    }
+  }, [state.messages, autoMountSuppressedUntilNewCycle]);
 
   // Video SDK auto-start: mirror the legacy auto-mint behaviour. When the
   // engineer lands on a pre-live or live session, automatically mount the
@@ -97,13 +122,14 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
     if (!state.isAssignedEngineer) return;
     if (isSupervisor) return;
     if (callOpen) return;
+    if (autoMountSuppressedUntilNewCycle) return;
     if (!["assigned", "joining", "live", "grace"].includes(state.session.status)) return;
     // Only auto-mount if the engineer hasn't already joined this cycle;
     // engineer_joined_at is cleared by zoom-video-sdk-end so the next cycle
     // starts fresh.
     if (state.session.engineer_joined_at) return;
     setCallOpen(true);
-  }, [state.session, state.isAssignedEngineer, isSupervisor, callOpen]);
+  }, [state.session, state.isAssignedEngineer, isSupervisor, callOpen, autoMountSuppressedUntilNewCycle]);
 
   // Reset 'started' when session changes or ends
   useEffect(() => {
@@ -310,7 +336,13 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
               sessionId={state.session.id}
               role="host"
               userName={meEmail || "Engineer"}
-              onClose={() => setCallOpen(false)}
+              onClose={() => {
+                setCallOpen(false);
+                // Suppress auto-mount until a NEW "Zoom meeting started"
+                // arrives — otherwise the effect would re-fire immediately
+                // because engineer_joined_at gets cleared on leave.
+                setAutoMountSuppressedUntilNewCycle(true);
+              }}
               onJoined={() => void state.markJoined()}
             />
           </div>

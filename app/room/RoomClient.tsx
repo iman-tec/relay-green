@@ -1416,7 +1416,10 @@ export function RoomClient() {
         </main>
       </div>
 
-      {state.session && state.session.status !== "ended" && (
+      {/* Hide the summary tray during a live call — the CallSurface owns
+          the right rail (in-call chat dock). The tray comes back as soon
+          as the call surface unmounts. */}
+      {state.session && state.session.status !== "ended" && !callOpen && (
         <SessionSummaryTray session={state.session} />
       )}
       </LaunchCallProvider>

@@ -31,11 +31,20 @@ type Props = {
 };
 
 export function CallSurfaceInner({ sessionId, role, userName, onClose, onJoined }: Props) {
-  // Share element is hoisted here so both the local sharer (startShareScreen)
-  // and remote share viewer (startShareView) write to the same element.
-  // Must be a <video> element on @zoom/videosdk 2.x WebCodecs build.
-  const shareCanvasRef = useRef<HTMLVideoElement | null>(null);
-  const call = useZoomCall({ sessionId, role, userName, shareCanvasRef });
+  // Share elements are hoisted here so both the local sharer
+  // (startShareScreen) and remote viewer (startShareView) can target them.
+  // The SDK picks canvas vs video at runtime based on WebCodecs availability;
+  // useZoomCall tries canvas first and falls back to video on the SDK's
+  // "Use Video element" 6003 error. ShareViewer renders BOTH and shows
+  // whichever the SDK accepted.
+  const shareCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const shareVideoRef = useRef<HTMLVideoElement | null>(null);
+  const [shareMode, setShareMode] = useState<"canvas" | "video" | null>(null);
+  const call = useZoomCall({
+    sessionId, role, userName,
+    shareCanvasRef, shareVideoRef,
+    onShareElementChange: setShareMode,
+  });
   const [chatOpen, setChatOpen] = useState(true);
   const [sharing, setSharing] = useState(false);
   const someoneElseSharing =
@@ -168,16 +177,19 @@ export function CallSurfaceInner({ sessionId, role, userName, onClose, onJoined 
               </button>
             </div>
           )}
-          {/* Share viewer must stay mounted ALWAYS so its canvas ref is
-              populated BEFORE the user clicks Share — startShareScreen()
-              needs the element on call. We hide it via CSS when no share
-              is active, and show it on top of the TileGrid otherwise. */}
+          {/* Share viewer must stay mounted ALWAYS so its canvas + video
+              refs are populated BEFORE the user clicks Share — both
+              startShareScreen() and startShareView() need a DOM element on
+              call. We hide it via CSS when no share is active, and show
+              it on top of the TileGrid otherwise. */}
           <div
             className="absolute inset-0"
             style={{ visibility: call.activeShareUserId !== null ? "visible" : "hidden" }}
           >
             <ShareViewer
-              ref={shareCanvasRef}
+              canvasRef={shareCanvasRef}
+              videoRef={shareVideoRef}
+              activeMode={shareMode}
               sharerName={sharerName}
               selfSharing={sharing}
               onStop={sharing ? () => void call.stopShareScreen() : undefined}

@@ -54,14 +54,19 @@ type Options = {
   sessionId: string;
   role: "host" | "guest";
   userName: string;
-  /** Optional. When provided, screen-share + view-share render their content
-   *  into this <video> element. The CallSurfaceInner hoists the ref so the
-   *  share overlay can mount in the main pane. Video element is required
-   *  for @zoom/videosdk 2.x with WebCodecs enabled. */
-  shareCanvasRef?: React.MutableRefObject<HTMLVideoElement | null>;
+  /** Canvas element ref used for screen-share when SDK is in fallback
+   *  (non-WebCodecs) mode. The host renders both canvas + video and
+   *  useZoomCall tries them in order. */
+  shareCanvasRef?: React.MutableRefObject<HTMLCanvasElement | null>;
+  /** Video element ref used for screen-share when SDK is in WebCodecs
+   *  mode (i.e. SAB / COOP+COEP available). */
+  shareVideoRef?: React.MutableRefObject<HTMLVideoElement | null>;
+  /** Callback fired when the SDK accepts one of the elements — lets the
+   *  parent flip ShareViewer to show that element. */
+  onShareElementChange?: (mode: "canvas" | "video" | null) => void;
 };
 
-export function useZoomCall({ sessionId, role, userName, shareCanvasRef }: Options): UseZoomCallReturn {
+export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVideoRef, onShareElementChange }: Options): UseZoomCallReturn {
   const supabaseRef = useRef(createClient());
   const clientRef = useRef<Awaited<ReturnType<typeof getVideoClient>> | null>(null);
   const joinedKeyRef = useRef<string | null>(null);
@@ -98,9 +103,35 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef }: Optio
         }
         const client = await getVideoClient();
         clientRef.current = client;
-        await client.init("en-US", "Global", { patchJsMedia: true });
+        // SharedArrayBuffer is unavailable on plain-HTTP localhost (no
+        // COOP/COEP headers) so we tell the SDK to use the multi-video
+        // fallback path. patchJsMedia keeps the media deps current.
+        // enforceVirtualBackground=true + enforceMultipleVideos=true is
+        // the combo Zoom recommends for environments without SAB.
+        try {
+          await client.init("en-US", "Global", {
+            patchJsMedia: true,
+            enforceMultipleVideos: true,
+            enforceVirtualBackground: true,
+            leaveOnPageUnload: true,
+          });
+        } catch (initErr) {
+          console.error("[useZoomCall] init failed:", initErr);
+          if (cancelled) return;
+          setError(`init failed: ${initErr instanceof Error ? initErr.message : String(initErr)}`);
+          setStatus("error");
+          return;
+        }
         setStatus("joining");
-        await client.join(data.topic, data.token, userName || "Relay user");
+        try {
+          await client.join(data.topic, data.token, userName || "Relay user");
+        } catch (joinErr) {
+          console.error("[useZoomCall] join failed:", joinErr);
+          if (cancelled) return;
+          setError(`join failed: ${joinErr instanceof Error ? joinErr.message : String(joinErr)}`);
+          setStatus("error");
+          return;
+        }
         if (cancelled) return;
         setStatus("joined");
 
@@ -216,52 +247,105 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef }: Optio
     const client = clientRef.current;
     if (!client) return;
     const ms = client.getMediaStream();
-    const el = shareCanvasRef?.current;
-    if (!el) {
-      console.warn("[useZoomCall] startShareScreen needs a <video> element");
+    const canvas = shareCanvasRef?.current;
+    const video = shareVideoRef?.current;
+    if (!canvas && !video) {
+      console.warn("[useZoomCall] startShareScreen needs a <canvas> or <video> element");
       return;
     }
-    try {
-      await ms.startShareScreen(el as unknown as HTMLCanvasElement);
-    } catch (e) { console.warn("[useZoomCall] startShareScreen", e); }
-  }, [shareCanvasRef]);
+    // The SDK picks between canvas vs video at runtime based on WebCodecs
+    // availability. We try canvas first (works in our localhost dev with
+    // enforceMultipleVideos fallback) and fall back to video on the SDK's
+    // specific 6003 "Use Video element" error.
+    const looksLikeWrongType = (e: unknown): boolean => {
+      const r = e as { errorCode?: number; reason?: string } | null;
+      return r?.errorCode === 6003 && typeof r.reason === "string"
+        && /Video element|HTMLVideoElement/i.test(r.reason);
+    };
+    if (canvas) {
+      try {
+        const res = await ms.startShareScreen(canvas);
+        if (res && typeof res === "object" && looksLikeWrongType(res) && video) {
+          // SDK returned an error object (not threw); fall through.
+        } else {
+          onShareElementChange?.("canvas");
+          return;
+        }
+      } catch (e) {
+        if (!looksLikeWrongType(e) || !video) {
+          console.warn("[useZoomCall] startShareScreen (canvas)", e);
+          return;
+        }
+        // fall through to video retry
+      }
+    }
+    if (video) {
+      try {
+        await ms.startShareScreen(video as unknown as HTMLCanvasElement);
+        onShareElementChange?.("video");
+      } catch (e) { console.warn("[useZoomCall] startShareScreen (video)", e); }
+    }
+  }, [shareCanvasRef, shareVideoRef, onShareElementChange]);
 
   const stopShareScreen = useCallback(async () => {
     const client = clientRef.current;
     if (!client) return;
     const ms = client.getMediaStream();
     try { await ms.stopShareScreen(); } catch (e) { console.warn("[useZoomCall] stopShareScreen", e); }
-  }, []);
+    onShareElementChange?.(null);
+  }, [onShareElementChange]);
 
   // When another participant becomes active sharer, render their share into
-  // the same canvas. When share stops, tear it down.
+  // whichever element the SDK accepts. Same canvas-first / video-fallback
+  // strategy as startShareScreen.
   useEffect(() => {
     const client = clientRef.current;
     const canvas = shareCanvasRef?.current;
-    if (!client || !canvas) return;
+    const video = shareVideoRef?.current;
+    if (!client || (!canvas && !video)) return;
     const me = (() => { try { return client.getCurrentUserInfo(); } catch { return null; } })();
     const meId = me?.userId ?? -1;
     if (activeShareUserId === null) {
-      // No active share; nothing to mount/unmount on the view side. If the
-      // local user was the sharer, stopShareScreen() already tore it down.
       try { client.getMediaStream().stopShareView?.(); } catch { /* ignore */ }
+      onShareElementChange?.(null);
       return;
     }
     if (activeShareUserId === meId) {
-      // Local share — handled by startShareScreen which already wrote to the
-      // canvas. Nothing to do.
+      // Local share — already mounted by startShareScreen.
       return;
     }
-    // Remote share: render the other user's share onto our video element.
+    const looksLikeWrongType = (e: unknown): boolean => {
+      const r = e as { errorCode?: number; reason?: string } | null;
+      return r?.errorCode === 6003 && typeof r.reason === "string"
+        && /Video element|HTMLVideoElement/i.test(r.reason);
+    };
+    let cancelled = false;
     (async () => {
-      try {
-        await client.getMediaStream().startShareView(canvas as unknown as HTMLCanvasElement, activeShareUserId);
-      } catch (e) { console.warn("[useZoomCall] startShareView", e); }
+      const ms = client.getMediaStream();
+      if (canvas) {
+        try {
+          await ms.startShareView(canvas, activeShareUserId);
+          if (!cancelled) onShareElementChange?.("canvas");
+          return;
+        } catch (e) {
+          if (!looksLikeWrongType(e) || !video) {
+            console.warn("[useZoomCall] startShareView (canvas)", e);
+            return;
+          }
+        }
+      }
+      if (video) {
+        try {
+          await ms.startShareView(video as unknown as HTMLCanvasElement, activeShareUserId);
+          if (!cancelled) onShareElementChange?.("video");
+        } catch (e) { console.warn("[useZoomCall] startShareView (video)", e); }
+      }
     })();
     return () => {
+      cancelled = true;
       try { client.getMediaStream().stopShareView?.(); } catch { /* ignore */ }
     };
-  }, [activeShareUserId, shareCanvasRef]);
+  }, [activeShareUserId, shareCanvasRef, shareVideoRef, onShareElementChange]);
 
   const leave = useCallback(async (endForAll?: boolean) => {
     const client = clientRef.current;
