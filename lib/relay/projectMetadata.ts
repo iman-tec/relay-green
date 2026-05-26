@@ -81,3 +81,15 @@ export function writeProjectMetadata(
   map[projectId] = { ...data, updatedAt: Date.now() };
   safeWrite(map);
 }
+
+/** Drop a project's metadata from local storage. Called when the
+ *  project itself is deleted — without this, a freshly-recreated
+ *  project with the same id (unlikely but possible) would inherit
+ *  stale stack settings. */
+export function deleteProjectMetadata(projectId: string): void {
+  if (!projectId) return;
+  const map = safeRead();
+  if (!map[projectId]) return;
+  delete map[projectId];
+  safeWrite(map);
+}
