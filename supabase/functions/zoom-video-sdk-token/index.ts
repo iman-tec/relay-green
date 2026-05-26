@@ -101,6 +101,31 @@ Deno.serve(async (req) => {
         .is("video_topic", null);
     }
 
+    // Post a "📞 Zoom meeting started" system message so MeetingChatEntry
+    // renders the inline call-card on BOTH sides with a Join button. We
+    // dedupe: only post when the latest started/ended pair shows the cycle
+    // is closed (latest is "ended" or no messages exist yet). This way a
+    // second restart inside the same session gets its own card pair, and
+    // repeated token mints (re-issue, page reload) don't spam the chat.
+    const { data: lastMsgs } = await admin
+      .from("guest_messages")
+      .select("body, created_at")
+      .eq("guest_call_id", session.id)
+      .or("body.ilike.%Zoom meeting started%,body.ilike.%Zoom meeting ended%")
+      .order("created_at", { ascending: false })
+      .limit(1);
+    const latest = (lastMsgs ?? [])[0] as { body: string } | undefined;
+    const cycleClosed = !latest || /ended/i.test(latest.body);
+    if (cycleClosed) {
+      const { error: insErr } = await admin.from("guest_messages").insert({
+        guest_call_id: session.id,
+        sender_kind:   "system",
+        sender_name:   "Relay",
+        body:          "📞 Zoom meeting started",
+      });
+      if (insErr) console.error("[zoom-video-sdk-token] insert started msg failed:", insErr);
+    }
+
     const iat = Math.floor(Date.now() / 1000);
     const exp = iat + 2 * 60 * 60; // 2h
 

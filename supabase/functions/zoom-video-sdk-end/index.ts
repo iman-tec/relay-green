@@ -53,7 +53,7 @@ Deno.serve(async (req) => {
 
     const { data: session } = await admin
       .from("guest_calls")
-      .select("id, claimed_by, video_ended_at")
+      .select("id, claimed_by, customer_user_id, video_ended_at")
       .eq("id", session_id)
       .maybeSingle();
     if (!session) {
@@ -63,10 +63,16 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Authorise: engineer or supervisor-class staff.
+    // Authorise: caller must be a party to this session — the engineer
+    // (claimed_by), the customer (customer_user_id), or a supervisor-class
+    // staffer. The engineer/supervisor branch fires the full end-for-all
+    // bookkeeping (summarize chain, video_ended_at); the customer branch
+    // just posts the system message so the chat card flips to ended on
+    // both sides.
     const isEngineer = session.claimed_by === userId;
+    const isCustomer = (session as { customer_user_id?: string }).customer_user_id === userId;
     let isSupervisor = false;
-    if (!isEngineer) {
+    if (!isEngineer && !isCustomer) {
       const { data: roleRows } = await admin
         .from("user_role_names")
         .select("role")
@@ -77,15 +83,18 @@ Deno.serve(async (req) => {
         roles.has("ops_manager") || roles.has("admin") ||
         roles.has("super_admin");
     }
-    if (!isEngineer && !isSupervisor) {
+    if (!isEngineer && !isCustomer && !isSupervisor) {
       return new Response(JSON.stringify({ error: "NOT_AUTHORIZED" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    const endForAll = isEngineer || isSupervisor;
 
-    // Stamp the end timestamp (idempotent — only set if NULL).
-    if (!session.video_ended_at) {
+    // Engineer/supervisor path: stamp the global video_ended_at and chain
+    // summarize. Customer-leave skips both — they just want THEIR side
+    // marked as done so the chat card flips.
+    if (endForAll && !session.video_ended_at) {
       await admin
         .from("guest_calls")
         .update({ video_ended_at: new Date().toISOString() })
@@ -93,13 +102,28 @@ Deno.serve(async (req) => {
         .is("video_ended_at", null);
     }
 
-    // Post system message; dedupe against any prior "ended" newer than the
-    // latest "started" (same shape as end-zoom-meeting).
+    // Clear participant-joined flags so the NEXT call cycle's chat card
+    // shows the Join button again (otherwise MeetingChatEntry sees the
+    // stale engineer_joined_at / customer_joined_at and renders "You're
+    // on the call" instead of the Join CTA). Only the leaving party's
+    // flag is cleared; the other side may still be on the call.
+    const update: Record<string, unknown> = {};
+    if (isEngineer || isSupervisor) update.engineer_joined_at = null;
+    if (isCustomer)                  update.customer_joined_at = null;
+    if (Object.keys(update).length > 0) {
+      await admin.from("guest_calls").update(update).eq("id", session.id);
+    }
+
+    // Post the "📞 Zoom meeting ended" system message — body is the exact
+    // string MeetingChatEntry's chat-card pairing logic looks for, so the
+    // ongoing card flips to its ended state on both client UIs.
+    // Dedupe: only post if the latest started/ended pair shows we're still
+    // in the "started but not ended" half.
     const { data: lastMsgs } = await admin
       .from("guest_messages")
       .select("body, created_at")
-      .eq("session_id", session.id)
-      .or("body.ilike.%Zoom meeting started%,body.ilike.%Zoom video session started%,body.ilike.%Zoom meeting ended%,body.ilike.%Zoom video session ended%")
+      .eq("guest_call_id", session.id)
+      .or("body.ilike.%Zoom meeting started%,body.ilike.%Zoom meeting ended%")
       .order("created_at", { ascending: false })
       .limit(2);
     const latestStarted = (lastMsgs ?? []).find((m) => /started/i.test((m as { body: string }).body));
@@ -110,34 +134,38 @@ Deno.serve(async (req) => {
        new Date((latestEnded as { created_at: string }).created_at).getTime());
 
     if (shouldPost) {
-      await admin.from("guest_messages").insert({
-        session_id: session.id,
-        body: "📞 Zoom video session ended",
-        role: "system",
+      const { error: insErr } = await admin.from("guest_messages").insert({
+        guest_call_id: session.id,
+        sender_kind:   "system",
+        sender_name:   "Relay",
+        body:          "📞 Zoom meeting ended",
       });
+      if (insErr) console.error("[zoom-video-sdk-end] insert system msg failed:", insErr);
     }
 
     // Audit.
     await admin.from("session_video_events").insert({
       guest_call_id: session.id,
-      kind:          "end_for_all",
+      kind:          endForAll ? "end_for_all" : "participant_left",
       actor_user_id: userId,
     });
 
-    // Fire-and-forget summarize-guest-call. Same pattern as zoom-webhook.
-    try {
-      void fetch(`${SUPABASE_URL}/functions/v1/summarize-guest-call`, {
-        method: "POST",
-        headers: {
-          Authorization:  `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ session_id: session.id }),
-      });
-    } catch { /* best-effort */ }
+    // Only the engineer/supervisor end-for-all triggers the summary chain.
+    if (endForAll) {
+      try {
+        void fetch(`${SUPABASE_URL}/functions/v1/summarize-guest-call`, {
+          method: "POST",
+          headers: {
+            Authorization:  `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ session_id: session.id }),
+        });
+      } catch { /* best-effort */ }
+    }
 
     return new Response(
-      JSON.stringify({ ok: true }),
+      JSON.stringify({ ok: true, end_for_all: endForAll }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e) {
