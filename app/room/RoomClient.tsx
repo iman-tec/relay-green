@@ -2198,27 +2198,25 @@ function BrandedLanding({
         <div className="flex max-w-3xl flex-col items-center text-center">
           <Wordmark size="lg" />
 
-          {/* Brand tagline — "human layer" italicized + brand-green, with
-              an animated underline that sweeps a bright dot left-to-right
-              along a faint green base. The animation reinforces the
-              "still alive, waiting" feeling of the no-session landing. */}
+          {/* Brand tagline — "human layer" italicized + brand-green. The
+              animated underline (relay-tagline-glow) was removed per
+              request; tagline now reads as plain text without any
+              underline treatment. */}
           <p
             className="mt-5 text-[18px] leading-snug"
             style={{ color: "var(--text-muted)" }}
           >
-            <span className="relay-tagline-glow">
-              The{" "}
-              <em
-                style={{
-                  color: "var(--primary)",
-                  fontStyle: "italic",
-                  fontWeight: 500,
-                }}
-              >
-                human layer
-              </em>
-              {" "}for AI-built software.
-            </span>
+            The{" "}
+            <em
+              style={{
+                color: "var(--primary)",
+                fontStyle: "italic",
+                fontWeight: 500,
+              }}
+            >
+              human layer
+            </em>
+            {" "}for AI-built software.
           </p>
 
           {hasProject && (

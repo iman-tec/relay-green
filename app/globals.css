@@ -409,24 +409,10 @@ textarea {
   height: 1px;
   background: color-mix(in srgb, var(--primary) 22%, transparent);
 }
-.relay-tagline-glow::after {
-  content: "";
-  position: absolute;
-  bottom: -1px;
-  width: 64px;
-  height: 3px;
-  border-radius: 2px;
-  background: linear-gradient(to right, transparent, var(--primary), #ffffff);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--primary) 65%, transparent);
-  left: -64px;
-  animation: relay-tagline-sweep 2.8s ease-in-out infinite;
-}
-@keyframes relay-tagline-sweep {
-  0%   { left: -64px;             opacity: 0; }
-  10%  {                          opacity: 1; }
-  85%  { left: calc(100% - 12px); opacity: 1; }
-  100% { left: 100%;              opacity: 0; }
-}
+/* Sweeping bright-dot animation removed per request — the static
+ * faint underline above (::before) stays as the quiet visual anchor.
+ * If we ever want the sweep back, restore the ::after pseudo-element
+ * and the relay-tagline-sweep keyframes from git history. */
 
 /* ──────── Incoming-call heartbeat ─────────────────────────────────────
    `relay-heartbeat` — used by the engineer presence ball when a match
