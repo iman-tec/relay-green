@@ -37,6 +37,8 @@ import { useEngineerSession } from "@/lib/relay/useEngineerSession";
 import { useIsSupervisor, isSupervisorOnlyMessage } from "@/lib/relay/useIsSupervisor";
 import { useSessionTimer } from "@/lib/relay/useSessionTimer";
 import { humanState } from "@/lib/relay/session-status";
+import { LaunchCallProvider, isVideoSdkEnabled } from "@/lib/video/LaunchCallContext";
+import { CallSurface } from "@/app/_components/call/CallSurface";
 import type { GuestCall, GuestMessage, SessionStatus, Urgency } from "@/lib/supabase/types";
 
 const BRAND_GREEN        = "#3f5c2e";
@@ -72,6 +74,36 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
   const [started, setStarted] = useState(false);
   const [autoMinting, setAutoMinting] = useState(false);
   const [autoStartError, setAutoStartError] = useState<string | null>(null);
+
+  // Video SDK in-window call surface — gated by NEXT_PUBLIC_USE_VIDEO_SDK.
+  // When the flag is set, the engineer's Zoom join path becomes the
+  // in-window <CallSurface> instead of the Meeting SDK embed.
+  const [callOpen, setCallOpen] = useState(false);
+  const launchCall: (() => void) | null = isVideoSdkEnabled()
+    ? () => setCallOpen(true)
+    : null;
+  useEffect(() => {
+    if (state.session?.status === "ended") setCallOpen(false);
+  }, [state.session?.status]);
+
+  // Video SDK auto-start: mirror the legacy auto-mint behaviour. When the
+  // engineer lands on a pre-live or live session, automatically mount the
+  // CallSurface — which calls zoom-video-sdk-token, which posts the
+  // "Zoom meeting started" system message so the customer's chat card
+  // appears with a Join button.
+  useEffect(() => {
+    if (!isVideoSdkEnabled()) return;
+    if (!state.session) return;
+    if (!state.isAssignedEngineer) return;
+    if (isSupervisor) return;
+    if (callOpen) return;
+    if (!["assigned", "joining", "live", "grace"].includes(state.session.status)) return;
+    // Only auto-mount if the engineer hasn't already joined this cycle;
+    // engineer_joined_at is cleared by zoom-video-sdk-end so the next cycle
+    // starts fresh.
+    if (state.session.engineer_joined_at) return;
+    setCallOpen(true);
+  }, [state.session, state.isAssignedEngineer, isSupervisor, callOpen]);
 
   // Reset 'started' when session changes or ends
   useEffect(() => {
@@ -139,11 +171,17 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
   // engineer is pre-live (assigned/joining/grace). Idempotent — re-entries
   // and reloads do the right thing. Skipped entirely for non-engineer
   // viewers (supervisors are read-only monitors).
+  // VIDEO SDK: when NEXT_PUBLIC_USE_VIDEO_SDK is on we DON'T auto-mint a
+  // Zoom Meeting — the Video SDK CallSurface uses zoom-video-sdk-token
+  // instead. Auto-mint would post an orphaned "Zoom meeting started" card
+  // that nobody actually joined (via Meeting SDK), so the engineer's chat
+  // would show a stale ongoing card while the real Video SDK call runs.
   useEffect(() => {
     const s = state.session;
     if (!s) return;
     if (!state.isAssignedEngineer) return;
     if (isSupervisor) return;  // supervisors never auto-mint Zoom
+    if (isVideoSdkEnabled()) return;  // Video SDK owns the call surface
     if (!["assigned", "joining", "grace"].includes(s.status)) return;
     if (started || autoMinting) return;
 
@@ -256,6 +294,7 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
   }
 
   return (
+    <LaunchCallProvider value={launchCall}>
     <div
       className="flex h-screen w-screen overflow-hidden"
       style={{ backgroundColor: "var(--background)", color: "var(--text)" }}
@@ -263,6 +302,19 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
       <Sidebar engineerEmail={meEmail} session={state.session} timer={timer} isSupervisor={isSupervisor} />
 
       <div className="relative flex min-w-0 flex-1 flex-col">
+        {/* In-window Video SDK call surface (feature-flagged). Engineer joins
+            as host (role=1); end-for-all RPC fires on Leave. */}
+        {callOpen && state.session && (
+          <div className="absolute inset-0 z-20" style={{ background: "var(--background)" }}>
+            <CallSurface
+              sessionId={state.session.id}
+              role="host"
+              userName={meEmail || "Engineer"}
+              onClose={() => setCallOpen(false)}
+              onJoined={() => void state.markJoined()}
+            />
+          </div>
+        )}
         {isSupervisor && (
           <div
             className="flex shrink-0 items-center justify-center gap-2 border-b px-4 py-1.5 text-[11px] font-medium uppercase tracking-wider"
@@ -306,6 +358,7 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
         </div>
       )}
     </div>
+    </LaunchCallProvider>
   );
 }
 

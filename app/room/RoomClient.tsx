@@ -46,6 +46,8 @@ import { ScheduleEngineerModal } from "@/app/_components/ScheduleEngineerModal";
 import { MessageAttachments } from "@/app/_components/MessageAttachments";
 import { Button, EmptyState, IconButton, Modal, cn } from "@/app/_components/ui";
 import { useCustomerSession } from "@/lib/relay/useCustomerSession";
+import { LaunchCallProvider, useLaunchCall, isVideoSdkEnabled } from "@/lib/video/LaunchCallContext";
+import { CallSurface } from "@/app/_components/call/CallSurface";
 import { useIsSupervisor, isSupervisorOnlyMessage } from "@/lib/relay/useIsSupervisor";
 import { useSessionTimer } from "@/lib/relay/useSessionTimer";
 import { computeSessionClock } from "@/lib/relay/sessionClock";
@@ -183,6 +185,17 @@ type EmployeeInfo =
 export function RoomClient() {
   const router = useRouter();
   const state  = useCustomerSession();
+
+  // Video SDK in-window call surface state. Gated by NEXT_PUBLIC_USE_VIDEO_SDK
+  // — when off, the legacy Meeting-SDK new-tab path is unchanged.
+  const [callOpen, setCallOpen] = useState(false);
+  const launchCall: (() => void) | null = isVideoSdkEnabled()
+    ? () => setCallOpen(true)
+    : null;
+  // Auto-close the surface when the session ends.
+  useEffect(() => {
+    if (state.session?.status === "ended") setCallOpen(false);
+  }, [state.session?.status]);
 
   // Employment probe — used to switch the plan chip into "Enterprise plan"
   // / "Out of credits" and to suppress the buy-a-plan paywall for employees
@@ -1340,7 +1353,22 @@ export function RoomClient() {
         onMarkProjectComplete={handleMarkProjectComplete}
       />
 
+      <LaunchCallProvider value={launchCall}>
       <div className="relative flex min-w-0 flex-1 flex-col">
+        {/* In-window Video SDK call surface (feature-flagged). Mounts as an
+            absolute overlay on the main column when a participant clicks
+            Join. Closes on session.status==='ended' or on user leave. */}
+        {callOpen && state.session && (
+          <div className="absolute inset-0 z-20" style={{ background: "var(--background)" }}>
+            <CallSurface
+              sessionId={state.session.id}
+              role="guest"
+              userName={state.session.guest_name ?? "Customer"}
+              onClose={() => setCallOpen(false)}
+              onJoined={() => void state.markJoined()}
+            />
+          </div>
+        )}
         {/* Floating status / timer chip + end-meeting button (top-right) */}
         <FloatingStatus
           session={state.session}
@@ -1391,6 +1419,7 @@ export function RoomClient() {
       {state.session && state.session.status !== "ended" && (
         <SessionSummaryTray session={state.session} />
       )}
+      </LaunchCallProvider>
 
       {/* Overlays */}
       {state.session?.status === "queued" && !asyncChatMode && (
@@ -1481,7 +1510,13 @@ function shouldShowIncomingCall(s: GuestCall): boolean {
 function shouldShowEngineerAssigned(s: GuestCall): boolean {
   return (
     s.status === "assigned" &&
+    // Dismiss as soon as EITHER call surface is provisioned: legacy
+    // Meeting SDK mints zoom_meeting_id, Video SDK stamps video_topic
+    // on first zoom-video-sdk-token call. Without this OR-branch the
+    // modal stays stuck forever in Video SDK mode (no meeting ever gets
+    // minted) and the customer thinks the call is broken.
     !s.zoom_meeting_id &&
+    !(s as { video_topic?: string | null }).video_topic &&
     !s.engineer_joined_at &&
     !s.customer_joined_at
   );
@@ -3910,9 +3945,16 @@ const FloatingStatus = memo(function FloatingStatus({
 // enabled the moment the engineer mints a Zoom meeting; before that it's
 // tooltipped as waiting so the user knows what to expect.
 function CallHeaderActions({ session, onJoin }: { session: GuestCall; onJoin?: () => void | Promise<void> }) {
+  const launchCall = useLaunchCall();
+  // With Video SDK enabled we don't need zoom_meeting_id — the topic is
+  // derived from session.id by zoom-video-sdk-token. Still gate on isLiveish
+  // so the button is only visible/enabled once the matcher has assigned
+  // someone.
   const hasZoom = !!session.zoom_meeting_id;
   const isLiveish = ["assigned", "joining", "live", "grace"].includes(session.status);
-  const canJoin = hasZoom && isLiveish;
+  const canJoinVideoSdk = !!launchCall && isLiveish;
+  const canJoinLegacy   = hasZoom && isLiveish;
+  const canJoin = canJoinVideoSdk || canJoinLegacy;
   const tooltip = canJoin
     ? "Join the call"
     : isLiveish
@@ -3928,11 +3970,17 @@ function CallHeaderActions({ session, onJoin }: { session: GuestCall; onJoin?: (
         size="md"
         disabled={!canJoin}
         onClick={() => {
-          // Header call button now does the SAME thing as the in-chat
-          // "Join Zoom call" button: stamp joined + open the Zoom URL.
-          if (!canJoin || !session.zoom_join_url) return;
+          if (!canJoin) return;
           void onJoin?.();
-          window.open(session.zoom_join_url, "_blank", "noopener,noreferrer");
+          if (launchCall) {
+            // Video SDK path: parent mounts <CallSurface> in-window.
+            launchCall();
+            return;
+          }
+          // Legacy Meeting SDK: open Zoom in a new tab.
+          if (session.zoom_join_url) {
+            window.open(session.zoom_join_url, "_blank", "noopener,noreferrer");
+          }
         }}
       >
         <Video size={16} />

@@ -18,6 +18,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { Phone, X, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
+import { useRingingHud } from "@/lib/relay/ringingHud";
 import type { GuestCall } from "@/lib/supabase/types";
 
 const BRAND_GREEN = "#3f5c2e";
@@ -136,6 +137,20 @@ export function EngineerIncomingMatch() {
       void supabaseRef.current.rpc("expire_stale_offers").then(() => fetchOffer());
     }
   }, [offer, now, fetchOffer]);
+
+  // Audio cue + favicon flash + title blink + browser Notification while a
+  // pending offer is on screen. Mute toggle is read fresh each render from
+  // localStorage (see `setRingMuted` / `isRingMuted`).
+  useRingingHud({
+    active: !!(offer && !onSessionRoute),
+    label: intake?.developing
+      ? `📞 Incoming match · ${intake.developing}`
+      : "📞 Incoming match",
+    body: intake?.technologies?.length
+      ? `Stack: ${intake.technologies.slice(0, 4).join(", ")}`
+      : "A customer is asking for you.",
+    tag: offer?.id,
+  });
 
   const accept = useCallback(async () => {
     if (!offer || busy) return;

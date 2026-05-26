@@ -42,6 +42,7 @@ import { ROLE, type Role } from "@/lib/relay/roles";
 // import + mount below to bring it back.
 // import { EngineerIncomingRequest } from "./EngineerIncomingRequest";
 import { EngineerIncomingMatch } from "./EngineerIncomingMatch";
+import { useEngineerHeartbeat } from "@/lib/relay/useEngineerHeartbeat";
 import { createClient } from "@/lib/supabase/browser";
 import { useEngineerWorkspace } from "@/lib/relay/useEngineerWorkspace";
 import type { GuestCall } from "@/lib/supabase/types";
@@ -122,6 +123,10 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   const homeHref = isEnterpriseAdmin ? "/enterprise" : engineer ? "/dashboard" : "/supervise";
 
   const [collapsed, setCollapsed] = useState(false);
+
+  // Presence heartbeat — engineers only. The RPC self-gates with NOT_AN_ENGINEER
+  // so non-engineer staff who incidentally render this shell are no-ops.
+  useEngineerHeartbeat(engineer);
 
   // In-pane overlays — Profile & settings (engineer-only) and the Privacy/
   // Terms viewer. When open, the corresponding pane renders IN PLACE OF
