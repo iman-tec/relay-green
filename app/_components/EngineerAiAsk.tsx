@@ -386,7 +386,11 @@ export function EngineerAiAsk({
           </div>
           <div
             ref={scrollRef}
-            className="max-h-[40vh] overflow-y-auto px-4 py-3"
+            // Cap with a pixel max (not 40vh) so the panel stays bounded
+            // inside narrow/short host containers — the active-call right
+            // rail is ~30–35% of viewport, so 40vh used to push the input
+            // off-screen.
+            className="max-h-[260px] overflow-y-auto px-4 py-3"
           >
             {thread.length === 0 && submitting && (
               <p className="text-[12px]" style={{ color: "var(--text-muted)" }}>

@@ -292,80 +292,105 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
     >
       <Sidebar engineerEmail={meEmail} session={state.session} timer={timer} isSupervisor={isSupervisor} />
 
-      {/* Main column + right call rail share a horizontal PanelGroup. The
-          right rail only mounts during a live call; when callOpen flips
-          back to false the layout collapses to a single full-width main
-          column again. Inside the right rail, video tiles sit on top and
-          the EngineerAiAsk (customer-project Q&A) sits on the bottom in
-          a vertical sub-panel, per the chat-first design. */}
-      <PanelGroup direction="horizontal" autoSaveId="relay-eng-call" className="flex min-w-0 flex-1">
-        <Panel id="eng-main" order={1} defaultSize={60} minSize={35}>
-          <div className="relative flex h-full min-w-0 flex-col">
-            {isSupervisor && (
-              <div
-                className="flex shrink-0 items-center justify-center gap-2 border-b px-4 py-1.5 text-[11px] font-medium uppercase tracking-wider"
-                style={{
-                  backgroundColor: "color-mix(in srgb, var(--text) 4%, transparent)",
-                  borderColor: "var(--border)",
-                  color: "var(--text-muted)",
-                }}
-              >
-                <Eye size={11} />
-                Supervisor view · read-only
-              </div>
-            )}
-            {!isSupervisor && (
-              <FloatingStatus
-                state={state}
-                timer={timer}
-                started={started}
-                onStart={() => setStarted(true)}
+      {/* Two layouts depending on whether the call is open:
+       *
+       *  callOpen=true  → Video LARGE on the main panel; right rail stacks
+       *                   chat (top, scrollable) over a COMPACT EngineerAiAsk
+       *                   strip (bottom, shrink-0). Engineer keeps eyes on
+       *                   the customer's screen-share while the chat + AI
+       *                   helpers sit beside it.
+       *  callOpen=false → Existing two-pane MainPane (chat + ProjectAIAssistant)
+       *                   so the engineer can study project history before
+       *                   launching the call. */}
+      {callOpen && state.session ? (
+        <PanelGroup direction="horizontal" autoSaveId="relay-eng-call-v2" className="flex min-w-0 flex-1">
+          <Panel id="eng-call-main" order={1} defaultSize={65} minSize={45}>
+            <div className="h-full w-full" style={{ background: "var(--background)" }}>
+              <CallSurface
+                sessionId={state.session.id}
+                role="host"
+                userName={meEmail || "Engineer"}
+                onClose={() => setCallOpen(false)}
+                onJoined={() => void state.markJoined()}
               />
-            )}
-            <main className="min-h-0 flex-1">
-              <MainPane state={state} isSupervisor={isSupervisor} hideAiAsk={callOpen} />
-            </main>
-          </div>
-        </Panel>
-        {callOpen && state.session && (
-          <>
-            <Resizer />
-            <Panel id="eng-call" order={2} defaultSize={40} minSize={28} maxSize={60}>
-              <PanelGroup direction="vertical" autoSaveId="relay-eng-call-inner" className="h-full">
-                <Panel id="eng-call-video" order={1} defaultSize={62} minSize={35}>
-                  <div className="h-full w-full" style={{ background: "var(--background)" }}>
-                    <CallSurface
-                      sessionId={state.session.id}
-                      role="host"
-                      userName={meEmail || "Engineer"}
-                      onClose={() => setCallOpen(false)}
-                      onJoined={() => void state.markJoined()}
-                    />
-                  </div>
-                </Panel>
-                <PanelResizeHandle
-                  className="group relative h-1.5 transition-colors hover:bg-[--green-soft]"
-                  style={
-                    { backgroundColor: "var(--border)", ["--green-soft" as string]: BRAND_GREEN_SOFT } as React.CSSProperties
-                  }
+            </div>
+          </Panel>
+          <Resizer />
+          <Panel id="eng-call-side" order={2} defaultSize={35} minSize={26} maxSize={50}>
+            <div
+              className="flex h-full min-h-0 flex-col overflow-hidden"
+              style={{ background: "var(--surface)", borderLeft: "1px solid var(--border)" }}
+            >
+              {isSupervisor && (
+                <div
+                  className="flex shrink-0 items-center justify-center gap-2 border-b px-3 py-1.5 text-[11px] font-medium uppercase tracking-wider"
+                  style={{
+                    backgroundColor: "color-mix(in srgb, var(--text) 4%, transparent)",
+                    borderColor: "var(--border)",
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  <Eye size={11} />
+                  Supervisor · read-only
+                </div>
+              )}
+              {!isSupervisor && (
+                <FloatingStatus
+                  state={state}
+                  timer={timer}
+                  started={started}
+                  onStart={() => setStarted(true)}
                 />
-                <Panel id="eng-call-ai" order={2} defaultSize={38} minSize={20}>
-                  <div
-                    className="flex h-full w-full flex-col overflow-hidden border-t"
-                    style={{ borderColor: "var(--border)", background: "var(--surface)" }}
-                  >
-                    <EngineerAiAsk
-                      sessionId={state.session.id}
-                      projectId={state.session.project_id ?? null}
-                      customerName={state.session.guest_name ?? "this customer"}
-                    />
-                  </div>
-                </Panel>
-              </PanelGroup>
-            </Panel>
-          </>
-        )}
-      </PanelGroup>
+              )}
+              <main className="min-h-0 flex-1 overflow-hidden">
+                <ChatPane
+                  state={state}
+                  fullWidth
+                  readOnly={!state.isAssignedEngineer || isSupervisor}
+                  hideAiAsk
+                />
+              </main>
+              <div
+                className="shrink-0 border-t px-3 py-2"
+                style={{ borderColor: "var(--border)", background: "var(--surface)" }}
+              >
+                <EngineerAiAsk
+                  sessionId={state.session.id}
+                  projectId={state.session.project_id ?? null}
+                  customerName={state.session.guest_name ?? "this customer"}
+                />
+              </div>
+            </div>
+          </Panel>
+        </PanelGroup>
+      ) : (
+        <div className="relative flex h-full min-w-0 flex-1 flex-col">
+          {isSupervisor && (
+            <div
+              className="flex shrink-0 items-center justify-center gap-2 border-b px-4 py-1.5 text-[11px] font-medium uppercase tracking-wider"
+              style={{
+                backgroundColor: "color-mix(in srgb, var(--text) 4%, transparent)",
+                borderColor: "var(--border)",
+                color: "var(--text-muted)",
+              }}
+            >
+              <Eye size={11} />
+              Supervisor view · read-only
+            </div>
+          )}
+          {!isSupervisor && (
+            <FloatingStatus
+              state={state}
+              timer={timer}
+              started={started}
+              onStart={() => setStarted(true)}
+            />
+          )}
+          <main className="min-h-0 flex-1">
+            <MainPane state={state} isSupervisor={isSupervisor} hideAiAsk={false} />
+          </main>
+        </div>
+      )}
 
       {state.error
         && !state.error.includes("NOT_ASSIGNED_TO_YOU")
