@@ -65,6 +65,7 @@ import { IntakeAssistant } from "@/app/_components/intake/IntakeAssistant";
 import { GlobalNewChatModal } from "@/app/_components/GlobalNewChatModal";
 import { EditableSummary } from "@/app/_components/EditableSummary";
 import { QuoteRequestModal } from "@/app/_components/QuoteRequestModal";
+import { ContractManagement } from "@/app/_components/ContractManagement";
 import { useRingtone } from "@/lib/relay/useRingtone";
 import type { GuestCall, GuestMessage, GuestMessageAttachment, SessionStatus, Urgency } from "@/lib/supabase/types";
 import { signedDownloadUrl, validateStagedFiles } from "@/lib/relay/chatAttachments";
@@ -5719,6 +5720,14 @@ const Sidebar = memo(function Sidebar({
           );
         })()}
       </div>
+
+      {/* Contract management — bids the team sent back (go-live / maintenance).
+          Sits above the quote shortcuts; renders nothing until a quote exists. */}
+      {!employment?.isEmployee && (
+        <div className="border-t px-2 py-2 empty:hidden" style={{ borderColor: "var(--border)" }}>
+          <ContractManagement />
+        </div>
+      )}
 
       {/* Quote-request shortcuts — sit directly above the user pill so
           they're always reachable but visually quieter than the primary
