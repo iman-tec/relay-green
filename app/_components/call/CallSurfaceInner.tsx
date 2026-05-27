@@ -2,11 +2,12 @@
 
 /*
  * The real Video SDK surface — loaded via next/dynamic({ ssr: false }) from
- * CallSurface.tsx. Owns the SDK lifecycle for one call session, renders the
- * tile grid + control bar, and slots a chat dock into the right rail.
+ * CallSurface.tsx. Owns the SDK lifecycle for one call session.
  *
- * Mount this as `absolute inset-0` over the chat pane and let it take over
- * the visible area while a call is live.
+ * Layout: a single vertical column (header / video tiles / control bar).
+ * The in-call ChatDock from earlier revisions is gone — the host now sees
+ * the regular Relay chat in the main area + this surface mounted as a
+ * resizable right sidebar.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -15,7 +16,6 @@ import { useZoomCall } from "@/lib/video/useZoomCall";
 import { silenceVideoSdkNoise } from "@/lib/video/silenceVideoSdkNoise";
 import { TileGrid } from "./TileGrid";
 import { ControlBar } from "./ControlBar";
-import { ChatDock } from "./ChatDock";
 import { ShareViewer } from "./ShareViewer";
 
 silenceVideoSdkNoise();
@@ -45,7 +45,6 @@ export function CallSurfaceInner({ sessionId, role, userName, onClose, onJoined 
     shareCanvasRef, shareVideoRef,
     onShareElementChange: setShareMode,
   });
-  const [chatOpen, setChatOpen] = useState(true);
   const [sharing, setSharing] = useState(false);
   const someoneElseSharing =
     call.activeShareUserId !== null &&
@@ -100,9 +99,6 @@ export function CallSurfaceInner({ sessionId, role, userName, onClose, onJoined 
   const initialising =
     call.status === "idle" || call.status === "fetching-token" || call.status === "joining";
 
-  // Sidebar widths match SessionSummaryTray's idiom (`w-80` open / `w-10` closed)
-  const sidebarWidth = chatOpen ? "320px" : "44px";
-
   const headerBar = useMemo(() => (
     <div
       className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-2"
@@ -132,12 +128,13 @@ export function CallSurfaceInner({ sessionId, role, userName, onClose, onJoined 
 
   return (
     <div
-      className="flex h-full w-full"
+      className="flex h-full w-full flex-col"
       style={{ background: "var(--background)", color: "var(--text)" }}
     >
-      {/* Main column: header + tile grid + control bar */}
-      <div className="flex min-w-0 flex-1 flex-col">
-        {headerBar}
+      {/* Single vertical column: header / tiles / controls. The host
+          mounts us inside a resizable right sidebar so the main chat
+          area stays visible underneath. */}
+      {headerBar}
 
         <div className="relative flex-1 overflow-hidden">
           {initialising && (
@@ -200,42 +197,19 @@ export function CallSurfaceInner({ sessionId, role, userName, onClose, onJoined 
           )}
         </div>
 
-        <ControlBar
-          self={call.self}
-          isHost={isHost}
-          sharing={sharing}
-          chatOpen={chatOpen}
-          showChatToggle
-          networkQuality={call.networkQuality}
-          onToggleMic={call.toggleMic}
-          onToggleCamera={call.toggleCamera}
-          onToggleShare={onToggleShare}
-          onToggleChat={() => setChatOpen((v) => !v)}
-          onLeave={onLeave}
-        />
-      </div>
-
-      {/* Right rail: chat dock (collapsible) */}
-      <aside
-        className="hidden shrink-0 border-l transition-[width] duration-200 lg:flex"
-        style={{ width: sidebarWidth, borderColor: "var(--border)", background: "var(--surface)" }}
-        aria-label="In-call chat"
-      >
-        {chatOpen ? (
-          <ChatDock client={call.client} />
-        ) : (
-          <button
-            type="button"
-            onClick={() => setChatOpen(true)}
-            className="m-1 inline-flex h-9 w-9 items-center justify-center rounded-md"
-            style={{ color: "var(--text-muted)" }}
-            aria-label="Open chat"
-            title="Open chat"
-          >
-            ⟨
-          </button>
-        )}
-      </aside>
+      <ControlBar
+        self={call.self}
+        isHost={isHost}
+        sharing={sharing}
+        chatOpen={false}
+        showChatToggle={false}
+        networkQuality={call.networkQuality}
+        onToggleMic={call.toggleMic}
+        onToggleCamera={call.toggleCamera}
+        onToggleShare={onToggleShare}
+        onToggleChat={() => {}}
+        onLeave={onLeave}
+      />
     </div>
   );
 }

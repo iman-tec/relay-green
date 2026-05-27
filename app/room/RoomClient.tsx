@@ -1354,71 +1354,81 @@ export function RoomClient() {
       />
 
       <LaunchCallProvider value={launchCall}>
-      <div className="relative flex min-w-0 flex-1 flex-col">
-        {/* In-window Video SDK call surface (feature-flagged). Mounts as an
-            absolute overlay on the main column when a participant clicks
-            Join. Closes on session.status==='ended' or on user leave. */}
-        {callOpen && state.session && (
-          <div className="absolute inset-0 z-20" style={{ background: "var(--background)" }}>
-            <CallSurface
-              sessionId={state.session.id}
-              role="guest"
-              userName={state.session.guest_name ?? "Customer"}
-              onClose={() => setCallOpen(false)}
-              onJoined={() => void state.markJoined()}
+      {/* Main column + right call rail share a horizontal PanelGroup so the
+          customer can drag the divider to widen video vs. chat. When no
+          call is live, only the main panel is mounted (full-width) and the
+          SessionSummaryTray takes the right slot as before. */}
+      <PanelGroup direction="horizontal" autoSaveId="relay-room-call" className="flex min-w-0 flex-1">
+        <Panel id="room-main" order={1} defaultSize={60} minSize={35}>
+          <div className="relative flex h-full min-w-0 flex-col">
+            {/* Floating status / timer chip + end-meeting button (top-right) */}
+            <FloatingStatus
+              session={state.session}
+              entitlement={state.entitlement}
+              accepted={accepted}
+              onEnd={state.end}
+              onJoin={() => void state.markJoined()}
             />
+
+            <main className="min-h-0 flex-1">
+              {asyncChatMode ? (
+                <AsyncChatPane
+                  onEscalateToCall={handleNewSession}
+                  onCloseAsyncMode={() => setAsyncChatMode(false)}
+                />
+              ) : (
+              <MainPane
+                state={state}
+                accepted={accepted}
+                employment={employment}
+                viewingPastId={viewingPastId}
+                onCloseViewPast={handleCloseViewPast}
+                onNeedsCredits={handleNeedsCredits}
+                projectFormOpen={projectFormOpen}
+                pendingDraft={pendingDraft}
+                projects={projects}
+                onProjectConfirmNew={handleProjectConfirmNew}
+                onProjectConfirmPick={handleProjectConfirmPick}
+                onProjectCancel={handleProjectCancel}
+                onNeedProject={handleNeedProject}
+                onNewSession={handleNewSession}
+                selectedProjectId={selectedProjectId}
+                onSelectProject={handleSelectProject}
+                onStartInProject={handleStartInProject}
+                accountTab={accountTab}
+                onCloseAccount={handleCloseAccount}
+                legalView={legalView}
+                onCloseLegal={handleCloseLegal}
+                preparingProjectId={preparingProjectId}
+                preparingDraftId={preparingDraftId}
+                onClosePrepare={handleClosePrepare}
+                onDraftsChanged={bumpDrafts}
+              />
+              )}
+            </main>
           </div>
+        </Panel>
+        {callOpen && state.session && (
+          <>
+            <Resizer />
+            <Panel id="room-call" order={2} defaultSize={40} minSize={28} maxSize={60}>
+              <div className="h-full w-full" style={{ background: "var(--background)" }}>
+                <CallSurface
+                  sessionId={state.session.id}
+                  role="guest"
+                  userName={state.session.guest_name ?? "Customer"}
+                  onClose={() => setCallOpen(false)}
+                  onJoined={() => void state.markJoined()}
+                />
+              </div>
+            </Panel>
+          </>
         )}
-        {/* Floating status / timer chip + end-meeting button (top-right) */}
-        <FloatingStatus
-          session={state.session}
-          entitlement={state.entitlement}
-          accepted={accepted}
-          onEnd={state.end}
-          onJoin={() => void state.markJoined()}
-        />
+      </PanelGroup>
 
-        <main className="min-h-0 flex-1">
-          {asyncChatMode ? (
-            <AsyncChatPane
-              onEscalateToCall={handleNewSession}
-              onCloseAsyncMode={() => setAsyncChatMode(false)}
-            />
-          ) : (
-          <MainPane
-            state={state}
-            accepted={accepted}
-            employment={employment}
-            viewingPastId={viewingPastId}
-            onCloseViewPast={handleCloseViewPast}
-            onNeedsCredits={handleNeedsCredits}
-            projectFormOpen={projectFormOpen}
-            pendingDraft={pendingDraft}
-            projects={projects}
-            onProjectConfirmNew={handleProjectConfirmNew}
-            onProjectConfirmPick={handleProjectConfirmPick}
-            onProjectCancel={handleProjectCancel}
-            onNeedProject={handleNeedProject}
-            onNewSession={handleNewSession}
-            selectedProjectId={selectedProjectId}
-            onSelectProject={handleSelectProject}
-            onStartInProject={handleStartInProject}
-            accountTab={accountTab}
-            onCloseAccount={handleCloseAccount}
-            legalView={legalView}
-            onCloseLegal={handleCloseLegal}
-            preparingProjectId={preparingProjectId}
-            preparingDraftId={preparingDraftId}
-            onClosePrepare={handleClosePrepare}
-            onDraftsChanged={bumpDrafts}
-          />
-          )}
-        </main>
-      </div>
-
-      {/* Hide the summary tray during a live call — the CallSurface owns
-          the right rail (in-call chat dock). The tray comes back as soon
-          as the call surface unmounts. */}
+      {/* Summary tray sits to the right of the PanelGroup when no call is
+          live. During a call the CallSurface occupies the right rail and
+          the tray is hidden to avoid stacking two right rails side-by-side. */}
       {state.session && state.session.status !== "ended" && !callOpen && (
         <SessionSummaryTray session={state.session} />
       )}
@@ -1434,7 +1444,13 @@ export function RoomClient() {
           onProjectsChanged={refetchProjects}
         />
       )}
-      {state.session && shouldShowEngineerAssigned(state.session) && !accepted && (
+      {/* Chat-first flow: the EngineerAssignedModal's "Engineer found —
+          Connecting…" overlay was designed for the old auto-mount Zoom
+          path. In Video SDK mode the customer lands directly in chat as
+          soon as the engineer accepts, so we skip the modal entirely.
+          The "Live" pill + engineer name in the header give enough
+          signal that the engineer is on the other side. */}
+      {!isVideoSdkEnabled() && state.session && shouldShowEngineerAssigned(state.session) && !accepted && (
         <EngineerAssignedModal
           engineerName={state.session.agent_name ?? "Your engineer"}
           onCancel={state.cancel}

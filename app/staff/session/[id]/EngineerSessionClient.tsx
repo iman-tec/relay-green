@@ -78,58 +78,21 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
   // Video SDK in-window call surface — gated by NEXT_PUBLIC_USE_VIDEO_SDK.
   // When the flag is set, the engineer's Zoom join path becomes the
   // in-window <CallSurface> instead of the Meeting SDK embed.
+  //
+  // Chat-first flow: we deliberately do NOT auto-mount the CallSurface
+  // when the engineer arrives. Both engineer + customer land in the chat
+  // window. Either side starts the call via the green Video button —
+  // that fires launchCall(), which mounts <CallSurface>, which then
+  // posts "📞 Zoom meeting started". The other side's
+  // MeetingChatEntry chat card flips to "Join call" and they decide
+  // when to join, just like a regular incoming call.
   const [callOpen, setCallOpen] = useState(false);
-  // Timestamp of the most recent voluntary close. Used to gate the
-  // auto-mount effect — without it, leaving the call would re-mount the
-  // surface ~1 s later (engineer_joined_at gets cleared by
-  // zoom-video-sdk-end so the auto-mount guard reactivates). With it,
-  // we only re-auto-mount when a NEW "Zoom meeting started" arrives
-  // (i.e. customer or someone else restarted the call).
-  const [autoMountSuppressedUntilNewCycle, setAutoMountSuppressedUntilNewCycle] = useState(false);
   const launchCall: (() => void) | null = isVideoSdkEnabled()
-    ? () => {
-        setAutoMountSuppressedUntilNewCycle(false);
-        setCallOpen(true);
-      }
+    ? () => setCallOpen(true)
     : null;
   useEffect(() => {
     if (state.session?.status === "ended") setCallOpen(false);
   }, [state.session?.status]);
-
-  // Whenever a NEW "Zoom meeting started" lands AFTER our dismissal, drop
-  // the suppression so the auto-mount can fire again. Indexed by the
-  // newest started message's id so we don't loop on the same one.
-  const lastStartedSeenRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!autoMountSuppressedUntilNewCycle) return;
-    const latestStarted = state.messages
-      .filter((m) => m.sender_kind === "system" && (m.body ?? "").includes("Zoom meeting started"))
-      .pop();
-    if (latestStarted && latestStarted.id !== lastStartedSeenRef.current) {
-      lastStartedSeenRef.current = latestStarted.id;
-      setAutoMountSuppressedUntilNewCycle(false);
-    }
-  }, [state.messages, autoMountSuppressedUntilNewCycle]);
-
-  // Video SDK auto-start: mirror the legacy auto-mint behaviour. When the
-  // engineer lands on a pre-live or live session, automatically mount the
-  // CallSurface — which calls zoom-video-sdk-token, which posts the
-  // "Zoom meeting started" system message so the customer's chat card
-  // appears with a Join button.
-  useEffect(() => {
-    if (!isVideoSdkEnabled()) return;
-    if (!state.session) return;
-    if (!state.isAssignedEngineer) return;
-    if (isSupervisor) return;
-    if (callOpen) return;
-    if (autoMountSuppressedUntilNewCycle) return;
-    if (!["assigned", "joining", "live", "grace"].includes(state.session.status)) return;
-    // Only auto-mount if the engineer hasn't already joined this cycle;
-    // engineer_joined_at is cleared by zoom-video-sdk-end so the next cycle
-    // starts fresh.
-    if (state.session.engineer_joined_at) return;
-    setCallOpen(true);
-  }, [state.session, state.isAssignedEngineer, isSupervisor, callOpen, autoMountSuppressedUntilNewCycle]);
 
   // Reset 'started' when session changes or ends
   useEffect(() => {
@@ -327,51 +290,80 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
     >
       <Sidebar engineerEmail={meEmail} session={state.session} timer={timer} isSupervisor={isSupervisor} />
 
-      <div className="relative flex min-w-0 flex-1 flex-col">
-        {/* In-window Video SDK call surface (feature-flagged). Engineer joins
-            as host (role=1); end-for-all RPC fires on Leave. */}
+      {/* Main column + right call rail share a horizontal PanelGroup. The
+          right rail only mounts during a live call; when callOpen flips
+          back to false the layout collapses to a single full-width main
+          column again. Inside the right rail, video tiles sit on top and
+          the EngineerAiAsk (customer-project Q&A) sits on the bottom in
+          a vertical sub-panel, per the chat-first design. */}
+      <PanelGroup direction="horizontal" autoSaveId="relay-eng-call" className="flex min-w-0 flex-1">
+        <Panel id="eng-main" order={1} defaultSize={60} minSize={35}>
+          <div className="relative flex h-full min-w-0 flex-col">
+            {isSupervisor && (
+              <div
+                className="flex shrink-0 items-center justify-center gap-2 border-b px-4 py-1.5 text-[11px] font-medium uppercase tracking-wider"
+                style={{
+                  backgroundColor: "color-mix(in srgb, var(--text) 4%, transparent)",
+                  borderColor: "var(--border)",
+                  color: "var(--text-muted)",
+                }}
+              >
+                <Eye size={11} />
+                Supervisor view · read-only
+              </div>
+            )}
+            {!isSupervisor && (
+              <FloatingStatus
+                state={state}
+                timer={timer}
+                started={started}
+                onStart={() => setStarted(true)}
+              />
+            )}
+            <main className="min-h-0 flex-1">
+              <MainPane state={state} isSupervisor={isSupervisor} hideAiAsk={callOpen} />
+            </main>
+          </div>
+        </Panel>
         {callOpen && state.session && (
-          <div className="absolute inset-0 z-20" style={{ background: "var(--background)" }}>
-            <CallSurface
-              sessionId={state.session.id}
-              role="host"
-              userName={meEmail || "Engineer"}
-              onClose={() => {
-                setCallOpen(false);
-                // Suppress auto-mount until a NEW "Zoom meeting started"
-                // arrives — otherwise the effect would re-fire immediately
-                // because engineer_joined_at gets cleared on leave.
-                setAutoMountSuppressedUntilNewCycle(true);
-              }}
-              onJoined={() => void state.markJoined()}
-            />
-          </div>
+          <>
+            <Resizer />
+            <Panel id="eng-call" order={2} defaultSize={40} minSize={28} maxSize={60}>
+              <PanelGroup direction="vertical" autoSaveId="relay-eng-call-inner" className="h-full">
+                <Panel id="eng-call-video" order={1} defaultSize={62} minSize={35}>
+                  <div className="h-full w-full" style={{ background: "var(--background)" }}>
+                    <CallSurface
+                      sessionId={state.session.id}
+                      role="host"
+                      userName={meEmail || "Engineer"}
+                      onClose={() => setCallOpen(false)}
+                      onJoined={() => void state.markJoined()}
+                    />
+                  </div>
+                </Panel>
+                <PanelResizeHandle
+                  className="group relative h-1.5 transition-colors hover:bg-[--green-soft]"
+                  style={
+                    { backgroundColor: "var(--border)", ["--green-soft" as string]: BRAND_GREEN_SOFT } as React.CSSProperties
+                  }
+                />
+                <Panel id="eng-call-ai" order={2} defaultSize={38} minSize={20}>
+                  <div
+                    className="flex h-full w-full flex-col overflow-hidden border-t"
+                    style={{ borderColor: "var(--border)", background: "var(--surface)" }}
+                  >
+                    <EngineerAiAsk
+                      sessionId={state.session.id}
+                      projectId={state.session.project_id ?? null}
+                      customerName={state.session.guest_name ?? "this customer"}
+                    />
+                  </div>
+                </Panel>
+              </PanelGroup>
+            </Panel>
+          </>
         )}
-        {isSupervisor && (
-          <div
-            className="flex shrink-0 items-center justify-center gap-2 border-b px-4 py-1.5 text-[11px] font-medium uppercase tracking-wider"
-            style={{
-              backgroundColor: "color-mix(in srgb, var(--text) 4%, transparent)",
-              borderColor: "var(--border)",
-              color: "var(--text-muted)",
-            }}
-          >
-            <Eye size={11} />
-            Supervisor view · read-only
-          </div>
-        )}
-        {!isSupervisor && (
-          <FloatingStatus
-            state={state}
-            timer={timer}
-            started={started}
-            onStart={() => setStarted(true)}
-          />
-        )}
-        <main className="min-h-0 flex-1">
-          <MainPane state={state} isSupervisor={isSupervisor} />
-        </main>
-      </div>
+      </PanelGroup>
 
       {state.error
         && !state.error.includes("NOT_ASSIGNED_TO_YOU")
@@ -396,10 +388,14 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
 
 // ── Layout decider ─────────────────────────────────────────────────────────
 function MainPane({
-  state, isSupervisor,
+  state, isSupervisor, hideAiAsk = false,
 }: {
   state: ReturnType<typeof useEngineerSession>;
   isSupervisor: boolean;
+  /** When the call surface is mounted in the right rail, the engineer's
+   *  EngineerAiAsk lives there — suppress the inline one in the composer
+   *  to avoid two parallel input boxes for the same backend. */
+  hideAiAsk?: boolean;
 }) {
   const session = state.session!;
   const isEnded = session.status === "ended";
@@ -984,11 +980,14 @@ function ConfirmEndModal({ onCancel, onConfirm }: { onCancel: () => void; onConf
 
 // ── Chat pane ──────────────────────────────────────────────────────────────
 function ChatPane({
-  state, fullWidth = false, readOnly = false,
+  state, fullWidth = false, readOnly = false, hideAiAsk = false,
 }: {
   state: ReturnType<typeof useEngineerSession>;
   fullWidth?: boolean;
   readOnly?: boolean;            // monitor mode — hide composer entirely
+  hideAiAsk?: boolean;            // suppress the inline EngineerAiAsk (the
+                                  //  call-rail version takes over while a
+                                  //  call surface is mounted)
 }) {
   const session = state.session!;
   const isReadOnly = readOnly || session.status === "ended";
@@ -1257,11 +1256,10 @@ function ChatPane({
 
           {/* Project AI assistant — slim bar that lets the engineer
              *  query the customer's project history (past sessions, AI
-             *  summaries, intake, files). Always visible during a live
-             *  session; disabled in read-only / monitor mode and when
-             *  the session isn't linked to a project. Sits below the
-             *  composer so it doesn't compete with the live chat flow. */}
-          {session.status !== "ended" && (
+             *  summaries, intake, files). Visible during a live session
+             *  unless the call surface is mounted (then the same panel
+             *  lives in the right rail's bottom half — see EngineerSessionClient). */}
+          {session.status !== "ended" && !hideAiAsk && (
             <EngineerAiAsk
               sessionId={session.id}
               projectId={session.project_id ?? null}
