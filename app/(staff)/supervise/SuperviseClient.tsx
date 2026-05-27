@@ -32,6 +32,7 @@ import {
 } from "@/app/_components/ui";
 import { MatchingPanel } from "./MatchingPanel";
 import { RosterPanel } from "./RosterPanel";
+import { CoveragePanel } from "./CoveragePanel";
 import { ActNowRail } from "./ActNowRail";
 import { SupervisorAvailabilityToggle } from "@/app/_components/SupervisorAvailabilityToggle";
 import { MatchingActions } from "@/app/_components/MatchingActions";
@@ -98,7 +99,7 @@ function engineerLabel(s: { agent_name: string | null; engineerRealName?: string
 // (most conversations happen on Zoom voice, not chat).
 const MIN_MESSAGES_FOR_AI = 2;
 
-type Tab = "all" | "waiting" | "live" | "past" | "team" | "matching";
+type Tab = "all" | "waiting" | "live" | "past" | "team" | "coverage" | "matching";
 
 // Per-page selector — shared by all three panels (All, Active, Past). Lifted
 // to the parent so changing "20 / page" once stays applied as you tab around.
@@ -398,6 +399,7 @@ export function SuperviseClient() {
             live:     liveSessions.length,
             past:     pastSessions.length,
             team:     0,
+            coverage: 0,
             matching: 0,
           }}
           showMatching={scope.kind === "unscoped" || (scope.kind === "pod" && !!scope.podId)}
@@ -683,7 +685,7 @@ function Tabs({
   const base = ["all", "waiting", "live", "past"] as const;
   const visible: readonly Tab[] = [
     ...base,
-    ...(showTeam ? (["team"] as const) : []),
+    ...(showTeam ? (["team", "coverage"] as const) : []),
     ...(showMatching ? (["matching"] as const) : []),
   ];
   return (
@@ -694,7 +696,7 @@ function Tabs({
     >
       {visible.map((t) => {
         const active = t === tab;
-        const showCount = t !== "matching" && t !== "team";
+        const showCount = t !== "matching" && t !== "team" && t !== "coverage";
         return (
           <button
             key={t}
@@ -748,6 +750,9 @@ function TabPanel({
 }) {
   if (tab === "team") {
     return <RosterPanel />;
+  }
+  if (tab === "coverage") {
+    return <CoveragePanel />;
   }
   if (tab === "matching") {
     return matchingGlobal
