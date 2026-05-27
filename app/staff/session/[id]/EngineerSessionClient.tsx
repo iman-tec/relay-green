@@ -30,6 +30,8 @@ import { MeetingChatEntry } from "@/app/_components/MeetingChatEntry";
 import { MeetingSummaryEntry, isAiSummaryMessageBody } from "@/app/_components/MeetingSummaryEntry";
 import { ChatComposer } from "@/app/_components/ChatComposer";
 import { EngineerAiAsk } from "@/app/_components/EngineerAiAsk";
+import { ProjectAIAssistant } from "@/app/_components/ProjectAIAssistant";
+import { EngineerEscalateButton } from "@/app/_components/EngineerEscalateButton";
 import { MessageAttachments } from "@/app/_components/MessageAttachments";
 import { EditableSummary } from "@/app/_components/EditableSummary";
 import { createClient } from "@/lib/supabase/browser";
@@ -424,10 +426,30 @@ function MainPane({
     );
   }
 
-  // Active session (assigned/joining/live/grace/expired_free). Chat full
-  // width; the ZoomJoinCard renders inline at the top of the message stream
-  // and the engineer can start a new Zoom from the icon button next to Send.
-  return <ChatPane state={state} fullWidth readOnly={!isEngineer} />;
+  // Active session (assigned/joining/live/grace/expired_free).
+  //   • Call open  → the right rail (CallSurface + EngineerAiAsk) owns the
+  //                  AI surface, so MainPane collapses to a full-width chat
+  //                  to give that rail room. (hideAiAsk mirrors callOpen.)
+  //   • No call    → MainPane is two-pane: ChatPane + ProjectAIAssistant.
+  //                  The engineer can query project context without scrolling
+  //                  through every past session manually.
+  if (hideAiAsk) {
+    return <ChatPane state={state} fullWidth readOnly={!isEngineer} hideAiAsk />;
+  }
+  return (
+    <PanelGroup direction="horizontal" autoSaveId="relay-eng-active" className="h-full">
+      <Panel defaultSize={62} minSize={40} order={1}>
+        <ChatPane state={state} fullWidth readOnly={!isEngineer} />
+      </Panel>
+      <Resizer />
+      <Panel defaultSize={38} minSize={26} order={2}>
+        <ProjectAIAssistant
+          projectId={session.project_id ?? null}
+          projectName={session.project_name ?? null}
+        />
+      </Panel>
+    </PanelGroup>
+  );
 }
 
 // ── Sidebar (customer card + past sessions + engineer profile) ─────────────
@@ -1001,6 +1023,37 @@ function ChatPane({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [state.messages.length]);
 
+  // ── Auto-mark escalation as joined when a supervisor opens the session ─
+  // If a supervisor (anyone NOT claimed_by) lands here AND they have an
+  // acked escalation row for this session, fire mark_escalation_joined.
+  // That flips the engineer's button from "Joining: {name}" → "Supervisor
+  // in session" and inserts a customer-visible system chat message.
+  useEffect(() => {
+    if (session.status === "ended") return;
+    if (!readOnly) return; // engineer who claimed it doesn't trigger join
+    if (!isSupervisor) return;
+    let cancelled = false;
+    void (async () => {
+      const sb = createClient();
+      const { data: u } = await sb.auth.getUser();
+      if (cancelled || !u.user) return;
+      const { data } = await sb
+        .from("session_escalations")
+        .select("id, status")
+        .eq("session_id", session.id)
+        .eq("supervisor_user_id", u.user.id)
+        .eq("status", "acked")
+        .limit(1);
+      if (cancelled) return;
+      const row = (data ?? [])[0] as { id: string } | undefined;
+      if (!row) return;
+      await sb.rpc("mark_escalation_joined", { _id: row.id });
+    })();
+    return () => { cancelled = true; };
+    // session.id changes on route navigation; readOnly + isSupervisor are
+    // booleans that flip rarely. Re-running on those edges is fine.
+  }, [session.id, session.status, readOnly, isSupervisor]);
+
   // Engineer-only handler that mints a Zoom meeting via the edge function.
   // Used for the first-time mint and for restart after a previous meeting
   // ended. The mint function is idempotent for an active meeting (no-op)
@@ -1265,6 +1318,14 @@ function ChatPane({
               projectId={session.project_id ?? null}
               customerName={session.guest_name ?? "this customer"}
             />
+          )}
+
+          {/* Escalation — pulls a supervisor into the session when the
+           *  engineer needs backup. Only the engineer who claimed the
+           *  session sees it (read-only monitor viewers don't). Posts a
+           *  customer-visible system chat note when the supervisor joins. */}
+          {session.status !== "ended" && !readOnly && (
+            <EngineerEscalateButton sessionId={session.id} />
           )}
         </div>
       </div>

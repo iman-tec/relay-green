@@ -73,6 +73,13 @@ export function EngineerPresenceBall({
 }) {
   const sbRef = useRef(createClient());
   const [presence, setPresence] = useState<Presence | null>(null);
+  // Mirror presence into a ref so recompute() (a stable useCallback) can
+  // read the latest value without being re-armed on every state change.
+  // Required because the auto-presence rule now BRANCHES on current
+  // presence — we only auto-flip online→offline when going idle, and
+  // we never auto-promote anything to online.
+  const presenceRef = useRef<Presence | null>(null);
+  useEffect(() => { presenceRef.current = presence; }, [presence]);
   const [incoming, setIncoming] = useState<boolean>(false);
   const [muted, setMuted] = useState<boolean>(false);
   const [menuOpen, setMenuOpen] = useState<boolean>(false);
@@ -225,35 +232,48 @@ export function EngineerPresenceBall({
     return () => { alive = false; };
   }, [userId]);
 
-  // ── Auto-presence: on-call detection + idle detection ─────────────
-  // The user asked for the ball to reflect reality automatically:
-  //   • on a live call         → orange / busy
-  //   • free at the PC         → green  / online
-  //   • away from PC > 5 min   → grey   / offline
+  // ── Auto-presence: one-way ratchet (demote-only) ──────────────────
+  // The auto-detector reflects ground truth in ONE direction: it can
+  // demote an engineer down the availability ladder, but never promote.
   //
-  // Implementation: two refs track the two auto-signals (isOnCall,
-  // isIdle); a `recompute()` callback combines them into the desired
-  // presence and writes via the existing set_engineer_presence RPC iff
-  // the desired AUTO state changed since the last AUTO write. This
-  // makes manual picks (via the popup) sticky until the auto signal
-  // itself changes, e.g. the engineer manually picks "Busy" then takes
-  // a call — busy was already manually set, auto stays busy; when the
-  // call ends and no idle, auto flips to online and overrides the manual
-  // busy. That's the right behaviour: auto reflects ground truth.
+  //   • on a live call          → busy   (always — even if currently offline,
+  //                                       because they're clearly engaged)
+  //   • idle > 5 min WHILE online → offline (only kicks in if they were online)
+  //   • free at the PC          → NO auto-change. Engineer must
+  //                                explicitly choose "online" via the menu.
+  //
+  // Why: the engineer's session starts at "offline" (DB default) so
+  // login doesn't drop them into the matcher queue before they're ready.
+  // Auto-promoting them to "online" because they merely loaded the page
+  // would re-introduce the bug we're fixing. Promotion is reserved for
+  // the manual menu pick in onSet().
   const isOnCallRef = useRef(false);
   const isIdleRef = useRef(false);
-  // Tracks the last value we (auto) wrote to the DB. We compare against
-  // this — NOT against the current `presence` state — so a manual user
-  // pick doesn't fool the auto-detector into a redundant write.
+  // Tracks the last value we (auto) wrote to the DB. Prevents redundant
+  // writes when the same condition re-fires (e.g. multiple mousemoves
+  // both call markActive while we're already known to be active).
   const lastAutoWriteRef = useRef<Presence | null>(null);
 
   const recompute = useCallback(async () => {
-    const desired: Presence = isOnCallRef.current
-      ? "busy"
-      : isIdleRef.current
-        ? "offline"
-        : "online";
-    if (lastAutoWriteRef.current === desired) return;
+    const current = presenceRef.current;
+    // Decide the desired demotion (if any). Null means "no auto-change".
+    let desired: Presence | null = null;
+    if (isOnCallRef.current) {
+      // On a call → busy. Always — engineers shouldn't appear available
+      // while they're actively engaged.
+      desired = "busy";
+    } else if (isIdleRef.current && current !== "offline") {
+      // Idle and currently at any non-offline state → demote to offline.
+      // Applies to both online and busy: an engineer who set themselves
+      // Busy and then walked away should still show as Offline after 5
+      // min, not "Busy forever".
+      desired = "offline";
+    }
+    // No "else → online" branch. The engineer must explicitly choose
+    // online via the menu — auto-detection only demotes.
+
+    if (desired === null) return;
+    if (desired === current) return;
     lastAutoWriteRef.current = desired;
     try {
       const sb = sbRef.current;

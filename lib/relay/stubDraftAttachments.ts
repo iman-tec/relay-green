@@ -2,43 +2,39 @@
  * stubDraftAttachments — IndexedDB-backed store for attachments staged
  * BEFORE a Relay session exists.
  *
- * The customer-facing ChatPanelStub (RoomClient.tsx) used to disable the
- * paperclip + voice-record buttons because guest_message_attachments has
- * a NOT NULL FK to guest_messages, and that table requires a guest_call_id.
- * No session → no message → nowhere to attach. Customers had to wait for
- * the engineer to join before they could attach anything, which broke
- * the "prepare your session in advance" promise.
+ * Now SCOPED per project. The original "one global queue" model meant
+ * a file attached while preparing project A would later flush into
+ * project B's session if A was abandoned. Customers expected each
+ * project's draft chat to be isolated — so every row now carries a
+ * `scope` string (the project id, or "general" for the no-project
+ * scratchpad). Every function takes an explicit scope; the older
+ * signatures that didn't take one have been dropped, and all callers
+ * pass scope explicitly.
  *
- * This module bridges the gap. The composer writes Blob + metadata here
- * (IndexedDB handles Blobs natively + has GB-scale storage, unlike the
- * 5-10 MB localStorage cap). When the next session goes live,
- * flushAttachmentsToSession reads the queue, uploads to the
- * chat-attachments storage bucket under the new sessionId, creates a
- * single system guest_messages row, attaches everything to it, and
- * clears the local queue.
+ * Used by the customer-facing ChatPanelStub (RoomClient.tsx) — its
+ * paperclip + voice-record buttons write to this queue, and the
+ * parent's auto-flush effect moves them into a real session
+ * (guest_message_attachments rows) when the customer rings.
  *
- * Key choices:
- *   - One global queue per device (not per-project) — matches the existing
- *     STUB_DRAFT_STORAGE_KEY semantics. The customer is preparing for
- *     *some* upcoming session; whichever they kick off next gets the
- *     pending attachments. If they need per-project staging in the future,
- *     SessionPrepView is the right surface (it's already scoped by project).
- *   - Blobs go to IndexedDB, not localStorage. localStorage is
- *     synchronous + string-only + 5MB; a single voice note can blow past
- *     that limit easily.
- *   - We keep the kind classification (image/document/audio) so the
- *     UI tray can render the right icon without re-running classify().
+ * Storage layout: one IDB object store `attachments`, keyed by id,
+ * with a `scope` field on each row + a `by_scope` index for fast
+ * per-scope queries.
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { classify, uploadOne, type AttachmentKind } from "./chatAttachments";
 
 const DB_NAME = "relay-stub-drafts";
-const DB_VERSION = 1;
+// v2 adds the `scope` field + `by_scope` index. v1 rows (if any
+// exist locally from an earlier session) get migrated on upgrade —
+// we tag them with scope="general" so they aren't lost.
+const DB_VERSION = 2;
 const STORE = "attachments";
+const SCOPE_INDEX = "by_scope";
 
 export type StubAttachment = {
   id: string;
+  scope: string;
   name: string;
   mime: string;
   size: number;
@@ -49,13 +45,10 @@ export type StubAttachment = {
   blob: Blob;
 };
 
-/** Lightweight metadata returned from list() — does NOT carry the Blob. */
+/** Metadata returned from list() — does NOT carry the Blob. */
 export type StubAttachmentMeta = Omit<StubAttachment, "blob">;
 
 // ── IDB plumbing ──────────────────────────────────────────────────────
-// We open the DB on demand, not at module load, so SSR/hydration code
-// that imports this module doesn't trigger an IDB call in environments
-// without `indexedDB` (the Vercel build step, jest).
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (typeof indexedDB === "undefined") {
@@ -63,11 +56,37 @@ function openDb(): Promise<IDBDatabase> {
       return;
     }
     const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
+    req.onupgradeneeded = (event) => {
       const db = req.result;
+      // Fresh install — create the store + index from scratch.
       if (!db.objectStoreNames.contains(STORE)) {
-        db.createObjectStore(STORE, { keyPath: "id" });
+        const store = db.createObjectStore(STORE, { keyPath: "id" });
+        store.createIndex(SCOPE_INDEX, "scope", { unique: false });
+        return;
       }
+      // Upgrade path: store exists from v1 (no `scope` field, no index).
+      // Backfill scope="general" on each row + create the index.
+      const tx = req.transaction;
+      if (!tx) return;
+      const store = tx.objectStore(STORE);
+      if (!store.indexNames.contains(SCOPE_INDEX)) {
+        // Walk every row and stamp scope="general" if missing.
+        const cursorReq = store.openCursor();
+        cursorReq.onsuccess = () => {
+          const cursor = cursorReq.result;
+          if (!cursor) {
+            // Done walking — now create the index.
+            store.createIndex(SCOPE_INDEX, "scope", { unique: false });
+            return;
+          }
+          const value = cursor.value as Partial<StubAttachment>;
+          if (!value.scope) {
+            cursor.update({ ...value, scope: "general" });
+          }
+          cursor.continue();
+        };
+      }
+      void event;
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error ?? new Error("IDB open failed"));
@@ -81,17 +100,18 @@ function tx(db: IDBDatabase, mode: IDBTransactionMode) {
 // ── Public API ────────────────────────────────────────────────────────
 
 /**
- * Stage a File (from file picker or MediaRecorder output) for later
- * delivery. Validates kind client-side; throws if the type isn't one
- * we accept. Returns the new attachment's id.
+ * Stage a File (from file picker or MediaRecorder output) under a
+ * specific scope. Validates client-side; throws if the type isn't
+ * accepted. Returns the new attachment's metadata.
  */
-export async function addAttachment(file: File): Promise<StubAttachmentMeta> {
+export async function addAttachment(file: File, scope: string): Promise<StubAttachmentMeta> {
   const kind = classify(file);
   if (!kind) {
     throw new Error("Unsupported file type. PDF, DOCX, XLSX, TXT, images, or audio.");
   }
   const item: StubAttachment = {
     id: crypto.randomUUID(),
+    scope: scope || "general",
     name: file.name,
     mime: file.type || "application/octet-stream",
     size: file.size,
@@ -106,20 +126,19 @@ export async function addAttachment(file: File): Promise<StubAttachmentMeta> {
     req.onerror = () => reject(req.error ?? new Error("IDB add failed"));
   });
   db.close();
-  // Strip blob from the return value — the UI only needs metadata to
-  // render the tray. Avoids accidentally serializing the blob through
-  // React state or sending it to devtools.
   const { blob: _blob, ...meta } = item;
   void _blob;
   return meta;
 }
 
-/** List all pending attachments (metadata only, no Blobs). Newest first. */
-export async function listAttachments(): Promise<StubAttachmentMeta[]> {
+/** List pending attachments for a scope. Newest first. */
+export async function listAttachments(scope: string): Promise<StubAttachmentMeta[]> {
   let db: IDBDatabase;
   try { db = await openDb(); } catch { return []; }
   const items = await new Promise<StubAttachment[]>((resolve, reject) => {
-    const req = tx(db, "readonly").getAll();
+    const store = tx(db, "readonly");
+    const idx = store.index(SCOPE_INDEX);
+    const req = idx.getAll(scope || "general");
     req.onsuccess = () => resolve(req.result as StubAttachment[]);
     req.onerror = () => reject(req.error ?? new Error("IDB getAll failed"));
   });
@@ -139,23 +158,33 @@ export async function removeAttachment(id: string): Promise<void> {
   db.close();
 }
 
-export async function clearAttachments(): Promise<void> {
+/** Clear all attachments for a specific scope. */
+export async function clearAttachments(scope: string): Promise<void> {
   let db: IDBDatabase;
   try { db = await openDb(); } catch { return; }
   await new Promise<void>((resolve, reject) => {
-    const req = tx(db, "readwrite").clear();
-    req.onsuccess = () => resolve();
+    const store = tx(db, "readwrite");
+    const idx = store.index(SCOPE_INDEX);
+    const req = idx.openCursor(scope || "general");
+    req.onsuccess = () => {
+      const cursor = req.result;
+      if (!cursor) { resolve(); return; }
+      cursor.delete();
+      cursor.continue();
+    };
     req.onerror = () => reject(req.error ?? new Error("IDB clear failed"));
   });
   db.close();
 }
 
-// Internal — read both meta and Blob for the flush path.
-async function readAllWithBlobs(): Promise<StubAttachment[]> {
+// Internal — read both meta and Blob for a specific scope, used by flush.
+async function readScopeWithBlobs(scope: string): Promise<StubAttachment[]> {
   let db: IDBDatabase;
   try { db = await openDb(); } catch { return []; }
   const items = await new Promise<StubAttachment[]>((resolve, reject) => {
-    const req = tx(db, "readonly").getAll();
+    const store = tx(db, "readonly");
+    const idx = store.index(SCOPE_INDEX);
+    const req = idx.getAll(scope || "general");
     req.onsuccess = () => resolve(req.result as StubAttachment[]);
     req.onerror = () => reject(req.error ?? new Error("IDB getAll failed"));
   });
@@ -164,38 +193,28 @@ async function readAllWithBlobs(): Promise<StubAttachment[]> {
 }
 
 /**
- * Move every pending attachment from IndexedDB into the live session.
+ * Flush every pending attachment in a given scope into a live session.
  *
- * 1. Re-hydrates each Blob into a File so the existing uploadOne helper
- *    can take it (uploadOne writes under `{sessionId}/{uuid}-{name}`).
- * 2. Inserts ONE system guest_messages row labelled
- *    "📎 Customer prepared these files before the call:"
- * 3. Inserts a guest_message_attachments row per uploaded file, all
- *    bound to that single system message.
- * 4. Clears the IDB queue ONLY on success — partial failure leaves the
- *    queue intact so the customer can retry, manually or on the next
- *    auto-flush tick.
+ * Uploads all blobs to the chat-attachments bucket under the new
+ * sessionId, inserts ONE system message ("📎 Customer prepared these
+ * files before the call:"), and attaches every uploaded row to it.
+ * Clears the scope's queue only on full success — partial failure
+ * leaves the queue intact for retry.
  *
- * Caller is responsible for triggering this when session status reaches
- * a live state (assigned / joining / live). It's a no-op if the queue
- * is empty so re-firing the same effect is safe.
- *
- * Returns the count uploaded. Throws on storage/RPC errors so the
- * caller can show a toast.
+ * Caller is responsible for picking the right scope (typically the
+ * session's project_id, or "general" when projectless). Returns the
+ * count uploaded.
  */
 export async function flushAttachmentsToSession(args: {
   sb: SupabaseClient;
   sessionId: string;
-  /** Override the system-message body if you want a non-default label. */
+  scope: string;
   systemBody?: string;
 }): Promise<number> {
-  const { sb, sessionId, systemBody } = args;
-  const items = await readAllWithBlobs();
+  const { sb, sessionId, scope, systemBody } = args;
+  const items = await readScopeWithBlobs(scope);
   if (items.length === 0) return 0;
 
-  // Step 1: upload all blobs. uploadOne handles the storage path layout
-  // + content-type header. We collect the uploaded metadata so we can
-  // create the attachment rows after the parent message is inserted.
   type Pending = { uploaded: Awaited<ReturnType<typeof uploadOne>>; kind: AttachmentKind };
   const uploaded: Pending[] = [];
   for (const it of items) {
@@ -204,11 +223,7 @@ export async function flushAttachmentsToSession(args: {
     uploaded.push({ uploaded: u, kind: it.kind });
   }
 
-  // Step 2: insert the parent system message. RLS on guest_messages
-  // allows INSERT for authenticated callers; the customer's auth cookie
-  // is enough since they own the session.
-  const body = systemBody
-    ?? "📎 Customer prepared these files before the call:";
+  const body = systemBody ?? "📎 Customer prepared these files before the call:";
   const { data: msg, error: msgErr } = await sb
     .from("guest_messages")
     .insert({
@@ -221,8 +236,6 @@ export async function flushAttachmentsToSession(args: {
     .single();
   if (msgErr || !msg) throw new Error(msgErr?.message ?? "Couldn't post the prep message.");
 
-  // Step 3: bulk-insert the attachment rows. All rows point at the
-  // same parent message so the engineer's UI groups them together.
   const rows = uploaded.map(({ uploaded: u, kind }) => ({
     message_id: msg.id,
     path: u.path,
@@ -234,7 +247,6 @@ export async function flushAttachmentsToSession(args: {
   const { error: attErr } = await sb.from("guest_message_attachments").insert(rows);
   if (attErr) throw new Error(attErr.message);
 
-  // Step 4: clear local queue only on full success.
-  await clearAttachments();
+  await clearAttachments(scope);
   return uploaded.length;
 }

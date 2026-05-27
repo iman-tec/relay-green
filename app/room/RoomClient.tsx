@@ -31,7 +31,7 @@ import {
   Wallet, RefreshCw, Settings, LogOut, Check, Folder, Pencil, PanelRightOpen, PanelRightClose,
   Building2, FileText, Clock, Video, MoreHorizontal, UserPlus, Pin, SlidersHorizontal,
   Paperclip, Mic, Download, Music, AudioLines, ShieldCheck, Receipt, Home,
-  Trash2, Rocket, Wrench,
+  Trash2, Rocket, Wrench, Menu, MessageCircle,
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { ThemeTriplet } from "@/app/_components/ThemeTriplet";
@@ -239,13 +239,26 @@ export function RoomClient() {
     return () => { bridge.setSessionActive?.(false); };
   }, [state.session?.status]);
 
-  // ── Auto-flush stub draft attachments ────────────────────────────
-  // When the session transitions to a live-ish state and the customer
-  // has files/voice notes staged in IndexedDB (via the ChatPanelStub
-  // paperclip + record buttons), upload them now and bind them to a
-  // single system message in the new thread. One-shot: a ref-flag
-  // gates the call per session id so a status oscillation doesn't
-  // re-flush. See lib/relay/stubDraftAttachments.ts for the queue.
+  // ── Auto-flush stub draft (text + attachments) on session ring ───
+  // When a session transitions to a live-ish state, the customer's
+  // pre-session draft for that project needs to land inside the new
+  // thread so the engineer arrives to a populated conversation:
+  //
+  //   1. Every draft chat line goes in as guest_messages rows
+  //      (sender_kind="guest"), preserving the customer's typed
+  //      order so the engineer reads exactly what the customer
+  //      prepared. Then the scoped sessionStorage bucket is
+  //      cleared so the draft doesn't re-flush on re-renders.
+  //
+  //   2. Every staged attachment in the IndexedDB queue for the
+  //      same scope flushes via flushStubAttachments — one system
+  //      message ("📎 Customer prepared these files before the
+  //      call:") with each blob attached. Same do-once gate.
+  //
+  // Scope = session.project_id when present, else "general" so the
+  // projectless landing's scratch still flushes into the session it
+  // actually started. One-shot: a ref-flag gates the call per
+  // session id so a status oscillation doesn't re-flush.
   const flushedForSessionRef = useRef<string | null>(null);
   useEffect(() => {
     const s = state.session;
@@ -257,10 +270,40 @@ export function RoomClient() {
     void (async () => {
       try {
         const sb = createClient();
-        const n = await flushStubAttachments({ sb, sessionId: s.id });
-        if (n > 0) {
-          // Refresh the messages list so the engineer + customer both
-          // see the new prep-attachments message immediately.
+        const scope = s.project_id || "general";
+
+        // Step 1: flush draft chat lines as guest messages.
+        let postedCount = 0;
+        if (typeof window !== "undefined") {
+          try {
+            const raw = window.sessionStorage.getItem(stubDraftStorageKey(scope));
+            const parsed = raw ? (JSON.parse(raw) as Array<{ text?: string }>) : [];
+            const lines = Array.isArray(parsed)
+              ? parsed.map((m) => (m.text ?? "").trim()).filter((t) => t.length > 0)
+              : [];
+            if (lines.length > 0) {
+              const guestName = s.guest_name ?? "Customer";
+              const rows = lines.map((body) => ({
+                guest_call_id: s.id,
+                sender_kind: "guest" as const,
+                sender_name: guestName,
+                body,
+              }));
+              const { error } = await sb.from("guest_messages").insert(rows);
+              if (error) throw new Error(error.message);
+              postedCount = rows.length;
+              window.sessionStorage.removeItem(stubDraftStorageKey(scope));
+            }
+          } catch (e) {
+            // Fail-soft — don't block the attachment flush below.
+            console.warn("[stub-flush] message post failed:", e instanceof Error ? e.message : e);
+          }
+        }
+
+        // Step 2: flush attachments queued under the same scope.
+        const n = await flushStubAttachments({ sb, sessionId: s.id, scope });
+
+        if (postedCount > 0 || n > 0) {
           await state.refresh();
         }
       } catch (err) {
@@ -304,6 +347,12 @@ export function RoomClient() {
   const searchParams = useSearchParams();
   const newChatParam = searchParams.get("newchat");
   const [asyncChatMode, setAsyncChatMode] = useState(false);
+  // Mobile-only state. The sidebar + chat panel are hidden by default
+  // at viewports < md (768px). A hamburger button opens the sidebar as
+  // a fixed-position drawer; a FAB opens the chat panel as a bottom
+  // sheet. Desktop layout is untouched (md:flex on each).
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [mobileChatOpen, setMobileChatOpen] = useState(false);
   useEffect(() => {
     if (newChatParam === "1") {
       setAsyncChatMode(true);
@@ -1317,6 +1366,88 @@ export function RoomClient() {
       className="flex h-screen w-screen overflow-hidden"
       style={{ backgroundColor: "var(--background)", color: "var(--text)" }}
     >
+      {/* Mobile hamburger — fixed top-left, only visible below md.
+          Opens the sidebar as a slide-in drawer. Sits above the main
+          pane so it's reachable even when the central pane scrolls. */}
+      <button
+        type="button"
+        onClick={() => setMobileSidebarOpen(true)}
+        aria-label="Open sidebar"
+        className="fixed left-3 top-3 z-30 flex h-11 w-11 items-center justify-center rounded-full border shadow-sm transition-transform hover:scale-105 md:hidden"
+        style={{
+          backgroundColor: "var(--surface)",
+          borderColor: "var(--border)",
+          color: "var(--text)",
+        }}
+      >
+        <Menu size={18} />
+      </button>
+
+      {/* Mobile sidebar drawer — scrim + slide-in panel from the left.
+          Renders the same Sidebar component as desktop so feature
+          parity is automatic. Tapping the scrim or any nav action
+          closes it (the scrim onClick handles the easy path; for the
+          nav actions, each handler in Sidebar already closes the
+          flow it opens — the drawer state just needs to follow). */}
+      {mobileSidebarOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-40 md:hidden"
+            style={{ backgroundColor: "var(--scrim, rgba(0,0,0,0.55))" }}
+            onClick={() => setMobileSidebarOpen(false)}
+          />
+          <div
+            className="fixed inset-y-0 left-0 z-50 flex w-[min(85vw,320px)] flex-col shadow-2xl md:hidden"
+            style={{ backgroundColor: "var(--surface)" }}
+            onClickCapture={(e) => {
+              // Close the drawer when the user taps any actionable
+              // element inside it (so navigating somewhere doesn't
+              // leave the scrim covering the destination). We use
+              // capture-phase so we observe clicks BEFORE the
+              // sidebar's own handlers — that way close-state
+              // updates before navigation, avoiding a flash where
+              // the drawer briefly re-renders over the new view.
+              const t = e.target as HTMLElement;
+              if (t.closest("button, a")) setMobileSidebarOpen(false);
+            }}
+          >
+            <Sidebar
+              email={sidebarEmail}
+              customerUserId={sidebarCustomerUserId}
+              session={state.session}
+              entitlement={state.entitlement}
+              employment={employment}
+              viewingPastId={viewingPastId}
+              projects={projects}
+              selectedProjectId={selectedProjectId}
+              onViewPast={handleViewPast}
+              onNewSession={handleNewSession}
+              onNewChat={() => setNewChatModalOpen(true)}
+              onStartInProject={handleStartInProject}
+              onRenameProject={handleRenameProject}
+              onStartNewProject={handleStartNewProject}
+              onCreateProjectWithMetadata={handleCreateProjectWithMetadata}
+              onSelectProject={handleSelectProject}
+              onWalletClick={handleWalletClick}
+              onOpenProfile={handleOpenProfile}
+              onOpenBilling={handleOpenBilling}
+              onOpenLegal={handleOpenLegal}
+              onGoHome={handleGoHome}
+              onPrepareSession={handlePrepareSession}
+              draftsTick={draftsTick}
+              onDeleteProject={handleOpenDeleteProject}
+              onPickerToast={(msg) => {
+                setPaidToast(msg);
+                window.setTimeout(() => setPaidToast(null), 5000);
+              }}
+              onMarkProjectComplete={handleMarkProjectComplete}
+            />
+          </div>
+        </>
+      )}
+
+      {/* Desktop sidebar — hidden below md, always-in-flow above. */}
+      <div className="hidden md:flex">
       <Sidebar
         email={sidebarEmail}
         customerUserId={sidebarCustomerUserId}
@@ -1352,6 +1483,7 @@ export function RoomClient() {
         }}
         onMarkProjectComplete={handleMarkProjectComplete}
       />
+      </div>
 
       <LaunchCallProvider value={launchCall}>
       {/* Main column + right call rail share a horizontal PanelGroup so the
@@ -1506,6 +1638,75 @@ export function RoomClient() {
 
       {/* ScheduleEngineerModal is mounted inside Sidebar since the schedule
           target state lives there (driven by the connect-flow modal). */}
+
+      {/* Mobile chat FAB — bottom-right circular button. Opens the
+          ChatPanelStub as a slide-up sheet (~80vh). Only shown when
+          there's no active live session UI taking over the screen
+          (we don't want to overlap the in-call chrome). Hidden at
+          md+ since the chat panel is already in-flow on desktop. */}
+      {!asyncChatMode && (
+        <button
+          type="button"
+          onClick={() => setMobileChatOpen(true)}
+          aria-label="Open chat"
+          className="fixed bottom-4 right-4 z-30 flex h-12 w-12 items-center justify-center rounded-full shadow-lg transition-transform hover:scale-105 md:hidden"
+          style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+        >
+          <MessageCircle size={20} />
+        </button>
+      )}
+
+      {/* Mobile chat bottom sheet. Re-uses ChatPanelStub so the stub
+          composer (paperclip + dictate + record + send) gets the
+          same behavior as desktop. The sheet wrapper provides the
+          slide-up affordance + scrim + close handle. */}
+      {mobileChatOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-40 md:hidden"
+            style={{ backgroundColor: "var(--scrim, rgba(0,0,0,0.55))" }}
+            onClick={() => setMobileChatOpen(false)}
+          />
+          <div
+            className="fixed inset-x-0 bottom-0 z-50 flex h-[85vh] flex-col rounded-t-2xl shadow-2xl md:hidden"
+            style={{ backgroundColor: "var(--surface)" }}
+          >
+            {/* Drag handle + close. The handle is decorative (it's
+                pleasing to look at + signals "this can slide") and
+                the explicit close button is what actually dismisses. */}
+            <div className="flex shrink-0 items-center justify-between px-3 py-2 border-b" style={{ borderColor: "var(--border)" }}>
+              <span aria-hidden className="mx-auto h-1 w-10 rounded-full" style={{ backgroundColor: "var(--border-strong, var(--border))" }} />
+              <button
+                type="button"
+                onClick={() => setMobileChatOpen(false)}
+                aria-label="Close chat"
+                className="absolute right-3 top-2 flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                style={{ color: "var(--text-muted)" }}
+              >
+                <X size={14} />
+              </button>
+            </div>
+            {/* The stub is normally hidden on mobile (via the md:flex
+                class on its own outer aside). We need to FORCE it
+                visible inside the sheet — wrapping with a div that
+                resets the hidden state via an inline className mod
+                isn't possible from outside, so we just bypass the
+                hidden class by mounting ChatPanelStub here in a
+                container that's always-flex. ChatPanelStub's outer
+                aside has `hidden md:flex`; the wrapper class below
+                gives it `flex` via the !flex utility. */}
+            <div className="relative flex min-h-0 flex-1 [&>aside]:!flex">
+              <ChatPanelStub
+                sidebarCollapsed={false}
+                onToggleCollapsed={() => { /* no-op on mobile */ }}
+                session={state.session}
+                scopeKey={state.session?.project_id || selectedProjectId || "general"}
+                enableResize={false}
+              />
+            </div>
+          </div>
+        </>
+      )}
 
     </div>
   );
@@ -2020,6 +2221,31 @@ function BrandedLanding({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const hasProject = !!selectedProject;
 
+  // "HOW RELAY WORKS" collapsible explainer.
+  //
+  // First-visit gate: customers who haven't seen the explainer get it
+  // expanded automatically; everyone else gets it collapsed. The
+  // dismiss is sticky via localStorage so a returning customer doesn't
+  // have to scroll past the same explainer every landing visit.
+  //
+  // We default to FALSE during SSR / first paint (no window) and flip
+  // to TRUE inside an effect if the flag is missing — this prevents
+  // a layout flash where the explainer briefly appears expanded for
+  // returning customers. The effect also writes the flag immediately
+  // on first-time open so the very next render of this component on
+  // the same browser defaults to collapsed (intentional one-shot).
+  const [explainerOpen, setExplainerOpen] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const seen = window.localStorage.getItem("relay:explainer-seen");
+      if (!seen) {
+        setExplainerOpen(true);
+        window.localStorage.setItem("relay:explainer-seen", "1");
+      }
+    } catch { /* private mode / quota — fall through to collapsed */ }
+  }, []);
+
   // Customer-level summary (only used when no project is selected).
   type CustomerSummary = {
     aiSummaryTitle: string | null;
@@ -2094,29 +2320,27 @@ function BrandedLanding({
           surfaces below the logo as quiet context. */}
       <div className="relative flex flex-1 items-center justify-center px-6">
         <div className="flex max-w-3xl flex-col items-center text-center">
-          <Wordmark size="lg" />
+          <Wordmark size="xl" />
 
-          {/* Brand tagline — "human layer" italicized + brand-green, with
-              an animated underline that sweeps a bright dot left-to-right
-              along a faint green base. The animation reinforces the
-              "still alive, waiting" feeling of the no-session landing. */}
+          {/* Brand tagline — "human layer" italicized + brand-green. The
+              animated underline (relay-tagline-glow) was removed per
+              request; tagline now reads as plain text without any
+              underline treatment. */}
           <p
-            className="mt-5 text-[18px] leading-snug"
+            className="mt-5 text-[24px] leading-snug"
             style={{ color: "var(--text-muted)" }}
           >
-            <span className="relay-tagline-glow">
-              The{" "}
-              <em
-                style={{
-                  color: "var(--primary)",
-                  fontStyle: "italic",
-                  fontWeight: 500,
-                }}
-              >
-                human layer
-              </em>
-              {" "}for AI-built software.
-            </span>
+            The{" "}
+            <em
+              style={{
+                color: "var(--primary)",
+                fontStyle: "italic",
+                fontWeight: 500,
+              }}
+            >
+              human layer
+            </em>
+            {" "}for AI-built software.
           </p>
 
           {hasProject && (
@@ -2147,12 +2371,70 @@ function BrandedLanding({
             </div>
           )}
 
-          {/* Horizontal separator between the wordmark/tagline pair
-              (above) and the explainer below. Quiet visual break only —
-              the explainer that follows is intentionally chrome-light. */}
+          {/* "HOW RELAY WORKS" toggle. Collapsed-by-default for
+              returning customers; auto-expanded on first visit (see
+              the effect at the top of this component). The big +/–
+              and the uppercase label sit centred so they read as a
+              single CTA when the explainer is closed; the chrome
+              stays quiet so the wordmark+tagline still own the
+              vertical centre of the landing. */}
+          <button
+            type="button"
+            onClick={() => setExplainerOpen((v) => !v)}
+            aria-expanded={explainerOpen}
+            aria-controls="relay-landing-explainer"
+            className="group/explainer mt-10 inline-flex items-center gap-2.5 rounded-full border px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] transition-all duration-200 ease-out hover:scale-[1.02] hover:bg-[var(--surface-raised)]"
+            style={{
+              color: "var(--text-muted)",
+              borderColor: "var(--border)",
+              backgroundColor: "var(--surface)",
+            }}
+          >
+            <span>How Relay works</span>
+            {/* +/– sign morph. Two short bars; the vertical one fades
+                + scales to zero when expanded so the symbol reads as
+                a minus. Cleaner than swapping two icons. */}
+            <span
+              aria-hidden
+              className="relative inline-flex h-5 w-5 items-center justify-center rounded-full border"
+              style={{ color: "var(--primary)", borderColor: "var(--primary)" }}
+            >
+              <span
+                className="absolute h-[2px] w-2.5 rounded-full transition-transform duration-200 ease-out"
+                style={{ backgroundColor: "currentColor" }}
+              />
+              <span
+                className="absolute h-2.5 w-[2px] rounded-full transition-all duration-200 ease-out"
+                style={{
+                  backgroundColor: "currentColor",
+                  transform: explainerOpen ? "scaleY(0) rotate(90deg)" : "scaleY(1) rotate(0deg)",
+                  opacity: explainerOpen ? 0 : 1,
+                }}
+              />
+            </span>
+          </button>
+
+          {/* Small italic hint shown only when collapsed — tells new
+              customers what the + does without competing with the
+              wordmark + tagline above. Disappears when expanded so
+              we don't shout the same instruction twice. */}
+          {!explainerOpen && (
+            <p
+              className="mt-3 text-[12px] italic"
+              style={{ color: "var(--text-faint)" }}
+            >
+              (click + to read features of this page)
+            </p>
+          )}
+
+          {/* Horizontal separator + explainer body. Both share the
+              same conditional render so closing the toggle hides
+              everything cleanly (no orphaned divider line). */}
+          {explainerOpen && (
+            <>
           <div
             aria-hidden
-            className="mt-8 h-px w-full max-w-md"
+            className="mt-6 h-px w-full max-w-md"
             style={{ backgroundColor: "var(--border)" }}
           />
 
@@ -2163,7 +2445,7 @@ function BrandedLanding({
               rhythm with one 2-column moment for the spatial
               left↔right reference. Reads like a polished spec page,
               not a dashboard widget. */}
-          <div className="mt-8 w-full text-left text-[15px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
+          <div id="relay-landing-explainer" className="mt-8 w-full text-left text-[15px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
 
             {/* ── 1. Phone icon legend — two clean rows, no card chrome ── */}
             <div className="flex flex-col gap-4">
@@ -2312,6 +2594,8 @@ function BrandedLanding({
               Pay per minute. No subscription, no auto-renew.
             </p>
           </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -2330,6 +2614,7 @@ function BrandedLanding({
       <ChatPanelStub
         sidebarCollapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((v) => !v)}
+        scopeKey={selectedProject?.id || "general"}
       />
     </div>
   );
@@ -2360,7 +2645,16 @@ type LocalDraftMessage = {
   editedAt?: number | null;
 };
 
-const STUB_DRAFT_STORAGE_KEY = "relay-chat-stub-draft-v1";
+// Storage-key prefix for the ChatPanelStub local draft buffer. Each
+// project gets its own bucket so switching projects in the sidebar
+// shows different draft content (per the customer's expectation:
+// "for each session the chat is unique"). The "general" suffix is
+// the bucket used when no project is selected — a scratchpad that
+// doesn't belong to any specific session.
+const STUB_DRAFT_STORAGE_PREFIX = "relay-chat-stub-draft-v1:";
+function stubDraftStorageKey(scopeKey: string): string {
+  return `${STUB_DRAFT_STORAGE_PREFIX}${scopeKey || "general"}`;
+}
 
 // (Edit + Delete are always available on local-only stub drafts —
 //  there's no recipient yet, so the WhatsApp-style "you can't unsend
@@ -2616,9 +2910,26 @@ function DraftBubble({
 }
 
 function ChatPanelStub({
-  sidebarCollapsed, onToggleCollapsed, session,
+  sidebarCollapsed, onToggleCollapsed, session, scopeKey = "general", enableResize = true,
 }: {
   sidebarCollapsed: boolean;
+  /**
+   * Scope key for local draft persistence + attachment staging.
+   * Typically the customer's currently-selected project id; falls
+   * back to "general" when no project is selected so brainstorm
+   * scratch isn't lost. Switching projects in the sidebar should
+   * pass a different scopeKey here and the stub will load that
+   * scope's messages + pending attachments.
+   */
+  scopeKey?: string;
+  /**
+   * When true (default), the aside is fixed-width + drag-resizable
+   * from its left edge, with the chosen width persisted to
+   * localStorage. Set false when the stub is rendered inside a
+   * container that already controls width (e.g. the mobile bottom
+   * sheet, which wants the panel to fill its viewport-wide host).
+   */
+  enableResize?: boolean;
   onToggleCollapsed: () => void;
   /**
    * Optional session context — when set, the header shows the engineer's
@@ -2650,17 +2961,15 @@ function ChatPanelStub({
     isLiveish ? "Live now" :
     isEndedish ? "Session ended" :
     "No active session";
-  const [messages, setMessages] = useState<LocalDraftMessage[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const raw = window.sessionStorage.getItem(STUB_DRAFT_STORAGE_KEY);
-      if (!raw) return [];
-      const parsed = JSON.parse(raw) as LocalDraftMessage[];
-      return Array.isArray(parsed) ? parsed.slice(-200) : [];
-    } catch {
-      return [];
-    }
-  });
+  // Start empty; the scope-load effect below populates from storage on
+  // mount and on every scopeKey change. Initial state can't read from
+  // storage directly because we don't know the right key until we have
+  // scopeKey, and React doesn't let useState initializer re-run.
+  const [messages, setMessages] = useState<LocalDraftMessage[]>([]);
+  // Track which scope's content is currently mounted in `messages` so
+  // the persist effect doesn't save the old scope's content to the new
+  // scope's key during the swap window.
+  const loadedScopeRef = useRef<string | null>(null);
   const [draftText, setDraftText] = useState("");
   const [voiceMode, setVoiceMode] = useState<"idle" | "transcribing">("idle");
   const [voiceMsg, setVoiceMsg] = useState<string | null>(null);
@@ -2703,25 +3012,48 @@ function ChatPanelStub({
   const transcribeBaseRef = useRef<string>("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Hydrate the pending-attachments tray on mount.
-  useEffect(() => {
-    let alive = true;
-    void stubListAttachments().then((items) => {
-      if (alive) setStubAttachments(items);
-    });
-    return () => { alive = false; };
-  }, []);
-
-  // Persist messages so a tab refresh doesn't erase the draft buffer.
+  // Load messages from the scoped sessionStorage bucket on mount and
+  // on every scopeKey change. The customer's expectation is "switch
+  // projects in the sidebar → see THIS project's draft chat" — so
+  // when the parent passes a new scopeKey we drop the old bucket's
+  // content and hydrate the new one.
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
+      const raw = window.sessionStorage.getItem(stubDraftStorageKey(scopeKey));
+      const parsed = raw ? (JSON.parse(raw) as LocalDraftMessage[]) : [];
+      setMessages(Array.isArray(parsed) ? parsed.slice(-200) : []);
+    } catch {
+      setMessages([]);
+    }
+    loadedScopeRef.current = scopeKey;
+  }, [scopeKey]);
+
+  // Hydrate the pending-attachments tray on mount, scoped to the
+  // current project bucket. Re-runs when scopeKey changes so the
+  // tray flips with the project.
+  useEffect(() => {
+    let alive = true;
+    void stubListAttachments(scopeKey).then((items) => {
+      if (alive) setStubAttachments(items);
+    });
+    return () => { alive = false; };
+  }, [scopeKey]);
+
+  // Persist messages so a tab refresh doesn't erase the draft buffer.
+  // Skip until the load effect above has hydrated the current scope —
+  // otherwise the first tick after a scopeKey change would overwrite
+  // the new scope's bucket with the old scope's React state.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (loadedScopeRef.current !== scopeKey) return;
+    try {
       window.sessionStorage.setItem(
-        STUB_DRAFT_STORAGE_KEY,
+        stubDraftStorageKey(scopeKey),
         JSON.stringify(messages.slice(-200)),
       );
     } catch { /* quota / privacy mode — local-only, swallow */ }
-  }, [messages]);
+  }, [messages, scopeKey]);
 
   // Auto-scroll the message area to the bottom when a new message arrives.
   // Only auto-scrolls when the user is already near the bottom — if they've
@@ -2938,7 +3270,7 @@ function ChatPanelStub({
     try {
       const fresh: StubAttachmentMeta[] = [];
       for (const c of v.classified) {
-        const meta = await stubAddAttachment(c.file);
+        const meta = await stubAddAttachment(c.file, scopeKey);
         fresh.push(meta);
       }
       setStubAttachments((prev) => [...fresh, ...prev]);
@@ -3008,7 +3340,7 @@ function ChatPanelStub({
       const name = `voice-${new Date().toISOString().replace(/[:.]/g, "-")}.${ext}`;
       const file = new File([blob], name, { type: blob.type });
       try {
-        const meta = await stubAddAttachment(file);
+        const meta = await stubAddAttachment(file, scopeKey);
         setStubAttachments((prev) => [meta, ...prev]);
       } catch (err) {
         setVoiceMsg(err instanceof Error ? err.message : "Couldn't save the recording.");
@@ -3039,16 +3371,111 @@ function ChatPanelStub({
     recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
   }, []);
 
+  // ── Drag-to-resize state ─────────────────────────────────────────
+  // Customer can drag the left edge of the panel to widen/narrow it.
+  // Default width 360px, clamped [PANEL_MIN, PANEL_MAX] on every
+  // update so a runaway drag can't shrink it past usability or eat
+  // the central pane. Persisted to localStorage so the chosen width
+  // survives refresh + theme toggles.
+  const PANEL_MIN = 280;
+  const PANEL_MAX = 720;
+  const PANEL_DEFAULT = 360;
+  const [panelWidth, setPanelWidth] = useState<number>(PANEL_DEFAULT);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem("relay:chat-panel-width");
+      const parsed = raw ? Number(raw) : NaN;
+      if (Number.isFinite(parsed) && parsed >= PANEL_MIN && parsed <= PANEL_MAX) {
+        setPanelWidth(parsed);
+      }
+    } catch { /* localStorage unavailable — fall through to default */ }
+  }, []);
+
+  // Active-drag tracking: state (not ref) so the className recomputes
+  // and the width-transition is correctly suppressed while dragging.
+  // Without this gate, every pointermove would queue a 200ms width
+  // transition and the panel would lag the pointer.
+  const [isDragging, setIsDragging] = useState(false);
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    if (!enableResize || sidebarCollapsed) return;
+    e.preventDefault();
+    setIsDragging(true);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const onMove = (mv: PointerEvent) => {
+      // The panel hugs the right edge of the viewport, so the new
+      // width is simply viewportRight - pointerX. (Equivalent to
+      // dragging the LEFT edge outward = wider panel.)
+      const next = Math.max(PANEL_MIN, Math.min(PANEL_MAX, window.innerWidth - mv.clientX));
+      setPanelWidth(next);
+    };
+    const onUp = () => {
+      setIsDragging(false);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }, [enableResize, sidebarCollapsed]);
+
+  // Persist on every settled width change too (covers cases where the
+  // user releases outside the window — the up handler still runs but
+  // panelWidth might lag one tick behind).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem("relay:chat-panel-width", String(panelWidth));
+    } catch { /* swallow */ }
+  }, [panelWidth]);
+
+  // Width selection: collapsed rail = 48px; fill-parent (mobile sheet)
+  // = 100% so the bottom sheet's full viewport width is used; default
+  // desktop = the drag-resizable panelWidth value above. transition
+  // only on non-drag updates so the live drag stays buttery.
+  const computedWidth = sidebarCollapsed
+    ? 48
+    : enableResize
+      ? `${panelWidth}px`
+      : "100%";
+  const transitionClass = isDragging
+    ? "" // dragging — no transition or the panel will lag the pointer
+    : "transition-[width] duration-200";
+
   return (
     <aside
-      className="flex h-full shrink-0 flex-col border-l transition-[width] duration-200"
+      className={`relative hidden h-full shrink-0 flex-col border-l md:flex ${transitionClass}`}
       style={{
-        width: sidebarCollapsed ? 48 : "min(30%, 420px)",
-        minWidth: sidebarCollapsed ? 48 : 280,
+        width: computedWidth,
+        minWidth: sidebarCollapsed ? 48 : PANEL_MIN,
         borderColor: "var(--border)",
         backgroundColor: "var(--surface)",
       }}
     >
+      {/* Drag-to-resize handle on the LEFT edge. Only renders when
+          enableResize=true + the panel is expanded. A 6px-wide
+          invisible hit zone with a subtle accent stripe on hover so
+          the customer discovers the affordance. Cursor flips to
+          col-resize while hovering. */}
+      {enableResize && !sidebarCollapsed && (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize chat panel"
+          onPointerDown={handlePointerDown}
+          className="group/resize absolute left-0 top-0 z-20 h-full w-1.5 -translate-x-1/2 cursor-col-resize"
+        >
+          {/* Visible 1px line on hover/drag — green so it reads as the
+              app's accent rather than a generic resize ribbon. */}
+          <span
+            aria-hidden
+            className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 transition-colors group-hover/resize:bg-[var(--primary)]"
+          />
+        </div>
+      )}
       {/* Header — engineer-chat style. Collapsed rail shows just the
           expand toggle so the customer can recover the panel. */}
       <div
@@ -3465,6 +3892,7 @@ function EndedSessionReview({
         sidebarCollapsed={chatCollapsed}
         onToggleCollapsed={() => setChatCollapsed((v) => !v)}
         session={session}
+        scopeKey={session.project_id || "general"}
       />
     </div>
   );
@@ -3530,6 +3958,7 @@ function PastSessionReview({
         sidebarCollapsed={chatCollapsed}
         onToggleCollapsed={() => setChatCollapsed((v) => !v)}
         session={row}
+        scopeKey={row.project_id || "general"}
       />
     </div>
   );
@@ -3897,14 +4326,16 @@ const FloatingStatus = memo(function FloatingStatus({
        *  by it. A subtle bottom border keeps it visually separate from the
        *  content without needing a backdrop blur. */}
       <div
-        className="flex shrink-0 items-center gap-3 border-b px-4 py-2"
+        className="flex shrink-0 items-center gap-3 border-b py-2 pl-16 pr-4 md:px-4"
         style={{
           backgroundColor: "var(--surface)",
           borderColor: "var(--border)",
         }}
       >
         {/* Session title (left) — picks the AI-summary title or a friendly
-            fallback so the chat header always has a clear identity. */}
+            fallback so the chat header always has a clear identity. The
+            left padding is wider on mobile (pl-16 = 64px) to clear the
+            fixed hamburger button at top-left. */}
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <h2 className="truncate font-serif text-base font-medium text-[var(--text)]">
             {session?.ai_summary_title || (session?.status === "queued" ? "Finding your engineer…" : "Session")}
@@ -4806,28 +5237,35 @@ const Sidebar = memo(function Sidebar({
       style={{ borderRight: "1px solid var(--border)", backgroundColor: "var(--surface)" }}
     >
       {/* Brand row — wordmark (clickable, returns home) + theme
-          triplet + explicit Home icon + flex spacer + collapse toggle.
-          Two ways to go home so the affordance is unambiguous: the
-          logo follows the universal "click logo to return to landing"
-          convention, and the explicit Home icon is for users who
-          don't intuit that the wordmark is interactive. */}
+          triplet + flex spacer + collapse toggle. The wordmark is
+          itself the Home affordance (universal convention), so the
+          previous duplicate Home icon was removed: it stole ~28px
+          of header width and was forcing the wordmark to wrap on
+          narrow sidebars. The wordmark also gets `whitespace-nowrap`
+          + `shrink-0` from Wordmark.tsx so it stays atomic even
+          when squeezed. */}
       <div className="flex h-12 items-center gap-2 px-3">
         <button
           type="button"
           onClick={onGoHome}
           title="Return to the home landing"
           aria-label="Home"
-          className="rounded-md transition-opacity hover:opacity-80"
+          className="shrink-0 rounded-md transition-opacity hover:opacity-80"
         >
           <Wordmark size="md" />
         </button>
         <ThemeTriplet />
+        {/* Explicit Home icon — restored per user request. Sits next to
+            the ThemeTriplet so the two "global affordances" (theme +
+            home) cluster together. The wordmark to the left also
+            navigates home (universal convention), so this is a
+            redundant-but-discoverable second path. */}
         <button
           type="button"
           onClick={onGoHome}
           title="Home"
           aria-label="Home"
-          className="flex h-7 w-7 items-center justify-center rounded-md transition-all duration-150 ease-out hover:scale-110 hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-all duration-150 ease-out hover:scale-110 hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5"
           style={{ color: "var(--text-muted)" }}
         >
           <Home size={15} />
@@ -4836,7 +5274,7 @@ const Sidebar = memo(function Sidebar({
         <button
           onClick={() => toggleCollapsed(true)}
           title="Collapse sidebar"
-          className="flex h-7 w-7 items-center justify-center rounded-md transition-all duration-150 ease-out hover:scale-110 hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-all duration-150 ease-out hover:scale-110 hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5"
           style={{ color: "var(--text-muted)" }}
         >
           <PanelLeftClose size={16} />
@@ -8833,7 +9271,7 @@ function ConnectingModal({
         if (e.target === e.currentTarget) setMinimized(true);
       }}
     >
-      <div className="relative w-full max-w-sm rounded-2xl border p-8 shadow-xl"
+      <div className="relative w-[calc(100vw-1.5rem)] max-w-sm max-h-[calc(100vh-2rem)] overflow-y-auto rounded-2xl border p-6 sm:p-8 shadow-xl"
         style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
 
         {/* Close (minimize) — top-right. Esc + click-outside do the same. */}

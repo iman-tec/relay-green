@@ -371,18 +371,30 @@ export function InboxClient() {
   const COL_CENTER_BG  = "color-mix(in srgb, var(--text) 6%, var(--surface))";
   const COL_CALLLOG_BG = "var(--surface)";
 
+  // Tramline divider — vertical strip rendered as its own grid column
+  // between content columns. 1px border line · ~8px green-tinted fill ·
+  // 1px border line. Lives in the grid template (not as a border on the
+  // aside) so the green fill can be opaque, which `border-style: double`
+  // can't do (its gap is always transparent).
+  const DIVIDER_W = 10;
+  const dividerStyle: React.CSSProperties = {
+    borderLeft: "1px solid var(--border)",
+    borderRight: "1px solid var(--border)",
+    backgroundColor: `color-mix(in srgb, ${BRAND_GREEN} 32%, var(--surface))`,
+  };
+
   return (
     <div
       className="grid h-screen transition-[grid-template-columns] duration-200"
       style={{
-        gridTemplateColumns: `280px 1fr ${logCollapsed ? 40 : 320}px`,
+        gridTemplateColumns: `280px ${DIVIDER_W}px 1fr ${DIVIDER_W}px ${logCollapsed ? 40 : 320}px`,
         backgroundColor: "var(--surface)",
       }}
     >
       {/* ── Left rail: People (light shade) ───────────────────────── */}
       <aside
-        className="flex min-h-0 flex-col overflow-hidden border-r"
-        style={{ borderColor: "var(--border)", backgroundColor: COL_PEOPLE_BG }}
+        className="flex min-h-0 flex-col overflow-hidden"
+        style={{ backgroundColor: COL_PEOPLE_BG }}
       >
         <div className="border-b p-3" style={{ borderColor: "var(--border)" }}>
           <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--text-muted)" }}>
@@ -479,10 +491,13 @@ export function InboxClient() {
         </div>
       </aside>
 
+      {/* ── Tramline divider (People → Sessions) ──────────────────── */}
+      <div aria-hidden style={dividerStyle} />
+
       {/* ── Center: Person's sessions (lighter shade) ──────────────── */}
       <section
-        className="flex min-h-0 flex-col overflow-hidden border-r"
-        style={{ borderColor: "var(--border)", backgroundColor: COL_CENTER_BG }}
+        className="flex min-h-0 flex-col overflow-hidden"
+        style={{ backgroundColor: COL_CENTER_BG }}
       >
         {error && (
           <div
@@ -530,10 +545,13 @@ export function InboxClient() {
         ) : null}
       </section>
 
+      {/* ── Tramline divider (Sessions → Call log) ────────────────── */}
+      <div aria-hidden style={dividerStyle} />
+
       {/* ── Right rail: Call log (dark, matches StaffShell sidebar) ── */}
       <aside
-        className="flex min-h-0 flex-col overflow-hidden border-l"
-        style={{ borderColor: "var(--border)", backgroundColor: COL_CALLLOG_BG }}
+        className="flex min-h-0 flex-col overflow-hidden"
+        style={{ backgroundColor: COL_CALLLOG_BG }}
       >
         {logCollapsed ? (
           /* Collapsed rail — narrow vertical strip with a toggle. */

@@ -38,6 +38,7 @@ import {
 } from "@/lib/relay/chatAttachments";
 import { isAiSummaryMessageBody } from "@/app/_components/MeetingSummaryEntry";
 import { MessageAttachments } from "@/app/_components/MessageAttachments";
+import { ProjectAIAssistant } from "@/app/_components/ProjectAIAssistant";
 import { queryMicPermission, speechRecognitionErrorMessage } from "@/app/_components/ChatComposer";
 import type { GuestCall, GuestMessage, GuestMessageAttachment } from "@/lib/supabase/types";
 
@@ -386,6 +387,26 @@ export function SessionReviewClient({
             error={error}
             onDownload={downloadTranscript}
           />
+
+          {/* AI project assistant — lets the engineer (or customer)
+              ask natural-language questions about this project after
+              the call. The same component used in the active-session
+              right rail (EngineerSessionClient → MainPane). Wrapped
+              in a fixed-height card here because the center column
+              flows vertically; the component is internally a flex
+              column that needs a bounded parent to render the
+              scrollable thread + pinned composer correctly. */}
+          {session.project_id && (
+            <div
+              className="mt-5 overflow-hidden rounded-2xl border"
+              style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)", height: 480 }}
+            >
+              <ProjectAIAssistant
+                projectId={session.project_id}
+                projectName={session.project_name ?? null}
+              />
+            </div>
+          )}
         </main>
 
         <ChatPane
