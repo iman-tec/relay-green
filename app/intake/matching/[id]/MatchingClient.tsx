@@ -41,8 +41,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Home, Phone, Volume2, VolumeX } from "lucide-react";
+import { Loader2, Home, Volume2, VolumeX } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
+import { RingingBall } from "@/app/_components/RingingBall";
 import { Button, Card, CardBody } from "@/app/_components/ui";
 import { createClient } from "@/lib/supabase/browser";
 import { useRingtone } from "@/lib/relay/useRingtone";
@@ -412,47 +413,10 @@ function RingingHero({
           Sized so it's clearly the focal point but doesn't crowd the
           page — ~240px on desktop, scales down on mobile via the
           responsive class. */}
-      <div className="relative flex items-center justify-center" style={{ width: 280, height: 280 }}>
-        {/* Halo rings — three concentric circles fading outward. The
-            keyframe scales 1→1.8 + opacity 0.6→0; -0.6s and -1.2s
-            negative delays stagger them so a new ring expands every
-            ~600ms. Lives in app/globals.css under @keyframes
-            relay-ring-halo (added by this commit). */}
-        <span aria-hidden className="relay-ringing-halo absolute inset-0 rounded-full" style={{ animationDelay: "0s" }} />
-        <span aria-hidden className="relay-ringing-halo absolute inset-0 rounded-full" style={{ animationDelay: "-0.6s" }} />
-        <span aria-hidden className="relay-ringing-halo absolute inset-0 rounded-full" style={{ animationDelay: "-1.2s" }} />
-
-        {/* Soft under-glow. Sits beneath the ball, blurred, low alpha.
-            Gives the ball a "lit from within" feel against dark themes. */}
-        <span
-          aria-hidden
-          className="absolute rounded-full"
-          style={{
-            width: 220,
-            height: 220,
-            background: "radial-gradient(circle, color-mix(in srgb, var(--primary) 55%, transparent) 0%, transparent 70%)",
-            filter: "blur(20px)",
-          }}
-        />
-
-        {/* The ball. Heartbeat scale animation lives in globals.css under
-            @keyframes relay-ringing-ball. Phone icon centered. */}
-        <div
-          className="relay-ringing-ball relative flex items-center justify-center rounded-full"
-          style={{
-            width: 200,
-            height: 200,
-            background: "radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--primary) 90%, white) 0%, var(--primary) 55%, color-mix(in srgb, var(--primary) 65%, #000) 100%)",
-            boxShadow:
-              "0 20px 48px color-mix(in srgb, var(--primary) 35%, transparent), " +
-              "0 8px 16px color-mix(in srgb, var(--primary) 25%, transparent), " +
-              "inset 0 -10px 20px rgba(0, 0, 0, 0.22), " +
-              "inset 0 10px 20px rgba(255, 255, 255, 0.14)",
-          }}
-        >
-          <Phone size={72} className="relay-ringing-icon" style={{ color: "#fff" }} strokeWidth={1.6} />
-        </div>
-      </div>
+      {/* Ringing-ball visual shared with the engineer's
+          EngineerIncomingMatch overlay so both surfaces look identical.
+          See app/_components/RingingBall.tsx. */}
+      <RingingBall />
 
       {/* Elapsed time — large, serif, calm. mm:ss because we don't
           want to fake-promise "X seconds until next ring" anymore —
