@@ -21,7 +21,7 @@
  *   the viewer). UI shape below already accepts that.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Search, Users } from "lucide-react";
 import {
   Avatar,
@@ -32,6 +32,7 @@ import {
   StatusBadge,
   cn,
 } from "@/app/_components/ui";
+import { createClient } from "@/lib/supabase/browser";
 import {
   getSupervisorForEngineer,
   isOnlineFromLastSeen,
@@ -69,6 +70,32 @@ export function OperationsClient() {
   const [supervisors, setSupervisors] = useState<AllocationSupervisor[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const supabaseRef = useRef(createClient());
+
+  // Supervisor flips an engineer online/offline (engineer_profiles.is_available
+  // via the supervisor_set_engineer_online RPC). Optimistic update; revert on
+  // error. The 5s poll reconciles either way.
+  const setEngineerOnline = useCallback(
+    async (engineerId: string, makeOnline: boolean) => {
+      setPendingId(engineerId);
+      setRows((prev) =>
+        prev.map((r) => (r.userId === engineerId ? { ...r, isOnline: makeOnline } : r)),
+      );
+      const { error } = await supabaseRef.current.rpc("supervisor_set_engineer_online", {
+        _engineer_id: engineerId,
+        _online: makeOnline,
+      });
+      if (error) {
+        setRows((prev) =>
+          prev.map((r) => (r.userId === engineerId ? { ...r, isOnline: !makeOnline } : r)),
+        );
+        console.warn("[operations] set engineer online failed:", error.message);
+      }
+      setPendingId(null);
+    },
+    [],
+  );
 
   // Fetch on mount + poll every 5s so the roster's online dots stay live
   // as engineers toggle availability (§3.2).
@@ -163,6 +190,7 @@ export function OperationsClient() {
                   <Th>Assigned supervisor</Th>
                   <Th>Status</Th>
                   <Th>Last call</Th>
+                  <Th>Availability</Th>
                 </tr>
               </thead>
               <tbody>
@@ -265,6 +293,35 @@ export function OperationsClient() {
                         ) : (
                           <span className="text-[var(--text-muted)]">—</span>
                         )}
+                      </Td>
+                      <Td>
+                        {(() => {
+                          const isAvail = r.isOnline ?? false;
+                          return (
+                            <button
+                              type="button"
+                              disabled={pendingId === r.userId}
+                              onClick={() => void setEngineerOnline(r.userId, !isAvail)}
+                              title={isAvail ? "Set this engineer offline" : "Set this engineer online"}
+                              aria-pressed={isAvail}
+                              className={cn(
+                                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50",
+                                isAvail
+                                  ? "border-[color-mix(in_srgb,var(--ok)_40%,transparent)] bg-[var(--ok-soft)] text-[var(--ok)]"
+                                  : "border-[var(--border)] text-[var(--text-muted)] hover:bg-[color-mix(in_srgb,var(--text)_5%,transparent)]",
+                              )}
+                            >
+                              <span
+                                aria-hidden
+                                className={cn(
+                                  "inline-block size-1.5 rounded-full",
+                                  isAvail ? "bg-[var(--ok)]" : "bg-[var(--text-faint)]",
+                                )}
+                              />
+                              {isAvail ? "Online" : "Offline"}
+                            </button>
+                          );
+                        })()}
                       </Td>
                     </tr>
                   );

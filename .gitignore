@@ -58,7 +58,6 @@ supabase/.temp
 supabase/.branches
 
 certificates
-
 # Local QA artifacts (screenshots, lighthouse reports) — never commit.
 /qa/
 
@@ -74,3 +73,7 @@ certificates
 # still be committed by explicit `git add` if needed.
 /.claude/launch.json
 /.claude/scheduled_tasks.lock
+
+# Local DB dumps — never commit
+backups/
+backup.sql

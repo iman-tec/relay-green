@@ -31,7 +31,7 @@ import {
   Wallet, RefreshCw, Settings, LogOut, Check, Folder, Pencil, PanelRightOpen, PanelRightClose,
   Building2, FileText, Clock, Video, MoreHorizontal, UserPlus, Pin, SlidersHorizontal,
   Paperclip, Mic, Download, Music, AudioLines, ShieldCheck, Receipt, Home,
-  Trash2, Rocket, Wrench,
+  Trash2, Rocket, Wrench, Menu, MessageCircle,
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { ThemeTriplet } from "@/app/_components/ThemeTriplet";
@@ -46,6 +46,8 @@ import { ScheduleEngineerModal } from "@/app/_components/ScheduleEngineerModal";
 import { MessageAttachments } from "@/app/_components/MessageAttachments";
 import { Button, EmptyState, IconButton, Modal, cn } from "@/app/_components/ui";
 import { useCustomerSession } from "@/lib/relay/useCustomerSession";
+import { LaunchCallProvider, useLaunchCall, isVideoSdkEnabled } from "@/lib/video/LaunchCallContext";
+import { CallSurface } from "@/app/_components/call/CallSurface";
 import { useIsSupervisor, isSupervisorOnlyMessage } from "@/lib/relay/useIsSupervisor";
 import { useSessionTimer } from "@/lib/relay/useSessionTimer";
 import { computeSessionClock } from "@/lib/relay/sessionClock";
@@ -65,8 +67,16 @@ import { IntakeAssistant } from "@/app/_components/intake/IntakeAssistant";
 import { GlobalNewChatModal } from "@/app/_components/GlobalNewChatModal";
 import { EditableSummary } from "@/app/_components/EditableSummary";
 import { QuoteRequestModal } from "@/app/_components/QuoteRequestModal";
+import { useRingtone } from "@/lib/relay/useRingtone";
 import type { GuestCall, GuestMessage, GuestMessageAttachment, SessionStatus, Urgency } from "@/lib/supabase/types";
-import { signedDownloadUrl } from "@/lib/relay/chatAttachments";
+import { signedDownloadUrl, validateStagedFiles } from "@/lib/relay/chatAttachments";
+import {
+  addAttachment as stubAddAttachment,
+  listAttachments as stubListAttachments,
+  removeAttachment as stubRemoveAttachment,
+  flushAttachmentsToSession as flushStubAttachments,
+  type StubAttachmentMeta,
+} from "@/lib/relay/stubDraftAttachments";
 
 // Re-pointed to design-system CSS vars after the white-theme transformation.
 // Kept as named constants so existing call-sites (style={{ color: BRAND_GREEN }})
@@ -176,6 +186,17 @@ export function RoomClient() {
   const router = useRouter();
   const state  = useCustomerSession();
 
+  // Video SDK in-window call surface state. Gated by NEXT_PUBLIC_USE_VIDEO_SDK
+  // — when off, the legacy Meeting-SDK new-tab path is unchanged.
+  const [callOpen, setCallOpen] = useState(false);
+  const launchCall: (() => void) | null = isVideoSdkEnabled()
+    ? () => setCallOpen(true)
+    : null;
+  // Auto-close the surface when the session ends.
+  useEffect(() => {
+    if (state.session?.status === "ended") setCallOpen(false);
+  }, [state.session?.status]);
+
   // Employment probe — used to switch the plan chip into "Enterprise plan"
   // / "Out of credits" and to suppress the buy-a-plan paywall for employees
   // (their minutes come from the dept pool, not a self-served Stripe plan).
@@ -218,6 +239,81 @@ export function RoomClient() {
     return () => { bridge.setSessionActive?.(false); };
   }, [state.session?.status]);
 
+  // ── Auto-flush stub draft (text + attachments) on session ring ───
+  // When a session transitions to a live-ish state, the customer's
+  // pre-session draft for that project needs to land inside the new
+  // thread so the engineer arrives to a populated conversation:
+  //
+  //   1. Every draft chat line goes in as guest_messages rows
+  //      (sender_kind="guest"), preserving the customer's typed
+  //      order so the engineer reads exactly what the customer
+  //      prepared. Then the scoped sessionStorage bucket is
+  //      cleared so the draft doesn't re-flush on re-renders.
+  //
+  //   2. Every staged attachment in the IndexedDB queue for the
+  //      same scope flushes via flushStubAttachments — one system
+  //      message ("📎 Customer prepared these files before the
+  //      call:") with each blob attached. Same do-once gate.
+  //
+  // Scope = session.project_id when present, else "general" so the
+  // projectless landing's scratch still flushes into the session it
+  // actually started. One-shot: a ref-flag gates the call per
+  // session id so a status oscillation doesn't re-flush.
+  const flushedForSessionRef = useRef<string | null>(null);
+  useEffect(() => {
+    const s = state.session;
+    if (!s) return;
+    const live = ["assigned", "joining", "live", "grace"].includes(s.status);
+    if (!live) return;
+    if (flushedForSessionRef.current === s.id) return;
+    flushedForSessionRef.current = s.id;
+    void (async () => {
+      try {
+        const sb = createClient();
+        const scope = s.project_id || "general";
+
+        // Step 1: flush draft chat lines as guest messages.
+        let postedCount = 0;
+        if (typeof window !== "undefined") {
+          try {
+            const raw = window.sessionStorage.getItem(stubDraftStorageKey(scope));
+            const parsed = raw ? (JSON.parse(raw) as Array<{ text?: string }>) : [];
+            const lines = Array.isArray(parsed)
+              ? parsed.map((m) => (m.text ?? "").trim()).filter((t) => t.length > 0)
+              : [];
+            if (lines.length > 0) {
+              const guestName = s.guest_name ?? "Customer";
+              const rows = lines.map((body) => ({
+                guest_call_id: s.id,
+                sender_kind: "guest" as const,
+                sender_name: guestName,
+                body,
+              }));
+              const { error } = await sb.from("guest_messages").insert(rows);
+              if (error) throw new Error(error.message);
+              postedCount = rows.length;
+              window.sessionStorage.removeItem(stubDraftStorageKey(scope));
+            }
+          } catch (e) {
+            // Fail-soft — don't block the attachment flush below.
+            console.warn("[stub-flush] message post failed:", e instanceof Error ? e.message : e);
+          }
+        }
+
+        // Step 2: flush attachments queued under the same scope.
+        const n = await flushStubAttachments({ sb, sessionId: s.id, scope });
+
+        if (postedCount > 0 || n > 0) {
+          await state.refresh();
+        }
+      } catch (err) {
+        // Don't reset the ref so we don't loop on a failing flush —
+        // the customer can re-attach + re-trigger by leaving + rejoining.
+        console.warn("[stub-flush] failed:", err instanceof Error ? err.message : err);
+      }
+    })();
+  }, [state.session?.id, state.session?.status, state]);
+
   // Local: customer has acknowledged the incoming call. Kept around because
   // the auto-join effect below uses it as the latch that calls mark_joined()
   // exactly once when the engineer's Zoom appears.
@@ -251,6 +347,12 @@ export function RoomClient() {
   const searchParams = useSearchParams();
   const newChatParam = searchParams.get("newchat");
   const [asyncChatMode, setAsyncChatMode] = useState(false);
+  // Mobile-only state. The sidebar + chat panel are hidden by default
+  // at viewports < md (768px). A hamburger button opens the sidebar as
+  // a fixed-position drawer; a FAB opens the chat panel as a bottom
+  // sheet. Desktop layout is untouched (md:flex on each).
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [mobileChatOpen, setMobileChatOpen] = useState(false);
   useEffect(() => {
     if (newChatParam === "1") {
       setAsyncChatMode(true);
@@ -1264,6 +1366,88 @@ export function RoomClient() {
       className="flex h-screen w-screen overflow-hidden"
       style={{ backgroundColor: "var(--background)", color: "var(--text)" }}
     >
+      {/* Mobile hamburger — fixed top-left, only visible below md.
+          Opens the sidebar as a slide-in drawer. Sits above the main
+          pane so it's reachable even when the central pane scrolls. */}
+      <button
+        type="button"
+        onClick={() => setMobileSidebarOpen(true)}
+        aria-label="Open sidebar"
+        className="fixed left-3 top-3 z-30 flex h-11 w-11 items-center justify-center rounded-full border shadow-sm transition-transform hover:scale-105 md:hidden"
+        style={{
+          backgroundColor: "var(--surface)",
+          borderColor: "var(--border)",
+          color: "var(--text)",
+        }}
+      >
+        <Menu size={18} />
+      </button>
+
+      {/* Mobile sidebar drawer — scrim + slide-in panel from the left.
+          Renders the same Sidebar component as desktop so feature
+          parity is automatic. Tapping the scrim or any nav action
+          closes it (the scrim onClick handles the easy path; for the
+          nav actions, each handler in Sidebar already closes the
+          flow it opens — the drawer state just needs to follow). */}
+      {mobileSidebarOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-40 md:hidden"
+            style={{ backgroundColor: "var(--scrim, rgba(0,0,0,0.55))" }}
+            onClick={() => setMobileSidebarOpen(false)}
+          />
+          <div
+            className="fixed inset-y-0 left-0 z-50 flex w-[min(85vw,320px)] flex-col shadow-2xl md:hidden"
+            style={{ backgroundColor: "var(--surface)" }}
+            onClickCapture={(e) => {
+              // Close the drawer when the user taps any actionable
+              // element inside it (so navigating somewhere doesn't
+              // leave the scrim covering the destination). We use
+              // capture-phase so we observe clicks BEFORE the
+              // sidebar's own handlers — that way close-state
+              // updates before navigation, avoiding a flash where
+              // the drawer briefly re-renders over the new view.
+              const t = e.target as HTMLElement;
+              if (t.closest("button, a")) setMobileSidebarOpen(false);
+            }}
+          >
+            <Sidebar
+              email={sidebarEmail}
+              customerUserId={sidebarCustomerUserId}
+              session={state.session}
+              entitlement={state.entitlement}
+              employment={employment}
+              viewingPastId={viewingPastId}
+              projects={projects}
+              selectedProjectId={selectedProjectId}
+              onViewPast={handleViewPast}
+              onNewSession={handleNewSession}
+              onNewChat={() => setNewChatModalOpen(true)}
+              onStartInProject={handleStartInProject}
+              onRenameProject={handleRenameProject}
+              onStartNewProject={handleStartNewProject}
+              onCreateProjectWithMetadata={handleCreateProjectWithMetadata}
+              onSelectProject={handleSelectProject}
+              onWalletClick={handleWalletClick}
+              onOpenProfile={handleOpenProfile}
+              onOpenBilling={handleOpenBilling}
+              onOpenLegal={handleOpenLegal}
+              onGoHome={handleGoHome}
+              onPrepareSession={handlePrepareSession}
+              draftsTick={draftsTick}
+              onDeleteProject={handleOpenDeleteProject}
+              onPickerToast={(msg) => {
+                setPaidToast(msg);
+                window.setTimeout(() => setPaidToast(null), 5000);
+              }}
+              onMarkProjectComplete={handleMarkProjectComplete}
+            />
+          </div>
+        </>
+      )}
+
+      {/* Desktop sidebar — hidden below md, always-in-flow above. */}
+      <div className="hidden md:flex">
       <Sidebar
         email={sidebarEmail}
         customerUserId={sidebarCustomerUserId}
@@ -1299,58 +1483,88 @@ export function RoomClient() {
         }}
         onMarkProjectComplete={handleMarkProjectComplete}
       />
-
-      <div className="relative flex min-w-0 flex-1 flex-col">
-        {/* Floating status / timer chip + end-meeting button (top-right) */}
-        <FloatingStatus
-          session={state.session}
-          entitlement={state.entitlement}
-          accepted={accepted}
-          onEnd={state.end}
-          onJoin={() => void state.markJoined()}
-        />
-
-        <main className="min-h-0 flex-1">
-          {asyncChatMode ? (
-            <AsyncChatPane
-              onEscalateToCall={handleNewSession}
-              onCloseAsyncMode={() => setAsyncChatMode(false)}
-            />
-          ) : (
-          <MainPane
-            state={state}
-            accepted={accepted}
-            employment={employment}
-            viewingPastId={viewingPastId}
-            onCloseViewPast={handleCloseViewPast}
-            onNeedsCredits={handleNeedsCredits}
-            projectFormOpen={projectFormOpen}
-            pendingDraft={pendingDraft}
-            projects={projects}
-            onProjectConfirmNew={handleProjectConfirmNew}
-            onProjectConfirmPick={handleProjectConfirmPick}
-            onProjectCancel={handleProjectCancel}
-            onNeedProject={handleNeedProject}
-            onNewSession={handleNewSession}
-            selectedProjectId={selectedProjectId}
-            onSelectProject={handleSelectProject}
-            onStartInProject={handleStartInProject}
-            accountTab={accountTab}
-            onCloseAccount={handleCloseAccount}
-            legalView={legalView}
-            onCloseLegal={handleCloseLegal}
-            preparingProjectId={preparingProjectId}
-            preparingDraftId={preparingDraftId}
-            onClosePrepare={handleClosePrepare}
-            onDraftsChanged={bumpDrafts}
-          />
-          )}
-        </main>
       </div>
 
-      {state.session && state.session.status !== "ended" && (
+      <LaunchCallProvider value={launchCall}>
+      {/* Main column + right call rail share a horizontal PanelGroup so the
+          customer can drag the divider to widen video vs. chat. When no
+          call is live, only the main panel is mounted (full-width) and the
+          SessionSummaryTray takes the right slot as before. */}
+      <PanelGroup direction="horizontal" autoSaveId="relay-room-call" className="flex min-w-0 flex-1">
+        <Panel id="room-main" order={1} defaultSize={60} minSize={35}>
+          <div className="relative flex h-full min-w-0 flex-col">
+            {/* Floating status / timer chip + end-meeting button (top-right) */}
+            <FloatingStatus
+              session={state.session}
+              entitlement={state.entitlement}
+              accepted={accepted}
+              onEnd={state.end}
+              onJoin={() => void state.markJoined()}
+            />
+
+            <main className="min-h-0 flex-1">
+              {asyncChatMode ? (
+                <AsyncChatPane
+                  onEscalateToCall={handleNewSession}
+                  onCloseAsyncMode={() => setAsyncChatMode(false)}
+                />
+              ) : (
+              <MainPane
+                state={state}
+                accepted={accepted}
+                employment={employment}
+                viewingPastId={viewingPastId}
+                onCloseViewPast={handleCloseViewPast}
+                onNeedsCredits={handleNeedsCredits}
+                projectFormOpen={projectFormOpen}
+                pendingDraft={pendingDraft}
+                projects={projects}
+                onProjectConfirmNew={handleProjectConfirmNew}
+                onProjectConfirmPick={handleProjectConfirmPick}
+                onProjectCancel={handleProjectCancel}
+                onNeedProject={handleNeedProject}
+                onNewSession={handleNewSession}
+                selectedProjectId={selectedProjectId}
+                onSelectProject={handleSelectProject}
+                onStartInProject={handleStartInProject}
+                accountTab={accountTab}
+                onCloseAccount={handleCloseAccount}
+                legalView={legalView}
+                onCloseLegal={handleCloseLegal}
+                preparingProjectId={preparingProjectId}
+                preparingDraftId={preparingDraftId}
+                onClosePrepare={handleClosePrepare}
+                onDraftsChanged={bumpDrafts}
+              />
+              )}
+            </main>
+          </div>
+        </Panel>
+        {callOpen && state.session && (
+          <>
+            <Resizer />
+            <Panel id="room-call" order={2} defaultSize={40} minSize={28} maxSize={60}>
+              <div className="h-full w-full" style={{ background: "var(--background)" }}>
+                <CallSurface
+                  sessionId={state.session.id}
+                  role="guest"
+                  userName={state.session.guest_name ?? "Customer"}
+                  onClose={() => setCallOpen(false)}
+                  onJoined={() => void state.markJoined()}
+                />
+              </div>
+            </Panel>
+          </>
+        )}
+      </PanelGroup>
+
+      {/* Summary tray sits to the right of the PanelGroup when no call is
+          live. During a call the CallSurface occupies the right rail and
+          the tray is hidden to avoid stacking two right rails side-by-side. */}
+      {state.session && state.session.status !== "ended" && !callOpen && (
         <SessionSummaryTray session={state.session} />
       )}
+      </LaunchCallProvider>
 
       {/* Overlays */}
       {state.session?.status === "queued" && !asyncChatMode && (
@@ -1362,7 +1576,13 @@ export function RoomClient() {
           onProjectsChanged={refetchProjects}
         />
       )}
-      {state.session && shouldShowEngineerAssigned(state.session) && !accepted && (
+      {/* Chat-first flow: the EngineerAssignedModal's "Engineer found —
+          Connecting…" overlay was designed for the old auto-mount Zoom
+          path. In Video SDK mode the customer lands directly in chat as
+          soon as the engineer accepts, so we skip the modal entirely.
+          The "Live" pill + engineer name in the header give enough
+          signal that the engineer is on the other side. */}
+      {!isVideoSdkEnabled() && state.session && shouldShowEngineerAssigned(state.session) && !accepted && (
         <EngineerAssignedModal
           engineerName={state.session.agent_name ?? "Your engineer"}
           onCancel={state.cancel}
@@ -1419,6 +1639,75 @@ export function RoomClient() {
       {/* ScheduleEngineerModal is mounted inside Sidebar since the schedule
           target state lives there (driven by the connect-flow modal). */}
 
+      {/* Mobile chat FAB — bottom-right circular button. Opens the
+          ChatPanelStub as a slide-up sheet (~80vh). Only shown when
+          there's no active live session UI taking over the screen
+          (we don't want to overlap the in-call chrome). Hidden at
+          md+ since the chat panel is already in-flow on desktop. */}
+      {!asyncChatMode && (
+        <button
+          type="button"
+          onClick={() => setMobileChatOpen(true)}
+          aria-label="Open chat"
+          className="fixed bottom-4 right-4 z-30 flex h-12 w-12 items-center justify-center rounded-full shadow-lg transition-transform hover:scale-105 md:hidden"
+          style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+        >
+          <MessageCircle size={20} />
+        </button>
+      )}
+
+      {/* Mobile chat bottom sheet. Re-uses ChatPanelStub so the stub
+          composer (paperclip + dictate + record + send) gets the
+          same behavior as desktop. The sheet wrapper provides the
+          slide-up affordance + scrim + close handle. */}
+      {mobileChatOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-40 md:hidden"
+            style={{ backgroundColor: "var(--scrim, rgba(0,0,0,0.55))" }}
+            onClick={() => setMobileChatOpen(false)}
+          />
+          <div
+            className="fixed inset-x-0 bottom-0 z-50 flex h-[85vh] flex-col rounded-t-2xl shadow-2xl md:hidden"
+            style={{ backgroundColor: "var(--surface)" }}
+          >
+            {/* Drag handle + close. The handle is decorative (it's
+                pleasing to look at + signals "this can slide") and
+                the explicit close button is what actually dismisses. */}
+            <div className="flex shrink-0 items-center justify-between px-3 py-2 border-b" style={{ borderColor: "var(--border)" }}>
+              <span aria-hidden className="mx-auto h-1 w-10 rounded-full" style={{ backgroundColor: "var(--border-strong, var(--border))" }} />
+              <button
+                type="button"
+                onClick={() => setMobileChatOpen(false)}
+                aria-label="Close chat"
+                className="absolute right-3 top-2 flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                style={{ color: "var(--text-muted)" }}
+              >
+                <X size={14} />
+              </button>
+            </div>
+            {/* The stub is normally hidden on mobile (via the md:flex
+                class on its own outer aside). We need to FORCE it
+                visible inside the sheet — wrapping with a div that
+                resets the hidden state via an inline className mod
+                isn't possible from outside, so we just bypass the
+                hidden class by mounting ChatPanelStub here in a
+                container that's always-flex. ChatPanelStub's outer
+                aside has `hidden md:flex`; the wrapper class below
+                gives it `flex` via the !flex utility. */}
+            <div className="relative flex min-h-0 flex-1 [&>aside]:!flex">
+              <ChatPanelStub
+                sidebarCollapsed={false}
+                onToggleCollapsed={() => { /* no-op on mobile */ }}
+                session={state.session}
+                scopeKey={state.session?.project_id || selectedProjectId || "general"}
+                enableResize={false}
+              />
+            </div>
+          </div>
+        </>
+      )}
+
     </div>
   );
 }
@@ -1441,7 +1730,13 @@ function shouldShowIncomingCall(s: GuestCall): boolean {
 function shouldShowEngineerAssigned(s: GuestCall): boolean {
   return (
     s.status === "assigned" &&
+    // Dismiss as soon as EITHER call surface is provisioned: legacy
+    // Meeting SDK mints zoom_meeting_id, Video SDK stamps video_topic
+    // on first zoom-video-sdk-token call. Without this OR-branch the
+    // modal stays stuck forever in Video SDK mode (no meeting ever gets
+    // minted) and the customer thinks the call is broken.
     !s.zoom_meeting_id &&
+    !(s as { video_topic?: string | null }).video_topic &&
     !s.engineer_joined_at &&
     !s.customer_joined_at
   );
@@ -1926,6 +2221,31 @@ function BrandedLanding({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const hasProject = !!selectedProject;
 
+  // "HOW RELAY WORKS" collapsible explainer.
+  //
+  // First-visit gate: customers who haven't seen the explainer get it
+  // expanded automatically; everyone else gets it collapsed. The
+  // dismiss is sticky via localStorage so a returning customer doesn't
+  // have to scroll past the same explainer every landing visit.
+  //
+  // We default to FALSE during SSR / first paint (no window) and flip
+  // to TRUE inside an effect if the flag is missing — this prevents
+  // a layout flash where the explainer briefly appears expanded for
+  // returning customers. The effect also writes the flag immediately
+  // on first-time open so the very next render of this component on
+  // the same browser defaults to collapsed (intentional one-shot).
+  const [explainerOpen, setExplainerOpen] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const seen = window.localStorage.getItem("relay:explainer-seen");
+      if (!seen) {
+        setExplainerOpen(true);
+        window.localStorage.setItem("relay:explainer-seen", "1");
+      }
+    } catch { /* private mode / quota — fall through to collapsed */ }
+  }, []);
+
   // Customer-level summary (only used when no project is selected).
   type CustomerSummary = {
     aiSummaryTitle: string | null;
@@ -2000,29 +2320,27 @@ function BrandedLanding({
           surfaces below the logo as quiet context. */}
       <div className="relative flex flex-1 items-center justify-center px-6">
         <div className="flex max-w-3xl flex-col items-center text-center">
-          <Wordmark size="lg" />
+          <Wordmark size="xl" />
 
-          {/* Brand tagline — "human layer" italicized + brand-green, with
-              an animated underline that sweeps a bright dot left-to-right
-              along a faint green base. The animation reinforces the
-              "still alive, waiting" feeling of the no-session landing. */}
+          {/* Brand tagline — "human layer" italicized + brand-green. The
+              animated underline (relay-tagline-glow) was removed per
+              request; tagline now reads as plain text without any
+              underline treatment. */}
           <p
-            className="mt-5 text-[18px] leading-snug"
+            className="mt-5 text-[24px] leading-snug"
             style={{ color: "var(--text-muted)" }}
           >
-            <span className="relay-tagline-glow">
-              The{" "}
-              <em
-                style={{
-                  color: "var(--primary)",
-                  fontStyle: "italic",
-                  fontWeight: 500,
-                }}
-              >
-                human layer
-              </em>
-              {" "}for AI-built software.
-            </span>
+            The{" "}
+            <em
+              style={{
+                color: "var(--primary)",
+                fontStyle: "italic",
+                fontWeight: 500,
+              }}
+            >
+              human layer
+            </em>
+            {" "}for AI-built software.
           </p>
 
           {hasProject && (
@@ -2053,12 +2371,70 @@ function BrandedLanding({
             </div>
           )}
 
-          {/* Horizontal separator between the wordmark/tagline pair
-              (above) and the explainer below. Quiet visual break only —
-              the explainer that follows is intentionally chrome-light. */}
+          {/* "HOW RELAY WORKS" toggle. Collapsed-by-default for
+              returning customers; auto-expanded on first visit (see
+              the effect at the top of this component). The big +/–
+              and the uppercase label sit centred so they read as a
+              single CTA when the explainer is closed; the chrome
+              stays quiet so the wordmark+tagline still own the
+              vertical centre of the landing. */}
+          <button
+            type="button"
+            onClick={() => setExplainerOpen((v) => !v)}
+            aria-expanded={explainerOpen}
+            aria-controls="relay-landing-explainer"
+            className="group/explainer mt-10 inline-flex items-center gap-2.5 rounded-full border px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] transition-all duration-200 ease-out hover:scale-[1.02] hover:bg-[var(--surface-raised)]"
+            style={{
+              color: "var(--text-muted)",
+              borderColor: "var(--border)",
+              backgroundColor: "var(--surface)",
+            }}
+          >
+            <span>How Relay works</span>
+            {/* +/– sign morph. Two short bars; the vertical one fades
+                + scales to zero when expanded so the symbol reads as
+                a minus. Cleaner than swapping two icons. */}
+            <span
+              aria-hidden
+              className="relative inline-flex h-5 w-5 items-center justify-center rounded-full border"
+              style={{ color: "var(--primary)", borderColor: "var(--primary)" }}
+            >
+              <span
+                className="absolute h-[2px] w-2.5 rounded-full transition-transform duration-200 ease-out"
+                style={{ backgroundColor: "currentColor" }}
+              />
+              <span
+                className="absolute h-2.5 w-[2px] rounded-full transition-all duration-200 ease-out"
+                style={{
+                  backgroundColor: "currentColor",
+                  transform: explainerOpen ? "scaleY(0) rotate(90deg)" : "scaleY(1) rotate(0deg)",
+                  opacity: explainerOpen ? 0 : 1,
+                }}
+              />
+            </span>
+          </button>
+
+          {/* Small italic hint shown only when collapsed — tells new
+              customers what the + does without competing with the
+              wordmark + tagline above. Disappears when expanded so
+              we don't shout the same instruction twice. */}
+          {!explainerOpen && (
+            <p
+              className="mt-3 text-[12px] italic"
+              style={{ color: "var(--text-faint)" }}
+            >
+              (click + to read features of this page)
+            </p>
+          )}
+
+          {/* Horizontal separator + explainer body. Both share the
+              same conditional render so closing the toggle hides
+              everything cleanly (no orphaned divider line). */}
+          {explainerOpen && (
+            <>
           <div
             aria-hidden
-            className="mt-8 h-px w-full max-w-md"
+            className="mt-6 h-px w-full max-w-md"
             style={{ backgroundColor: "var(--border)" }}
           />
 
@@ -2069,7 +2445,7 @@ function BrandedLanding({
               rhythm with one 2-column moment for the spatial
               left↔right reference. Reads like a polished spec page,
               not a dashboard widget. */}
-          <div className="mt-8 w-full text-left text-[15px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
+          <div id="relay-landing-explainer" className="mt-8 w-full text-left text-[15px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
 
             {/* ── 1. Phone icon legend — two clean rows, no card chrome ── */}
             <div className="flex flex-col gap-4">
@@ -2218,6 +2594,8 @@ function BrandedLanding({
               Pay per minute. No subscription, no auto-renew.
             </p>
           </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -2236,6 +2614,7 @@ function BrandedLanding({
       <ChatPanelStub
         sidebarCollapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((v) => !v)}
+        scopeKey={selectedProject?.id || "general"}
       />
     </div>
   );
@@ -2266,7 +2645,16 @@ type LocalDraftMessage = {
   editedAt?: number | null;
 };
 
-const STUB_DRAFT_STORAGE_KEY = "relay-chat-stub-draft-v1";
+// Storage-key prefix for the ChatPanelStub local draft buffer. Each
+// project gets its own bucket so switching projects in the sidebar
+// shows different draft content (per the customer's expectation:
+// "for each session the chat is unique"). The "general" suffix is
+// the bucket used when no project is selected — a scratchpad that
+// doesn't belong to any specific session.
+const STUB_DRAFT_STORAGE_PREFIX = "relay-chat-stub-draft-v1:";
+function stubDraftStorageKey(scopeKey: string): string {
+  return `${STUB_DRAFT_STORAGE_PREFIX}${scopeKey || "general"}`;
+}
 
 // (Edit + Delete are always available on local-only stub drafts —
 //  there's no recipient yet, so the WhatsApp-style "you can't unsend
@@ -2522,22 +2910,66 @@ function DraftBubble({
 }
 
 function ChatPanelStub({
-  sidebarCollapsed, onToggleCollapsed,
+  sidebarCollapsed, onToggleCollapsed, session, scopeKey = "general", enableResize = true,
 }: {
   sidebarCollapsed: boolean;
+  /**
+   * Scope key for local draft persistence + attachment staging.
+   * Typically the customer's currently-selected project id; falls
+   * back to "general" when no project is selected so brainstorm
+   * scratch isn't lost. Switching projects in the sidebar should
+   * pass a different scopeKey here and the stub will load that
+   * scope's messages + pending attachments.
+   */
+  scopeKey?: string;
+  /**
+   * When true (default), the aside is fixed-width + drag-resizable
+   * from its left edge, with the chosen width persisted to
+   * localStorage. Set false when the stub is rendered inside a
+   * container that already controls width (e.g. the mobile bottom
+   * sheet, which wants the panel to fill its viewport-wide host).
+   */
+  enableResize?: boolean;
   onToggleCollapsed: () => void;
+  /**
+   * Optional session context — when set, the header shows the engineer's
+   * name + a live/ended subtitle instead of the generic "Engineer chat /
+   * No active session" copy. Used by EndedSessionReview and
+   * PastSessionReview to give the right panel a real identity.
+   *
+   * Live sessions never use this component (ChatPane renders instead),
+   * so the live/joining/assigned/grace cases here only get hit if a
+   * future caller wires the stub against an active session.
+   */
+  session?: GuestCall | null;
 }) {
-  const [messages, setMessages] = useState<LocalDraftMessage[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const raw = window.sessionStorage.getItem(STUB_DRAFT_STORAGE_KEY);
-      if (!raw) return [];
-      const parsed = JSON.parse(raw) as LocalDraftMessage[];
-      return Array.isArray(parsed) ? parsed.slice(-200) : [];
-    } catch {
-      return [];
-    }
-  });
+  // Derive the header copy from session state. Three branches:
+  //   • live-ish + engineer named  → "Chatting with X" / "Live now"
+  //   • ended-ish + engineer named → "You chatted with X" / "Session ended"
+  //   • no session OR no name yet  → "Engineer chat" / "No active session"
+  // The "no name yet" fallback is important during the assigned→joining
+  // window when claimed_by is set but agent_name hasn't synced down.
+  const engineerName = session?.agent_name?.trim() || null;
+  const status = session?.status ?? null;
+  const isLiveish = !!status && ["assigned", "joining", "live", "grace"].includes(status);
+  const isEndedish = !!status && ["ended", "cancelled", "abandoned"].includes(status);
+  const headerTitle =
+    isLiveish && engineerName ? `Chatting with ${engineerName}` :
+    isEndedish && engineerName ? `You chatted with ${engineerName}` :
+    "Engineer chat";
+  const headerSubtitle =
+    isLiveish ? "Live now" :
+    isEndedish ? "Session ended" :
+    "No active session";
+  // Start empty; the scope-load effect below populates from storage on
+  // mount and on every scopeKey change. Initial state can't read from
+  // storage directly because we don't know the right key until we have
+  // scopeKey, and React doesn't let useState initializer re-run.
+  const [messages, setMessages] = useState<LocalDraftMessage[]>([]);
+  // Track which scope's content is currently mounted in `messages` so
+  // the persist effect doesn't save the old scope's content to the new
+  // scope's key during the swap window.
+  const loadedScopeRef = useRef<string | null>(null);
   const [draftText, setDraftText] = useState("");
   const [voiceMode, setVoiceMode] = useState<"idle" | "transcribing">("idle");
   const [voiceMsg, setVoiceMsg] = useState<string | null>(null);
@@ -2557,6 +2989,22 @@ function ChatPanelStub({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText]   = useState("");
 
+  // Pending attachments (files picked + voice notes recorded BEFORE a
+  // session exists). Persisted to IndexedDB via stubDraftAttachments
+  // so a tab refresh keeps them around. We hold only metadata in
+  // React state — the actual Blob bytes live in IDB. flushed to the
+  // first session that goes live by the parent's auto-flush effect.
+  const [stubAttachments, setStubAttachments] = useState<StubAttachmentMeta[]>([]);
+  const attachInputRef = useRef<HTMLInputElement>(null);
+
+  // Voice-recording state: idle | recording. Mirrors the real
+  // ChatComposer's tap-to-record affordance without the tap-vs-hold
+  // gesture (this is a separate button from dictate, not the same one).
+  const [recState, setRecState] = useState<"idle" | "recording">("idle");
+  const recorderRef       = useRef<MediaRecorder | null>(null);
+  const recorderChunksRef = useRef<Blob[]>([]);
+  const recorderStreamRef = useRef<MediaStream | null>(null);
+
   const recognitionRef = useRef<{
     abort: () => void;
     stop: () => void;
@@ -2564,16 +3012,48 @@ function ChatPanelStub({
   const transcribeBaseRef = useRef<string>("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Persist messages so a tab refresh doesn't erase the draft buffer.
+  // Load messages from the scoped sessionStorage bucket on mount and
+  // on every scopeKey change. The customer's expectation is "switch
+  // projects in the sidebar → see THIS project's draft chat" — so
+  // when the parent passes a new scopeKey we drop the old bucket's
+  // content and hydrate the new one.
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
+      const raw = window.sessionStorage.getItem(stubDraftStorageKey(scopeKey));
+      const parsed = raw ? (JSON.parse(raw) as LocalDraftMessage[]) : [];
+      setMessages(Array.isArray(parsed) ? parsed.slice(-200) : []);
+    } catch {
+      setMessages([]);
+    }
+    loadedScopeRef.current = scopeKey;
+  }, [scopeKey]);
+
+  // Hydrate the pending-attachments tray on mount, scoped to the
+  // current project bucket. Re-runs when scopeKey changes so the
+  // tray flips with the project.
+  useEffect(() => {
+    let alive = true;
+    void stubListAttachments(scopeKey).then((items) => {
+      if (alive) setStubAttachments(items);
+    });
+    return () => { alive = false; };
+  }, [scopeKey]);
+
+  // Persist messages so a tab refresh doesn't erase the draft buffer.
+  // Skip until the load effect above has hydrated the current scope —
+  // otherwise the first tick after a scopeKey change would overwrite
+  // the new scope's bucket with the old scope's React state.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (loadedScopeRef.current !== scopeKey) return;
+    try {
       window.sessionStorage.setItem(
-        STUB_DRAFT_STORAGE_KEY,
+        stubDraftStorageKey(scopeKey),
         JSON.stringify(messages.slice(-200)),
       );
     } catch { /* quota / privacy mode — local-only, swallow */ }
-  }, [messages]);
+  }, [messages, scopeKey]);
 
   // Auto-scroll the message area to the bottom when a new message arrives.
   // Only auto-scrolls when the user is already near the bottom — if they've
@@ -2771,21 +3251,231 @@ function ChatPanelStub({
     try { recognitionRef.current?.stop(); } catch { /* noop */ }
   }, []);
 
+  // ── Attachment picker (paperclip) ─────────────────────────────────
+  // Opens the OS file picker. Files are validated client-side (mime
+  // whitelist + 50 MB cap), then persisted to IndexedDB via
+  // stubDraftAttachments. The auto-flush in the parent RoomClient
+  // moves them into the real session when one goes live.
+  const handlePickFiles = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+    // Clear the input so picking the same file twice in a row still fires onChange.
+    e.target.value = "";
+    setVoiceMsg(null);
+    const v = validateStagedFiles(files, []);
+    if (!v.ok) {
+      setVoiceMsg(v.error);
+      return;
+    }
+    try {
+      const fresh: StubAttachmentMeta[] = [];
+      for (const c of v.classified) {
+        const meta = await stubAddAttachment(c.file, scopeKey);
+        fresh.push(meta);
+      }
+      setStubAttachments((prev) => [...fresh, ...prev]);
+    } catch (err) {
+      setVoiceMsg(err instanceof Error ? err.message : "Couldn't stage the file.");
+    }
+  }, []);
+
+  const handleRemoveAttachment = useCallback(async (id: string) => {
+    setStubAttachments((prev) => prev.filter((a) => a.id !== id));
+    try { await stubRemoveAttachment(id); } catch { /* swallow — UI already updated */ }
+  }, []);
+
+  // ── Voice recording (record button) ───────────────────────────────
+  // MediaRecorder → Blob → IDB. Mirrors the real ChatComposer's
+  // record flow (see app/_components/ChatComposer.tsx:335) but stages
+  // to IDB instead of an immediate upload. Tap to start, tap again to
+  // stop. The button shows a pulsing dot while recording.
+  const startStubRecording = useCallback(async () => {
+    if (recState !== "idle") return;
+    if (typeof window === "undefined" || !("MediaRecorder" in window)) {
+      setVoiceMsg("Voice recording isn't supported in this browser.");
+      return;
+    }
+    setVoiceMsg(null);
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      if (e instanceof Error && e.name === "NotAllowedError") {
+        setVoiceMsg("Microphone access blocked. Click the lock icon in your browser's address bar, allow microphone, then try again.");
+      } else if (e instanceof Error && e.name === "NotFoundError") {
+        setVoiceMsg("No microphone detected. Check that one is plugged in and not being used by another app.");
+      } else {
+        setVoiceMsg("Couldn't access your microphone.");
+      }
+      return;
+    }
+    recorderStreamRef.current = stream;
+
+    // MediaRecorder MIME pick — Chrome/Firefox produce webm/opus,
+    // Safari produces audio/mp4. Probe in priority order; let the
+    // browser pick its default if neither hint is supported.
+    const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"];
+    let mime: string | undefined;
+    for (const c of candidates) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if ((MediaRecorder as any).isTypeSupported?.(c)) { mime = c; break; }
+    }
+    const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+
+    recorderChunksRef.current = [];
+    rec.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) recorderChunksRef.current.push(e.data);
+    };
+    rec.onstop = async () => {
+      const blob = new Blob(recorderChunksRef.current, { type: rec.mimeType || "audio/webm" });
+      recorderChunksRef.current = [];
+      recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
+      recorderStreamRef.current = null;
+      recorderRef.current = null;
+      setRecState("idle");
+      // Save to IDB as a normal file. mimeToExt-style suffix derived
+      // from the recorder's actual MIME so download names stay sensible.
+      const t = rec.mimeType || "audio/webm";
+      const ext = t.includes("webm") ? "webm" : t.includes("mp4") ? "m4a" : t.includes("ogg") ? "ogg" : "webm";
+      const name = `voice-${new Date().toISOString().replace(/[:.]/g, "-")}.${ext}`;
+      const file = new File([blob], name, { type: blob.type });
+      try {
+        const meta = await stubAddAttachment(file, scopeKey);
+        setStubAttachments((prev) => [meta, ...prev]);
+      } catch (err) {
+        setVoiceMsg(err instanceof Error ? err.message : "Couldn't save the recording.");
+      }
+    };
+    rec.onerror = () => {
+      setVoiceMsg("Recording failed — try again.");
+      setRecState("idle");
+      recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
+      recorderStreamRef.current = null;
+      recorderRef.current = null;
+    };
+    recorderRef.current = rec;
+    setRecState("recording");
+    rec.start();
+  }, [recState]);
+
+  const stopStubRecording = useCallback(() => {
+    const r = recorderRef.current;
+    if (!r) { setRecState("idle"); return; }
+    try { r.stop(); } catch { /* already stopping */ }
+  }, []);
+
   // Tear-down on unmount so an abandoned mic stream doesn't keep listening.
   useEffect(() => () => {
     try { recognitionRef.current?.abort(); } catch { /* noop */ }
+    try { recorderRef.current?.stop(); } catch { /* noop */ }
+    recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
   }, []);
+
+  // ── Drag-to-resize state ─────────────────────────────────────────
+  // Customer can drag the left edge of the panel to widen/narrow it.
+  // Default width 360px, clamped [PANEL_MIN, PANEL_MAX] on every
+  // update so a runaway drag can't shrink it past usability or eat
+  // the central pane. Persisted to localStorage so the chosen width
+  // survives refresh + theme toggles.
+  const PANEL_MIN = 280;
+  const PANEL_MAX = 720;
+  const PANEL_DEFAULT = 360;
+  const [panelWidth, setPanelWidth] = useState<number>(PANEL_DEFAULT);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem("relay:chat-panel-width");
+      const parsed = raw ? Number(raw) : NaN;
+      if (Number.isFinite(parsed) && parsed >= PANEL_MIN && parsed <= PANEL_MAX) {
+        setPanelWidth(parsed);
+      }
+    } catch { /* localStorage unavailable — fall through to default */ }
+  }, []);
+
+  // Active-drag tracking: state (not ref) so the className recomputes
+  // and the width-transition is correctly suppressed while dragging.
+  // Without this gate, every pointermove would queue a 200ms width
+  // transition and the panel would lag the pointer.
+  const [isDragging, setIsDragging] = useState(false);
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    if (!enableResize || sidebarCollapsed) return;
+    e.preventDefault();
+    setIsDragging(true);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const onMove = (mv: PointerEvent) => {
+      // The panel hugs the right edge of the viewport, so the new
+      // width is simply viewportRight - pointerX. (Equivalent to
+      // dragging the LEFT edge outward = wider panel.)
+      const next = Math.max(PANEL_MIN, Math.min(PANEL_MAX, window.innerWidth - mv.clientX));
+      setPanelWidth(next);
+    };
+    const onUp = () => {
+      setIsDragging(false);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }, [enableResize, sidebarCollapsed]);
+
+  // Persist on every settled width change too (covers cases where the
+  // user releases outside the window — the up handler still runs but
+  // panelWidth might lag one tick behind).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem("relay:chat-panel-width", String(panelWidth));
+    } catch { /* swallow */ }
+  }, [panelWidth]);
+
+  // Width selection: collapsed rail = 48px; fill-parent (mobile sheet)
+  // = 100% so the bottom sheet's full viewport width is used; default
+  // desktop = the drag-resizable panelWidth value above. transition
+  // only on non-drag updates so the live drag stays buttery.
+  const computedWidth = sidebarCollapsed
+    ? 48
+    : enableResize
+      ? `${panelWidth}px`
+      : "100%";
+  const transitionClass = isDragging
+    ? "" // dragging — no transition or the panel will lag the pointer
+    : "transition-[width] duration-200";
 
   return (
     <aside
-      className="flex h-full shrink-0 flex-col border-l transition-[width] duration-200"
+      className={`relative hidden h-full shrink-0 flex-col border-l md:flex ${transitionClass}`}
       style={{
-        width: sidebarCollapsed ? 48 : "min(30%, 420px)",
-        minWidth: sidebarCollapsed ? 48 : 280,
+        width: computedWidth,
+        minWidth: sidebarCollapsed ? 48 : PANEL_MIN,
         borderColor: "var(--border)",
         backgroundColor: "var(--surface)",
       }}
     >
+      {/* Drag-to-resize handle on the LEFT edge. Only renders when
+          enableResize=true + the panel is expanded. A 6px-wide
+          invisible hit zone with a subtle accent stripe on hover so
+          the customer discovers the affordance. Cursor flips to
+          col-resize while hovering. */}
+      {enableResize && !sidebarCollapsed && (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize chat panel"
+          onPointerDown={handlePointerDown}
+          className="group/resize absolute left-0 top-0 z-20 h-full w-1.5 -translate-x-1/2 cursor-col-resize"
+        >
+          {/* Visible 1px line on hover/drag — green so it reads as the
+              app's accent rather than a generic resize ribbon. */}
+          <span
+            aria-hidden
+            className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 transition-colors group-hover/resize:bg-[var(--primary)]"
+          />
+        </div>
+      )}
       {/* Header — engineer-chat style. Collapsed rail shows just the
           expand toggle so the customer can recover the panel. */}
       <div
@@ -2797,24 +3487,37 @@ function ChatPanelStub({
             <div
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold"
               style={{
-                backgroundColor: "var(--surface-raised)",
-                color: "var(--text-muted)",
+                // Live sessions get a green-tinted avatar; otherwise the
+                // muted surface-raised. Matches the "live now" subtitle
+                // color so the header reads as one element.
+                backgroundColor: isLiveish ? BRAND_GREEN_SOFT : "var(--surface-raised)",
+                color: isLiveish ? BRAND_GREEN : "var(--text-muted)",
               }}
             >
-              <MessageSquare size={14} />
+              {/* Show the engineer's initial when we have a name + are
+                  live-ish; otherwise the generic chat icon. */}
+              {engineerName && (isLiveish || isEndedish)
+                ? engineerName[0].toUpperCase()
+                : <MessageSquare size={14} />}
             </div>
             <div className="flex min-w-0 flex-col">
               <span
                 className="truncate text-[13px] font-medium"
                 style={{ color: "var(--text)" }}
               >
-                Engineer chat
+                {headerTitle}
               </span>
               <span
-                className="truncate text-[10px]"
-                style={{ color: "var(--text-muted)" }}
+                className="inline-flex items-center gap-1 truncate text-[10px]"
+                style={{ color: isLiveish ? BRAND_GREEN : "var(--text-muted)" }}
               >
-                No active session
+                {isLiveish && (
+                  <span aria-hidden className="relative inline-flex h-1.5 w-1.5">
+                    <span className="absolute inset-0 inline-flex animate-ping rounded-full opacity-60" style={{ backgroundColor: BRAND_GREEN }} />
+                    <span className="relative h-1.5 w-1.5 rounded-full" style={{ backgroundColor: BRAND_GREEN }} />
+                  </span>
+                )}
+                {headerSubtitle}
               </span>
             </div>
           </div>
@@ -3016,18 +3719,88 @@ function ChatPanelStub({
                 className="block w-full resize-none bg-transparent text-[13px] leading-relaxed outline-none placeholder:opacity-60"
                 style={{ color: "var(--text)" }}
               />
+
+              {/* Pending-attachments tray — files + voice recordings staged
+                  via the paperclip / record buttons. Sits between the
+                  textarea and the button row so it's clearly part of
+                  the same draft. Each chip has a remove-X. The whole
+                  block disappears when the queue empties. Per-row icon
+                  is keyed off the chatAttachments kind classification
+                  (image/document/audio). */}
+              {stubAttachments.length > 0 && (
+                <div className="mt-2 flex flex-col gap-1.5">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+                    Will be delivered when your engineer joins
+                  </div>
+                  <ul className="flex flex-col gap-1">
+                    {stubAttachments.map((a) => {
+                      const Icon = a.kind === "audio" ? Music : a.kind === "image" ? FileText : FileText;
+                      return (
+                        <li
+                          key={a.id}
+                          className="flex items-center gap-2 rounded-md border px-2 py-1.5 text-[11.5px]"
+                          style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+                        >
+                          <span
+                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md"
+                            style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
+                          >
+                            <Icon size={11} />
+                          </span>
+                          <span className="min-w-0 flex-1 truncate" style={{ color: "var(--text)" }}>{a.name}</span>
+                          <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+                            {a.size < 1024 * 1024 ? `${Math.round(a.size / 1024)} KB` : `${(a.size / (1024 * 1024)).toFixed(1)} MB`}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => void handleRemoveAttachment(a.id)}
+                            aria-label={`Remove ${a.name}`}
+                            className="flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                            style={{ color: "var(--text-muted)" }}
+                          >
+                            <X size={11} />
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
+
+              {/* voiceMsg renders ONCE in the pre-existing toast above
+                  the composer (see ~3191 — dismissable, sits above the
+                  textarea). We don't re-render it here. The record-state
+                  pulse below is a transient "currently recording" tell
+                  that's separate from error state. */}
+              {recState === "recording" && (
+                <p className="mt-2 inline-flex items-center gap-1 text-[11px]" style={{ color: BRAND_GREEN }}>
+                  <span className="relative inline-flex h-1.5 w-1.5">
+                    <span className="absolute inset-0 inline-flex animate-ping rounded-full opacity-60" style={{ backgroundColor: BRAND_GREEN }} />
+                    <span className="relative h-1.5 w-1.5 rounded-full" style={{ backgroundColor: BRAND_GREEN }} />
+                  </span>
+                  Recording — tap mic again to finish.
+                </p>
+              )}
               <div className="mt-2 flex items-center gap-1">
-                {/* Paperclip stays disabled in the stub — uploads need a
-                    real session id to bind attachments to (chat_attachments
-                    has FK to guest_messages). When the engineer joins,
-                    the real ChatComposer mounts and that's where files
-                    actually get sent. */}
+                {/* Paperclip — picks files into the IDB-backed staging
+                    queue. They sit there until a session goes live; the
+                    parent's auto-flush effect (flushAttachmentsToSession)
+                    handles the upload + guest_message_attachments insert
+                    once a guest_calls row exists. */}
+                <input
+                  ref={attachInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  accept=".pdf,.txt,.xlsx,.docx,image/*,audio/*"
+                  onChange={(e) => void handlePickFiles(e)}
+                />
                 <button
                   type="button"
-                  disabled
+                  onClick={() => attachInputRef.current?.click()}
                   aria-label="Attach file"
-                  title="Attaching files needs an active session — it'll wake up when your engineer joins."
-                  className="flex h-8 w-8 shrink-0 cursor-not-allowed items-center justify-center rounded-full opacity-50"
+                  title="Attach a file — it'll be delivered when your engineer joins."
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/5"
                   style={{
                     color: "var(--text-muted)",
                     border: "1px solid var(--border)",
@@ -3054,22 +3827,23 @@ function ChatPanelStub({
                 >
                   <Mic size={14} />
                 </button>
-                {/* Voice-recording — disabled in the stub because there's
-                    no recipient until an engineer joins. Mirrors the real
-                    ChatComposer's affordance so the customer sees the
-                    full surface they'll get during a live call. */}
+                {/* Voice-recording — MediaRecorder writes the blob to
+                    IDB. Same flush path as paperclip-staged files. */}
                 <button
                   type="button"
-                  disabled
-                  aria-label="Record voice message"
-                  title="Voice messages need an active session — wakes up when your engineer joins."
-                  className="flex h-8 w-8 shrink-0 cursor-not-allowed items-center justify-center rounded-full opacity-50"
+                  onClick={recState === "recording" ? stopStubRecording : () => void startStubRecording()}
+                  aria-label={recState === "recording" ? "Stop recording" : "Record voice message"}
+                  title={recState === "recording"
+                    ? "Tap to finish recording"
+                    : "Record a voice message — it'll be delivered when your engineer joins."}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors"
                   style={{
-                    color: "var(--text-muted)",
+                    color: recState === "recording" ? "#fff" : "var(--text-muted)",
+                    backgroundColor: recState === "recording" ? BRAND_GREEN : "transparent",
                     border: "1px solid var(--border)",
                   }}
                 >
-                  <AudioLines size={14} />
+                  <AudioLines size={14} className={recState === "recording" ? "animate-pulse" : undefined} />
                 </button>
                 <div className="flex-1" />
                 <button
@@ -3117,6 +3891,8 @@ function EndedSessionReview({
       <ChatPanelStub
         sidebarCollapsed={chatCollapsed}
         onToggleCollapsed={() => setChatCollapsed((v) => !v)}
+        session={session}
+        scopeKey={session.project_id || "general"}
       />
     </div>
   );
@@ -3181,6 +3957,8 @@ function PastSessionReview({
       <ChatPanelStub
         sidebarCollapsed={chatCollapsed}
         onToggleCollapsed={() => setChatCollapsed((v) => !v)}
+        session={row}
+        scopeKey={row.project_id || "general"}
       />
     </div>
   );
@@ -3548,14 +4326,16 @@ const FloatingStatus = memo(function FloatingStatus({
        *  by it. A subtle bottom border keeps it visually separate from the
        *  content without needing a backdrop blur. */}
       <div
-        className="flex shrink-0 items-center gap-3 border-b px-4 py-2"
+        className="flex shrink-0 items-center gap-3 border-b py-2 pl-16 pr-4 md:px-4"
         style={{
           backgroundColor: "var(--surface)",
           borderColor: "var(--border)",
         }}
       >
         {/* Session title (left) — picks the AI-summary title or a friendly
-            fallback so the chat header always has a clear identity. */}
+            fallback so the chat header always has a clear identity. The
+            left padding is wider on mobile (pl-16 = 64px) to clear the
+            fixed hamburger button at top-left. */}
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <h2 className="truncate font-serif text-base font-medium text-[var(--text)]">
             {session?.ai_summary_title || (session?.status === "queued" ? "Finding your engineer…" : "Session")}
@@ -3615,9 +4395,16 @@ const FloatingStatus = memo(function FloatingStatus({
 // enabled the moment the engineer mints a Zoom meeting; before that it's
 // tooltipped as waiting so the user knows what to expect.
 function CallHeaderActions({ session, onJoin }: { session: GuestCall; onJoin?: () => void | Promise<void> }) {
+  const launchCall = useLaunchCall();
+  // With Video SDK enabled we don't need zoom_meeting_id — the topic is
+  // derived from session.id by zoom-video-sdk-token. Still gate on isLiveish
+  // so the button is only visible/enabled once the matcher has assigned
+  // someone.
   const hasZoom = !!session.zoom_meeting_id;
   const isLiveish = ["assigned", "joining", "live", "grace"].includes(session.status);
-  const canJoin = hasZoom && isLiveish;
+  const canJoinVideoSdk = !!launchCall && isLiveish;
+  const canJoinLegacy   = hasZoom && isLiveish;
+  const canJoin = canJoinVideoSdk || canJoinLegacy;
   const tooltip = canJoin
     ? "Join the call"
     : isLiveish
@@ -3633,11 +4420,17 @@ function CallHeaderActions({ session, onJoin }: { session: GuestCall; onJoin?: (
         size="md"
         disabled={!canJoin}
         onClick={() => {
-          // Header call button now does the SAME thing as the in-chat
-          // "Join Zoom call" button: stamp joined + open the Zoom URL.
-          if (!canJoin || !session.zoom_join_url) return;
+          if (!canJoin) return;
           void onJoin?.();
-          window.open(session.zoom_join_url, "_blank", "noopener,noreferrer");
+          if (launchCall) {
+            // Video SDK path: parent mounts <CallSurface> in-window.
+            launchCall();
+            return;
+          }
+          // Legacy Meeting SDK: open Zoom in a new tab.
+          if (session.zoom_join_url) {
+            window.open(session.zoom_join_url, "_blank", "noopener,noreferrer");
+          }
         }}
       >
         <Video size={16} />
@@ -3946,7 +4739,7 @@ const Sidebar = memo(function Sidebar({
   //   pinnedIds — session ids the user has pinned. Persisted to
   //     localStorage so the choice survives reloads; promoting to Supabase
   //     is a follow-up that needs a guest_calls.pinned_at column.
-  const [statusFilter, setStatusFilter] = useState<"active" | "all" | "ended">("all");
+  const [statusFilter, setStatusFilter] = useState<"active" | "all" | "completed">("all");
   const [groupBy, setGroupBy] = useState<"project" | "date">("project");
   const [sortBy, setSortBy] = useState<"recent" | "oldest" | "title">("recent");
   // Sort/filter popover open state — single boolean. Click the SlidersHorizontal
@@ -4220,16 +5013,14 @@ const Sidebar = memo(function Sidebar({
   // chosen status bucket), search query (substring match across title /
   // agent / project name / status), then pin-aware sort (pinned sessions
   // float to the top of each group, then date-desc).
+  //
+  // NB: statusFilter applies at the PROJECT level (Active = not completed,
+  // Completed = completed/archived). It does NOT filter individual
+  // sessions, so a completed project's session history is preserved
+  // even when "Active" is selected. See the post-filter step below.
   const projectGroups = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    const matchStatus = (s: PastSession) => {
-      if (statusFilter === "all") return true;
-      if (statusFilter === "ended") return s.status === "ended";
-      // "active" — anything not in a terminal state
-      return !["ended", "cancelled", "abandoned"].includes(s.status);
-    };
     const matchSession = (s: PastSession) => {
-      if (!matchStatus(s)) return false;
       if (!q) return true;
       const hay = [s.title, s.agent ?? "", s.projectName ?? ""].join(" ").toLowerCase();
       return hay.includes(q);
@@ -4314,7 +5105,22 @@ const Sidebar = memo(function Sidebar({
       return name !== "try relay" && name !== "try-relay";
     });
 
-    return cleaned.sort((a, b) => b.latestDate - a.latestDate);
+    // ── Project-level status filter ──────────────────────────────────
+    // Applied AFTER session-level search filter so a search hit in a
+    // completed project still surfaces when "All" is selected. The
+    // "general" bucket (sessions with no project) has no completion
+    // status — show it in Active but not in Completed.
+    const statusFiltered = cleaned.filter((g) => {
+      if (statusFilter === "all") return true;
+      if (g.key === "general") return statusFilter === "active";
+      if (statusFilter === "active") {
+        return g.completionStatus !== "completed" && g.completionStatus !== "archived";
+      }
+      // statusFilter === "completed"
+      return g.completionStatus === "completed" || g.completionStatus === "archived";
+    });
+
+    return statusFiltered.sort((a, b) => b.latestDate - a.latestDate);
   }, [projects, past, searchQuery, statusFilter, pinnedIds, sortBy]);
 
   const hasActiveSession = session && !["ended", "cancelled", "abandoned"].includes(session.status);
@@ -4330,7 +5136,7 @@ const Sidebar = memo(function Sidebar({
         <button
           onClick={() => toggleCollapsed(false)}
           title="Expand sidebar"
-          className="mb-1 flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          className="mb-1 flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-150 ease-out hover:scale-110 hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5"
           style={{ color: "var(--text-muted)" }}
         >
           <PanelLeftOpen size={18} />
@@ -4343,7 +5149,7 @@ const Sidebar = memo(function Sidebar({
           onClick={onGoHome}
           title="Home"
           aria-label="Home"
-          className="mb-1 flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          className="mb-1 flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-150 ease-out hover:scale-110 hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5"
           style={{ color: "var(--text-muted)" }}
         >
           <Home size={16} />
@@ -4357,7 +5163,7 @@ const Sidebar = memo(function Sidebar({
         <button
           onClick={() => toggleCollapsed(false)}
           title="Search sessions"
-          className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          className="flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-150 ease-out hover:scale-110 hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5"
           style={{ color: "var(--text-muted)" }}
         >
           <Search size={16} />
@@ -4366,7 +5172,7 @@ const Sidebar = memo(function Sidebar({
         {/* Sessions */}
         <button
           title="Sessions"
-          className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          className="flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-150 ease-out hover:scale-110 hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5"
           style={{ color: "var(--text-muted)" }}
         >
           <MessageSquare size={16} />
@@ -4396,7 +5202,7 @@ const Sidebar = memo(function Sidebar({
           <button
             onClick={() => setUserMenuOpen((v) => !v)}
             title={email.split("@")[0]}
-            className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            className="flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-150 ease-out hover:scale-110 hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5"
           >
             <div
               className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold uppercase"
@@ -4431,28 +5237,35 @@ const Sidebar = memo(function Sidebar({
       style={{ borderRight: "1px solid var(--border)", backgroundColor: "var(--surface)" }}
     >
       {/* Brand row — wordmark (clickable, returns home) + theme
-          triplet + explicit Home icon + flex spacer + collapse toggle.
-          Two ways to go home so the affordance is unambiguous: the
-          logo follows the universal "click logo to return to landing"
-          convention, and the explicit Home icon is for users who
-          don't intuit that the wordmark is interactive. */}
+          triplet + flex spacer + collapse toggle. The wordmark is
+          itself the Home affordance (universal convention), so the
+          previous duplicate Home icon was removed: it stole ~28px
+          of header width and was forcing the wordmark to wrap on
+          narrow sidebars. The wordmark also gets `whitespace-nowrap`
+          + `shrink-0` from Wordmark.tsx so it stays atomic even
+          when squeezed. */}
       <div className="flex h-12 items-center gap-2 px-3">
         <button
           type="button"
           onClick={onGoHome}
           title="Return to the home landing"
           aria-label="Home"
-          className="rounded-md transition-opacity hover:opacity-80"
+          className="shrink-0 rounded-md transition-opacity hover:opacity-80"
         >
           <Wordmark size="md" />
         </button>
         <ThemeTriplet />
+        {/* Explicit Home icon — restored per user request. Sits next to
+            the ThemeTriplet so the two "global affordances" (theme +
+            home) cluster together. The wordmark to the left also
+            navigates home (universal convention), so this is a
+            redundant-but-discoverable second path. */}
         <button
           type="button"
           onClick={onGoHome}
           title="Home"
           aria-label="Home"
-          className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-all duration-150 ease-out hover:scale-110 hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5"
           style={{ color: "var(--text-muted)" }}
         >
           <Home size={15} />
@@ -4461,7 +5274,7 @@ const Sidebar = memo(function Sidebar({
         <button
           onClick={() => toggleCollapsed(true)}
           title="Collapse sidebar"
-          className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-all duration-150 ease-out hover:scale-110 hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5"
           style={{ color: "var(--text-muted)" }}
         >
           <PanelLeftClose size={16} />
@@ -4678,13 +5491,60 @@ const Sidebar = memo(function Sidebar({
             }}
             title="Create a project with name + stack metadata (no engineer call yet)"
             aria-label="Create a project with name and stack metadata"
-            className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-medium transition-colors hover:bg-[var(--surface-raised)]"
+            className="group/cta inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-medium transition-all duration-150 ease-out hover:translate-x-0.5 hover:bg-[var(--surface-raised)]"
             style={{ color: "var(--primary-hover)" }}
           >
-            <Plus size={12} />
+            <Plus size={12} className="transition-transform duration-150 ease-out group-hover/cta:rotate-90" />
             Create New Project
           </button>
         </div>
+
+        {/* Pinned section — sessions the customer is actively working
+            on. Always renders the header in the same color register as
+            "Create New Project" (var(--primary-hover)) so it reads as
+            part of the same "things you reach for" cluster. Sessions
+            pin/unpin via the existing Pin icon on each row (kebab
+            inside SessionRowFlat + ProjectAccordion). Hidden when no
+            pins exist so we don't show an empty header. */}
+        {(() => {
+          const pinnedSessions = past
+            .filter((s) => pinnedIds.has(s.id))
+            // Preserve pin-insertion order via the Set iteration
+            // order so a freshly-pinned session bubbles to the top.
+            .sort((a, b) => {
+              const ids = [...pinnedIds];
+              return ids.indexOf(a.id) - ids.indexOf(b.id);
+            });
+          if (pinnedSessions.length === 0) return null;
+          return (
+            <div className="mb-1 px-2.5">
+              <div
+                className="mb-1 px-0.5 text-[10px] font-semibold uppercase tracking-[0.1em]"
+                style={{ color: "var(--primary-hover)" }}
+              >
+                Pinned
+              </div>
+              <div className="flex flex-col gap-0.5">
+                {pinnedSessions.map((s) => (
+                  <SessionRowFlat
+                    key={s.id}
+                    session={s}
+                    isPinned
+                    isViewing={viewingPastId === s.id}
+                    isCurrent={
+                      !!session
+                      && s.id === session.id
+                      && !["ended", "cancelled", "abandoned"].includes(s.status)
+                    }
+                    onClick={() => onViewPast(s.id)}
+                    onTogglePin={() => togglePin(s.id)}
+                    showProjectName
+                  />
+                ))}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Separator between the create-project action and the filter
             popover + project list. */}
@@ -4705,7 +5565,7 @@ const Sidebar = memo(function Sidebar({
               className="text-[10px] font-semibold uppercase tracking-[0.1em]"
               style={{ color: "var(--text-muted)" }}
             >
-              {statusFilter === "all" ? "All sessions" : statusFilter === "active" ? "Active" : "Ended"}
+              {statusFilter === "all" ? "All sessions" : statusFilter === "active" ? "Active" : "Completed"}
               {" · "}
               {groupBy === "project" ? "by project" : "by date"}
             </span>
@@ -4738,20 +5598,20 @@ const Sidebar = memo(function Sidebar({
               <SortRow
                 label="Status"
                 value={
-                  statusFilter === "all" ? "All" : statusFilter === "active" ? "Active" : "Ended"
+                  statusFilter === "all" ? "All" : statusFilter === "active" ? "Active" : "Completed"
                 }
                 highlight={statusFilter !== "all"}
                 options={[
-                  { value: "all",    label: "All" },
-                  { value: "active", label: "Active" },
-                  { value: "ended",  label: "Ended" },
+                  { value: "all",       label: "All" },
+                  { value: "active",    label: "Active" },
+                  { value: "completed", label: "Completed" },
                 ]}
                 expanded={expandedSortRow === "status"}
                 onToggle={() =>
                   setExpandedSortRow((v) => (v === "status" ? null : "status"))
                 }
                 onSelect={(v) => {
-                  setStatusFilter(v as "all" | "active" | "ended");
+                  setStatusFilter(v as "all" | "active" | "completed");
                   setExpandedSortRow(null);
                 }}
               />
@@ -4798,15 +5658,12 @@ const Sidebar = memo(function Sidebar({
         </div>
 
         {(() => {
-          // Default state = All / Project / Recent. Any non-default
-          // setting flips the sidebar from project-grouped accordions
-          // to a flat session list — the user has clearly asked
-          // "show me sessions across projects" rather than "show me
-          // projects". When groupBy is "date", the flat list is
-          // additionally bucketed by Today / Yesterday / This week /
-          // Earlier.
-          const isSessionView =
-            statusFilter !== "all" || groupBy === "date" || sortBy !== "recent";
+          // ONLY "Group by: Date" flips the sidebar from project
+          // accordions to a flat session list. Status filter operates
+          // at the project level (Active = projects not completed,
+          // Completed = projects marked completed/archived) and keeps
+          // the accordion view. Sort order applies in either view.
+          const isSessionView = groupBy === "date";
 
           if (!isSessionView) {
             // Default view — project accordions (unchanged behavior).
@@ -4880,35 +5737,50 @@ const Sidebar = memo(function Sidebar({
                   ? `No sessions match "${searchQuery}".`
                   : statusFilter === "active"
                     ? "No active sessions."
-                    : statusFilter === "ended"
-                      ? "No ended sessions yet."
+                    : statusFilter === "completed"
+                      ? "No completed sessions yet."
                       : "No sessions yet."}
               </p>
             );
           }
 
-          // Flat chronological list — no bucket headers. The rows already
-          // carry their own date in the meta line, so explicit Today /
-          // Yesterday / This week / Earlier headers were just noise. The
-          // sortBy chip (Recent / Oldest / Title) handles ordering; the
-          // groupBy chip is mostly redundant in session view (kept for
-          // future re-introduction of buckets if useful).
+          // Date-bucketed flat list. Sessions get grouped under
+          // Today / Yesterday / This week / Earlier headers. Project
+          // names are hidden from each row (showProjectName=false)
+          // because the bucket header is doing the temporal work and
+          // the per-row project chip becomes noise in this view —
+          // the user picked Date specifically to see sessions across
+          // projects ordered by when they happened.
+          const bucketed = bucketSessionsByDate(allSessions);
           return (
-            <div className="flex flex-col gap-0.5">
-              {allSessions.map((s) => (
-                <SessionRowFlat
-                  key={s.id}
-                  session={s}
-                  isPinned={pinnedIds.has(s.id)}
-                  isViewing={viewingPastId === s.id}
-                  isCurrent={
-                    !!session
-                    && s.id === session.id
-                    && !["ended", "cancelled", "abandoned"].includes(s.status)
-                  }
-                  onClick={() => onViewPast(s.id)}
-                  onTogglePin={() => togglePin(s.id)}
-                />
+            <div className="flex flex-col gap-3">
+              {bucketed.map((bucket) => (
+                <div key={bucket.label}>
+                  <div
+                    className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-[0.08em]"
+                    style={{ color: "var(--text-faint)" }}
+                  >
+                    {bucket.label}
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    {bucket.sessions.map((s) => (
+                        <SessionRowFlat
+                          key={s.id}
+                          session={s}
+                          isPinned={pinnedIds.has(s.id)}
+                          isViewing={viewingPastId === s.id}
+                          isCurrent={
+                            !!session
+                            && s.id === session.id
+                            && !["ended", "cancelled", "abandoned"].includes(s.status)
+                          }
+                          onClick={() => onViewPast(s.id)}
+                          onTogglePin={() => togglePin(s.id)}
+                          showProjectName={false}
+                        />
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           );
@@ -4922,16 +5794,23 @@ const Sidebar = memo(function Sidebar({
             • Maintain — ongoing maintenance / enhancement
           Both open the same QuoteRequestModal, distinguished by kind.
           Suppressed for employees: their org runs on a separate billing
-          relationship; the quote flow is for direct-billed customers. */}
-      {!employment && (
+          relationship; the quote flow is for direct-billed customers.
+          NB: the /api/customer/me-employment route returns an EmployeeInfo
+          object even for non-employees (with isEmployee: false), so we
+          gate on the explicit boolean instead of `!employment` — see the
+          isEmployee derivation at the top of the parent RoomClient. */}
+      {!employment?.isEmployee && (
         <div className="border-t px-2 pt-2 pb-1" style={{ borderColor: "var(--border)" }}>
+          {/* group/quote class lets us drive the icon's hover state from the
+              row, not just the icon itself. translateX + icon-color flip
+              gives the row a small "lean in" tell on hover without yelling. */}
           <button
             type="button"
             onClick={() => setQuoteFlow("golive")}
-            className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            className="group/quote flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-all duration-150 ease-out hover:translate-x-0.5 hover:bg-black/5 dark:hover:bg-white/5"
           >
             <span
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-all duration-150 ease-out group-hover/quote:scale-110 group-hover/quote:bg-[var(--primary)] group-hover/quote:text-white group-hover/quote:shadow-[0_0_0_3px_color-mix(in_srgb,var(--primary)_18%,transparent)]"
               style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
             >
               <Rocket size={13} />
@@ -4945,13 +5824,20 @@ const Sidebar = memo(function Sidebar({
               </span>
             </span>
           </button>
+
+          {/* Hairline separator — lighter than the section's outer border
+              so the two rows still read as a group, just clearly distinct.
+              mx-2 indents past the buttons' left padding so it doesn't
+              touch the icons. */}
+          <div className="mx-2 my-1 h-px" style={{ backgroundColor: "color-mix(in srgb, var(--border) 60%, transparent)" }} />
+
           <button
             type="button"
             onClick={() => setQuoteFlow("maintain")}
-            className="mt-1 flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            className="group/quote flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-all duration-150 ease-out hover:translate-x-0.5 hover:bg-black/5 dark:hover:bg-white/5"
           >
             <span
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-all duration-150 ease-out group-hover/quote:scale-110 group-hover/quote:bg-[var(--primary)] group-hover/quote:text-white group-hover/quote:shadow-[0_0_0_3px_color-mix(in_srgb,var(--primary)_18%,transparent)]"
               style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
             >
               <Wrench size={13} />
@@ -4968,14 +5854,16 @@ const Sidebar = memo(function Sidebar({
         </div>
       )}
 
-      {/* Profile (bottom) */}
-      <div className="relative border-t p-2" style={{ borderColor: "var(--border)" }}>
+      {/* Profile (bottom) — extra bottom padding lifts the user pill +
+          quote shortcuts off the very edge of the viewport so the
+          eye doesn't read them as "stuck at the bottom." */}
+      <div className="relative border-t p-2 pb-6" style={{ borderColor: "var(--border)" }}>
         <button
           onClick={() => setUserMenuOpen((v) => !v)}
-          className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          className="group/userpill flex w-full items-center gap-2.5 rounded-lg px-2 py-2 transition-all duration-150 ease-out hover:translate-x-0.5 hover:bg-black/5 dark:hover:bg-white/5"
         >
           <div
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold uppercase"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold uppercase transition-transform duration-150 ease-out group-hover/userpill:scale-110"
             style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
           >
             {(email || "?")[0]}
@@ -4988,7 +5876,11 @@ const Sidebar = memo(function Sidebar({
               <WalletBalance session={session} entitlement={entitlement} employment={employment} />
             </div>
           </div>
-          <ChevronDown size={12} style={{ color: "var(--text-muted)" }} />
+          <ChevronDown
+            size={12}
+            className={`transition-transform duration-150 ease-out group-hover/userpill:translate-y-0.5 ${userMenuOpen ? "rotate-180" : ""}`}
+            style={{ color: "var(--text-muted)" }}
+          />
         </button>
         {userMenuOpen && (
           <UserMenu
@@ -5769,7 +6661,7 @@ function bucketSessionsByDate(sessions: PastSession[]): { label: string; session
 // (so the user doesn't lose project context when viewing across projects).
 // Pin button overlays the top-right just like in the accordion.
 function SessionRowFlat({
-  session, isPinned, isViewing, isCurrent, onClick, onTogglePin,
+  session, isPinned, isViewing, isCurrent, onClick, onTogglePin, showProjectName = true,
 }: {
   session: PastSession;
   isPinned: boolean;
@@ -5777,6 +6669,11 @@ function SessionRowFlat({
   isCurrent: boolean;
   onClick: () => void;
   onTogglePin: () => void;
+  /** Show the first-two-words project chip in the meta line. Hidden
+   *  when groupBy=date (the date bucket headers carry temporal
+   *  context; per-row project chips become noise). Defaults to true
+   *  so existing call sites continue rendering as before. */
+  showProjectName?: boolean;
 }) {
   const isActive = !["ended", "abandoned", "cancelled"].includes(session.status);
   const fmtRelDate = (d: Date) => {
@@ -5837,7 +6734,7 @@ function SessionRowFlat({
             className="mt-0.5 flex items-center gap-1 text-[10px]"
             style={{ color: "var(--text-muted)" }}
           >
-            {session.projectName && (
+            {showProjectName && session.projectName && (
               <>
                 <span className="truncate">
                   {session.projectName.split(/\s+/).slice(0, 2).join(" ")}
@@ -6764,7 +7661,7 @@ const ProjectAccordion = memo(function ProjectAccordion({
             // open/close, no selection state.
             if (!isGeneral) onSelectProject(group.key);
           }}
-          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 text-left transition-all duration-150 ease-out hover:translate-x-0.5 hover:bg-black/5 dark:hover:bg-white/5"
           style={isSelected ? { backgroundColor: BRAND_GREEN_SOFT } : undefined}
         >
           <ChevronRight
@@ -7039,7 +7936,7 @@ const ProjectAccordion = memo(function ProjectAccordion({
               <button
                 onClick={() => onViewPast(isCurrent ? null : s.id)}
                 className={cn(
-                  "flex w-full items-start gap-2 rounded-lg border px-2.5 py-2 pr-7 text-left transition-colors",
+                  "flex w-full items-start gap-2 rounded-lg border px-2.5 py-2 pr-7 text-left transition-all duration-150 ease-out hover:translate-x-0.5",
                   // FIX 3 — selected session card gets a real green border
                   // + light-green tint (was just a faint fill before),
                   // matching the room-w.png "CORS error issues" card.
@@ -8281,16 +9178,13 @@ function ConnectingModal({
   const mins      = Math.floor(remaining / 60);
   const secs      = remaining % 60;
 
-  // Ring geometry — change RADIUS only; SIZE and CENTER follow so the
-  // outer canvas always fits the full stroke with breathing room.
-  const RADIUS = 68;
-  const STROKE = 6;
-  const PADDING = 8;
-  const SIZE   = 2 * (RADIUS + STROKE / 2 + PADDING); // = 160 for r=68
-  const CENTER = SIZE / 2;
-  const CIRC   = 2 * Math.PI * RADIUS;
-  // Ring drains as time passes; sits at fully-empty when expired.
-  const dashOffset = CIRC * (1 - remaining / QUEUE_TIMEOUT_S);
+  // Elapsed shown as mm:ss counting up — honest waiting clock instead
+  // of the old draining countdown ring. The 90s anchor is still used
+  // by `expired` to surface the "Call again" CTA, but the UI just
+  // shows how long you've been waiting.
+  const eMin = Math.floor(elapsed / 60);
+  const eSec = elapsed % 60;
+  const elapsedClock = `${String(eMin).padStart(2, "0")}:${String(eSec).padStart(2, "0")}`;
 
   const ringColor = session.urgency === "critical" ? CRIT_RED
     : session.urgency === "urgent" ? URGENT_AMBER
@@ -8298,6 +9192,12 @@ function ConnectingModal({
   const ringSoft = session.urgency === "critical" ? CRIT_RED_SOFT
     : session.urgency === "urgent" ? URGENT_AMBER_SOFT
     : BRAND_GREEN_SOFT;
+
+  // Play the warm "tring tring" mechanical bell while the modal is
+  // open + not minimized + not expired. Shared synthesis with the
+  // full-page ringing screen (lib/relay/useRingtone.ts) so both
+  // surfaces sound identical.
+  useRingtone(!minimized && !expired);
 
   const handleCallAgain = async () => {
     setRecalling(true);
@@ -8371,7 +9271,7 @@ function ConnectingModal({
         if (e.target === e.currentTarget) setMinimized(true);
       }}
     >
-      <div className="relative w-full max-w-sm rounded-2xl border p-8 shadow-xl"
+      <div className="relative w-[calc(100vw-1.5rem)] max-w-sm max-h-[calc(100vh-2rem)] overflow-y-auto rounded-2xl border p-6 sm:p-8 shadow-xl"
         style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
 
         {/* Close (minimize) — top-right. Esc + click-outside do the same. */}
@@ -8403,51 +9303,83 @@ function ConnectingModal({
           </div>
         )}
 
-        {/* Timer ring */}
+        {/* Ringing hero — pulsing green ball + expanding halo rings +
+            soft under-glow, same visual register as the full-page
+            ringing screen (app/intake/matching/[id]/MatchingClient.tsx
+            → RingingHero). Sized down (~140px ball) to fit the modal.
+            Color follows urgency: green normal / amber urgent / red
+            critical. Animations are gated behind the existing
+            prefers-reduced-motion query in globals.css. */}
         <div className="mb-5 flex justify-center">
-          <div className="relative" style={{ height: SIZE, width: SIZE }}>
-            <svg
-              width={SIZE}
-              height={SIZE}
-              viewBox={`0 0 ${SIZE} ${SIZE}`}
-              className="-rotate-90"
+          <div
+            className="relative flex items-center justify-center"
+            style={{ width: 200, height: 200, ["--primary" as string]: ringColor }}
+          >
+            {/* Halo rings — 3 concentric, staggered. */}
+            <span aria-hidden className="relay-ringing-halo absolute inset-0 rounded-full" style={{ animationDelay: "0s" }} />
+            <span aria-hidden className="relay-ringing-halo absolute inset-0 rounded-full" style={{ animationDelay: "-0.6s" }} />
+            <span aria-hidden className="relay-ringing-halo absolute inset-0 rounded-full" style={{ animationDelay: "-1.2s" }} />
+
+            {/* Under-glow — blurred radial behind the ball. */}
+            <span
+              aria-hidden
+              className="absolute rounded-full"
+              style={{
+                width: 160,
+                height: 160,
+                background: `radial-gradient(circle, color-mix(in srgb, ${ringColor} 55%, transparent) 0%, transparent 70%)`,
+                filter: "blur(16px)",
+              }}
+            />
+
+            {/* The ball. Heartbeat scale + radial gradient give it
+                weight + a "lit from within" feel. Phone icon centered. */}
+            <div
+              className="relay-ringing-ball relative flex items-center justify-center rounded-full"
+              style={{
+                width: 140,
+                height: 140,
+                background: `radial-gradient(circle at 50% 35%, color-mix(in srgb, ${ringColor} 90%, white) 0%, ${ringColor} 55%, color-mix(in srgb, ${ringColor} 65%, #000) 100%)`,
+                boxShadow:
+                  `0 16px 36px color-mix(in srgb, ${ringColor} 32%, transparent), ` +
+                  `0 6px 12px color-mix(in srgb, ${ringColor} 22%, transparent), ` +
+                  `inset 0 -8px 16px rgba(0, 0, 0, 0.22), ` +
+                  `inset 0 8px 16px rgba(255, 255, 255, 0.14)`,
+                opacity: expired ? 0.55 : 1,
+              }}
             >
-              <circle cx={CENTER} cy={CENTER} r={RADIUS} fill="none" strokeWidth={STROKE}
-                style={{ stroke: ringSoft }} />
-              <circle cx={CENTER} cy={CENTER} r={RADIUS} fill="none" strokeWidth={STROKE} strokeLinecap="round"
-                style={{
-                  stroke: expired ? "var(--text-muted)" : ringColor,
-                  strokeDasharray: CIRC,
-                  strokeDashoffset: dashOffset,
-                  transition: "stroke-dashoffset 1s linear",
-                }} />
-            </svg>
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <div className="text-3xl font-medium tabular-nums"
-                style={{
-                  fontFamily: "var(--font-inter)",
-                  color: expired ? "var(--text-muted)" : ringColor,
-                }}>
-                {String(mins).padStart(2, "0")}:{String(secs).padStart(2, "0")}
-              </div>
-              <div className="mt-0.5 text-[9px] font-semibold uppercase tracking-[0.15em]"
-                style={{ color: "var(--text-muted)" }}>
-                {expired ? "No answer" : "Avg wait"}
-              </div>
+              <Phone size={48} className="relay-ringing-icon" style={{ color: "#fff" }} strokeWidth={1.6} />
             </div>
           </div>
         </div>
 
-        {/* Heading + subtitle — flip when the 3-min window has elapsed */}
-        <div className="mb-6 text-center">
-          <h2 className="mb-2 text-xl font-medium"
+        {/* Elapsed clock — counts up from the moment the call started.
+            Honest "you've been waiting this long" instead of the old
+            countdown-to-expiry. */}
+        <div className="mb-4 text-center">
+          <div
+            className="font-mono text-2xl tabular-nums tracking-[0.05em]"
+            style={{
+              color: expired ? "var(--text-muted)" : "var(--text)",
+              fontFeatureSettings: '"tnum"',
+            }}
+            aria-live="polite"
+          >
+            {elapsedClock}
+          </div>
+        </div>
+
+        {/* Heading + subtitle — flips when the 90s window has elapsed
+            so the customer knows we're still trying and can recall. */}
+        <div className="mb-5 text-center">
+          <h2 className="mb-1.5 text-xl font-medium"
             style={{ fontFamily: "var(--font-source-serif)", color: "var(--text)" }}>
-            {expired ? "Still searching…" : "Calling engineer…"}
+            {expired ? "Still searching…" : "Ringing your engineer"}
           </h2>
           <p className="text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
             {expired
               ? "No one's picked up just yet. Try calling again — we'll page the next available engineer."
-              : "We're matching you with the right engineer."}
+              : "Hang tight — we'll connect you the moment someone picks up."}
           </p>
         </div>
 

@@ -20,6 +20,7 @@ import { useState } from "react";
 import { Video, PhoneOff, ExternalLink, Sparkles, Loader2 } from "lucide-react";
 import { MeetingSummaryEntry } from "./MeetingSummaryEntry";
 import { Button } from "@/app/_components/ui";
+import { useLaunchCall } from "@/lib/video/LaunchCallContext";
 
 type Props = {
   active: boolean;
@@ -31,6 +32,10 @@ type Props = {
   joinUrl?: string | null;
   /** Fires alongside opening the Zoom URL — typically state.markJoined(). */
   onJoin?: () => void | Promise<void>;
+  /** Video SDK wire-in: when provided, the Join button calls this INSTEAD of
+   *  window.open(joinUrl). Lets the parent mount an in-window <CallSurface>
+   *  instead of popping a new tab. Falls back to window.open when omitted. */
+  onLaunchCall?: () => void;
   /** True when *this* viewer has already joined the meeting (customer_joined_at
    *  or engineer_joined_at is set). Replaces the live Join button with a
    *  disabled "Joined" chip so the user can't double-click into Zoom. */
@@ -61,6 +66,7 @@ export function MeetingChatEntry({
   durationSec,
   joinUrl,
   onJoin,
+  onLaunchCall,
   selfJoined,
   onCancel,
   summaryBody,
@@ -68,15 +74,25 @@ export function MeetingChatEntry({
 }: Props) {
   const [cancelling, setCancelling] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  // Prefer explicit prop; fall back to LaunchCallContext (Video SDK wire-in).
+  const ctxLaunch = useLaunchCall();
+  const effectiveLaunch = onLaunchCall ?? ctxLaunch;
 
   const hasSummary = !active && !!summaryBody;
   const hasRecording = !active && !!recordingBody;
   const canExpand = hasSummary || hasRecording;
 
   const handleJoin = () => {
-    if (!joinUrl) return;
     void onJoin?.();
-    window.open(joinUrl, "_blank", "noopener,noreferrer");
+    if (effectiveLaunch) {
+      // Video SDK path: parent mounts <CallSurface> in-window.
+      effectiveLaunch();
+      return;
+    }
+    // Legacy Meeting SDK fallback: open Zoom in a new tab.
+    if (joinUrl) {
+      window.open(joinUrl, "_blank", "noopener,noreferrer");
+    }
   };
 
   const handleCancel = async () => {
@@ -110,15 +126,15 @@ export function MeetingChatEntry({
           </div>
 
           <div className="flex flex-wrap items-center justify-center gap-2">
-            {joinUrl && !selfJoined && (
+            {(joinUrl || effectiveLaunch) && !selfJoined && (
               <Button
                 variant="launcher"
                 size="lg"
                 onClick={handleJoin}
                 iconLeft={<Video size={16} />}
-                iconRight={<ExternalLink size={14} />}
+                iconRight={effectiveLaunch ? undefined : <ExternalLink size={14} />}
               >
-                Join Zoom call
+                {effectiveLaunch ? "Join call" : "Join Zoom call"}
               </Button>
             )}
             {selfJoined && (

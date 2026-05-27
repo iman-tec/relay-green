@@ -18,10 +18,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { Phone, X, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
+import { useRingingHud } from "@/lib/relay/ringingHud";
+import { RingingBall } from "@/app/_components/RingingBall";
 import type { GuestCall } from "@/lib/supabase/types";
-
-const BRAND_GREEN = "#3f5c2e";
-const CRIT_RED    = "#8b1a1a";
 
 type Offer = {
   id: string;
@@ -137,6 +136,20 @@ export function EngineerIncomingMatch() {
     }
   }, [offer, now, fetchOffer]);
 
+  // Audio cue + favicon flash + title blink + browser Notification while a
+  // pending offer is on screen. Mute toggle is read fresh each render from
+  // localStorage (see `setRingMuted` / `isRingMuted`).
+  useRingingHud({
+    active: !!(offer && !onSessionRoute),
+    label: intake?.developing
+      ? `📞 Incoming match · ${intake.developing}`
+      : "📞 Incoming match",
+    body: intake?.technologies?.length
+      ? `Stack: ${intake.technologies.slice(0, 4).join(", ")}`
+      : "A customer is asking for you.",
+    tag: offer?.id,
+  });
+
   const accept = useCallback(async () => {
     if (!offer || busy) return;
     setBusy(true);
@@ -164,70 +177,85 @@ export function EngineerIncomingMatch() {
   if (onSessionRoute || !offer) return null;
 
   const remaining = Math.max(0, Math.ceil((new Date(offer.expires_at).getTime() - now) / 1000));
+  const subtitle = intake?.developing
+    ? `Building: ${intake.developing}`
+    : "A customer is asking for you";
 
+  // Mirror the customer's MatchingClient ringing screen: full-bleed dark
+  // overlay, RingingBall front-and-centre, mm:ss elapsed clock, soft
+  // subtitle, then Accept/Decline below. Same visual language so a
+  // customer-side ring and engineer-side ring feel like the same call.
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center px-6"
-      style={{ background: "rgba(20, 18, 14, 0.7)", backdropFilter: "blur(4px)" }}
+      className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-8 px-4 py-12 text-center"
+      style={{ background: "rgba(15, 15, 15, 0.86)", backdropFilter: "blur(8px)" }}
     >
+      <RingingBall />
+
       <div
-        className="w-full max-w-md rounded-2xl border p-6 shadow-2xl"
-        style={{ background: "var(--surface)", borderColor: "var(--border)" }}
+        className="font-mono text-4xl tabular-nums tracking-[0.05em]"
+        style={{ color: "#fff", fontFeatureSettings: '"tnum"' }}
+        aria-live="polite"
       >
-        <div className="flex items-center gap-3 pb-4">
-          <div
-            className="size-11 rounded-full inline-flex items-center justify-center"
-            style={{ background: "rgba(63, 92, 46, 0.18)", color: BRAND_GREEN }}
-          >
-            <Phone className="size-5 animate-pulse" />
-          </div>
-          <div className="flex flex-col">
-            <p className="text-sm font-medium">Incoming match</p>
-            <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-              {intake?.developing ? `Building: ${intake.developing}` : "A client is asking for you"}
-            </p>
-          </div>
-          <div className="ml-auto text-xs font-mono" style={{ color: "var(--text-muted)" }}>
-            {remaining}s
-          </div>
-        </div>
+        00:{remaining.toString().padStart(2, "0")}
+      </div>
 
-        {intake?.technologies && intake.technologies.length > 0 ? (
-          <div className="flex flex-wrap gap-1.5 pb-5">
-            {intake.technologies.map((t) => (
-              <span
-                key={t}
-                className="rounded-full border px-2.5 py-1 text-xs"
-                style={{ borderColor: "var(--border)" }}
-              >
-                {t}
-              </span>
-            ))}
-          </div>
-        ) : null}
+      <div className="max-w-md space-y-1.5">
+        <p className="font-serif text-2xl" style={{ letterSpacing: "-0.01em", color: "#fff" }}>
+          Incoming match
+        </p>
+        <p className="text-sm" style={{ color: "rgba(255,255,255,0.65)" }}>
+          {subtitle}
+        </p>
+      </div>
 
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={decline}
-            disabled={busy}
-            className="flex-1 rounded-full border px-4 py-3 text-sm font-semibold inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
-            style={{ borderColor: "var(--border)", color: CRIT_RED }}
-          >
-            {busy ? <Loader2 className="size-4 animate-spin" /> : <X className="size-4" />}
-            Decline
-          </button>
-          <button
-            type="button"
-            onClick={accept}
-            disabled={busy}
-            className="flex-1 rounded-full px-4 py-3 text-sm font-semibold text-white inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
-            style={{ background: BRAND_GREEN }}
-          >
-            {busy ? <Loader2 className="size-4 animate-spin" /> : <Phone className="size-4" />}
-            Accept
-          </button>
+      {intake?.technologies && intake.technologies.length > 0 ? (
+        <div className="flex max-w-md flex-wrap justify-center gap-1.5">
+          {intake.technologies.slice(0, 8).map((t) => (
+            <span
+              key={t}
+              className="rounded-full border px-2.5 py-1 text-xs"
+              style={{
+                borderColor: "rgba(255,255,255,0.18)",
+                color: "rgba(255,255,255,0.85)",
+              }}
+            >
+              {t}
+            </span>
+          ))}
         </div>
+      ) : null}
+
+      <div className="flex items-center gap-3 pt-2">
+        <button
+          type="button"
+          onClick={decline}
+          disabled={busy}
+          className="inline-flex h-12 items-center justify-center gap-2 rounded-full border px-6 text-sm font-semibold disabled:opacity-50"
+          style={{
+            borderColor: "rgba(255,255,255,0.2)",
+            color: "#fff",
+            background: "transparent",
+          }}
+        >
+          {busy ? <Loader2 className="size-4 animate-spin" /> : <X className="size-4" />}
+          Decline
+        </button>
+        <button
+          type="button"
+          onClick={accept}
+          disabled={busy}
+          className="inline-flex h-12 items-center justify-center gap-2 rounded-full px-7 text-sm font-semibold text-white shadow-lg disabled:opacity-50"
+          style={{
+            background: "var(--primary)",
+            boxShadow:
+              "0 10px 30px color-mix(in srgb, var(--primary) 50%, transparent), " +
+              "0 4px 8px color-mix(in srgb, var(--primary) 30%, transparent)",
+          }}
+        >
+          {busy ? <Loader2 className="size-4 animate-spin" /> : <Phone className="size-4" />}
+          Accept
+        </button>
       </div>
     </div>
   );

@@ -36,6 +36,12 @@ type Holiday = {
   kind: string;
 };
 
+type DateOverride = {
+  date: string;            // ISO yyyy-mm-dd
+  startMinute: number;
+  endMinute: number;
+};
+
 type Slot = { start: Date; end: Date };
 
 const SLOT_MIN = 30;
@@ -53,6 +59,7 @@ export function ScheduleEngineerModal({
   const [windows, setWindows] = useState<Window[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
+  const [dateOverrides, setDateOverrides] = useState<DateOverride[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeDay, setActiveDay] = useState<Date>(() => {
@@ -72,7 +79,10 @@ export function ScheduleEngineerModal({
         const to = new Date(from);
         to.setDate(to.getDate() + DAYS_AHEAD + 1);
 
-        const [wRes, bRes, hRes] = await Promise.all([
+        // Per-date overrides (engineer_date_windows) may 404 if the
+        // migration isn't applied — degrade silently to "no overrides"
+        // so the customer side keeps working off the weekly pattern.
+        const [wRes, bRes, hRes, dwRes] = await Promise.all([
           sb.from("engineer_availability_windows")
             .select("weekday, start_minute, end_minute, timezone")
             .eq("engineer_user_id", engineerUserId),
@@ -87,6 +97,11 @@ export function ScheduleEngineerModal({
             .eq("engineer_user_id", engineerUserId)
             .gte("holiday_date", from.toISOString().slice(0, 10))
             .lt("holiday_date", to.toISOString().slice(0, 10)),
+          sb.from("engineer_date_windows")
+            .select("the_date, start_minute, end_minute")
+            .eq("engineer_user_id", engineerUserId)
+            .gte("the_date", from.toISOString().slice(0, 10))
+            .lt("the_date", to.toISOString().slice(0, 10)),
         ]);
         if (!alive) return;
         if (wRes.error) throw new Error(wRes.error.message);
@@ -112,6 +127,13 @@ export function ScheduleEngineerModal({
           label: r.label,
           kind: r.kind,
         })));
+        if (!dwRes.error) {
+          setDateOverrides(((dwRes.data ?? []) as Array<{ the_date: string; start_minute: number; end_minute: number }>).map((r) => ({
+            date: r.the_date,
+            startMinute: r.start_minute,
+            endMinute: r.end_minute,
+          })));
+        }
       } catch (err) {
         if (!alive) return;
         setError(err instanceof Error ? err.message : "Couldn't load calendar.");
@@ -131,13 +153,38 @@ export function ScheduleEngineerModal({
     return holidays.find((h) => h.date === dayKey) ?? null;
   }, [activeDay, holidays]);
 
+  // Resolve which windows apply for a given local date — checking the
+  // per-date overrides first, then falling back to the weekly pattern.
+  // This is the model-A resolver: holiday > date_window > weekly_pattern.
+  const dayKeyOf = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+  const overridesByDate = useMemo(() => {
+    const m = new Map<string, DateOverride[]>();
+    for (const dw of dateOverrides) {
+      const arr = m.get(dw.date) ?? [];
+      arr.push(dw);
+      m.set(dw.date, arr);
+    }
+    return m;
+  }, [dateOverrides]);
+
   // Compute open slots for the active day.
   const slots: Slot[] = useMemo(() => {
-    if (windows.length === 0) return [];
     if (activeHoliday) return [];
-    const weekday = activeDay.getDay();
-    const dayWindows = windows.filter((w) => w.weekday === weekday);
+
+    // Pick the right set of (start, end) windows for this specific date.
+    const dayKey = dayKeyOf(activeDay);
+    const overrides = overridesByDate.get(dayKey);
+    let dayWindows: Array<{ startMinute: number; endMinute: number }>;
+    if (overrides && overrides.length > 0) {
+      dayWindows = overrides;
+    } else {
+      const weekday = activeDay.getDay();
+      dayWindows = windows.filter((w) => w.weekday === weekday);
+    }
     if (dayWindows.length === 0) return [];
+
     const out: Slot[] = [];
     for (const w of dayWindows) {
       let m = w.startMinute;
@@ -159,12 +206,10 @@ export function ScheduleEngineerModal({
       }
     }
     return out;
-  }, [windows, bookings, activeDay, activeHoliday]);
+  }, [windows, bookings, activeDay, activeHoliday, overridesByDate]);
 
   // Pre-compute holiday dates as a Set for fast day-picker rendering.
   const holidayDates = useMemo(() => new Set(holidays.map((h) => h.date)), [holidays]);
-  const dayKeyOf = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
   const dayList: Date[] = useMemo(() => {
     const out: Date[] = [];
@@ -258,8 +303,12 @@ export function ScheduleEngineerModal({
               <div className="flex gap-1.5 overflow-x-auto pb-1">
                 {dayList.map((d) => {
                   const active = d.toDateString() === activeDay.toDateString();
-                  const dayWindows = windows.filter((w) => w.weekday === d.getDay());
-                  const isHoliday = holidayDates.has(dayKeyOf(d));
+                  const dKey = dayKeyOf(d);
+                  const dayOverrides = overridesByDate.get(dKey);
+                  const dayWindows = (dayOverrides && dayOverrides.length > 0)
+                    ? dayOverrides
+                    : windows.filter((w) => w.weekday === d.getDay());
+                  const isHoliday = holidayDates.has(dKey);
                   const hasAvailability = dayWindows.length > 0 && !isHoliday;
                   return (
                     <button

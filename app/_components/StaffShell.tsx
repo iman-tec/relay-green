@@ -6,7 +6,7 @@
  * Mirrors the customer-room sidebar pattern (RoomClient) so admin /
  * supervisor / engineer surfaces feel consistent with the customer view.
  *
- * - Sidebar width: 240px open, 60px collapsed. State persists in
+ * - Sidebar width: 272px open, 60px collapsed. State persists in
  *   localStorage so a reload keeps your preference.
  * - Top: wordmark (full when open, dot-only when collapsed) + toggle.
  * - Middle: nav items, each rendered as icon + label. Labels hide when
@@ -24,16 +24,17 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Loader2, LogOut, ChevronDown, AlertTriangle, X,
-  PanelLeftClose, PanelLeftOpen, LayoutDashboard,
+  PanelLeftClose, PanelLeftOpen, LayoutDashboard, Calendar,
   Eye, Users as UsersIcon, Wallet as WalletIcon, Table as TableIcon, Inbox as InboxIcon,
-  Settings, ShieldCheck, FileText,
+  Settings, ShieldCheck, FileText, Home,
 } from "lucide-react";
 import { Wordmark } from "./Wordmark";
 import { ThemeTriplet } from "./ThemeTriplet";
 import { EngineerProfilePane } from "./EngineerProfilePane";
-import { EngineerPresenceBadge } from "./EngineerPresenceBadge";
+import { EngineerPresenceBall } from "./EngineerPresenceBall";
 import { LegalPane, type LegalKind } from "./LegalPane";
 import { useStaffGuard } from "@/lib/relay/useStaffGuard";
+import { registerDeviceAndEnforceLimit } from "@/lib/relay/deviceTracking";
 import { highestRoleLabel, highestRoleSummary, formatRole } from "@/lib/relay/role-labels";
 import { ROLE, type Role } from "@/lib/relay/roles";
 // TEMP 2026-05-18: legacy first-come-first-served ring disabled while
@@ -41,7 +42,9 @@ import { ROLE, type Role } from "@/lib/relay/roles";
 // import + mount below to bring it back.
 // import { EngineerIncomingRequest } from "./EngineerIncomingRequest";
 import { EngineerIncomingMatch } from "./EngineerIncomingMatch";
+import { useEngineerHeartbeat } from "@/lib/relay/useEngineerHeartbeat";
 import { createClient } from "@/lib/supabase/browser";
+import { useEngineerWorkspace } from "@/lib/relay/useEngineerWorkspace";
 import type { GuestCall } from "@/lib/supabase/types";
 
 const BRAND_GREEN       = "#3f5c2e";
@@ -51,7 +54,11 @@ const URGENT_AMBER_SOFT = "rgba(212, 160, 23, 0.14)";
 const CRIT_RED          = "#8b1a1a";
 const CRIT_RED_SOFT     = "rgba(139, 26, 26, 0.18)";
 
-const SIDEBAR_OPEN_W = 240;
+// 272px: 240 was too tight once the header gained the Home shortcut +
+// 3-icon ThemeTriplet + collapse button — the rightmost icon clipped on
+// the edge. 272 (= 240 + 32) keeps the visual feel close to the original
+// while leaving a comfortable margin for all five header items.
+const SIDEBAR_OPEN_W = 272;
 const SIDEBAR_CLOSED_W = 60;
 const COLLAPSED_KEY = "relay.staff.sidebar.collapsed";
 
@@ -69,6 +76,10 @@ const NAV: Nav[] = [
   { href: "/dashboard",            label: "Dashboard", icon: LayoutDashboard, roles: [ROLE.engineer] },
   // Engineer-only. People + per-customer session history + call log.
   { href: "/inbox",                label: "Inbox",     icon: InboxIcon,       roles: [ROLE.engineer] },
+  // Engineer-only. Weekly pattern, holidays, monthly per-date editor.
+  // Was previously a tab inside the Profile pane; promoted to a top-level
+  // destination so engineers reach it in one click.
+  { href: "/calendar",             label: "Calendar",  icon: Calendar,        roles: [ROLE.engineer] },
   // /supervise renders the platform-wide grid for super_admin + supervisor,
   // and the org-scoped grid for enterprise + department admins — see
   // app/(staff)/supervise/page.tsx.
@@ -91,7 +102,7 @@ const NAV: Nav[] = [
   { href: "/operations",           label: "Operations", icon: TableIcon,       roles: [ROLE.supervisor] },
 ];
 
-const ENGINEER_ONLY_PATHS = ["/dashboard", "/inbox", "/staff/session"];
+const ENGINEER_ONLY_PATHS = ["/dashboard", "/inbox", "/calendar", "/staff/session"];
 
 function isEngineer(roles: readonly Role[]): boolean {
   return roles.includes(ROLE.engineer);
@@ -116,6 +127,10 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   const homeHref = isEnterpriseAdmin ? "/enterprise/v2" : engineer ? "/dashboard" : "/supervise";
 
   const [collapsed, setCollapsed] = useState(false);
+
+  // Presence heartbeat — engineers only. The RPC self-gates with NOT_AN_ENGINEER
+  // so non-engineer staff who incidentally render this shell are no-ops.
+  useEngineerHeartbeat(engineer);
 
   // In-pane overlays — Profile & settings (engineer-only) and the Privacy/
   // Terms viewer. When open, the corresponding pane renders IN PLACE OF
@@ -183,6 +198,15 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
       setProfilePaneOpen(true);
     }
   }, [pathname, engineer, profilePaneOpen]);
+
+  // Device tracking — registers this browser as a device and auto-revokes
+  // the oldest device when the user is over the 3-device cap. Best-effort:
+  // failures are logged but never block the user. Runs once per shell
+  // mount after auth resolves.
+  useEffect(() => {
+    if (guard.kind !== "staff") return;
+    void registerDeviceAndEnforceLimit();
+  }, [guard.kind]);
 
   if (guard.kind === "loading") {
     return (
@@ -282,28 +306,45 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
           backgroundColor: "var(--surface)",
         }}
       >
-        {/* Top: wordmark + toggle */}
+        {/* Top: wordmark + theme triplet + home + collapse toggle.
+            Wordmark already links home, but engineers asked for an explicit
+            Home icon back — the wordmark is visually busy with the presence
+            dot and easy to read as a label rather than a button. */}
         <div
-          className="flex items-center justify-between border-b px-3 py-3"
+          className="flex items-center gap-2 border-b px-3 py-3"
           style={{ borderColor: "var(--border)" }}
         >
           <Link
             href={homeHref}
             className="flex items-center no-underline"
             aria-label="Home"
+            title="Home"
           >
             {collapsed ? <DotOnly /> : <Wordmark size="md" />}
           </Link>
           {!collapsed && (
-            <button
-              type="button"
-              onClick={toggle}
-              className="rounded-md p-1.5 transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
-              aria-label="Collapse sidebar"
-              style={{ color: "var(--text-muted)" }}
-            >
-              <PanelLeftClose size={16} />
-            </button>
+            <>
+              <Link
+                href={homeHref}
+                className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
+                style={{ color: BRAND_GREEN, backgroundColor: BRAND_GREEN_SOFT }}
+                aria-label="Go to dashboard"
+                title="Dashboard"
+              >
+                <Home size={15} />
+              </Link>
+              <span className="flex-1" />
+              <ThemeTriplet />
+              <button
+                type="button"
+                onClick={toggle}
+                className="rounded-md p-1.5 transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
+                aria-label="Collapse sidebar"
+                style={{ color: "var(--text-muted)" }}
+              >
+                <PanelLeftClose size={16} />
+              </button>
+            </>
           )}
         </div>
 
@@ -345,20 +386,52 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
             );
           })}
 
+          {/* Engineer presence ball — sits directly under the Calendar
+              nav item, sandwiched between hairline separators so it
+              reads as its own zone. Ring + audio fire here when a match
+              offer lands via realtime. */}
+          {engineer && guard.kind === "staff" && (
+            <>
+              <div
+                className="mx-1 my-2 h-px"
+                style={{ backgroundColor: "var(--border)" }}
+                aria-hidden
+              />
+              <EngineerPresenceBall userId={guard.userId} collapsed={collapsed} />
+              <div
+                className="mx-1 my-2 h-px"
+                style={{ backgroundColor: "var(--border)" }}
+                aria-hidden
+              />
+            </>
+          )}
+
           {/* Spacer pushes alerts + profile to bottom */}
           <div className="flex-1" />
         </nav>
 
-        {/* Bottom: theme toggle + profile */}
+        {/* FIFO auto-ring — 30s after the engineer's session ends, if
+            there's still a queue and they're online, claim the next
+            customer. Empty render — pure side-effect. */}
+        {engineer && guard.kind === "staff" && (
+          <FifoAutoRing />
+        )}
+
+        {/* Bottom: profile. Theme triplet moved to the top (next to
+            wordmark + home button). When collapsed, we keep a single
+            ThemeTriplet here as a fallback so the user isn't locked out
+            of switching themes.
+            mb-4 lifts the chip clear of the bottom edge so it doesn't
+            kiss the viewport on short screens. */}
         <div
-          className="border-t px-2 py-2"
+          className="mb-4 border-t px-2 py-2"
           style={{ borderColor: "var(--border)" }}
         >
-          <div
-            className={`mb-1 flex ${collapsed ? "justify-center" : "justify-end"}`}
-          >
-            <ThemeTriplet />
-          </div>
+          {collapsed && (
+            <div className="mb-1 flex justify-center">
+              <ThemeTriplet />
+            </div>
+          )}
           <ProfileButton
             email={meEmail}
             onEmailResolved={setMeEmail}
@@ -395,13 +468,6 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
           children
         )}
       </main>
-
-      {/* Always-visible presence pill for engineers. Realtime-subscribed
-          so cross-tab + deep-pane changes mirror here. Other staff
-          roles don't render this (no engineer_profiles row to read). */}
-      {engineer && guard.kind === "staff" && (
-        <EngineerPresenceBadge userId={guard.userId} />
-      )}
 
       {/* Full-screen incoming-call popup for anyone who can take calls
        *  (engineer role). The modal self-gates: it only renders when
@@ -484,12 +550,22 @@ function ProfileButton({
   }, [open]);
 
   const handleSignOut = async () => {
-    // Flip the engineer Offline before the session dies, so the matcher and
-    // the supervisor/admin assign list stop showing them as available. Must
-    // run BEFORE signOut (the RPC needs auth.uid()). Best-effort: non-engineer
-    // roles get NOT_AN_ENGINEER, which we ignore.
+    // Flip the engineer to Offline BEFORE the session dies, so the matcher
+    // and supervisor/admin assign list stop showing them as available.
+    //
+    // Using set_engineer_presence('offline') (not the legacy
+    // engineer_set_online(false)) because it ALSO writes presence_state =
+    // 'offline'. That's the source of truth the dashboard ball reads on
+    // next login — without it, an engineer who logged out while Online
+    // would re-appear as Online on next login (presence_state stuck at
+    // 'online' even though is_available was flipped to false). The new
+    // login default is "Offline; engineer manually goes Online when
+    // ready", and this is the half of the change that the DB needs.
+    //
+    // Non-engineer roles get NOT_AN_ENGINEER, which we ignore (this is a
+    // best-effort cleanup; the auth.signOut below is the real gate).
     try {
-      await supabaseRef.current.rpc("engineer_set_online", { _online: false });
+      await supabaseRef.current.rpc("set_engineer_presence", { _state: "offline" });
     } catch { /* best-effort cleanup */ }
     // Supervisors go off duty on logout too, so coverage re-routes to whoever
     // is still on duty (non-supervisors get NOT_A_SUPERVISOR, which we ignore).
@@ -646,9 +722,104 @@ function ProfileButton({
   );
 }
 
+// ── FIFO auto-ring ──────────────────────────────────────────────────────
+// 30 seconds after the engineer's active session transitions to "ended",
+// check the queue; if there's a waiting customer AND the engineer is
+// still online (presence_state='online'), claim the next one.
+//
+// Watches `myActive` from useEngineerWorkspace for the ended transition
+// (vs. tailing guest_calls directly) because that hook already does the
+// realtime subscription and dedupes. Auto-ring fires once per ended
+// session — a ref tracks which session ids we've already armed for.
+//
+// Render-side this component is invisible; it just owns the effect.
+function FifoAutoRing() {
+  const sbRef = useRef(createClient());
+  const router = useRouter();
+  const { myActive, queue, takeNext, userId } = useEngineerWorkspace();
+  const armedRef = useRef<Set<string>>(new Set());
+  const lastActiveRef = useRef<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    // Build a map of session_id → status for the current active set.
+    const currentMap = new Map<string, string>();
+    for (const s of myActive) currentMap.set(s.id, s.status);
+
+    // Detect sessions that transitioned to "ended" since the last render.
+    for (const [id, prevStatus] of lastActiveRef.current.entries()) {
+      const nowStatus = currentMap.get(id);
+      const wasLive = ["assigned", "joining", "live", "grace", "expired_free"].includes(prevStatus);
+      const nowEnded = nowStatus === "ended" || !currentMap.has(id);
+      if (wasLive && nowEnded && !armedRef.current.has(id)) {
+        armedRef.current.add(id);
+        // 30s grace, then re-check the queue + presence and claim.
+        setTimeout(async () => {
+          try {
+            const sb = sbRef.current;
+            if (!userId) return;
+            // Check presence — only auto-claim when the engineer is
+            // explicitly online (busy / offline / unset = skip).
+            const { data: prof } = await sb
+              .from("engineer_profiles")
+              .select("presence_state, is_available")
+              .eq("user_id", userId)
+              .maybeSingle();
+            const presenceRow = (prof ?? null) as {
+              presence_state: string | null; is_available: boolean | null;
+            } | null;
+            const isOnline = presenceRow
+              ? (presenceRow.presence_state === "online" || (presenceRow.presence_state == null && presenceRow.is_available === true))
+              : false;
+            if (!isOnline) return;
+
+            // Check queue afresh — it may have drained while we waited.
+            const { data: liveQueue } = await sb
+              .from("guest_calls")
+              .select("id")
+              .eq("status", "queued")
+              .order("created_at", { ascending: true })
+              .limit(1);
+            if (!liveQueue || liveQueue.length === 0) return;
+
+            const claimed = await takeNext();
+            if (claimed) {
+              // Land the engineer in the session room for the auto-claimed
+              // call. Same destination as the manual "Take next call".
+              router.push(`/staff/session/${claimed.id}`);
+            }
+          } catch (err) {
+            console.warn("[fifo-auto-ring] failed:", err);
+          }
+        }, 30_000);
+      }
+    }
+
+    // Snapshot current status for the next render comparison.
+    lastActiveRef.current = currentMap;
+  }, [myActive, queue.length, userId, takeNext, router]);
+
+  return null;
+}
+
 /* ──────── Supervisor toast alerts (same logic as legacy shell) ──────── */
 
-type AlertToast = { id: string; sessionId: string; name: string; urgency: string };
+// AlertToast urgency union now includes "escalation" — engineer-initiated
+// supervisor pull-in from a live session_escalations row.
+type AlertToast = {
+  id: string;
+  sessionId: string;
+  name: string;
+  urgency: string;
+  /** Only set for escalation toasts — used to acknowledge_escalation
+   *  + navigate when the supervisor clicks Acknowledge & join. */
+  escalationId?: string;
+  reason?: string;
+};
+
+// Same key the EngineerPresenceBall uses, so muting the engineer ring
+// also mutes the supervisor escalation ring on the same device. One
+// switch, two consumers — keeps the affordance discoverable.
+const SUPERVISOR_MUTE_KEY = "relay.engineer.ring.muted.v1";
 
 function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
   const isSupervisor = !isEngineer(roles);
@@ -657,7 +828,11 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
   // Separate dedupe set for "reassignment needed" toasts so a session can be
   // re-flagged after it's reassigned (cleared when reassign_needed goes false).
   const seenReassignRef = useRef<Set<string>>(new Set());
+  // Dedupe for escalation toasts — keyed by escalation row id so the
+  // same row can't toast twice.
+  const seenEscalationRef = useRef<Set<string>>(new Set());
   const supabaseRef = useRef(createClient());
+  const router = useRouter();
 
   const dismiss = (id: string) =>
     setAlerts((prev) => prev.filter((a) => a.id !== id));
@@ -665,8 +840,16 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
   useEffect(() => {
     if (!isSupervisor) return;
     const sb = supabaseRef.current;
+    // Per-mount UUID suffix on the channel name. The previous fixed name
+    // ("supervisor-alerts-shell") was the worst case for Supabase's
+    // name-based dedupe — every supervisor load reused it, so a stale
+    // subscription from a previous render would refuse the new .on()
+    // with "cannot add postgres_changes after subscribe()".
+    const suffix = typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     const ch = sb
-      .channel("supervisor-alerts-shell")
+      .channel(`supervisor-alerts-shell-${suffix}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "guest_calls" },
@@ -716,50 +899,205 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
     return () => { sb.removeChannel(ch); };
   }, [isSupervisor]);
 
+  // Separate channel for engineer-initiated escalations. Toasts are
+  // visually + audibly louder than the urgent-session toast above so
+  // supervisors learn the difference by ear. Subscribes to INSERT only
+  // (acked/joined/resolved updates don't toast — those are the
+  // supervisor's own actions or the engineer closing the loop).
+  useEffect(() => {
+    if (!isSupervisor) return;
+    const sb = supabaseRef.current;
+    const suffix = typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const ch = sb
+      .channel(`supervisor-escalations-${suffix}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "session_escalations",
+        },
+        (payload) => {
+          const row = payload.new as {
+            id?: string;
+            session_id?: string;
+            engineer_user_id?: string;
+            reason?: string | null;
+            status?: string;
+          } | null;
+          if (!row?.id || !row.session_id) return;
+          if (row.status !== "pending") return;
+          if (seenEscalationRef.current.has(row.id)) return;
+          seenEscalationRef.current.add(row.id);
+
+          // Lookup the customer name for the toast headline. Cheap one-off.
+          void (async () => {
+            const { data } = await sb
+              .from("guest_calls")
+              .select("guest_name")
+              .eq("id", row.session_id)
+              .maybeSingle();
+            const name = (data as { guest_name?: string | null } | null)?.guest_name
+              ?? "A live session";
+            setAlerts((prev) => [
+              ...prev,
+              {
+                id: `escalation-${row.id}`,
+                sessionId: row.session_id!,
+                name,
+                urgency: "escalation",
+                escalationId: row.id,
+                reason: row.reason ?? undefined,
+              },
+            ]);
+            playEscalationRingtone();
+          })();
+        },
+      )
+      .subscribe();
+    return () => { sb.removeChannel(ch); };
+  }, [isSupervisor]);
+
+  // Acknowledge + navigate. Used by the toast's primary CTA. First
+  // supervisor wins via the RPC's UPDATE-with-where-status='pending'.
+  const acknowledgeAndJoin = useCallback(async (toast: AlertToast) => {
+    if (!toast.escalationId) return;
+    const sb = supabaseRef.current;
+    const { error: e } = await sb.rpc("acknowledge_escalation", {
+      _id: toast.escalationId,
+    });
+    if (e) {
+      // ALREADY_TAKEN: surface lightly + drop the toast. Another
+      // supervisor beat us to it.
+      console.warn("[supervisor-alerts] escalation ack failed:", e.message);
+      setAlerts((prev) => prev.filter((a) => a.id !== toast.id));
+      return;
+    }
+    setAlerts((prev) => prev.filter((a) => a.id !== toast.id));
+    router.push(`/staff/session/${toast.sessionId}`);
+  }, [router]);
+
   if (!isSupervisor || !alerts.length) return null;
 
   return (
     <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2">
-      {alerts.map((a) => (
-        <div
-          key={a.id}
-          className="flex items-start gap-3 rounded-lg border px-4 py-3 shadow-lg"
-          style={{
-            backgroundColor:
-              a.urgency === "critical" ? CRIT_RED_SOFT : URGENT_AMBER_SOFT,
-            borderColor:
-              a.urgency === "critical" ? CRIT_RED : URGENT_AMBER,
-            color: "var(--text)",
-            maxWidth: 360,
-          }}
-        >
-          <AlertTriangle
-            size={16}
+      {alerts.map((a) => {
+        const isEscalation = a.urgency === "escalation";
+        const tintBg = a.urgency === "critical" || isEscalation
+          ? CRIT_RED_SOFT
+          : URGENT_AMBER_SOFT;
+        const tintFg = a.urgency === "critical" || isEscalation
+          ? CRIT_RED
+          : URGENT_AMBER;
+        return (
+          <div
+            key={a.id}
+            className="flex items-start gap-3 rounded-lg border px-4 py-3 shadow-lg"
             style={{
-              color: a.urgency === "critical" ? CRIT_RED : URGENT_AMBER,
-              marginTop: 2,
+              backgroundColor: tintBg,
+              borderColor: tintFg,
+              color: "var(--text)",
+              maxWidth: 380,
+              animation: isEscalation
+                ? "relay-toast-in 200ms ease-out"
+                : undefined,
+              boxShadow: isEscalation
+                ? `0 10px 28px ${tintFg}55`
+                : undefined,
             }}
-          />
-          <div className="flex-1">
-            <div className="text-sm font-medium">
-              {a.urgency === "reassign" ? "Assignment declined" : a.name}
-            </div>
-            <div className="text-xs" style={{ color: "var(--text-muted)" }}>
-              {a.urgency === "reassign"
-                ? `${a.name} needs a new engineer — reassign in Supervise`
-                : `${a.urgency} session`}
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => dismiss(a.id)}
-            className="rounded-md p-1"
-            aria-label="Dismiss"
           >
-            <X size={14} />
-          </button>
-        </div>
-      ))}
+            <AlertTriangle size={16} style={{ color: tintFg, marginTop: 2 }} />
+            <div className="flex-1">
+              <div className="text-sm font-medium">
+                {isEscalation
+                  ? `Engineer needs help — ${a.name}`
+                  : a.urgency === "reassign"
+                    ? "Assignment declined"
+                    : a.name}
+              </div>
+              <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+                {isEscalation
+                  ? a.reason
+                    ? `"${a.reason}"`
+                    : "Live escalation — supervisor needed"
+                  : a.urgency === "reassign"
+                    ? `${a.name} needs a new engineer — reassign in Supervise`
+                    : `${a.urgency} session`}
+              </div>
+              {isEscalation && (
+                <div className="mt-2 flex gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => void acknowledgeAndJoin(a)}
+                    className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold text-white transition-opacity hover:opacity-90"
+                    style={{ backgroundColor: tintFg }}
+                  >
+                    Acknowledge &amp; join
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => dismiss(a.id)}
+                    className="rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                    style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+                  >
+                    Snooze
+                  </button>
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => dismiss(a.id)}
+              className="rounded-md p-1"
+              aria-label="Dismiss"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
+}
+
+// ── Escalation ringtone — three-beat urgent pattern. Louder and longer
+// than the EngineerPresenceBall match-offer ringtone (which is 880-660-880
+// over ~0.85s) so supervisors learn the cadence: this one is an
+// engineer-initiated escalation, not a routine match. Respects the
+// shared MUTE key so muting the engineer ring also silences this.
+function playEscalationRingtone() {
+  try {
+    if (typeof window === "undefined") return;
+    const muted = window.localStorage.getItem(SUPERVISOR_MUTE_KEY) === "1";
+    if (muted) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const Ctor = (window as any).AudioContext ?? (window as any).webkitAudioContext;
+    if (!Ctor) return;
+    const ctx: AudioContext = new Ctor();
+    const now = ctx.currentTime;
+    const beep = (start: number, hz: number, dur: number, vol: number) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(hz, now + start);
+      gain.gain.setValueAtTime(0, now + start);
+      gain.gain.linearRampToValueAtTime(vol, now + start + 0.02);
+      gain.gain.setValueAtTime(vol, now + start + dur - 0.05);
+      gain.gain.linearRampToValueAtTime(0, now + start + dur);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(now + start);
+      osc.stop(now + start + dur + 0.05);
+    };
+    // Urgent cadence: low-high-low-high two-pair pattern at higher
+    // amplitude than the match-offer ringtone. Total ~1.4s.
+    beep(0.00, 520, 0.30, 0.14);
+    beep(0.32, 880, 0.30, 0.14);
+    beep(0.72, 520, 0.30, 0.14);
+    beep(1.04, 880, 0.30, 0.14);
+    setTimeout(() => { ctx.close().catch(() => { /* already closing */ }); }, 1600);
+  } catch (err) {
+    console.warn("[supervisor-alerts] escalation ringtone failed:", err);
+  }
 }
