@@ -85,5 +85,6 @@ export async function GET() {
   });
   engineers.sort((a, b) => a.name.localeCompare(b.name));
 
-  return NextResponse.json({ engineers });
+  const podList = ((pods ?? []) as { id: string; name: string }[]).map((p) => ({ id: p.id, name: p.name }));
+  return NextResponse.json({ engineers, pods: podList });
 }
