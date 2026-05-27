@@ -602,7 +602,7 @@ function SessionTile({ session }: { session: SessionWithHealth }) {
         style={{ backgroundColor: HEALTH_VAR[health] }}
       />
 
-      <div className="mb-3 flex items-center justify-between gap-2">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <StatusBadge tone={tone} compact>
           {humanState(session.status)}
         </StatusBadge>
@@ -725,7 +725,7 @@ function Tabs({
     <div
       role="tablist"
       aria-label="Session views"
-      className="flex items-center gap-1 border-b border-[var(--border)]"
+      className="flex items-center gap-1 overflow-x-auto border-b border-[var(--border)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
     >
       {visible.map((t) => {
         const active = t === tab;
@@ -737,7 +737,7 @@ function Tabs({
             aria-selected={active}
             onClick={() => setTab(t)}
             className={cn(
-              "relative inline-flex items-center gap-2 px-3 py-2.5 text-sm capitalize transition-colors",
+              "relative inline-flex shrink-0 items-center gap-2 whitespace-nowrap px-3 py-2.5 text-sm capitalize transition-colors",
               active
                 ? "font-semibold text-[var(--text)]"
                 : "font-medium text-[var(--text-muted)] hover:text-[var(--text)]",
