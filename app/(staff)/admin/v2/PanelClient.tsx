@@ -16,13 +16,15 @@ import { EnterpriseTab } from "./EnterpriseTab";
 import { ResellersTab } from "./ResellersTab";
 import { PodsTab } from "./PodsTab";
 import { InternalUsersTab } from "./InternalUsersTab";
+import { BenchTab } from "./BenchTab";
 
-type TabKey = "enterprise" | "reseller" | "pods" | "internal";
+type TabKey = "enterprise" | "reseller" | "pods" | "internal" | "bench";
 
 const TABS: readonly Tab<TabKey>[] = [
   { key: "reseller",   label: "Channel Partners" },
   { key: "enterprise", label: "Enterprise" },
   { key: "pods",       label: "Pods"       },
+  { key: "bench",      label: "Bench"      },
   { key: "internal",   label: "Internal Users" },
 ];
 
@@ -59,6 +61,7 @@ export function PanelClient({
         {tab === "enterprise" && <EnterpriseTab />}
         {tab === "reseller"   && <ResellersTab />}
         {tab === "pods"       && <PodsTab />}
+        {tab === "bench"      && <BenchTab />}
         {tab === "internal"   && <InternalUsersTab />}
       </div>
     </div>
