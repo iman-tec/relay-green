@@ -18,7 +18,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { Eye, Loader2, ArrowUpRight, Users, ChevronDown, Activity, Timer, Hash, Flag, X } from "lucide-react";
+import { Eye, Loader2, ArrowUpRight, Users, ChevronDown, Activity, Timer, Hash, Flag, X, TrendingUp } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import { Button, Card, EmptyState as UiEmptyState, cn } from "@/app/_components/ui";
 
@@ -113,9 +113,57 @@ export function RosterPanel() {
         <Kpi label="Build min" value={fmtNum(buildMinutes)} sub="30d" />
         <Kpi label="Sessions" value={fmtNum(sessions30d)} sub="30d" />
       </div>
+
+      <ThemesCard />
       <div className="grid items-start gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
         {engineers.map((e) => <EngineerCard key={e.userId} engineer={e} />)}
       </div>
+    </div>
+  );
+}
+
+// ── D5 — recurring escalation themes (LLM, behind graceful states) ─────────
+function ThemesCard() {
+  const [state, setState] = useState<"loading" | "ok" | "insufficient" | "unavailable">("loading");
+  const [themes, setThemes] = useState<{ theme: string; count: number }[]>([]);
+  const [sample, setSample] = useState(0);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const res = await fetch("/api/supervisor/escalation-themes", { cache: "no-store" });
+        const j = (await res.json().catch(() => ({}))) as { state?: string; themes?: { theme: string; count: number }[]; sampleSize?: number };
+        if (!alive) return;
+        setThemes(j.themes ?? []); setSample(j.sampleSize ?? 0);
+        setState((j.state as "ok" | "insufficient" | "unavailable") ?? "unavailable");
+      } catch { if (alive) setState("unavailable"); }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  return (
+    <div className="rounded-2xl border p-4" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+      <div className="mb-2 flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--text)" }}>
+        <TrendingUp size={15} /> Recurring escalation themes
+      </div>
+      {state === "loading" ? (
+        <div className="flex items-center gap-2 text-xs" style={{ color: "var(--text-muted)" }}><Loader2 size={13} className="animate-spin" /> Computing…</div>
+      ) : state === "ok" && themes.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {themes.map((t, i) => (
+            <span key={i} className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs" style={{ borderColor: "var(--border)", color: "var(--text)" }}>
+              {t.theme}<span className="rounded-full px-1.5 text-[10px] font-semibold tabular-nums" style={{ background: "var(--primary-tint)", color: "var(--primary-hover)" }}>{t.count}</span>
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+          {state === "insufficient" ? `Not enough escalations yet to surface themes (${sample} in 30d).` :
+           state === "ok" ? "No recurring themes — escalations look one-off." :
+           "Theme detection unavailable right now."}
+        </p>
+      )}
     </div>
   );
 }
