@@ -244,6 +244,11 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
   const findAnother = useCallback(async () => {
     setRetrying(true);
     const sb = supabaseRef.current;
+    // Self-heal: reap any guest_calls stuck in 'assigned'/'joining' with no
+    // recent engineer heartbeat. Otherwise those engineers look "in a session"
+    // to the matcher and get filtered out, even though they're actually gone.
+    // Cheap UPDATE WHERE NOT EXISTS; no-op if nothing is stuck.
+    try { await sb.rpc("reap_stale_assigned_sessions"); } catch { /* helper may not be deployed yet */ }
     await sb.rpc("match_engineer", { _intake_id: intakeId });
     setRetrying(false);
     void fetchLatest();
