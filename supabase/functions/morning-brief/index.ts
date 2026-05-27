@@ -10,9 +10,8 @@
 //   1. Deploy:   supabase functions deploy morning-brief --no-verify-jwt
 //   2. Env (Edge Function secrets):
 //        SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY  (already set for other fns)
-//        RESEND_API_KEY        — transactional email (or swap sendEmail for
-//                                 your provider / SMTP)
-//        MORNING_BRIEF_FROM    — e.g. "Relay Ops <ops@relay.green>"
+//        SENDGRID_API_KEY      — transactional email (SendGrid /v3/mail/send)
+//        MORNING_BRIEF_FROM    — verified sender, e.g. "Relay Ops <ops@relay.green>"
 //        MORNING_BRIEF_OPS_TO  — ops fallback recipient (optional)
 //   3. Schedule 08:00 daily — either:
 //        • Supabase Dashboard → Edge Functions → Schedules → cron "0 8 * * *", or
@@ -22,30 +21,44 @@
 //                 headers := jsonb_build_object('Authorization','Bearer <service_role>')
 //               ) $$);
 //
-// Without RESEND_API_KEY it computes the digest and logs it (no send), so a
-// manual invoke is safe to smoke-test before email is wired.
+// Without SENDGRID_API_KEY it computes the digest and logs it (no send), so a
+// manual invoke is safe to smoke-test before email is wired. The MORNING_BRIEF_FROM
+// address must be a SendGrid-verified sender / authenticated domain or sends 403.
 // ============================================================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
+const SENDGRID_API_KEY = Deno.env.get("SENDGRID_API_KEY") ?? "";
 const FROM = Deno.env.get("MORNING_BRIEF_FROM") ?? "Relay Ops <ops@relay.green>";
 const OPS_TO = Deno.env.get("MORNING_BRIEF_OPS_TO") ?? "";
 
 const OPEN_HOUR = 8, CLOSE_HOUR = 22;
 
+// Parse "Name <email>" (or a bare email) into SendGrid's { email, name } shape.
+function parseFrom(s: string): { email: string; name?: string } {
+  const m = s.match(/^\s*(.*?)\s*<([^>]+)>\s*$/);
+  if (m) return { email: m[2].trim(), name: m[1].trim() || undefined };
+  return { email: s.trim() };
+}
+
 async function sendEmail(to: string, subject: string, html: string) {
-  if (!RESEND_API_KEY) {
-    console.log(`[morning-brief] (no RESEND_API_KEY) would email ${to}: ${subject}`);
+  if (!SENDGRID_API_KEY) {
+    console.log(`[morning-brief] (no SENDGRID_API_KEY) would email ${to}: ${subject}`);
     return;
   }
-  const res = await fetch("https://api.resend.com/emails", {
+  const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
     method: "POST",
-    headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from: FROM, to, subject, html }),
+    headers: { Authorization: `Bearer ${SENDGRID_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      personalizations: [{ to: [{ email: to }] }],
+      from: parseFrom(FROM),
+      subject,
+      content: [{ type: "text/html", value: html }],
+    }),
   });
+  // SendGrid returns 202 Accepted on success.
   if (!res.ok) console.error(`[morning-brief] email to ${to} failed: ${res.status} ${await res.text()}`);
 }
 

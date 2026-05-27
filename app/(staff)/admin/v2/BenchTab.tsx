@@ -15,7 +15,7 @@ import { createClient } from "@/lib/supabase/browser";
 type Engineer = {
   userId: string; name: string; email: string; pod: string;
   presenceState: string; isAvailable: boolean;
-  expertise: string[]; technologies: string[]; issues: string[]; environments: string[];
+  projectTypes: string[]; aiTools: string[]; backendStacks: string[]; frontendStacks: string[];
   experienceLevel: string | null; onboardingComplete: boolean; onboardingPct: number;
 };
 type Pod = { id: string; name: string };
@@ -98,7 +98,7 @@ function Matrix({ rows, onEdit }: { rows: Engineer[]; onEdit: (e: Engineer) => v
       <table className="w-full min-w-[860px] text-sm">
         <thead>
           <tr style={{ color: "var(--text-muted)" }}>
-            {["Engineer", "Pod", "Level", "Expertise", "Technologies", "Issues", "Environments", ""].map((h, i) => (
+            {["Engineer", "Pod", "Level", "Project types", "AI tools", "Backend", "Frontend", ""].map((h, i) => (
               <th key={i} className="px-3 py-2.5 text-left text-[11px] font-medium uppercase tracking-wide">{h}</th>
             ))}
           </tr>
@@ -117,10 +117,10 @@ function Matrix({ rows, onEdit }: { rows: Engineer[]; onEdit: (e: Engineer) => v
               </td>
               <td className="px-3 py-3" style={{ color: "var(--text-muted)" }}>{e.pod}</td>
               <td className="px-3 py-3" style={{ color: "var(--text-muted)" }}>{e.experienceLevel ?? "—"}</td>
-              <td className="px-3 py-3"><Tags items={e.expertise} /></td>
-              <td className="px-3 py-3"><Tags items={e.technologies} /></td>
-              <td className="px-3 py-3"><Tags items={e.issues} /></td>
-              <td className="px-3 py-3"><Tags items={e.environments} /></td>
+              <td className="px-3 py-3"><Tags items={e.projectTypes} /></td>
+              <td className="px-3 py-3"><Tags items={e.aiTools} /></td>
+              <td className="px-3 py-3"><Tags items={e.backendStacks} /></td>
+              <td className="px-3 py-3"><Tags items={e.frontendStacks} /></td>
               <td className="px-3 py-3 text-right">
                 <button type="button" onClick={() => onEdit(e)} title="Edit" aria-label="Edit"
                   className="inline-flex size-7 items-center justify-center rounded-md border" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
@@ -137,10 +137,10 @@ function Matrix({ rows, onEdit }: { rows: Engineer[]; onEdit: (e: Engineer) => v
 
 // ── F2: super-admin edits expertise axes + on/off-duty ─────────────────────
 function EditDrawer({ engineer, onClose, onSaved }: { engineer: Engineer; onClose: () => void; onSaved: () => void }) {
-  const [expertise, setExpertise] = useState(engineer.expertise.join(", "));
-  const [technologies, setTechnologies] = useState(engineer.technologies.join(", "));
-  const [issues, setIssues] = useState(engineer.issues.join(", "));
-  const [environments, setEnvironments] = useState(engineer.environments.join(", "));
+  const [projectTypes, setProjectTypes] = useState(engineer.projectTypes.join(", "));
+  const [aiTools, setAiTools] = useState(engineer.aiTools.join(", "));
+  const [backendStacks, setBackendStacks] = useState(engineer.backendStacks.join(", "));
+  const [frontendStacks, setFrontendStacks] = useState(engineer.frontendStacks.join(", "));
   const [level, setLevel] = useState(engineer.experienceLevel ?? "");
   const [available, setAvailable] = useState(engineer.isAvailable);
   const [busy, setBusy] = useState(false);
@@ -152,7 +152,7 @@ function EditDrawer({ engineer, onClose, onSaved }: { engineer: Engineer; onClos
     try {
       const res = await fetch(`/api/admin/engineers/${engineer.userId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ expertise: csv(expertise), technologies: csv(technologies), issues: csv(issues), environments: csv(environments), experienceLevel: level.trim() || null, isAvailable: available }),
+        body: JSON.stringify({ project_types: csv(projectTypes), ai_tools: csv(aiTools), backend_stacks: csv(backendStacks), frontend_stacks: csv(frontendStacks), experienceLevel: level.trim() || null, isAvailable: available }),
       });
       if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error || "Save failed.");
       onSaved();
@@ -173,7 +173,7 @@ function EditDrawer({ engineer, onClose, onSaved }: { engineer: Engineer; onClos
           On duty (matcher rings them)
           <input type="checkbox" checked={available} onChange={(e) => setAvailable(e.target.checked)} />
         </label>
-        {([["Expertise", expertise, setExpertise], ["Technologies", technologies, setTechnologies], ["Issues", issues, setIssues], ["Environments", environments, setEnvironments]] as const).map(([label, val, set]) => (
+        {([["Project types", projectTypes, setProjectTypes], ["AI tools", aiTools, setAiTools], ["Backend stacks", backendStacks, setBackendStacks], ["Frontend stacks", frontendStacks, setFrontendStacks]] as const).map(([label, val, set]) => (
           <label key={label} className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
             {label} <span style={{ color: "var(--text-faint)" }}>(comma-separated)</span>
             <input value={val} onChange={(e) => set(e.target.value)} className="h-10 rounded-lg border px-3 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />

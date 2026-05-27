@@ -36,6 +36,8 @@ type Engineer = {
   onCallSince: string | null;
   buildMinutes: number;
   sessions30d: number;
+  golive: number;
+  maintain: number;
   liveSentiment: Sentiment | null;
   lastCustomer: string | null;
   lastCallAt: string | null;
@@ -103,16 +105,20 @@ export function RosterPanel() {
   // Pod aggregate KPIs (E1), summed across the pod's engineers.
   const buildMinutes = engineers.reduce((s, e) => s + (e.buildMinutes || 0), 0);
   const sessions30d = engineers.reduce((s, e) => s + (e.sessions30d || 0), 0);
+  const golive = engineers.reduce((s, e) => s + (e.golive || 0), 0);
+  const maintain = engineers.reduce((s, e) => s + (e.maintain || 0), 0);
 
   return (
     <div className="flex flex-col gap-4">
       {/* Pod dashboard — KPIs across the whole pod */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-7">
         <Kpi label="Engineers" value={fmtNum(engineers.length)} />
         <Kpi label="Online" value={fmtNum(onlineCount)} />
         <Kpi label="Live now" value={fmtNum(onCallCount)} />
         <Kpi label="Build min" value={fmtNum(buildMinutes)} sub="30d" />
         <Kpi label="Sessions" value={fmtNum(sessions30d)} sub="30d" />
+        <Kpi label="Go-live" value={fmtNum(golive)} />
+        <Kpi label="Maintain" value={fmtNum(maintain)} />
       </div>
 
       <ThemesCard />
@@ -218,6 +224,7 @@ type Detail = {
   recentSessions: Array<{ id: string; guestName: string | null; status: string; durationMinutes: number | null; createdAt: string; endedAt: string | null; projectName: string | null }>;
   escalations: Array<{ id: string; reason: string; note: string | null; status: string; resolutionNote: string | null; createdAt: string; resolvedAt: string | null }>;
   availability: { weekdays: number[]; holidays: { date: string; label: string | null; kind: string }[]; upcomingBookings: string[] };
+  devices: { id: string; label: string; lastSeenAt: string | null }[];
 };
 
 const DOW_SHORT = ["S", "M", "T", "W", "T", "F", "S"];
@@ -277,6 +284,12 @@ function EngineerCard({ engineer: e }: { engineer: Engineer }) {
         <Kpi icon={<Timer size={12} />} label="Build min" value={fmtNum(e.buildMinutes)} sub="30d" />
         <Kpi icon={<Hash size={12} />} label="Sessions" value={fmtNum(e.sessions30d)} sub="30d" />
       </div>
+      {(e.golive > 0 || e.maintain > 0) && (
+        <div className="mt-1.5 flex gap-3 text-[11px]" style={{ color: "var(--text-muted)" }}>
+          {e.golive > 0 && <span>{e.golive} go-live</span>}
+          {e.maintain > 0 && <span>{e.maintain} maintain</span>}
+        </div>
+      )}
 
       {onCall && (
         <Button full size="sm" className="mt-3" onClick={watch} iconLeft={<Eye size={14} />} iconRight={<ArrowUpRight size={12} className="opacity-80" />}>
@@ -295,7 +308,7 @@ function EngineerCard({ engineer: e }: { engineer: Engineer }) {
               <Loader2 size={14} className="animate-spin" /> Loading…
             </div>
           ) : detail ? (
-            <DrillIn detail={detail} />
+            <DrillIn detail={detail} userId={e.userId} />
           ) : (
             <p className="py-4 text-xs" style={{ color: "var(--text-muted)" }}>Couldn&apos;t load detail.</p>
           )}
@@ -305,9 +318,14 @@ function EngineerCard({ engineer: e }: { engineer: Engineer }) {
   );
 }
 
-function DrillIn({ detail }: { detail: Detail }) {
+function DrillIn({ detail, userId }: { detail: Detail; userId: string }) {
   const router = useRouter();
   const t = detail.engineer.totals;
+  const [devices, setDevices] = useState(detail.devices);
+  const kick = async (deviceId: string) => {
+    setDevices((d) => d.filter((x) => x.id !== deviceId)); // optimistic
+    await fetch(`/api/supervisor/engineer/${userId}?deviceId=${deviceId}`, { method: "DELETE" }).catch(() => {});
+  };
   const rate = detail.engineer.escalationRate;
   const rateTone = rate >= 3 ? "var(--risk)" : rate >= 1.5 ? "var(--warn)" : "var(--text)";
   return (
@@ -386,6 +404,27 @@ function DrillIn({ detail }: { detail: Detail }) {
                     {new Date(s.endedAt ?? s.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
                   </span>
                 </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* F3 — active devices (3-device cap) + force-kick */}
+      <div>
+        <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+          Devices ({devices.length}/3)
+        </h4>
+        {devices.length === 0 ? (
+          <p className="text-xs" style={{ color: "var(--text-muted)" }}>No active devices.</p>
+        ) : (
+          <ul className="flex flex-col gap-1">
+            {devices.map((d) => (
+              <li key={d.id} className="flex items-center gap-2 text-xs">
+                <span className="min-w-0 flex-1 truncate" style={{ color: "var(--text)" }}>{d.label}</span>
+                {d.lastSeenAt && <span className="shrink-0" style={{ color: "var(--text-faint)" }}>{new Date(d.lastSeenAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>}
+                <button type="button" onClick={() => void kick(d.id)} title="Force sign out"
+                  className="shrink-0 rounded-md border px-2 py-0.5 text-[10px] font-medium" style={{ borderColor: "var(--border)", color: "var(--risk)" }}>Kick</button>
               </li>
             ))}
           </ul>

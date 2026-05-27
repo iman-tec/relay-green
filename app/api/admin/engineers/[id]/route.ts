@@ -19,7 +19,7 @@ import { ROLE } from "@/lib/relay/roles";
 export const dynamic = "force-dynamic";
 export const runtime  = "nodejs";
 
-const ARRAY_FIELDS = ["expertise", "technologies", "issues", "environments"] as const;
+const ARRAY_FIELDS = ["project_types", "ai_tools", "backend_stacks", "frontend_stacks"] as const;
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

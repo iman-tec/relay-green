@@ -25,6 +25,7 @@ import { Check, ChevronLeft, ChevronRight, Folder, Loader2, PhoneIncoming, Searc
 import { useEngineerWorkspace } from "@/lib/relay/useEngineerWorkspace";
 import { useRequireEngineerProfile } from "@/lib/relay/useRequireEngineerProfile";
 import { createClient } from "@/lib/supabase/browser";
+import { QuoteRequestsInbox } from "./QuoteRequestsInbox";
 import type { GuestCall } from "@/lib/supabase/types";
 
 type ConnectRequest = {
@@ -520,6 +521,12 @@ export function InboxClient() {
             onDecline={onDecline}
           />
         )}
+
+        {/* Incoming go-live / maintenance quote requests → bid prep. Quiet
+            (renders nothing) when there are none. */}
+        <div className="px-4 pt-3 empty:hidden">
+          <QuoteRequestsInbox />
+        </div>
 
         {selectedPerson ? (
           <PersonHistory person={selectedPerson} onOpen={(id) => router.push(`/session-review/${id}`)} />

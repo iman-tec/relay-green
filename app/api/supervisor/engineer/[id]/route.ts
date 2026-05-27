@@ -48,7 +48,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const since30 = new Date(Date.now() - 30 * 86_400_000).toISOString();
   const todayStr = new Date().toISOString().slice(0, 10);
   const next14 = new Date(Date.now() + 14 * 86_400_000).toISOString();
-  const [{ data: profile }, { data: recent }, { data: kpiRows }, { data: escRows }, { data: winRows }, { data: holRows }, { data: bookRows }] = await Promise.all([
+  const [{ data: profile }, { data: recent }, { data: kpiRows }, { data: escRows }, { data: winRows }, { data: holRows }, { data: bookRows }, { data: devRows }] = await Promise.all([
     admin.from("engineer_profiles").select("presence_state, is_available, updated_at").eq("user_id", engineerId).maybeSingle(),
     admin
       .from("guest_calls")
@@ -70,6 +70,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     admin.from("engineer_availability_windows").select("weekday").eq("engineer_user_id", engineerId),
     admin.from("engineer_holidays").select("holiday_date, label, kind").eq("engineer_user_id", engineerId).gte("holiday_date", todayStr).order("holiday_date", { ascending: true }).limit(10),
     admin.from("engineer_bookings").select("slot_start, status").eq("engineer_user_id", engineerId).eq("status", "booked").gte("slot_start", new Date().toISOString()).lt("slot_start", next14).order("slot_start", { ascending: true }).limit(10),
+    admin.from("user_devices").select("id, device_label, user_agent, last_seen_at").eq("user_id", engineerId).order("last_seen_at", { ascending: false }),
   ]);
 
   const kpis = (kpiRows ?? []) as { duration_minutes: number | null; status: string; ended_at: string | null }[];
@@ -103,6 +104,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       holidays: ((holRows ?? []) as { holiday_date: string; label: string | null; kind: string }[]).map((h) => ({ date: h.holiday_date, label: h.label, kind: h.kind })),
       upcomingBookings: ((bookRows ?? []) as { slot_start: string }[]).map((b) => b.slot_start),
     },
+    devices: ((devRows ?? []) as { id: string; device_label: string | null; user_agent: string | null; last_seen_at: string | null }[]).map((d) => ({
+      id: d.id, label: d.device_label ?? "Unknown device", lastSeenAt: d.last_seen_at,
+    })),
     recentSessions: (recent ?? []).map((r: { id: string; guest_name: string | null; status: string; duration_minutes: number | null; created_at: string; ended_at: string | null; project_name: string | null }) => ({
       id: r.id,
       guestName: r.guest_name,
@@ -113,4 +117,37 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       projectName: r.project_name,
     })),
   });
+}
+
+// F3 — supervisor force-kicks one of the engineer's devices (frees a cap slot).
+// DELETE /api/supervisor/engineer/:id/?deviceId=... — pod-scoped.
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id: engineerId } = await params;
+  const deviceId = new URL(req.url).searchParams.get("deviceId");
+  if (!deviceId) return NextResponse.json({ error: "missing deviceId" }, { status: 400 });
+
+  const supabase = await createServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
+  const { data: roleRows } = await supabase.from("user_role_names").select("role").eq("user_id", user.id);
+  const roles = (roleRows ?? []).map((r: { role: string }) => r.role);
+  if (roles.includes(ROLE.super_admin) || !roles.includes(ROLE.supervisor)) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return NextResponse.json({ error: "service_role_not_configured" }, { status: 500 });
+  const admin = createAdminClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+
+  const { data: myPod } = await admin.from("pod_members").select("pod_id").eq("user_id", user.id).eq("pod_role", "supervisor").maybeSingle();
+  const podId = (myPod as { pod_id?: string } | null)?.pod_id ?? null;
+  if (!podId) return NextResponse.json({ error: "no_pod" }, { status: 403 });
+  const { data: membership } = await admin.from("pod_members").select("user_id").eq("pod_id", podId).eq("pod_role", "engineer").eq("user_id", engineerId).maybeSingle();
+  if (!membership) return NextResponse.json({ error: "not_in_pod" }, { status: 403 });
+
+  // Scope the delete to the engineer's own device rows.
+  const { error } = await admin.from("user_devices").delete().eq("id", deviceId).eq("user_id", engineerId);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ ok: true });
 }
