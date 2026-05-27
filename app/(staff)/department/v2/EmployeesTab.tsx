@@ -16,9 +16,12 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Power, PowerOff, Coins, Pencil } from "lucide-react";
+import { Plus, Power, PowerOff, Coins, Pencil, Upload } from "lucide-react";
 import { DetailCard } from "@/app/_components/admin-v2/DetailCard";
 import { EditNameDrawer } from "@/app/_components/admin-v2/EditNameDrawer";
+import { Button } from "@/app/_components/ui";
+import { InviteFlow } from "@/app/_components/invite/InviteFlow";
+import { InviteStatusTable } from "@/app/_components/invite/InviteStatusTable";
 import { AddEmployeeDrawer } from "./_drawers/AddEmployeeDrawer";
 import { RefillEmployeeDrawer } from "./_drawers/RefillEmployeeDrawer";
 
@@ -56,6 +59,8 @@ export function EmployeesTab() {
   const [error, setError]             = useState<string | null>(null);
 
   const [addOpen, setAddOpen]         = useState(false);
+  const [bulkOpen, setBulkOpen]       = useState(false);
+  const [inviteKey, setInviteKey]     = useState(0);
   const [refillTarget, setRefillTarget] = useState<Employee | null>(null);
   const [editTarget, setEditTarget]   = useState<Employee | null>(null);
 
@@ -156,13 +161,29 @@ export function EmployeesTab() {
           onRefill={(e) => setRefillTarget(e)}
           onToggleStatus={toggleStatus}
         />
+
+        <section className="flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-serif text-lg font-medium" style={{ color: "var(--text)" }}>Invitations</h2>
+            <Button variant="secondary" iconLeft={<Upload size={15} />} onClick={() => setBulkOpen(true)}>Bulk add (CSV)</Button>
+          </div>
+          <InviteStatusTable reloadKey={inviteKey} />
+        </section>
       </div>
 
       <AddEmployeeDrawer
         open={addOpen}
         deptRemainingMinutes={dept.remainingMinutes}
         onClose={() => setAddOpen(false)}
-        onCreated={() => { setAddOpen(false); refresh(); }}
+        onCreated={() => { setAddOpen(false); refresh(); setInviteKey((k) => k + 1); }}
+      />
+      <InviteFlow
+        open={bulkOpen}
+        onClose={() => setBulkOpen(false)}
+        variant="members"
+        endpoint="/api/department/employees"
+        title="Invite employees"
+        onSent={() => { refresh(); setInviteKey((k) => k + 1); }}
       />
       <RefillEmployeeDrawer
         open={refillTarget !== null}

@@ -17,8 +17,10 @@
  */
 
 import { NextResponse } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireEnterpriseAdmin } from "@/lib/enterprise-auth";
 import { sendInvitationEmail } from "@/lib/admin-invite";
+import { recordInvite } from "@/lib/relay/invites";
 import { ROLE, STAFF_ROLES as ALL_STAFF_ROLES } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
@@ -102,27 +104,19 @@ export async function GET(request: Request) {
   return NextResponse.json({ members });
 }
 
-export async function POST(request: Request) {
-  const gate = await requireEnterpriseAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
-  const { admin, orgId, user: actor } = gate;
+type ProvisionInput = { email?: string; displayName?: string; role?: string; departmentId?: string };
+type ProvisionResult =
+  | { ok: true; userId: string; role: string; departmentId: string | null; mode: "invited" | "attached_existing" }
+  | { ok: false; status: number; error: string };
 
-  const { email, displayName, role, departmentId } =
-    (await request.json().catch(() => ({}))) as {
-      email?:        string;
-      displayName?:  string;
-      role?:         string;
-      /** Optional. When set on a client invite, the new user is bound to
-       *  this department and marked as client_type='employee'. Ignored for
-       *  enterprise_admin invites (admins aren't bound to a single dept). */
-      departmentId?: string;
-    };
+/** Invite + provision ONE member into orgId. Shared by the single + bulk POST paths. */
+async function provisionMember(
+  admin: SupabaseClient, orgId: string, actorId: string, input: ProvisionInput,
+): Promise<ProvisionResult> {
+  const { email, displayName, role, departmentId } = input;
 
   if (!email?.trim() || !displayName?.trim() || !role || !INVITABLE_ROLES.has(role)) {
-    return NextResponse.json(
-      { error: "Need email, displayName, and role ∈ {enterprise_admin, client}." },
-      { status: 400 },
-    );
+    return { ok: false, status: 400, error: "Need email, displayName, and role ∈ {enterprise_admin, client}." };
   }
 
   // Validate department membership before any email goes out — must
@@ -139,16 +133,10 @@ export async function POST(request: Request) {
       .maybeSingle();
     const d = dept as { id: string; enterprise_id: string; status: string; name: string; department_code: string } | null;
     if (!d || d.enterprise_id !== orgId) {
-      return NextResponse.json(
-        { error: "Department doesn't belong to this organization." },
-        { status: 400 },
-      );
+      return { ok: false, status: 400, error: "Department doesn't belong to this organization." };
     }
     if (d.status !== "active") {
-      return NextResponse.json(
-        { error: "Department is suspended — reactivate it before adding members." },
-        { status: 400 },
-      );
+      return { ok: false, status: 400, error: "Department is suspended — reactivate it before adding members." };
     }
     resolvedDepartmentId = d.id;
     departmentCode = d.department_code;
@@ -177,10 +165,7 @@ export async function POST(request: Request) {
       .maybeSingle();
     const otherOrg = (prior as { organization_id: string | null } | null)?.organization_id;
     if (otherOrg && otherOrg !== orgId) {
-      return NextResponse.json(
-        { error: "This user already belongs to another organization. Ask a super admin to release them first." },
-        { status: 409 },
-      );
+      return { ok: false, status: 409, error: "This user already belongs to another organization. Ask a super admin to release them first." };
     }
   }
 
@@ -201,7 +186,7 @@ export async function POST(request: Request) {
       organization_id: orgId,
       org_name:        org?.name ?? "",
       enterprise_code: org?.enterprise_code ?? "",
-      invited_by:      actor.id,
+      invited_by:      actorId,
       ...(resolvedDepartmentId ? {
         department_id:   resolvedDepartmentId,
         department_code: departmentCode,
@@ -210,7 +195,7 @@ export async function POST(request: Request) {
     },
   });
   if (!invite.ok) {
-    return NextResponse.json({ error: invite.error }, { status: 400 });
+    return { ok: false, status: 400, error: invite.error ?? "Invite failed." };
   }
 
   let userId = invite.userId ?? existing0?.id ?? null;
@@ -221,10 +206,7 @@ export async function POST(request: Request) {
     )?.id ?? null;
   }
   if (!userId) {
-    return NextResponse.json(
-      { error: "Member invited but auth row not yet visible — try again." },
-      { status: 500 },
-    );
+    return { ok: false, status: 500, error: "Member invited but auth row not yet visible — try again." };
   }
 
   // Resolve role_id for the assigned role.
@@ -235,7 +217,7 @@ export async function POST(request: Request) {
     .maybeSingle();
   const assignedRoleId = (roleRow as { id: string } | null)?.id;
   if (!assignedRoleId) {
-    return NextResponse.json({ error: `Unknown role: ${role}` }, { status: 500 });
+    return { ok: false, status: 500, error: `Unknown role: ${role}` };
   }
 
   // Profile upsert: bind to this org, preserve existing primary_role +
@@ -267,7 +249,7 @@ export async function POST(request: Request) {
     .from("profiles")
     .upsert(profileUpdate, { onConflict: "id" });
   if (profileErr) {
-    return NextResponse.json({ error: profileErr.message }, { status: 500 });
+    return { ok: false, status: 500, error: profileErr.message };
   }
 
   const mode = invite.mode === "invited" ? "invited" : "attached_existing";
@@ -282,22 +264,67 @@ export async function POST(request: Request) {
     if (mode === "invited") {
       await admin.auth.admin.deleteUser(userId).catch(() => {});
     }
-    return NextResponse.json({ error: roleErr.message }, { status: 500 });
+    return { ok: false, status: 500, error: roleErr.message };
   }
 
   console.log(
     `[enterprise/users] org=${orgId} ${mode} ${trimmedEmail} as ${role}${resolvedDepartmentId ? ` (dept ${resolvedDepartmentId})` : ""}`,
   );
 
+  return { ok: true, userId, role, departmentId: resolvedDepartmentId, mode };
+}
+
+export async function POST(request: Request) {
+  const gate = await requireEnterpriseAdmin();
+  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  const { admin, orgId, user: actor } = gate;
+
+  const body = (await request.json().catch(() => ({}))) as
+    & ProvisionInput
+    & { recipients?: Array<{ email?: string; name?: string; displayName?: string; role?: string; departmentId?: string }> };
+
+  // Record a company-scoped invite row so the shared status table tracks it.
+  const track = async (email: string, name: string, role: string, departmentId: string | null) => {
+    await recordInvite(admin, {
+      email, name, role,
+      scopeType: "company", scopeId: orgId,
+      departmentId, invitedBy: actor.id,
+    }).catch(() => {});
+  };
+
+  // Bulk path — shared InviteFlow posts { recipients: [...] }.
+  if (Array.isArray(body.recipients)) {
+    const recipients = body.recipients.filter((r) => r.email && r.email.includes("@"));
+    if (recipients.length === 0) return NextResponse.json({ error: "No valid recipients." }, { status: 400 });
+    if (recipients.length > 500) return NextResponse.json({ error: "Max 500 recipients per batch." }, { status: 400 });
+
+    const results: Array<{ email: string; ok: boolean; error?: string }> = [];
+    for (const rec of recipients) {
+      const email = rec.email!.trim().toLowerCase();
+      const name = (rec.displayName ?? rec.name ?? email.split("@")[0]).trim();
+      const role = rec.role || ROLE.client;
+      const res = await provisionMember(admin, orgId, actor.id, {
+        email, displayName: name, role, departmentId: rec.departmentId,
+      });
+      if (res.ok) { await track(email, name, role, res.departmentId); results.push({ email, ok: true }); }
+      else results.push({ email, ok: false, error: res.error });
+    }
+    return NextResponse.json({ sent: results.filter((r) => r.ok).length, total: recipients.length, results });
+  }
+
+  // Legacy single path — { email, displayName, role, departmentId }.
+  const res = await provisionMember(admin, orgId, actor.id, body);
+  if (!res.ok) return NextResponse.json({ error: res.error }, { status: res.status });
+  await track(body.email!.trim().toLowerCase(), body.displayName!.trim(), res.role, res.departmentId);
   return NextResponse.json({
     user: {
-      id:           userId,
-      email:        trimmedEmail,
-      displayName:  trimmedName,
-      role,
-      departmentId: resolvedDepartmentId,
+      id:           res.userId,
+      email:        body.email!.trim().toLowerCase(),
+      displayName:  body.displayName!.trim(),
+      role:         res.role,
+      departmentId: res.departmentId,
     },
-    invited:          mode === "invited",
-    attachedExisting: mode === "attached_existing",
+    invited:          res.mode === "invited",
+    attachedExisting: res.mode === "attached_existing",
   });
 }

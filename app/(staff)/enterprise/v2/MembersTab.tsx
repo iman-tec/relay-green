@@ -7,8 +7,10 @@
  */
 
 import { useState } from "react";
-import { UserPlus, Mail } from "lucide-react";
-import { Button, Input, Modal, StatusBadge, Avatar, EmptyState } from "@/app/_components/ui";
+import { UserPlus } from "lucide-react";
+import { Button, StatusBadge, Avatar, EmptyState } from "@/app/_components/ui";
+import { InviteFlow } from "@/app/_components/invite/InviteFlow";
+import { InviteStatusTable } from "@/app/_components/invite/InviteStatusTable";
 import { useApiData, num, TabBody, LoadingState, ErrorState } from "./_shared";
 
 type Member = {
@@ -19,38 +21,13 @@ type Member = {
 
 const ROLE_OPTIONS = [
   { value: "client", label: "Member" },
-  { value: "department_admin", label: "Department manager" },
   { value: "enterprise_admin", label: "Enterprise admin" },
 ];
 
 export function MembersTab() {
   const { data, loading, error, reload } = useApiData<{ members: Member[] }>("/api/enterprise/users?scope=users");
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [email, setEmail] = useState("");
-  const [name, setName] = useState("");
-  const [role, setRole] = useState("client");
-  const [busy, setBusy] = useState(false);
-  const [inviteErr, setInviteErr] = useState<string | null>(null);
-
-  const invite = async () => {
-    if (!email.trim() || !name.trim()) { setInviteErr("Name and email are required."); return; }
-    setBusy(true); setInviteErr(null);
-    try {
-      const res = await fetch("/api/enterprise/users", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), displayName: name.trim(), role }),
-      });
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) throw new Error(body.error || "Invite failed");
-      setInviteOpen(false); setEmail(""); setName(""); setRole("client");
-      reload();
-    } catch (e) {
-      setInviteErr(e instanceof Error ? e.message : "Invite failed");
-    } finally {
-      setBusy(false);
-    }
-  };
+  const [inviteKey, setInviteKey] = useState(0);
 
   const members = data?.members ?? [];
 
@@ -111,35 +88,20 @@ export function MembersTab() {
         </div>
       )}
 
-      <Modal
+      <section className="mt-8">
+        <h2 className="mb-3 font-serif text-lg font-medium" style={{ color: "var(--text)" }}>Invitations</h2>
+        <InviteStatusTable reloadKey={inviteKey} />
+      </section>
+
+      <InviteFlow
         open={inviteOpen}
         onClose={() => setInviteOpen(false)}
-        title="Invite a member"
-        description="They'll get an email to set up their account."
-        footer={
-          <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setInviteOpen(false)} disabled={busy}>Cancel</Button>
-            <Button onClick={invite} loading={busy} iconLeft={<Mail size={14} />}>Send invite</Button>
-          </div>
-        }
-      >
-        <div className="flex flex-col gap-3">
-          <Input label="Full name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Jane Doe" />
-          <Input label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jane@company.com" />
-          <label className="flex flex-col gap-1.5 text-sm" style={{ color: "var(--text)" }}>
-            Role
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              className="h-11 rounded-lg border px-3"
-              style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }}
-            >
-              {ROLE_OPTIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-            </select>
-          </label>
-          {inviteErr && <p className="text-xs" style={{ color: "var(--risk)" }}>{inviteErr}</p>}
-        </div>
-      </Modal>
+        variant="members"
+        endpoint="/api/enterprise/users"
+        title="Invite members"
+        roles={ROLE_OPTIONS}
+        onSent={() => { reload(); setInviteKey((k) => k + 1); }}
+      />
     </TabBody>
   );
 }

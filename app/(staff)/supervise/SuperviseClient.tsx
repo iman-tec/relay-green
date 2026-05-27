@@ -31,6 +31,7 @@ import {
   type StatusTone,
 } from "@/app/_components/ui";
 import { MatchingPanel } from "./MatchingPanel";
+import { RosterPanel } from "./RosterPanel";
 import { SupervisorAvailabilityToggle } from "@/app/_components/SupervisorAvailabilityToggle";
 import { MatchingActions } from "@/app/_components/MatchingActions";
 
@@ -96,7 +97,7 @@ function engineerLabel(s: { agent_name: string | null; engineerRealName?: string
 // (most conversations happen on Zoom voice, not chat).
 const MIN_MESSAGES_FOR_AI = 2;
 
-type Tab = "all" | "waiting" | "live" | "past" | "matching";
+type Tab = "all" | "waiting" | "live" | "past" | "team" | "matching";
 
 // Per-page selector — shared by all three panels (All, Active, Past). Lifted
 // to the parent so changing "20 / page" once stays applied as you tab around.
@@ -388,9 +389,11 @@ export function SuperviseClient() {
             waiting:  waitingSessions.length,
             live:     liveSessions.length,
             past:     pastSessions.length,
+            team:     0,
             matching: 0,
           }}
           showMatching={scope.kind === "unscoped" || (scope.kind === "pod" && !!scope.podId)}
+          showTeam={scope.kind === "pod" && !!scope.podId}
         />
 
         {loading ? (
@@ -660,14 +663,20 @@ function Tabs({
   setTab,
   counts,
   showMatching,
+  showTeam,
 }: {
   tab: Tab;
   setTab: (t: Tab) => void;
   counts: Record<Tab, number>;
   showMatching: boolean;
+  showTeam: boolean;
 }) {
   const base = ["all", "waiting", "live", "past"] as const;
-  const visible: readonly Tab[] = showMatching ? [...base, "matching"] : base;
+  const visible: readonly Tab[] = [
+    ...base,
+    ...(showTeam ? (["team"] as const) : []),
+    ...(showMatching ? (["matching"] as const) : []),
+  ];
   return (
     <div
       role="tablist"
@@ -676,7 +685,7 @@ function Tabs({
     >
       {visible.map((t) => {
         const active = t === tab;
-        const showCount = t !== "matching";
+        const showCount = t !== "matching" && t !== "team";
         return (
           <button
             key={t}
@@ -728,6 +737,9 @@ function TabPanel({
   setPerPage: (n: PageSize) => void;
   matchingGlobal: boolean;
 }) {
+  if (tab === "team") {
+    return <RosterPanel />;
+  }
   if (tab === "matching") {
     return matchingGlobal
       ? <MatchingPanel endpoint="/api/admin/matching" scope="global" />
