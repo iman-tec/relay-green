@@ -616,6 +616,8 @@ function Sidebar({
             </div>
           </div>
         </div>
+        {/* Escalation context for this session (raised / resolved). */}
+        <SessionEscalationFlag sessionId={session.id} />
         {/* Engineers can raise a hand to their supervisor mid-call. */}
         {!isSupervisor && <EscalateButton sessionId={session.id} />}
         {/* AI assistant — available to the engineer on call and to supervisors
@@ -625,6 +627,38 @@ function Sidebar({
         </div>
       </div>
     </aside>
+  );
+}
+
+// ── G3: this session's escalation context (banner on the session view) ──────
+function SessionEscalationFlag({ sessionId }: { sessionId: string }) {
+  const [esc, setEsc] = useState<{ reason: string; status: string; note: string | null; resolution_note: string | null } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const { data } = await createClient()
+        .from("session_escalations")
+        .select("reason, status, note, resolution_note")
+        .eq("session_id", sessionId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (alive) setEsc((data as { reason: string; status: string; note: string | null; resolution_note: string | null } | null) ?? null);
+    })();
+    return () => { alive = false; };
+  }, [sessionId]);
+  if (!esc) return null;
+  const open = esc.status === "open";
+  const tone = open ? "var(--risk)" : "var(--text-muted)";
+  return (
+    <div className="mt-1 rounded-lg border px-2.5 py-2" style={{ borderColor: tone, background: open ? "color-mix(in srgb, var(--risk) 8%, transparent)" : "var(--surface)" }}>
+      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide" style={{ color: tone }}>
+        <LifeBuoy size={12} /> Escalation · {esc.status}
+      </div>
+      <div className="mt-0.5 text-[12px]" style={{ color: "var(--text)" }}>{esc.reason}</div>
+      {esc.note && <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>{esc.note}</div>}
+      {esc.resolution_note && <div className="mt-0.5 text-[11px]" style={{ color: "var(--text-faint)" }}>↳ {esc.resolution_note}</div>}
+    </div>
   );
 }
 

@@ -217,7 +217,10 @@ type Detail = {
   engineer: { totals: { sessions30d: number; buildMinutes: number; avgDurationMin: number }; escalations30d: number; escalationRate: number };
   recentSessions: Array<{ id: string; guestName: string | null; status: string; durationMinutes: number | null; createdAt: string; endedAt: string | null; projectName: string | null }>;
   escalations: Array<{ id: string; reason: string; note: string | null; status: string; resolutionNote: string | null; createdAt: string; resolvedAt: string | null }>;
+  availability: { weekdays: number[]; holidays: { date: string; label: string | null; kind: string }[]; upcomingBookings: string[] };
 };
+
+const DOW_SHORT = ["S", "M", "T", "W", "T", "F", "S"];
 
 function EngineerCard({ engineer: e }: { engineer: Engineer }) {
   const router = useRouter();
@@ -320,6 +323,26 @@ function DrillIn({ detail }: { detail: Detail }) {
             {rate}<span className="ml-0.5 text-[10px] font-normal" style={{ color: "var(--text-faint)" }}>/10</span>
           </div>
         </div>
+      </div>
+
+      {/* B3 — availability (weekly pattern + holidays + upcoming bookings) */}
+      <div>
+        <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Availability</h4>
+        <div className="flex items-center gap-1.5">
+          {DOW_SHORT.map((d, i) => {
+            const on = detail.availability.weekdays.includes(i);
+            return <span key={i} className="inline-flex size-6 items-center justify-center rounded-md text-[11px] font-medium"
+              style={{ background: on ? "var(--primary-tint)" : "transparent", color: on ? "var(--primary-hover)" : "var(--text-faint)", border: `1px solid ${on ? "var(--primary)" : "var(--border)"}` }}>{d}</span>;
+          })}
+          {detail.availability.upcomingBookings.length > 0 && (
+            <span className="ml-2 text-[11px]" style={{ color: "var(--text-muted)" }}>· {detail.availability.upcomingBookings.length} booking{detail.availability.upcomingBookings.length === 1 ? "" : "s"} (14d)</span>
+          )}
+        </div>
+        {detail.availability.holidays.length > 0 && (
+          <div className="mt-1.5 text-[11px]" style={{ color: "var(--text-faint)" }}>
+            Off: {detail.availability.holidays.slice(0, 4).map((h) => new Date(h.date + "T00:00:00Z").toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" })).join(", ")}
+          </div>
+        )}
       </div>
 
       {/* D3 — escalation history */}

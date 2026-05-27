@@ -46,7 +46,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (!membership) return NextResponse.json({ error: "not_in_pod" }, { status: 403 });
 
   const since30 = new Date(Date.now() - 30 * 86_400_000).toISOString();
-  const [{ data: profile }, { data: recent }, { data: kpiRows }, { data: escRows }] = await Promise.all([
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const next14 = new Date(Date.now() + 14 * 86_400_000).toISOString();
+  const [{ data: profile }, { data: recent }, { data: kpiRows }, { data: escRows }, { data: winRows }, { data: holRows }, { data: bookRows }] = await Promise.all([
     admin.from("engineer_profiles").select("presence_state, is_available, updated_at").eq("user_id", engineerId).maybeSingle(),
     admin
       .from("guest_calls")
@@ -65,6 +67,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       .eq("engineer_user_id", engineerId)
       .order("created_at", { ascending: false })
       .limit(20),
+    admin.from("engineer_availability_windows").select("weekday").eq("engineer_user_id", engineerId),
+    admin.from("engineer_holidays").select("holiday_date, label, kind").eq("engineer_user_id", engineerId).gte("holiday_date", todayStr).order("holiday_date", { ascending: true }).limit(10),
+    admin.from("engineer_bookings").select("slot_start, status").eq("engineer_user_id", engineerId).eq("status", "booked").gte("slot_start", new Date().toISOString()).lt("slot_start", next14).order("slot_start", { ascending: true }).limit(10),
   ]);
 
   const kpis = (kpiRows ?? []) as { duration_minutes: number | null; status: string; ended_at: string | null }[];
@@ -93,6 +98,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       id: e.id, reason: e.reason, note: e.note, status: e.status,
       resolutionNote: e.resolution_note, createdAt: e.created_at, resolvedAt: e.resolved_at,
     })),
+    availability: {
+      weekdays: [...new Set(((winRows ?? []) as { weekday: number }[]).map((w) => w.weekday))].sort(),
+      holidays: ((holRows ?? []) as { holiday_date: string; label: string | null; kind: string }[]).map((h) => ({ date: h.holiday_date, label: h.label, kind: h.kind })),
+      upcomingBookings: ((bookRows ?? []) as { slot_start: string }[]).map((b) => b.slot_start),
+    },
     recentSessions: (recent ?? []).map((r: { id: string; guest_name: string | null; status: string; duration_minutes: number | null; created_at: string; ended_at: string | null; project_name: string | null }) => ({
       id: r.id,
       guestName: r.guest_name,
