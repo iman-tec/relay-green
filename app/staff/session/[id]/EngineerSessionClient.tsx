@@ -34,6 +34,7 @@ import { EditableSummary } from "@/app/_components/EditableSummary";
 import { createClient } from "@/lib/supabase/browser";
 import { useEngineerSession } from "@/lib/relay/useEngineerSession";
 import { useIsSupervisor, isSupervisorOnlyMessage } from "@/lib/relay/useIsSupervisor";
+import { EngineerAiAsk } from "@/app/_components/EngineerAiAsk";
 import { useSessionTimer } from "@/lib/relay/useSessionTimer";
 import { humanState } from "@/lib/relay/session-status";
 import type { GuestCall, GuestMessage, SessionStatus, Urgency } from "@/lib/supabase/types";
@@ -617,6 +618,11 @@ function Sidebar({
         </div>
         {/* Engineers can raise a hand to their supervisor mid-call. */}
         {!isSupervisor && <EscalateButton sessionId={session.id} />}
+        {/* AI assistant — available to the engineer on call and to supervisors
+            monitoring (read-only viewers still get the aid). */}
+        <div className="mt-2">
+          <EngineerAiAsk compact contextLabel="this session" placeholder="Ask the assistant…" />
+        </div>
       </div>
     </aside>
   );

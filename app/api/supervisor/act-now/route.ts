@@ -109,17 +109,46 @@ export async function GET() {
   const custBySession = new Map<string, string>();
   for (const s of (sess ?? []) as { id: string; guest_name: string | null }[]) if (s.guest_name) custBySession.set(s.id, s.guest_name);
 
+  // For each estimation request, find the customer's live session (if any) +
+  // its sentiment, so the dive-in can offer monitor mode + a temperature read.
+  const quoteCustomerIds = [...new Set(qs.map((q) => q.customer_user_id))];
+  const liveByCustomer = new Map<string, string>();
+  let liveSentiment = new Map<string, { score: number; summary: string; messageCount: number }>();
+  if (quoteCustomerIds.length) {
+    const { data: liveSess } = await admin
+      .from("guest_calls")
+      .select("id, customer_user_id, created_at")
+      .in("customer_user_id", quoteCustomerIds)
+      .in("status", ["assigned", "joining", "live", "grace"])
+      .order("created_at", { ascending: false });
+    for (const s of (liveSess ?? []) as { id: string; customer_user_id: string | null }[]) {
+      if (s.customer_user_id && !liveByCustomer.has(s.customer_user_id)) liveByCustomer.set(s.customer_user_id, s.id);
+    }
+    const liveIds = [...liveByCustomer.values()];
+    if (liveIds.length) {
+      const { data: h } = await admin
+        .from("latest_session_health").select("session_id, score, summary, message_count").in("session_id", liveIds);
+      liveSentiment = new Map((h ?? []).map((x: { session_id: string; score: number; summary: string; message_count: number }) =>
+        [x.session_id, { score: Number(x.score), summary: x.summary, messageCount: x.message_count }]));
+    }
+  }
+
   const now = Date.now();
   return NextResponse.json({
-    estimationRequests: qs.map((q) => ({
-      id: q.id,
-      kind: q.kind, // 'golive' | 'maintain'
-      customer: nameById.get(q.customer_user_id) ?? "Customer",
-      project: projById.get(q.project_id) ?? "Untitled project",
-      projectId: q.project_id,
-      comments: q.comments,
-      createdAt: q.created_at,
-    })),
+    estimationRequests: qs.map((q) => {
+      const liveSessionId = liveByCustomer.get(q.customer_user_id) ?? null;
+      return {
+        id: q.id,
+        kind: q.kind, // 'golive' | 'maintain'
+        customer: nameById.get(q.customer_user_id) ?? "Customer",
+        project: projById.get(q.project_id) ?? "Untitled project",
+        projectId: q.project_id,
+        comments: q.comments,
+        createdAt: q.created_at,
+        liveSessionId,
+        liveSentiment: liveSessionId ? liveSentiment.get(liveSessionId) ?? null : null,
+      };
+    }),
     callbackQueue: cs.map((c) => {
       const ageMs = now - new Date(c.created_at).getTime();
       return {

@@ -14,10 +14,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { Loader2, Rocket, Wrench, PhoneCall, AlertTriangle, Inbox, LifeBuoy, Eye, Check } from "lucide-react";
+import { Loader2, Rocket, Wrench, PhoneCall, AlertTriangle, Inbox, LifeBuoy, Eye, Check, X, FileText } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
+import { EngineerAiAsk } from "@/app/_components/EngineerAiAsk";
 
-type Estimation = { id: string; kind: "golive" | "maintain" | string; customer: string; project: string; projectId: string; comments: string | null; createdAt: string };
+type Sentiment = { score: number; summary: string; messageCount: number };
+type Estimation = { id: string; kind: "golive" | "maintain" | string; customer: string; project: string; projectId: string; comments: string | null; createdAt: string; liveSessionId: string | null; liveSentiment: Sentiment | null };
 type Callback = { id: string; customer: string; engineer: string; project: string | null; message: string | null; createdAt: string; slaBreached: boolean };
 type Escalation = { id: string; sessionId: string; engineer: string; customer: string; reason: string; note: string | null; createdAt: string };
 type Feed = { estimationRequests: Estimation[]; callbackQueue: Callback[]; escalations: Escalation[] };
@@ -53,6 +55,8 @@ export function ActNowRail() {
     return () => { if (pending) clearTimeout(pending); sb.removeChannel(ch); channelRef.current = null; clearInterval(fallback); };
   }, [refresh]);
 
+  const [diveIn, setDiveIn] = useState<Estimation | null>(null);
+
   const resolveEscalation = useCallback(async (id: string) => {
     const note = window.prompt("Resolution note (optional):") ?? "";
     await supabaseRef.current.rpc("resolve_escalation", { _id: id, _note: note });
@@ -73,7 +77,7 @@ export function ActNowRail() {
           <Section title="Estimation requests" count={feed.estimationRequests.length} accent="var(--primary)">
             {feed.estimationRequests.length === 0 ? (
               <Empty body="No go-live or maintenance estimates waiting." />
-            ) : feed.estimationRequests.map((q) => <EstimationRow key={q.id} q={q} />)}
+            ) : feed.estimationRequests.map((q) => <EstimationRow key={q.id} q={q} onAct={() => setDiveIn(q)} />)}
           </Section>
 
           {/* Callback queue */}
@@ -93,7 +97,123 @@ export function ActNowRail() {
           </Section>
         </>
       )}
+
+      {diveIn && <DiveInModal q={diveIn} onClose={() => setDiveIn(null)} onDone={() => { setDiveIn(null); void refresh(); }} />}
     </div>
+  );
+}
+
+// ── Job-3 dive-in: scope a live/maintain estimate, issue a proposal w/ T&C ──
+function DiveInModal({ q, onClose, onDone }: { q: Estimation; onClose: () => void; onDone: () => void }) {
+  const router = useRouter();
+  const supabase = useRef(createClient()).current;
+  const [amount, setAmount] = useState("");
+  const [notes, setNotes] = useState("");
+  const [termsUrl, setTermsUrl] = useState("/legal/terms-of-use");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const s = q.liveSentiment;
+  const tone = !s || s.messageCount < 2 ? null : s.score >= 0.3 ? "var(--ok)" : s.score > -0.3 ? "var(--warn)" : "var(--risk)";
+
+  const submit = async () => {
+    const cents = Math.round(parseFloat(amount) * 100);
+    if (!Number.isFinite(cents) || cents < 0) { setErr("Enter a valid amount."); return; }
+    setBusy(true); setErr(null);
+    try {
+      const { error } = await supabase.rpc("respond_project_quote_request", {
+        _id: q.id, _amount_cents: cents, _notes: notes.trim() || null, _terms_url: termsUrl.trim() || null,
+      });
+      if (error) throw new Error(error.message);
+      onDone();
+    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't send the proposal."); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 z-[60]" style={{ backgroundColor: "var(--scrim)" }} onClick={() => !busy && onClose()} />
+      <div role="dialog" aria-modal="true"
+        className="fixed left-1/2 top-1/2 z-[61] flex max-h-[88vh] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col gap-4 overflow-y-auto rounded-2xl border p-5 shadow-2xl"
+        style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}>
+        <div className="flex items-start gap-2">
+          {q.kind === "golive" ? <Rocket size={18} style={{ color: "var(--primary-hover)" }} /> : <Wrench size={18} style={{ color: "var(--primary-hover)" }} />}
+          <div className="min-w-0 flex-1">
+            <h2 className="text-[15px] font-semibold" style={{ color: "var(--text)" }}>
+              Scope {q.kind === "golive" ? "go-live" : "maintenance"} estimate
+            </h2>
+            <p className="text-xs" style={{ color: "var(--text-muted)" }}>{q.project} · {q.customer}</p>
+          </div>
+          <button type="button" onClick={() => !busy && onClose()} style={{ color: "var(--text-muted)" }}><X size={16} /></button>
+        </div>
+
+        {q.comments && (
+          <p className="rounded-lg border px-3 py-2 text-xs" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
+            “{q.comments}”
+          </p>
+        )}
+
+        {/* Live session temperature + monitor jump */}
+        {q.liveSessionId && (
+          <div className="flex items-center gap-2">
+            {tone && s ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px]"
+                style={{ borderColor: `color-mix(in srgb, ${tone} 35%, transparent)`, background: `color-mix(in srgb, ${tone} 10%, transparent)`, color: tone }}
+                title={s.summary}>
+                <span className="size-1.5 rounded-full" style={{ backgroundColor: tone }} />
+                {s.score >= 0.3 ? "Positive" : s.score > -0.3 ? "Neutral" : "Negative"}
+              </span>
+            ) : (
+              <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>Live session · sentiment warming up</span>
+            )}
+            <button type="button" onClick={() => router.push(`/staff/session/${q.liveSessionId}`)}
+              className="ml-auto inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium"
+              style={{ borderColor: "var(--border)", color: "var(--text)" }}>
+              <Eye size={11} /> Watch session
+            </button>
+          </div>
+        )}
+
+        {/* AI scoping assistant */}
+        <EngineerAiAsk
+          contextLabel={`${q.kind === "golive" ? "Go-live" : "Maintain"} · ${q.project}`}
+          placeholder="Ask the assistant to help scope this…"
+          compact
+          seed={[{ role: "user", content: `Context: a customer requested a ${q.kind === "golive" ? "go-live" : "maintenance"} estimate for project "${q.project}". Their note: ${q.comments || "(none)"}. Help me scope it.` }]}
+        />
+
+        {/* Proposal */}
+        <div className="flex flex-col gap-3 border-t pt-4" style={{ borderColor: "var(--border)" }}>
+          <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+            <FileText size={12} /> Proposal
+          </div>
+          <label className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
+            Amount (EUR)
+            <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" placeholder="2500"
+              className="h-10 rounded-lg border px-3 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
+          </label>
+          <label className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
+            Scope notes
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="What's included, timeline, assumptions…"
+              className="rounded-lg border p-2 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
+          </label>
+          <label className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
+            Terms &amp; Conditions link
+            <input value={termsUrl} onChange={(e) => setTermsUrl(e.target.value)}
+              className="h-10 rounded-lg border px-3 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
+          </label>
+          {err && <p className="text-[12px]" style={{ color: "var(--risk)" }}>{err}</p>}
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => !busy && onClose()} disabled={busy}
+              className="rounded-full px-3.5 py-1.5 text-[13px] font-medium" style={{ color: "var(--text-muted)" }}>Cancel</button>
+            <button type="button" onClick={() => void submit()} disabled={busy}
+              className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13px] font-semibold text-white" style={{ background: "var(--primary)" }}>
+              {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Send proposal
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -141,7 +261,7 @@ function Section({ title, count, accent, badge, children }: { title: string; cou
   );
 }
 
-function EstimationRow({ q }: { q: Estimation }) {
+function EstimationRow({ q, onAct }: { q: Estimation; onAct: () => void }) {
   const golive = q.kind === "golive";
   return (
     <div className="rounded-xl border p-3" style={{ borderColor: "var(--primary)", background: "color-mix(in srgb, var(--primary) 7%, transparent)" }}>
@@ -153,6 +273,11 @@ function EstimationRow({ q }: { q: Estimation }) {
       <div className="mt-1.5 truncate text-sm font-medium" style={{ color: "var(--text)" }}>{q.project}</div>
       <div className="truncate text-xs" style={{ color: "var(--text-muted)" }}>{q.customer}</div>
       {q.comments && <p className="mt-1.5 line-clamp-2 text-[11px]" style={{ color: "var(--text-faint)" }}>{q.comments}</p>}
+      <button type="button" onClick={onAct}
+        className="mt-2 inline-flex w-full items-center justify-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-semibold text-white"
+        style={{ background: "var(--primary)" }}>
+        Scope &amp; propose
+      </button>
     </div>
   );
 }
