@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Users, CheckCircle2, CircleDashed, Pencil, CalendarOff, X } from "lucide-react";
+import { Loader2, Users, CheckCircle2, CircleDashed, Pencil, CalendarOff, X, Inbox, Check, Ban } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 
 type Engineer = {
@@ -22,7 +22,7 @@ type Pod = { id: string; name: string };
 const PRESENCE_DOT: Record<string, string> = { online: "var(--ok)", busy: "var(--warn)", offline: "var(--text-faint)" };
 
 export function BenchTab() {
-  const [view, setView] = useState<"matrix" | "onboarding">("matrix");
+  const [view, setView] = useState<"matrix" | "onboarding" | "requests">("matrix");
   const [rows, setRows] = useState<Engineer[]>([]);
   const [pods, setPods] = useState<Pod[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,11 +57,11 @@ export function BenchTab() {
               <CalendarOff size={13} /> Set pod holiday
             </button>
             <div className="flex gap-1">
-              {(["matrix", "onboarding"] as const).map((v) => (
+              {(["matrix", "onboarding", "requests"] as const).map((v) => (
                 <button key={v} type="button" onClick={() => setView(v)}
                   className="rounded-full border px-3 py-1 text-xs font-medium capitalize transition-colors"
                   style={{ borderColor: view === v ? "var(--primary)" : "var(--border)", background: view === v ? "var(--primary-tint)" : "transparent", color: view === v ? "var(--primary-hover)" : "var(--text-muted)" }}>
-                  {v === "matrix" ? "Expertise matrix" : "Onboarding"}
+                  {v === "matrix" ? "Expertise matrix" : v === "onboarding" ? "Onboarding" : "Requests"}
                 </button>
               ))}
             </div>
@@ -76,8 +76,10 @@ export function BenchTab() {
           <p className="py-6 text-sm" style={{ color: "var(--text-muted)" }}>No engineers found.</p>
         ) : view === "matrix" ? (
           <Matrix rows={rows} onEdit={setEditing} />
-        ) : (
+        ) : view === "onboarding" ? (
           <Onboarding rows={rows} />
+        ) : (
+          <RequestsInbox />
         )}
       </div>
 
@@ -279,6 +281,64 @@ function Onboarding({ rows }: { rows: Engineer[] }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ── 6c: availability/leave relay inbox (super-admin) ───────────────────────
+type Req = { id: string; engineer: string; raisedBy: string; pod: string | null; kind: string; detail: string | null; createdAt: string };
+
+function RequestsInbox() {
+  const [rows, setRows] = useState<Req[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [acting, setActing] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/admin/availability-requests", { cache: "no-store" });
+      if (res.ok) setRows(((await res.json()) as { requests: Req[] }).requests ?? []);
+    } finally { setLoading(false); }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  const resolve = async (id: string, status: "approved" | "rejected" | "actioned") => {
+    setActing(id);
+    const note = status === "rejected" ? (window.prompt("Reason (optional):") ?? "") : "";
+    try { await createClient().rpc("resolve_availability_request", { _id: id, _status: status, _note: note }); await load(); }
+    finally { setActing(null); }
+  };
+
+  if (loading) return <div className="flex justify-center py-12"><Loader2 size={18} className="animate-spin" style={{ color: "var(--text-muted)" }} /></div>;
+  if (rows.length === 0) return (
+    <div className="flex items-center gap-2 rounded-2xl border border-dashed px-4 py-6 text-sm" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
+      <Inbox size={16} /> No open availability or leave requests.
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col gap-2">
+      {rows.map((r) => (
+        <div key={r.id} className="flex flex-col gap-2 rounded-2xl border p-4 sm:flex-row sm:items-center" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase" style={{ background: "var(--primary-tint)", color: "var(--primary-hover)" }}>{r.kind}</span>
+              <span className="truncate text-sm font-medium" style={{ color: "var(--text)" }}>{r.engineer}</span>
+              {r.pod && <span className="text-xs" style={{ color: "var(--text-muted)" }}>· {r.pod}</span>}
+            </div>
+            <div className="mt-0.5 text-xs" style={{ color: "var(--text-muted)" }}>raised by {r.raisedBy} · {new Date(r.createdAt).toLocaleDateString()}</div>
+            {r.detail && <p className="mt-1 text-[12px]" style={{ color: "var(--text-faint)" }}>{r.detail}</p>}
+          </div>
+          <div className="flex shrink-0 gap-1.5">
+            <button type="button" disabled={acting === r.id} onClick={() => resolve(r.id, "approved")}
+              className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[11px] font-semibold text-white" style={{ background: "var(--ok)" }}><Check size={12} /> Approve</button>
+            <button type="button" disabled={acting === r.id} onClick={() => resolve(r.id, "actioned")}
+              className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-[11px] font-medium" style={{ borderColor: "var(--border)", color: "var(--text)" }}>Actioned</button>
+            <button type="button" disabled={acting === r.id} onClick={() => resolve(r.id, "rejected")}
+              className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-[11px] font-medium" style={{ borderColor: "var(--border)", color: "var(--risk)" }}><Ban size={12} /> Reject</button>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
