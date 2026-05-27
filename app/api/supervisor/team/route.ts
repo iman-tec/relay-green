@@ -146,6 +146,33 @@ export async function GET() {
     healthBySession.set(h.session_id, { score: Number(h.score), summary: h.summary, messageCount: h.message_count });
   }
 
+  // Per-engineer go-live / maintain counts (E1/E2): distinct projects the
+  // engineer worked, bucketed by projects.contract_type.
+  const { data: engCalls } = await admin
+    .from("guest_calls").select("claimed_by, project_id").in("claimed_by", engineerIds).not("project_id", "is", null);
+  const projByEng = new Map<string, Set<string>>();
+  const allProjIds = new Set<string>();
+  for (const c of (engCalls ?? []) as { claimed_by: string | null; project_id: string | null }[]) {
+    if (!c.claimed_by || !c.project_id) continue;
+    if (!projByEng.has(c.claimed_by)) projByEng.set(c.claimed_by, new Set());
+    projByEng.get(c.claimed_by)!.add(c.project_id);
+    allProjIds.add(c.project_id);
+  }
+  const ctypeByProj = new Map<string, string>();
+  if (allProjIds.size) {
+    const { data: projTypes } = await admin.from("projects").select("id, contract_type").in("id", [...allProjIds]);
+    for (const p of (projTypes ?? []) as { id: string; contract_type: string }[]) ctypeByProj.set(p.id, p.contract_type);
+  }
+  const engagementByEng = new Map<string, { golive: number; maintain: number }>();
+  for (const [eng, pids] of projByEng) {
+    let golive = 0, maintain = 0;
+    for (const pid of pids) {
+      const ct = ctypeByProj.get(pid);
+      if (ct === "golive") golive++; else if (ct === "maintain") maintain++;
+    }
+    engagementByEng.set(eng, { golive, maintain });
+  }
+
   const lastByEng = new Map<string, (CallRow & { ended_at: string })>();
   for (const c of (pastCalls ?? []) as (CallRow & { ended_at: string })[]) {
     if (c.claimed_by && !lastByEng.has(c.claimed_by)) lastByEng.set(c.claimed_by, c);
@@ -156,6 +183,7 @@ export async function GET() {
     const last = lastByEng.get(p.id);
     const pres = presenceById.get(p.id);
     const kpi  = kpiByEng.get(p.id) ?? { buildMinutes: 0, sessions: 0 };
+    const eng  = engagementByEng.get(p.id) ?? { golive: 0, maintain: 0 };
     const sentiment = cur ? healthBySession.get(cur.id) ?? null : null;
     return {
       userId:          p.id,
@@ -170,6 +198,8 @@ export async function GET() {
       onCallSince:     cur?.assigned_at ?? cur?.created_at ?? null,
       buildMinutes:    kpi.buildMinutes,
       sessions30d:     kpi.sessions,
+      golive:          eng.golive,
+      maintain:        eng.maintain,
       liveSentiment:   sentiment,
       lastCustomer:    last?.guest_name ?? null,
       lastCallAt:      last?.ended_at ?? null,
