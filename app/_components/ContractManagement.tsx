@@ -17,6 +17,7 @@ import { FileText, Rocket, Wrench, X, Loader2, Printer, ExternalLink, CalendarCl
 import { createClient } from "@/lib/supabase/browser";
 import { useTheme } from "@/app/_components/ThemeProvider";
 import { buildStripeAppearance } from "@/lib/stripe/appearance";
+import { useOverlayDismiss } from "@/lib/relay/useOverlayDismiss";
 
 const STRIPE_PK = (typeof process !== "undefined" && process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) || "";
 let _sp: Promise<StripeJs | null> | null = null;
@@ -124,6 +125,7 @@ function BidViewer({ quote, projectName, onClose, onChanged }: { quote: Quote; p
   const [changes, setChanges] = useState(false);
   const [declining, setDeclining] = useState(false);
   const [committed, setCommitted] = useState(quote.status === "committed");
+  const dialogRef = useOverlayDismiss(onClose);
 
   // Mark the bid seen (clears the blinking dot) on open.
   useEffect(() => {
@@ -137,8 +139,8 @@ function BidViewer({ quote, projectName, onClose, onChanged }: { quote: Quote; p
 
   return (
     <>
-      <div className="fixed inset-0 z-[80]" style={{ backgroundColor: "var(--scrim)" }} onClick={() => !paying && onClose()} />
-      <div role="dialog" aria-modal="true" className="fixed left-1/2 top-1/2 z-[81] flex max-h-[90vh] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col gap-4 overflow-y-auto rounded-2xl border p-5 shadow-2xl"
+      <div className="fixed inset-0 z-[var(--z-modal)]" style={{ backgroundColor: "var(--scrim)" }} onClick={() => !paying && onClose()} />
+      <div ref={dialogRef} role="dialog" aria-modal="true" className="fixed left-1/2 top-1/2 z-[var(--z-modal)] flex max-h-[90vh] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col gap-4 overflow-y-auto rounded-2xl border p-5 shadow-2xl"
         style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}>
         <div className="flex items-start gap-2">
           {golive ? <Rocket size={18} style={{ color: "var(--primary)" }} /> : <Wrench size={18} style={{ color: "var(--primary)" }} />}

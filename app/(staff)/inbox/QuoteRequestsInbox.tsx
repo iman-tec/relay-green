@@ -13,6 +13,7 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import { Loader2, Rocket, Wrench, X, FileText, CalendarClock, Inbox, ChevronDown } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import { ProjectAIAssistant } from "@/app/_components/ProjectAIAssistant";
+import { useOverlayDismiss } from "@/lib/relay/useOverlayDismiss";
 
 type Req = {
   id: string; kind: "golive" | "maintain" | string; status: string;
@@ -101,6 +102,7 @@ function BidPrepModal({ req, onClose, onSent }: { req: Req; onClose: () => void;
   const [showAi, setShowAi] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const dialogRef = useOverlayDismiss(onClose);
 
   const send = async () => {
     const cents = Math.round(parseFloat(amount) * 100);
@@ -119,9 +121,9 @@ function BidPrepModal({ req, onClose, onSent }: { req: Req; onClose: () => void;
 
   return (
     <>
-      <div className="fixed inset-0 z-[60]" style={{ backgroundColor: "var(--scrim)" }} onClick={() => !busy && onClose()} />
-      <div role="dialog" aria-modal="true"
-        className="fixed left-1/2 top-1/2 z-[61] flex max-h-[90vh] w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 flex-col gap-4 overflow-y-auto rounded-2xl border p-5 shadow-2xl"
+      <div className="fixed inset-0 z-[var(--z-modal)]" style={{ backgroundColor: "var(--scrim)" }} onClick={() => !busy && onClose()} />
+      <div ref={dialogRef} role="dialog" aria-modal="true"
+        className="fixed left-1/2 top-1/2 z-[var(--z-modal)] flex max-h-[90vh] w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 flex-col gap-4 overflow-y-auto rounded-2xl border p-5 shadow-2xl"
         style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}>
         <div className="flex items-start gap-2">
           {req.kind === "golive" ? <Rocket size={18} style={{ color: "var(--primary-hover)" }} /> : <Wrench size={18} style={{ color: "var(--primary-hover)" }} />}

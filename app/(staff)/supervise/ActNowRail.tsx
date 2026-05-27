@@ -18,6 +18,7 @@ import { Loader2, Rocket, Wrench, PhoneCall, AlertTriangle, Inbox, LifeBuoy, Eye
 import { createClient } from "@/lib/supabase/browser";
 import { cn } from "@/app/_components/ui";
 import { ProjectAIAssistant } from "@/app/_components/ProjectAIAssistant";
+import { useOverlayDismiss } from "@/lib/relay/useOverlayDismiss";
 
 type Sentiment = { score: number; summary: string; messageCount: number };
 type Estimation = { id: string; kind: "golive" | "maintain" | string; status: string; customer: string; project: string; projectId: string; comments: string | null; amountCents: number | null; bidScope: string | null; bidTimeline: string | null; appointmentRequestedAt: string | null; appointmentNote: string | null; changeRequestNote: string | null; createdAt: string; liveSessionId: string | null; liveSentiment: Sentiment | null };
@@ -124,6 +125,7 @@ function ResolveEscalationModal({ esc, onClose, onDone }: { esc: Escalation; onC
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const dialogRef = useOverlayDismiss(onClose);
 
   const submit = async () => {
     setBusy(true); setErr(null);
@@ -137,7 +139,7 @@ function ResolveEscalationModal({ esc, onClose, onDone }: { esc: Escalation; onC
   return (
     <>
       <div className="fixed inset-0 z-[var(--z-modal)]" style={{ backgroundColor: "var(--scrim)" }} onClick={() => !busy && onClose()} />
-      <div role="dialog" aria-modal="true"
+      <div ref={dialogRef} role="dialog" aria-modal="true"
         className="fixed left-1/2 top-1/2 z-[var(--z-modal)] w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border p-5 shadow-2xl"
         style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}>
         <div className="mb-3 flex items-center gap-2">
@@ -177,6 +179,7 @@ function DiveInModal({ q, onClose, onDone }: { q: Estimation; onClose: () => voi
   const [showAi, setShowAi] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const dialogRef = useOverlayDismiss(onClose);
 
   const s = q.liveSentiment;
   const tone = !s || s.messageCount < 2 ? null : s.score >= 0.3 ? "var(--ok)" : s.score > -0.3 ? "var(--warn)" : "var(--risk)";
@@ -200,9 +203,9 @@ function DiveInModal({ q, onClose, onDone }: { q: Estimation; onClose: () => voi
 
   return (
     <>
-      <div className="fixed inset-0 z-[60]" style={{ backgroundColor: "var(--scrim)" }} onClick={() => !busy && onClose()} />
-      <div role="dialog" aria-modal="true"
-        className="fixed left-1/2 top-1/2 z-[61] flex max-h-[88vh] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col gap-4 overflow-y-auto rounded-2xl border p-5 shadow-2xl"
+      <div className="fixed inset-0 z-[var(--z-modal)]" style={{ backgroundColor: "var(--scrim)" }} onClick={() => !busy && onClose()} />
+      <div ref={dialogRef} role="dialog" aria-modal="true"
+        className="fixed left-1/2 top-1/2 z-[var(--z-modal)] flex max-h-[88vh] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col gap-4 overflow-y-auto rounded-2xl border p-5 shadow-2xl"
         style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}>
         <div className="flex items-start gap-2">
           {q.kind === "golive" ? <Rocket size={18} style={{ color: "var(--primary-hover)" }} /> : <Wrench size={18} style={{ color: "var(--primary-hover)" }} />}
