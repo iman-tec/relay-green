@@ -14,11 +14,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { Loader2, Rocket, Wrench, PhoneCall, AlertTriangle, Inbox, LifeBuoy, Eye, Check, X, FileText, Repeat } from "lucide-react";
+import { Loader2, Rocket, Wrench, PhoneCall, AlertTriangle, Inbox, LifeBuoy, Eye, Check, X, FileText, Repeat, CalendarClock } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
+import { ProjectAIAssistant } from "@/app/_components/ProjectAIAssistant";
 
 type Sentiment = { score: number; summary: string; messageCount: number };
-type Estimation = { id: string; kind: "golive" | "maintain" | string; customer: string; project: string; projectId: string; comments: string | null; createdAt: string; liveSessionId: string | null; liveSentiment: Sentiment | null };
+type Estimation = { id: string; kind: "golive" | "maintain" | string; status: string; customer: string; project: string; projectId: string; comments: string | null; amountCents: number | null; bidScope: string | null; bidTimeline: string | null; appointmentRequestedAt: string | null; appointmentNote: string | null; createdAt: string; liveSessionId: string | null; liveSentiment: Sentiment | null };
 type Callback = { id: string; customer: string; engineer: string; project: string | null; message: string | null; createdAt: string; slaBreached: boolean };
 type Escalation = { id: string; sessionId: string; engineer: string; customer: string; reason: string; note: string | null; createdAt: string };
 type Feed = { estimationRequests: Estimation[]; callbackQueue: Callback[]; escalations: Escalation[] };
@@ -121,26 +122,31 @@ export function ActNowRail() {
 function DiveInModal({ q, onClose, onDone }: { q: Estimation; onClose: () => void; onDone: () => void }) {
   const router = useRouter();
   const supabase = useRef(createClient()).current;
-  const [amount, setAmount] = useState("");
-  const [notes, setNotes] = useState("");
-  const [termsUrl, setTermsUrl] = useState("/legal/terms-of-use");
+  const [amount, setAmount] = useState(q.amountCents != null ? String(q.amountCents / 100) : "");
+  const [scope, setScope] = useState(q.bidScope ?? "");
+  const [timeline, setTimeline] = useState(q.bidTimeline ?? "");
+  const [validity, setValidity] = useState("30");
+  const [termsUrl, setTermsUrl] = useState("/legal/contracting-terms");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const s = q.liveSentiment;
   const tone = !s || s.messageCount < 2 ? null : s.score >= 0.3 ? "var(--ok)" : s.score > -0.3 ? "var(--warn)" : "var(--risk)";
+  const isQuoted = q.status === "quoted";
 
   const submit = async () => {
     const cents = Math.round(parseFloat(amount) * 100);
     if (!Number.isFinite(cents) || cents < 0) { setErr("Enter a valid amount."); return; }
     setBusy(true); setErr(null);
     try {
-      const { error } = await supabase.rpc("respond_project_quote_request", {
-        _id: q.id, _amount_cents: cents, _notes: notes.trim() || null, _terms_url: termsUrl.trim() || null,
+      // Same rich bid the engineer sends — supervisor reviews/adjusts here.
+      const { error } = await supabase.rpc("submit_project_bid", {
+        _id: q.id, _amount_cents: cents, _scope: scope.trim() || null, _timeline: timeline.trim() || null,
+        _validity_days: Number(validity) || 0, _terms_url: termsUrl.trim() || null,
       });
       if (error) throw new Error(error.message);
       onDone();
-    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't send the proposal."); }
+    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't send the bid."); }
     finally { setBusy(false); }
   };
 
@@ -188,25 +194,42 @@ function DiveInModal({ q, onClose, onDone }: { q: Estimation; onClose: () => voi
           </div>
         )}
 
-        {/* Scope using the project's AI history via the session monitor:
-            "Watch session" above opens the room where the project AI
-            assistant lives. */}
+        {/* Customer asked to talk before committing. */}
+        {q.appointmentRequestedAt && (
+          <div className="rounded-lg border px-3 py-2 text-xs" style={{ borderColor: "var(--primary)", background: "var(--primary-tint)", color: "var(--text)" }}>
+            <CalendarClock size={12} className="mr-1 inline" /> Customer requested an appointment{q.appointmentNote ? `: "${q.appointmentNote}"` : "."}
+          </div>
+        )}
 
-        {/* Proposal */}
+        {/* Review the project's AI history before scoping (engineer + supervisor). */}
+        <div>
+          <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Project history</div>
+          <ProjectAIAssistant projectId={q.projectId} />
+        </div>
+
+        {/* Bid — same one-page bid the engineer prepares. */}
         <div className="flex flex-col gap-3 border-t pt-4" style={{ borderColor: "var(--border)" }}>
           <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-            <FileText size={12} /> Proposal
+            <FileText size={12} /> {isQuoted ? "Bid (sent — adjust & resend)" : "Bid"}
           </div>
           <label className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
             Amount (EUR)
-            <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" placeholder="2500"
+            <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" placeholder="5000"
               className="h-10 rounded-lg border px-3 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
           </label>
           <label className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
-            Scope notes
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="What's included, timeline, assumptions…"
+            Scope (what's included)
+            <textarea value={scope} onChange={(e) => setScope(e.target.value)} rows={3}
               className="rounded-lg border p-2 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
           </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>Timeline
+              <input value={timeline} onChange={(e) => setTimeline(e.target.value)} placeholder="3–4 weeks" className="h-10 rounded-lg border px-3 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
+            </label>
+            <label className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>Valid for (days)
+              <input value={validity} onChange={(e) => setValidity(e.target.value)} inputMode="numeric" className="h-10 rounded-lg border px-3 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
+            </label>
+          </div>
           <label className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
             Terms &amp; Conditions link
             <input value={termsUrl} onChange={(e) => setTermsUrl(e.target.value)}
@@ -218,7 +241,7 @@ function DiveInModal({ q, onClose, onDone }: { q: Estimation; onClose: () => voi
               className="rounded-full px-3.5 py-1.5 text-[13px] font-medium" style={{ color: "var(--text-muted)" }}>Cancel</button>
             <button type="button" onClick={() => void submit()} disabled={busy}
               className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13px] font-semibold text-white" style={{ background: "var(--primary)" }}>
-              {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Send proposal
+              {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} {isQuoted ? "Update bid" : "Send bid"}
             </button>
           </div>
         </div>
@@ -278,15 +301,19 @@ function EstimationRow({ q, onAct }: { q: Estimation; onAct: () => void }) {
       <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--primary-hover)" }}>
         {golive ? <Rocket size={12} /> : <Wrench size={12} />}
         {golive ? "Go-live" : "Maintain"}
+        <span className="rounded px-1.5 py-0.5 text-[9px]" style={{ background: q.status === "pending" ? "color-mix(in srgb, var(--warn) 16%, transparent)" : "color-mix(in srgb, var(--ok) 16%, transparent)", color: q.status === "pending" ? "var(--warn)" : "var(--ok)" }}>
+          {q.status === "pending" ? "Needs bid" : "Bid sent"}
+        </span>
         <span className="ml-auto font-normal normal-case" style={{ color: "var(--text-muted)" }}>{fmtAgo(q.createdAt)}</span>
       </div>
       <div className="mt-1.5 truncate text-sm font-medium" style={{ color: "var(--text)" }}>{q.project}</div>
       <div className="truncate text-xs" style={{ color: "var(--text-muted)" }}>{q.customer}</div>
+      {q.appointmentRequestedAt && <div className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold" style={{ color: "var(--primary-hover)" }}><CalendarClock size={10} /> wants to talk</div>}
       {q.comments && <p className="mt-1.5 line-clamp-2 text-[11px]" style={{ color: "var(--text-faint)" }}>{q.comments}</p>}
       <button type="button" onClick={onAct}
         className="mt-2 inline-flex w-full items-center justify-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-semibold text-white"
         style={{ background: "var(--primary)" }}>
-        Scope &amp; propose
+        {q.status === "pending" ? "Review & bid" : "Review bid"}
       </button>
     </div>
   );
