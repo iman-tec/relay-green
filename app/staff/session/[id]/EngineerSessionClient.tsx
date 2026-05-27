@@ -618,6 +618,8 @@ function Sidebar({
         </div>
         {/* Escalation context for this session (raised / resolved). */}
         <SessionEscalationFlag sessionId={session.id} />
+        {/* Supervisors can search the whole project's chat history. */}
+        {isSupervisor && session.project_id && <ProjectChatSearch projectId={session.project_id} />}
         {/* Engineers can raise a hand to their supervisor mid-call. */}
         {!isSupervisor && <EscalateButton sessionId={session.id} />}
         {/* AI assistant — available to the engineer on call and to supervisors
@@ -627,6 +629,61 @@ function Sidebar({
         </div>
       </div>
     </aside>
+  );
+}
+
+// ── G2: per-project chat search (supervisor monitor) ───────────────────────
+function ProjectChatSearch({ projectId }: { projectId: string }) {
+  const router = useRouter();
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState<{ sessionId: string; senderName: string | null; senderKind: string; body: string; createdAt: string }[] | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const search = async () => {
+    if (q.trim().length < 2) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/supervisor/chat-search?projectId=${encodeURIComponent(projectId)}&q=${encodeURIComponent(q.trim())}`, { cache: "no-store" });
+      const j = (await res.json().catch(() => ({}))) as { results?: typeof results };
+      setResults(j.results ?? []);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="mt-1 rounded-lg border p-2" style={{ borderColor: "var(--border)" }}>
+      <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+        <BookOpen size={12} /> Search project chat
+      </div>
+      <div className="flex gap-1">
+        <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void search(); }}
+          placeholder="e.g. Stripe, deadline…" className="h-8 flex-1 rounded-md border px-2 text-[12px] outline-none"
+          style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
+        <button type="button" onClick={() => void search()} disabled={busy || q.trim().length < 2}
+          className="inline-flex size-8 items-center justify-center rounded-md text-white disabled:opacity-50" style={{ background: "var(--primary)" }} aria-label="Search">
+          {busy ? <Loader2 size={13} className="animate-spin" /> : <ChevronRight size={13} />}
+        </button>
+      </div>
+      {results && (
+        results.length === 0 ? (
+          <p className="mt-2 text-[11px]" style={{ color: "var(--text-muted)" }}>No matches.</p>
+        ) : (
+          <ul className="mt-2 flex max-h-48 flex-col gap-1 overflow-y-auto">
+            {results.map((r, i) => (
+              <li key={i}>
+                <button type="button" onClick={() => router.push(`/staff/session/${r.sessionId}`)}
+                  className="w-full rounded-md px-1.5 py-1 text-left text-[11px] transition-colors hover:bg-white/5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium" style={{ color: "var(--text)" }}>{r.senderName || r.senderKind}</span>
+                    <span style={{ color: "var(--text-faint)" }}>{new Date(r.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+                  </div>
+                  <div className="line-clamp-2" style={{ color: "var(--text-muted)" }}>{r.body}</div>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )
+      )}
+    </div>
   );
 }
 
