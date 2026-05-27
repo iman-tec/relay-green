@@ -32,6 +32,7 @@ import {
 } from "@/app/_components/ui";
 import { MatchingPanel } from "./MatchingPanel";
 import { RosterPanel } from "./RosterPanel";
+import { ActNowRail } from "./ActNowRail";
 import { SupervisorAvailabilityToggle } from "@/app/_components/SupervisorAvailabilityToggle";
 import { MatchingActions } from "@/app/_components/MatchingActions";
 
@@ -361,7 +362,14 @@ export function SuperviseClient() {
     <PagerSlotContext.Provider value={pagerSlot}>
     <div className="flex min-h-screen flex-col">
       <style>{WAITING_GLOW_CSS}</style>
-      <div className="mx-auto w-full max-w-screen-2xl flex-1 space-y-6 px-6 pt-8 pb-6">
+      <div className="mx-auto flex w-full max-w-screen-2xl flex-1 gap-6 px-6 pt-8 pb-6">
+        {/* Left rail — act-now queue (pod supervisors). Sticky + self-scrolling. */}
+        {scope.kind === "pod" && (
+          <aside className="hidden w-80 shrink-0 lg:block lg:sticky lg:top-8 lg:max-h-[calc(100vh-7rem)]">
+            <ActNowRail />
+          </aside>
+        )}
+        <div className="min-w-0 flex-1 space-y-6">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="font-serif text-3xl font-medium tracking-tight text-[var(--text)]">
@@ -411,6 +419,7 @@ export function SuperviseClient() {
             matchingGlobal={scope.kind === "unscoped"}
           />
         )}
+        </div>
       </div>
 
       {/* Sticky footer — session-health legend (left) + pager slot (right).
