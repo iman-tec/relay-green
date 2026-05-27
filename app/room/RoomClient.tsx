@@ -1380,12 +1380,12 @@ export function RoomClient() {
       {mobileSidebarOpen && (
         <>
           <div
-            className="fixed inset-0 z-40 md:hidden"
-            style={{ backgroundColor: "var(--scrim, rgba(0,0,0,0.55))" }}
+            className="fixed inset-0 z-[var(--z-drawer)] md:hidden"
+            style={{ backgroundColor: "var(--scrim)" }}
             onClick={() => setMobileSidebarOpen(false)}
           />
           <div
-            className="fixed inset-y-0 left-0 z-50 flex w-[min(85vw,320px)] flex-col shadow-2xl md:hidden"
+            className="fixed inset-y-0 left-0 z-[var(--z-drawer)] flex w-[min(85vw,320px)] flex-col shadow-2xl md:hidden"
             style={{ backgroundColor: "var(--surface)" }}
             onClickCapture={(e) => {
               // Close the drawer when the user taps any actionable
@@ -1616,12 +1616,12 @@ export function RoomClient() {
       {mobileChatOpen && (
         <>
           <div
-            className="fixed inset-0 z-40 md:hidden"
-            style={{ backgroundColor: "var(--scrim, rgba(0,0,0,0.55))" }}
+            className="fixed inset-0 z-[var(--z-drawer)] md:hidden"
+            style={{ backgroundColor: "var(--scrim)" }}
             onClick={() => setMobileChatOpen(false)}
           />
           <div
-            className="fixed inset-x-0 bottom-0 z-50 flex h-[85vh] flex-col rounded-t-2xl shadow-2xl md:hidden"
+            className="fixed inset-x-0 bottom-0 z-[var(--z-drawer)] flex h-[85vh] flex-col rounded-t-2xl shadow-2xl md:hidden"
             style={{ backgroundColor: "var(--surface)" }}
           >
             {/* Drag handle + close. The handle is decorative (it's
@@ -6273,8 +6273,8 @@ function ConnectFlowModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6"
-      style={{ backgroundColor: "rgba(0, 0, 0, 0.55)", backdropFilter: "blur(4px)" }}
+      className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center px-4 py-6"
+      style={{ backgroundColor: "var(--scrim)", backdropFilter: "blur(4px)" }}
       onClick={onClose}
     >
       <div
@@ -9151,7 +9151,7 @@ function ConnectingModal({
     // Pulsing green dot + headline + live countdown, tap to re-expand.
     return (
       <div
-        className="fixed inset-x-0 top-4 z-40 flex justify-center px-4"
+        className="fixed inset-x-0 top-4 z-[var(--z-toast)] flex justify-center px-4"
         aria-live="polite"
       >
         <button
@@ -9206,7 +9206,7 @@ function ConnectingModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center px-6"
+      className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center px-6"
       style={{ backgroundColor: "var(--scrim)", backdropFilter: "blur(4px)" }}
       onClick={(e) => {
         // Click-outside the card → minimize, do NOT cancel.
@@ -9371,8 +9371,8 @@ function EngineerAssignedModal({
 }) {
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center px-6"
-      style={{ backgroundColor: "rgba(0, 0, 0, 0.55)", backdropFilter: "blur(4px)" }}
+      className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center px-6"
+      style={{ backgroundColor: "var(--scrim)", backdropFilter: "blur(4px)" }}
     >
       <div
         className="relative w-full max-w-sm rounded-2xl border p-8 text-center shadow-xl"
@@ -9439,7 +9439,7 @@ function FullScreenLoader() {
 
 function ErrorToast({ message }: { message: string }) {
   return (
-    <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-md border px-4 py-2 text-sm shadow-lg"
+    <div className="fixed bottom-6 left-1/2 z-[var(--z-toast)] -translate-x-1/2 rounded-md border px-4 py-2 text-sm shadow-lg"
       style={{
         backgroundColor: "var(--surface)",
         borderColor: "color-mix(in srgb, var(--accent-red) 30%, transparent)",
@@ -9452,7 +9452,7 @@ function ErrorToast({ message }: { message: string }) {
 
 function SuccessToast({ message }: { message: string }) {
   return (
-    <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium shadow-lg"
+    <div className="fixed bottom-6 left-1/2 z-[var(--z-toast)] -translate-x-1/2 inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium shadow-lg"
       style={{
         backgroundColor: "var(--surface)",
         borderColor: BRAND_GREEN_BORDER,
