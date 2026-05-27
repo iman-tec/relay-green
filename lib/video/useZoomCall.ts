@@ -71,6 +71,10 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
   const clientRef = useRef<Awaited<ReturnType<typeof getVideoClient>> | null>(null);
   const joinedKeyRef = useRef<string | null>(null);
   const teardownRef = useRef<(() => void) | null>(null);
+  // Set to true once `leave()` has run so the unmount cleanup doesn't
+  // race a second `client.leave()` against the in-flight first one — the
+  // SDK occasionally wedges when two leaves overlap.
+  const leftRef = useRef(false);
 
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -158,6 +162,20 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
         client.on("active-share-change", onActiveShare);
         client.on("network-quality-change", onNetwork);
 
+        // Seed activeShareUserId from current room state — listeners above
+        // only catch FUTURE active-share-change events. If we joined while
+        // someone was already sharing, the SDK doesn't replay the event,
+        // so without this query the remote share never renders for us.
+        try {
+          const users = client.getAllUser();
+          const sharer = Array.isArray(users)
+            ? users.find((u: any) => u && (u.bShareOn || u.sharerOn))
+            : null;
+          if (sharer && typeof sharer.userId === "number") {
+            setActiveShareUserId(sharer.userId);
+          }
+        } catch (e) { console.warn("[useZoomCall] active-share probe", e); }
+
         teardownRef.current = () => {
           try {
             client.off("user-added", onUserUpdate);
@@ -181,12 +199,36 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
       cancelled = true;
       try { teardownRef.current?.(); } catch { /* ignore */ }
       teardownRef.current = null;
-      // Leave gracefully; the singleton survives so HMR reconnects fast.
-      const client = clientRef.current;
-      if (client) {
-        try { void client.leave(false); } catch { /* ignore */ }
+      // If explicit `leave()` already ran, the SDK is mid-leave or done —
+      // don't fire a second leave. The race wedges the SDK on rejoin.
+      if (!leftRef.current) {
+        const client = clientRef.current;
+        if (client) {
+          try { void client.leave(false); } catch { /* ignore */ }
+        }
+        // Unmount-without-explicit-leave path (nav away, tab close, parent
+        // unmounts CallSurface). Notify the server so the session row
+        // doesn't stay stuck in 'live' — without this, the next page load
+        // still shows "you are on a call". sendBeacon is unload-safe;
+        // functions.invoke isn't.
+        try {
+          const sb = supabaseRef.current;
+          const session = (sb as unknown as { auth?: { session?: () => any } }).auth;
+          // Best-effort: post to the function's invoke URL via beacon. The
+          // function reads session_id from the JSON body and tolerates
+          // unauth (relies on the row state). If beacon is unavailable
+          // (very old browsers) we fall back to a fire-and-forget invoke.
+          const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL ?? ""}/functions/v1/zoom-video-sdk-end`;
+          const body = JSON.stringify({ session_id: sessionId });
+          if (typeof navigator !== "undefined" && navigator.sendBeacon && url) {
+            navigator.sendBeacon(url, new Blob([body], { type: "application/json" }));
+          } else {
+            void sb.functions.invoke("zoom-video-sdk-end", { body: { session_id: sessionId } });
+          }
+        } catch (e) { console.warn("[useZoomCall] cleanup end-notify", e); }
       }
       joinedKeyRef.current = null;
+      leftRef.current = false;
     };
   }, [sessionId, role, userName, refresh]);
 
@@ -262,11 +304,23 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
       return r?.errorCode === 6003 && typeof r.reason === "string"
         && /Video element|HTMLVideoElement/i.test(r.reason);
     };
+    // The SDK sometimes RETURNS an error-shaped object instead of throwing.
+    // A real success resolves to undefined / a stream handle without an
+    // errorCode — anything carrying errorCode is a failure regardless of
+    // type. Only flip the UI to "sharing" after a confirmed success.
+    const isErrorReturn = (r: unknown): boolean => {
+      return !!r && typeof r === "object" && "errorCode" in (r as object);
+    };
     if (canvas) {
       try {
         const res = await ms.startShareScreen(canvas);
-        if (res && typeof res === "object" && looksLikeWrongType(res) && video) {
-          // SDK returned an error object (not threw); fall through.
+        if (isErrorReturn(res)) {
+          if (looksLikeWrongType(res) && video) {
+            // fall through to video retry
+          } else {
+            console.warn("[useZoomCall] startShareScreen (canvas) failed", res);
+            return;
+          }
         } else {
           onShareElementChange?.("canvas");
           return;
@@ -281,7 +335,11 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
     }
     if (video) {
       try {
-        await ms.startShareScreen(video as unknown as HTMLCanvasElement);
+        const res = await ms.startShareScreen(video as unknown as HTMLCanvasElement);
+        if (isErrorReturn(res)) {
+          console.warn("[useZoomCall] startShareScreen (video) failed", res);
+          return;
+        }
         onShareElementChange?.("video");
       } catch (e) { console.warn("[useZoomCall] startShareScreen (video)", e); }
     }
@@ -348,6 +406,10 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
   }, [activeShareUserId, shareCanvasRef, shareVideoRef, onShareElementChange]);
 
   const leave = useCallback(async (endForAll?: boolean) => {
+    // Mark first so the unmount cleanup (which runs after status="ended"
+    // flips the host's callOpen) skips its own client.leave() — two
+    // overlapping leaves wedge the SDK.
+    leftRef.current = true;
     const client = clientRef.current;
     if (client) { try { await client.leave(!!endForAll); } catch { /* may already be out */ } }
     // Always notify the server — the function uses caller role to decide
@@ -356,6 +418,10 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
     try {
       await supabaseRef.current.functions.invoke("zoom-video-sdk-end", { body: { session_id: sessionId } });
     } catch (e) { console.warn("[useZoomCall] zoom-video-sdk-end failed", e); }
+    // Reset the join guard so a fresh CallSurface mount can re-join the
+    // same session without the early-return at the top of the join effect
+    // silently blocking it.
+    joinedKeyRef.current = null;
     setStatus("ended");
   }, [sessionId]);
 
