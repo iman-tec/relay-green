@@ -20,9 +20,6 @@ import { Phone, X, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import type { GuestCall } from "@/lib/supabase/types";
 
-const BRAND_GREEN = "#3f5c2e";
-const CRIT_RED    = "#8b1a1a";
-
 type Offer = {
   id: string;
   intake_id: string;
@@ -167,8 +164,8 @@ export function EngineerIncomingMatch() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center px-6"
-      style={{ background: "rgba(20, 18, 14, 0.7)", backdropFilter: "blur(4px)" }}
+      className="fixed inset-0 z-[100] flex items-center justify-center px-6"
+      style={{ background: "var(--scrim)", backdropFilter: "blur(4px)" }}
     >
       <div
         className="w-full max-w-md rounded-2xl border p-6 shadow-2xl"
@@ -177,7 +174,7 @@ export function EngineerIncomingMatch() {
         <div className="flex items-center gap-3 pb-4">
           <div
             className="size-11 rounded-full inline-flex items-center justify-center"
-            style={{ background: "rgba(63, 92, 46, 0.18)", color: BRAND_GREEN }}
+            style={{ background: "var(--primary-tint)", color: "var(--primary-hover)" }}
           >
             <Phone className="size-5 animate-pulse" />
           </div>
@@ -212,7 +209,7 @@ export function EngineerIncomingMatch() {
             onClick={decline}
             disabled={busy}
             className="flex-1 rounded-full border px-4 py-3 text-sm font-semibold inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
-            style={{ borderColor: "var(--border)", color: CRIT_RED }}
+            style={{ borderColor: "var(--border)", color: "var(--risk)" }}
           >
             {busy ? <Loader2 className="size-4 animate-spin" /> : <X className="size-4" />}
             Decline
@@ -222,7 +219,7 @@ export function EngineerIncomingMatch() {
             onClick={accept}
             disabled={busy}
             className="flex-1 rounded-full px-4 py-3 text-sm font-semibold text-white inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
-            style={{ background: BRAND_GREEN }}
+            style={{ background: "var(--primary)" }}
           >
             {busy ? <Loader2 className="size-4 animate-spin" /> : <Phone className="size-4" />}
             Accept
