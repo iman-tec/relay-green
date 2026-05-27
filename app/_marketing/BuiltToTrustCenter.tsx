@@ -32,11 +32,11 @@ export function BuiltToTrustCenter() {
           lineHeight: 1.1,
           letterSpacing: "-0.02em",
           margin: "20px 0 12px",
-          color: "var(--cream)",
+          color: "var(--text-on-dark)",
         }}
       >
         First 10 min,{" "}
-        <em style={{ fontStyle: "italic", color: "var(--cream)" }}>on us</em>.
+        <em style={{ fontStyle: "italic", color: "var(--text-on-dark)" }}>on us</em>.
       </h3>
       <p
         style={{

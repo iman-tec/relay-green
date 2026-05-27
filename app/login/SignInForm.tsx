@@ -30,6 +30,7 @@ import { createClient } from "@/lib/supabase/browser";
 
 type Mode = "password" | "otp-email" | "otp-code";
 type Purpose = "first-time" | "forgot";
+type OAuthProvider = "github" | "google";
 
 const PURPOSE_COPY = {
   "first-time": {
@@ -70,14 +71,22 @@ export function SignInForm() {
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [oauthLoading, setOauthLoading] = useState<"github" | null>(null);
+  const [oauthLoading, setOauthLoading] = useState<OAuthProvider | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
   const passwordRef = useRef<HTMLInputElement>(null);
+
+  const switchToOtp = (p: Purpose) => {
+    setError(null);
+    setPwd("");
+    setPurpose(p);
+    setMode("otp-email");
+  };
 
   // ── OAuth (GitHub) ──────────────────────────────────────────────────
   // Redirects to the provider; on return the /auth/callback route exchanges
   // the code for a session and routes the user onward. The provider must be
   // enabled in the Supabase dashboard (Authentication → Providers).
-  const handleOAuth = async (provider: "github") => {
+  const handleOAuth = async (provider: OAuthProvider) => {
     setError(null);
     setOauthLoading(provider);
     try {
@@ -208,6 +217,8 @@ export function SignInForm() {
 
   // ── Password mode UI ───────────────────────────────────────────────
   if (mode === "password") {
+    const oauthBtn =
+      "inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm font-medium text-[var(--text)] transition-colors hover:border-[var(--border-strong)] hover:bg-[var(--surface-raised)] disabled:cursor-not-allowed disabled:opacity-60";
     return (
       <form onSubmit={handlePasswordSubmit} className="flex flex-col gap-4">
         <Input
@@ -223,14 +234,71 @@ export function SignInForm() {
         />
         <Input
           ref={passwordRef}
-          label="Password"
-          type="password"
-          autoComplete="current-password"
+          label={
+            <span className="flex w-full items-center justify-between gap-2">
+              <span>Password</span>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => switchToOtp("forgot")}
+                className="text-xs font-normal text-[var(--text-muted)] underline-offset-4 hover:underline hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Forgot password?
+              </button>
+            </span>
+          }
           required
+          requiredMark={false}
+          type={showPassword ? "text" : "password"}
+          autoComplete="current-password"
           disabled={loading}
           placeholder="Your password"
           value={password}
           onChange={(e) => setPwd(e.target.value)}
+          suffix={
+            <button
+              type="button"
+              tabIndex={-1}
+              onClick={() => setShowPassword((s) => !s)}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+              aria-pressed={showPassword}
+              className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-raised)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--primary)_45%,transparent)]"
+            >
+              {showPassword ? (
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                >
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-10-7-10-7a17.42 17.42 0 0 1 4.06-5.94" />
+                  <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 10 7 10 7a17.39 17.39 0 0 1-2.16 3.19" />
+                  <path d="m1 1 22 22" />
+                  <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+                </svg>
+              ) : (
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                >
+                  <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+              )}
+            </button>
+          }
         />
 
         {error && <Toast tone="risk">{error}</Toast>}
@@ -249,8 +317,34 @@ export function SignInForm() {
           <button
             type="button"
             disabled={loading || oauthLoading !== null}
+            onClick={() => void handleOAuth("google")}
+            className={oauthBtn}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden>
+              <path
+                fill="#4285F4"
+                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+              />
+              <path
+                fill="#34A853"
+                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.99.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+              />
+              <path
+                fill="#FBBC05"
+                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+              />
+              <path
+                fill="#EA4335"
+                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+              />
+            </svg>
+            {oauthLoading === "google" ? "Redirecting…" : "Continue with Google"}
+          </button>
+          <button
+            type="button"
+            disabled={loading || oauthLoading !== null}
             onClick={() => void handleOAuth("github")}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm font-medium text-[var(--text)] transition-colors hover:border-[var(--border-strong)] hover:bg-[var(--surface-raised)] disabled:cursor-not-allowed disabled:opacity-60"
+            className={oauthBtn}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
               <path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.54-3.88-1.54-.53-1.34-1.3-1.7-1.3-1.7-1.06-.72.08-.71.08-.71 1.17.08 1.79 1.2 1.79 1.2 1.04 1.79 2.73 1.27 3.4.97.1-.76.41-1.27.74-1.56-2.55-.29-5.23-1.27-5.23-5.67 0-1.25.45-2.27 1.19-3.07-.12-.29-.52-1.46.11-3.04 0 0 .97-.31 3.18 1.17a11 11 0 0 1 5.8 0c2.2-1.48 3.17-1.17 3.17-1.17.63 1.58.23 2.75.11 3.04.74.8 1.19 1.82 1.19 3.07 0 4.41-2.69 5.38-5.25 5.66.42.36.8 1.08.8 2.18v3.23c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z" />
@@ -259,30 +353,13 @@ export function SignInForm() {
           </button>
         </div>
 
-        <div className="flex items-center justify-between gap-3 text-xs">
+        <div className="flex items-center justify-center pt-1 text-xs">
           <button
             type="button"
-            onClick={() => {
-              setError(null);
-              setPwd("");
-              setPurpose("first-time");
-              setMode("otp-email");
-            }}
+            onClick={() => switchToOtp("first-time")}
             className="text-[var(--text-muted)] underline-offset-4 hover:underline hover:text-[var(--text)]"
           >
             First time signing in?
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setError(null);
-              setPwd("");
-              setPurpose("forgot");
-              setMode("otp-email");
-            }}
-            className="text-[var(--text-muted)] underline-offset-4 hover:underline hover:text-[var(--text)]"
-          >
-            Forgot password?
           </button>
         </div>
       </form>

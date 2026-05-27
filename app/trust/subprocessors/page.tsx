@@ -77,7 +77,7 @@ export default function TrustSubprocessorsPage() {
               fontSize: 12,
             }}
           >
-            Last reviewed: May 2026 · updated quarterly
+            Last reviewed: June 2026 · updated quarterly
           </p>
           {/* Wrapped in r-grid-table-scroll so the dense vendor
               matrix scrolls horizontally on phones rather than squeezing. */}
@@ -87,7 +87,7 @@ export default function TrustSubprocessorsPage() {
                 border: "1px solid #d2d2d7",
                 borderRadius: 8,
                 overflow: "hidden",
-                background: "#ffffff",
+                background: "var(--paper)",
                 minWidth: 640,
                 boxShadow: "0 22px 54px rgba(0, 0, 0, 0.05)",
               }}
@@ -97,7 +97,7 @@ export default function TrustSubprocessorsPage() {
                   display: "grid",
                   gridTemplateColumns: "1.4fr 2.4fr 1.2fr",
                   gap: 0,
-                  background: "#f5f5f7",
+                  background: "var(--cream-2)",
                   borderBottom: "1px solid #d2d2d7",
                   fontFamily: "var(--font-sans)",
                   fontSize: 11,

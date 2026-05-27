@@ -59,7 +59,7 @@ export default function TrustResponsibleDisclosurePage() {
               padding: "28px 28px",
               border: "1px solid #d2d2d7",
               borderRadius: "var(--radius)",
-              background: "#f5f5f7",
+              background: "var(--cream-2)",
               marginBottom: 16,
             }}
           >
@@ -96,7 +96,7 @@ export default function TrustResponsibleDisclosurePage() {
               padding: "28px 28px",
               border: "1px solid #d2d2d7",
               borderRadius: "var(--radius)",
-              background: "#f5f5f7",
+              background: "var(--cream-2)",
             }}
           >
             <p

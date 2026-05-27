@@ -92,7 +92,7 @@ export default function TrustPrivacyPage() {
               margin: 0,
               border: "1px solid var(--rule)",
               borderRadius: 8,
-              background: "#ffffff",
+              background: "var(--paper)",
               boxShadow: "0 22px 54px rgba(0, 0, 0, 0.05)",
             }}
           >
@@ -141,7 +141,7 @@ export default function TrustPrivacyPage() {
                   padding: "24px 24px",
                   border: "1px solid #d2d2d7",
                   borderRadius: 8,
-                  background: "#ffffff",
+                  background: "var(--paper)",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "space-between",

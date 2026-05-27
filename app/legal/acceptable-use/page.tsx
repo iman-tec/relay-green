@@ -47,7 +47,7 @@ export default function AcceptableUsePage() {
             <em>Acceptable Use Policy.</em>
           </h1>
           <p className="r-lede" style={{ marginTop: 24, maxWidth: "60ch" }}>
-            Last updated: May 2026
+            Last updated: June 2026
           </p>
         </div>
       </section>

@@ -19,7 +19,7 @@ export default function DownloadRelayDesktopPage() {
           display: "flex",
           alignItems: "center",
           padding: "112px 0",
-          background: "#ffffff",
+          background: "var(--paper)",
         }}
       >
         <div className="r-wrap" style={{ maxWidth: 920 }}>

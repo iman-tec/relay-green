@@ -69,12 +69,11 @@ depth.
 ## Company
 
 - [About / Governance](https://www.relay.green/company/about)
-- [Contact](https://www.relay.green/company/contact)
+- [Contact](https://www.relay.green/company/about#contact)
 
 ## Trust
 
 - [Trust center](https://www.relay.green/trust)
-- [Security](https://www.relay.green/trust/security)
 - [Privacy](https://www.relay.green/trust/privacy)
 - [Compliance](https://www.relay.green/trust/compliance)
 - [Data handling](https://www.relay.green/trust/data-handling)
@@ -88,7 +87,7 @@ depth.
 - [Terms (Consumer)](https://www.relay.green/legal/terms-consumer)
 - [Acceptable use](https://www.relay.green/legal/acceptable-use)
 - [DPA](https://www.relay.green/legal/dpa)
-- [Sub-processors](https://www.relay.green/legal/sub-processors)
+- [Sub-processors](https://www.relay.green/trust/subprocessors)
 - [Cookie notice](https://www.relay.green/legal/cookies)
 
 ## Optional

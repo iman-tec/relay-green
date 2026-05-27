@@ -1,11 +1,17 @@
 /*
- * Edge proxy — Supabase auth session refresh + route protection.
+ * Edge proxy — Supabase auth session refresh + route protection + geo-theme.
  *
- * Two jobs:
+ * Three jobs:
  *   1. Refresh the Supabase JWT on every request so the session stays alive
  *      (required by @supabase/ssr — without this the access token expires).
  *   2. Redirect clearly-unauthed traffic away from protected routes before
  *      it hits the React tree.
+ *   3. Detect the visitor's country (from Vercel edge headers / request.geo)
+ *      and write a `relay-theme-geo` cookie so the marketing site can auto-
+ *      select the right theme (Nordics/Middle East → Espresso, Benelux+DE →
+ *      Cloud KLM, NA/UK/AUS/SG → Moon, rest of world → Sun). Skipped when
+ *      the visitor has an explicit `relay-theme-user` cookie from the
+ *      manual theme switcher.
  *
  * Real authorization (role checks, RLS) happens server-side in route handlers
  * and RPCs, and client-side in useStaffGuard. This proxy is the fast edge layer.
@@ -15,6 +21,22 @@
 
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+
+// ISO 3166-1 alpha-2 country codes → theme id. Anything not listed falls
+// through to "sun" (default white/peach theme).
+const COUNTRY_TO_THEME: Record<string, "cream" | "dark" | "espresso" | "klm"> = {
+  // Espresso — Nordics + Middle East
+  SE: "espresso", NO: "espresso", DK: "espresso", FI: "espresso", IS: "espresso",
+  AE: "espresso", SA: "espresso", QA: "espresso", KW: "espresso", BH: "espresso",
+  OM: "espresso", IL: "espresso", JO: "espresso", LB: "espresso", EG: "espresso",
+  // Cloud (KLM) — Benelux + Germany
+  NL: "klm", BE: "klm", LU: "klm", DE: "klm",
+  // Moon — North America + UK + Australia + Singapore
+  US: "dark", CA: "dark", MX: "dark",
+  GB: "dark", IE: "dark",
+  AU: "dark", NZ: "dark",
+  SG: "dark",
+};
 
 // Routes split by which login surface they belong to. Staff routes bounce
 // unauthed traffic to /staff/login (the 8-digit-code experience); customer
@@ -90,6 +112,23 @@ export async function proxy(req: NextRequest) {
       url.pathname = isStaff ? STAFF_LOGIN : CUSTOMER_LOGIN;
       return NextResponse.redirect(url);
     }
+  }
+
+  // Geo-theme cookie — set on every response unless the visitor has an
+  // explicit user choice from the manual theme switcher. Short TTL so VPN /
+  // travel changes refresh within a day. Not httpOnly because the
+  // client-side ThemeSwitcher needs to read it on first paint.
+  if (!req.cookies.get("relay-theme-user")) {
+    const geoCountry =
+      (req as NextRequest & { geo?: { country?: string } }).geo?.country ?? "";
+    const headerCountry = req.headers.get("x-vercel-ip-country") ?? "";
+    const country = (geoCountry || headerCountry).toUpperCase();
+    const theme = COUNTRY_TO_THEME[country] ?? "cream";
+    res.cookies.set("relay-theme-geo", theme, {
+      path: "/",
+      maxAge: 60 * 60 * 24,
+      sameSite: "lax",
+    });
   }
 
   return res;

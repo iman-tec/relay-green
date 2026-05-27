@@ -369,7 +369,7 @@ export default function ForEnterprisePage() {
         className="r-enterprise-hero"
         style={{
           padding: "78px 0 64px",
-          background: "#ffffff",
+          background: "var(--paper)",
         }}
       >
         <div className="r-wrap" style={{ maxWidth: 1200, margin: "0 auto" }}>
@@ -508,8 +508,7 @@ export default function ForEnterprisePage() {
               <div
                 className="enterprise-card-surface"
                 style={{
-                  background:
-                    "linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(250,250,251,0.96) 100%)",
+                  background: "var(--paper)",
                   border: "1px solid var(--rule)",
                   borderRadius: 8,
                   padding: "28px 30px 12px",
@@ -593,7 +592,7 @@ export default function ForEnterprisePage() {
       <section
         style={{
           padding: "88px 0",
-          background: "linear-gradient(180deg, #f5f5f7 0%, #ffffff 100%)",
+          background: "var(--cream-2)",
           color: "var(--ink)",
         }}
       >
@@ -802,7 +801,7 @@ export default function ForEnterprisePage() {
               fontWeight: 400,
               lineHeight: 1.15,
               letterSpacing: "-0.02em",
-              color: "var(--cream)",
+              color: "var(--text-on-dark)",
               margin: "0 0 56px",
             }}
           >
@@ -898,7 +897,7 @@ export default function ForEnterprisePage() {
                 key={card.title}
                 className="enterprise-card-surface"
                 style={{
-                  background: "#ffffff",
+                  background: "var(--paper)",
                   border: "1px solid var(--rule)",
                   borderRadius: 8,
                   padding: 28,
@@ -912,7 +911,7 @@ export default function ForEnterprisePage() {
                     width: 32,
                     height: 32,
                     borderRadius: 8,
-                    background: "#ffffff",
+                    background: "var(--paper)",
                     border: "1px solid var(--rule)",
                     color: "var(--green-deep)",
                     display: "flex",
@@ -1026,7 +1025,7 @@ export default function ForEnterprisePage() {
                 fontWeight: 400,
                 lineHeight: 1.1,
                 letterSpacing: "-0.02em",
-                color: "var(--cream)",
+                color: "var(--text-on-dark)",
                 margin: 0,
               }}
             >
@@ -1126,7 +1125,7 @@ export default function ForEnterprisePage() {
       <section
         style={{
           padding: "88px 0",
-          background: "linear-gradient(180deg, #ffffff 0%, #f5f5f7 100%)",
+          background: "var(--cream-2)",
         }}
       >
         <div className="r-wrap" style={{ maxWidth: 1200, margin: "0 auto" }}>
@@ -1159,7 +1158,7 @@ export default function ForEnterprisePage() {
                 key={phase.id}
                 className="enterprise-card-surface"
                 style={{
-                  background: "#ffffff",
+                  background: "var(--paper)",
                   border: "1px solid var(--rule)",
                   borderRadius: 8,
                   padding: 30,
@@ -1176,7 +1175,7 @@ export default function ForEnterprisePage() {
                     textTransform: "uppercase",
                     color: "var(--ink-soft)",
                     padding: "4px 10px",
-                    background: "#f5f5f7",
+                    background: "var(--cream-3)",
                     border: "1px solid var(--rule)",
                     borderRadius: 6,
                     marginBottom: 18,
@@ -1254,7 +1253,7 @@ export default function ForEnterprisePage() {
       {/* CTA */}
       <section
         style={{
-          background: "#ffffff",
+          background: "var(--paper)",
           color: "var(--ink)",
           padding: "88px 0 96px",
           textAlign: "center",
@@ -1267,9 +1266,9 @@ export default function ForEnterprisePage() {
               maxWidth: 760,
               margin: "0 auto",
               padding: "44px 28px",
-              border: "1px solid #d2d2d7",
+              border: "1px solid var(--rule)",
               borderRadius: 8,
-              background: "#f5f5f7",
+              background: "var(--cream-2)",
             }}
           >
             <h2

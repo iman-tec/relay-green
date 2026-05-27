@@ -625,7 +625,9 @@ export function MarketingHome() {
                     alignItems: "center",
                     gap: 10,
                     padding: "6px 16px 6px 6px",
-                    background: "#ffffff",
+                    // Was hardcoded #ffffff — left chip white in dark themes
+                    // while text flipped LIGHT, making chip names invisible.
+                    background: "var(--paper)",
                     border: "1px solid var(--rule)",
                     borderRadius: 999,
                     fontSize: 14,
