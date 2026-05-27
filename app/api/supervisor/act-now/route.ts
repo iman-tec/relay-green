@@ -50,8 +50,9 @@ export async function GET() {
     podEngineerIds = (members ?? []).map((m: { user_id: string }) => m.user_id);
   }
 
-  // Pending estimation requests (golive/maintain) + pod callback queue.
-  const [{ data: quotes }, { data: callbacks }] = await Promise.all([
+  // Pending estimation requests (golive/maintain) + pod callback queue +
+  // open escalations raised by the pod's engineers.
+  const [{ data: quotes }, { data: callbacks }, { data: escalations }] = await Promise.all([
     admin
       .from("project_quote_requests")
       .select("id, kind, comments, status, created_at, project_id, customer_user_id")
@@ -67,27 +68,46 @@ export async function GET() {
           .order("created_at", { ascending: true })
           .limit(50)
       : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+    (podId || podEngineerIds.length)
+      ? admin
+          .from("session_escalations")
+          .select("id, session_id, engineer_user_id, reason, note, created_at, pod_id")
+          .eq("status", "open")
+          .or([
+            podId ? `pod_id.eq.${podId}` : "",
+            podEngineerIds.length ? `engineer_user_id.in.(${podEngineerIds.join(",")})` : "",
+          ].filter(Boolean).join(","))
+          .order("created_at", { ascending: true })
+          .limit(50)
+      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
   ]);
 
   type Q = { id: string; kind: string; comments: string | null; created_at: string; project_id: string; customer_user_id: string };
   type C = { id: string; customer_user_id: string; engineer_user_id: string; project_id: string | null; message: string | null; created_at: string };
+  type E = { id: string; session_id: string; engineer_user_id: string; reason: string; note: string | null; created_at: string };
   const qs = (quotes ?? []) as Q[];
   const cs = (callbacks ?? []) as C[];
+  const es = (escalations ?? []) as E[];
 
-  // Resolve names (profiles) + project names in two batched queries.
+  // Resolve names (profiles) + project names + escalation session customers.
   const userIds = new Set<string>();
   const projectIds = new Set<string>();
+  const sessionIds = new Set<string>();
   for (const q of qs) { userIds.add(q.customer_user_id); projectIds.add(q.project_id); }
   for (const c of cs) { userIds.add(c.customer_user_id); userIds.add(c.engineer_user_id); if (c.project_id) projectIds.add(c.project_id); }
+  for (const e of es) { userIds.add(e.engineer_user_id); sessionIds.add(e.session_id); }
 
-  const [{ data: profs }, { data: projs }] = await Promise.all([
+  const [{ data: profs }, { data: projs }, { data: sess }] = await Promise.all([
     userIds.size ? admin.from("profiles").select("id, full_name").in("id", [...userIds]) : Promise.resolve({ data: [] }),
     projectIds.size ? admin.from("projects").select("id, name").in("id", [...projectIds]) : Promise.resolve({ data: [] }),
+    sessionIds.size ? admin.from("guest_calls").select("id, guest_name").in("id", [...sessionIds]) : Promise.resolve({ data: [] }),
   ]);
   const nameById = new Map<string, string>();
   for (const p of (profs ?? []) as { id: string; full_name: string | null }[]) if (p.full_name) nameById.set(p.id, p.full_name);
   const projById = new Map<string, string>();
   for (const p of (projs ?? []) as { id: string; name: string | null }[]) if (p.name) projById.set(p.id, p.name);
+  const custBySession = new Map<string, string>();
+  for (const s of (sess ?? []) as { id: string; guest_name: string | null }[]) if (s.guest_name) custBySession.set(s.id, s.guest_name);
 
   const now = Date.now();
   return NextResponse.json({
@@ -112,5 +132,14 @@ export async function GET() {
         slaBreached: ageMs > SLA_BREACH_MS,
       };
     }),
+    escalations: es.map((e) => ({
+      id: e.id,
+      sessionId: e.session_id,
+      engineer: nameById.get(e.engineer_user_id) ?? "Engineer",
+      customer: custBySession.get(e.session_id) ?? "Customer",
+      reason: e.reason,
+      note: e.note,
+      createdAt: e.created_at,
+    })),
   });
 }

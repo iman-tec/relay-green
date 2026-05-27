@@ -12,16 +12,18 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { Loader2, Rocket, Wrench, PhoneCall, AlertTriangle, Inbox } from "lucide-react";
+import { Loader2, Rocket, Wrench, PhoneCall, AlertTriangle, Inbox, LifeBuoy, Eye, Check } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 
 type Estimation = { id: string; kind: "golive" | "maintain" | string; customer: string; project: string; projectId: string; comments: string | null; createdAt: string };
 type Callback = { id: string; customer: string; engineer: string; project: string | null; message: string | null; createdAt: string; slaBreached: boolean };
-type Feed = { estimationRequests: Estimation[]; callbackQueue: Callback[] };
+type Escalation = { id: string; sessionId: string; engineer: string; customer: string; reason: string; note: string | null; createdAt: string };
+type Feed = { estimationRequests: Estimation[]; callbackQueue: Callback[]; escalations: Escalation[] };
 
 export function ActNowRail() {
-  const [feed, setFeed] = useState<Feed>({ estimationRequests: [], callbackQueue: [] });
+  const [feed, setFeed] = useState<Feed>({ estimationRequests: [], callbackQueue: [], escalations: [] });
   const [loading, setLoading] = useState(true);
   const [, setTick] = useState(0);
   const supabaseRef = useRef(createClient());
@@ -44,10 +46,17 @@ export function ActNowRail() {
       .channel("relay-act-now")
       .on("postgres_changes", { event: "*", schema: "public", table: "project_quote_requests" }, queue)
       .on("postgres_changes", { event: "*", schema: "public", table: "engineer_connect_requests" }, queue)
+      .on("postgres_changes", { event: "*", schema: "public", table: "session_escalations" }, queue)
       .subscribe();
     channelRef.current = ch;
     const fallback = setInterval(() => { void refresh(); }, 5_000);
     return () => { if (pending) clearTimeout(pending); sb.removeChannel(ch); channelRef.current = null; clearInterval(fallback); };
+  }, [refresh]);
+
+  const resolveEscalation = useCallback(async (id: string) => {
+    const note = window.prompt("Resolution note (optional):") ?? "";
+    await supabaseRef.current.rpc("resolve_escalation", { _id: id, _note: note });
+    void refresh();
   }, [refresh]);
 
   const breaches = feed.callbackQueue.filter((c) => c.slaBreached).length;
@@ -75,8 +84,42 @@ export function ActNowRail() {
               <Empty body="No customers waiting on an engineer." />
             ) : feed.callbackQueue.map((c) => <CallbackRow key={c.id} c={c} />)}
           </Section>
+
+          {/* Live escalations inbox */}
+          <Section title="Escalations" count={feed.escalations.length} accent="var(--risk)">
+            {feed.escalations.length === 0 ? (
+              <Empty body="No engineers have raised a hand." />
+            ) : feed.escalations.map((e) => <EscalationRow key={e.id} e={e} onResolve={resolveEscalation} />)}
+          </Section>
         </>
       )}
+    </div>
+  );
+}
+
+function EscalationRow({ e, onResolve }: { e: Escalation; onResolve: (id: string) => void }) {
+  const router = useRouter();
+  return (
+    <div className="rounded-xl border p-3" style={{ borderColor: "var(--risk)", background: "color-mix(in srgb, var(--risk) 8%, transparent)" }}>
+      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--risk)" }}>
+        <LifeBuoy size={12} /> {e.reason}
+        <span className="ml-auto font-normal normal-case" style={{ color: "var(--text-muted)" }}>{fmtAgo(e.createdAt)}</span>
+      </div>
+      <div className="mt-1.5 truncate text-sm font-medium" style={{ color: "var(--text)" }}>{e.engineer}</div>
+      <div className="truncate text-xs" style={{ color: "var(--text-muted)" }}>on {e.customer}</div>
+      {e.note && <p className="mt-1.5 line-clamp-2 text-[11px]" style={{ color: "var(--text-faint)" }}>{e.note}</p>}
+      <div className="mt-2 flex gap-1.5">
+        <button type="button" onClick={() => router.push(`/staff/session/${e.sessionId}`)}
+          className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium"
+          style={{ borderColor: "var(--border)", color: "var(--text)" }}>
+          <Eye size={11} /> Watch
+        </button>
+        <button type="button" onClick={() => onResolve(e.id)}
+          className="inline-flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold text-white"
+          style={{ background: "var(--primary)" }}>
+          <Check size={11} /> Resolve
+        </button>
+      </div>
     </div>
   );
 }
