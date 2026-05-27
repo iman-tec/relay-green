@@ -385,7 +385,10 @@ export function SuperviseClient() {
           {/* On-duty toggle — drives coverage failover. Only the supervise
               audience (supervisor / super_admin) reaches this client. */}
           {scope.kind !== "loading" && (
-            <SupervisorAvailabilityToggle className="shrink-0 pt-1" />
+            <div className="flex shrink-0 flex-col items-end gap-2 pt-1">
+              <SupervisorAvailabilityToggle />
+              <CoveringStrip />
+            </div>
           )}
         </div>
 
@@ -443,6 +446,33 @@ export function SuperviseClient() {
       </div>
     </div>
     </PagerSlotContext.Provider>
+  );
+}
+
+// H1 — who's covering: co-supervisors + their on-duty state.
+function CoveringStrip() {
+  const [sups, setSups] = useState<{ name: string; isOnline: boolean }[]>([]);
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const res = await fetch("/api/supervisor/covering", { cache: "no-store" });
+        if (res.ok && alive) setSups((((await res.json()) as { supervisors?: { name: string; isOnline: boolean }[] }).supervisors) ?? []);
+      } catch { /* ignore */ }
+    };
+    void load();
+    const id = setInterval(load, 30_000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
+  if (sups.length === 0) return null;
+  const online = sups.filter((s) => s.isOnline).length;
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-1.5" title={sups.map((s) => `${s.name}${s.isOnline ? " (on duty)" : ""}`).join("\n")}>
+      <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>{online}/{sups.length} covering</span>
+      {sups.slice(0, 6).map((s, i) => (
+        <span key={i} className="inline-flex size-2 rounded-full" style={{ backgroundColor: s.isOnline ? "var(--ok)" : "var(--text-faint)" }} />
+      ))}
+    </div>
   );
 }
 

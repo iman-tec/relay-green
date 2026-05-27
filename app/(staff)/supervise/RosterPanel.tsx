@@ -18,9 +18,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { Eye, Loader2, ArrowUpRight, Users, ChevronDown, Activity, Timer, Hash } from "lucide-react";
+import { Eye, Loader2, ArrowUpRight, Users, ChevronDown, Activity, Timer, Hash, Flag, X, TrendingUp, Wallet } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import { Button, Card, EmptyState as UiEmptyState, cn } from "@/app/_components/ui";
+import { eur } from "@/app/(staff)/enterprise/v2/_shared";
 
 type Sentiment = { score: number; summary: string; messageCount: number };
 type Engineer = {
@@ -113,6 +114,9 @@ export function RosterPanel() {
         <Kpi label="Build min" value={fmtNum(buildMinutes)} sub="30d" />
         <Kpi label="Sessions" value={fmtNum(sessions30d)} sub="30d" />
       </div>
+
+      <ThemesCard />
+      <PayoutsCard />
       <div className="grid items-start gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
         {engineers.map((e) => <EngineerCard key={e.userId} engineer={e} />)}
       </div>
@@ -120,11 +124,103 @@ export function RosterPanel() {
   );
 }
 
+// ── D5 — recurring escalation themes (LLM, behind graceful states) ─────────
+function ThemesCard() {
+  const [state, setState] = useState<"loading" | "ok" | "insufficient" | "unavailable">("loading");
+  const [themes, setThemes] = useState<{ theme: string; count: number }[]>([]);
+  const [sample, setSample] = useState(0);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const res = await fetch("/api/supervisor/escalation-themes", { cache: "no-store" });
+        const j = (await res.json().catch(() => ({}))) as { state?: string; themes?: { theme: string; count: number }[]; sampleSize?: number };
+        if (!alive) return;
+        setThemes(j.themes ?? []); setSample(j.sampleSize ?? 0);
+        setState((j.state as "ok" | "insufficient" | "unavailable") ?? "unavailable");
+      } catch { if (alive) setState("unavailable"); }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  return (
+    <div className="rounded-2xl border p-4" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+      <div className="mb-2 flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--text)" }}>
+        <TrendingUp size={15} /> Recurring escalation themes
+      </div>
+      {state === "loading" ? (
+        <div className="flex items-center gap-2 text-xs" style={{ color: "var(--text-muted)" }}><Loader2 size={13} className="animate-spin" /> Computing…</div>
+      ) : state === "ok" && themes.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {themes.map((t, i) => (
+            <span key={i} className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs" style={{ borderColor: "var(--border)", color: "var(--text)" }}>
+              {t.theme}<span className="rounded-full px-1.5 text-[10px] font-semibold tabular-nums" style={{ background: "var(--primary-tint)", color: "var(--primary-hover)" }}>{t.count}</span>
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+          {state === "insufficient" ? `Not enough escalations yet to surface themes (${sample} in 30d).` :
+           state === "ok" ? "No recurring themes — escalations look one-off." :
+           "Theme detection unavailable right now."}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ── E3 — pod payouts overview ──────────────────────────────────────────────
+type Payouts = { total: { earningsCents: number; billableMinutes: number; sessions: number }; engineers: { name: string; earningsCents: number; billableMinutes: number; sessions: number; lastSessionAt: string | null }[] };
+
+function PayoutsCard() {
+  const [data, setData] = useState<Payouts | null>(null);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const res = await fetch("/api/supervisor/payouts", { cache: "no-store" });
+        if (res.ok && alive) setData((await res.json()) as Payouts);
+      } catch { /* ignore */ }
+    })();
+    return () => { alive = false; };
+  }, []);
+  if (!data || data.engineers.length === 0) return null;
+
+  return (
+    <div className="rounded-2xl border p-4" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+      <button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-2 text-left" aria-expanded={open}>
+        <Wallet size={15} style={{ color: "var(--text-muted)" }} />
+        <span className="text-sm font-semibold" style={{ color: "var(--text)" }}>Pod payouts</span>
+        <span className="text-sm tabular-nums" style={{ color: "var(--text)" }}>{eur(data.total.earningsCents)}</span>
+        <span className="text-xs" style={{ color: "var(--text-muted)" }}>· {fmtNum(data.total.billableMinutes)} billable min · {fmtNum(data.total.sessions)} sessions</span>
+        <ChevronDown size={15} className={cn("ml-auto transition-transform", open && "rotate-180")} style={{ color: "var(--text-muted)" }} />
+      </button>
+      {open && (
+        <ul className="mt-3 flex flex-col gap-1 border-t pt-3" style={{ borderColor: "var(--border)" }}>
+          {data.engineers.map((e, i) => (
+            <li key={i} className="flex items-center gap-2 text-xs">
+              <span className="min-w-0 flex-1 truncate" style={{ color: "var(--text)" }}>{e.name}</span>
+              <span className="shrink-0 tabular-nums" style={{ color: "var(--text-muted)" }}>{fmtNum(e.billableMinutes)}m · {fmtNum(e.sessions)}</span>
+              <span className="w-20 shrink-0 text-right font-medium tabular-nums" style={{ color: "var(--text)" }}>{eur(e.earningsCents)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 // ── The atomic roster unit ────────────────────────────────────────────────
 type Detail = {
-  engineer: { totals: { sessions30d: number; buildMinutes: number; avgDurationMin: number } };
+  engineer: { totals: { sessions30d: number; buildMinutes: number; avgDurationMin: number }; escalations30d: number; escalationRate: number };
   recentSessions: Array<{ id: string; guestName: string | null; status: string; durationMinutes: number | null; createdAt: string; endedAt: string | null; projectName: string | null }>;
+  escalations: Array<{ id: string; reason: string; note: string | null; status: string; resolutionNote: string | null; createdAt: string; resolvedAt: string | null }>;
+  availability: { weekdays: number[]; holidays: { date: string; label: string | null; kind: string }[]; upcomingBookings: string[] };
 };
+
+const DOW_SHORT = ["S", "M", "T", "W", "T", "F", "S"];
 
 function EngineerCard({ engineer: e }: { engineer: Engineer }) {
   const router = useRouter();
@@ -188,6 +284,9 @@ function EngineerCard({ engineer: e }: { engineer: Engineer }) {
         </Button>
       )}
 
+      {/* Flag a leave/availability issue up to super-admin (relay). */}
+      <FlagAvailability userId={e.userId} name={e.displayName} />
+
       {/* Expand-in-place drill-in */}
       {expanded && (
         <div className="mt-4 border-t pt-4" style={{ borderColor: "var(--border)" }}>
@@ -209,13 +308,64 @@ function EngineerCard({ engineer: e }: { engineer: Engineer }) {
 function DrillIn({ detail }: { detail: Detail }) {
   const router = useRouter();
   const t = detail.engineer.totals;
+  const rate = detail.engineer.escalationRate;
+  const rateTone = rate >= 3 ? "var(--risk)" : rate >= 1.5 ? "var(--warn)" : "var(--text)";
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-4 gap-2">
         <Kpi label="Sessions" value={fmtNum(t.sessions30d)} sub="30d" />
         <Kpi label="Build min" value={fmtNum(t.buildMinutes)} sub="30d" />
         <Kpi label="Avg" value={`${fmtNum(t.avgDurationMin)}m`} sub="per call" />
+        {/* D4 — escalations per 10 sessions */}
+        <div className="rounded-lg border px-2 py-1.5" style={{ borderColor: "var(--border)" }}>
+          <div className="text-[10px] uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Esc rate</div>
+          <div className="text-sm font-semibold tabular-nums" style={{ color: rateTone }}>
+            {rate}<span className="ml-0.5 text-[10px] font-normal" style={{ color: "var(--text-faint)" }}>/10</span>
+          </div>
+        </div>
       </div>
+
+      {/* B3 — availability (weekly pattern + holidays + upcoming bookings) */}
+      <div>
+        <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Availability</h4>
+        <div className="flex items-center gap-1.5">
+          {DOW_SHORT.map((d, i) => {
+            const on = detail.availability.weekdays.includes(i);
+            return <span key={i} className="inline-flex size-6 items-center justify-center rounded-md text-[11px] font-medium"
+              style={{ background: on ? "var(--primary-tint)" : "transparent", color: on ? "var(--primary-hover)" : "var(--text-faint)", border: `1px solid ${on ? "var(--primary)" : "var(--border)"}` }}>{d}</span>;
+          })}
+          {detail.availability.upcomingBookings.length > 0 && (
+            <span className="ml-2 text-[11px]" style={{ color: "var(--text-muted)" }}>· {detail.availability.upcomingBookings.length} booking{detail.availability.upcomingBookings.length === 1 ? "" : "s"} (14d)</span>
+          )}
+        </div>
+        {detail.availability.holidays.length > 0 && (
+          <div className="mt-1.5 text-[11px]" style={{ color: "var(--text-faint)" }}>
+            Off: {detail.availability.holidays.slice(0, 4).map((h) => new Date(h.date + "T00:00:00Z").toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" })).join(", ")}
+          </div>
+        )}
+      </div>
+
+      {/* D3 — escalation history */}
+      {detail.escalations.length > 0 && (
+        <div>
+          <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+            Escalations ({detail.engineer.escalations30d} in 30d)
+          </h4>
+          <ul className="flex flex-col gap-1.5">
+            {detail.escalations.map((e) => (
+              <li key={e.id} className="rounded-md border px-2.5 py-1.5 text-xs" style={{ borderColor: "var(--border)" }}>
+                <div className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate font-medium" style={{ color: "var(--text)" }}>{e.reason}</span>
+                  <span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase"
+                    style={{ color: e.status === "open" ? "var(--warn)" : e.status === "resolved" ? "var(--ok)" : "var(--text-muted)", background: "color-mix(in srgb, var(--text) 6%, transparent)" }}>{e.status}</span>
+                  <span className="shrink-0" style={{ color: "var(--text-faint)" }}>{new Date(e.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+                </div>
+                {e.resolutionNote && <div className="mt-0.5 truncate" style={{ color: "var(--text-faint)" }}>↳ {e.resolutionNote}</div>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div>
         <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Recent sessions</h4>
         {detail.recentSessions.length === 0 ? (
@@ -242,6 +392,74 @@ function DrillIn({ detail }: { detail: Detail }) {
         )}
       </div>
     </div>
+  );
+}
+
+// Supervisor flags a leave/availability issue → routes up to super-admin.
+function FlagAvailability({ userId, name }: { userId: string; name: string }) {
+  const [open, setOpen] = useState(false);
+  const [kind, setKind] = useState("availability");
+  const [detail, setDetail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const submit = async () => {
+    setBusy(true); setErr(null);
+    try {
+      const { error } = await createClient().rpc("raise_availability_request", { _engineer_user_id: userId, _kind: kind, _detail: detail.trim() || null });
+      if (error) throw new Error(error.message);
+      setDone(true);
+      setTimeout(() => { setOpen(false); setDone(false); setDetail(""); }, 1300);
+    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't flag."); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}
+        className="mt-2 inline-flex w-full items-center justify-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors"
+        style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
+        <Flag size={11} /> Flag to super-admin
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-[60]" style={{ backgroundColor: "var(--scrim)" }} onClick={() => !busy && setOpen(false)} />
+          <div role="dialog" aria-modal="true" className="fixed left-1/2 top-1/2 z-[61] w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border p-5 shadow-2xl"
+            style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}>
+            <div className="mb-3 flex items-center gap-2">
+              <Flag size={15} style={{ color: "var(--primary-hover)" }} />
+              <h2 className="text-[15px] font-semibold" style={{ color: "var(--text)" }}>Flag {name}</h2>
+              <button type="button" onClick={() => !busy && setOpen(false)} className="ml-auto" style={{ color: "var(--text-muted)" }}><X size={16} /></button>
+            </div>
+            {done ? (
+              <p className="py-4 text-center text-sm" style={{ color: "var(--ok)" }}>Routed to super-admin.</p>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>Supervisors monitor availability; super-admin owns leave. This routes up for action.</p>
+                <label className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
+                  Type
+                  <select value={kind} onChange={(e) => setKind(e.target.value)} className="h-10 rounded-lg border px-2 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }}>
+                    <option value="availability">Availability issue</option>
+                    <option value="leave">Leave request</option>
+                    <option value="other">Other</option>
+                  </select>
+                </label>
+                <textarea value={detail} onChange={(e) => setDetail(e.target.value)} rows={3} placeholder="What's the issue?"
+                  className="rounded-lg border p-2 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
+                {err && <p className="text-[12px]" style={{ color: "var(--risk)" }}>{err}</p>}
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => !busy && setOpen(false)} disabled={busy} className="rounded-full px-3.5 py-1.5 text-[13px] font-medium" style={{ color: "var(--text-muted)" }}>Cancel</button>
+                  <button type="button" onClick={() => void submit()} disabled={busy} className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13px] font-semibold text-white" style={{ background: "var(--primary)" }}>
+                    {busy ? <Loader2 size={13} className="animate-spin" /> : <Flag size={13} />} Flag
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </>
   );
 }
 

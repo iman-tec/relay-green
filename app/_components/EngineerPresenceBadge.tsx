@@ -128,6 +128,26 @@ export function EngineerPresenceBadge({ userId }: { userId: string }) {
     }
   }, [busy, presence]);
 
+  // A3 — idle auto-flip. When the engineer is Online but hasn't touched the
+  // app for 5 minutes, drop them to Offline so the matcher stops ringing an
+  // away engineer (and the supervisor roster shows "Away"). Any activity
+  // resets the timer; only online→offline (never touches Busy).
+  useEffect(() => {
+    if (presence !== "online") return;
+    let timer: ReturnType<typeof setTimeout>;
+    const IDLE_MS = 5 * 60 * 1000;
+    const flip = async () => {
+      const sb = sbRef.current;
+      const { error } = await sb.rpc("set_engineer_presence", { _state: "offline" });
+      if (!error) setPresence("offline");
+    };
+    const reset = () => { clearTimeout(timer); timer = setTimeout(() => void flip(), IDLE_MS); };
+    const events: (keyof DocumentEventMap)[] = ["mousemove", "keydown", "pointerdown", "visibilitychange", "scroll"];
+    for (const e of events) document.addEventListener(e, reset, { passive: true });
+    reset();
+    return () => { clearTimeout(timer); for (const e of events) document.removeEventListener(e, reset); };
+  }, [presence]);
+
   if (presence === null) return null;
 
   const current = OPTIONS.find((o) => o.value === presence) ?? OPTIONS[2];

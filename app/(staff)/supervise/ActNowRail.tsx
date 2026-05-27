@@ -14,9 +14,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { Loader2, Rocket, Wrench, PhoneCall, AlertTriangle, Inbox, LifeBuoy, Eye, Check, X, FileText } from "lucide-react";
+import { Loader2, Rocket, Wrench, PhoneCall, AlertTriangle, Inbox, LifeBuoy, Eye, Check, X, FileText, Repeat } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
-import { AssistantBar } from "@/app/_components/AssistantBar";
 
 type Sentiment = { score: number; summary: string; messageCount: number };
 type Estimation = { id: string; kind: "golive" | "maintain" | string; customer: string; project: string; projectId: string; comments: string | null; createdAt: string; liveSessionId: string | null; liveSentiment: Sentiment | null };
@@ -56,10 +55,25 @@ export function ActNowRail() {
   }, [refresh]);
 
   const [diveIn, setDiveIn] = useState<Estimation | null>(null);
+  const [engineers, setEngineers] = useState<{ userId: string; displayName: string }[]>([]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch("/api/supervisor/team", { cache: "no-store" });
+        if (res.ok) setEngineers((((await res.json()) as { engineers?: { userId: string; displayName: string }[] }).engineers ?? []).map((e) => ({ userId: e.userId, displayName: e.displayName })));
+      } catch { /* ignore */ }
+    })();
+  }, []);
 
   const resolveEscalation = useCallback(async (id: string) => {
     const note = window.prompt("Resolution note (optional):") ?? "";
     await supabaseRef.current.rpc("resolve_escalation", { _id: id, _note: note });
+    void refresh();
+  }, [refresh]);
+
+  const reassign = useCallback(async (id: string, engineerId: string) => {
+    await supabaseRef.current.rpc("reassign_connect_request", { _id: id, _new_engineer_user_id: engineerId });
     void refresh();
   }, [refresh]);
 
@@ -86,7 +100,7 @@ export function ActNowRail() {
             badge={breaches > 0 ? `${breaches} SLA` : undefined}>
             {feed.callbackQueue.length === 0 ? (
               <Empty body="No customers waiting on an engineer." />
-            ) : feed.callbackQueue.map((c) => <CallbackRow key={c.id} c={c} />)}
+            ) : feed.callbackQueue.map((c) => <CallbackRow key={c.id} c={c} engineers={engineers} onReassign={reassign} />)}
           </Section>
 
           {/* Live escalations inbox */}
@@ -174,13 +188,9 @@ function DiveInModal({ q, onClose, onDone }: { q: Estimation; onClose: () => voi
           </div>
         )}
 
-        {/* AI scoping assistant */}
-        <AssistantBar
-          contextLabel={`${q.kind === "golive" ? "Go-live" : "Maintain"} · ${q.project}`}
-          placeholder="Ask the assistant to help scope this…"
-          compact
-          seed={[{ role: "user", content: `Context: a customer requested a ${q.kind === "golive" ? "go-live" : "maintenance"} estimate for project "${q.project}". Their note: ${q.comments || "(none)"}. Help me scope it.` }]}
-        />
+        {/* Scope using the project's AI history via the session monitor:
+            "Watch session" above opens the room where the project AI
+            assistant lives. */}
 
         {/* Proposal */}
         <div className="flex flex-col gap-3 border-t pt-4" style={{ borderColor: "var(--border)" }}>
@@ -282,7 +292,8 @@ function EstimationRow({ q, onAct }: { q: Estimation; onAct: () => void }) {
   );
 }
 
-function CallbackRow({ c }: { c: Callback }) {
+function CallbackRow({ c, engineers, onReassign }: { c: Callback; engineers: { userId: string; displayName: string }[]; onReassign: (id: string, engineerId: string) => void }) {
+  const [reassigning, setReassigning] = useState(false);
   return (
     <div className="rounded-xl border p-3" style={{ borderColor: c.slaBreached ? "var(--risk)" : "var(--border)", background: c.slaBreached ? "color-mix(in srgb, var(--risk) 8%, transparent)" : "var(--surface)" }}>
       <div className="flex items-center gap-1.5 text-xs">
@@ -297,6 +308,20 @@ function CallbackRow({ c }: { c: Callback }) {
         <div className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-semibold uppercase" style={{ color: "var(--risk)" }}>
           <AlertTriangle size={10} /> SLA breached
         </div>
+      )}
+      {reassigning ? (
+        <select autoFocus defaultValue="" onChange={(e) => { if (e.target.value) onReassign(c.id, e.target.value); setReassigning(false); }}
+          onBlur={() => setReassigning(false)}
+          className="mt-2 h-8 w-full rounded-md border px-2 text-[11px]" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }}>
+          <option value="" disabled>Reassign to…</option>
+          {engineers.map((eng) => <option key={eng.userId} value={eng.userId}>{eng.displayName}</option>)}
+        </select>
+      ) : (
+        <button type="button" onClick={() => setReassigning(true)}
+          className="mt-2 inline-flex w-full items-center justify-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium"
+          style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
+          <Repeat size={11} /> Reassign
+        </button>
       )}
     </div>
   );

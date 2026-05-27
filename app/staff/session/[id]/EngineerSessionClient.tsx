@@ -839,10 +839,101 @@ function Sidebar({
             </div>
           </div>
         </div>
+        {/* Escalation context for this session (raised / resolved). */}
+        <SessionEscalationFlag sessionId={session.id} />
+        {/* Supervisors can search the whole project's chat history. */}
+        {isSupervisor && session.project_id && <ProjectChatSearch projectId={session.project_id} />}
         {/* Engineers can raise a hand to their supervisor mid-call. */}
         {!isSupervisor && <EscalateButton sessionId={session.id} />}
       </div>
     </aside>
+  );
+}
+
+// ── G2: per-project chat search (supervisor monitor) ───────────────────────
+function ProjectChatSearch({ projectId }: { projectId: string }) {
+  const router = useRouter();
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState<{ sessionId: string; senderName: string | null; senderKind: string; body: string; createdAt: string }[] | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const search = async () => {
+    if (q.trim().length < 2) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/supervisor/chat-search?projectId=${encodeURIComponent(projectId)}&q=${encodeURIComponent(q.trim())}`, { cache: "no-store" });
+      const j = (await res.json().catch(() => ({}))) as { results?: typeof results };
+      setResults(j.results ?? []);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="mt-1 rounded-lg border p-2" style={{ borderColor: "var(--border)" }}>
+      <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+        <BookOpen size={12} /> Search project chat
+      </div>
+      <div className="flex gap-1">
+        <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void search(); }}
+          placeholder="e.g. Stripe, deadline…" className="h-8 flex-1 rounded-md border px-2 text-[12px] outline-none"
+          style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
+        <button type="button" onClick={() => void search()} disabled={busy || q.trim().length < 2}
+          className="inline-flex size-8 items-center justify-center rounded-md text-white disabled:opacity-50" style={{ background: "var(--primary)" }} aria-label="Search">
+          {busy ? <Loader2 size={13} className="animate-spin" /> : <ChevronRight size={13} />}
+        </button>
+      </div>
+      {results && (
+        results.length === 0 ? (
+          <p className="mt-2 text-[11px]" style={{ color: "var(--text-muted)" }}>No matches.</p>
+        ) : (
+          <ul className="mt-2 flex max-h-48 flex-col gap-1 overflow-y-auto">
+            {results.map((r, i) => (
+              <li key={i}>
+                <button type="button" onClick={() => router.push(`/staff/session/${r.sessionId}`)}
+                  className="w-full rounded-md px-1.5 py-1 text-left text-[11px] transition-colors hover:bg-white/5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium" style={{ color: "var(--text)" }}>{r.senderName || r.senderKind}</span>
+                    <span style={{ color: "var(--text-faint)" }}>{new Date(r.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+                  </div>
+                  <div className="line-clamp-2" style={{ color: "var(--text-muted)" }}>{r.body}</div>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )
+      )}
+    </div>
+  );
+}
+
+// ── G3: this session's escalation context (banner on the session view) ──────
+function SessionEscalationFlag({ sessionId }: { sessionId: string }) {
+  const [esc, setEsc] = useState<{ reason: string; status: string; note: string | null; resolution_note: string | null } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const { data } = await createClient()
+        .from("session_escalations")
+        .select("reason, status, note, resolution_note")
+        .eq("session_id", sessionId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (alive) setEsc((data as { reason: string; status: string; note: string | null; resolution_note: string | null } | null) ?? null);
+    })();
+    return () => { alive = false; };
+  }, [sessionId]);
+  if (!esc) return null;
+  const open = esc.status === "open";
+  const tone = open ? "var(--risk)" : "var(--text-muted)";
+  return (
+    <div className="mt-1 rounded-lg border px-2.5 py-2" style={{ borderColor: tone, background: open ? "color-mix(in srgb, var(--risk) 8%, transparent)" : "var(--surface)" }}>
+      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide" style={{ color: tone }}>
+        <LifeBuoy size={12} /> Escalation · {esc.status}
+      </div>
+      <div className="mt-0.5 text-[12px]" style={{ color: "var(--text)" }}>{esc.reason}</div>
+      {esc.note && <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>{esc.note}</div>}
+      {esc.resolution_note && <div className="mt-0.5 text-[11px]" style={{ color: "var(--text-faint)" }}>↳ {esc.resolution_note}</div>}
+    </div>
   );
 }
 
