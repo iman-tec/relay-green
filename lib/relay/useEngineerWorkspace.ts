@@ -117,10 +117,23 @@ export function useEngineerWorkspace(): WorkspaceState {
   }, [refresh]);
 
   // Realtime — any guest_calls change refetches all three lists.
+  //
+  // The channel name must be unique per hook instance: Supabase's
+  // realtime client shares channels by name, so when two components on
+  // the same page (e.g. DashboardClient + StaffShell's FifoAutoRing)
+  // both mount this hook with the same channel name, the second
+  // .on() call lands AFTER the first .subscribe() resolved — and
+  // realtime-js throws "cannot add postgres_changes callbacks after
+  // subscribe()". A per-mount random suffix sidesteps the sharing.
   useEffect(() => {
     const sb = supabaseRef.current;
+    const channelName = `relay-engineer-workspace-${
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+    }`;
     const ch = sb
-      .channel("relay-engineer-workspace")
+      .channel(channelName)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "guest_calls" },

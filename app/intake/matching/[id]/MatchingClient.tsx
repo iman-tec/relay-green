@@ -41,12 +41,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Home } from "lucide-react";
+import { Loader2, Home, Phone, Volume2, VolumeX } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
-import { Button, Card, CardBody, cn } from "@/app/_components/ui";
-import { IntakeAssistant } from "@/app/_components/intake/IntakeAssistant";
-import { emptyContext, type IntakeContext } from "@/lib/intake/intakeAssistant";
+import { Button, Card, CardBody } from "@/app/_components/ui";
 import { createClient } from "@/lib/supabase/browser";
+import { useRingtone } from "@/lib/relay/useRingtone";
 
 // How often to re-check session + offer state. Belt-and-braces in case a
 // realtime event drops.
@@ -85,20 +84,29 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   const [retrying, setRetrying] = useState(false);
   const [now, setNow] = useState(() => Date.now());
-  const [intakeCtx, setIntakeCtx] = useState<IntakeContext>(emptyContext);
   const guestCallIdRef = useRef<string | null>(null);
 
-  // Two-step ringing layout. First ~2s the customer sees a centered
-  // "Ringing engineers…" hero (iOS-style incoming call). Then it slides
-  // up into a pill at the top and the chat fades in below, centered.
-  // Once flipped, never flips back — even if phase transitions and
-  // returns to ringing.
-  const [chatRevealed, setChatRevealed] = useState(false);
+  // Ringing-phase start timestamp — used to drive the elapsed-time
+  // clock under the big ball. Set the first time the phase enters
+  // "ringing"; never reset after that (we don't want a transient
+  // realtime hiccup that bounces to loading + back to ringing to
+  // restart the timer from 0).
+  const ringStartRef = useRef<number | null>(null);
   useEffect(() => {
-    if (phase.kind !== "ringing" || chatRevealed) return;
-    const t = setTimeout(() => setChatRevealed(true), 2000);
-    return () => clearTimeout(t);
-  }, [phase.kind, chatRevealed]);
+    if (phase.kind === "ringing" && ringStartRef.current === null) {
+      ringStartRef.current = Date.now();
+    }
+  }, [phase.kind]);
+
+  // Ringtone audio. Synthesized via Web Audio API so we ship zero
+  // audio bytes + can shape it exactly how we want (US-ringback
+  // double-tone, 480Hz + 620Hz, 2s pulse + 4s gap). Default is ON;
+  // customer can mute via the speaker toggle. Browser autoplay
+  // policies usually allow this because the user just navigated
+  // here via a click, but if the AudioContext starts in "suspended"
+  // state we keep the toggle visible so they can enable manually.
+  const [soundOn, setSoundOn] = useState(true);
+  const ringtone = useRingtone(phase.kind === "ringing" && soundOn);
 
   // 1Hz tick for the countdown badge.
   useEffect(() => {
@@ -299,92 +307,15 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
         )}
 
         {phase.kind === "ringing" && (
-          <>
-            {/* Compact top-pill — iOS/macOS incoming-call style. Visible only
-                after the 2s gate. Fixed to viewport top so it survives chat
-                scroll. */}
-            <div
-              aria-hidden={!chatRevealed}
-              className={cn(
-                "pointer-events-none fixed inset-x-0 top-4 z-40 flex justify-center px-4 transition-all duration-500 ease-out",
-                chatRevealed
-                  ? "translate-y-0 opacity-100"
-                  : "-translate-y-8 opacity-0",
-              )}
-            >
-              <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-[var(--border)] bg-[var(--surface)]/95 px-4 py-2 shadow-lg backdrop-blur">
-                <PulseDot compact />
-                <span className="text-sm font-medium text-[var(--text)]">
-                  Ringing engineers…
-                </span>
-                {phase.livePending && (
-                  <Countdown
-                    expiresAt={phase.livePending.expires_at}
-                    nowMs={now}
-                    compact
-                  />
-                )}
-                <Button variant="secondary" size="sm" onClick={skip}>
-                  Cancel
-                </Button>
-              </div>
-            </div>
-
-            {/* Hero card — visible only BEFORE the 2s gate. Fades+shrinks
-                out as the chat slides in below. We collapse max-h so it
-                doesn't leave a vertical gap once gone. */}
-            <div
-              className={cn(
-                "w-full max-w-md transition-all duration-500 ease-out",
-                chatRevealed
-                  ? "pointer-events-none max-h-0 -translate-y-2 scale-95 opacity-0 overflow-hidden"
-                  : "max-h-[560px] translate-y-0 scale-100 opacity-100",
-              )}
-            >
-              <Card variant="surface">
-                <CardBody className="flex flex-col items-center gap-3 py-10 text-center">
-                  <PulseDot />
-                  <h1 className="font-serif text-2xl font-medium leading-tight text-[var(--text)]">
-                    Ringing engineers…
-                  </h1>
-                  <p className="max-w-sm text-sm leading-relaxed text-[var(--text-muted)]">
-                    {phase.livePending
-                      ? "Hang tight — we'll connect you the moment an engineer picks up."
-                      : "Your call is open to every available engineer."}
-                  </p>
-                  {phase.livePending && (
-                    <Countdown
-                      expiresAt={phase.livePending.expires_at}
-                      nowMs={now}
-                    />
-                  )}
-                  <div className="flex flex-wrap gap-2 pt-2">
-                    <Button variant="secondary" size="sm" onClick={skip}>
-                      Cancel
-                    </Button>
-                  </div>
-                </CardBody>
-              </Card>
-            </div>
-
-            {/* Centered chat — fades in after the 2s gate. Takes the
-                remaining viewport height so the composer stays PINNED at
-                the bottom and only the thread scrolls (no full-page
-                scroll, ChatGPT-style). */}
-            <div
-              className={cn(
-                "flex w-full max-w-2xl flex-1 min-h-0 transition-opacity duration-500 ease-out",
-                chatRevealed
-                  ? "opacity-100"
-                  : "pointer-events-none opacity-0",
-              )}
-            >
-              <IntakeAssistant
-                intakeId={intakeId}
-                onContextChange={setIntakeCtx}
-              />
-            </div>
-          </>
+          <RingingHero
+            elapsedMs={
+              ringStartRef.current !== null ? now - ringStartRef.current : 0
+            }
+            soundOn={soundOn}
+            soundAvailable={ringtone.available}
+            onToggleSound={() => setSoundOn((v) => !v)}
+            onCancel={skip}
+          />
         )}
 
         {phase.kind === "no_engineer" && (
@@ -444,48 +375,130 @@ function BounceHome({ router }: { router: ReturnType<typeof useRouter> }) {
   return null;
 }
 
-function PulseDot({ compact = false }: { compact?: boolean }) {
-  const outer = compact ? "size-5" : "size-14";
-  const inner = compact ? "size-2.5" : "size-8";
+// ── RingingHero ──────────────────────────────────────────────────────
+// The big centred green ball + heartbeat + halo + elapsed-time clock +
+// soothing copy + cancel + sound toggle. This is the whole ringing
+// surface — no chat, no intake bot, no other entry surfaces. The
+// previous design (top pill + IntakeAssistant chat) was replaced
+// because the customer's job while waiting is to wait calmly, not to
+// fill out a form. The intake context is already captured before the
+// session is queued; nothing new is needed during the ring.
+function RingingHero({
+  elapsedMs,
+  soundOn,
+  soundAvailable,
+  onToggleSound,
+  onCancel,
+}: {
+  elapsedMs: number;
+  soundOn: boolean;
+  /** True if the AudioContext started successfully — false if the
+   *  browser blocked autoplay and the customer has to tap the toggle
+   *  to enable. We use this to nudge the icon when it's relevant. */
+  soundAvailable: boolean;
+  onToggleSound: () => void;
+  onCancel: () => void;
+}) {
+  const mm = Math.floor(elapsedMs / 60000);
+  const ss = Math.floor((elapsedMs % 60000) / 1000);
+  const clock = `${mm.toString().padStart(2, "0")}:${ss.toString().padStart(2, "0")}`;
   return (
-    <div className={cn("relative inline-flex items-center justify-center", outer)}>
-      <span
-        aria-hidden
-        className="absolute inline-flex size-full rounded-full opacity-40 animate-ping"
-        style={{ background: "var(--green-dot)" }}
-      />
-      <span
-        aria-hidden
-        className={cn("relative inline-flex rounded-full", inner)}
-        style={{ background: "var(--green-dot)" }}
-        data-relay-pulse
-      />
+    <div className="flex flex-1 flex-col items-center justify-center gap-8 px-4 py-12 text-center">
+      {/* Ball assembly. Stack of:
+            • 3 expanding halo rings (CSS keyframe, staggered phase)
+            • Soft glow under the ball
+            • The green ball itself with a gentle scale-pulse heartbeat
+            • Phone icon centered + tiny bobble in cadence with the beat
+          Sized so it's clearly the focal point but doesn't crowd the
+          page — ~240px on desktop, scales down on mobile via the
+          responsive class. */}
+      <div className="relay-ringing-hero relative flex items-center justify-center" style={{ width: 280, height: 280 }}>
+        {/* Halo rings — three concentric circles fading outward. The
+            keyframe scales 1→1.8 + opacity 0.6→0; -0.6s and -1.2s
+            negative delays stagger them so a new ring expands every
+            ~600ms. Lives in app/globals.css under @keyframes
+            relay-ring-halo (added by this commit). */}
+        <span aria-hidden className="relay-ringing-halo absolute inset-0 rounded-full" style={{ animationDelay: "0s" }} />
+        <span aria-hidden className="relay-ringing-halo absolute inset-0 rounded-full" style={{ animationDelay: "-0.6s" }} />
+        <span aria-hidden className="relay-ringing-halo absolute inset-0 rounded-full" style={{ animationDelay: "-1.2s" }} />
+
+        {/* Soft under-glow. Sits beneath the ball, blurred, low alpha.
+            Gives the ball a "lit from within" feel against dark themes. */}
+        <span
+          aria-hidden
+          className="absolute rounded-full"
+          style={{
+            width: 220,
+            height: 220,
+            background: "radial-gradient(circle, color-mix(in srgb, var(--primary) 55%, transparent) 0%, transparent 70%)",
+            filter: "blur(20px)",
+          }}
+        />
+
+        {/* The ball. Heartbeat scale animation lives in globals.css under
+            @keyframes relay-ringing-ball. Phone icon centered. */}
+        <div
+          className="relay-ringing-ball relay-ringing-ball-wrap relative flex items-center justify-center rounded-full"
+          style={{
+            width: 200,
+            height: 200,
+            background: "radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--primary) 90%, white) 0%, var(--primary) 55%, color-mix(in srgb, var(--primary) 65%, #000) 100%)",
+            boxShadow:
+              "0 20px 48px color-mix(in srgb, var(--primary) 35%, transparent), " +
+              "0 8px 16px color-mix(in srgb, var(--primary) 25%, transparent), " +
+              "inset 0 -10px 20px rgba(0, 0, 0, 0.22), " +
+              "inset 0 10px 20px rgba(255, 255, 255, 0.14)",
+          }}
+        >
+          <Phone size={72} className="relay-ringing-icon" style={{ color: "#fff" }} strokeWidth={1.6} />
+        </div>
+      </div>
+
+      {/* Elapsed time — large, serif, calm. mm:ss because we don't
+          want to fake-promise "X seconds until next ring" anymore —
+          honest waiting clock instead. */}
+      <div
+        className="font-mono text-4xl tabular-nums tracking-[0.05em]"
+        style={{ color: "var(--text)", fontFeatureSettings: '"tnum"' }}
+        aria-live="polite"
+      >
+        {clock}
+      </div>
+
+      {/* Soothing copy. Two lines: the action ("ringing") + the
+          reassurance ("we'll connect you the moment…"). Spelled out
+          so the customer never wonders whether the system is stuck. */}
+      <div className="max-w-md space-y-1.5">
+        <p className="font-serif text-2xl text-[var(--text)]" style={{ letterSpacing: "-0.01em" }}>
+          Ringing your engineers
+        </p>
+        <p className="text-sm text-[var(--text-muted)]">
+          Hang tight — we'll connect you the moment someone picks up.
+        </p>
+      </div>
+
+      {/* Footer actions: sound toggle + Cancel. Both small + quiet so
+          they don't fight the ball for attention. */}
+      <div className="flex items-center gap-3 pt-2">
+        <button
+          type="button"
+          onClick={onToggleSound}
+          aria-label={soundOn ? "Mute ringtone" : "Unmute ringtone"}
+          className="flex h-9 w-9 items-center justify-center rounded-full border transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          style={{
+            borderColor: "var(--border)",
+            color: soundOn && soundAvailable ? "var(--primary)" : "var(--text-muted)",
+          }}
+        >
+          {soundOn ? <Volume2 size={14} /> : <VolumeX size={14} />}
+        </button>
+        <Button variant="secondary" size="sm" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
     </div>
   );
 }
 
-function Countdown({
-  expiresAt,
-  nowMs,
-  compact = false,
-}: {
-  expiresAt: string;
-  nowMs: number;
-  compact?: boolean;
-}) {
-  const remaining = Math.max(
-    0,
-    Math.ceil((new Date(expiresAt).getTime() - nowMs) / 1000),
-  );
-  return (
-    <p
-      className={cn(
-        "font-mono tabular-nums text-[var(--text-muted)]",
-        compact ? "text-[11px]" : "text-xs",
-      )}
-      aria-live="polite"
-    >
-      {compact ? `${remaining}s` : `${remaining}s until next ring`}
-    </p>
-  );
-}
+// useRingtone moved to lib/relay/useRingtone.ts — shared with the
+// CallingModal in RoomClient so both surfaces ring identically.

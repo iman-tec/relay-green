@@ -14,6 +14,9 @@ const SIZES = {
   sm: { font: "14px", dot: 10, gap: "4px" },
   md: { font: "18px", dot: 12, gap: "6px" },
   lg: { font: "22px", dot: 14, gap: "6px" },
+  // xl is used by the /room landing where we want the wordmark to
+  // feel like the page's anchor visual without dominating it.
+  xl: { font: "30px", dot: 16, gap: "8px" },
 } as const;
 
 export function Wordmark({
@@ -26,7 +29,7 @@ export function Wordmark({
   const s = SIZES[size];
   return (
     <span
-      className={`inline-flex items-center ${className}`}
+      className={`inline-flex shrink-0 items-center whitespace-nowrap ${className}`}
       style={{
         fontFamily: "var(--font-inter)",
         fontWeight: 500,
