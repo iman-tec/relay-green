@@ -253,6 +253,17 @@
   --font-mono: var(--font-jetbrains);
 }
 
+html,
+body {
+  /* Mobile safety: a single overflowing child shouldn't make the whole
+   * page horizontally scrollable. Without this, an off-screen modal or
+   * an unwrapped long URL can push the body wider than the viewport
+   * and break every layout below. The 100% width pin + overflow-x
+   * clip keeps us honest. */
+  width: 100%;
+  overflow-x: hidden;
+}
+
 body {
   background: var(--background);
   color: var(--text);
@@ -261,6 +272,11 @@ body {
     system-ui,
     -apple-system,
     sans-serif;
+  /* Long URLs in chat messages shouldn't push columns wider than the
+   * viewport on mobile. word-break only kicks in for the cases where
+   * the renderer would otherwise spill horizontally; ordinary prose
+   * still wraps at word boundaries. */
+  overflow-wrap: anywhere;
 }
 
 h1,
@@ -471,23 +487,37 @@ textarea {
   height: 1px;
   background: color-mix(in srgb, var(--primary) 22%, transparent);
 }
-.relay-tagline-glow::after {
-  content: "";
-  position: absolute;
-  bottom: -1px;
-  width: 64px;
-  height: 3px;
-  border-radius: 2px;
-  background: linear-gradient(to right, transparent, var(--primary), #ffffff);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--primary) 65%, transparent);
-  left: -64px;
-  animation: relay-tagline-sweep 2.8s ease-in-out infinite;
-}
-@keyframes relay-tagline-sweep {
-  0%   { left: -64px;             opacity: 0; }
-  10%  {                          opacity: 1; }
-  85%  { left: calc(100% - 12px); opacity: 1; }
-  100% { left: 100%;              opacity: 0; }
+/* Sweeping bright-dot animation removed per request — the static
+ * faint underline above (::before) stays as the quiet visual anchor.
+ * If we ever want the sweep back, restore the ::after pseudo-element
+ * and the relay-tagline-sweep keyframes from git history. */
+
+/* ──────── Incoming-call heartbeat ─────────────────────────────────────
+   `relay-heartbeat` — used by the engineer presence ball when a match
+   offer arrives. Double-beat pulse with an expanding glow ring. Cadence
+   tuned to read as "incoming call" without strobing. `currentColor`
+   inherits from the ball's fill so it adapts to the presence state. */
+@keyframes relay-heartbeat {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 currentColor;
+  }
+  20% {
+    transform: scale(1.18);
+    box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 30%, transparent);
+  }
+  40% {
+    transform: scale(1);
+    box-shadow: 0 0 0 8px color-mix(in srgb, currentColor 0%, transparent);
+  }
+  60% {
+    transform: scale(1.18);
+    box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 30%, transparent);
+  }
+  80% {
+    transform: scale(1);
+    box-shadow: 0 0 0 12px color-mix(in srgb, currentColor 0%, transparent);
+  }
 }
 
 /* ──────── Status / launcher pulse ─────────────────────────────────────
@@ -505,6 +535,71 @@ textarea {
 
 [data-relay-pulse] {
   animation: relay-pulse-ok 1800ms ease-in-out infinite;
+}
+
+/* ──────── Ringing hero — big ball + concentric halo rings ─────────────
+   Used by app/intake/matching/[id]/MatchingClient.tsx → RingingHero.
+   The hero is the centred surface a customer stares at while the system
+   pages engineers; the animations are deliberately slow + soft so the
+   wait feels like meditation, not a slot machine. */
+@keyframes relay-ringing-halo {
+  0%   { transform: scale(0.9); opacity: 0.55; }
+  80%  { transform: scale(1.7); opacity: 0;    }
+  100% { transform: scale(1.7); opacity: 0;    }
+}
+.relay-ringing-halo {
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--primary) 35%, transparent) 0%,
+    color-mix(in srgb, var(--primary) 18%, transparent) 50%,
+    transparent 70%
+  );
+  animation: relay-ringing-halo 1800ms cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  transform-origin: center;
+}
+
+@keyframes relay-ringing-ball {
+  0%, 100% { transform: scale(1);    }
+  20%      { transform: scale(1.06); }
+  40%      { transform: scale(1);    }
+  60%      { transform: scale(1.06); }
+  80%      { transform: scale(1);    }
+}
+.relay-ringing-ball {
+  animation: relay-ringing-ball 1800ms cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  transform-origin: center;
+}
+
+/* Phone icon mirrors the ball's heartbeat with a subtler 3% scale so it
+   reads as part of the same beat without competing visually. */
+@keyframes relay-ringing-icon {
+  0%, 100% { transform: scale(1);    }
+  20%      { transform: scale(1.03); }
+  40%      { transform: scale(1);    }
+  60%      { transform: scale(1.03); }
+  80%      { transform: scale(1);    }
+}
+.relay-ringing-icon {
+  animation: relay-ringing-icon 1800ms cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  transform-origin: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .relay-ringing-halo,
+  .relay-ringing-ball,
+  .relay-ringing-icon {
+    animation: none !important;
+  }
+}
+
+/* Narrow-viewport sizing for the ringing hero. The default 280×280
+ * outer + 200×200 ball renders fine ≥360px but crowds the halo
+ * expansion room on smaller phones (iPhone SE @ 320px). Scale the
+ * outer down to 220×220 / inner ball to 160×160 below 360px so the
+ * halos still have room to bloom outward. */
+@media (max-width: 360px) {
+  .relay-ringing-hero { width: 220px !important; height: 220px !important; }
+  .relay-ringing-ball-wrap { width: 160px !important; height: 160px !important; }
 }
 
 /* Reduced-motion: kill every keyframe animation introduced for the

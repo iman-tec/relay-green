@@ -16,7 +16,6 @@ import { useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { Loader2, Rocket, Wrench, PhoneCall, AlertTriangle, Inbox, LifeBuoy, Eye, Check, X, FileText, Repeat } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
-import { EngineerAiAsk } from "@/app/_components/EngineerAiAsk";
 
 type Sentiment = { score: number; summary: string; messageCount: number };
 type Estimation = { id: string; kind: "golive" | "maintain" | string; customer: string; project: string; projectId: string; comments: string | null; createdAt: string; liveSessionId: string | null; liveSentiment: Sentiment | null };
@@ -189,13 +188,9 @@ function DiveInModal({ q, onClose, onDone }: { q: Estimation; onClose: () => voi
           </div>
         )}
 
-        {/* AI scoping assistant */}
-        <EngineerAiAsk
-          contextLabel={`${q.kind === "golive" ? "Go-live" : "Maintain"} · ${q.project}`}
-          placeholder="Ask the assistant to help scope this…"
-          compact
-          seed={[{ role: "user", content: `Context: a customer requested a ${q.kind === "golive" ? "go-live" : "maintenance"} estimate for project "${q.project}". Their note: ${q.comments || "(none)"}. Help me scope it.` }]}
-        />
+        {/* Scope using the project's AI history via the session monitor:
+            "Watch session" above opens the room where the project AI
+            assistant lives. */}
 
         {/* Proposal */}
         <div className="flex flex-col gap-3 border-t pt-4" style={{ borderColor: "var(--border)" }}>

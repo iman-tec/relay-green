@@ -66,8 +66,13 @@ export function EngineerPresenceBadge({ userId }: { userId: string }) {
       }
     })();
 
+    // Per-mount UUID on the channel name so the badge survives a stale
+    // sibling subscription colliding under Supabase's name-based dedupe.
+    const suffix = typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     const ch = sb
-      .channel(`presence-badge-${userId}`)
+      .channel(`presence-badge-${userId}-${suffix}`)
       .on(
         "postgres_changes",
         {

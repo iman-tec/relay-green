@@ -109,7 +109,7 @@ export function QuoteRequestModal({
       <div
         role="dialog"
         aria-modal="true"
-        className="fixed left-1/2 top-1/2 z-[61] w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border shadow-2xl"
+        className="fixed left-1/2 top-1/2 z-[61] w-[calc(100vw-1.5rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border shadow-2xl max-h-[calc(100vh-2rem)] overflow-y-auto"
         style={{
           borderColor: "var(--border)",
           backgroundColor: "var(--surface)",
