@@ -118,6 +118,34 @@ export async function GET() {
     if (c.claimed_by && !currentByEng.has(c.claimed_by)) currentByEng.set(c.claimed_by, c);
   }
 
+  // 5. Per-engineer 30-day KPI strip (build minutes + session count) and the
+  //    live sentiment of the current call (latest_session_health), if any.
+  const since30 = new Date(Date.now() - 30 * 86_400_000).toISOString();
+  const liveSessionIds = Array.from(currentByEng.values()).map((c) => c.id);
+  const [{ data: kpiRows }, { data: healthRows }] = await Promise.all([
+    admin
+      .from("guest_calls")
+      .select("claimed_by, duration_minutes")
+      .in("claimed_by", engineerIds)
+      .gte("created_at", since30),
+    liveSessionIds.length
+      ? admin.from("latest_session_health").select("session_id, score, summary, message_count").in("session_id", liveSessionIds)
+      : Promise.resolve({ data: [] as { session_id: string; score: number; summary: string; message_count: number }[] }),
+  ]);
+
+  const kpiByEng = new Map<string, { buildMinutes: number; sessions: number }>();
+  for (const r of (kpiRows ?? []) as { claimed_by: string | null; duration_minutes: number | null }[]) {
+    if (!r.claimed_by) continue;
+    const k = kpiByEng.get(r.claimed_by) ?? { buildMinutes: 0, sessions: 0 };
+    k.buildMinutes += Math.round(Number(r.duration_minutes ?? 0));
+    k.sessions += 1;
+    kpiByEng.set(r.claimed_by, k);
+  }
+  const healthBySession = new Map<string, { score: number; summary: string; messageCount: number }>();
+  for (const h of (healthRows ?? []) as { session_id: string; score: number; summary: string; message_count: number }[]) {
+    healthBySession.set(h.session_id, { score: Number(h.score), summary: h.summary, messageCount: h.message_count });
+  }
+
   const lastByEng = new Map<string, (CallRow & { ended_at: string })>();
   for (const c of (pastCalls ?? []) as (CallRow & { ended_at: string })[]) {
     if (c.claimed_by && !lastByEng.has(c.claimed_by)) lastByEng.set(c.claimed_by, c);
@@ -127,6 +155,8 @@ export async function GET() {
     const cur  = currentByEng.get(p.id);
     const last = lastByEng.get(p.id);
     const pres = presenceById.get(p.id);
+    const kpi  = kpiByEng.get(p.id) ?? { buildMinutes: 0, sessions: 0 };
+    const sentiment = cur ? healthBySession.get(cur.id) ?? null : null;
     return {
       userId:          p.id,
       displayName:     p.full_name ?? "Unnamed",
@@ -138,6 +168,9 @@ export async function GET() {
       currentSessionId: cur?.id ?? null,
       currentStatus:   cur?.status ?? null,
       onCallSince:     cur?.assigned_at ?? cur?.created_at ?? null,
+      buildMinutes:    kpi.buildMinutes,
+      sessions30d:     kpi.sessions,
+      liveSentiment:   sentiment,
       lastCustomer:    last?.guest_name ?? null,
       lastCallAt:      last?.ended_at ?? null,
       isOnline:        onlineById.get(p.id) ?? null,
