@@ -7,8 +7,8 @@
  * "is anyone about to be left waiting?" a week or month ahead.
  */
 
-import { useCallback, useEffect, useState } from "react";
-import { Loader2, CalendarRange, AlertTriangle } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Loader2, CalendarRange, AlertTriangle, CalendarClock } from "lucide-react";
 import { Card, EmptyState as UiEmptyState } from "@/app/_components/ui";
 
 type Day = { date: string; weekday: number; coverageByHour: number[]; bookings: number; gaps: { startHour: number; endHour: number }[] };
@@ -110,10 +110,71 @@ export function CoveragePanel() {
               <span className="ml-2">Bk = bookings</span>
             </div>
           </Card>
+
+          <BookingsList />
         </>
       )}
     </div>
   );
+}
+
+// ── C2: bookings org-view ──────────────────────────────────────────────────
+type Booking = { id: string; engineer: string; engineerId: string; customer: string; project: string | null; slotStart: string; slotEnd: string; status: string };
+
+function BookingsList() {
+  const [rows, setRows] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [eng, setEng] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const res = await fetch("/api/supervisor/bookings", { cache: "no-store" });
+        if (res.ok && alive) setRows(((await res.json()) as { bookings: Booking[] }).bookings ?? []);
+      } finally { if (alive) setLoading(false); }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  const engineers = useMemo(() => [...new Map(rows.map((r) => [r.engineerId, r.engineer])).entries()], [rows]);
+  const filtered = eng ? rows.filter((r) => r.engineerId === eng) : rows;
+
+  return (
+    <Card variant="surface" className="p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--text)" }}>
+          <CalendarClock size={15} /> Bookings <span className="text-xs font-normal" style={{ color: "var(--text-muted)" }}>({filtered.length})</span>
+        </h3>
+        {engineers.length > 1 && (
+          <select value={eng} onChange={(e) => setEng(e.target.value)} className="h-8 rounded-md border px-2 text-xs" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }}>
+            <option value="">All engineers</option>
+            {engineers.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+          </select>
+        )}
+      </div>
+      {loading ? (
+        <div className="flex items-center gap-2 py-4 text-xs" style={{ color: "var(--text-muted)" }}><Loader2 size={13} className="animate-spin" /> Loading…</div>
+      ) : filtered.length === 0 ? (
+        <p className="py-2 text-xs" style={{ color: "var(--text-muted)" }}>No upcoming bookings.</p>
+      ) : (
+        <ul className="flex flex-col gap-1">
+          {filtered.map((b) => (
+            <li key={b.id} className="flex items-center gap-2 border-t py-2 text-xs first:border-t-0" style={{ borderColor: "var(--border)" }}>
+              <span className="w-32 shrink-0 tabular-nums" style={{ color: "var(--text)" }}>{fmtSlot(b.slotStart)}</span>
+              <span className="min-w-0 flex-1 truncate" style={{ color: "var(--text)" }}>{b.customer}{b.project ? <span style={{ color: "var(--text-faint)" }}> · {b.project}</span> : null}</span>
+              <span className="shrink-0" style={{ color: "var(--text-muted)" }}>{b.engineer}</span>
+              <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] uppercase" style={{ color: b.status === "booked" ? "var(--primary-hover)" : "var(--text-muted)", background: "color-mix(in srgb, var(--text) 6%, transparent)" }}>{b.status}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+function fmtSlot(iso: string) {
+  return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
 function cell(count: number): React.CSSProperties {
