@@ -19,7 +19,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useOverlayDismiss } from "@/lib/relay/useOverlayDismiss";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { Eye, Loader2, ArrowUpRight, Users, ChevronDown, Activity, Timer, Hash, Flag, X, TrendingUp, Wallet } from "lucide-react";
+import { Eye, Loader2, ArrowUpRight, Users, ChevronDown, Flag, X, TrendingUp, Wallet } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import { Button, Card, EmptyState as UiEmptyState, cn } from "@/app/_components/ui";
 import { eur } from "@/app/(staff)/enterprise/v2/_shared";
@@ -124,7 +124,7 @@ export function RosterPanel() {
 
       <ThemesCard />
       <PayoutsCard />
-      <div className="grid items-start gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+      <div className="grid items-stretch gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
         {engineers.map((e) => <EngineerCard key={e.userId} engineer={e} />)}
       </div>
     </div>
@@ -253,7 +253,7 @@ function EngineerCard({ engineer: e }: { engineer: Engineer }) {
   };
 
   return (
-    <Card variant="surface" className={cn("relative p-4", onCall && "relay-card-glow", expanded && "2xl:col-span-2")}
+    <Card variant="surface" className={cn("relative flex h-full flex-col p-4", onCall && "relay-card-glow", expanded && "2xl:col-span-2")}
       style={onCall ? ({ "--glow": "var(--ok)" } as React.CSSProperties) : undefined}>
       <button type="button" onClick={() => void toggle()} className="flex w-full items-start gap-3 text-left" aria-expanded={expanded}>
         <span className="relative mt-1 inline-flex size-3 shrink-0">
@@ -280,10 +280,12 @@ function EngineerCard({ engineer: e }: { engineer: Engineer }) {
       {onCall && <SentimentChip s={e.liveSentiment} />}
 
       {/* KPI strip */}
-      <div className="mt-3 grid grid-cols-3 gap-2">
-        <Kpi icon={<Activity size={12} />} label="Live now" value={onCall ? "1" : "0"} />
-        <Kpi icon={<Timer size={12} />} label="Build min" value={fmtNum(e.buildMinutes)} sub="30d" />
-        <Kpi icon={<Hash size={12} />} label="Sessions" value={fmtNum(e.sessions30d)} sub="30d" />
+      {/* On-call status already shows live state above, so the per-engineer
+          strip carries the two 30-day KPIs — 2 cells fit the narrow card
+          without truncating the numbers. */}
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <Kpi label="Build min" value={fmtNum(e.buildMinutes)} sub="30d" />
+        <Kpi label="Sessions" value={fmtNum(e.sessions30d)} sub="30d" />
       </div>
       {(e.golive > 0 || e.maintain > 0) && (
         <div className="mt-1.5 flex gap-3 text-[11px]" style={{ color: "var(--text-muted)" }}>
@@ -530,11 +532,11 @@ function SentimentChip({ s }: { s: Sentiment | null }) {
 
 function Kpi({ icon, label, value, sub }: { icon?: React.ReactNode; label: string; value: string; sub?: string }) {
   return (
-    <div className="rounded-lg border px-2 py-1.5" style={{ borderColor: "var(--border)" }}>
-      <div className="flex items-center gap-1 text-[10px] uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-        {icon}{label}
+    <div className="min-w-0 overflow-hidden rounded-lg border px-2 py-1.5" style={{ borderColor: "var(--border)" }}>
+      <div className="flex min-w-0 items-center gap-1 text-[10px] uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+        {icon}<span className="truncate">{label}</span>
       </div>
-      <div className="text-sm font-semibold tabular-nums" style={{ color: "var(--text)" }}>
+      <div className="whitespace-nowrap text-sm font-semibold tabular-nums" style={{ color: "var(--text)" }}>
         {value}{sub ? <span className="ml-0.5 text-[10px] font-normal" style={{ color: "var(--text-faint)" }}>{sub}</span> : null}
       </div>
     </div>
@@ -544,9 +546,9 @@ function Kpi({ icon, label, value, sub }: { icon?: React.ReactNode; label: strin
 function OnCall({ customer, since }: { customer: string | null; since: string | null }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="inline-flex size-1.5 animate-pulse rounded-full" style={{ backgroundColor: "var(--ok)" }} />
-      <span style={{ color: "var(--text)" }}>On call{customer ? <> · <span className="font-medium">{customer}</span></> : ""}</span>
-      {since && <span className="ml-auto tabular-nums" style={{ color: "var(--text-muted)" }}>{fmtSince(since)}</span>}
+      <span className="inline-flex size-1.5 shrink-0 animate-pulse rounded-full" style={{ backgroundColor: "var(--ok)" }} />
+      <span className="min-w-0 flex-1 truncate" style={{ color: "var(--text)" }}>On call{customer ? <> · <span className="font-medium">{customer}</span></> : ""}</span>
+      {since && <span className="shrink-0 whitespace-nowrap tabular-nums" style={{ color: "var(--text-muted)" }}>{fmtSince(since)}</span>}
     </div>
   );
 }
