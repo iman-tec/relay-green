@@ -22,6 +22,12 @@ type CallSurfaceProps = {
    *  state.markJoined() so the session lifecycle advances from
    *  'assigned' to 'joining'/'live'. */
   onJoined?: () => void;
+  /** When the surface is mounted inside a side rail (e.g. engineer's
+   *  right column), force participant tiles to stack vertically as
+   *  squares regardless of the rail's actual pixel width. Without this
+   *  hint, a rail that happens to be wider than the responsive threshold
+   *  still renders side-by-side rectangles. Default: false. */
+  compact?: boolean;
 };
 
 export const CallSurface = dynamic<CallSurfaceProps>(

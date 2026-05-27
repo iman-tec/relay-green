@@ -6,22 +6,54 @@ test.afterAll(async () => { await cleanupTestUsers(); });
 test.describe("auth guards", () => {
   test("/room redirects anonymous to /login", async ({ page }) => {
     await page.goto("/room");
-    await expect(page).toHaveURL(/\/login/);
+    await expect(page).toHaveURL(/\/login(\?|$)/);
   });
 
-  test("/dashboard redirects anonymous to /staff/login", async ({ page }) => {
+  test("/dashboard redirects anonymous to /staff", async ({ page }) => {
     await page.goto("/dashboard");
-    await expect(page).toHaveURL(/\/staff\/login/);
+    await expect(page).toHaveURL(/\/staff(\?|$)/);
   });
 
-  test("/triage redirects anonymous to /staff/login", async ({ page }) => {
+  test("/triage redirects anonymous to /staff", async ({ page }) => {
     await page.goto("/triage");
-    await expect(page).toHaveURL(/\/staff\/login/);
+    await expect(page).toHaveURL(/\/staff(\?|$)/);
   });
 
-  test("/inbox redirects anonymous to /staff/login", async ({ page }) => {
+  test("/inbox redirects anonymous to /staff", async ({ page }) => {
     await page.goto("/inbox");
-    await expect(page).toHaveURL(/\/staff\/login/);
+    await expect(page).toHaveURL(/\/staff(\?|$)/);
+  });
+
+  test("/supervise redirects anonymous to /staff", async ({ page }) => {
+    await page.goto("/supervise");
+    await expect(page).toHaveURL(/\/staff(\?|$)/);
+  });
+
+  test("/reseller/v2 redirects anonymous to /partner", async ({ page }) => {
+    await page.goto("/reseller/v2");
+    await expect(page).toHaveURL(/\/partner(\?|$)/);
+  });
+
+  test("/enterprise/v2 redirects anonymous to /business", async ({ page }) => {
+    await page.goto("/enterprise/v2");
+    await expect(page).toHaveURL(/\/business(\?|$)/);
+  });
+
+  test("/department/v2 redirects anonymous to /business", async ({ page }) => {
+    await page.goto("/department/v2");
+    await expect(page).toHaveURL(/\/business(\?|$)/);
+  });
+
+  test("/staff/login (legacy URL) redirects to /staff", async ({ page }) => {
+    await page.goto("/staff/login");
+    await expect(page).toHaveURL(/\/staff(\?|$)/);
+  });
+
+  test("anonymous can load each public login surface (200)", async ({ page }) => {
+    for (const url of ["/login", "/staff", "/partner", "/business"]) {
+      const res = await page.goto(url);
+      expect(res?.status(), `${url} should return 200`).toBe(200);
+    }
   });
 
   test("authed customer (no staff role) sees Pick role screen on /dashboard", async ({ page }) => {

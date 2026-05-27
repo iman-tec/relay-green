@@ -271,7 +271,7 @@ async function main() {
   console.log("      Engineer      engineer.beta2@relay.test      (Bree Beta Two)");
   console.log("");
   console.log(`  All new users share the demo password: ${DEMO_PASSWORD}`);
-  console.log(`  Sign in via /staff/login (OTP) or the Developer Shortcuts panel.`);
+  console.log(`  Sign in via /staff (OTP) or the Developer Shortcuts panel.`);
 }
 
 main().catch((err) => {

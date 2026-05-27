@@ -31,7 +31,7 @@ import {
   Wallet, RefreshCw, Settings, LogOut, Check, Folder, Pencil, PanelRightOpen, PanelRightClose,
   Building2, FileText, Clock, Video, MoreHorizontal, UserPlus, Pin, SlidersHorizontal,
   Paperclip, Mic, Download, Music, AudioLines, ShieldCheck, Receipt, Home,
-  Trash2, Rocket, Wrench, Menu, MessageCircle,
+  Trash2, Rocket, Wrench, Menu, MessageCircle, ArrowLeft,
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { ThemeTriplet } from "@/app/_components/ThemeTriplet";
@@ -1485,15 +1485,15 @@ export function RoomClient() {
       />
       </div>
 
-      <LaunchCallProvider value={launchCall}>
+      <LaunchCallProvider value={{ launchCall, isCallOpen: callOpen }}>
       {/* When the call is open the customer's video gets the MAIN panel —
           they're here to see the engineer / their own share. Chat moves to
           the right rail. When no call is live, the main column owns the
           chat full-width as before. */}
-      <PanelGroup direction="horizontal" autoSaveId="relay-room-call-v2" className="flex min-w-0 flex-1">
+      <PanelGroup direction="horizontal" autoSaveId="relay-room-call-v4" className="flex min-w-0 flex-1">
         {callOpen && state.session && (
           <>
-            <Panel id="room-call" order={1} defaultSize={60} minSize={40} maxSize={75}>
+            <Panel id="room-call" order={1} defaultSize={52} minSize={20}>
               <div className="h-full w-full" style={{ background: "var(--background)" }}>
                 <CallSurface
                   sessionId={state.session.id}
@@ -1507,11 +1507,20 @@ export function RoomClient() {
             <Resizer />
           </>
         )}
+        {/* defaultSize + minSize MUST be stable across re-renders or
+            react-resizable-panels treats every prop change as a reset and
+            the user-dragged size snaps back on the next render (which
+            happens every realtime tick). Same defaults regardless of
+            callOpen — when room-call is absent the PanelGroup auto-fills
+            this Panel to 100% via the flex layout it owns.
+            v4 defaultSize 48 / minSize 28 keeps the chat rail visibly open
+            the moment the call mounts (previously stuck collapsed when an
+            older saved width was restored from autoSaveId v3). */}
         <Panel
           id="room-main"
           order={2}
-          defaultSize={callOpen ? 40 : 100}
-          minSize={callOpen ? 26 : 35}
+          defaultSize={48}
+          minSize={28}
         >
           <div className="relative flex h-full min-w-0 flex-col">
             {/* Floating status / timer chip + end-meeting button (top-right) */}
@@ -1803,6 +1812,11 @@ const MainPane = memo(function MainPane({
 }) {
   const session = state.session;
 
+  // EndedSessionReview "Back" dismissal — keyed on session.id so a NEW
+  // ended session re-shows the review. Without this the customer was
+  // trapped on a stuck "Waiting for Zoom summary…" view with no exit.
+  const [reviewDismissedFor, setReviewDismissedFor] = useState<string | null>(null);
+
   // Auto-close the prep view if its project disappears between renders
   // (deleted in another tab, archived, etc). Runs as an effect AFTER
   // render so we don't synchronously call setState on the parent
@@ -1896,12 +1910,13 @@ const MainPane = memo(function MainPane({
   // right = WhatsApp chat stub (30%, inactive — there's no live call).
   // The actual chat history during the call rolls into the AI summary,
   // so the customer doesn't lose anything by not seeing the timeline.
-  if (session?.status === "ended") {
+  if (session?.status === "ended" && reviewDismissedFor !== session.id) {
     return (
       <EndedSessionReview
         session={session}
         messages={state.messages}
         currentUserId={state.auth.kind === "authed" ? state.auth.userId : null}
+        onBack={() => setReviewDismissedFor(session.id)}
       />
     );
   }
@@ -3882,16 +3897,21 @@ function EndedSessionReview({
   session,
   messages,
   currentUserId,
+  onBack,
 }: {
   session: GuestCall;
   messages: GuestMessage[];
   currentUserId: string | null;
+  /** Dismiss the post-call review → caller flips RoomClient back to its
+   *  landing/no-session state. Without this the customer has no clear
+   *  exit from a "stuck on Waiting for Zoom summary" view. */
+  onBack?: () => void;
 }) {
   const [chatCollapsed, setChatCollapsed] = useState(false);
   return (
     <div className="flex h-full w-full">
       <div className="flex min-w-0 flex-1 flex-col">
-        <SummaryPanel session={session} messages={messages} currentUserId={currentUserId} />
+        <SummaryPanel session={session} messages={messages} currentUserId={currentUserId} onClose={onBack} />
       </div>
       <ChatPanelStub
         sidebarCollapsed={chatCollapsed}
@@ -4092,21 +4112,22 @@ function SummaryPanel({
       style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
     >
       <div className="flex items-center gap-2 border-b px-4 py-3" style={{ borderColor: "var(--border)" }}>
-        <Sparkles size={12} style={{ color: BRAND_GREEN }} />
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium opacity-70 transition-opacity hover:opacity-100"
+            style={{ color: "var(--text-muted)" }}
+            aria-label="Back to room"
+          >
+            <ArrowLeft size={13} />
+            Back
+          </button>
+        )}
+        <Sparkles size={12} style={{ color: BRAND_GREEN, marginLeft: onClose ? 4 : 0 }} />
         <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text)" }}>
           Summary
         </span>
         <div className="flex-1" />
-        {onClose && (
-          <button
-            onClick={onClose}
-            className="rounded-md p-1 opacity-60 transition-opacity hover:opacity-100"
-            style={{ color: "var(--text-muted)" }}
-            aria-label="Close review"
-          >
-            <X size={14} />
-          </button>
-        )}
       </div>
       <SummaryView session={session} messages={messages} currentUserId={currentUserId} />
     </section>
@@ -4375,7 +4396,7 @@ const FloatingStatus = memo(function FloatingStatus({
         {showEnd && (
           <button
             onClick={() => setConfirmEnd(true)}
-            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
+            className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
             style={{ backgroundColor: "var(--risk)" }}
           >
             <PhoneOff size={12} />
@@ -4487,14 +4508,14 @@ function LiveTimer({
     : "paid";
 
   return (
-    <span className="inline-flex items-baseline gap-1.5 text-xs font-medium">
+    <span className="inline-flex shrink-0 items-baseline gap-1.5 whitespace-nowrap text-xs font-medium">
       <span
-        className="font-semibold tabular-nums"
+        className="whitespace-nowrap font-semibold tabular-nums"
         style={{ fontFamily: "var(--font-inter)", color, fontSize: 13 }}
       >
         {timer.display}
       </span>
-      <span style={{ color: "var(--text-muted)" }}>{suffix}</span>
+      <span className="whitespace-nowrap" style={{ color: "var(--text-muted)" }}>{suffix}</span>
     </span>
   );
 }
@@ -4504,8 +4525,8 @@ function LiveTimer({
 function CompactStatus({ session }: { session: GuestCall }) {
   const cfg = pillConfig(session.status, session.urgency);
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider" style={{ color: cfg.fg }}>
-      <span className="relative flex h-2 w-2">
+    <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-medium uppercase tracking-wider" style={{ color: cfg.fg }}>
+      <span className="relative flex h-2 w-2 shrink-0">
         {cfg.pulse && (
           <span
             className="absolute inset-0 rounded-full opacity-70"
@@ -4514,7 +4535,7 @@ function CompactStatus({ session }: { session: GuestCall }) {
         )}
         <span className="relative h-2 w-2 rounded-full" style={{ backgroundColor: cfg.fg }} />
       </span>
-      {cfg.label}
+      <span className="whitespace-nowrap">{cfg.label}</span>
     </span>
   );
 }
@@ -8441,7 +8462,31 @@ function SummaryView({
   // Drive UI off the explicit summary_state machine — see migration
   // 20260518200000_summary_state.sql. Avoids the prior infinite-spinner
   // bug when the Zoom AI Companion summary never lands.
-  const state = session.summary_state ?? "idle";
+  const rawState = session.summary_state ?? "idle";
+  // Client-side timeout: if the DB has been in waiting_for_transcript for
+  // longer than the patience window, treat it as transcript_unavailable in
+  // the UI so the user sees a clear "no summary" message + the chat
+  // history below — instead of an infinite spinner. The backend state is
+  // unchanged; this is presentation only.
+  const SUMMARY_PATIENCE_MS = 90_000;
+  const [waitedTooLong, setWaitedTooLong] = useState(false);
+  useEffect(() => {
+    if (rawState !== "waiting_for_transcript") {
+      setWaitedTooLong(false);
+      return;
+    }
+    const endedAtMs = session.ended_at ? new Date(session.ended_at).getTime() : Date.now();
+    const elapsed = Date.now() - endedAtMs;
+    if (elapsed >= SUMMARY_PATIENCE_MS) {
+      setWaitedTooLong(true);
+      return;
+    }
+    const t = setTimeout(() => setWaitedTooLong(true), SUMMARY_PATIENCE_MS - elapsed);
+    return () => clearTimeout(t);
+  }, [rawState, session.ended_at]);
+  const state = (rawState === "waiting_for_transcript" && waitedTooLong)
+    ? "transcript_unavailable"
+    : rawState;
   const generating =
     state === "generating_session_summary" ||
     state === "generating_zoom_summary" ||
@@ -8954,11 +8999,24 @@ function ChatHistoryView({ messages }: { messages: GuestMessage[] }) {
 function Resizer() {
   return (
     <PanelResizeHandle
-      className="group relative w-1.5 transition-colors hover:bg-[--green-soft]"
+      className="group relative w-2 cursor-col-resize transition-colors data-[resize-handle-state=drag]:bg-[--green-strong] hover:bg-[--green-soft]"
       style={
-        { backgroundColor: "var(--border)", ["--green-soft" as string]: BRAND_GREEN_SOFT } as React.CSSProperties
+        {
+          backgroundColor: "var(--border)",
+          ["--green-soft" as string]: BRAND_GREEN_SOFT,
+          ["--green-strong" as string]: BRAND_GREEN,
+        } as React.CSSProperties
       }
-    />
+    >
+      <span
+        aria-hidden
+        className="pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col gap-1 opacity-60 group-hover:opacity-100"
+      >
+        <span className="block h-1 w-1 rounded-full" style={{ backgroundColor: "var(--text-muted)" }} />
+        <span className="block h-1 w-1 rounded-full" style={{ backgroundColor: "var(--text-muted)" }} />
+        <span className="block h-1 w-1 rounded-full" style={{ backgroundColor: "var(--text-muted)" }} />
+      </span>
+    </PanelResizeHandle>
   );
 }
 

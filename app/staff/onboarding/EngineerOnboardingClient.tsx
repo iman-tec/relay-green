@@ -73,7 +73,7 @@ export function EngineerOnboardingClient() {
     void (async () => {
       const { data } = await sb.auth.getUser();
       if (!data.user) {
-        router.replace("/staff/login");
+        router.replace("/staff");
         return;
       }
       setUserId(data.user.id);

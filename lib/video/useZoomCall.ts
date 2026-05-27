@@ -176,6 +176,25 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
           }
         } catch (e) { console.warn("[useZoomCall] active-share probe", e); }
 
+        // Only on REAL page unload (close tab, navigate away, refresh) do
+        // we notify the server. Vital distinction: React unmount fires on
+        // HMR re-renders and parent re-mounts too — if we ended the session
+        // on every React unmount, dev would kill the call on hot-reload AND
+        // a customer refresh would end their own call. pagehide fires only
+        // when the page is actually going away (bfcache-aware).
+        const onPageHide = () => {
+          try {
+            const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL ?? ""}/functions/v1/zoom-video-sdk-end`;
+            const body = JSON.stringify({ session_id: sessionId });
+            if (typeof navigator !== "undefined" && navigator.sendBeacon && url) {
+              navigator.sendBeacon(url, new Blob([body], { type: "application/json" }));
+            }
+          } catch { /* unload races are fine */ }
+        };
+        if (typeof window !== "undefined") {
+          window.addEventListener("pagehide", onPageHide);
+        }
+
         teardownRef.current = () => {
           try {
             client.off("user-added", onUserUpdate);
@@ -185,6 +204,9 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
             client.off("active-share-change", onActiveShare);
             client.off("network-quality-change", onNetwork);
           } catch { /* listeners may already be gone */ }
+          if (typeof window !== "undefined") {
+            window.removeEventListener("pagehide", onPageHide);
+          }
         };
 
         refresh();
@@ -199,34 +221,13 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
       cancelled = true;
       try { teardownRef.current?.(); } catch { /* ignore */ }
       teardownRef.current = null;
-      // If explicit `leave()` already ran, the SDK is mid-leave or done —
-      // don't fire a second leave. The race wedges the SDK on rejoin.
-      if (!leftRef.current) {
-        const client = clientRef.current;
-        if (client) {
-          try { void client.leave(false); } catch { /* ignore */ }
-        }
-        // Unmount-without-explicit-leave path (nav away, tab close, parent
-        // unmounts CallSurface). Notify the server so the session row
-        // doesn't stay stuck in 'live' — without this, the next page load
-        // still shows "you are on a call". sendBeacon is unload-safe;
-        // functions.invoke isn't.
-        try {
-          const sb = supabaseRef.current;
-          const session = (sb as unknown as { auth?: { session?: () => any } }).auth;
-          // Best-effort: post to the function's invoke URL via beacon. The
-          // function reads session_id from the JSON body and tolerates
-          // unauth (relies on the row state). If beacon is unavailable
-          // (very old browsers) we fall back to a fire-and-forget invoke.
-          const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL ?? ""}/functions/v1/zoom-video-sdk-end`;
-          const body = JSON.stringify({ session_id: sessionId });
-          if (typeof navigator !== "undefined" && navigator.sendBeacon && url) {
-            navigator.sendBeacon(url, new Blob([body], { type: "application/json" }));
-          } else {
-            void sb.functions.invoke("zoom-video-sdk-end", { body: { session_id: sessionId } });
-          }
-        } catch (e) { console.warn("[useZoomCall] cleanup end-notify", e); }
-      }
+      // React unmount fires on HMR + parent re-render — NOT a signal the
+      // user actually left. We deliberately do NOT call client.leave() or
+      // notify the server here. Real exits are handled two other ways:
+      //   • Explicit Leave button → leave() in this hook (sets leftRef).
+      //   • Page close / nav away → pagehide listener above + Zoom SDK's
+      //     own leaveOnPageUnload:true (set in init()).
+      // This preserves the call across HMR and across React re-renders.
       joinedKeyRef.current = null;
       leftRef.current = false;
     };

@@ -128,6 +128,50 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
 
   const [collapsed, setCollapsed] = useState(false);
 
+  // Drag-to-resize the expanded sidebar. Clamped + persisted to
+  // localStorage so the user's chosen width survives refresh. Collapsed
+  // state still snaps to SIDEBAR_CLOSED_W (60px) for the icon rail.
+  const SIDEBAR_MIN = 200;
+  const SIDEBAR_MAX = 480;
+  const [sidebarWidth, setSidebarWidth] = useState<number>(SIDEBAR_OPEN_W);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem("relay:staff-sidebar-width");
+      const parsed = raw ? Number(raw) : NaN;
+      if (Number.isFinite(parsed) && parsed >= SIDEBAR_MIN && parsed <= SIDEBAR_MAX) {
+        setSidebarWidth(parsed);
+      }
+    } catch { /* fall through to default */ }
+  }, []);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem("relay:staff-sidebar-width", String(sidebarWidth));
+    } catch { /* ignore */ }
+  }, [sidebarWidth]);
+  const [sidebarDragging, setSidebarDragging] = useState(false);
+  const startSidebarDrag = useCallback((e: React.PointerEvent) => {
+    if (collapsed) return;
+    e.preventDefault();
+    setSidebarDragging(true);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    const onMove = (mv: PointerEvent) => {
+      const next = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, mv.clientX));
+      setSidebarWidth(next);
+    };
+    const onUp = () => {
+      setSidebarDragging(false);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }, [collapsed]);
+
   // Presence heartbeat — engineers only. The RPC self-gates with NOT_AN_ENGINEER
   // so non-engineer staff who incidentally render this shell are no-ops.
   useEngineerHeartbeat(engineer);
@@ -235,7 +279,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
           </p>
           <div className="flex justify-center gap-2">
             <Link
-              href="/staff/login"
+              href="/staff"
               className="rounded-md px-4 py-2 text-sm font-medium"
               style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
             >
@@ -299,13 +343,28 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen" style={{ backgroundColor: "var(--background)" }}>
       <aside
-        className="sticky top-0 flex h-screen shrink-0 flex-col border-r transition-[width] duration-200 ease-out"
+        className={`sticky top-0 flex h-screen shrink-0 flex-col border-r ${sidebarDragging ? "" : "transition-[width] duration-200 ease-out"}`}
         style={{
-          width: collapsed ? SIDEBAR_CLOSED_W : SIDEBAR_OPEN_W,
+          width: collapsed ? SIDEBAR_CLOSED_W : sidebarWidth,
           borderColor: "var(--border)",
           backgroundColor: "var(--surface)",
+          position: "relative",
         }}
       >
+        {/* Drag-to-resize handle on the right edge. Hidden when the
+            sidebar is collapsed (the user toggles back via the icon).
+            6px wide invisible hit zone; subtle accent on hover so the
+            affordance is discoverable. Cursor flips to col-resize. */}
+        {!collapsed && (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize sidebar"
+            onPointerDown={startSidebarDrag}
+            className={`group absolute right-0 top-0 z-20 h-full w-1.5 cursor-col-resize transition-colors hover:bg-[var(--primary-soft)] ${sidebarDragging ? "bg-[var(--primary)]" : ""}`}
+            style={{ transform: "translateX(50%)" }}
+          />
+        )}
         {/* Top: wordmark + theme triplet + home + collapse toggle.
             Wordmark already links home, but engineers asked for an explicit
             Home icon back — the wordmark is visually busy with the presence
@@ -573,7 +632,7 @@ function ProfileButton({
       await supabaseRef.current.rpc("supervisor_set_online", { _online: false });
     } catch { /* best-effort cleanup */ }
     await supabaseRef.current.auth.signOut();
-    router.push("/staff/login");
+    router.push("/staff");
   };
 
   const userEmail = email;

@@ -12,7 +12,7 @@
  *   npx tsx scripts/bootstrap-super-admin.ts
  *
  * Auth model: email OTP. The Super Admin user is created with email
- * confirmed and no password. They sign in via /staff/login by requesting
+ * confirmed and no password. They sign in via /staff by requesting
  * a 6-digit code that Supabase emails them. Subsequent invites for staff
  * / enterprise admins / customers follow the same email-OTP flow with an
  * initial "Invite User" magic-link email.
@@ -162,7 +162,7 @@ async function main() {
 
   console.log("");
   console.log(`✓ Bootstrapped ${SUPER_ADMINS.length} Super Admin${SUPER_ADMINS.length === 1 ? "" : "s"}.`);
-  console.log(`  Sign in at /staff/login with any of the listed emails → enter the OTP from your inbox.`);
+  console.log(`  Sign in at /staff with any of the listed emails → enter the OTP from your inbox.`);
 }
 
 main().catch((err) => {

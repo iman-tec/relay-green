@@ -62,7 +62,7 @@ export function SetPasswordClient() {
       };
       if (!res.ok || !body.ok) {
         if (res.status === 401) {
-          router.replace(mode === "staff" ? "/staff/login" : "/login");
+          router.replace(mode === "staff" ? "/staff" : "/login");
           return;
         }
         setError(body.error ?? "Could not save password.");

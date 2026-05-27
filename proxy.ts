@@ -38,21 +38,40 @@ const COUNTRY_TO_THEME: Record<string, "cream" | "dark" | "espresso" | "klm"> = 
   SG: "dark",
 };
 
-// Routes split by which login surface they belong to. Staff routes bounce
-// unauthed traffic to /staff/login (the 8-digit-code experience); customer
-// routes bounce to /login (the magic-link experience). Keeping them in two
-// lists means a customer hitting /room while signed out lands on the right
-// form instead of being asked for a staff OTP.
+// Routes split by which login surface their audience belongs to. Each
+// surface has its own URL — unauthed traffic on a protected prefix is
+// redirected to the matching surface so a recipient hits the right form
+// (no "asked for a staff OTP on the customer page" confusion). Real
+// authorization (role checks, RLS) lives server-side; this is the fast
+// edge layer.
+//
+// Surface mapping:
+//   customer  → /login       (client)
+//   staff     → /staff       (super_admin / supervisor / engineer)
+//   partner   → /partner     (reseller — "Channel Partner")
+//   business  → /business    (enterprise_admin / department_admin / dept member)
 const STAFF_PREFIXES = [
   "/dashboard",
   "/inbox",
   "/triage",
   "/supervise",
   "/admin",
-  "/enterprise",
-  "/reseller",
-  "/department",
+  "/calendar",
+  "/finance",
+  "/operations",
+  "/settings",
+  "/session-review",
   "/staff/session",
+  "/staff/onboarding",
+];
+
+const PARTNER_PREFIXES = [
+  "/reseller",
+];
+
+const BUSINESS_PREFIXES = [
+  "/enterprise",
+  "/department",
 ];
 
 const CUSTOMER_PREFIXES = [
@@ -60,11 +79,21 @@ const CUSTOMER_PREFIXES = [
   "/account",
 ];
 
-const STAFF_LOGIN = "/staff/login";
+const STAFF_LOGIN    = "/staff";
+const PARTNER_LOGIN  = "/partner";
+const BUSINESS_LOGIN = "/business";
 const CUSTOMER_LOGIN = "/login";
 
 function matchesPrefix(pathname: string, prefixes: readonly string[]): boolean {
   return prefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
+function loginForPath(pathname: string): string | null {
+  if (matchesPrefix(pathname, STAFF_PREFIXES))    return STAFF_LOGIN;
+  if (matchesPrefix(pathname, PARTNER_PREFIXES))  return PARTNER_LOGIN;
+  if (matchesPrefix(pathname, BUSINESS_PREFIXES)) return BUSINESS_LOGIN;
+  if (matchesPrefix(pathname, CUSTOMER_PREFIXES)) return CUSTOMER_LOGIN;
+  return null;
 }
 
 export async function proxy(req: NextRequest) {
@@ -92,15 +121,14 @@ export async function proxy(req: NextRequest) {
     await supabase.auth.getUser();
   }
 
-  // Route protection — redirect unauthenticated users on protected pages.
-  // Staff routes bounce to /staff/login; customer routes (/room) bounce to
-  // /login so the right form renders. Anything not listed (homepage,
-  // marketing, /login itself) is left alone.
+  // Route protection — redirect unauthenticated users on protected pages
+  // to the login surface their audience belongs to (see SURFACE_URL in
+  // lib/relay/loginSurface.ts). Anything not listed (homepage, marketing,
+  // login surfaces themselves) is left alone.
   const { pathname } = req.nextUrl;
-  const isStaff    = matchesPrefix(pathname, STAFF_PREFIXES);
-  const isCustomer = matchesPrefix(pathname, CUSTOMER_PREFIXES);
+  const target = loginForPath(pathname);
 
-  if (isStaff || isCustomer) {
+  if (target) {
     // After the getUser() call above, the cookie may have been refreshed.
     // Check for a valid Supabase auth cookie to decide redirect.
     const hasSession = req.cookies
@@ -109,7 +137,7 @@ export async function proxy(req: NextRequest) {
 
     if (!hasSession) {
       const url = req.nextUrl.clone();
-      url.pathname = isStaff ? STAFF_LOGIN : CUSTOMER_LOGIN;
+      url.pathname = target;
       return NextResponse.redirect(url);
     }
   }

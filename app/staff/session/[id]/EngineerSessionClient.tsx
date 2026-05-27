@@ -14,7 +14,7 @@
  * (the post-call landing screen with recent calls + take-next).
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -30,7 +30,6 @@ import { MeetingChatEntry } from "@/app/_components/MeetingChatEntry";
 import { MeetingSummaryEntry, isAiSummaryMessageBody } from "@/app/_components/MeetingSummaryEntry";
 import { ChatComposer } from "@/app/_components/ChatComposer";
 import { EngineerAiAsk } from "@/app/_components/EngineerAiAsk";
-import { AssistantBar } from "@/app/_components/AssistantBar";
 import { ProjectAIAssistant } from "@/app/_components/ProjectAIAssistant";
 import { MessageAttachments } from "@/app/_components/MessageAttachments";
 import { EditableSummary } from "@/app/_components/EditableSummary";
@@ -285,7 +284,7 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
   }
 
   return (
-    <LaunchCallProvider value={launchCall}>
+    <LaunchCallProvider value={{ launchCall, isCallOpen: callOpen }}>
     <div
       className="flex h-screen w-screen overflow-hidden"
       style={{ backgroundColor: "var(--background)", color: "var(--text)" }}
@@ -305,7 +304,7 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
        *                   launching the call. */}
       {callOpen && state.session ? (
         <PanelGroup direction="horizontal" autoSaveId="relay-eng-call-v3" className="flex min-w-0 flex-1">
-          <Panel id="eng-call-ai" order={1} defaultSize={60} minSize={40}>
+          <Panel id="eng-call-ai" order={1} defaultSize={60} minSize={20}>
             <div
               className="flex h-full min-h-0 flex-col overflow-hidden"
               style={{ background: "var(--surface)" }}
@@ -332,7 +331,7 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
             </div>
           </Panel>
           <Resizer />
-          <Panel id="eng-call-side" order={2} defaultSize={40} minSize={28} maxSize={55}>
+          <Panel id="eng-call-side" order={2} defaultSize={40} minSize={20}>
             <div
               className="flex h-full min-h-0 flex-col overflow-hidden"
               style={{ background: "var(--surface)", borderLeft: "1px solid var(--border)" }}
@@ -345,8 +344,8 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
                   onStart={() => setStarted(true)}
                 />
               )}
-              <PanelGroup direction="vertical" autoSaveId="relay-eng-call-side-inner" className="min-h-0 flex-1">
-                <Panel id="eng-side-video" order={1} defaultSize={55} minSize={30}>
+              <PanelGroup direction="vertical" autoSaveId="relay-eng-call-side-inner-v2" className="min-h-0 flex-1">
+                <Panel id="eng-side-video" order={1} defaultSize={35} minSize={15}>
                   <div className="h-full w-full" style={{ background: "var(--background)" }}>
                     <CallSurface
                       sessionId={state.session.id}
@@ -358,12 +357,25 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
                   </div>
                 </Panel>
                 <PanelResizeHandle
-                  className="group relative h-1.5 transition-colors hover:bg-[--green-soft]"
+                  className="group relative h-2 cursor-row-resize transition-colors data-[resize-handle-state=drag]:bg-[--green-strong] hover:bg-[--green-soft]"
                   style={
-                    { backgroundColor: "var(--border)", ["--green-soft" as string]: BRAND_GREEN_SOFT } as React.CSSProperties
+                    {
+                      backgroundColor: "var(--border)",
+                      ["--green-soft" as string]: BRAND_GREEN_SOFT,
+                      ["--green-strong" as string]: BRAND_GREEN,
+                    } as React.CSSProperties
                   }
-                />
-                <Panel id="eng-side-chat" order={2} defaultSize={45} minSize={25}>
+                >
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-row gap-1 opacity-60 group-hover:opacity-100"
+                  >
+                    <span className="block h-1 w-1 rounded-full" style={{ backgroundColor: "var(--text-muted)" }} />
+                    <span className="block h-1 w-1 rounded-full" style={{ backgroundColor: "var(--text-muted)" }} />
+                    <span className="block h-1 w-1 rounded-full" style={{ backgroundColor: "var(--text-muted)" }} />
+                  </span>
+                </PanelResizeHandle>
+                <Panel id="eng-side-chat" order={2} defaultSize={65} minSize={15}>
                   <div className="flex h-full min-h-0 flex-col overflow-hidden border-t" style={{ borderColor: "var(--border)" }}>
                     <ChatPane
                       state={state}
@@ -450,11 +462,11 @@ function MainPane({
   if (isEnded) {
     return (
       <PanelGroup direction="horizontal" autoSaveId="relay-eng-review" className="h-full">
-        <Panel defaultSize={60} minSize={40} order={1}>
+        <Panel defaultSize={60} minSize={20} order={1}>
           <ChatPane state={state} fullWidth />
         </Panel>
         <Resizer />
-        <Panel defaultSize={40} minSize={28} order={2}>
+        <Panel defaultSize={40} minSize={20} order={2}>
           <ReviewPanel
             session={session}
             messages={state.messages}
@@ -477,11 +489,14 @@ function MainPane({
   }
   return (
     <PanelGroup direction="horizontal" autoSaveId="relay-eng-active" className="h-full">
-      <Panel defaultSize={62} minSize={40} order={1}>
-        <ChatPane state={state} fullWidth readOnly={!isEngineer} />
+      <Panel defaultSize={62} minSize={20} order={1}>
+        {/* hideAiAsk: ProjectAIAssistant in the right panel handles the
+            project Q&A, so suppress the inline EngineerAiAsk pill below
+            the composer to avoid two parallel AI input boxes. */}
+        <ChatPane state={state} fullWidth readOnly={!isEngineer} hideAiAsk />
       </Panel>
       <Resizer />
-      <Panel defaultSize={38} minSize={26} order={2}>
+      <Panel defaultSize={38} minSize={20} order={2}>
         <ProjectAIAssistant
           projectId={session.project_id ?? null}
           projectName={session.project_name ?? null}
@@ -543,6 +558,51 @@ function Sidebar({
   // Default open since the engineer actively uses customer history during
   // a call; collapse is for when they want more room for the Zoom video.
   const [collapsed, setCollapsed] = useState(false);
+
+  // Drag-to-resize the expanded sidebar. Persists per-engineer in
+  // localStorage so a refresh keeps your chosen width. Collapsed state
+  // still snaps to the 56-px icon rail.
+  const SIDEBAR_MIN = 220;
+  const SIDEBAR_MAX = 460;
+  const SIDEBAR_DEFAULT = 260;
+  const [sidebarWidth, setSidebarWidth] = useState<number>(SIDEBAR_DEFAULT);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem("relay:eng-session-sidebar-width");
+      const parsed = raw ? Number(raw) : NaN;
+      if (Number.isFinite(parsed) && parsed >= SIDEBAR_MIN && parsed <= SIDEBAR_MAX) {
+        setSidebarWidth(parsed);
+      }
+    } catch { /* fall back to default */ }
+  }, []);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem("relay:eng-session-sidebar-width", String(sidebarWidth));
+    } catch { /* ignore */ }
+  }, [sidebarWidth]);
+  const [sidebarDragging, setSidebarDragging] = useState(false);
+  const startSidebarDrag = useCallback((e: React.PointerEvent) => {
+    if (collapsed) return;
+    e.preventDefault();
+    setSidebarDragging(true);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    const onMove = (mv: PointerEvent) => {
+      const next = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, mv.clientX));
+      setSidebarWidth(next);
+    };
+    const onUp = () => {
+      setSidebarDragging(false);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }, [collapsed]);
 
   // ── Collapsed rail ──────────────────────────────────────────────────────
   if (collapsed) {
@@ -608,12 +668,33 @@ function Sidebar({
     );
   }
 
-  // ── Expanded sidebar (260 px) ───────────────────────────────────────────
+  // ── Expanded sidebar (drag-resizable) ───────────────────────────────────
   return (
     <aside
-      className="flex h-full w-[260px] shrink-0 flex-col"
-      style={{ borderRight: "1px solid var(--border)", backgroundColor: "var(--surface)" }}
+      className={`relative flex h-full shrink-0 flex-col ${sidebarDragging ? "" : "transition-[width] duration-150 ease-out"}`}
+      style={{
+        width: sidebarWidth,
+        borderRight: "1px solid var(--border)",
+        backgroundColor: "var(--surface)",
+      }}
     >
+      {/* Drag handle on the right edge — invisible 6px hit zone, subtle
+          accent on hover so the affordance is discoverable. Cursor flips
+          to col-resize. */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize sidebar"
+        onPointerDown={startSidebarDrag}
+        className={`group absolute right-0 top-0 z-20 h-full w-1.5 cursor-col-resize transition-colors hover:bg-[--green-soft] ${sidebarDragging ? "bg-[--green-strong]" : ""}`}
+        style={
+          {
+            transform: "translateX(50%)",
+            ["--green-soft" as string]: BRAND_GREEN_SOFT,
+            ["--green-strong" as string]: BRAND_GREEN,
+          } as React.CSSProperties
+        }
+      />
       {/* Brand + back-to-inbox + collapse toggle */}
       <div className="flex h-12 items-center justify-between gap-1 px-3">
         <Wordmark size="md" />
@@ -760,11 +841,6 @@ function Sidebar({
         </div>
         {/* Engineers can raise a hand to their supervisor mid-call. */}
         {!isSupervisor && <EscalateButton sessionId={session.id} />}
-        {/* AI assistant — available to the engineer on call and to supervisors
-            monitoring (read-only viewers still get the aid). */}
-        <div className="mt-2">
-          <AssistantBar compact contextLabel="this session" placeholder="Ask the assistant…" />
-        </div>
       </div>
     </aside>
   );
@@ -1749,11 +1825,25 @@ function SummaryView({
 function Resizer() {
   return (
     <PanelResizeHandle
-      className="group relative w-1.5 transition-colors hover:bg-[--green-soft]"
+      className="group relative w-2 cursor-col-resize transition-colors data-[resize-handle-state=drag]:bg-[--green-strong] hover:bg-[--green-soft]"
       style={
-        { backgroundColor: "var(--border)", ["--green-soft" as string]: BRAND_GREEN_SOFT } as React.CSSProperties
+        {
+          backgroundColor: "var(--border)",
+          ["--green-soft" as string]: BRAND_GREEN_SOFT,
+          ["--green-strong" as string]: BRAND_GREEN,
+        } as React.CSSProperties
       }
-    />
+    >
+      {/* Centered grip dots so the handle is visually discoverable */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col gap-1 opacity-60 group-hover:opacity-100"
+      >
+        <span className="block h-1 w-1 rounded-full" style={{ backgroundColor: "var(--text-muted)" }} />
+        <span className="block h-1 w-1 rounded-full" style={{ backgroundColor: "var(--text-muted)" }} />
+        <span className="block h-1 w-1 rounded-full" style={{ backgroundColor: "var(--text-muted)" }} />
+      </span>
+    </PanelResizeHandle>
   );
 }
 

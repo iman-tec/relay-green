@@ -63,10 +63,15 @@ export function useSessionTimer(
       ? joinedAtOrInput
       : { joinedAt: joinedAtOrInput as string | null, freeMinutes: legacyFreeMinutes };
 
-  const [now, setNow] = useState(() => Date.now());
+  // Tick at 250ms (sub-second) so the visible MM:SS rolls over within a
+  // quarter-second of crossing the next second boundary, and `Date.now()`
+  // is read FRESH at render time — using a `now` state captured at hook
+  // mount caused the first second to flash "00:-1" or stick at "00:00"
+  // because the state was stale relative to a later-arriving anchor.
+  const [, setTick] = useState(0);
   useEffect(() => {
     if (!input.joinedAt) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
+    const id = setInterval(() => setTick((t) => (t + 1) % 1_000_000), 250);
     return () => clearInterval(id);
   }, [input.joinedAt]);
 
@@ -76,7 +81,7 @@ export function useSessionTimer(
   // runs in staff/elapsed mode (counts up, no enforcement).
   const clock = computeSessionClock({
     anchor: input.joinedAt,
-    now,
+    now: Date.now(),
     freeMinutes: input.freeMinutes,
     freeConsumed: input.isFreeSession === undefined ? undefined : !input.isFreeSession,
     paidExtensionAt: input.paidExtensionAt ?? null,

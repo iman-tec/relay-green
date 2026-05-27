@@ -75,7 +75,7 @@ export function ClientsTab() {
       // Verified onboarding link, also sent to the company email by the invite.
       // Signing up via it binds the individual as this company's enterprise
       // admin (carried by the org code) and confirms the email.
-      const url = `https://${BRAND}/staff/login?onboard=${encodeURIComponent(code)}&email=${encodeURIComponent(email)}`;
+      const url = `https://${BRAND}/staff?onboard=${encodeURIComponent(code)}&email=${encodeURIComponent(email)}`;
       setCreated({ company: co.trim(), email, url, discountPct, discountMonths });
       dash.reload(); setInviteKey((k) => k + 1);
     } catch (e) { setErr(e instanceof Error ? e.message : "Could not onboard company"); }

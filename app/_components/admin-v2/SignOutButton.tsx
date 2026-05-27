@@ -3,7 +3,7 @@
 /*
  * Sign-out button used in the /admin/v2 top bar. Same flow as the
  * legacy StaffShell: signOut() via the browser Supabase client, then
- * push to /staff/login.
+ * push to /staff.
  */
 
 import { useState } from "react";
@@ -30,7 +30,7 @@ export function SignOutButton() {
       } catch { /* best-effort */ }
       await supabase.auth.signOut();
     } finally {
-      router.push("/staff/login");
+      router.push("/staff");
     }
   };
 

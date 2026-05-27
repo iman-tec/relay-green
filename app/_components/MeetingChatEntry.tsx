@@ -20,7 +20,7 @@ import { useState } from "react";
 import { Video, PhoneOff, ExternalLink, Sparkles, Loader2 } from "lucide-react";
 import { MeetingSummaryEntry } from "./MeetingSummaryEntry";
 import { Button } from "@/app/_components/ui";
-import { useLaunchCall } from "@/lib/video/LaunchCallContext";
+import { useLaunchCall, useLaunchCallShape } from "@/lib/video/LaunchCallContext";
 
 type Props = {
   active: boolean;
@@ -77,6 +77,15 @@ export function MeetingChatEntry({
   // Prefer explicit prop; fall back to LaunchCallContext (Video SDK wire-in).
   const ctxLaunch = useLaunchCall();
   const effectiveLaunch = onLaunchCall ?? ctxLaunch;
+  // The `selfJoined` prop is sourced from the DB stamp (engineer_joined_at /
+  // customer_joined_at). That stamp persists for the lifetime of the
+  // session, so once a user joined once, the badge stuck "You're on the
+  // call" forever — even after they unmounted the CallSurface (hot-reload,
+  // closing the rail, page nav). isCallOpen reflects the live in-window
+  // mount state; gating selfJoined on it restores the Join button when the
+  // user is no longer actually on the call.
+  const { isCallOpen } = useLaunchCallShape();
+  const effectiveSelfJoined = selfJoined && (effectiveLaunch ? isCallOpen : true);
 
   const hasSummary = !active && !!summaryBody;
   const hasRecording = !active && !!recordingBody;
@@ -126,7 +135,7 @@ export function MeetingChatEntry({
           </div>
 
           <div className="flex flex-wrap items-center justify-center gap-2">
-            {(joinUrl || effectiveLaunch) && !selfJoined && (
+            {(joinUrl || effectiveLaunch) && !effectiveSelfJoined && (
               <Button
                 variant="launcher"
                 size="lg"
@@ -137,7 +146,7 @@ export function MeetingChatEntry({
                 {effectiveLaunch ? "Join call" : "Join Zoom call"}
               </Button>
             )}
-            {selfJoined && (
+            {effectiveSelfJoined && (
               <span
                 aria-disabled="true"
                 className="inline-flex items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--ok)_40%,transparent)] bg-[var(--ok-soft)] px-4 py-2 text-sm font-medium text-[var(--ok)]"

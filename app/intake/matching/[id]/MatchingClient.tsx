@@ -84,7 +84,11 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
   const supabaseRef = useRef(createClient());
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   const [retrying, setRetrying] = useState(false);
-  const [now, setNow] = useState(() => Date.now());
+  // Bare re-render trigger — clock is computed from Date.now() at render
+  // time so we don't store stale time in state. (Using a `now` state
+  // captured at mount caused the very first paint to compute a negative
+  // elapsedMs against ringStartRef.)
+  const [, setTick] = useState(0);
   const guestCallIdRef = useRef<string | null>(null);
 
   // Ringing-phase start timestamp — used to drive the elapsed-time
@@ -109,9 +113,10 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
   const [soundOn, setSoundOn] = useState(true);
   const ringtone = useRingtone(phase.kind === "ringing" && soundOn);
 
-  // 1Hz tick for the countdown badge.
+  // Sub-second tick so the clock under the ball rolls within ~250ms of
+  // crossing the next second, not up to a full second late.
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
+    const id = setInterval(() => setTick((t) => (t + 1) % 1_000_000), 250);
     return () => clearInterval(id);
   }, []);
 
@@ -315,7 +320,7 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
         {phase.kind === "ringing" && (
           <RingingHero
             elapsedMs={
-              ringStartRef.current !== null ? now - ringStartRef.current : 0
+              ringStartRef.current !== null ? Date.now() - ringStartRef.current : 0
             }
             soundOn={soundOn}
             soundAvailable={ringtone.available}
@@ -405,8 +410,13 @@ function RingingHero({
   onToggleSound: () => void;
   onCancel: () => void;
 }) {
-  const mm = Math.floor(elapsedMs / 60000);
-  const ss = Math.floor((elapsedMs % 60000) / 1000);
+  // Clamp negative values to 0 — the parent's `now` state is captured BEFORE
+  // ringStartRef is set on the first render, so the first tick can briefly
+  // produce a negative elapsedMs which renders as "00:-1". Without this guard,
+  // the customer sees a "-1 seconds" flash when the ringing screen first appears.
+  const safeMs = Math.max(0, elapsedMs);
+  const mm = Math.floor(safeMs / 60000);
+  const ss = Math.floor((safeMs % 60000) / 1000);
   const clock = `${mm.toString().padStart(2, "0")}:${ss.toString().padStart(2, "0")}`;
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-8 px-4 py-12 text-center">

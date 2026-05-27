@@ -37,7 +37,18 @@ const DEV_ROLES: DevRole[] = [
   { label: "Enterprise Admin", devRole: "enterprise", icon: Building2,   hint: "Org-level controls" },
 ];
 
-export function StaffLoginForm({ devMode }: { devMode: boolean }) {
+import type { LoginSurface } from "@/lib/relay/loginSurface";
+
+export function StaffLoginForm({
+  devMode,
+  surface = "staff",
+}: {
+  devMode: boolean;
+  /** Which login surface this form is mounted on. Determines which
+   *  server-side role gate runs; passed verbatim to /api/auth/signin-password
+   *  and /api/auth/verify-otp as `surface`. */
+  surface?: LoginSurface;
+}) {
   const search = useSearchParams();
   const initialEmail = search?.get("email") ?? "";
 
@@ -113,14 +124,22 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
       const res = await fetch("/api/auth/signin-password", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ email: em, password, mode: "staff" }),
+        body:    JSON.stringify({ email: em, password, surface }),
       });
       const body = (await res.json().catch(() => ({}))) as {
-        ok?:    boolean;
-        next?:  string;
-        error?: string;
+        ok?:                  boolean;
+        next?:                string;
+        error?:               string;
+        allowed_surface_url?: string;
       };
       if (!res.ok || !body.ok) {
+        // Role-gate rejected — bounce straight to the correct surface
+        // with the email prefilled so the user just types their password
+        // again. Avoids the "wait, where do I go now?" confusion.
+        if (body.error === "wrong_login_surface" && body.allowed_surface_url) {
+          window.location.assign(`${body.allowed_surface_url}?wrong_surface=1&email=${encodeURIComponent(em)}`);
+          return;
+        }
         setError(body.error ?? "Couldn't sign in.");
         return;
       }
@@ -180,12 +199,16 @@ export function StaffLoginForm({ devMode }: { devMode: boolean }) {
       const res = await fetch("/api/auth/verify-otp", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ email, code: trimmed, mode: "staff", purpose: "forgot" }),
+        body:    JSON.stringify({ email, code: trimmed, surface, purpose: "forgot" }),
       });
       const body = (await res.json().catch(() => ({}))) as {
-        ok?: boolean; next?: string; error?: string;
+        ok?: boolean; next?: string; error?: string; allowed_surface_url?: string;
       };
       if (!res.ok) {
+        if (body.error === "wrong_login_surface" && body.allowed_surface_url) {
+          window.location.assign(`${body.allowed_surface_url}?wrong_surface=1&email=${encodeURIComponent(email)}`);
+          return;
+        }
         setError(body.error ?? "Couldn't verify code.");
         return;
       }

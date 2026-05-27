@@ -13,7 +13,7 @@ export default async function AdminUsersPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect("/staff/login");
+  if (!user) redirect("/staff");
 
   const { data: roleRows } = await supabase
     .from("user_role_names")

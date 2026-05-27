@@ -33,7 +33,7 @@ export function CalendarPageClient() {
       if (!data.user) {
         // Server-side StaffGroupLayout has already redirected unauth'd
         // users, but defend-in-depth here too.
-        router.push("/staff/login");
+        router.push("/staff");
         return;
       }
       setUserId(data.user.id);

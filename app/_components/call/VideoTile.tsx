@@ -43,25 +43,29 @@ export function VideoTile({ participant, client }: Props) {
     };
   }, [client, participant.userId, participant.video.on]);
 
+  // Subtle styling: no border (just a soft bg), smaller camera-off icon,
+  // compact bottom overlay with reduced opacity. Parent controls aspect
+  // (square when stacked in a side rail, video-aspect when in a grid).
   return (
     <div
-      className="relative flex aspect-video items-center justify-center overflow-hidden rounded-lg border"
-      style={{ background: "var(--surface-raised)", borderColor: "var(--border)" }}
+      className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-md"
+      style={{ background: "color-mix(in srgb, var(--text) 6%, transparent)" }}
     >
       {participant.video.on ? (
         <video ref={videoRef} className="h-full w-full object-cover" autoPlay muted={participant.isCurrentUser} playsInline />
       ) : (
-        <div className="flex h-full w-full flex-col items-center justify-center gap-2" style={{ color: "var(--text-muted)" }}>
-          <VideoOff size={28} />
-          <span className="text-sm">{participant.displayName}</span>
+        <div className="flex h-full w-full items-center justify-center" style={{ color: "var(--text-faint)" }}>
+          <VideoOff size={18} aria-label="Camera off" strokeWidth={1.5} />
         </div>
       )}
       <div
-        className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium"
-        style={{ background: "rgba(0,0,0,0.55)", color: "#fff" }}
+        className="absolute bottom-1.5 left-1.5 right-1.5 flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium"
+        style={{ background: "rgba(0,0,0,0.45)", color: "rgba(255,255,255,0.92)" }}
       >
-        {participant.audio.muted ? <MicOff size={12} /> : <Mic size={12} />}
-        <span className="truncate max-w-[160px]">
+        {participant.audio.muted
+          ? <MicOff size={10} className="shrink-0 opacity-90" />
+          : <Mic size={10} className="shrink-0 opacity-90" />}
+        <span className="truncate">
           {participant.displayName}{participant.isCurrentUser ? " (you)" : ""}
         </span>
       </div>

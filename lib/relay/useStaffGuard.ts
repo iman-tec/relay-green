@@ -3,7 +3,7 @@
 /*
  * Client-side guard for engineer-only routes.
  *
- * If the user is not signed in, redirect to /staff/login.
+ * If the user is not signed in, redirect to /staff.
  * If the user is signed in but has no staff role, redirect to /room.
  *
  * This is defence-in-depth — RPC functions and RLS policies are the
@@ -44,7 +44,7 @@ export function useStaffGuard(): StaffGuardState {
         if (!u.user) {
           setState({ kind: "anonymous" });
           if (typeof window !== "undefined") {
-            window.location.replace("/staff/login");
+            window.location.replace("/staff");
           }
           return;
         }

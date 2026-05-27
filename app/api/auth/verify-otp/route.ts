@@ -15,25 +15,39 @@ import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { landingForRoles } from "@/lib/relay/role-labels";
 import { toRoles } from "@/lib/relay/roles";
+import {
+  SURFACE_ROLES,
+  SURFACE_URL,
+  isAllowedOnSurface,
+  preferredSurfaceForRoles,
+  type LoginSurface,
+} from "@/lib/relay/loginSurface";
 
 export const dynamic = "force-dynamic";
 export const runtime  = "nodejs";
 
+const VALID_SURFACES = new Set<LoginSurface>(["customer", "staff", "partner", "business"]);
+
 export async function POST(request: Request) {
-  const { email, code, mode, purpose } = await request.json().catch(() => ({}));
+  const reqBody = await request.json().catch(() => ({})) as {
+    email?: string; code?: string; mode?: string; surface?: string; purpose?: string;
+  };
+  const { email, code, purpose } = reqBody;
   if (
     !email || typeof email !== "string" ||
     !code  || typeof code  !== "string"
   ) {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
-  // `mode` lets the form tell us which experience the user is signing into.
-  // The customer login is always for /room — even if the same email also
-  // holds the engineer role. Without this, a power-user with both roles
-  // (e.g. dev.soni testing both sides) would always land on /dashboard
-  // because role-based routing picks the most-privileged role.
-  const signInMode: "customer" | "staff" =
-    mode === "customer" ? "customer" : "staff";
+  // Determine which login surface the OTP belongs to. New callers pass
+  // `surface`; legacy callers pass `mode: "customer" | "staff"`. Default
+  // to "customer" — a missing param should never silently escalate.
+  const surfaceParam = (reqBody.surface ?? reqBody.mode ?? "customer").toLowerCase();
+  const surface: LoginSurface = VALID_SURFACES.has(surfaceParam as LoginSurface)
+    ? (surfaceParam as LoginSurface)
+    : "customer";
+  // Legacy alias preserved for the /set-password URL params downstream.
+  const signInMode: "customer" | "staff" = surface === "customer" ? "customer" : "staff";
   // `purpose` tells us why the user is in the OTP flow:
   //   "first-time" → brand-new signup, divert to /set-password.
   //   "forgot"     → forgotten password, force divert regardless of flag.
@@ -64,19 +78,29 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
-  // Customer-mode sign-ins always go to /room. Staff-mode sign-ins resolve
-  // by the user's most-privileged role. We read from the user_role_names
-  // view, which joins user_roles → roles and exposes the role NAME — so
-  // this route doesn't need to know anything about the FK shape.
+  // Customer-mode sign-ins always go to /room. Other surfaces resolve by
+  // the user's most-privileged role. We always pull roles so we can gate
+  // (regardless of mode) — a user whose role isn't admitted on `surface`
+  // must be signed out and bounced to their correct surface.
   const userId = verified.user?.id;
-  let next = "/room";
-  if (signInMode === "staff" && userId) {
+  let next: string = surface === "customer" ? "/room" : "/dashboard";
+  if (userId) {
     const { data: roleRows } = await supabase
       .from("user_role_names")
       .select("role")
       .eq("user_id", userId);
     const roles = toRoles((roleRows ?? []).map((r: { role: string }) => r.role));
-    next = landingForRoles(roles);
+    if (!isAllowedOnSurface(roles, surface)) {
+      await supabase.auth.signOut({ scope: "global" }).catch(() => {});
+      const allowed = preferredSurfaceForRoles(roles);
+      return NextResponse.json({
+        error: "wrong_login_surface",
+        allowed_surface: allowed,
+        allowed_surface_url: SURFACE_URL[allowed],
+        allowed_roles_here: SURFACE_ROLES[surface],
+      }, { status: 403 });
+    }
+    if (surface !== "customer") next = landingForRoles(roles);
   }
 
   // First-time signup / password-less account / forgot-password: divert

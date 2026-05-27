@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 export default async function EnterpriseV2Page() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/staff/login");
+  if (!user) redirect("/business");
 
   const { data: roleRows } = await supabase
     .from("user_role_names")
