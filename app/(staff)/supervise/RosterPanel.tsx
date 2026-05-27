@@ -122,8 +122,9 @@ export function RosterPanel() {
 
 // ── The atomic roster unit ────────────────────────────────────────────────
 type Detail = {
-  engineer: { totals: { sessions30d: number; buildMinutes: number; avgDurationMin: number } };
+  engineer: { totals: { sessions30d: number; buildMinutes: number; avgDurationMin: number }; escalations30d: number; escalationRate: number };
   recentSessions: Array<{ id: string; guestName: string | null; status: string; durationMinutes: number | null; createdAt: string; endedAt: string | null; projectName: string | null }>;
+  escalations: Array<{ id: string; reason: string; note: string | null; status: string; resolutionNote: string | null; createdAt: string; resolvedAt: string | null }>;
 };
 
 function EngineerCard({ engineer: e }: { engineer: Engineer }) {
@@ -212,13 +213,44 @@ function EngineerCard({ engineer: e }: { engineer: Engineer }) {
 function DrillIn({ detail }: { detail: Detail }) {
   const router = useRouter();
   const t = detail.engineer.totals;
+  const rate = detail.engineer.escalationRate;
+  const rateTone = rate >= 3 ? "var(--risk)" : rate >= 1.5 ? "var(--warn)" : "var(--text)";
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-4 gap-2">
         <Kpi label="Sessions" value={fmtNum(t.sessions30d)} sub="30d" />
         <Kpi label="Build min" value={fmtNum(t.buildMinutes)} sub="30d" />
         <Kpi label="Avg" value={`${fmtNum(t.avgDurationMin)}m`} sub="per call" />
+        {/* D4 — escalations per 10 sessions */}
+        <div className="rounded-lg border px-2 py-1.5" style={{ borderColor: "var(--border)" }}>
+          <div className="text-[10px] uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Esc rate</div>
+          <div className="text-sm font-semibold tabular-nums" style={{ color: rateTone }}>
+            {rate}<span className="ml-0.5 text-[10px] font-normal" style={{ color: "var(--text-faint)" }}>/10</span>
+          </div>
+        </div>
       </div>
+
+      {/* D3 — escalation history */}
+      {detail.escalations.length > 0 && (
+        <div>
+          <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+            Escalations ({detail.engineer.escalations30d} in 30d)
+          </h4>
+          <ul className="flex flex-col gap-1.5">
+            {detail.escalations.map((e) => (
+              <li key={e.id} className="rounded-md border px-2.5 py-1.5 text-xs" style={{ borderColor: "var(--border)" }}>
+                <div className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate font-medium" style={{ color: "var(--text)" }}>{e.reason}</span>
+                  <span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase"
+                    style={{ color: e.status === "open" ? "var(--warn)" : e.status === "resolved" ? "var(--ok)" : "var(--text-muted)", background: "color-mix(in srgb, var(--text) 6%, transparent)" }}>{e.status}</span>
+                  <span className="shrink-0" style={{ color: "var(--text-faint)" }}>{new Date(e.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+                </div>
+                {e.resolutionNote && <div className="mt-0.5 truncate" style={{ color: "var(--text-faint)" }}>↳ {e.resolutionNote}</div>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div>
         <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Recent sessions</h4>
         {detail.recentSessions.length === 0 ? (

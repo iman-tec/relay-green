@@ -46,7 +46,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (!membership) return NextResponse.json({ error: "not_in_pod" }, { status: 403 });
 
   const since30 = new Date(Date.now() - 30 * 86_400_000).toISOString();
-  const [{ data: profile }, { data: recent }, { data: kpiRows }] = await Promise.all([
+  const [{ data: profile }, { data: recent }, { data: kpiRows }, { data: escRows }] = await Promise.all([
     admin.from("engineer_profiles").select("presence_state, is_available, updated_at").eq("user_id", engineerId).maybeSingle(),
     admin
       .from("guest_calls")
@@ -59,6 +59,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       .select("duration_minutes, status, ended_at")
       .eq("claimed_by", engineerId)
       .gte("created_at", since30),
+    admin
+      .from("session_escalations")
+      .select("id, reason, note, status, resolution_note, created_at, resolved_at")
+      .eq("engineer_user_id", engineerId)
+      .order("created_at", { ascending: false })
+      .limit(20),
   ]);
 
   const kpis = (kpiRows ?? []) as { duration_minutes: number | null; status: string; ended_at: string | null }[];
@@ -69,12 +75,24 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     : 0;
   const pres = profile as { presence_state: string | null; is_available: boolean | null; updated_at: string | null } | null;
 
+  type Esc = { id: string; reason: string; note: string | null; status: string; resolution_note: string | null; created_at: string; resolved_at: string | null };
+  const escalations = (escRows ?? []) as Esc[];
+  const esc30d = escalations.filter((e) => e.created_at >= since30).length;
+  // Escalations per 10 sessions over the 30-day window (D4).
+  const escalationRate = kpis.length > 0 ? Math.round((esc30d / kpis.length) * 10 * 10) / 10 : 0;
+
   return NextResponse.json({
     engineer: {
       presenceState: pres?.presence_state ?? "offline",
       presenceSince: pres?.updated_at ?? null,
       totals: { sessions30d: kpis.length, buildMinutes, avgDurationMin },
+      escalations30d: esc30d,
+      escalationRate,
     },
+    escalations: escalations.map((e) => ({
+      id: e.id, reason: e.reason, note: e.note, status: e.status,
+      resolutionNote: e.resolution_note, createdAt: e.created_at, resolvedAt: e.resolved_at,
+    })),
     recentSessions: (recent ?? []).map((r: { id: string; guest_name: string | null; status: string; duration_minutes: number | null; created_at: string; ended_at: string | null; project_name: string | null }) => ({
       id: r.id,
       guestName: r.guest_name,
