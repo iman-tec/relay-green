@@ -1486,12 +1486,33 @@ export function RoomClient() {
       </div>
 
       <LaunchCallProvider value={launchCall}>
-      {/* Main column + right call rail share a horizontal PanelGroup so the
-          customer can drag the divider to widen video vs. chat. When no
-          call is live, only the main panel is mounted (full-width) and the
-          SessionSummaryTray takes the right slot as before. */}
-      <PanelGroup direction="horizontal" autoSaveId="relay-room-call" className="flex min-w-0 flex-1">
-        <Panel id="room-main" order={1} defaultSize={60} minSize={35}>
+      {/* When the call is open the customer's video gets the MAIN panel —
+          they're here to see the engineer / their own share. Chat moves to
+          the right rail. When no call is live, the main column owns the
+          chat full-width as before. */}
+      <PanelGroup direction="horizontal" autoSaveId="relay-room-call-v2" className="flex min-w-0 flex-1">
+        {callOpen && state.session && (
+          <>
+            <Panel id="room-call" order={1} defaultSize={60} minSize={40} maxSize={75}>
+              <div className="h-full w-full" style={{ background: "var(--background)" }}>
+                <CallSurface
+                  sessionId={state.session.id}
+                  role="guest"
+                  userName={state.session.guest_name ?? "Customer"}
+                  onClose={() => setCallOpen(false)}
+                  onJoined={() => void state.markJoined()}
+                />
+              </div>
+            </Panel>
+            <Resizer />
+          </>
+        )}
+        <Panel
+          id="room-main"
+          order={2}
+          defaultSize={callOpen ? 40 : 100}
+          minSize={callOpen ? 26 : 35}
+        >
           <div className="relative flex h-full min-w-0 flex-col">
             {/* Floating status / timer chip + end-meeting button (top-right) */}
             <FloatingStatus
@@ -1540,22 +1561,6 @@ export function RoomClient() {
             </main>
           </div>
         </Panel>
-        {callOpen && state.session && (
-          <>
-            <Resizer />
-            <Panel id="room-call" order={2} defaultSize={40} minSize={28} maxSize={60}>
-              <div className="h-full w-full" style={{ background: "var(--background)" }}>
-                <CallSurface
-                  sessionId={state.session.id}
-                  role="guest"
-                  userName={state.session.guest_name ?? "Customer"}
-                  onClose={() => setCallOpen(false)}
-                  onJoined={() => void state.markJoined()}
-                />
-              </div>
-            </Panel>
-          </>
-        )}
       </PanelGroup>
 
       {/* Summary tray sits to the right of the PanelGroup when no call is
@@ -4717,6 +4722,22 @@ const Sidebar = memo(function Sidebar({
   // returning users see the full hierarchy on each fresh /room landing.
   const [collapsed, setCollapsed] = useState<boolean>(false);
   const toggleCollapsed = (next: boolean) => setCollapsed(next);
+
+  // Auto-collapse once when the session enters an engineer-engaged state
+  // (assigned / joining / live). The customer's focus shifts to the chat +
+  // call surface — the sidebar's project list / past sessions becomes noise.
+  // One-shot per session: if the customer manually re-expands later we
+  // respect that choice; sessionAutoCollapsedRef keys on session.id so a
+  // NEW session re-triggers the auto-collapse.
+  const sessionAutoCollapsedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const s = session;
+    if (!s) return;
+    if (!["assigned", "joining", "live"].includes(s.status)) return;
+    if (sessionAutoCollapsedRef.current === s.id) return;
+    sessionAutoCollapsedRef.current = s.id;
+    setCollapsed(true);
+  }, [session]);
 
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   // Quote-request flow: null = closed; "golive" = ship-it lead;
