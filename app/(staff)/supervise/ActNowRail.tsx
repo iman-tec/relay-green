@@ -14,8 +14,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { Loader2, Rocket, Wrench, PhoneCall, AlertTriangle, Inbox, LifeBuoy, Eye, Check, X, FileText, Repeat, CalendarClock } from "lucide-react";
+import { Loader2, Rocket, Wrench, PhoneCall, AlertTriangle, Inbox, LifeBuoy, Eye, Check, X, FileText, Repeat, CalendarClock, ChevronDown } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
+import { cn } from "@/app/_components/ui";
 import { ProjectAIAssistant } from "@/app/_components/ProjectAIAssistant";
 
 type Sentiment = { score: number; summary: string; messageCount: number };
@@ -127,6 +128,7 @@ function DiveInModal({ q, onClose, onDone }: { q: Estimation; onClose: () => voi
   const [timeline, setTimeline] = useState(q.bidTimeline ?? "");
   const [validity, setValidity] = useState("30");
   const [termsUrl, setTermsUrl] = useState("/legal/contracting-terms");
+  const [showAi, setShowAi] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -201,10 +203,16 @@ function DiveInModal({ q, onClose, onDone }: { q: Estimation; onClose: () => voi
           </div>
         )}
 
-        {/* Review the project's AI history before scoping (engineer + supervisor). */}
-        <div>
-          <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Project history</div>
-          <ProjectAIAssistant projectId={q.projectId} />
+        {/* Review the project's AI history before scoping — collapsed by default
+            so the bid form stays the primary content (the assistant is a tall
+            full-height panel). Height-bounded + scrolls internally when open. */}
+        <div className="rounded-lg border" style={{ borderColor: "var(--border)" }}>
+          <button type="button" onClick={() => setShowAi((v) => !v)}
+            className="flex w-full items-center gap-1.5 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+            <FileText size={12} /> Review project history (AI)
+            <ChevronDown size={13} className={cn("ml-auto transition-transform", showAi && "rotate-180")} />
+          </button>
+          {showAi && <div className="h-72 overflow-hidden border-t" style={{ borderColor: "var(--border)" }}><ProjectAIAssistant projectId={q.projectId} /></div>}
         </div>
 
         {/* Bid — same one-page bid the engineer prepares. */}

@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { Loader2, Rocket, Wrench, X, FileText, CalendarClock, Inbox } from "lucide-react";
+import { Loader2, Rocket, Wrench, X, FileText, CalendarClock, Inbox, ChevronDown } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import { ProjectAIAssistant } from "@/app/_components/ProjectAIAssistant";
 
@@ -98,6 +98,7 @@ function BidPrepModal({ req, onClose, onSent }: { req: Req; onClose: () => void;
   const [timeline, setTimeline] = useState("");
   const [validity, setValidity] = useState("30");
   const [terms, setTerms] = useState(DEFAULT_TERMS);
+  const [showAi, setShowAi] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -139,10 +140,15 @@ function BidPrepModal({ req, onClose, onSent }: { req: Req; onClose: () => void;
           </div>
         )}
 
-        {/* Review the project's AI history before scoping. */}
-        <div>
-          <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Project history</div>
-          <ProjectAIAssistant projectId={req.projectId} />
+        {/* Review the project's AI history — collapsed by default so the bid
+            form stays primary (assistant is a tall full-height panel). */}
+        <div className="rounded-lg border" style={{ borderColor: "var(--border)" }}>
+          <button type="button" onClick={() => setShowAi((v) => !v)}
+            className="flex w-full items-center gap-1.5 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+            <FileText size={12} /> Review project history (AI)
+            <ChevronDown size={13} className={`ml-auto transition-transform ${showAi ? "rotate-180" : ""}`} />
+          </button>
+          {showAi && <div className="h-72 overflow-hidden border-t" style={{ borderColor: "var(--border)" }}><ProjectAIAssistant projectId={req.projectId} /></div>}
         </div>
 
         {/* The one-page bid. */}
