@@ -17,6 +17,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useOverlayDismiss } from "@/lib/relay/useOverlayDismiss";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { Eye, Loader2, ArrowUpRight, Users, ChevronDown, Activity, Timer, Hash, Flag, X, TrendingUp, Wallet } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
@@ -442,6 +443,8 @@ function FlagAvailability({ userId, name }: { userId: string; name: string }) {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const close = useCallback(() => setOpen(false), []);
+  const dialogRef = useOverlayDismiss(close, open);
 
   const submit = async () => {
     setBusy(true); setErr(null);
@@ -463,8 +466,8 @@ function FlagAvailability({ userId, name }: { userId: string; name: string }) {
       </button>
       {open && (
         <>
-          <div className="fixed inset-0 z-[60]" style={{ backgroundColor: "var(--scrim)" }} onClick={() => !busy && setOpen(false)} />
-          <div role="dialog" aria-modal="true" className="fixed left-1/2 top-1/2 z-[61] w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border p-5 shadow-2xl"
+          <div className="fixed inset-0 z-[var(--z-modal)]" style={{ backgroundColor: "var(--scrim)" }} onClick={() => !busy && setOpen(false)} />
+          <div ref={dialogRef} role="dialog" aria-modal="true" className="fixed left-1/2 top-1/2 z-[var(--z-modal)] w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border p-5 shadow-2xl"
             style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}>
             <div className="mb-3 flex items-center gap-2">
               <Flag size={15} style={{ color: "var(--primary-hover)" }} />

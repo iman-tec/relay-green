@@ -5,8 +5,8 @@
  * Closes on ✕, Esc, scrim click, or after the caller signals success.
  */
 
-import { useEffect } from "react";
 import { X } from "lucide-react";
+import { useOverlayDismiss } from "@/lib/relay/useOverlayDismiss";
 
 export function Drawer({
   open,
@@ -23,26 +23,20 @@ export function Drawer({
   footer?:  React.ReactNode;
   width?:   number;
 }) {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  const dialogRef = useOverlayDismiss<HTMLElement>(onClose, open);
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50">
+    <div className="fixed inset-0 z-[var(--z-drawer)]">
       <div
         className="absolute inset-0 transition-opacity"
-        style={{ background: "rgba(0,0,0,0.5)" }}
+        style={{ background: "var(--scrim)" }}
         onClick={onClose}
         aria-hidden="true"
       />
       <aside
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={title}

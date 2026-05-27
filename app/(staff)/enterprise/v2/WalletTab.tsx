@@ -16,6 +16,7 @@ import { Button, EmptyState } from "@/app/_components/ui";
 import { useTheme } from "@/app/_components/ThemeProvider";
 import { buildStripeAppearance } from "@/lib/stripe/appearance";
 import { useApiData, eur, num, StatCard, LoadingState, ErrorState } from "./_shared";
+import { useOverlayDismiss } from "@/lib/relay/useOverlayDismiss";
 
 const STRIPE_PUBLISHABLE_KEY =
   (typeof process !== "undefined" && process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) || "";
@@ -121,6 +122,7 @@ function BuyBundleModal({ bundle, onClose, onCredited }: {
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [paymentIntentId, setPaymentIntentId] = useState<string | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const dialogRef = useOverlayDismiss(onClose);
 
   useEffect(() => {
     let alive = true;
@@ -148,9 +150,9 @@ function BuyBundleModal({ bundle, onClose, onCredited }: {
 
   return (
     <>
-      <div className="fixed inset-0 z-[60]" style={{ backgroundColor: "var(--scrim)" }} onClick={onClose} />
-      <div role="dialog" aria-modal="true"
-        className="fixed top-1/2 left-1/2 z-[61] w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border shadow-2xl"
+      <div className="fixed inset-0 z-[var(--z-modal)]" style={{ backgroundColor: "var(--scrim)" }} onClick={onClose} />
+      <div ref={dialogRef} role="dialog" aria-modal="true"
+        className="fixed top-1/2 left-1/2 z-[var(--z-modal)] w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border shadow-2xl"
         style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}>
         <div className="flex items-start gap-3 border-b px-5 py-4" style={{ borderColor: "var(--border)" }}>
           <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full"

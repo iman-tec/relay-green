@@ -15,12 +15,14 @@ const FOCUSABLE =
  *   - closes on Esc (top layer only — `stopPropagation` prevents a parent
  *     overlay from also closing).
  *
- * Use only in components that are mounted *while open* (e.g. rendered behind
- * `{open && <Modal/>}`), so mount === open.
+ * For components mounted *while open* (e.g. `{open && <Modal/>}`) the default
+ * `active=true` is fine. For always-mounted components that toggle via an
+ * `open` prop, pass that prop as `active` so the lock/trap only engage while open.
  */
-export function useOverlayDismiss(onClose: () => void) {
-  const ref = useRef<HTMLDivElement>(null);
+export function useOverlayDismiss<T extends HTMLElement = HTMLDivElement>(onClose: () => void, active = true) {
+  const ref = useRef<T>(null);
   useEffect(() => {
+    if (!active) return;
     const prevFocus = document.activeElement as HTMLElement | null;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -54,6 +56,6 @@ export function useOverlayDismiss(onClose: () => void) {
       document.removeEventListener("keydown", onKey, true);
       prevFocus?.focus?.();
     };
-  }, [onClose]);
+  }, [onClose, active]);
   return ref;
 }

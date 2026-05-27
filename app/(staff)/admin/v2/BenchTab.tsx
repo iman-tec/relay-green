@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useOverlayDismiss } from "@/lib/relay/useOverlayDismiss";
 import { Loader2, Users, CheckCircle2, CircleDashed, Pencil, CalendarOff, X, Inbox, Check, Ban, Siren } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 
@@ -145,6 +146,7 @@ function EditDrawer({ engineer, onClose, onSaved }: { engineer: Engineer; onClos
   const [available, setAvailable] = useState(engineer.isAvailable);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const dialogRef = useOverlayDismiss<HTMLDivElement>(onClose);
 
   const csv = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
   const save = async () => {
@@ -162,8 +164,8 @@ function EditDrawer({ engineer, onClose, onSaved }: { engineer: Engineer; onClos
 
   return (
     <>
-      <div className="fixed inset-0 z-[60]" style={{ backgroundColor: "var(--scrim)" }} onClick={() => !busy && onClose()} />
-      <div role="dialog" aria-modal="true" className="fixed right-0 top-0 z-[61] flex h-full w-full max-w-md flex-col gap-3 overflow-y-auto border-l p-5 shadow-2xl"
+      <div className="fixed inset-0 z-[var(--z-modal)]" style={{ backgroundColor: "var(--scrim)" }} onClick={() => !busy && onClose()} />
+      <div ref={dialogRef} role="dialog" aria-modal="true" className="fixed right-0 top-0 z-[var(--z-modal)] flex h-full w-full max-w-md flex-col gap-3 overflow-y-auto border-l p-5 shadow-2xl"
         style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}>
         <div className="flex items-center gap-2">
           <h2 className="text-[15px] font-semibold" style={{ color: "var(--text)" }}>Edit {engineer.name}</h2>
@@ -203,6 +205,7 @@ function PodHolidayModal({ pods, onClose, onDone }: { pods: Pod[]; onClose: () =
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [done, setDone] = useState<number | null>(null);
+  const dialogRef = useOverlayDismiss<HTMLDivElement>(onClose);
 
   const submit = async () => {
     if (!podId || !date) { setErr("Pick a pod and a date."); return; }
@@ -218,8 +221,8 @@ function PodHolidayModal({ pods, onClose, onDone }: { pods: Pod[]; onClose: () =
 
   return (
     <>
-      <div className="fixed inset-0 z-[60]" style={{ backgroundColor: "var(--scrim)" }} onClick={() => !busy && onClose()} />
-      <div role="dialog" aria-modal="true" className="fixed left-1/2 top-1/2 z-[61] w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border p-5 shadow-2xl"
+      <div className="fixed inset-0 z-[var(--z-modal)]" style={{ backgroundColor: "var(--scrim)" }} onClick={() => !busy && onClose()} />
+      <div ref={dialogRef} role="dialog" aria-modal="true" className="fixed left-1/2 top-1/2 z-[var(--z-modal)] w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border p-5 shadow-2xl"
         style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}>
         <div className="mb-3 flex items-center gap-2">
           <CalendarOff size={16} style={{ color: "var(--primary-hover)" }} />

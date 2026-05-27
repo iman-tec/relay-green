@@ -28,6 +28,7 @@ import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { buildStripeAppearance } from "@/lib/stripe/appearance";
 import { useTheme } from "@/app/_components/ThemeProvider";
+import { useOverlayDismiss } from "@/lib/relay/useOverlayDismiss";
 
 // Single Stripe.js loader for the whole app — Stripe recommends not
 // re-loading on every modal open. Returns null at build time on the server.
@@ -55,6 +56,7 @@ export function PaywallModal({
 }) {
   const [busyPlan, setBusyPlan] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const dialogRef = useOverlayDismiss<HTMLDivElement>(onClose, open);
   // Anonymous (guest) users have no email, so checkout can't issue a receipt
   // or charge. When a guest picks a paid plan we first show a sign-up gate;
   // pendingPlan holds the plan to resume once they've created an account.
@@ -161,10 +163,11 @@ export function PaywallModal({
   if (pendingPlan) {
     return (
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6"
+        className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center px-4 py-6"
         style={{ backgroundColor: BACKDROP, backdropFilter: "blur(4px)" }}
       >
         <div
+          ref={dialogRef}
           className="relative w-full max-w-md rounded-2xl border p-6 shadow-2xl"
           style={{ backgroundColor: SURFACE, borderColor: CARD_EDGE, color: INK }}
         >
@@ -214,10 +217,11 @@ export function PaywallModal({
   if (activeCheckout) {
     return (
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6"
+        className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center px-4 py-6"
         style={{ backgroundColor: BACKDROP, backdropFilter: "blur(4px)" }}
       >
         <div
+          ref={dialogRef}
           className="relative w-full max-w-lg overflow-hidden rounded-2xl border shadow-2xl"
           style={{ backgroundColor: SURFACE, borderColor: CARD_EDGE, color: INK }}
         >
@@ -264,10 +268,11 @@ export function PaywallModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6"
+      className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center px-4 py-6"
       style={{ backgroundColor: BACKDROP, backdropFilter: "blur(4px)" }}
     >
       <div
+        ref={dialogRef}
         className="relative w-full max-w-5xl rounded-2xl border shadow-2xl"
         style={{ backgroundColor: SURFACE, borderColor: CARD_EDGE, color: INK }}
       >

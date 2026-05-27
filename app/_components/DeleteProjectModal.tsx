@@ -25,6 +25,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Loader2, X } from "lucide-react";
 import { Input } from "@/app/_components/ui";
 import { createClient } from "@/lib/supabase/browser";
+import { useOverlayDismiss } from "@/lib/relay/useOverlayDismiss";
 
 const REQUIRED_PHRASE = "delete the project";
 
@@ -50,6 +51,9 @@ export function DeleteProjectModal({
   const [phraseInput, setPhraseInput] = useState("");
   const [verifying,   setVerifying]   = useState(false);
   const [error,       setError]       = useState<string | null>(null);
+  // Scroll-lock + Tab-trap + Esc-closes (top layer). Focus is re-pointed at
+  // the password field by the effect below.
+  const dialogRef = useOverlayDismiss(onClose);
 
   // Focus the password field on open — saves the customer one tab.
   // Query-based focus avoids needing a ref into the Input component
@@ -61,19 +65,6 @@ export function DeleteProjectModal({
     }, 0);
     return () => clearTimeout(t);
   }, []);
-
-  // Escape closes the modal. Stops at the modal layer; doesn't bubble
-  // to the underlying /room handlers.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !verifying) {
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, verifying]);
 
   // Gate checks — all three must pass before Delete activates.
   const nameMatches   = nameInput.trim() === projectName.trim();
@@ -122,17 +113,18 @@ export function DeleteProjectModal({
       {/* Backdrop. Click outside dismisses; verifying state blocks
           so the user can't accidentally close mid-network. */}
       <div
-        className="fixed inset-0 z-[60]"
+        className="fixed inset-0 z-[var(--z-modal)]"
         style={{ backgroundColor: "var(--scrim)" }}
         onClick={verifying ? undefined : onClose}
       />
 
       {/* Modal panel */}
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="delete-project-title"
-        className="fixed left-1/2 top-1/2 z-[61] w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border shadow-2xl"
+        className="fixed left-1/2 top-1/2 z-[var(--z-modal)] w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border shadow-2xl"
         style={{
           borderColor: "var(--border)",
           backgroundColor: "var(--surface)",
