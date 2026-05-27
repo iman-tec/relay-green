@@ -46,14 +46,16 @@ export function ContractManagement() {
       .eq("customer_user_id", u.user.id)
       .order("created_at", { ascending: false });
     const rows = (data ?? []) as Quote[];
-    setQuotes(rows);
+    // Resolve project names BEFORE committing state so the list + bid viewer
+    // never flash the "Project" fallback (avoids a setQuotes/setProjNames race).
     const ids = [...new Set(rows.map((r) => r.project_id))];
+    const m: Record<string, string> = {};
     if (ids.length) {
       const { data: ps } = await sb.from("projects").select("id, name").in("id", ids);
-      const m: Record<string, string> = {};
       for (const p of (ps ?? []) as { id: string; name: string | null }[]) if (p.name) m[p.id] = p.name;
-      setProjNames(m);
     }
+    setProjNames(m);
+    setQuotes(rows);
   }, [sb]);
 
   useEffect(() => { void load(); }, [load]);

@@ -218,6 +218,7 @@ type Detail = {
   recentSessions: Array<{ id: string; guestName: string | null; status: string; durationMinutes: number | null; createdAt: string; endedAt: string | null; projectName: string | null }>;
   escalations: Array<{ id: string; reason: string; note: string | null; status: string; resolutionNote: string | null; createdAt: string; resolvedAt: string | null }>;
   availability: { weekdays: number[]; holidays: { date: string; label: string | null; kind: string }[]; upcomingBookings: string[] };
+  devices: { id: string; label: string; lastSeenAt: string | null }[];
 };
 
 const DOW_SHORT = ["S", "M", "T", "W", "T", "F", "S"];
@@ -295,7 +296,7 @@ function EngineerCard({ engineer: e }: { engineer: Engineer }) {
               <Loader2 size={14} className="animate-spin" /> Loading…
             </div>
           ) : detail ? (
-            <DrillIn detail={detail} />
+            <DrillIn detail={detail} userId={e.userId} />
           ) : (
             <p className="py-4 text-xs" style={{ color: "var(--text-muted)" }}>Couldn&apos;t load detail.</p>
           )}
@@ -305,9 +306,14 @@ function EngineerCard({ engineer: e }: { engineer: Engineer }) {
   );
 }
 
-function DrillIn({ detail }: { detail: Detail }) {
+function DrillIn({ detail, userId }: { detail: Detail; userId: string }) {
   const router = useRouter();
   const t = detail.engineer.totals;
+  const [devices, setDevices] = useState(detail.devices);
+  const kick = async (deviceId: string) => {
+    setDevices((d) => d.filter((x) => x.id !== deviceId)); // optimistic
+    await fetch(`/api/supervisor/engineer/${userId}?deviceId=${deviceId}`, { method: "DELETE" }).catch(() => {});
+  };
   const rate = detail.engineer.escalationRate;
   const rateTone = rate >= 3 ? "var(--risk)" : rate >= 1.5 ? "var(--warn)" : "var(--text)";
   return (
@@ -386,6 +392,27 @@ function DrillIn({ detail }: { detail: Detail }) {
                     {new Date(s.endedAt ?? s.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
                   </span>
                 </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* F3 — active devices (3-device cap) + force-kick */}
+      <div>
+        <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+          Devices ({devices.length}/3)
+        </h4>
+        {devices.length === 0 ? (
+          <p className="text-xs" style={{ color: "var(--text-muted)" }}>No active devices.</p>
+        ) : (
+          <ul className="flex flex-col gap-1">
+            {devices.map((d) => (
+              <li key={d.id} className="flex items-center gap-2 text-xs">
+                <span className="min-w-0 flex-1 truncate" style={{ color: "var(--text)" }}>{d.label}</span>
+                {d.lastSeenAt && <span className="shrink-0" style={{ color: "var(--text-faint)" }}>{new Date(d.lastSeenAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>}
+                <button type="button" onClick={() => void kick(d.id)} title="Force sign out"
+                  className="shrink-0 rounded-md border px-2 py-0.5 text-[10px] font-medium" style={{ borderColor: "var(--border)", color: "var(--risk)" }}>Kick</button>
               </li>
             ))}
           </ul>
