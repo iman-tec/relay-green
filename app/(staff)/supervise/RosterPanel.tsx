@@ -99,12 +99,20 @@ export function RosterPanel() {
 
   const onlineCount = engineers.filter((e) => e.presenceState === "online").length;
   const onCallCount = engineers.filter((e) => e.currentSessionId && ON_CALL_STATES.has(e.currentStatus ?? "")).length;
+  // Pod aggregate KPIs (E1), summed across the pod's engineers.
+  const buildMinutes = engineers.reduce((s, e) => s + (e.buildMinutes || 0), 0);
+  const sessions30d = engineers.reduce((s, e) => s + (e.sessions30d || 0), 0);
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-        {engineers.length} engineer{engineers.length === 1 ? "" : "s"} · {onlineCount} online · {onCallCount} on a call
-      </p>
+      {/* Pod dashboard — KPIs across the whole pod */}
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
+        <Kpi label="Engineers" value={fmtNum(engineers.length)} />
+        <Kpi label="Online" value={fmtNum(onlineCount)} />
+        <Kpi label="Live now" value={fmtNum(onCallCount)} />
+        <Kpi label="Build min" value={fmtNum(buildMinutes)} sub="30d" />
+        <Kpi label="Sessions" value={fmtNum(sessions30d)} sub="30d" />
+      </div>
       <div className="grid items-start gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
         {engineers.map((e) => <EngineerCard key={e.userId} engineer={e} />)}
       </div>
