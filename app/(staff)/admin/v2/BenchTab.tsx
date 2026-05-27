@@ -8,7 +8,8 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Users, CheckCircle2, CircleDashed, Pencil, CalendarOff, X, Inbox, Check, Ban } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Loader2, Users, CheckCircle2, CircleDashed, Pencil, CalendarOff, X, Inbox, Check, Ban, Siren } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 
 type Engineer = {
@@ -67,6 +68,8 @@ export function BenchTab() {
             </div>
           </div>
         </div>
+
+        <OpsBanner />
 
         {loading ? (
           <div className="flex justify-center py-16"><Loader2 size={20} className="animate-spin" style={{ color: "var(--text-muted)" }} /></div>
@@ -281,6 +284,46 @@ function Onboarding({ rows }: { rows: Engineer[] }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ── H2: escalations that fell through to ops ───────────────────────────────
+type OpsEsc = { id: string; sessionId: string; engineer: string; customer: string; reason: string; createdAt: string; opsEscalatedAt: string };
+
+function OpsBanner() {
+  const router = useRouter();
+  const [rows, setRows] = useState<OpsEsc[]>([]);
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const res = await fetch("/api/admin/ops-escalations", { cache: "no-store" });
+        if (res.ok && alive) setRows(((await res.json()) as { escalations: OpsEsc[] }).escalations ?? []);
+      } catch { /* ignore */ }
+    };
+    void load();
+    const id = setInterval(load, 30_000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
+
+  if (rows.length === 0) return null;
+  return (
+    <div className="rounded-2xl border p-4" style={{ borderColor: "var(--risk)", background: "color-mix(in srgb, var(--risk) 8%, transparent)" }}>
+      <div className="mb-2 flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--risk)" }}>
+        <Siren size={15} /> {rows.length} escalation{rows.length === 1 ? "" : "s"} fell through to ops — no supervisor picked up
+      </div>
+      <ul className="flex flex-col gap-1.5">
+        {rows.map((e) => (
+          <li key={e.id} className="flex items-center gap-2 text-xs">
+            <span className="min-w-0 flex-1 truncate" style={{ color: "var(--text)" }}>
+              <span className="font-medium">{e.engineer}</span> · {e.reason} <span style={{ color: "var(--text-muted)" }}>(on {e.customer})</span>
+            </span>
+            <button type="button" onClick={() => router.push(`/staff/session/${e.sessionId}`)}
+              className="shrink-0 rounded-md border px-2 py-1 text-[11px] font-medium" style={{ borderColor: "var(--border)", color: "var(--text)" }}>Watch</button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
