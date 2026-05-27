@@ -13,7 +13,7 @@
 import { Download, Receipt, CreditCard } from "lucide-react";
 import { StatusBadge, EmptyState } from "@/app/_components/ui";
 import {
-  useApiData, eur, TabBody, StatCard, LoadingState, ErrorState,
+  useApiData, eur, StatCard, LoadingState, ErrorState,
 } from "./_shared";
 
 type Billing = {
@@ -32,9 +32,9 @@ type Billing = {
 export function BillingTab() {
   const { data, loading, error, reload } = useApiData<Billing>("/api/enterprise/billing");
 
-  if (loading) return <TabBody><LoadingState /></TabBody>;
-  if (error) return <TabBody><ErrorState message={error} onRetry={reload} /></TabBody>;
-  if (!data) return <TabBody><ErrorState message="No billing data" onRetry={reload} /></TabBody>;
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState message={error} onRetry={reload} />;
+  if (!data) return <ErrorState message="No billing data" onRetry={reload} />;
 
   const tx = data.recentTransactions ?? [];
   const exportStatement = () => {
@@ -50,7 +50,7 @@ export function BillingTab() {
   };
 
   return (
-    <TabBody>
+    <section>
       <h1 className="mb-1 font-serif text-2xl font-medium" style={{ color: "var(--text)" }}>Billing & invoices</h1>
       <p className="mb-6 text-sm" style={{ color: "var(--text-muted)" }}>
         Pay-per-minute · €{(data.revenue.perMinuteCents / 100).toFixed(2)}/min, billed by the second. No subscription.
@@ -114,6 +114,6 @@ export function BillingTab() {
           </ul>
         )}
       </section>
-    </TabBody>
+    </section>
   );
 }

@@ -12,8 +12,10 @@
  */
 
 import { useMemo, useState } from "react";
-import { Building2, UserPlus, Copy, Check, Share2 } from "lucide-react";
+import { Building2, UserPlus, Copy, Check, Share2, Upload } from "lucide-react";
 import { Button, Input, Modal, StatusBadge, EmptyState } from "@/app/_components/ui";
+import { InviteFlow } from "@/app/_components/invite/InviteFlow";
+import { InviteStatusTable } from "@/app/_components/invite/InviteStatusTable";
 import {
   useApiData, eur, num, TabBody, LoadingState, ErrorState,
 } from "@/app/(staff)/enterprise/v2/_shared";
@@ -42,6 +44,8 @@ export function ClientsTab() {
 
   // Onboarding
   const [open, setOpen] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [inviteKey, setInviteKey] = useState(0);
   const [co, setCo] = useState(""); const [adminName, setAdminName] = useState(""); const [adminEmail, setAdminEmail] = useState("");
   // Configurable promo discount granted to the onboarded company.
   const [discountPct, setDiscountPct] = useState(10);
@@ -73,7 +77,7 @@ export function ClientsTab() {
       // admin (carried by the org code) and confirms the email.
       const url = `https://${BRAND}/staff/login?onboard=${encodeURIComponent(code)}&email=${encodeURIComponent(email)}`;
       setCreated({ company: co.trim(), email, url, discountPct, discountMonths });
-      dash.reload();
+      dash.reload(); setInviteKey((k) => k + 1);
     } catch (e) { setErr(e instanceof Error ? e.message : "Could not onboard company"); }
     finally { setBusy(false); }
   };
@@ -94,7 +98,10 @@ export function ClientsTab() {
     <TabBody>
       <div className="mb-6 flex items-center justify-between gap-3">
         <h1 className="font-serif text-2xl font-medium" style={{ color: "var(--text)" }}>Clients</h1>
-        <Button iconLeft={<UserPlus size={15} />} onClick={() => setOpen(true)}>Onboard a company</Button>
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" iconLeft={<Upload size={15} />} onClick={() => setBulkOpen(true)}>Bulk add (CSV)</Button>
+          <Button iconLeft={<UserPlus size={15} />} onClick={() => setOpen(true)}>Onboard a company</Button>
+        </div>
       </div>
 
       {ents.length === 0 ? (
@@ -157,6 +164,20 @@ export function ClientsTab() {
           Portfolio spend to date: <strong style={{ color: "var(--text)" }}>{eur(totalSpend)}</strong> across {num(ents.length)} companies.
         </p>
       )}
+
+      <section className="mt-8">
+        <h2 className="mb-3 font-serif text-lg font-medium" style={{ color: "var(--text)" }}>Invitations</h2>
+        <InviteStatusTable reloadKey={inviteKey} />
+      </section>
+
+      <InviteFlow
+        open={bulkOpen}
+        onClose={() => setBulkOpen(false)}
+        variant="companies"
+        endpoint="/api/reseller/enterprises"
+        title="Add companies in bulk"
+        onSent={() => { dash.reload(); setInviteKey((k) => k + 1); }}
+      />
 
       <Modal open={open} onClose={resetModal}
         title={created ? "Share the onboarding link" : "Onboard a company"}

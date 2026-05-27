@@ -75,13 +75,17 @@ export async function GET() {
   const [{ data: profiles }, { data: authList }, { data: availRows }] = await Promise.all([
     admin.from("profiles_with_role").select("id, full_name, primary_role").in("id", engineerIds),
     admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
-    admin.from("engineer_profiles").select("user_id, is_available").in("user_id", engineerIds),
+    admin.from("engineer_profiles").select("user_id, is_available, presence_state, updated_at").in("user_id", engineerIds),
   ]);
 
   // is_available is the engineer's explicit online/offline toggle (§3.2).
+  // presence_state is the triple-state intent (online/busy/offline);
+  // updated_at is the last presence change — used to show "Away · N min".
   const onlineById = new Map<string, boolean>();
-  for (const r of (availRows ?? []) as { user_id: string; is_available: boolean }[]) {
+  const presenceById = new Map<string, { state: string; since: string | null }>();
+  for (const r of (availRows ?? []) as { user_id: string; is_available: boolean; presence_state: string | null; updated_at: string | null }[]) {
     onlineById.set(r.user_id, r.is_available);
+    presenceById.set(r.user_id, { state: r.presence_state ?? "offline", since: r.updated_at ?? null });
   }
 
   const emailById = new Map<string, string>();
@@ -94,7 +98,7 @@ export async function GET() {
   const [{ data: liveCalls }, { data: pastCalls }] = await Promise.all([
     admin
       .from("guest_calls")
-      .select("id, claimed_by, guest_name, created_at, status")
+      .select("id, claimed_by, guest_name, created_at, status, assigned_at")
       .in("claimed_by", engineerIds)
       .in("status", LIVE_STATES)
       .order("created_at", { ascending: false }),
@@ -108,9 +112,38 @@ export async function GET() {
   ]);
 
   type CallRow = { id: string; claimed_by: string | null; guest_name: string | null };
-  const currentByEng = new Map<string, CallRow>();
-  for (const c of (liveCalls ?? []) as (CallRow & { created_at: string })[]) {
+  type LiveCallRow = CallRow & { created_at: string; status: string; assigned_at: string | null };
+  const currentByEng = new Map<string, LiveCallRow>();
+  for (const c of (liveCalls ?? []) as LiveCallRow[]) {
     if (c.claimed_by && !currentByEng.has(c.claimed_by)) currentByEng.set(c.claimed_by, c);
+  }
+
+  // 5. Per-engineer 30-day KPI strip (build minutes + session count) and the
+  //    live sentiment of the current call (latest_session_health), if any.
+  const since30 = new Date(Date.now() - 30 * 86_400_000).toISOString();
+  const liveSessionIds = Array.from(currentByEng.values()).map((c) => c.id);
+  const [{ data: kpiRows }, { data: healthRows }] = await Promise.all([
+    admin
+      .from("guest_calls")
+      .select("claimed_by, duration_minutes")
+      .in("claimed_by", engineerIds)
+      .gte("created_at", since30),
+    liveSessionIds.length
+      ? admin.from("latest_session_health").select("session_id, score, summary, message_count").in("session_id", liveSessionIds)
+      : Promise.resolve({ data: [] as { session_id: string; score: number; summary: string; message_count: number }[] }),
+  ]);
+
+  const kpiByEng = new Map<string, { buildMinutes: number; sessions: number }>();
+  for (const r of (kpiRows ?? []) as { claimed_by: string | null; duration_minutes: number | null }[]) {
+    if (!r.claimed_by) continue;
+    const k = kpiByEng.get(r.claimed_by) ?? { buildMinutes: 0, sessions: 0 };
+    k.buildMinutes += Math.round(Number(r.duration_minutes ?? 0));
+    k.sessions += 1;
+    kpiByEng.set(r.claimed_by, k);
+  }
+  const healthBySession = new Map<string, { score: number; summary: string; messageCount: number }>();
+  for (const h of (healthRows ?? []) as { session_id: string; score: number; summary: string; message_count: number }[]) {
+    healthBySession.set(h.session_id, { score: Number(h.score), summary: h.summary, messageCount: h.message_count });
   }
 
   const lastByEng = new Map<string, (CallRow & { ended_at: string })>();
@@ -121,12 +154,23 @@ export async function GET() {
   const engineers = (profiles ?? []).map((p: { id: string; full_name: string | null; primary_role: string | null }) => {
     const cur  = currentByEng.get(p.id);
     const last = lastByEng.get(p.id);
+    const pres = presenceById.get(p.id);
+    const kpi  = kpiByEng.get(p.id) ?? { buildMinutes: 0, sessions: 0 };
+    const sentiment = cur ? healthBySession.get(cur.id) ?? null : null;
     return {
       userId:          p.id,
       displayName:     p.full_name ?? "Unnamed",
       email:           emailById.get(p.id) ?? "",
       primaryRole:     p.primary_role ?? ROLE.engineer,
+      presenceState:   pres?.state ?? "offline",
+      presenceSince:   pres?.since ?? null,
       currentCustomer: cur?.guest_name ?? null,
+      currentSessionId: cur?.id ?? null,
+      currentStatus:   cur?.status ?? null,
+      onCallSince:     cur?.assigned_at ?? cur?.created_at ?? null,
+      buildMinutes:    kpi.buildMinutes,
+      sessions30d:     kpi.sessions,
+      liveSentiment:   sentiment,
       lastCustomer:    last?.guest_name ?? null,
       lastCallAt:      last?.ended_at ?? null,
       isOnline:        onlineById.get(p.id) ?? null,

@@ -23,15 +23,15 @@ import {
 import {
   Send, Video, PhoneOff, Loader2, ArrowLeft, RotateCw, Sparkles, Lock, Eye, LogOut,
   PanelLeftOpen, PanelLeftClose, AlertTriangle, BookOpen, ChevronRight, Check,
-  Download,
+  Download, LifeBuoy, X,
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { MeetingChatEntry } from "@/app/_components/MeetingChatEntry";
 import { MeetingSummaryEntry, isAiSummaryMessageBody } from "@/app/_components/MeetingSummaryEntry";
 import { ChatComposer } from "@/app/_components/ChatComposer";
 import { EngineerAiAsk } from "@/app/_components/EngineerAiAsk";
+import { AssistantBar } from "@/app/_components/AssistantBar";
 import { ProjectAIAssistant } from "@/app/_components/ProjectAIAssistant";
-import { EngineerEscalateButton } from "@/app/_components/EngineerEscalateButton";
 import { MessageAttachments } from "@/app/_components/MessageAttachments";
 import { EditableSummary } from "@/app/_components/EditableSummary";
 import { createClient } from "@/lib/supabase/browser";
@@ -758,8 +758,100 @@ function Sidebar({
             </div>
           </div>
         </div>
+        {/* Engineers can raise a hand to their supervisor mid-call. */}
+        {!isSupervisor && <EscalateButton sessionId={session.id} />}
+        {/* AI assistant — available to the engineer on call and to supervisors
+            monitoring (read-only viewers still get the aid). */}
+        <div className="mt-2">
+          <AssistantBar compact contextLabel="this session" placeholder="Ask the assistant…" />
+        </div>
       </div>
     </aside>
+  );
+}
+
+// ── Engineer "escalate to supervisor" control ──────────────────────────────
+const ESCALATION_REASONS = [
+  "Need help / stuck",
+  "Scope creep",
+  "Customer unhappy",
+  "Needs an estimate",
+  "Technical blocker",
+  "Other",
+];
+
+function EscalateButton({ sessionId }: { sessionId: string }) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState(ESCALATION_REASONS[0]);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const submit = async () => {
+    setBusy(true); setErr(null);
+    try {
+      const { error } = await createClient().rpc("engineer_escalate_session", {
+        _session_id: sessionId, _reason: reason, _note: note.trim() || null,
+      });
+      if (error) throw new Error(error.message);
+      setDone(true);
+      setTimeout(() => { setOpen(false); setDone(false); setNote(""); }, 1400);
+    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't escalate."); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}
+        className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-[12px] font-medium transition-colors"
+        style={{ borderColor: "color-mix(in srgb, var(--risk) 40%, transparent)", color: "var(--risk)" }}>
+        <LifeBuoy size={13} /> Escalate to supervisor
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-[60]" style={{ backgroundColor: "var(--scrim)" }} onClick={() => !busy && setOpen(false)} />
+          <div role="dialog" aria-modal="true"
+            className="fixed left-1/2 top-1/2 z-[61] w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border p-5 shadow-2xl"
+            style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}>
+            <div className="mb-3 flex items-center gap-2">
+              <LifeBuoy size={16} style={{ color: "var(--risk)" }} />
+              <h2 className="text-[15px] font-semibold" style={{ color: "var(--text)" }}>Escalate to supervisor</h2>
+              <button type="button" onClick={() => !busy && setOpen(false)} className="ml-auto" style={{ color: "var(--text-muted)" }}><X size={16} /></button>
+            </div>
+            {done ? (
+              <p className="py-4 text-center text-sm" style={{ color: "var(--ok)" }}>Raised — your supervisor has been notified.</p>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <label className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
+                  Reason
+                  <select value={reason} onChange={(e) => setReason(e.target.value)}
+                    className="h-10 rounded-lg border px-2 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }}>
+                    {ESCALATION_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
+                  Detail (optional)
+                  <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3}
+                    placeholder="What's happening?" className="rounded-lg border p-2 text-sm"
+                    style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
+                </label>
+                {err && <p className="text-[12px]" style={{ color: "var(--risk)" }}>{err}</p>}
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => setOpen(false)} disabled={busy}
+                    className="rounded-full px-3.5 py-1.5 text-[13px] font-medium" style={{ color: "var(--text-muted)" }}>Cancel</button>
+                  <button type="button" onClick={() => void submit()} disabled={busy}
+                    className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13px] font-semibold text-white" style={{ background: "var(--risk)" }}>
+                    {busy ? <Loader2 size={13} className="animate-spin" /> : <LifeBuoy size={13} />} Raise
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </>
   );
 }
 
@@ -1359,13 +1451,10 @@ function ChatPane({
             />
           )}
 
-          {/* Escalation — pulls a supervisor into the session when the
-           *  engineer needs backup. Only the engineer who claimed the
-           *  session sees it (read-only monitor viewers don't). Posts a
-           *  customer-visible system chat note when the supervisor joins. */}
-          {session.status !== "ended" && !readOnly && (
-            <EngineerEscalateButton sessionId={session.id} />
-          )}
+          {/* Escalation control lives inline in the Sidebar now via
+           *  EscalateButton (introduced by feat/unified-onboarding's
+           *  session escalations work). The previous stub here is
+           *  removed; see the EscalateButton component below. */}
         </div>
       </div>
     </section>

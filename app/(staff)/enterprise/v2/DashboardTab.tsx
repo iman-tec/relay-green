@@ -6,8 +6,10 @@
  * usage. Org-scoped via the /api/enterprise/* endpoints.
  */
 
-import { Clock, Activity, CheckCircle2, Timer, Radio } from "lucide-react";
-import { StatusBadge, EmptyState } from "@/app/_components/ui";
+import { useState } from "react";
+import { Clock, Activity, CheckCircle2, Timer, Radio, Sparkles, ArrowRight } from "lucide-react";
+import { Button, StatusBadge, EmptyState } from "@/app/_components/ui";
+import { SetupWizard } from "./SetupWizard";
 import {
   useApiData, eur, num, TabBody, StatCard, LoadingState, ErrorState,
 } from "./_shared";
@@ -40,14 +42,18 @@ export function DashboardTab() {
   const me = useApiData<Me>("/api/enterprise/me");
   const sessions = useApiData<{ sessions: Session[] }>("/api/enterprise/sessions?limit=8");
   const depts = useApiData<{ departments: Dept[] }>("/api/enterprise/departments");
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   if (me.loading) return <TabBody><LoadingState /></TabBody>;
   if (me.error) return <TabBody><ErrorState message={me.error} onRetry={me.reload} /></TabBody>;
   const k = me.data?.kpis;
 
-  const topDepts = [...(depts.data?.departments ?? [])]
-    .sort((a, b) => b.usedMinutes - a.usedMinutes)
-    .slice(0, 5);
+  const deptList = depts.data?.departments ?? [];
+  const topDepts = [...deptList].sort((a, b) => b.usedMinutes - a.usedMinutes).slice(0, 5);
+  // Fresh org: nothing set up yet → nudge the setup wizard.
+  const needsSetup = !depts.loading && deptList.length === 0 && (k?.userCount ?? 0) === 0;
+
+  const reloadAll = () => { me.reload(); depts.reload(); };
 
   return (
     <TabBody>
@@ -57,6 +63,24 @@ export function DashboardTab() {
       <p className="mb-6 text-sm" style={{ color: "var(--text-muted)" }}>
         Org-wide overview · {num(k?.userCount)} members · {num(k?.staffCount)} staff
       </p>
+
+      {needsSetup && (
+        <div className="mb-6 flex flex-col items-start gap-3 rounded-2xl border p-5 sm:flex-row sm:items-center sm:justify-between"
+          style={{ borderColor: "var(--primary)", background: "var(--primary-tint)" }}>
+          <div className="flex items-start gap-3">
+            <span className="inline-flex size-10 items-center justify-center rounded-xl" style={{ background: "var(--surface)", color: "var(--primary-hover)" }}>
+              <Sparkles size={18} />
+            </span>
+            <div>
+              <div className="text-sm font-semibold" style={{ color: "var(--text)" }}>Finish setting up {me.data?.org.name ?? "your workspace"}</div>
+              <div className="text-xs" style={{ color: "var(--text-muted)" }}>Create departments and invite your team — three quick steps.</div>
+            </div>
+          </div>
+          <Button iconLeft={<ArrowRight size={14} />} onClick={() => setWizardOpen(true)}>Set up workspace</Button>
+        </div>
+      )}
+
+      <SetupWizard open={wizardOpen} onClose={() => setWizardOpen(false)} orgName={me.data?.org.name ?? "your workspace"} onChanged={reloadAll} />
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <StatCard icon={<Timer size={16} />} value={eur(k?.spendMonthCents)} label="Spend this month" />

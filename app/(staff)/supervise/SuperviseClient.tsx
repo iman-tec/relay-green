@@ -31,6 +31,9 @@ import {
   type StatusTone,
 } from "@/app/_components/ui";
 import { MatchingPanel } from "./MatchingPanel";
+import { RosterPanel } from "./RosterPanel";
+import { CoveragePanel } from "./CoveragePanel";
+import { ActNowRail } from "./ActNowRail";
 import { SupervisorAvailabilityToggle } from "@/app/_components/SupervisorAvailabilityToggle";
 import { MatchingActions } from "@/app/_components/MatchingActions";
 
@@ -96,7 +99,7 @@ function engineerLabel(s: { agent_name: string | null; engineerRealName?: string
 // (most conversations happen on Zoom voice, not chat).
 const MIN_MESSAGES_FOR_AI = 2;
 
-type Tab = "all" | "waiting" | "live" | "past" | "matching";
+type Tab = "all" | "waiting" | "live" | "past" | "team" | "coverage" | "matching";
 
 // Per-page selector — shared by all three panels (All, Active, Past). Lifted
 // to the parent so changing "20 / page" once stays applied as you tab around.
@@ -360,7 +363,14 @@ export function SuperviseClient() {
     <PagerSlotContext.Provider value={pagerSlot}>
     <div className="flex min-h-screen flex-col">
       <style>{WAITING_GLOW_CSS}</style>
-      <div className="mx-auto w-full max-w-screen-2xl flex-1 space-y-6 px-6 pt-8 pb-6">
+      <div className="mx-auto flex w-full max-w-screen-2xl flex-1 gap-6 px-6 pt-8 pb-6">
+        {/* Left rail — act-now queue (pod supervisors). Sticky + self-scrolling. */}
+        {scope.kind === "pod" && (
+          <aside className="hidden w-80 shrink-0 lg:block lg:sticky lg:top-8 lg:max-h-[calc(100vh-7rem)]">
+            <ActNowRail />
+          </aside>
+        )}
+        <div className="min-w-0 flex-1 space-y-6">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="font-serif text-3xl font-medium tracking-tight text-[var(--text)]">
@@ -388,9 +398,12 @@ export function SuperviseClient() {
             waiting:  waitingSessions.length,
             live:     liveSessions.length,
             past:     pastSessions.length,
+            team:     0,
+            coverage: 0,
             matching: 0,
           }}
           showMatching={scope.kind === "unscoped" || (scope.kind === "pod" && !!scope.podId)}
+          showTeam={scope.kind === "pod" && !!scope.podId}
         />
 
         {loading ? (
@@ -408,6 +421,7 @@ export function SuperviseClient() {
             matchingGlobal={scope.kind === "unscoped"}
           />
         )}
+        </div>
       </div>
 
       {/* Sticky footer — session-health legend (left) + pager slot (right).
@@ -660,14 +674,20 @@ function Tabs({
   setTab,
   counts,
   showMatching,
+  showTeam,
 }: {
   tab: Tab;
   setTab: (t: Tab) => void;
   counts: Record<Tab, number>;
   showMatching: boolean;
+  showTeam: boolean;
 }) {
   const base = ["all", "waiting", "live", "past"] as const;
-  const visible: readonly Tab[] = showMatching ? [...base, "matching"] : base;
+  const visible: readonly Tab[] = [
+    ...base,
+    ...(showTeam ? (["team", "coverage"] as const) : []),
+    ...(showMatching ? (["matching"] as const) : []),
+  ];
   return (
     <div
       role="tablist"
@@ -676,7 +696,7 @@ function Tabs({
     >
       {visible.map((t) => {
         const active = t === tab;
-        const showCount = t !== "matching";
+        const showCount = t !== "matching" && t !== "team" && t !== "coverage";
         return (
           <button
             key={t}
@@ -728,6 +748,12 @@ function TabPanel({
   setPerPage: (n: PageSize) => void;
   matchingGlobal: boolean;
 }) {
+  if (tab === "team") {
+    return <RosterPanel />;
+  }
+  if (tab === "coverage") {
+    return <CoveragePanel />;
+  }
   if (tab === "matching") {
     return matchingGlobal
       ? <MatchingPanel endpoint="/api/admin/matching" scope="global" />

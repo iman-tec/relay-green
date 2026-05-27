@@ -16,28 +16,34 @@ import { TabsHeader, type Tab } from "@/app/_components/admin-v2/TabsHeader";
 import { SignOutButton } from "@/app/_components/admin-v2/SignOutButton";
 import { UserChip } from "@/app/_components/admin-v2/UserChip";
 import { ThemeTriplet } from "@/app/_components/ThemeTriplet";
-import { PartnerDashboardTab } from "./PartnerDashboardTab";
+import { PartnerOverviewTab, type PartnerOverviewView } from "./PartnerOverviewTab";
 import { ClientsTab } from "./ClientsTab";
-import { SalesTab } from "./SalesTab";
 import { PartnerSettingsTab } from "./PartnerSettingsTab";
 
-type TabKey = "dashboard" | "clients" | "sales" | "settings";
+type TabKey = "dashboard" | "clients" | "settings";
 
 const TABS: readonly Tab<TabKey>[] = [
   { key: "dashboard", label: "Dashboard" },
   { key: "clients",   label: "Clients" },
-  { key: "sales",     label: "Sales" },
   { key: "settings",  label: "Settings" },
 ];
 
 const VALID = new Set<TabKey>(TABS.map((t) => t.key));
 
+function resolveInitial(param: string | null | undefined): { tab: TabKey; view: PartnerOverviewView } {
+  switch (param) {
+    case "sales":     return { tab: "dashboard", view: "sales" };
+    case "clients":   return { tab: "clients", view: "portfolio" };
+    case "settings":  return { tab: "settings", view: "portfolio" };
+    case "dashboard":
+    default:          return { tab: "dashboard", view: "portfolio" };
+  }
+}
+
 export function PanelClient({ me }: { me: { email: string; roleLabel: string } }) {
   const searchParams = useSearchParams();
-  const initial = searchParams?.get("tab");
-  const [tab, setTab] = useState<TabKey>(
-    initial && VALID.has(initial as TabKey) ? (initial as TabKey) : "dashboard",
-  );
+  const initial = resolveInitial(searchParams?.get("tab"));
+  const [tab, setTab] = useState<TabKey>(VALID.has(initial.tab) ? initial.tab : "dashboard");
 
   return (
     <div className="flex h-screen min-h-0 flex-col">
@@ -55,9 +61,8 @@ export function PanelClient({ me }: { me: { email: string; roleLabel: string } }
         }
       />
       <div className="min-h-0 flex-1 overflow-hidden">
-        {tab === "dashboard" && <PartnerDashboardTab />}
+        {tab === "dashboard" && <PartnerOverviewTab initialView={initial.view} />}
         {tab === "clients"   && <ClientsTab />}
-        {tab === "sales"     && <SalesTab />}
         {tab === "settings"  && <PartnerSettingsTab />}
       </div>
     </div>
