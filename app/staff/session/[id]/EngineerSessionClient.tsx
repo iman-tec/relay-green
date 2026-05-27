@@ -14,8 +14,9 @@
  * (the post-call landing screen with recent calls + take-next).
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useOverlayDismiss } from "@/lib/relay/useOverlayDismiss";
 import Link from "next/link";
 import {
   PanelGroup, Panel, PanelResizeHandle,
@@ -755,6 +756,8 @@ function EscalateButton({ sessionId }: { sessionId: string }) {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const closeModal = useCallback(() => setOpen(false), []);
+  const dialogRef = useOverlayDismiss(closeModal, open);
 
   const submit = async () => {
     setBusy(true); setErr(null);
@@ -779,9 +782,9 @@ function EscalateButton({ sessionId }: { sessionId: string }) {
 
       {open && (
         <>
-          <div className="fixed inset-0 z-[60]" style={{ backgroundColor: "var(--scrim)" }} onClick={() => !busy && setOpen(false)} />
-          <div role="dialog" aria-modal="true"
-            className="fixed left-1/2 top-1/2 z-[61] w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border p-5 shadow-2xl"
+          <div className="fixed inset-0 z-[var(--z-modal)]" style={{ backgroundColor: "var(--scrim)" }} onClick={() => !busy && setOpen(false)} />
+          <div ref={dialogRef} role="dialog" aria-modal="true"
+            className="fixed left-1/2 top-1/2 z-[var(--z-modal)] w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border p-5 shadow-2xl"
             style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}>
             <div className="mb-3 flex items-center gap-2">
               <LifeBuoy size={16} style={{ color: "var(--risk)" }} />

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useOverlayDismiss } from "@/lib/relay/useOverlayDismiss";
 import { useEngineerWorkspace } from "@/lib/relay/useEngineerWorkspace";
 import { useRequireEngineerProfile } from "@/lib/relay/useRequireEngineerProfile";
 import { createClient } from "@/lib/supabase/browser";
@@ -404,6 +405,8 @@ function fmt12hLocal(minutes: number): string {
 // Surfaces the support email + a "Coming soon" notice for the chat path.
 function SupervisorContactCard() {
   const [open, setOpen] = useState(false);
+  const closeContact = useCallback(() => setOpen(false), []);
+  const dialogRef = useOverlayDismiss<HTMLDivElement>(closeContact, open);
   return (
     <>
       <div
@@ -441,10 +444,11 @@ function SupervisorContactCard() {
       </div>
       {open && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center px-6"
-          style={{ backgroundColor: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}
+          className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center px-6"
+          style={{ backgroundColor: "var(--scrim)", backdropFilter: "blur(4px)" }}
         >
           <div
+            ref={dialogRef}
             className="relative w-full max-w-md rounded-2xl border p-6 shadow-xl"
             style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}
           >
@@ -1713,6 +1717,8 @@ function WeekStrip() {
 // ──────────────────────────────────────────────────────────────────────────
 function DashboardFooterEscalate() {
   const [open, setOpen] = useState(false);
+  const closeEscalate = useCallback(() => setOpen(false), []);
+  const dialogRef = useOverlayDismiss<HTMLDivElement>(closeEscalate, open);
   return (
     <>
       <div
@@ -1732,10 +1738,11 @@ function DashboardFooterEscalate() {
       </div>
       {open && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center px-6"
-          style={{ backgroundColor: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}
+          className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center px-6"
+          style={{ backgroundColor: "var(--scrim)", backdropFilter: "blur(4px)" }}
         >
           <div
+            ref={dialogRef}
             className="relative w-full max-w-md rounded-2xl border p-6 shadow-xl"
             style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}
           >

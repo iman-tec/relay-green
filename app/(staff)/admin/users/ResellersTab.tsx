@@ -31,6 +31,7 @@ import {
   Building2,
 } from "lucide-react";
 import { useConfirmDialog } from "@/app/_components/ConfirmDialog";
+import { useOverlayDismiss } from "@/lib/relay/useOverlayDismiss";
 
 const BRAND_GREEN = "#3f5c2e";
 
@@ -798,9 +799,13 @@ function ModalShell({
   onClose: () => void;
   children: React.ReactNode;
 }) {
+  const dialogRef = useOverlayDismiss<HTMLDivElement>(onClose);
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center" style={{ backgroundColor: "rgba(0,0,0,0.40)" }}>
+    <div className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center" style={{ backgroundColor: "var(--scrim)" }}>
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
         className="w-full max-w-md rounded-xl border p-4"
         style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
       >

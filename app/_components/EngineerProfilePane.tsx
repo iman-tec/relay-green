@@ -24,6 +24,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useOverlayDismiss } from "@/lib/relay/useOverlayDismiss";
 import {
   Bell, BellRing, Calendar as CalendarIcon, Check, CheckCircle2, ChevronRight,
   Clock, Copy, CreditCard, Download as DownloadIcon, Globe, Home, KeyRound, Loader2, Mail,
@@ -1890,6 +1891,7 @@ function DateSlotsPopup({
   onAnyChange: () => Promise<void> | void;
 }) {
   const sbRef = useRef(createClient());
+  const dialogRef = useOverlayDismiss<HTMLDivElement>(onClose);
   const dateObj = new Date(`${date}T12:00:00`);
   const weekday = dateObj.getDay();
   const dayWeeklyWindows = weeklyWindows
@@ -1991,11 +1993,12 @@ function DateSlotsPopup({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center px-6"
-      style={{ backgroundColor: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}
+      className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center px-6"
+      style={{ backgroundColor: "var(--scrim)", backdropFilter: "blur(4px)" }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
+        ref={dialogRef}
         className="relative w-full max-w-lg overflow-hidden rounded-2xl border shadow-xl"
         style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)", maxHeight: "85vh" }}
       >
