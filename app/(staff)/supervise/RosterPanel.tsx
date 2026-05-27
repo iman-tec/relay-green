@@ -18,9 +18,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { Eye, Loader2, ArrowUpRight, Users, ChevronDown, Activity, Timer, Hash, Flag, X, TrendingUp } from "lucide-react";
+import { Eye, Loader2, ArrowUpRight, Users, ChevronDown, Activity, Timer, Hash, Flag, X, TrendingUp, Wallet } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import { Button, Card, EmptyState as UiEmptyState, cn } from "@/app/_components/ui";
+import { eur } from "@/app/(staff)/enterprise/v2/_shared";
 
 type Sentiment = { score: number; summary: string; messageCount: number };
 type Engineer = {
@@ -115,6 +116,7 @@ export function RosterPanel() {
       </div>
 
       <ThemesCard />
+      <PayoutsCard />
       <div className="grid items-start gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
         {engineers.map((e) => <EngineerCard key={e.userId} engineer={e} />)}
       </div>
@@ -163,6 +165,48 @@ function ThemesCard() {
            state === "ok" ? "No recurring themes — escalations look one-off." :
            "Theme detection unavailable right now."}
         </p>
+      )}
+    </div>
+  );
+}
+
+// ── E3 — pod payouts overview ──────────────────────────────────────────────
+type Payouts = { total: { earningsCents: number; billableMinutes: number; sessions: number }; engineers: { name: string; earningsCents: number; billableMinutes: number; sessions: number; lastSessionAt: string | null }[] };
+
+function PayoutsCard() {
+  const [data, setData] = useState<Payouts | null>(null);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const res = await fetch("/api/supervisor/payouts", { cache: "no-store" });
+        if (res.ok && alive) setData((await res.json()) as Payouts);
+      } catch { /* ignore */ }
+    })();
+    return () => { alive = false; };
+  }, []);
+  if (!data || data.engineers.length === 0) return null;
+
+  return (
+    <div className="rounded-2xl border p-4" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+      <button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-2 text-left" aria-expanded={open}>
+        <Wallet size={15} style={{ color: "var(--text-muted)" }} />
+        <span className="text-sm font-semibold" style={{ color: "var(--text)" }}>Pod payouts</span>
+        <span className="text-sm tabular-nums" style={{ color: "var(--text)" }}>{eur(data.total.earningsCents)}</span>
+        <span className="text-xs" style={{ color: "var(--text-muted)" }}>· {fmtNum(data.total.billableMinutes)} billable min · {fmtNum(data.total.sessions)} sessions</span>
+        <ChevronDown size={15} className={cn("ml-auto transition-transform", open && "rotate-180")} style={{ color: "var(--text-muted)" }} />
+      </button>
+      {open && (
+        <ul className="mt-3 flex flex-col gap-1 border-t pt-3" style={{ borderColor: "var(--border)" }}>
+          {data.engineers.map((e, i) => (
+            <li key={i} className="flex items-center gap-2 text-xs">
+              <span className="min-w-0 flex-1 truncate" style={{ color: "var(--text)" }}>{e.name}</span>
+              <span className="shrink-0 tabular-nums" style={{ color: "var(--text-muted)" }}>{fmtNum(e.billableMinutes)}m · {fmtNum(e.sessions)}</span>
+              <span className="w-20 shrink-0 text-right font-medium tabular-nums" style={{ color: "var(--text)" }}>{eur(e.earningsCents)}</span>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
