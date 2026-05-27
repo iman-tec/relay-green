@@ -20,7 +20,7 @@ import { cn } from "@/app/_components/ui";
 import { ProjectAIAssistant } from "@/app/_components/ProjectAIAssistant";
 
 type Sentiment = { score: number; summary: string; messageCount: number };
-type Estimation = { id: string; kind: "golive" | "maintain" | string; status: string; customer: string; project: string; projectId: string; comments: string | null; amountCents: number | null; bidScope: string | null; bidTimeline: string | null; appointmentRequestedAt: string | null; appointmentNote: string | null; createdAt: string; liveSessionId: string | null; liveSentiment: Sentiment | null };
+type Estimation = { id: string; kind: "golive" | "maintain" | string; status: string; customer: string; project: string; projectId: string; comments: string | null; amountCents: number | null; bidScope: string | null; bidTimeline: string | null; appointmentRequestedAt: string | null; appointmentNote: string | null; changeRequestNote: string | null; createdAt: string; liveSessionId: string | null; liveSentiment: Sentiment | null };
 type Callback = { id: string; customer: string; engineer: string; project: string | null; message: string | null; createdAt: string; slaBreached: boolean };
 type Escalation = { id: string; sessionId: string; engineer: string; customer: string; reason: string; note: string | null; createdAt: string };
 type Feed = { estimationRequests: Estimation[]; callbackQueue: Callback[]; escalations: Escalation[] };
@@ -68,11 +68,8 @@ export function ActNowRail() {
     })();
   }, []);
 
-  const resolveEscalation = useCallback(async (id: string) => {
-    const note = window.prompt("Resolution note (optional):") ?? "";
-    await supabaseRef.current.rpc("resolve_escalation", { _id: id, _note: note });
-    void refresh();
-  }, [refresh]);
+  const [resolveTarget, setResolveTarget] = useState<Escalation | null>(null);
+  const resolveEscalation = useCallback((esc: Escalation) => { setResolveTarget(esc); }, []);
 
   const reassign = useCallback(async (id: string, engineerId: string) => {
     await supabaseRef.current.rpc("reassign_connect_request", { _id: id, _new_engineer_user_id: engineerId });
@@ -115,7 +112,56 @@ export function ActNowRail() {
       )}
 
       {diveIn && <DiveInModal q={diveIn} onClose={() => setDiveIn(null)} onDone={() => { setDiveIn(null); void refresh(); }} />}
+      {resolveTarget && <ResolveEscalationModal esc={resolveTarget} onClose={() => setResolveTarget(null)} onDone={() => { setResolveTarget(null); void refresh(); }} />}
     </div>
+  );
+}
+
+// Supervisor resolves an escalation with an optional note. Replaces the old
+// window.prompt — a real, theme-aware, focus-trapped dialog.
+function ResolveEscalationModal({ esc, onClose, onDone }: { esc: Escalation; onClose: () => void; onDone: () => void }) {
+  const sb = useRef(createClient()).current;
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const submit = async () => {
+    setBusy(true); setErr(null);
+    try {
+      const { error } = await sb.rpc("resolve_escalation", { _id: esc.id, _note: note.trim() || null });
+      if (error) throw new Error(error.message);
+      onDone();
+    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't resolve."); setBusy(false); }
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 z-[var(--z-modal)]" style={{ backgroundColor: "var(--scrim)" }} onClick={() => !busy && onClose()} />
+      <div role="dialog" aria-modal="true"
+        className="fixed left-1/2 top-1/2 z-[var(--z-modal)] w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border p-5 shadow-2xl"
+        style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}>
+        <div className="mb-3 flex items-center gap-2">
+          <Check size={16} style={{ color: "var(--primary-hover)" }} />
+          <h2 className="text-[15px] font-semibold" style={{ color: "var(--text)" }}>Resolve escalation</h2>
+          <button type="button" onClick={() => !busy && onClose()} className="ml-auto" style={{ color: "var(--text-muted)" }}><X size={16} /></button>
+        </div>
+        <p className="mb-3 text-xs" style={{ color: "var(--text-muted)" }}>{esc.reason} · {esc.engineer} on {esc.customer}</p>
+        <label className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
+          Resolution note (optional)
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} autoFocus
+            placeholder="What did you do?" className="rounded-lg border p-2 text-sm"
+            style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
+        </label>
+        {err && <p className="mt-2 text-[12px]" style={{ color: "var(--risk)" }}>{err}</p>}
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" onClick={() => !busy && onClose()} disabled={busy} className="rounded-full px-3.5 py-1.5 text-[13px] font-medium" style={{ color: "var(--text-muted)" }}>Cancel</button>
+          <button type="button" onClick={() => void submit()} disabled={busy}
+            className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13px] font-semibold text-white" style={{ background: "var(--primary)" }}>
+            {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Resolve
+          </button>
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -258,7 +304,7 @@ function DiveInModal({ q, onClose, onDone }: { q: Estimation; onClose: () => voi
   );
 }
 
-function EscalationRow({ e, onResolve }: { e: Escalation; onResolve: (id: string) => void }) {
+function EscalationRow({ e, onResolve }: { e: Escalation; onResolve: (e: Escalation) => void }) {
   const router = useRouter();
   return (
     <div className="rounded-xl border p-3" style={{ borderColor: "var(--risk)", background: "color-mix(in srgb, var(--risk) 8%, transparent)" }}>
@@ -275,7 +321,7 @@ function EscalationRow({ e, onResolve }: { e: Escalation; onResolve: (id: string
           style={{ borderColor: "var(--border)", color: "var(--text)" }}>
           <Eye size={11} /> Watch
         </button>
-        <button type="button" onClick={() => onResolve(e.id)}
+        <button type="button" onClick={() => onResolve(e)}
           className="inline-flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold text-white"
           style={{ background: "var(--primary)" }}>
           <Check size={11} /> Resolve
@@ -317,6 +363,11 @@ function EstimationRow({ q, onAct }: { q: Estimation; onAct: () => void }) {
       <div className="mt-1.5 truncate text-sm font-medium" style={{ color: "var(--text)" }}>{q.project}</div>
       <div className="truncate text-xs" style={{ color: "var(--text-muted)" }}>{q.customer}</div>
       {q.appointmentRequestedAt && <div className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold" style={{ color: "var(--primary-hover)" }}><CalendarClock size={10} /> wants to talk</div>}
+      {q.changeRequestNote && (
+        <p className="mt-1.5 rounded-md px-2 py-1 text-[11px]" style={{ background: "color-mix(in srgb, var(--warn) 12%, transparent)", color: "var(--text)" }}>
+          <span className="font-semibold" style={{ color: "var(--warn)" }}>Changes requested:</span> {q.changeRequestNote}
+        </p>
+      )}
       {q.comments && <p className="mt-1.5 line-clamp-2 text-[11px]" style={{ color: "var(--text-faint)" }}>{q.comments}</p>}
       <button type="button" onClick={onAct}
         className="mt-2 inline-flex w-full items-center justify-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-semibold text-white"

@@ -62,6 +62,21 @@
   /* Overlays */
   --scrim: rgba(20, 23, 26, 0.48);
 
+  /* Z-index ladder — single source of truth for stacking. Every overlay
+   * uses one of these tokens instead of an ad-hoc z-value, so stacking is
+   * designed, not accidental. Values sit on the codebase's existing scale
+   * (ui/Modal = 100, route bar = 1000, Zoom pop-out = 9999) so a partial
+   * migration never floats a migrated overlay above a not-yet-migrated one.
+   * Theme-independent (defined once). */
+  --z-sticky: 30;       /* sticky headers / footers */
+  --z-dropdown: 40;     /* menus, popovers, selects */
+  --z-drawer: 50;       /* side drawers + sheets + their scrim */
+  --z-modal: 100;       /* dialogs + their scrim (matches ui/Modal) */
+  --z-ring: 110;        /* incoming-call ring — must sit above an open modal */
+  --z-toast: 120;       /* transient toasts */
+  --z-progress: 1000;   /* top route-progress bar */
+  --z-popout: 9999;     /* Zoom pop-out (OS-window-like surface) */
+
   /* Motion timings (brief: 150-200ms micro-interactions) */
   --motion-fast: 150ms;
   --motion-med: 200ms;

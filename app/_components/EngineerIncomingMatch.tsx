@@ -164,7 +164,7 @@ export function EngineerIncomingMatch() {
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center px-6"
+      className="fixed inset-0 z-[var(--z-ring)] flex items-center justify-center px-6"
       style={{ background: "var(--scrim)", backdropFilter: "blur(4px)" }}
     >
       <div

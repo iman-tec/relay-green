@@ -55,20 +55,22 @@ test("2D: escalation round-trip — engineer raises -> supervisor resolves -> en
     await sp.screenshot({ path: "tests/_audit_2d_supervisor_escalation.png", fullPage: true });
     console.log("SUPERVISOR sees the escalation");
 
-    sp.on("dialog", (d) => d.accept("Resolved by audit — guided the engineer"));
     const escCard = sp.locator("div.rounded-xl", { hasText: "AUDIT-2D blocker — need help" });
     await escCard.getByRole("button", { name: "Resolve" }).click();
+    // Resolve is now a real modal (replaced window.prompt).
+    const dlg = sp.getByRole("dialog");
+    await expect(dlg.getByRole("heading", { name: "Resolve escalation" })).toBeVisible({ timeout: 8000 });
+    await dlg.getByPlaceholder("What did you do?").fill("Resolved by audit — guided the engineer");
+    await dlg.getByRole("button", { name: "Resolve" }).click();
     await sp.waitForTimeout(2500);
 
     const { data: resolved } = await admin.from("session_escalations").select("status, resolution_note, resolved_by").eq("session_id", SID).order("created_at", { ascending: false }).limit(1).maybeSingle();
     console.log("DB after resolve:", JSON.stringify(resolved));
     expect((resolved as { status?: string } | null)?.status).toBe("resolved");
 
-    // ── Engineer side reflects the resolution (after reload — see audit note) ──
-    await ep.reload();
-    await cookie(ep);
+    // ── Engineer side reflects the resolution LIVE (no reload — realtime fix) ──
     await expect(ep.getByText(/Escalation · resolved/i)).toBeVisible({ timeout: 15000 });
-    console.log("ENGINEER session view shows resolved");
+    console.log("ENGINEER session view shows resolved (live, no reload)");
   } finally {
     await admin.from("session_escalations").delete().eq("session_id", SID);
     await admin.from("guest_calls").delete().eq("id", SID);

@@ -703,9 +703,10 @@ function ProjectChatSearch({ projectId }: { projectId: string }) {
 function SessionEscalationFlag({ sessionId }: { sessionId: string }) {
   const [esc, setEsc] = useState<{ reason: string; status: string; note: string | null; resolution_note: string | null } | null>(null);
   useEffect(() => {
+    const sb = createClient();
     let alive = true;
-    void (async () => {
-      const { data } = await createClient()
+    const load = async () => {
+      const { data } = await sb
         .from("session_escalations")
         .select("reason, status, note, resolution_note")
         .eq("session_id", sessionId)
@@ -713,8 +714,14 @@ function SessionEscalationFlag({ sessionId }: { sessionId: string }) {
         .limit(1)
         .maybeSingle();
       if (alive) setEsc((data as { reason: string; status: string; note: string | null; resolution_note: string | null } | null) ?? null);
-    })();
-    return () => { alive = false; };
+    };
+    void load();
+    // Realtime so a supervisor's resolve reflects here without a reload.
+    const ch = sb
+      .channel(`session-escalation-${sessionId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "session_escalations", filter: `session_id=eq.${sessionId}` }, () => { void load(); })
+      .subscribe();
+    return () => { alive = false; void sb.removeChannel(ch); };
   }, [sessionId]);
   if (!esc) return null;
   const open = esc.status === "open";

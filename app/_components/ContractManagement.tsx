@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { loadStripe, type Stripe as StripeJs } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
-import { FileText, Rocket, Wrench, X, Loader2, Printer, ExternalLink, CalendarClock, Check, ShieldCheck } from "lucide-react";
+import { FileText, Rocket, Wrench, X, Loader2, Printer, ExternalLink, CalendarClock, Check, ShieldCheck, RotateCcw } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import { useTheme } from "@/app/_components/ThemeProvider";
 import { buildStripeAppearance } from "@/lib/stripe/appearance";
@@ -29,6 +29,7 @@ type Quote = {
   quote_amount_cents: number | null; bid_scope: string | null; bid_timeline: string | null;
   bid_validity_until: string | null; terms_url: string | null; comments: string | null;
   customer_viewed_at: string | null; appointment_requested_at: string | null; committed_at: string | null;
+  customer_response_note: string | null;
 };
 
 export function ContractManagement() {
@@ -42,7 +43,7 @@ export function ContractManagement() {
     if (!u.user) return;
     const { data } = await sb
       .from("project_quote_requests")
-      .select("id, kind, status, project_id, quote_amount_cents, bid_scope, bid_timeline, bid_validity_until, terms_url, comments, customer_viewed_at, appointment_requested_at, committed_at")
+      .select("id, kind, status, project_id, quote_amount_cents, bid_scope, bid_timeline, bid_validity_until, terms_url, comments, customer_viewed_at, appointment_requested_at, committed_at, customer_response_note")
       .eq("customer_user_id", u.user.id)
       .order("created_at", { ascending: false });
     const rows = (data ?? []) as Quote[];
@@ -120,6 +121,8 @@ function BidViewer({ quote, projectName, onClose, onChanged }: { quote: Quote; p
   const sb = useRef(createClient()).current;
   const [paying, setPaying] = useState(false);
   const [appt, setAppt] = useState(false);
+  const [changes, setChanges] = useState(false);
+  const [declining, setDeclining] = useState(false);
   const [committed, setCommitted] = useState(quote.status === "committed");
 
   // Mark the bid seen (clears the blinking dot) on open.
@@ -175,14 +178,29 @@ function BidViewer({ quote, projectName, onClose, onChanged }: { quote: Quote; p
           <PayPanel quoteId={quote.id} amount={amount} onPaid={() => { setCommitted(true); onChanged(); }} onCancel={() => setPaying(false)} />
         ) : appt ? (
           <ApptPanel quoteId={quote.id} onDone={() => { setAppt(false); onChanged(); }} onCancel={() => setAppt(false)} />
+        ) : changes ? (
+          <ChangesPanel quoteId={quote.id} onDone={() => { setChanges(false); onChanged(); onClose(); }} onCancel={() => setChanges(false)} />
+        ) : declining ? (
+          <DeclinePanel quoteId={quote.id} onDone={() => { setDeclining(false); onChanged(); onClose(); }} onCancel={() => setDeclining(false)} />
         ) : (
-          <div className="flex gap-2">
-            <button type="button" onClick={() => setAppt(true)} className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full border px-4 py-2 text-[13px] font-medium" style={{ borderColor: "var(--border)", color: "var(--text)" }}>
-              <CalendarClock size={14} /> Ask for appointment
-            </button>
-            <button type="button" onClick={() => setPaying(true)} className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold text-white" style={{ background: "var(--primary)" }}>
-              <Check size={14} /> Accept &amp; pay {eur(amount)}
-            </button>
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setAppt(true)} className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full border px-4 py-2 text-[13px] font-medium" style={{ borderColor: "var(--border)", color: "var(--text)" }}>
+                <CalendarClock size={14} /> Ask for appointment
+              </button>
+              <button type="button" onClick={() => setPaying(true)} className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold text-white" style={{ background: "var(--primary)" }}>
+                <Check size={14} /> Accept &amp; pay {eur(amount)}
+              </button>
+            </div>
+            <div className="flex items-center justify-center gap-4 text-[12px]">
+              <button type="button" onClick={() => setChanges(true)} className="inline-flex items-center gap-1" style={{ color: "var(--text-muted)" }}>
+                <RotateCcw size={12} /> Request changes
+              </button>
+              <span style={{ color: "var(--border)" }}>·</span>
+              <button type="button" onClick={() => setDeclining(true)} className="inline-flex items-center gap-1" style={{ color: "var(--risk)" }}>
+                <X size={12} /> Decline
+              </button>
+            </div>
           </div>
         )}
         {quote.appointment_requested_at && !committed && (
@@ -209,6 +227,53 @@ function ApptPanel({ quoteId, onDone, onCancel }: { quoteId: string; onDone: () 
       <div className="flex justify-end gap-2">
         <button type="button" onClick={onCancel} disabled={busy} className="rounded-full px-3 py-1.5 text-[13px] font-medium" style={{ color: "var(--text-muted)" }}>Cancel</button>
         <button type="button" onClick={() => void submit()} disabled={busy} className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13px] font-semibold text-white" style={{ background: "var(--primary)" }}>{busy ? <Loader2 size={13} className="animate-spin" /> : <CalendarClock size={13} />} Request</button>
+      </div>
+    </div>
+  );
+}
+
+function ChangesPanel({ quoteId, onDone, onCancel }: { quoteId: string; onDone: () => void; onCancel: () => void }) {
+  const sb = useRef(createClient()).current;
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const submit = async () => {
+    if (!note.trim()) { setErr("Tell the team what to change."); return; }
+    setBusy(true); setErr(null);
+    try { const { error } = await sb.rpc("request_quote_changes", { _id: quoteId, _note: note.trim() }); if (error) throw new Error(error.message); onDone(); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't send."); setBusy(false); }
+  };
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border p-3" style={{ borderColor: "var(--border)" }}>
+      <p className="text-xs" style={{ color: "var(--text-muted)" }}>Send it back for a revised bid — tell the team what to adjust (scope, price, timeline).</p>
+      <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} placeholder="What should change?" className="rounded-lg border p-2 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
+      {err && <p className="text-[12px]" style={{ color: "var(--risk)" }}>{err}</p>}
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onCancel} disabled={busy} className="rounded-full px-3 py-1.5 text-[13px] font-medium" style={{ color: "var(--text-muted)" }}>Cancel</button>
+        <button type="button" onClick={() => void submit()} disabled={busy} className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13px] font-semibold text-white" style={{ background: "var(--primary)" }}>{busy ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />} Send for revision</button>
+      </div>
+    </div>
+  );
+}
+
+function DeclinePanel({ quoteId, onDone, onCancel }: { quoteId: string; onDone: () => void; onCancel: () => void }) {
+  const sb = useRef(createClient()).current;
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const submit = async () => {
+    setBusy(true); setErr(null);
+    try { const { error } = await sb.rpc("decline_quote", { _id: quoteId, _note: note.trim() || null }); if (error) throw new Error(error.message); onDone(); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't decline."); setBusy(false); }
+  };
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border p-3" style={{ borderColor: "color-mix(in srgb, var(--risk) 30%, transparent)" }}>
+      <p className="text-xs" style={{ color: "var(--text-muted)" }}>Decline this estimate. You can always start a new request later.</p>
+      <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Reason (optional)" className="rounded-lg border p-2 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
+      {err && <p className="text-[12px]" style={{ color: "var(--risk)" }}>{err}</p>}
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onCancel} disabled={busy} className="rounded-full px-3 py-1.5 text-[13px] font-medium" style={{ color: "var(--text-muted)" }}>Keep it</button>
+        <button type="button" onClick={() => void submit()} disabled={busy} className="inline-flex items-center gap-1.5 rounded-full border px-4 py-1.5 text-[13px] font-semibold" style={{ borderColor: "var(--risk)", color: "var(--risk)" }}>{busy ? <Loader2 size={13} className="animate-spin" /> : <X size={13} />} Decline estimate</button>
       </div>
     </div>
   );

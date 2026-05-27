@@ -55,7 +55,7 @@ export async function GET() {
   const [{ data: quotes }, { data: callbacks }, { data: escalations }] = await Promise.all([
     admin
       .from("project_quote_requests")
-      .select("id, kind, comments, status, created_at, project_id, customer_user_id, quote_amount_cents, bid_scope, bid_timeline, appointment_requested_at, appointment_note")
+      .select("id, kind, comments, status, created_at, project_id, customer_user_id, quote_amount_cents, bid_scope, bid_timeline, appointment_requested_at, appointment_note, customer_response_note")
       .in("status", ["pending", "quoted"])
       .order("created_at", { ascending: false })
       .limit(50),
@@ -82,7 +82,7 @@ export async function GET() {
       : Promise.resolve({ data: [] as Record<string, unknown>[] }),
   ]);
 
-  type Q = { id: string; kind: string; comments: string | null; status: string; created_at: string; project_id: string; customer_user_id: string; quote_amount_cents: number | null; bid_scope: string | null; bid_timeline: string | null; appointment_requested_at: string | null; appointment_note: string | null };
+  type Q = { id: string; kind: string; comments: string | null; status: string; created_at: string; project_id: string; customer_user_id: string; quote_amount_cents: number | null; bid_scope: string | null; bid_timeline: string | null; appointment_requested_at: string | null; appointment_note: string | null; customer_response_note: string | null };
   type C = { id: string; customer_user_id: string; engineer_user_id: string; project_id: string | null; message: string | null; created_at: string };
   type E = { id: string; session_id: string; engineer_user_id: string; reason: string; note: string | null; created_at: string };
   const qs = (quotes ?? []) as Q[];
@@ -150,6 +150,7 @@ export async function GET() {
         bidTimeline: q.bid_timeline,
         appointmentRequestedAt: q.appointment_requested_at,
         appointmentNote: q.appointment_note,
+        changeRequestNote: q.customer_response_note,
         createdAt: q.created_at,
         liveSessionId,
         liveSentiment: liveSessionId ? liveSentiment.get(liveSessionId) ?? null : null,

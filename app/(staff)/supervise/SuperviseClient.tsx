@@ -212,7 +212,10 @@ export function SuperviseClient() {
       // Also surface any session awaiting reassignment (a declined manual
       // assignment, which is queued with no pod/coverage yet) to every
       // supervisor, so it never gets stuck with nobody able to pick it up.
-      liveQ = liveQ.or(`${base},reassign_needed.eq.true`);
+      // AND surface unclaimed queued ("ringing") calls — they have no pod yet,
+      // so without this a pod supervisor can't see customers still waiting to
+      // be picked up (only ops/super_admin could). Shared incoming queue.
+      liveQ = liveQ.or(`${base},reassign_needed.eq.true,and(status.eq.queued,claimed_by.is.null)`);
       pastQ = pastQ.or(base);
     }
     const [liveRes, pastRes] = await Promise.all([liveQ, pastQ]);
