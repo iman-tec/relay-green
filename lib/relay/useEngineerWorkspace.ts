@@ -152,7 +152,7 @@ export function useEngineerWorkspace(): WorkspaceState {
       if (msg.includes("ALREADY_CLAIMED")) {
         setError("Another engineer just took this one.");
       } else if (msg.includes("NOT_AUTHORIZED")) {
-        setError("You need engineer access. Pick a role on /staff/login first.");
+        setError("You need engineer access. Pick a role on /staff first.");
       } else {
         setError(msg);
       }
@@ -189,7 +189,7 @@ export function useEngineerWorkspace(): WorkspaceState {
         continue;
       }
       setError(msg.includes("NOT_AUTHORIZED")
-        ? "You need engineer access. Pick a role on /staff/login first."
+        ? "You need engineer access. Pick a role on /staff first."
         : asString(e));
       setTimeout(() => setError(null), 4000);
       return null;

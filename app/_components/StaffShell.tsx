@@ -6,7 +6,7 @@
  * Mirrors the customer-room sidebar pattern (RoomClient) so admin /
  * supervisor / engineer surfaces feel consistent with the customer view.
  *
- * - Sidebar width: 240px open, 60px collapsed. State persists in
+ * - Sidebar width: 272px open, 60px collapsed. State persists in
  *   localStorage so a reload keeps your preference.
  * - Top: wordmark (full when open, dot-only when collapsed) + toggle.
  * - Middle: nav items, each rendered as icon + label. Labels hide when
@@ -24,9 +24,9 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Loader2, LogOut, ChevronDown, AlertTriangle, X,
-  PanelLeftClose, PanelLeftOpen, LayoutDashboard, Home, Calendar,
+  PanelLeftClose, PanelLeftOpen, LayoutDashboard, Calendar,
   Eye, Users as UsersIcon, Wallet as WalletIcon, Table as TableIcon, Inbox as InboxIcon,
-  Settings, ShieldCheck, FileText,
+  Settings, ShieldCheck, FileText, Home,
 } from "lucide-react";
 import { Wordmark } from "./Wordmark";
 import { ThemeTriplet } from "./ThemeTriplet";
@@ -42,6 +42,7 @@ import { ROLE, type Role } from "@/lib/relay/roles";
 // import + mount below to bring it back.
 // import { EngineerIncomingRequest } from "./EngineerIncomingRequest";
 import { EngineerIncomingMatch } from "./EngineerIncomingMatch";
+import { useEngineerHeartbeat } from "@/lib/relay/useEngineerHeartbeat";
 import { createClient } from "@/lib/supabase/browser";
 import { useEngineerWorkspace } from "@/lib/relay/useEngineerWorkspace";
 import type { GuestCall } from "@/lib/supabase/types";
@@ -53,7 +54,11 @@ const URGENT_AMBER_SOFT = "rgba(212, 160, 23, 0.14)";
 const CRIT_RED          = "#8b1a1a";
 const CRIT_RED_SOFT     = "rgba(139, 26, 26, 0.18)";
 
-const SIDEBAR_OPEN_W = 240;
+// 272px: 240 was too tight once the header gained the Home shortcut +
+// 3-icon ThemeTriplet + collapse button — the rightmost icon clipped on
+// the edge. 272 (= 240 + 32) keeps the visual feel close to the original
+// while leaving a comfortable margin for all five header items.
+const SIDEBAR_OPEN_W = 272;
 const SIDEBAR_CLOSED_W = 60;
 const COLLAPSED_KEY = "relay.staff.sidebar.collapsed";
 
@@ -122,6 +127,54 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   const homeHref = isEnterpriseAdmin ? "/enterprise/v2" : engineer ? "/dashboard" : "/supervise";
 
   const [collapsed, setCollapsed] = useState(false);
+
+  // Drag-to-resize the expanded sidebar. Clamped + persisted to
+  // localStorage so the user's chosen width survives refresh. Collapsed
+  // state still snaps to SIDEBAR_CLOSED_W (60px) for the icon rail.
+  const SIDEBAR_MIN = 200;
+  const SIDEBAR_MAX = 480;
+  const [sidebarWidth, setSidebarWidth] = useState<number>(SIDEBAR_OPEN_W);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem("relay:staff-sidebar-width");
+      const parsed = raw ? Number(raw) : NaN;
+      if (Number.isFinite(parsed) && parsed >= SIDEBAR_MIN && parsed <= SIDEBAR_MAX) {
+        setSidebarWidth(parsed);
+      }
+    } catch { /* fall through to default */ }
+  }, []);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem("relay:staff-sidebar-width", String(sidebarWidth));
+    } catch { /* ignore */ }
+  }, [sidebarWidth]);
+  const [sidebarDragging, setSidebarDragging] = useState(false);
+  const startSidebarDrag = useCallback((e: React.PointerEvent) => {
+    if (collapsed) return;
+    e.preventDefault();
+    setSidebarDragging(true);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    const onMove = (mv: PointerEvent) => {
+      const next = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, mv.clientX));
+      setSidebarWidth(next);
+    };
+    const onUp = () => {
+      setSidebarDragging(false);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }, [collapsed]);
+
+  // Presence heartbeat — engineers only. The RPC self-gates with NOT_AN_ENGINEER
+  // so non-engineer staff who incidentally render this shell are no-ops.
+  useEngineerHeartbeat(engineer);
 
   // In-pane overlays — Profile & settings (engineer-only) and the Privacy/
   // Terms viewer. When open, the corresponding pane renders IN PLACE OF
@@ -226,7 +279,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
           </p>
           <div className="flex justify-center gap-2">
             <Link
-              href="/staff/login"
+              href="/staff"
               className="rounded-md px-4 py-2 text-sm font-medium"
               style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
             >
@@ -290,18 +343,32 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen" style={{ backgroundColor: "var(--background)" }}>
       <aside
-        className="sticky top-0 flex h-screen shrink-0 flex-col border-r transition-[width] duration-200 ease-out"
+        className={`sticky top-0 flex h-screen shrink-0 flex-col border-r ${sidebarDragging ? "" : "transition-[width] duration-200 ease-out"}`}
         style={{
-          width: collapsed ? SIDEBAR_CLOSED_W : SIDEBAR_OPEN_W,
+          width: collapsed ? SIDEBAR_CLOSED_W : sidebarWidth,
           borderColor: "var(--border)",
           backgroundColor: "var(--surface)",
+          position: "relative",
         }}
       >
+        {/* Drag-to-resize handle on the right edge. Hidden when the
+            sidebar is collapsed (the user toggles back via the icon).
+            6px wide invisible hit zone; subtle accent on hover so the
+            affordance is discoverable. Cursor flips to col-resize. */}
+        {!collapsed && (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize sidebar"
+            onPointerDown={startSidebarDrag}
+            className={`group absolute right-0 top-0 z-20 h-full w-1.5 cursor-col-resize transition-colors hover:bg-[var(--primary-soft)] ${sidebarDragging ? "bg-[var(--primary)]" : ""}`}
+            style={{ transform: "translateX(50%)" }}
+          />
+        )}
         {/* Top: wordmark + theme triplet + home + collapse toggle.
-            The triplet + home button only show when the sidebar is
-            expanded — they need horizontal room. In collapsed mode the
-            Wordmark dot remains the home affordance and theme is changed
-            by expanding the sidebar (one extra click; rare action). */}
+            Wordmark already links home, but engineers asked for an explicit
+            Home icon back — the wordmark is visually busy with the presence
+            dot and easy to read as a label rather than a button. */}
         <div
           className="flex items-center gap-2 border-b px-3 py-3"
           style={{ borderColor: "var(--border)" }}
@@ -316,17 +383,17 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
           </Link>
           {!collapsed && (
             <>
-              <ThemeTriplet />
               <Link
                 href={homeHref}
                 className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
-                style={{ color: "var(--text-muted)" }}
+                style={{ color: BRAND_GREEN, backgroundColor: BRAND_GREEN_SOFT }}
                 aria-label="Go to dashboard"
                 title="Dashboard"
               >
-                <Home size={14} />
+                <Home size={15} />
               </Link>
               <span className="flex-1" />
+              <ThemeTriplet />
               <button
                 type="button"
                 onClick={toggle}
@@ -542,12 +609,22 @@ function ProfileButton({
   }, [open]);
 
   const handleSignOut = async () => {
-    // Flip the engineer Offline before the session dies, so the matcher and
-    // the supervisor/admin assign list stop showing them as available. Must
-    // run BEFORE signOut (the RPC needs auth.uid()). Best-effort: non-engineer
-    // roles get NOT_AN_ENGINEER, which we ignore.
+    // Flip the engineer to Offline BEFORE the session dies, so the matcher
+    // and supervisor/admin assign list stop showing them as available.
+    //
+    // Using set_engineer_presence('offline') (not the legacy
+    // engineer_set_online(false)) because it ALSO writes presence_state =
+    // 'offline'. That's the source of truth the dashboard ball reads on
+    // next login — without it, an engineer who logged out while Online
+    // would re-appear as Online on next login (presence_state stuck at
+    // 'online' even though is_available was flipped to false). The new
+    // login default is "Offline; engineer manually goes Online when
+    // ready", and this is the half of the change that the DB needs.
+    //
+    // Non-engineer roles get NOT_AN_ENGINEER, which we ignore (this is a
+    // best-effort cleanup; the auth.signOut below is the real gate).
     try {
-      await supabaseRef.current.rpc("engineer_set_online", { _online: false });
+      await supabaseRef.current.rpc("set_engineer_presence", { _state: "offline" });
     } catch { /* best-effort cleanup */ }
     // Supervisors go off duty on logout too, so coverage re-routes to whoever
     // is still on duty (non-supervisors get NOT_A_SUPERVISOR, which we ignore).
@@ -555,7 +632,7 @@ function ProfileButton({
       await supabaseRef.current.rpc("supervisor_set_online", { _online: false });
     } catch { /* best-effort cleanup */ }
     await supabaseRef.current.auth.signOut();
-    router.push("/staff/login");
+    router.push("/staff");
   };
 
   const userEmail = email;
@@ -785,7 +862,23 @@ function FifoAutoRing() {
 
 /* ──────── Supervisor toast alerts (same logic as legacy shell) ──────── */
 
-type AlertToast = { id: string; sessionId: string; name: string; urgency: string };
+// AlertToast urgency union now includes "escalation" — engineer-initiated
+// supervisor pull-in from a live session_escalations row.
+type AlertToast = {
+  id: string;
+  sessionId: string;
+  name: string;
+  urgency: string;
+  /** Only set for escalation toasts — used to acknowledge_escalation
+   *  + navigate when the supervisor clicks Acknowledge & join. */
+  escalationId?: string;
+  reason?: string;
+};
+
+// Same key the EngineerPresenceBall uses, so muting the engineer ring
+// also mutes the supervisor escalation ring on the same device. One
+// switch, two consumers — keeps the affordance discoverable.
+const SUPERVISOR_MUTE_KEY = "relay.engineer.ring.muted.v1";
 
 function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
   const isSupervisor = !isEngineer(roles);
@@ -794,7 +887,11 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
   // Separate dedupe set for "reassignment needed" toasts so a session can be
   // re-flagged after it's reassigned (cleared when reassign_needed goes false).
   const seenReassignRef = useRef<Set<string>>(new Set());
+  // Dedupe for escalation toasts — keyed by escalation row id so the
+  // same row can't toast twice.
+  const seenEscalationRef = useRef<Set<string>>(new Set());
   const supabaseRef = useRef(createClient());
+  const router = useRouter();
 
   const dismiss = (id: string) =>
     setAlerts((prev) => prev.filter((a) => a.id !== id));
@@ -861,50 +958,205 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
     return () => { sb.removeChannel(ch); };
   }, [isSupervisor]);
 
+  // Separate channel for engineer-initiated escalations. Toasts are
+  // visually + audibly louder than the urgent-session toast above so
+  // supervisors learn the difference by ear. Subscribes to INSERT only
+  // (acked/joined/resolved updates don't toast — those are the
+  // supervisor's own actions or the engineer closing the loop).
+  useEffect(() => {
+    if (!isSupervisor) return;
+    const sb = supabaseRef.current;
+    const suffix = typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const ch = sb
+      .channel(`supervisor-escalations-${suffix}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "session_escalations",
+        },
+        (payload) => {
+          const row = payload.new as {
+            id?: string;
+            session_id?: string;
+            engineer_user_id?: string;
+            reason?: string | null;
+            status?: string;
+          } | null;
+          if (!row?.id || !row.session_id) return;
+          if (row.status !== "pending") return;
+          if (seenEscalationRef.current.has(row.id)) return;
+          seenEscalationRef.current.add(row.id);
+
+          // Lookup the customer name for the toast headline. Cheap one-off.
+          void (async () => {
+            const { data } = await sb
+              .from("guest_calls")
+              .select("guest_name")
+              .eq("id", row.session_id)
+              .maybeSingle();
+            const name = (data as { guest_name?: string | null } | null)?.guest_name
+              ?? "A live session";
+            setAlerts((prev) => [
+              ...prev,
+              {
+                id: `escalation-${row.id}`,
+                sessionId: row.session_id!,
+                name,
+                urgency: "escalation",
+                escalationId: row.id,
+                reason: row.reason ?? undefined,
+              },
+            ]);
+            playEscalationRingtone();
+          })();
+        },
+      )
+      .subscribe();
+    return () => { sb.removeChannel(ch); };
+  }, [isSupervisor]);
+
+  // Acknowledge + navigate. Used by the toast's primary CTA. First
+  // supervisor wins via the RPC's UPDATE-with-where-status='pending'.
+  const acknowledgeAndJoin = useCallback(async (toast: AlertToast) => {
+    if (!toast.escalationId) return;
+    const sb = supabaseRef.current;
+    const { error: e } = await sb.rpc("acknowledge_escalation", {
+      _id: toast.escalationId,
+    });
+    if (e) {
+      // ALREADY_TAKEN: surface lightly + drop the toast. Another
+      // supervisor beat us to it.
+      console.warn("[supervisor-alerts] escalation ack failed:", e.message);
+      setAlerts((prev) => prev.filter((a) => a.id !== toast.id));
+      return;
+    }
+    setAlerts((prev) => prev.filter((a) => a.id !== toast.id));
+    router.push(`/staff/session/${toast.sessionId}`);
+  }, [router]);
+
   if (!isSupervisor || !alerts.length) return null;
 
   return (
     <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2">
-      {alerts.map((a) => (
-        <div
-          key={a.id}
-          className="flex items-start gap-3 rounded-lg border px-4 py-3 shadow-lg"
-          style={{
-            backgroundColor:
-              a.urgency === "critical" ? CRIT_RED_SOFT : URGENT_AMBER_SOFT,
-            borderColor:
-              a.urgency === "critical" ? CRIT_RED : URGENT_AMBER,
-            color: "var(--text)",
-            maxWidth: 360,
-          }}
-        >
-          <AlertTriangle
-            size={16}
+      {alerts.map((a) => {
+        const isEscalation = a.urgency === "escalation";
+        const tintBg = a.urgency === "critical" || isEscalation
+          ? CRIT_RED_SOFT
+          : URGENT_AMBER_SOFT;
+        const tintFg = a.urgency === "critical" || isEscalation
+          ? CRIT_RED
+          : URGENT_AMBER;
+        return (
+          <div
+            key={a.id}
+            className="flex items-start gap-3 rounded-lg border px-4 py-3 shadow-lg"
             style={{
-              color: a.urgency === "critical" ? CRIT_RED : URGENT_AMBER,
-              marginTop: 2,
+              backgroundColor: tintBg,
+              borderColor: tintFg,
+              color: "var(--text)",
+              maxWidth: 380,
+              animation: isEscalation
+                ? "relay-toast-in 200ms ease-out"
+                : undefined,
+              boxShadow: isEscalation
+                ? `0 10px 28px ${tintFg}55`
+                : undefined,
             }}
-          />
-          <div className="flex-1">
-            <div className="text-sm font-medium">
-              {a.urgency === "reassign" ? "Assignment declined" : a.name}
-            </div>
-            <div className="text-xs" style={{ color: "var(--text-muted)" }}>
-              {a.urgency === "reassign"
-                ? `${a.name} needs a new engineer — reassign in Supervise`
-                : `${a.urgency} session`}
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => dismiss(a.id)}
-            className="rounded-md p-1"
-            aria-label="Dismiss"
           >
-            <X size={14} />
-          </button>
-        </div>
-      ))}
+            <AlertTriangle size={16} style={{ color: tintFg, marginTop: 2 }} />
+            <div className="flex-1">
+              <div className="text-sm font-medium">
+                {isEscalation
+                  ? `Engineer needs help — ${a.name}`
+                  : a.urgency === "reassign"
+                    ? "Assignment declined"
+                    : a.name}
+              </div>
+              <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+                {isEscalation
+                  ? a.reason
+                    ? `"${a.reason}"`
+                    : "Live escalation — supervisor needed"
+                  : a.urgency === "reassign"
+                    ? `${a.name} needs a new engineer — reassign in Supervise`
+                    : `${a.urgency} session`}
+              </div>
+              {isEscalation && (
+                <div className="mt-2 flex gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => void acknowledgeAndJoin(a)}
+                    className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold text-white transition-opacity hover:opacity-90"
+                    style={{ backgroundColor: tintFg }}
+                  >
+                    Acknowledge &amp; join
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => dismiss(a.id)}
+                    className="rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                    style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+                  >
+                    Snooze
+                  </button>
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => dismiss(a.id)}
+              className="rounded-md p-1"
+              aria-label="Dismiss"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
+}
+
+// ── Escalation ringtone — three-beat urgent pattern. Louder and longer
+// than the EngineerPresenceBall match-offer ringtone (which is 880-660-880
+// over ~0.85s) so supervisors learn the cadence: this one is an
+// engineer-initiated escalation, not a routine match. Respects the
+// shared MUTE key so muting the engineer ring also silences this.
+function playEscalationRingtone() {
+  try {
+    if (typeof window === "undefined") return;
+    const muted = window.localStorage.getItem(SUPERVISOR_MUTE_KEY) === "1";
+    if (muted) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const Ctor = (window as any).AudioContext ?? (window as any).webkitAudioContext;
+    if (!Ctor) return;
+    const ctx: AudioContext = new Ctor();
+    const now = ctx.currentTime;
+    const beep = (start: number, hz: number, dur: number, vol: number) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(hz, now + start);
+      gain.gain.setValueAtTime(0, now + start);
+      gain.gain.linearRampToValueAtTime(vol, now + start + 0.02);
+      gain.gain.setValueAtTime(vol, now + start + dur - 0.05);
+      gain.gain.linearRampToValueAtTime(0, now + start + dur);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(now + start);
+      osc.stop(now + start + dur + 0.05);
+    };
+    // Urgent cadence: low-high-low-high two-pair pattern at higher
+    // amplitude than the match-offer ringtone. Total ~1.4s.
+    beep(0.00, 520, 0.30, 0.14);
+    beep(0.32, 880, 0.30, 0.14);
+    beep(0.72, 520, 0.30, 0.14);
+    beep(1.04, 880, 0.30, 0.14);
+    setTimeout(() => { ctx.close().catch(() => { /* already closing */ }); }, 1600);
+  } catch (err) {
+    console.warn("[supervisor-alerts] escalation ringtone failed:", err);
+  }
 }

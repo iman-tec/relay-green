@@ -20,7 +20,7 @@ export default async function EngineerSessionPage({
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect("/staff/login");
+  if (!user) redirect("/staff");
 
   const { id } = await params;
   return <EngineerSessionClient sessionId={id} />;

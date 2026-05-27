@@ -16,7 +16,7 @@ export const metadata: Metadata = {
 export default async function ResellerV2Page() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/staff/login");
+  if (!user) redirect("/partner");
 
   const { data: roleRows } = await supabase
     .from("user_role_names")

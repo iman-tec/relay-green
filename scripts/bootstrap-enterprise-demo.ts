@@ -122,7 +122,7 @@ async function main() {
   console.log(`  Email:           ${ENTERPRISE_DEMO_EMAIL}`);
   console.log(`  Org:             ${DEMO_ORG_NAME}`);
   console.log(`  Enterprise code: ${org.code}`);
-  console.log(`  Sign in via:     /staff/login → Developer shortcuts → Enterprise Admin`);
+  console.log(`  Sign in via:     /staff → Developer shortcuts → Enterprise Admin`);
 }
 
 main().catch((err) => {

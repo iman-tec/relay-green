@@ -29,7 +29,7 @@ export default async function SessionReviewPage({
   const { id } = await params;
   const sb = await createClient();
   const { data: { user } } = await sb.auth.getUser();
-  if (!user) redirect("/staff/login");
+  if (!user) redirect("/staff");
 
   const { data: session } = await sb
     .from("guest_calls")

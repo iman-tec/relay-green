@@ -39,6 +39,8 @@ import { useEngineerSession } from "@/lib/relay/useEngineerSession";
 import { useIsSupervisor, isSupervisorOnlyMessage } from "@/lib/relay/useIsSupervisor";
 import { useSessionTimer } from "@/lib/relay/useSessionTimer";
 import { humanState } from "@/lib/relay/session-status";
+import { LaunchCallProvider, isVideoSdkEnabled } from "@/lib/video/LaunchCallContext";
+import { CallSurface } from "@/app/_components/call/CallSurface";
 import type { GuestCall, GuestMessage, SessionStatus, Urgency } from "@/lib/supabase/types";
 
 const BRAND_GREEN        = "#3f5c2e";
@@ -74,6 +76,25 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
   const [started, setStarted] = useState(false);
   const [autoMinting, setAutoMinting] = useState(false);
   const [autoStartError, setAutoStartError] = useState<string | null>(null);
+
+  // Video SDK in-window call surface — gated by NEXT_PUBLIC_USE_VIDEO_SDK.
+  // When the flag is set, the engineer's Zoom join path becomes the
+  // in-window <CallSurface> instead of the Meeting SDK embed.
+  //
+  // Chat-first flow: we deliberately do NOT auto-mount the CallSurface
+  // when the engineer arrives. Both engineer + customer land in the chat
+  // window. Either side starts the call via the green Video button —
+  // that fires launchCall(), which mounts <CallSurface>, which then
+  // posts "📞 Zoom meeting started". The other side's
+  // MeetingChatEntry chat card flips to "Join call" and they decide
+  // when to join, just like a regular incoming call.
+  const [callOpen, setCallOpen] = useState(false);
+  const launchCall: (() => void) | null = isVideoSdkEnabled()
+    ? () => setCallOpen(true)
+    : null;
+  useEffect(() => {
+    if (state.session?.status === "ended") setCallOpen(false);
+  }, [state.session?.status]);
 
   // Reset 'started' when session changes or ends
   useEffect(() => {
@@ -141,11 +162,17 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
   // engineer is pre-live (assigned/joining/grace). Idempotent — re-entries
   // and reloads do the right thing. Skipped entirely for non-engineer
   // viewers (supervisors are read-only monitors).
+  // VIDEO SDK: when NEXT_PUBLIC_USE_VIDEO_SDK is on we DON'T auto-mint a
+  // Zoom Meeting — the Video SDK CallSurface uses zoom-video-sdk-token
+  // instead. Auto-mint would post an orphaned "Zoom meeting started" card
+  // that nobody actually joined (via Meeting SDK), so the engineer's chat
+  // would show a stale ongoing card while the real Video SDK call runs.
   useEffect(() => {
     const s = state.session;
     if (!s) return;
     if (!state.isAssignedEngineer) return;
     if (isSupervisor) return;  // supervisors never auto-mint Zoom
+    if (isVideoSdkEnabled()) return;  // Video SDK owns the call surface
     if (!["assigned", "joining", "grace"].includes(s.status)) return;
     if (started || autoMinting) return;
 
@@ -258,38 +285,139 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
   }
 
   return (
+    <LaunchCallProvider value={{ launchCall, isCallOpen: callOpen }}>
     <div
       className="flex h-screen w-screen overflow-hidden"
       style={{ backgroundColor: "var(--background)", color: "var(--text)" }}
     >
       <Sidebar engineerEmail={meEmail} session={state.session} timer={timer} isSupervisor={isSupervisor} />
 
-      <div className="relative flex min-w-0 flex-1 flex-col">
-        {isSupervisor && (
-          <div
-            className="flex shrink-0 items-center justify-center gap-2 border-b px-4 py-1.5 text-[11px] font-medium uppercase tracking-wider"
-            style={{
-              backgroundColor: "color-mix(in srgb, var(--text) 4%, transparent)",
-              borderColor: "var(--border)",
-              color: "var(--text-muted)",
-            }}
-          >
-            <Eye size={11} />
-            Supervisor view · read-only
-          </div>
-        )}
-        {!isSupervisor && (
-          <FloatingStatus
-            state={state}
-            timer={timer}
-            started={started}
-            onStart={() => setStarted(true)}
-          />
-        )}
-        <main className="min-h-0 flex-1">
-          <MainPane state={state} isSupervisor={isSupervisor} />
-        </main>
-      </div>
+      {/* Two layouts depending on whether the call is open:
+       *
+       *  callOpen=true  → ProjectAIAssistant gets the MAIN panel — the engineer's
+       *                   primary focus during a call is studying project context
+       *                   to ground their answers. Right rail stacks CallSurface
+       *                   (top, customer video/share) over ChatPane (bottom,
+       *                   customer conversation). All three coexist; engineer
+       *                   resizes both axes to taste.
+       *  callOpen=false → Existing two-pane MainPane (chat + ProjectAIAssistant)
+       *                   so the engineer can study project history before
+       *                   launching the call. */}
+      {callOpen && state.session ? (
+        <PanelGroup direction="horizontal" autoSaveId="relay-eng-call-v3" className="flex min-w-0 flex-1">
+          <Panel id="eng-call-ai" order={1} defaultSize={60} minSize={20}>
+            <div
+              className="flex h-full min-h-0 flex-col overflow-hidden"
+              style={{ background: "var(--surface)" }}
+            >
+              {isSupervisor && (
+                <div
+                  className="flex shrink-0 items-center justify-center gap-2 border-b px-3 py-1.5 text-[11px] font-medium uppercase tracking-wider"
+                  style={{
+                    backgroundColor: "color-mix(in srgb, var(--text) 4%, transparent)",
+                    borderColor: "var(--border)",
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  <Eye size={11} />
+                  Supervisor · read-only
+                </div>
+              )}
+              <main className="min-h-0 flex-1 overflow-hidden">
+                <ProjectAIAssistant
+                  projectId={state.session.project_id ?? null}
+                  projectName={state.session.project_name ?? null}
+                />
+              </main>
+            </div>
+          </Panel>
+          <Resizer />
+          <Panel id="eng-call-side" order={2} defaultSize={40} minSize={20}>
+            <div
+              className="flex h-full min-h-0 flex-col overflow-hidden"
+              style={{ background: "var(--surface)", borderLeft: "1px solid var(--border)" }}
+            >
+              {!isSupervisor && (
+                <FloatingStatus
+                  state={state}
+                  timer={timer}
+                  started={started}
+                  onStart={() => setStarted(true)}
+                />
+              )}
+              <PanelGroup direction="vertical" autoSaveId="relay-eng-call-side-inner-v2" className="min-h-0 flex-1">
+                <Panel id="eng-side-video" order={1} defaultSize={35} minSize={15}>
+                  <div className="h-full w-full" style={{ background: "var(--background)" }}>
+                    <CallSurface
+                      sessionId={state.session.id}
+                      role="host"
+                      userName={meEmail || "Engineer"}
+                      onClose={() => setCallOpen(false)}
+                      onJoined={() => void state.markJoined()}
+                    />
+                  </div>
+                </Panel>
+                <PanelResizeHandle
+                  className="group relative h-2 cursor-row-resize transition-colors data-[resize-handle-state=drag]:bg-[--green-strong] hover:bg-[--green-soft]"
+                  style={
+                    {
+                      backgroundColor: "var(--border)",
+                      ["--green-soft" as string]: BRAND_GREEN_SOFT,
+                      ["--green-strong" as string]: BRAND_GREEN,
+                    } as React.CSSProperties
+                  }
+                >
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-row gap-1 opacity-60 group-hover:opacity-100"
+                  >
+                    <span className="block h-1 w-1 rounded-full" style={{ backgroundColor: "var(--text-muted)" }} />
+                    <span className="block h-1 w-1 rounded-full" style={{ backgroundColor: "var(--text-muted)" }} />
+                    <span className="block h-1 w-1 rounded-full" style={{ backgroundColor: "var(--text-muted)" }} />
+                  </span>
+                </PanelResizeHandle>
+                <Panel id="eng-side-chat" order={2} defaultSize={65} minSize={15}>
+                  <div className="flex h-full min-h-0 flex-col overflow-hidden border-t" style={{ borderColor: "var(--border)" }}>
+                    <ChatPane
+                      state={state}
+                      fullWidth
+                      readOnly={!state.isAssignedEngineer || isSupervisor}
+                      hideAiAsk
+                    />
+                  </div>
+                </Panel>
+              </PanelGroup>
+            </div>
+          </Panel>
+        </PanelGroup>
+      ) : (
+        <div className="relative flex h-full min-w-0 flex-1 flex-col">
+          {isSupervisor && (
+            <div
+              className="flex shrink-0 items-center justify-center gap-2 border-b px-4 py-1.5 text-[11px] font-medium uppercase tracking-wider"
+              style={{
+                backgroundColor: "color-mix(in srgb, var(--text) 4%, transparent)",
+                borderColor: "var(--border)",
+                color: "var(--text-muted)",
+              }}
+            >
+              <Eye size={11} />
+              Supervisor view · read-only
+            </div>
+          )}
+          {!isSupervisor && (
+            <FloatingStatus
+              state={state}
+              timer={timer}
+              started={started}
+              onStart={() => setStarted(true)}
+            />
+          )}
+          <main className="min-h-0 flex-1">
+            <MainPane state={state} isSupervisor={isSupervisor} hideAiAsk={false} />
+          </main>
+        </div>
+      )}
 
       {state.error
         && !state.error.includes("NOT_ASSIGNED_TO_YOU")
@@ -308,15 +436,20 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
         </div>
       )}
     </div>
+    </LaunchCallProvider>
   );
 }
 
 // ── Layout decider ─────────────────────────────────────────────────────────
 function MainPane({
-  state, isSupervisor,
+  state, isSupervisor, hideAiAsk = false,
 }: {
   state: ReturnType<typeof useEngineerSession>;
   isSupervisor: boolean;
+  /** When the call surface is mounted in the right rail, the engineer's
+   *  EngineerAiAsk lives there — suppress the inline one in the composer
+   *  to avoid two parallel input boxes for the same backend. */
+  hideAiAsk?: boolean;
 }) {
   const session = state.session!;
   const isEnded = session.status === "ended";
@@ -330,11 +463,11 @@ function MainPane({
   if (isEnded) {
     return (
       <PanelGroup direction="horizontal" autoSaveId="relay-eng-review" className="h-full">
-        <Panel defaultSize={60} minSize={40} order={1}>
+        <Panel defaultSize={60} minSize={20} order={1}>
           <ChatPane state={state} fullWidth />
         </Panel>
         <Resizer />
-        <Panel defaultSize={40} minSize={28} order={2}>
+        <Panel defaultSize={40} minSize={20} order={2}>
           <ReviewPanel
             session={session}
             messages={state.messages}
@@ -345,19 +478,26 @@ function MainPane({
     );
   }
 
-  // Active session (assigned/joining/live/grace/expired_free). Two-pane
-  // layout: chat on the left, AI project assistant on the right. The
-  // engineer usually has Zoom open in a separate desktop window, so
-  // this page is where they BOTH follow the customer's chat AND query
-  // project context to refresh their memory without scrolling through
-  // every past session manually.
+  // Active session (assigned/joining/live/grace/expired_free).
+  //   • Call open  → the right rail (CallSurface + EngineerAiAsk) owns the
+  //                  AI surface, so MainPane collapses to a full-width chat
+  //                  to give that rail room. (hideAiAsk mirrors callOpen.)
+  //   • No call    → MainPane is two-pane: ChatPane + ProjectAIAssistant.
+  //                  The engineer can query project context without scrolling
+  //                  through every past session manually.
+  if (hideAiAsk) {
+    return <ChatPane state={state} fullWidth readOnly={!isEngineer} hideAiAsk />;
+  }
   return (
     <PanelGroup direction="horizontal" autoSaveId="relay-eng-active" className="h-full">
-      <Panel defaultSize={62} minSize={40} order={1}>
-        <ChatPane state={state} fullWidth readOnly={!isEngineer} />
+      <Panel defaultSize={62} minSize={20} order={1}>
+        {/* hideAiAsk: ProjectAIAssistant in the right panel handles the
+            project Q&A, so suppress the inline EngineerAiAsk pill below
+            the composer to avoid two parallel AI input boxes. */}
+        <ChatPane state={state} fullWidth readOnly={!isEngineer} hideAiAsk />
       </Panel>
       <Resizer />
-      <Panel defaultSize={38} minSize={26} order={2}>
+      <Panel defaultSize={38} minSize={20} order={2}>
         <ProjectAIAssistant
           projectId={session.project_id ?? null}
           projectName={session.project_name ?? null}
@@ -419,6 +559,51 @@ function Sidebar({
   // Default open since the engineer actively uses customer history during
   // a call; collapse is for when they want more room for the Zoom video.
   const [collapsed, setCollapsed] = useState(false);
+
+  // Drag-to-resize the expanded sidebar. Persists per-engineer in
+  // localStorage so a refresh keeps your chosen width. Collapsed state
+  // still snaps to the 56-px icon rail.
+  const SIDEBAR_MIN = 220;
+  const SIDEBAR_MAX = 460;
+  const SIDEBAR_DEFAULT = 260;
+  const [sidebarWidth, setSidebarWidth] = useState<number>(SIDEBAR_DEFAULT);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem("relay:eng-session-sidebar-width");
+      const parsed = raw ? Number(raw) : NaN;
+      if (Number.isFinite(parsed) && parsed >= SIDEBAR_MIN && parsed <= SIDEBAR_MAX) {
+        setSidebarWidth(parsed);
+      }
+    } catch { /* fall back to default */ }
+  }, []);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem("relay:eng-session-sidebar-width", String(sidebarWidth));
+    } catch { /* ignore */ }
+  }, [sidebarWidth]);
+  const [sidebarDragging, setSidebarDragging] = useState(false);
+  const startSidebarDrag = useCallback((e: React.PointerEvent) => {
+    if (collapsed) return;
+    e.preventDefault();
+    setSidebarDragging(true);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    const onMove = (mv: PointerEvent) => {
+      const next = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, mv.clientX));
+      setSidebarWidth(next);
+    };
+    const onUp = () => {
+      setSidebarDragging(false);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }, [collapsed]);
 
   // ── Collapsed rail ──────────────────────────────────────────────────────
   if (collapsed) {
@@ -484,12 +669,33 @@ function Sidebar({
     );
   }
 
-  // ── Expanded sidebar (260 px) ───────────────────────────────────────────
+  // ── Expanded sidebar (drag-resizable) ───────────────────────────────────
   return (
     <aside
-      className="flex h-full w-[260px] shrink-0 flex-col"
-      style={{ borderRight: "1px solid var(--border)", backgroundColor: "var(--surface)" }}
+      className={`relative flex h-full shrink-0 flex-col ${sidebarDragging ? "" : "transition-[width] duration-150 ease-out"}`}
+      style={{
+        width: sidebarWidth,
+        borderRight: "1px solid var(--border)",
+        backgroundColor: "var(--surface)",
+      }}
     >
+      {/* Drag handle on the right edge — invisible 6px hit zone, subtle
+          accent on hover so the affordance is discoverable. Cursor flips
+          to col-resize. */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize sidebar"
+        onPointerDown={startSidebarDrag}
+        className={`group absolute right-0 top-0 z-20 h-full w-1.5 cursor-col-resize transition-colors hover:bg-[--green-soft] ${sidebarDragging ? "bg-[--green-strong]" : ""}`}
+        style={
+          {
+            transform: "translateX(50%)",
+            ["--green-soft" as string]: BRAND_GREEN_SOFT,
+            ["--green-strong" as string]: BRAND_GREEN,
+          } as React.CSSProperties
+        }
+      />
       {/* Brand + back-to-inbox + collapse toggle */}
       <div className="flex h-12 items-center justify-between gap-1 px-3">
         <Wordmark size="md" />
@@ -1104,11 +1310,14 @@ function ConfirmEndModal({ onCancel, onConfirm }: { onCancel: () => void; onConf
 
 // ── Chat pane ──────────────────────────────────────────────────────────────
 function ChatPane({
-  state, fullWidth = false, readOnly = false,
+  state, fullWidth = false, readOnly = false, hideAiAsk = false,
 }: {
   state: ReturnType<typeof useEngineerSession>;
   fullWidth?: boolean;
   readOnly?: boolean;            // monitor mode — hide composer entirely
+  hideAiAsk?: boolean;            // suppress the inline EngineerAiAsk (the
+                                  //  call-rail version takes over while a
+                                  //  call surface is mounted)
 }) {
   const session = state.session!;
   const isReadOnly = readOnly || session.status === "ended";
@@ -1408,11 +1617,10 @@ function ChatPane({
 
           {/* Project AI assistant — slim bar that lets the engineer
              *  query the customer's project history (past sessions, AI
-             *  summaries, intake, files). Always visible during a live
-             *  session; disabled in read-only / monitor mode and when
-             *  the session isn't linked to a project. Sits below the
-             *  composer so it doesn't compete with the live chat flow. */}
-          {session.status !== "ended" && (
+             *  summaries, intake, files). Visible during a live session
+             *  unless the call surface is mounted (then the same panel
+             *  lives in the right rail's bottom half — see EngineerSessionClient). */}
+          {session.status !== "ended" && !hideAiAsk && (
             <EngineerAiAsk
               sessionId={session.id}
               projectId={session.project_id ?? null}
@@ -1420,6 +1628,10 @@ function ChatPane({
             />
           )}
 
+          {/* Escalation control lives inline in the Sidebar now via
+           *  EscalateButton (introduced by feat/unified-onboarding's
+           *  session escalations work). The previous stub here is
+           *  removed; see the EscalateButton component below. */}
         </div>
       </div>
     </section>
@@ -1714,11 +1926,25 @@ function SummaryView({
 function Resizer() {
   return (
     <PanelResizeHandle
-      className="group relative w-1.5 transition-colors hover:bg-[--green-soft]"
+      className="group relative w-2 cursor-col-resize transition-colors data-[resize-handle-state=drag]:bg-[--green-strong] hover:bg-[--green-soft]"
       style={
-        { backgroundColor: "var(--border)", ["--green-soft" as string]: BRAND_GREEN_SOFT } as React.CSSProperties
+        {
+          backgroundColor: "var(--border)",
+          ["--green-soft" as string]: BRAND_GREEN_SOFT,
+          ["--green-strong" as string]: BRAND_GREEN,
+        } as React.CSSProperties
       }
-    />
+    >
+      {/* Centered grip dots so the handle is visually discoverable */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col gap-1 opacity-60 group-hover:opacity-100"
+      >
+        <span className="block h-1 w-1 rounded-full" style={{ backgroundColor: "var(--text-muted)" }} />
+        <span className="block h-1 w-1 rounded-full" style={{ backgroundColor: "var(--text-muted)" }} />
+        <span className="block h-1 w-1 rounded-full" style={{ backgroundColor: "var(--text-muted)" }} />
+      </span>
+    </PanelResizeHandle>
   );
 }
 

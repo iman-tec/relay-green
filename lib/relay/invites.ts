@@ -10,6 +10,7 @@
 
 import { randomBytes } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { loginUrlForInvitedRole } from "@/lib/relay/loginSurface";
 
 export type InviteScope = "partner" | "company" | "department";
 
@@ -18,10 +19,24 @@ export function genInviteCode(): string {
   return randomBytes(18).toString("base64url");
 }
 
-/** Build the claim link the recipient clicks (email + code prefilled). */
-export function inviteLink(code: string, email: string): string {
+/**
+ * Build the claim link the recipient clicks (email + code prefilled).
+ *
+ * The login URL is chosen by the invited role so the recipient lands on
+ * the surface their account is admitted on:
+ *   reseller                          → /partner
+ *   enterprise_admin, department_admin → /business
+ *   client (invited via a department)  → /business
+ *   super_admin, supervisor, engineer  → /staff
+ *   anything else / unknown            → /login (customer default)
+ *
+ * If the role is null we fall back to /login so a generic invite still
+ * works for customers signing up directly.
+ */
+export function inviteLink(code: string, email: string, role?: string | null): string {
   const brand = process.env.NEXT_PUBLIC_BRAND_DOMAIN || "relay.green";
-  return `https://${brand}/staff/login?invite=${encodeURIComponent(code)}&email=${encodeURIComponent(email)}`;
+  const path  = loginUrlForInvitedRole(role);
+  return `https://${brand}${path}?invite=${encodeURIComponent(code)}&email=${encodeURIComponent(email)}`;
 }
 
 export interface RecordInviteInput {
@@ -72,5 +87,5 @@ export async function recordInvite(
     .select("id, email, name, role, company_name, code, status, sent_at, opened_at, accepted_at, expires_at")
     .single();
   if (error || !data) return { error: error?.message ?? "Could not record invite" };
-  return { row: data as InviteRow, link: inviteLink(code, (data as InviteRow).email) };
+  return { row: data as InviteRow, link: inviteLink(code, (data as InviteRow).email, (data as InviteRow).role) };
 }

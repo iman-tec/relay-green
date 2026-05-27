@@ -181,6 +181,20 @@ export function ChatComposer({
   const filePicsRef = useRef<HTMLInputElement>(null);
   const taRef       = useRef<HTMLTextAreaElement>(null);
   const wrapRef     = useRef<HTMLDivElement>(null);
+  // Track composer width so we can hide non-essential buttons (mic /
+  // audio recorder) when the chat rail gets dragged narrow. Without
+  // this the textarea gets squeezed to ~24px and the placeholder
+  // becomes a single character.
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(([entry]) => {
+      setNarrow(entry.contentRect.width < 280);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Generate / dispose object URLs for image thumbnails.
   useEffect(() => {
@@ -652,8 +666,12 @@ export function ChatComposer({
                 • AudioLines → record a voice message (audio attachment
                             sent through the normal onSend pipeline)
               Each button is a clean click — no tap-vs-hold gesture — so
-              the behavior is obvious without trial and error. */}
-          <div className="flex shrink-0 items-center gap-1">
+              the behavior is obvious without trial and error.
+              Hidden when the composer is narrow (rail dragged thin) so
+              the textarea isn't squeezed to nothing. The + menu and
+              send button remain — voice features are recoverable when
+              the rail is widened. */}
+          <div className={`${narrow ? "hidden" : "flex"} shrink-0 items-center gap-1`}>
             {/* Voice-to-text */}
             <div className="relative">
               <button
@@ -720,7 +738,7 @@ export function ChatComposer({
                 void handleSend();
               }
             }}
-            className="flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-snug outline-none placeholder:opacity-60 disabled:opacity-60"
+            className="min-w-0 flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-snug outline-none placeholder:opacity-60 disabled:opacity-60"
             style={{
               color: "var(--text)",
               maxHeight: 120,

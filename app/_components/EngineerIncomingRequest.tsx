@@ -18,6 +18,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { Phone, X, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
+import { useRingingHud } from "@/lib/relay/ringingHud";
 import type { GuestCall } from "@/lib/supabase/types";
 
 const BRAND_GREEN       = "#3f5c2e";
@@ -91,36 +92,21 @@ export function EngineerIncomingRequest() {
     };
   }, [onSessionRoute]);
 
-  // Ring sound while a request is showing.
-  useEffect(() => {
-    if (!request) return;
-    let ctx: AudioContext | null = null;
-    let iv: ReturnType<typeof setInterval> | null = null;
-    try {
-      const AudioCtx = (window as unknown as { AudioContext?: typeof AudioContext }).AudioContext;
-      if (!AudioCtx) return;
-      ctx = new AudioCtx();
-      const ring = () => {
-        if (!ctx) return;
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.frequency.value = 660;
-        gain.gain.setValueAtTime(0, ctx.currentTime);
-        gain.gain.linearRampToValueAtTime(0.045, ctx.currentTime + 0.05);
-        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.4);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.45);
-      };
-      ring();
-      iv = setInterval(ring, 1800);
-    } catch { /* ignore */ }
-    return () => {
-      if (iv) clearInterval(iv);
-      try { void ctx?.close(); } catch { /* ignore */ }
-    };
-  }, [request?.id]);
+  // Audio cue + favicon flash + title blink + browser Notification while
+  // a queued request is showing. Shared with EngineerIncomingMatch via the
+  // ringingHud helper.
+  useRingingHud({
+    active: !!request,
+    label: request?.guest_name
+      ? `📞 Incoming · ${request.guest_name}`
+      : "📞 Incoming request",
+    body: request?.urgency === "critical"
+      ? "Critical priority — please pick up."
+      : request?.urgency === "urgent"
+      ? "Urgent — please pick up."
+      : "A customer is waiting in the queue.",
+    tag: request?.id,
+  });
 
   // Desktop-shell integration: inside the Relay Electron app, surface
   // incoming calls via tray flash + taskbar flash + a custom desktop-level

@@ -41,8 +41,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Home, Phone, Volume2, VolumeX } from "lucide-react";
+import { Loader2, Home, Volume2, VolumeX } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
+import { RingingBall } from "@/app/_components/RingingBall";
 import { Button, Card, CardBody } from "@/app/_components/ui";
 import { createClient } from "@/lib/supabase/browser";
 import { useRingtone } from "@/lib/relay/useRingtone";
@@ -83,7 +84,11 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
   const supabaseRef = useRef(createClient());
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   const [retrying, setRetrying] = useState(false);
-  const [now, setNow] = useState(() => Date.now());
+  // Bare re-render trigger — clock is computed from Date.now() at render
+  // time so we don't store stale time in state. (Using a `now` state
+  // captured at mount caused the very first paint to compute a negative
+  // elapsedMs against ringStartRef.)
+  const [, setTick] = useState(0);
   const guestCallIdRef = useRef<string | null>(null);
 
   // Ringing-phase start timestamp — used to drive the elapsed-time
@@ -108,9 +113,10 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
   const [soundOn, setSoundOn] = useState(true);
   const ringtone = useRingtone(phase.kind === "ringing" && soundOn);
 
-  // 1Hz tick for the countdown badge.
+  // Sub-second tick so the clock under the ball rolls within ~250ms of
+  // crossing the next second, not up to a full second late.
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
+    const id = setInterval(() => setTick((t) => (t + 1) % 1_000_000), 250);
     return () => clearInterval(id);
   }, []);
 
@@ -243,6 +249,11 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
   const findAnother = useCallback(async () => {
     setRetrying(true);
     const sb = supabaseRef.current;
+    // Self-heal: reap any guest_calls stuck in 'assigned'/'joining' with no
+    // recent engineer heartbeat. Otherwise those engineers look "in a session"
+    // to the matcher and get filtered out, even though they're actually gone.
+    // Cheap UPDATE WHERE NOT EXISTS; no-op if nothing is stuck.
+    try { await sb.rpc("reap_stale_assigned_sessions"); } catch { /* helper may not be deployed yet */ }
     await sb.rpc("match_engineer", { _intake_id: intakeId });
     setRetrying(false);
     void fetchLatest();
@@ -309,7 +320,7 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
         {phase.kind === "ringing" && (
           <RingingHero
             elapsedMs={
-              ringStartRef.current !== null ? now - ringStartRef.current : 0
+              ringStartRef.current !== null ? Date.now() - ringStartRef.current : 0
             }
             soundOn={soundOn}
             soundAvailable={ringtone.available}
@@ -399,8 +410,13 @@ function RingingHero({
   onToggleSound: () => void;
   onCancel: () => void;
 }) {
-  const mm = Math.floor(elapsedMs / 60000);
-  const ss = Math.floor((elapsedMs % 60000) / 1000);
+  // Clamp negative values to 0 — the parent's `now` state is captured BEFORE
+  // ringStartRef is set on the first render, so the first tick can briefly
+  // produce a negative elapsedMs which renders as "00:-1". Without this guard,
+  // the customer sees a "-1 seconds" flash when the ringing screen first appears.
+  const safeMs = Math.max(0, elapsedMs);
+  const mm = Math.floor(safeMs / 60000);
+  const ss = Math.floor((safeMs % 60000) / 1000);
   const clock = `${mm.toString().padStart(2, "0")}:${ss.toString().padStart(2, "0")}`;
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-8 px-4 py-12 text-center">
@@ -412,47 +428,10 @@ function RingingHero({
           Sized so it's clearly the focal point but doesn't crowd the
           page — ~240px on desktop, scales down on mobile via the
           responsive class. */}
-      <div className="relay-ringing-hero relative flex items-center justify-center" style={{ width: 280, height: 280 }}>
-        {/* Halo rings — three concentric circles fading outward. The
-            keyframe scales 1→1.8 + opacity 0.6→0; -0.6s and -1.2s
-            negative delays stagger them so a new ring expands every
-            ~600ms. Lives in app/globals.css under @keyframes
-            relay-ring-halo (added by this commit). */}
-        <span aria-hidden className="relay-ringing-halo absolute inset-0 rounded-full" style={{ animationDelay: "0s" }} />
-        <span aria-hidden className="relay-ringing-halo absolute inset-0 rounded-full" style={{ animationDelay: "-0.6s" }} />
-        <span aria-hidden className="relay-ringing-halo absolute inset-0 rounded-full" style={{ animationDelay: "-1.2s" }} />
-
-        {/* Soft under-glow. Sits beneath the ball, blurred, low alpha.
-            Gives the ball a "lit from within" feel against dark themes. */}
-        <span
-          aria-hidden
-          className="absolute rounded-full"
-          style={{
-            width: 220,
-            height: 220,
-            background: "radial-gradient(circle, color-mix(in srgb, var(--primary) 55%, transparent) 0%, transparent 70%)",
-            filter: "blur(20px)",
-          }}
-        />
-
-        {/* The ball. Heartbeat scale animation lives in globals.css under
-            @keyframes relay-ringing-ball. Phone icon centered. */}
-        <div
-          className="relay-ringing-ball relay-ringing-ball-wrap relative flex items-center justify-center rounded-full"
-          style={{
-            width: 200,
-            height: 200,
-            background: "radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--primary) 90%, white) 0%, var(--primary) 55%, color-mix(in srgb, var(--primary) 65%, #000) 100%)",
-            boxShadow:
-              "0 20px 48px color-mix(in srgb, var(--primary) 35%, transparent), " +
-              "0 8px 16px color-mix(in srgb, var(--primary) 25%, transparent), " +
-              "inset 0 -10px 20px rgba(0, 0, 0, 0.22), " +
-              "inset 0 10px 20px rgba(255, 255, 255, 0.14)",
-          }}
-        >
-          <Phone size={72} className="relay-ringing-icon" style={{ color: "#fff" }} strokeWidth={1.6} />
-        </div>
-      </div>
+      {/* Ringing-ball visual shared with the engineer's
+          EngineerIncomingMatch overlay so both surfaces look identical.
+          See app/_components/RingingBall.tsx. */}
+      <RingingBall />
 
       {/* Elapsed time — large, serif, calm. mm:ss because we don't
           want to fake-promise "X seconds until next ring" anymore —

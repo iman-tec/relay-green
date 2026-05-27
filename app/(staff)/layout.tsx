@@ -24,7 +24,7 @@ export default async function StaffGroupLayout({
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect("/staff/login");
+  if (!user) redirect("/staff");
 
   return <StaffShell>{children}</StaffShell>;
 }

@@ -115,14 +115,22 @@ export function SignInForm() {
       const res = await fetch("/api/auth/signin-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: em, password, mode: "customer" }),
+        body: JSON.stringify({ email: em, password, surface: "customer" }),
       });
       const body = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        next?: string;
-        error?: string;
+        ok?:                  boolean;
+        next?:                string;
+        error?:               string;
+        allowed_surface_url?: string;
       };
       if (!res.ok || !body.ok) {
+        // Role-gate: account exists but isn't admitted on the customer
+        // surface. Send them to their correct surface instead of leaking
+        // the raw error code into the UI.
+        if (body.error === "wrong_login_surface" && body.allowed_surface_url) {
+          window.location.assign(`${body.allowed_surface_url}?wrong_surface=1&email=${encodeURIComponent(em)}`);
+          return;
+        }
         setError(friendlyError(body.error ?? "Couldn't sign in."));
         return;
       }
@@ -191,14 +199,19 @@ export function SignInForm() {
       const res = await fetch("/api/auth/verify-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, code: full, mode: "customer", purpose }),
+        body: JSON.stringify({ email, code: full, surface: "customer", purpose }),
       });
       const body = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        next?: string;
-        error?: string;
+        ok?:                  boolean;
+        next?:                string;
+        error?:               string;
+        allowed_surface_url?: string;
       };
       if (!res.ok || !body.ok) {
+        if (body.error === "wrong_login_surface" && body.allowed_surface_url) {
+          window.location.assign(`${body.allowed_surface_url}?wrong_surface=1&email=${encodeURIComponent(email)}`);
+          return;
+        }
         setError(friendlyError(body.error ?? "Couldn't verify code."));
         return;
       }
