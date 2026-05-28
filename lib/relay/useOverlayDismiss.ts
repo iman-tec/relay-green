@@ -21,6 +21,15 @@ const FOCUSABLE =
  */
 export function useOverlayDismiss<T extends HTMLElement = HTMLDivElement>(onClose: () => void, active = true) {
   const ref = useRef<T>(null);
+  // Stabilise the onClose callback. Callers commonly pass inline closures
+  // (e.g. `onClose={() => { reset(); close(); }}`); without this ref
+  // indirection the effect's deps see a new identity on every parent
+  // re-render → cleanup fires → `prevFocus?.focus?.()` snaps focus back
+  // to whatever was active when the effect originally ran, which is the
+  // dialog's first focusable element (the ✕ Close button). Bug symptom:
+  // typing one character in any field steals focus to Close.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
   useEffect(() => {
     if (!active) return;
     const prevFocus = document.activeElement as HTMLElement | null;
@@ -32,7 +41,7 @@ export function useOverlayDismiss<T extends HTMLElement = HTMLDivElement>(onClos
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key === "Tab" && ref.current) {
@@ -56,6 +65,6 @@ export function useOverlayDismiss<T extends HTMLElement = HTMLDivElement>(onClos
       document.removeEventListener("keydown", onKey, true);
       prevFocus?.focus?.();
     };
-  }, [onClose, active]);
+  }, [active]);
   return ref;
 }
