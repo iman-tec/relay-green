@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import { Source_Serif_4, Inter, JetBrains_Mono } from "next/font/google";
-import { cookies } from "next/headers";
 import "./globals.css";
 import { JsonLd } from "./_marketing/JsonLd";
 import { AnalyticsGate } from "./_marketing/AnalyticsGate";
@@ -134,26 +133,21 @@ export const viewport: Viewport = {
   maximumScale: 5,
 };
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // Read theme cookies on the server so the first painted HTML already
-  // carries the correct data-theme attribute — eliminating the FOUC where
-  // the default Sun theme briefly renders before the client effect swaps
-  // in the user's saved theme. Priority: explicit user choice > geo
-  // default > Sun. Sun is represented by the absence of the attribute.
-  const cookieStore = await cookies();
-  const userTheme = cookieStore.get("relay-theme-user")?.value;
-  const geoTheme = cookieStore.get("relay-theme-geo")?.value;
-  const initialTheme = userTheme || geoTheme || "cream";
-  const themeAttr = initialTheme !== "cream" ? initialTheme : undefined;
-
+  // The theme CLASS on <html> (what globals.css `:root.dark/.espresso/.klm`
+  // keys off of) is applied by the inline THEME_INIT_SCRIPT below, before
+  // paint, from the user/geo cookies + localStorage. The marketing surface's
+  // `.mk-root[data-theme]` is set server-side in Shell.tsx. We deliberately
+  // do NOT set data-theme on <html> here — no CSS reads it, and doing so
+  // masked the real wiring (the geo cookie was being written into an
+  // attribute nothing styled).
   return (
     <html
       lang="en"
-      data-theme={themeAttr}
       className={`${sourceSerif.variable} ${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >

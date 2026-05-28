@@ -6,6 +6,7 @@
 
 import type { ReactNode } from "react";
 import { cookies } from "next/headers";
+import { GEO_COOKIE, USER_COOKIE } from "@/lib/relay/theme";
 import "./marketing.css";
 import { Nav } from "./Nav";
 import { Footer } from "./Footer";
@@ -32,8 +33,8 @@ export async function Shell({
   // attribute directly, so no client-side flash before ThemeSwitcher's
   // effect runs. Priority: user choice > geo > Sun (no attribute).
   const cookieStore = await cookies();
-  const userTheme = cookieStore.get("relay-theme-user")?.value;
-  const geoTheme = cookieStore.get("relay-theme-geo")?.value;
+  const userTheme = cookieStore.get(USER_COOKIE)?.value;
+  const geoTheme = cookieStore.get(GEO_COOKIE)?.value;
   const initialTheme = userTheme || geoTheme || "cream";
   const themeAttr = initialTheme !== "cream" ? initialTheme : undefined;
 

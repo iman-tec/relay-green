@@ -7,11 +7,12 @@
  *   2. Redirect clearly-unauthed traffic away from protected routes before
  *      it hits the React tree.
  *   3. Detect the visitor's country (from Vercel edge headers / request.geo)
- *      and write a `relay-theme-geo` cookie so the marketing site can auto-
- *      select the right theme (Nordics/Middle East → Espresso, Benelux+DE →
- *      Cloud KLM, NA/UK/AUS/SG → Moon, rest of world → Sun). Skipped when
- *      the visitor has an explicit `relay-theme-user` cookie from the
- *      manual theme switcher.
+ *      and write a `relay-theme-geo` cookie so both surfaces can auto-select
+ *      the right theme (Nordics/Eastern-Europe/Middle-East → Espresso,
+ *      Benelux+DE+FR → Cloud KLM, NA/UK/AUS/SG → Moon, rest of world → Sun).
+ *      Skipped when the visitor has an explicit `relay-theme-user` cookie
+ *      from the manual theme switcher. The country→theme map lives in
+ *      lib/relay/theme.ts (shared + unit-tested).
  *
  * Real authorization (role checks, RLS) happens server-side in route handlers
  * and RPCs, and client-side in useStaffGuard. This proxy is the fast edge layer.
@@ -21,22 +22,7 @@
 
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-
-// ISO 3166-1 alpha-2 country codes → theme id. Anything not listed falls
-// through to "sun" (default white/peach theme).
-const COUNTRY_TO_THEME: Record<string, "cream" | "dark" | "espresso" | "klm"> = {
-  // Espresso — Nordics + Middle East
-  SE: "espresso", NO: "espresso", DK: "espresso", FI: "espresso", IS: "espresso",
-  AE: "espresso", SA: "espresso", QA: "espresso", KW: "espresso", BH: "espresso",
-  OM: "espresso", IL: "espresso", JO: "espresso", LB: "espresso", EG: "espresso",
-  // Cloud (KLM) — Benelux + Germany
-  NL: "klm", BE: "klm", LU: "klm", DE: "klm",
-  // Moon — North America + UK + Australia + Singapore
-  US: "dark", CA: "dark", MX: "dark",
-  GB: "dark", IE: "dark",
-  AU: "dark", NZ: "dark",
-  SG: "dark",
-};
+import { GEO_COOKIE, USER_COOKIE, themeForCountry } from "./lib/relay/theme";
 
 // Routes split by which login surface their audience belongs to. Each
 // surface has its own URL — unauthed traffic on a protected prefix is
@@ -74,10 +60,7 @@ const BUSINESS_PREFIXES = [
   "/department",
 ];
 
-const CUSTOMER_PREFIXES = [
-  "/room",
-  "/account",
-];
+const CUSTOMER_PREFIXES = ["/room", "/account"];
 
 const STAFF_LOGIN    = "/staff";
 const PARTNER_LOGIN  = "/partner";
@@ -110,7 +93,9 @@ export async function proxy(req: NextRequest) {
           return req.cookies.getAll();
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) => req.cookies.set(name, value));
+          cookiesToSet.forEach(({ name, value }) =>
+            req.cookies.set(name, value)
+          );
           res = NextResponse.next({ request: req });
           cookiesToSet.forEach(({ name, value, options }) =>
             res.cookies.set(name, value, options)
@@ -145,14 +130,13 @@ export async function proxy(req: NextRequest) {
   // Geo-theme cookie — set on every response unless the visitor has an
   // explicit user choice from the manual theme switcher. Short TTL so VPN /
   // travel changes refresh within a day. Not httpOnly because the
-  // client-side ThemeSwitcher needs to read it on first paint.
-  if (!req.cookies.get("relay-theme-user")) {
+  // pre-paint script + client switchers need to read it on first paint.
+  if (!req.cookies.get(USER_COOKIE)) {
     const geoCountry =
       (req as NextRequest & { geo?: { country?: string } }).geo?.country ?? "";
     const headerCountry = req.headers.get("x-vercel-ip-country") ?? "";
-    const country = (geoCountry || headerCountry).toUpperCase();
-    const theme = COUNTRY_TO_THEME[country] ?? "cream";
-    res.cookies.set("relay-theme-geo", theme, {
+    const theme = themeForCountry(geoCountry || headerCountry);
+    res.cookies.set(GEO_COOKIE, theme, {
       path: "/",
       maxAge: 60 * 60 * 24,
       sameSite: "lax",
