@@ -17,17 +17,39 @@
  *      what makes the sign-in card pick up the visitor's marketing
  *      theme instead of falling back to the app default.
  *
- * Choice persists in localStorage so navigating across pages keeps it.
- * Reads the saved theme inside a useEffect so SSR/hydration is safe
- * (no FOUC band-aid yet — that would require an inline script in
- * layout.tsx; can add when we ship).
+ * Choice persists in BOTH localStorage and the cross-surface
+ * `relay-theme-user` cookie (so the server, the geo proxy, and the
+ * pre-paint script all honor it). On mount it resolves the active icon
+ * with the same priority as the rest of the app — user cookie > localStorage
+ * > geo cookie > cream — so it never clobbers the geo theme the server
+ * already rendered onto `.mk-root`. First-paint FOUC is handled server-side
+ * (Shell sets `.mk-root[data-theme]`) + by the inline script in layout.tsx.
  */
 
 import { useEffect, useState } from "react";
 
-type Theme = "cream" | "dark" | "espresso" | "klm";
+import {
+  GEO_COOKIE,
+  STORAGE_KEY,
+  USER_COOKIE,
+  normalizeToGeoTheme,
+  type GeoTheme,
+} from "@/lib/relay/theme";
 
-const STORAGE_KEY = "relay-theme";
+type Theme = GeoTheme;
+
+function readCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(
+    new RegExp("(?:^|; )" + name + "=([^;]*)")
+  );
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function writeUserThemeCookie(theme: Theme): void {
+  if (typeof document === "undefined") return;
+  document.cookie = `${USER_COOKIE}=${theme}; path=/; max-age=${60 * 60 * 24 * 365}; samesite=lax`;
+}
 
 function applyTheme(theme: Theme) {
   // 1. Marketing surface — .mk-root data attribute
@@ -147,19 +169,22 @@ export function ThemeSwitcher() {
   const [theme, setTheme] = useState<Theme>("cream");
 
   useEffect(() => {
-    const saved =
-      (typeof window !== "undefined" &&
-        (localStorage.getItem(STORAGE_KEY) as Theme | null)) ||
-      "cream";
-    if (
-      saved === "cream" ||
-      saved === "dark" ||
-      saved === "espresso" ||
-      saved === "klm"
-    ) {
-      setTheme(saved);
-      applyTheme(saved);
-    }
+    // Resolve with the same priority as the rest of the app so this mount
+    // effect does NOT clobber the geo theme the server already rendered onto
+    // `.mk-root` (which would happen if we blindly read localStorage and
+    // defaulted to "cream"). Priority: user cookie > localStorage > geo
+    // cookie > cream.
+    const userCookie = normalizeToGeoTheme(readCookie(USER_COOKIE));
+    const stored = normalizeToGeoTheme(localStorage.getItem(STORAGE_KEY));
+    const geoCookie = normalizeToGeoTheme(readCookie(GEO_COOKIE));
+    const resolved: Theme = userCookie ?? stored ?? geoCookie ?? "cream";
+
+    // Backfill the cross-surface cookie for legacy visitors who only have a
+    // localStorage choice — keeps SSR + proxy honoring it from now on.
+    if (!userCookie && stored) writeUserThemeCookie(stored);
+
+    setTheme(resolved);
+    applyTheme(resolved);
   }, []);
 
   function choose(next: Theme) {
@@ -170,6 +195,7 @@ export function ThemeSwitcher() {
     } catch {
       /* localStorage may be blocked; theme still applies for the session */
     }
+    writeUserThemeCookie(next);
   }
 
   return (
