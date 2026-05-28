@@ -11,6 +11,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Loader2, AlertTriangle } from "lucide-react";
 import { useZoomCall } from "@/lib/video/useZoomCall";
 import { silenceVideoSdkNoise } from "@/lib/video/silenceVideoSdkNoise";
@@ -30,9 +31,14 @@ type Props = {
   onJoined?: () => void;
   /** Compact mode — see CallSurface.tsx prop docs. */
   compact?: boolean;
+  /** When set AND a share is active, tiles render via createPortal into
+   *  this element. See CallSurface.tsx prop docs. */
+  tilesPortalTarget?: HTMLElement | null;
+  /** Fires when activeShareUserId crosses null ↔ non-null. */
+  onShareStateChange?: (sharing: boolean) => void;
 };
 
-export function CallSurfaceInner({ sessionId, role, userName, onClose, onJoined, compact = false }: Props) {
+export function CallSurfaceInner({ sessionId, role, userName, onClose, onJoined, compact = false, tilesPortalTarget = null, onShareStateChange }: Props) {
   // Share elements are hoisted here so both the local sharer
   // (startShareScreen) and remote viewer (startShareView) can target them.
   // The SDK picks canvas vs video at runtime based on WebCodecs availability;
@@ -72,6 +78,13 @@ export function CallSurfaceInner({ sessionId, role, userName, onClose, onJoined,
   useEffect(() => {
     if (call.status === "ended") onClose();
   }, [call.status, onClose]);
+
+  // Notify host whenever the share state crosses null ↔ non-null. Host
+  // (RoomClient) uses this to mount/unmount the tile-portal slot in the
+  // right rail so the chat fills the rail when nobody is sharing.
+  useEffect(() => {
+    onShareStateChange?.(call.activeShareUserId !== null);
+  }, [call.activeShareUserId, onShareStateChange]);
 
   // Fire onJoined() exactly once when the SDK transitions to 'joined'.
   // Wired to state.markJoined() by the host (RoomClient / EngineerSession)
@@ -176,67 +189,96 @@ export function CallSurfaceInner({ sessionId, role, userName, onClose, onJoined,
               </button>
             </div>
           )}
-          {/* Share viewer must stay mounted ALWAYS so its canvas + video
-              refs are populated BEFORE the user clicks Share — both
-              startShareScreen() and startShareView() need a DOM element on
-              call. When a share is active, the viewer takes most of the
-              space and the participant tiles move to a thin vertical strip
-              on the right so the customer/engineer can still see faces
-              while watching what's being shared. */}
-          {call.activeShareUserId !== null ? (
-            <div className="absolute inset-0 flex">
-              {/* Share canvas/video — main column */}
-              <div className="relative min-w-0 flex-1">
-                <ShareViewer
-                  canvasRef={shareCanvasRef}
-                  videoRef={shareVideoRef}
-                  activeMode={shareMode}
-                  sharerName={sharerName}
-                  selfSharing={sharing}
-                  onStop={sharing ? () => void call.stopShareScreen() : undefined}
-                />
-              </div>
-              {/* Participant tiles — narrow vertical strip beside the share.
-                  forceStack=true so they stack one-under-another regardless
-                  of container width; aspect-ratio:1/1 inside TileGrid keeps
-                  them square. ~120-160px wide is enough to recognize faces
-                  without crowding the shared content. */}
-              <aside
-                className="shrink-0 overflow-hidden border-l"
-                style={{
-                  width: "clamp(120px, 18%, 180px)",
-                  borderColor: "var(--border)",
-                  background: "var(--surface)",
-                }}
-                aria-label="Participants"
-              >
-                <TileGrid
-                  self={call.self}
-                  participants={call.participants}
-                  client={call.client}
-                  forceStack
-                />
-              </aside>
+          {/* ShareViewer is mounted in EXACTLY ONE place across all render
+              modes so its <canvas> / <video> DOM elements (which the Zoom
+              SDK is told to draw into via startShareView) persist across
+              share-state changes. If we re-mounted it inside conditional
+              branches, React would destroy those elements every time
+              someone started or stopped sharing, the SDK's reference to
+              them would dangle, and the customer would see a black canvas
+              even though "is sharing" was reported.
+
+              When no share is active, the viewer hides via visibility +
+              0 inset; tiles render on top. When a share starts, tiles
+              either portal out (customer) or shrink to a side strip
+              (engineer fallback). The legacy side-strip layout uses an
+              inset-right so the viewer doesn't underlap the strip.
+
+              Layering: ShareViewer is the bottom layer; tile arrangements
+              sit above (z-index ordering via DOM order, no z classes
+              needed since the share takes the full area and tiles take a
+              positioned subset). */}
+          <div
+            className="absolute"
+            style={{
+              top: 0,
+              bottom: 0,
+              left: 0,
+              right:
+                call.activeShareUserId !== null && !tilesPortalTarget
+                  ? "clamp(120px, 18%, 180px)"
+                  : 0,
+              visibility: call.activeShareUserId !== null ? "visible" : "hidden",
+            }}
+          >
+            <ShareViewer
+              canvasRef={shareCanvasRef}
+              videoRef={shareVideoRef}
+              activeMode={shareMode}
+              sharerName={sharerName}
+              selfSharing={sharing}
+              onStop={sharing ? () => void call.stopShareScreen() : undefined}
+            />
+          </div>
+
+          {/* Tile arrangements layered above the (possibly-hidden) ShareViewer. */}
+          {call.activeShareUserId !== null && !tilesPortalTarget && (
+            <aside
+              className="absolute overflow-hidden border-l"
+              style={{
+                top: 0,
+                bottom: 0,
+                right: 0,
+                width: "clamp(120px, 18%, 180px)",
+                borderColor: "var(--border)",
+                background: "var(--surface)",
+              }}
+              aria-label="Participants"
+            >
+              <TileGrid
+                self={call.self}
+                participants={call.participants}
+                client={call.client}
+                forceStack
+              />
+            </aside>
+          )}
+          {call.activeShareUserId === null && (
+            <div className="absolute inset-0">
+              <TileGrid
+                self={call.self}
+                participants={call.participants}
+                client={call.client}
+                forceStack={compact}
+              />
             </div>
-          ) : (
-            <>
-              {/* No share active — keep ShareViewer mounted hidden so refs
-                  are populated by the time someone clicks Share. TileGrid
-                  fills the surface. */}
-              <div className="absolute inset-0" style={{ visibility: "hidden" }}>
-                <ShareViewer
-                  canvasRef={shareCanvasRef}
-                  videoRef={shareVideoRef}
-                  activeMode={shareMode}
-                  sharerName={sharerName}
-                  selfSharing={sharing}
-                  onStop={undefined}
-                />
-              </div>
-              <TileGrid self={call.self} participants={call.participants} client={call.client} forceStack={compact} />
-            </>
           )}
         </div>
+        {/* Portal — only mounted when a share is active AND the host has
+            provided a target slot. forceSideBySide puts the participants
+            in one horizontal row of equal-width tiles so both are visible
+            at once without scroll. Height per tile is 140px; slot below
+            in RoomClient is sized to match. */}
+        {tilesPortalTarget && call.activeShareUserId !== null && createPortal(
+          <TileGrid
+            self={call.self}
+            participants={call.participants}
+            client={call.client}
+            forceSideBySide
+            tileHeightPx={140}
+          />,
+          tilesPortalTarget,
+        )}
 
       <ControlBar
         self={call.self}

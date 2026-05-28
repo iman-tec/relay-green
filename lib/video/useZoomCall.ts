@@ -130,9 +130,26 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
         try {
           await client.join(data.topic, data.token, userName || "Relay user");
         } catch (joinErr) {
+          // Zoom SDK errors are plain objects like {type, reason, errorCode}.
+          // String() on those yields '[object Object]', which is useless.
+          // Pull out the useful fields so the UI surfaces something
+          // actionable (e.g. INVALID_PARAMETERS / signature mismatch).
           console.error("[useZoomCall] join failed:", joinErr);
           if (cancelled) return;
-          setError(`join failed: ${joinErr instanceof Error ? joinErr.message : String(joinErr)}`);
+          let reason: string;
+          if (joinErr instanceof Error) {
+            reason = joinErr.message;
+          } else if (joinErr && typeof joinErr === "object") {
+            const e = joinErr as { type?: unknown; reason?: unknown; errorCode?: unknown };
+            const parts: string[] = [];
+            if (typeof e.type === "string") parts.push(e.type);
+            if (typeof e.errorCode === "number") parts.push(`code=${e.errorCode}`);
+            if (typeof e.reason === "string") parts.push(e.reason);
+            reason = parts.length > 0 ? parts.join(" · ") : JSON.stringify(joinErr);
+          } else {
+            reason = String(joinErr);
+          }
+          setError(`join failed: ${reason}`);
           setStatus("error");
           return;
         }

@@ -190,6 +190,15 @@ export function RoomClient() {
   // Video SDK in-window call surface state. Gated by NEXT_PUBLIC_USE_VIDEO_SDK
   // — when off, the legacy Meeting-SDK new-tab path is unchanged.
   const [callOpen, setCallOpen] = useState(false);
+  // Portal target for the in-call participant tiles. Only mounted in the
+  // right rail when an active screen share is in progress — at that
+  // point the center column hands its space to the shared screen and the
+  // tiles hop over here. While the call is open but nobody is sharing,
+  // tiles stay inline in the center (legacy call-without-share layout).
+  // Callback-ref so React re-renders CallSurface once the target node is
+  // attached (useRef wouldn't trigger that).
+  const [tilesTarget, setTilesTarget] = useState<HTMLDivElement | null>(null);
+  const [shareActive, setShareActive] = useState(false);
   const launchCall: (() => void) | null = isVideoSdkEnabled()
     ? () => setCallOpen(true)
     : null;
@@ -1502,6 +1511,8 @@ export function RoomClient() {
                   userName={state.session.guest_name ?? "Customer"}
                   onClose={() => setCallOpen(false)}
                   onJoined={() => void state.markJoined()}
+                  tilesPortalTarget={tilesTarget}
+                  onShareStateChange={setShareActive}
                 />
               </div>
             </Panel>
@@ -1532,6 +1543,24 @@ export function RoomClient() {
               onEnd={state.end}
               onJoin={() => void state.markJoined()}
             />
+
+            {/* Participant tiles slot — CallSurface portals the tile grid
+                into this div ONLY when a screen share is active. Tiles
+                render side-by-side at 140px tall, so the slot is sized
+                to fit ONE row (140px + 16px padding ≈ 172px) and the
+                chat reclaims the rest of the rail. */}
+            {callOpen && shareActive && (
+              <div
+                ref={setTilesTarget}
+                className="shrink-0 border-b"
+                style={{
+                  height: "172px",
+                  borderColor: "var(--border)",
+                  background: "var(--surface)",
+                }}
+                aria-label="Call participants"
+              />
+            )}
 
             <main className="min-h-0 flex-1">
               {asyncChatMode ? (

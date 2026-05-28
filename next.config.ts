@@ -98,13 +98,16 @@ const nextConfig: NextConfig = {
             key: "Referrer-Policy",
             value: "strict-origin-when-cross-origin",
           },
-          // Minimal permissions baseline — block geolocation / mic / cam
-          // / payment APIs until explicitly opted in by a feature that
-          // needs them.
+          // Minimal permissions baseline. microphone/camera/display-capture
+          // are allowed for same-origin only because the Zoom Video SDK's
+          // in-window <CallSurface> needs them — disabling these makes
+          // `navigator.mediaDevices` undefined and breaks `client.init()`
+          // with `Cannot use 'in' operator to search for 'getDisplayMedia'
+          // in undefined`. Everything else stays denied by default.
           {
             key: "Permissions-Policy",
             value:
-              "geolocation=(), microphone=(), camera=(), payment=(), usb=(), interest-cohort=()",
+              "geolocation=(), microphone=(self), camera=(self), display-capture=(self), payment=(), usb=(), interest-cohort=()",
           },
           { key: "X-DNS-Prefetch-Control", value: "on" },
           // CSP in report-only mode. Observe browser console for

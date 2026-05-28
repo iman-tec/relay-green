@@ -28,6 +28,19 @@ type CallSurfaceProps = {
    *  hint, a rail that happens to be wider than the responsive threshold
    *  still renders side-by-side rectangles. Default: false. */
   compact?: boolean;
+  /** When provided AND a screen share is currently active, participant
+   *  tiles are rendered (via React portal) into this element instead of
+   *  inline alongside the share viewer. Used by RoomClient to hoist
+   *  tiles into the right rail above chat once sharing starts, so the
+   *  customer's center column shows the shared screen full-width. When
+   *  no share is active, tiles render inline in the center (the legacy
+   *  "video call without share" layout). Null/undefined target → tiles
+   *  always render inline (engineer-side behavior, unchanged). */
+  tilesPortalTarget?: HTMLElement | null;
+  /** Fires whenever the active-share state changes (null ↔ userId).
+   *  RoomClient uses this to mount/unmount the tiles slot in the right
+   *  rail so the chat fills the rail when nobody is sharing. */
+  onShareStateChange?: (sharing: boolean) => void;
 };
 
 export const CallSurface = dynamic<CallSurfaceProps>(

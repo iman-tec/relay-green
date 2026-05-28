@@ -12,6 +12,17 @@ type Props = {
    *  call surface is mounted as a thin side rail (customer watching a
    *  share, narrow engineer right rail). */
   forceStack?: boolean;
+  /** Forces ALL participants into a single horizontal row, equal-width
+   *  columns. Used when tiles are hoisted into a short, wide slot above
+   *  chat — `forceStack` would push the second tile out of view there
+   *  even with a fixed height. Overrides forceStack when both are set. */
+  forceSideBySide?: boolean;
+  /** When set, each stacked tile uses this fixed pixel height instead of
+   *  `aspect-ratio: 1/1`. Necessary when the rail is wider than the desired
+   *  tile size — without it, the aspect-ratio rule blows each tile up to
+   *  rail-width-squared and only the first fits before scroll. Also used
+   *  in `forceSideBySide` mode to set row height. */
+  tileHeightPx?: number;
 };
 
 // Width below which we flip to vertical-stack + square tiles. We prefer
@@ -20,7 +31,7 @@ type Props = {
 // two tiles side-by-side become too small to recognize faces.
 const NARROW_WIDTH_PX = 200;
 
-export function TileGrid({ self, participants, client, forceStack = false }: Props) {
+export function TileGrid({ self, participants, client, forceStack = false, forceSideBySide = false, tileHeightPx }: Props) {
   // Include self at the front; SDK's getAllUser sometimes omits the local user.
   const all = self ? [self, ...participants.filter((p) => p.userId !== self.userId)] : participants;
 
@@ -53,6 +64,33 @@ export function TileGrid({ self, participants, client, forceStack = false }: Pro
     );
   }
 
+  // forceSideBySide: single horizontal row, equal-width columns, fixed
+  // tile height. Used for the in-rail tile slot above chat where vertical
+  // space is the scarce dimension. Each tile cell takes 1fr of width and
+  // tileHeightPx of height — aspect ratio falls out naturally and stays
+  // consistent across participants regardless of count.
+  if (forceSideBySide) {
+    return (
+      <div
+        ref={wrapperRef}
+        className="grid h-full w-full gap-2 p-2"
+        style={{
+          gridTemplateColumns: `repeat(${all.length}, minmax(0, 1fr))`,
+        }}
+      >
+        {all.map((p) => (
+          <div
+            key={p.userId}
+            className="min-h-0 min-w-0"
+            style={tileHeightPx ? { height: tileHeightPx } : undefined}
+          >
+            <VideoTile participant={p} client={client} />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   // Stacked layout: one tile per row, square aspect ratio, scrolls when the
   // rail is short. Side-by-side layout: auto-fit grid with a min tile width.
   return (
@@ -72,7 +110,13 @@ export function TileGrid({ self, participants, client, forceStack = false }: Pro
         <div
           key={p.userId}
           className={stack ? "w-full shrink-0" : "min-h-0"}
-          style={{ aspectRatio: stack ? "1 / 1" : "16 / 9" }}
+          style={
+            stack
+              ? tileHeightPx
+                ? { height: tileHeightPx }
+                : { aspectRatio: "1 / 1" }
+              : { aspectRatio: "16 / 9" }
+          }
         >
           <VideoTile participant={p} client={client} />
         </div>
