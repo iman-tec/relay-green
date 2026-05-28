@@ -65,6 +65,13 @@ type MessageRow = {
   created_at: string;
 };
 
+type CaptionRow = {
+  speaker: string | null;
+  text: string;
+  window_start: string;
+  window_end: string;
+};
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -108,36 +115,67 @@ Deno.serve(async (req) => {
           if (age < WINDOW_SECONDS * 1000) return { session_id: s.id, skipped: "too_young" };
         }
 
-        const { data: msgs } = await admin
-          .from("guest_messages")
-          // Only count human-typed chat as "signal" — system messages
-          // ("Engineer joined", "Call started") are noise and shouldn't
-          // trigger a Groq call.
-          .select("sender_kind, body, created_at")
-          .eq("guest_call_id", s.id)
-          .gte("created_at", windowStart.toISOString())
-          .order("created_at", { ascending: true });
-        const allRows = (msgs ?? []) as MessageRow[];
+        // Pull both signal sources for the same 60s window IN PARALLEL —
+        // chat (typed) AND captions (Zoom Live Transcription of what's
+        // spoken on the call). Either alone is enough to score; together
+        // they give the LLM the full picture even when the conversation
+        // is voice-dominant.
+        const [msgsRes, capsRes] = await Promise.all([
+          admin
+            .from("guest_messages")
+            .select("sender_kind, body, created_at")
+            .eq("guest_call_id", s.id)
+            .gte("created_at", windowStart.toISOString())
+            .order("created_at", { ascending: true }),
+          admin
+            .from("session_captions")
+            .select("speaker, text, window_start, window_end")
+            .eq("session_id", s.id)
+            // window_end overlaps the scoring window — captions whose
+            // window ends inside the last 60s are in-scope. Caption
+            // batches buffer for ~60s on the client, so window_start
+            // can be older than windowStart while window_end is fresh.
+            .gte("window_end", windowStart.toISOString())
+            .order("window_end", { ascending: true }),
+        ]);
+        const allRows = (msgsRes.data ?? []) as MessageRow[];
         const messages = allRows.filter((m) => m.sender_kind === "guest" || m.sender_kind === "engineer");
+        const captions = (capsRes.data ?? []) as CaptionRow[];
 
-        // SKIP empty-chat sessions entirely. The whole conversation
-        // happens on Zoom (voice); we have nothing to score. Calling
-        // Groq with an empty transcript just produces a flat
-        // score=0 / "Quiet — no signal yet." row that misleads the
-        // supervisor card into AMBER. Better to insert nothing — the
-        // frontend's deriveHealth will fall back to the deterministic
-        // verdict, which is accurate when there's no text signal.
-        if (messages.length === 0) {
-          return { session_id: s.id, skipped: "no_chat" };
+        // SKIP only when BOTH signal sources are empty. If captions are
+        // streaming (voice call) but no chat, we still score from voice.
+        // Previously this skipped any session without typed chat,
+        // making voice-only sessions invisible to the supervisor's
+        // sentiment bar.
+        if (messages.length === 0 && captions.length === 0) {
+          return { session_id: s.id, skipped: "no_signal" };
         }
 
-        const transcript = messages.map((m) => {
+        // Build a unified transcript ordered chronologically by the
+        // best timestamp we have on each line (created_at for chat,
+        // window_end for captions). Captions are tagged distinctly so
+        // the LLM can weigh "this was spoken" vs "this was typed".
+        type TranscriptLine = { ts: number; line: string };
+        const lines: TranscriptLine[] = [];
+        for (const m of messages) {
           const who =
             m.sender_kind === "guest"    ? "Customer" :
             m.sender_kind === "engineer" ? "Engineer" :
             m.sender_kind;
-          return `${who}: ${m.body}`;
-        }).join("\n");
+          lines.push({
+            ts: new Date(m.created_at).getTime(),
+            line: `${who} (chat): ${m.body}`,
+          });
+        }
+        for (const c of captions) {
+          const who = c.speaker ?? "Speaker";
+          lines.push({
+            ts: new Date(c.window_end).getTime(),
+            line: `${who} (voice): ${c.text}`,
+          });
+        }
+        lines.sort((a, b) => a.ts - b.ts);
+        const transcript = lines.map((l) => l.line).join("\n");
 
         const userPrompt =
           `Session: ${s.id}\n` +
@@ -190,7 +228,10 @@ Deno.serve(async (req) => {
           summary,
           window_start:  windowStart.toISOString(),
           window_end:    windowEnd.toISOString(),
-          message_count: messages.length,
+          // Now reflects total signal lines (chat + caption batches) so
+          // a voice-only call doesn't show message_count=0 in supervisor
+          // tooltips.
+          message_count: messages.length + captions.length,
         });
         if (insErr) throw new Error(`insert: ${insErr.message}`);
 

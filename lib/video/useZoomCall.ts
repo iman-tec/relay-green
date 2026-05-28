@@ -75,6 +75,13 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
   // race a second `client.leave()` against the in-flight first one — the
   // SDK occasionally wedges when two leaves overlap.
   const leftRef = useRef(false);
+  // Live transcription caption buffers — hoisted to component scope so
+  // leave() can flush them BEFORE invoking zoom-video-sdk-end (which
+  // triggers summarize-guest-call). Without hoisting, the last 0-60s of
+  // voice transcript would be summarised against nothing because the
+  // batched INSERT hasn't fired yet when summarize-guest-call runs.
+  type CaptionBuffer = { speaker: string | null; texts: string[]; windowStart: Date };
+  const captionBuffersRef = useRef<Map<string, CaptionBuffer>>(new Map());
 
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -84,6 +91,44 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
   const [tick, setTick] = useState(0); // bump to force re-render after SDK state changes
 
   const refresh = useCallback(() => setTick((t) => t + 1), []);
+
+  // Flush the current caption buffer to session_captions. Hoisted out
+  // of the join useEffect so leave() can await it BEFORE invoking
+  // zoom-video-sdk-end (which fires summarize-guest-call). Force=true
+  // flushes everything regardless of window age (called at teardown
+  // and final leave).
+  const flushCaptions = useCallback(async (force: boolean): Promise<void> => {
+    if (role !== "host") return;
+    const buffers = captionBuffersRef.current;
+    const now = new Date();
+    const cutoffMs = now.getTime() - 60_000;
+    const rows: Array<{
+      session_id: string;
+      speaker: string | null;
+      text: string;
+      window_start: string;
+      window_end: string;
+    }> = [];
+    for (const [key, buf] of Array.from(buffers.entries())) {
+      if (buf.texts.length === 0) continue;
+      if (!force && buf.windowStart.getTime() > cutoffMs) continue;
+      rows.push({
+        session_id: sessionId,
+        speaker: buf.speaker,
+        text: buf.texts.join(" ").trim(),
+        window_start: buf.windowStart.toISOString(),
+        window_end: now.toISOString(),
+      });
+      buffers.delete(key);
+    }
+    if (rows.length === 0) return;
+    try {
+      const { error: insErr } = await supabaseRef.current
+        .from("session_captions")
+        .insert(rows);
+      if (insErr) console.warn("[useZoomCall] caption insert:", insErr.message);
+    } catch (e) { console.warn("[useZoomCall] caption flush threw:", e); }
+  }, [sessionId, role]);
 
   // ── join lifecycle ───────────────────────────────────────────────────
   useEffect(() => {
@@ -193,6 +238,64 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
           }
         } catch (e) { console.warn("[useZoomCall] active-share probe", e); }
 
+        // ── Live transcription (Zoom Video SDK) ───────────────────────
+        // Path 1 test: try `getLiveTranscriptionClient().startLiveTranscription()`
+        // and see if our Video SDK account has the entitlement. Captions
+        // arrive via the `caption-message` event on the main client (not
+        // on the live-transcription client). The buffer + flush logic
+        // lives at component scope (captionBuffersRef + flushCaptions
+        // above) so leave() can await a final flush BEFORE invoking
+        // summarize-guest-call — otherwise the last 0-60s of voice
+        // transcript would never reach the summary.
+        const onCaptionMessage = (payload: {
+          userId?: number;
+          displayName?: string;
+          text?: string;
+          done?: boolean;
+        }) => {
+          const text = (payload?.text ?? "").trim();
+          if (!text) return;
+          const speaker = payload.displayName ?? (payload.userId ? `User ${payload.userId}` : "Unknown");
+          let buf = captionBuffersRef.current.get(speaker);
+          if (!buf) {
+            buf = { speaker, texts: [], windowStart: new Date() };
+            captionBuffersRef.current.set(speaker, buf);
+          }
+          buf.texts.push(text);
+        };
+        client.on("caption-message", onCaptionMessage);
+        const flushInterval = window.setInterval(() => { void flushCaptions(false); }, 60_000);
+
+        // Host attempts to start Zoom's ASR. If the account doesn't have
+        // the entitlement, the SDK rejects and we log the precise error
+        // so the next step (Path 2 Whisper, or escalate to vsdk-help@zoom.us)
+        // is informed by a real error code, not a guess.
+        let liveTranscriptionStarted = false;
+        if (role === "host") {
+          try {
+            const lt = (client as any).getLiveTranscriptionClient?.();
+            if (!lt?.startLiveTranscription) {
+              console.error(
+                "[useZoomCall] Live Transcription client missing on this SDK build — getLiveTranscriptionClient() returned",
+                lt,
+              );
+            } else {
+              await lt.startLiveTranscription();
+              liveTranscriptionStarted = true;
+              console.info(
+                "[useZoomCall] ✓ Live Transcription STARTED — captions will stream into session_captions every ~60s",
+              );
+            }
+          } catch (ltErr) {
+            console.error(
+              "[useZoomCall] ✗ Live Transcription FAILED to start. Likely the Video SDK account doesn't have the entitlement enabled. " +
+              "Either escalate to vsdk-help@zoom.us asking them to enable Live Transcription for app key " +
+              "or pivot to Path 2 (OpenAI Whisper streaming). Raw error:",
+              ltErr,
+            );
+          }
+        }
+
         // Only on REAL page unload (close tab, navigate away, refresh) do
         // we notify the server. Vital distinction: React unmount fires on
         // HMR re-renders and parent re-mounts too — if we ended the session
@@ -220,7 +323,18 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
             client.off("connection-change", onConnection);
             client.off("active-share-change", onActiveShare);
             client.off("network-quality-change", onNetwork);
+            client.off("caption-message", onCaptionMessage);
           } catch { /* listeners may already be gone */ }
+          window.clearInterval(flushInterval);
+          // Final flush on teardown so the tail of the conversation isn't
+          // lost. Don't await — teardown shouldn't block React unmount.
+          void flushCaptions(true);
+          if (liveTranscriptionStarted) {
+            try {
+              const lt = (client as any).getLiveTranscriptionClient?.();
+              lt?.disableCaptions?.(true);
+            } catch { /* SDK already torn down */ }
+          }
           if (typeof window !== "undefined") {
             window.removeEventListener("pagehide", onPageHide);
           }
@@ -430,6 +544,13 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
     leftRef.current = true;
     const client = clientRef.current;
     if (client) { try { await client.leave(!!endForAll); } catch { /* may already be out */ } }
+    // CRITICAL: flush any pending live-transcription captions BEFORE
+    // calling zoom-video-sdk-end. The end function triggers
+    // summarize-guest-call inside the session.ended webhook chain, which
+    // reads session_captions for the prompt. If we let the flush race
+    // the summary, the last 0-60s of voice transcript never reaches the
+    // model and the summary feels truncated. Await is intentional.
+    try { await flushCaptions(true); } catch (e) { console.warn("[useZoomCall] leave-flush", e); }
     // Always notify the server — the function uses caller role to decide
     // between participant_left (just post the ended message + audit) and
     // end_for_all (also stamp video_ended_at + fire summarize chain).
@@ -441,7 +562,7 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
     // silently blocking it.
     joinedKeyRef.current = null;
     setStatus("ended");
-  }, [sessionId]);
+  }, [sessionId, flushCaptions]);
 
   return {
     status, error,

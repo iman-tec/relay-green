@@ -72,29 +72,62 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { data: msgs } = await supabase
-      .from("guest_messages")
-      .select("sender_kind, sender_name, body, created_at")
-      .eq("guest_call_id", guest_call_id)
-      .order("created_at", { ascending: true });
+    // Pull three signal sources IN PARALLEL:
+    //   1. guest_messages — the typed chat (and AI Companion summaries if Zoom delivered them)
+    //   2. session_captions — Zoom Live Transcription of what was SPOKEN on the call
+    //
+    // Captions are batched by the engineer client into ~60s windows and
+    // tagged with a speaker. We interleave them with chat chronologically
+    // so the model sees a single timeline of "what was said + what was
+    // typed + what Zoom heard".
+    const [msgsRes, capsRes] = await Promise.all([
+      supabase
+        .from("guest_messages")
+        .select("sender_kind, sender_name, body, created_at")
+        .eq("guest_call_id", guest_call_id)
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("session_captions")
+        .select("speaker, text, window_start, window_end")
+        .eq("session_id", guest_call_id)
+        .order("window_end", { ascending: true }),
+    ]);
+    const msgs = msgsRes.data;
+    const caps = (capsRes.data ?? []) as Array<{
+      speaker: string | null;
+      text: string;
+      window_start: string;
+      window_end: string;
+    }>;
 
-    // Build the prompt corpus: human messages + per-call Zoom AI Companion
-    // summaries. Other system rows (Zoom started/ended chips, the
-    // supervisor-only recording link) are noise for the LLM and dropped.
-    // The AI Companion blocks are tagged inline so the model treats them as
-    // observations from the actual call, not as chat turns.
-    const transcript = (msgs ?? [])
-      .filter((m: any) => {
-        if (m.sender_kind !== "system") return true;
-        return typeof m.body === "string" && m.body.includes("AI Companion summary");
-      })
-      .map((m: any) => {
-        if (m.sender_kind === "system") {
-          return `[Zoom AI Companion summary from the call]\n${m.body}`;
-        }
-        return `${m.sender_name ?? m.sender_kind}: ${m.body}`;
-      })
-      .join("\n");
+    // Build the prompt corpus chronologically. Sort key:
+    //   • chat row: created_at
+    //   • caption row: window_end (when the spoken phrase was captured)
+    // Each line is tagged distinctly so the model can weigh sources:
+    //   • [Zoom AI Companion summary from the call]  — high-confidence
+    //   • Speaker (voice): text                       — live transcript
+    //   • Name: text                                  — typed chat
+    type Line = { ts: number; text: string };
+    const lines: Line[] = [];
+    for (const m of (msgs ?? []) as any[]) {
+      // Drop noise system messages but keep AI Companion blocks.
+      if (m.sender_kind === "system" && (typeof m.body !== "string" || !m.body.includes("AI Companion summary"))) {
+        continue;
+      }
+      const text = m.sender_kind === "system"
+        ? `[Zoom AI Companion summary from the call]\n${m.body}`
+        : `${m.sender_name ?? m.sender_kind}: ${m.body}`;
+      lines.push({ ts: new Date(m.created_at).getTime(), text });
+    }
+    for (const c of caps) {
+      const who = c.speaker ?? "Speaker";
+      lines.push({
+        ts: new Date(c.window_end).getTime(),
+        text: `${who} (voice): ${c.text}`,
+      });
+    }
+    lines.sort((a, b) => a.ts - b.ts);
+    const transcript = lines.map((l) => l.text).join("\n");
 
     // Guard against hallucinated summaries for trivial sessions. A lone
     // "hello" in chat (no real exchange, no Zoom) used to pass the
@@ -120,8 +153,15 @@ Deno.serve(async (req) => {
       (n: number, m: any) => n + m.body.trim().length,
       0,
     );
+    // Caption substance: total spoken characters across all batches. A
+    // voice-only call may have zero chat but plenty of transcript — that
+    // should count.
+    const captionChars = caps.reduce((n, c) => n + (c.text?.trim().length ?? 0), 0);
     const hasSubstance =
-      companionBlocks.length > 0 || humanMsgs.length >= 3 || humanChars >= 80;
+      companionBlocks.length > 0 ||
+      humanMsgs.length >= 3 ||
+      humanChars >= 80 ||
+      captionChars >= 200;
 
     if (!transcript.trim() || !hasSubstance) {
       // Distinguish three "nothing to summarize" cases so the UI shows the
@@ -218,7 +258,11 @@ Deno.serve(async (req) => {
               role: "system",
               content:
                 "You summarize a short engineer↔builder support session. Respond with strict JSON only: {\"title\": string, \"overview\": string, \"problem\": string, \"tried\": string, \"next_steps\": string[]}. " +
-                "The transcript interleaves chat messages with one or more `[Zoom AI Companion summary from the call]` blocks — those describe what happened on the live video calls. Use both signals: chat tells you what was typed; the AI Companion blocks tell you what was discussed verbally. When a Companion block and chat disagree, prefer the more specific evidence. " +
+                "The transcript interleaves THREE kinds of lines: " +
+                "(1) `Name: text` — typed chat between customer and engineer. " +
+                "(2) `Speaker (voice): text` — Zoom Live Transcription of what was spoken on the call (this is usually the bulk of the conversation). " +
+                "(3) `[Zoom AI Companion summary from the call]` — Zoom's own post-hoc summary block. " +
+                "All three are evidence of the same session. Voice transcript is typically the richest source; chat is high-signal short bursts; AI Companion blocks are high-confidence summaries. When sources conflict, prefer the more specific and recent evidence. " +
                 "Rules for `title`: 3-5 words, NO period, problem-focused — name the *issue the builder was stuck on*, not the action taken. Examples of good titles: \"Auth redirect loop\", \"Stripe webhook silent fail\", \"Supabase RLS blocking inserts\", \"Vite hot reload broken\". Bad titles: \"Helped a user\", \"Quick chat\", \"Discussion about deploy\". " +
                 "`overview` = 2-3 sentence TL;DR covering the whole session (which may include multiple Zoom calls). `problem` = 1-2 sentences naming the root cause. `tried` = 1-2 sentences listing what was attempted. `next_steps` = 3-5 short imperative items. No extra prose outside the JSON.",
             },

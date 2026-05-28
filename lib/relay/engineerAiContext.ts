@@ -115,6 +115,7 @@ export async function assembleProjectContext(
     projectRes,
     sessionsRes,
     currentMsgsRes,
+    currentCapsRes,
   ] = await Promise.all([
     sb.from("projects")
       .select("id, name, customer_id, ai_summary_title, ai_summary_overview, ai_next_steps, summary")
@@ -130,6 +131,15 @@ export async function assembleProjectContext(
       .select("sender_kind, sender_name, body, created_at")
       .eq("guest_call_id", currentSessionId)
       .order("created_at", { ascending: false })
+      .limit(MAX_CURRENT_SESSION_MESSAGES),
+    // Live voice transcript for THIS session — Zoom Live Transcription
+    // batches buffered into ~60s windows by useZoomCall. Surfaced here
+    // so the engineer's AI helper can answer questions like "what did
+    // the customer just say about X" from voice, not just typed chat.
+    sb.from("session_captions")
+      .select("speaker, text, window_end")
+      .eq("session_id", currentSessionId)
+      .order("window_end", { ascending: false })
       .limit(MAX_CURRENT_SESSION_MESSAGES),
   ]);
 
@@ -295,21 +305,42 @@ export async function assembleProjectContext(
     }
   }
 
-  // Current session tail — messages are read newest-first so reverse for
-  // chronological order in the prompt.
-  const currentMsgs = ((currentMsgsRes.data ?? []) as MessageRow[]).slice().reverse();
-  if (currentMsgs.length > 0) {
+  // Current session tail — interleave chat AND captions chronologically.
+  // Each line tagged with its source so the model can weigh "spoken on
+  // the call" vs "typed in chat".
+  type CurrentLine = { ts: number; text: string };
+  const currentLines: CurrentLine[] = [];
+  const currentMsgs = ((currentMsgsRes.data ?? []) as MessageRow[]);
+  for (const m of currentMsgs) {
+    if (m.sender_kind === "system") continue;
+    const body = (m.body ?? "").trim();
+    if (!body) continue;
+    const speaker = m.sender_kind === "engineer"
+      ? `Engineer${m.sender_name ? ` (${m.sender_name})` : ""}`
+      : `Customer${m.sender_name ? ` (${m.sender_name})` : ""}`;
+    currentLines.push({
+      ts: new Date(m.created_at).getTime(),
+      text: `${speaker} (chat): ${body}`,
+    });
+  }
+  const currentCaps = ((currentCapsRes.data ?? []) as Array<{
+    speaker: string | null;
+    text: string;
+    window_end: string;
+  }>);
+  for (const c of currentCaps) {
+    const t = (c.text ?? "").trim();
+    if (!t) continue;
+    currentLines.push({
+      ts: new Date(c.window_end).getTime(),
+      text: `${c.speaker ?? "Speaker"} (voice): ${t}`,
+    });
+  }
+  currentLines.sort((a, b) => a.ts - b.ts);
+  if (currentLines.length > 0) {
     lines.push("");
-    lines.push("== Current session (live, latest messages, chronological) ==");
-    for (const m of currentMsgs) {
-      if (m.sender_kind === "system") continue;
-      const speaker = m.sender_kind === "engineer"
-        ? `Engineer${m.sender_name ? ` (${m.sender_name})` : ""}`
-        : `Customer${m.sender_name ? ` (${m.sender_name})` : ""}`;
-      const body = (m.body ?? "").trim();
-      if (!body) continue;
-      lines.push(`${speaker}: ${body}`);
-    }
+    lines.push("== Current session (live, latest exchange, chronological — chat + voice transcript) ==");
+    for (const l of currentLines) lines.push(l.text);
   }
 
   return {

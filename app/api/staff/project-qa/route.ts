@@ -179,7 +179,13 @@ export async function POST(req: NextRequest) {
   });
   const sessionIds = rawSessions.map((s) => s.id);
 
-  // 3. Chat transcript across those sessions.
+  // 3. Chat transcript across those sessions + voice transcript for any
+  //    currently-LIVE session in the project. Past sessions already have
+  //    voice context baked into their ai_summary_overview (via
+  //    summarize-guest-call), so we don't fetch their raw captions
+  //    again — that would balloon the prompt for diminishing return.
+  //    For a live session, however, ai_summary_overview is null and the
+  //    engineer needs the AI to know what was JUST said on the call.
   type ChatRow = {
     sender_kind: string;
     sender_name: string | null;
@@ -188,19 +194,45 @@ export async function POST(req: NextRequest) {
   };
   let chatLines: string[] = [];
   if (sessionIds.length > 0) {
-    const { data: chatRows } = await sb
-      .from("guest_messages")
-      .select("sender_kind, sender_name, body, created_at")
-      .in("guest_call_id", sessionIds)
-      .order("created_at", { ascending: true })
-      .limit(MAX_CHAT_LINES);
-    chatLines = ((chatRows ?? []) as ChatRow[])
-      .filter((m) => m.body && m.body.trim().length > 0)
-      .map((m) => {
-        const who = m.sender_name ?? m.sender_kind;
-        const date = new Date(m.created_at).toISOString().split("T")[0];
-        return `[${date}] ${who}: ${(m.body ?? "").trim().slice(0, 600)}`;
+    const liveSessionIds = rawSessions
+      .filter((s) => s.status === "live" || s.status === "grace" || s.status === "joining")
+      .map((s) => s.id);
+    const [chatRowsRes, capRowsRes] = await Promise.all([
+      sb.from("guest_messages")
+        .select("sender_kind, sender_name, body, created_at")
+        .in("guest_call_id", sessionIds)
+        .order("created_at", { ascending: true })
+        .limit(MAX_CHAT_LINES),
+      liveSessionIds.length > 0
+        ? sb.from("session_captions")
+            .select("speaker, text, window_end")
+            .in("session_id", liveSessionIds)
+            .order("window_end", { ascending: true })
+            .limit(MAX_CHAT_LINES)
+        : Promise.resolve({ data: [] as Array<{ speaker: string | null; text: string; window_end: string }> }),
+    ]);
+    type Line = { ts: number; line: string };
+    const lines: Line[] = [];
+    for (const m of (chatRowsRes.data ?? []) as ChatRow[]) {
+      if (!m.body || !m.body.trim()) continue;
+      const who = m.sender_name ?? m.sender_kind;
+      const date = new Date(m.created_at).toISOString().split("T")[0];
+      lines.push({
+        ts: new Date(m.created_at).getTime(),
+        line: `[${date}] ${who} (chat): ${m.body.trim().slice(0, 600)}`,
       });
+    }
+    for (const c of (capRowsRes.data ?? []) as Array<{ speaker: string | null; text: string; window_end: string }>) {
+      const t = (c.text ?? "").trim();
+      if (!t) continue;
+      const date = new Date(c.window_end).toISOString().split("T")[0];
+      lines.push({
+        ts: new Date(c.window_end).getTime(),
+        line: `[${date}] ${c.speaker ?? "Speaker"} (voice): ${t.slice(0, 600)}`,
+      });
+    }
+    lines.sort((a, b) => a.ts - b.ts);
+    chatLines = lines.map((l) => l.line);
   }
 
   // 4. File metadata across those sessions.
