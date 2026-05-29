@@ -12,15 +12,14 @@
 --   away — no polite sequential escalation. If they all decline ⇒
 --   supervisor (reassign_needed).
 --
--- ── Regular (signed-in) customers → TIERED escalation ────────────────────
---   Mirrors how a supervisor would hand a session around by hand:
---     Tier 1 (0 prior offers) → ring the single BEST-fit online engineer.
---     Tier 2 (1 prior offer)  → on decline/expiry, ring the single 2nd-best.
---     Tier 3 (2+ prior offers)→ on the 2nd decline, BROADCAST to every
---                                remaining eligible online engineer at once.
---     Exhausted               → no eligible engineers left ⇒ flag the
---                                session reassign_needed = true so the
---                                SUPERVISOR picks it up. No more auto-match.
+-- ── Regular (signed-in) customers → BEST then BROADCAST ──────────────────
+--   First ring (0 prior offers) → the single BEST-fit online engineer.
+--   On the FIRST decline/expiry  → BROADCAST to every remaining eligible
+--                                   online engineer at once (first-accept
+--                                   -wins). No "2nd-best single" middle step.
+--   Exhausted (no one left)      → flag the session reassign_needed = true
+--                                   so the SUPERVISOR picks it up. No more
+--                                   auto-matching.
 --
 -- The escalation is driven entirely by re-invocation: the
 -- advance_match_on_offer_close trigger (20260528032000) already calls
@@ -67,20 +66,21 @@ BEGIN
   _is_guest := COALESCE(_is_guest, false);
 
   -- How many offers have already gone out for this intake (any status)?
-  --   0 → first ring (best), 1 → second ring (2nd best),
-  --   2+ → broadcast to everyone still eligible.
+  --   0  → first ring: the single best-fit engineer.
+  --   1+ → broadcast to everyone still eligible.
   SELECT count(*) INTO _prior
     FROM engineer_match_offers
    WHERE intake_id = _intake.id
      AND guest_call_id = _intake.guest_call_id;
 
-  -- Guests broadcast on every ring; regular customers only once they've
-  -- exhausted the best + 2nd-best single rings.
-  _broadcast := _is_guest OR (_prior >= 2);
+  -- Guests broadcast from the very first ring. Regular customers get one
+  -- best-fit ring, then broadcast to everyone the moment that engineer
+  -- declines/expires.
+  _broadcast := _is_guest OR (_prior >= 1);
 
-  -- Ranked eligible candidates. Identical scoring + eligibility to the
-  -- prior matcher; the only behavioural change is how many we ring
-  -- (one for tiers 1-2, all for tier 3) — handled by the EXIT below.
+  -- Ranked eligible candidates. We ring just the top one on the first
+  -- pass (best match); on broadcast we ring everyone — handled by the
+  -- EXIT below.
   FOR _rec IN
     SELECT
       ur.user_id,
@@ -124,8 +124,8 @@ BEGIN
     RETURN NEXT _offer;
     _any := true;
 
-    -- Tiers 1 & 2 ring exactly one engineer; only the broadcast tier
-    -- (2+ prior offers) keeps looping to ring everyone still eligible.
+    -- First (best-match) ring sends exactly one offer; broadcast keeps
+    -- looping to ring everyone still eligible.
     IF NOT _broadcast THEN
       EXIT;
     END IF;
