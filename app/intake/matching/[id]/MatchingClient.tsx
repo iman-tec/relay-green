@@ -44,9 +44,17 @@ import { useRouter } from "next/navigation";
 import { Loader2, Home, Volume2, VolumeX } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { RingingBall } from "@/app/_components/RingingBall";
+import { IntakeAssistant } from "@/app/_components/intake/IntakeAssistant";
 import { Button, Card, CardBody } from "@/app/_components/ui";
 import { createClient } from "@/lib/supabase/browser";
 import { useRingtone } from "@/lib/relay/useRingtone";
+
+// How long to keep the ringing ball centred (no chat) before fading the
+// intake chat in below it. The pause lets the customer see the canonical
+// ring visual first — matching every other call-initiation surface —
+// before we offer them something to type into. Short enough that an
+// impatient user won't tap out, long enough to feel deliberate.
+const CHAT_REVEAL_DELAY_MS = 1500;
 
 // How often to re-check session + offer state. Belt-and-braces in case a
 // realtime event drops.
@@ -102,6 +110,46 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
       ringStartRef.current = Date.now();
     }
   }, [phase.kind]);
+
+  // The ring-screen intake chat is a FIRST-TIME-GUEST onboarding moment
+  // only. A routine customer (signed-in, or a returning guest who's
+  // already done this) just wants the simple centred ring — no chat
+  // pane, no compact-pill transition. We treat "first-time guest" as an
+  // anonymous (Try-Relay) user with zero prior terminal sessions. The
+  // current queued session isn't counted (filter excludes 'queued').
+  const [isFirstTimeGuest, setIsFirstTimeGuest] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const sb = supabaseRef.current;
+      const { data } = await sb.auth.getUser();
+      const user = data.user;
+      // Not anonymous → routine customer → never show the intake chat.
+      if (!user || user.is_anonymous !== true) return;
+      const { count } = await sb
+        .from("guest_calls")
+        .select("id", { count: "exact", head: true })
+        .eq("customer_user_id", user.id)
+        .in("status", ["ended", "abandoned", "cancelled", "expired_free"]);
+      if (cancelled) return;
+      setIsFirstTimeGuest(!count || count <= 0);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Intake chat reveal — fades the chat panel in below the ringing ball
+  // CHAT_REVEAL_DELAY_MS after the ring starts, so a first-time guest
+  // first sees the centred green ball (matching every other call
+  // surface) and then smoothly gets a place to describe their problem
+  // while they wait. Gated on isFirstTimeGuest so routine customers keep
+  // the simple centred ring. Flag stays true once flipped so a transient
+  // realtime hiccup doesn't re-hide the chat.
+  const [chatVisible, setChatVisible] = useState(false);
+  useEffect(() => {
+    if (phase.kind !== "ringing" || chatVisible || !isFirstTimeGuest) return;
+    const t = setTimeout(() => setChatVisible(true), CHAT_REVEAL_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [phase.kind, chatVisible, isFirstTimeGuest]);
 
   // Ringtone audio. Synthesized via Web Audio API so we ship zero
   // audio bytes + can shape it exactly how we want (US-ringback
@@ -293,7 +341,7 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
 
   // ── Render ─────────────────────────────────────────────────────────
   return (
-    <main className="relative flex h-[100dvh] flex-col items-center overflow-hidden bg-[var(--background)] px-4 py-8 sm:px-6 sm:py-10">
+    <main className="relative flex min-h-[100dvh] flex-col items-center overflow-y-auto bg-[var(--background)] px-4 py-8 sm:px-6 sm:py-10">
       <span
         aria-hidden
         className="pointer-events-none absolute inset-x-0 top-0 h-72"
@@ -318,15 +366,67 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
         )}
 
         {phase.kind === "ringing" && (
-          <RingingHero
-            elapsedMs={
-              ringStartRef.current !== null ? Date.now() - ringStartRef.current : 0
-            }
-            soundOn={soundOn}
-            soundAvailable={ringtone.available}
-            onToggleSound={() => setSoundOn((v) => !v)}
-            onCancel={skip}
-          />
+          <>
+            {/* Phase 1 — hero. Big centred ball + halo, exactly the
+                canonical ringing visual. Stays mounted until CHAT_REVEAL_
+                DELAY_MS, then fades + collapses out. We collapse the
+                max-height alongside opacity so it stops eating layout
+                space the moment the compact pill + chat take over.   */}
+            <div
+              aria-hidden={chatVisible}
+              className="flex w-full flex-col items-center overflow-hidden transition-all duration-500 ease-out"
+              style={{
+                opacity: chatVisible ? 0 : 1,
+                maxHeight: chatVisible ? 0 : "100vh",
+                pointerEvents: chatVisible ? "none" : "auto",
+              }}
+            >
+              <RingingHero
+                elapsedMs={
+                  ringStartRef.current !== null ? Date.now() - ringStartRef.current : 0
+                }
+                soundOn={soundOn}
+                soundAvailable={ringtone.available}
+                onToggleSound={() => setSoundOn((v) => !v)}
+                onCancel={skip}
+              />
+            </div>
+
+            {/* Phase 2 — compact ringing pill at top + chat as the new
+                centre of gravity. Fades in CHAT_REVEAL_DELAY_MS after
+                the ring starts. The pill keeps the customer aware that
+                the ring is still going (small ball + clock + cancel
+                stays reachable); the chat is the main thing they look
+                at while they wait. IntakeAssistant persists each turn
+                via intakeId so the engineer reads the transcript on
+                accept.                                                */}
+            <div
+              aria-hidden={!chatVisible}
+              className="flex w-full flex-1 min-h-0 flex-col items-center transition-all duration-500 ease-out"
+              style={{
+                opacity: chatVisible ? 1 : 0,
+                transform: chatVisible ? "translateY(0)" : "translateY(12px)",
+                pointerEvents: chatVisible ? "auto" : "none",
+              }}
+            >
+              <CompactRingingPill
+                elapsedMs={
+                  ringStartRef.current !== null ? Date.now() - ringStartRef.current : 0
+                }
+                soundOn={soundOn}
+                soundAvailable={ringtone.available}
+                onToggleSound={() => setSoundOn((v) => !v)}
+                onCancel={skip}
+              />
+
+              <div className="mt-6 flex w-full max-w-2xl flex-1 min-h-[480px] flex-col">
+                <IntakeAssistant
+                  intakeId={intakeId}
+                  greeting="While we line up an engineer — tell me what you're building. A sentence or two is plenty: the kind of product, who it's for, and how far along you are."
+                />
+              </div>
+            </div>
+          </>
         )}
 
         {phase.kind === "no_engineer" && (
@@ -419,7 +519,7 @@ function RingingHero({
   const ss = Math.floor((safeMs % 60000) / 1000);
   const clock = `${mm.toString().padStart(2, "0")}:${ss.toString().padStart(2, "0")}`;
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-8 px-4 py-12 text-center">
+    <div className="flex flex-col items-center justify-center gap-8 px-4 py-12 text-center">
       {/* Ball assembly. Stack of:
             • 3 expanding halo rings (CSS keyframe, staggered phase)
             • Soft glow under the ball
@@ -475,6 +575,74 @@ function RingingHero({
           Cancel
         </Button>
       </div>
+    </div>
+  );
+}
+
+// ── CompactRingingPill ──────────────────────────────────────────────
+// Phase-2 ringing surface — the big hero collapses into this thin pill
+// so the chat below can take over the centre of the page. Same green
+// ball + halo as the hero (just smaller), the clock, a one-liner status,
+// and the sound/cancel controls — every piece of information from the
+// hero is preserved, just compressed horizontally so it reads as a
+// notification rather than a focal point.
+function CompactRingingPill({
+  elapsedMs,
+  soundOn,
+  soundAvailable,
+  onToggleSound,
+  onCancel,
+}: {
+  elapsedMs: number;
+  soundOn: boolean;
+  soundAvailable: boolean;
+  onToggleSound: () => void;
+  onCancel: () => void;
+}) {
+  const safeMs = Math.max(0, elapsedMs);
+  const mm = Math.floor(safeMs / 60000);
+  const ss = Math.floor((safeMs % 60000) / 1000);
+  const clock = `${mm.toString().padStart(2, "0")}:${ss.toString().padStart(2, "0")}`;
+  return (
+    <div
+      className="flex w-full max-w-md items-center gap-3 rounded-full border px-3 py-2 shadow-sm"
+      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+      role="status"
+      aria-live="polite"
+    >
+      {/* Mini ringing ball — same canonical visual, just sized down so
+          it reads as a status indicator rather than the main surface. */}
+      <div className="shrink-0">
+        <RingingBall size={56} ballSize={40} iconSize={16} />
+      </div>
+
+      <div className="flex min-w-0 flex-1 flex-col text-left">
+        <div className="truncate text-[13px] font-medium" style={{ color: "var(--text)" }}>
+          Ringing your engineers
+        </div>
+        <div
+          className="font-mono text-[12px] tabular-nums"
+          style={{ color: "var(--text-muted)", fontFeatureSettings: '"tnum"' }}
+        >
+          {clock}
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={onToggleSound}
+        aria-label={soundOn ? "Mute ringtone" : "Unmute ringtone"}
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+        style={{
+          borderColor: "var(--border)",
+          color: soundOn && soundAvailable ? "var(--primary)" : "var(--text-muted)",
+        }}
+      >
+        {soundOn ? <Volume2 size={12} /> : <VolumeX size={12} />}
+      </button>
+      <Button variant="secondary" size="sm" onClick={onCancel}>
+        Cancel
+      </Button>
     </div>
   );
 }

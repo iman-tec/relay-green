@@ -141,7 +141,12 @@ export function IntakeAssistant({
     const seeded: IntakeMessage[] = [
       { id: nextId(), role: "assistant", body: opener, createdAt: Date.now() },
     ];
-    if (first) {
+    // Skip appending the first script prompt when it's identical to the
+    // opener — the ring-screen passes a greeting that IS the first prompt
+    // ("While we line up an engineer — tell me what you're building…"), so
+    // showing both would duplicate the line. `first` is still returned as
+    // the active prompt so the conversation engine waits for that answer.
+    if (first && first.body !== opener) {
       seeded.push({
         id: nextId(),
         role: "assistant",
@@ -189,6 +194,16 @@ export function IntakeAssistant({
       const { data: authData } = await sb.auth.getUser();
       const user = authData.user;
       if (!user) {
+        upgradedRef.current = true;
+        return;
+      }
+      // Anonymous (Try-Relay) guests never get the "Welcome back — what are
+      // you working on this time?" returning-user treatment. Their
+      // guest_calls history accumulates under one anonymous uid, so the
+      // upgrade would otherwise fire on every subsequent call and nag them
+      // with a follow-up prompt that only makes sense for an established,
+      // verified account. Guests always keep the clean first-time greeting.
+      if (user.is_anonymous === true) {
         upgradedRef.current = true;
         return;
       }

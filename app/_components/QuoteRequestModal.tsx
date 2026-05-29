@@ -21,7 +21,7 @@
  */
 
 import { useState } from "react";
-import { Loader2, X, ChevronLeft, Check, Send, Rocket, Wrench } from "lucide-react";
+import { Loader2, X, ChevronLeft, Check, Send, Rocket, Wrench, Plus } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 
 const BRAND_GREEN = "var(--primary)";
@@ -39,12 +39,18 @@ export function QuoteRequestModal({
   projects,
   initialProjectId,
   onClose,
+  onCreateProject,
 }: {
   kind: QuoteKind;
   projects: QuoteProjectOption[];
   /** If the customer was already viewing a project when they clicked, pre-select it. */
   initialProjectId?: string | null;
   onClose: () => void;
+  /** Optional callback for the empty-state CTA. When the customer has no
+   *  projects yet, the empty branch surfaces a "Create a project" button
+   *  that fires this instead of just closing the modal. The parent is
+   *  expected to dismiss this modal and open the project-creation flow. */
+  onCreateProject?: () => void;
 }) {
   const [step, setStep] = useState<"pick" | "details" | "done">(
     initialProjectId ? "details" : "pick",
@@ -85,6 +91,31 @@ export function QuoteRequestModal({
     setErrMsg(null);
     try {
       const sb = createClient();
+
+      // Block redundant requests of the same kind for the same project.
+      // A go-live bid that's already pending / quoted / committed makes
+      // a second go-live request meaningless — the customer would just
+      // see two identical lines in Contract management. Same kind +
+      // same project + non-terminal status is the duplicate signal;
+      // declined / cancelled don't count (the customer can retry).
+      // A different kind (e.g. go-live + maintain on the same project)
+      // is intentional and still allowed.
+      const { data: existing } = await sb
+        .from("project_quote_requests")
+        .select("id, status")
+        .eq("project_id", projectId)
+        .eq("kind", kind)
+        .not("status", "in", "(declined,cancelled)")
+        .limit(1);
+      if (existing && existing.length > 0) {
+        const niceKind = kind === "golive" ? "go-live" : "maintenance";
+        setErrMsg(
+          `A ${niceKind} bid is already in flight for this project. Open Contract management to review it instead of starting a new one.`,
+        );
+        setSubmitting(false);
+        return;
+      }
+
       const { error } = await sb.rpc("create_project_quote_request", {
         _project_id: projectId,
         _kind: kind,
@@ -154,6 +185,7 @@ export function QuoteRequestModal({
             blurb={copy.blurb}
             onPick={(id) => { setProjectId(id); setStep("details"); }}
             onClose={onClose}
+            onCreateProject={onCreateProject}
           />
         )}
 
@@ -182,12 +214,13 @@ export function QuoteRequestModal({
 
 // ── Step 1: pick a project ───────────────────────────────────────────
 function PickProjectStep({
-  projects, blurb, onPick, onClose,
+  projects, blurb, onPick, onClose, onCreateProject,
 }: {
   projects: QuoteProjectOption[];
   blurb: string;
   onPick: (id: string) => void;
   onClose: () => void;
+  onCreateProject?: () => void;
 }) {
   return (
     <div className="px-5 py-4">
@@ -202,8 +235,10 @@ function PickProjectStep({
           className="rounded-lg border px-3 py-3 text-[12px]"
           style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)", color: "var(--text-muted)" }}
         >
-          No projects yet. Start a session first — once a project exists you can request a quote on it.
-          <div className="mt-3 flex justify-end">
+          {onCreateProject
+            ? "No projects yet. Create one to request a quote on it."
+            : "No projects yet. Start a session first — once a project exists you can request a quote on it."}
+          <div className="mt-3 flex items-center justify-end gap-2">
             <button
               type="button"
               onClick={onClose}
@@ -212,6 +247,17 @@ function PickProjectStep({
             >
               Close
             </button>
+            {onCreateProject && (
+              <button
+                type="button"
+                onClick={onCreateProject}
+                className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[11.5px] font-semibold transition-opacity hover:opacity-90"
+                style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+              >
+                <Plus size={11} />
+                Create a project
+              </button>
+            )}
           </div>
         </div>
       ) : (

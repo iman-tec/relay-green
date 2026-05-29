@@ -438,6 +438,15 @@ export function RoomClient() {
   // re-reads from localStorage and re-renders the draft rows.
   const [draftsTick, setDraftsTick] = useState(0);
   const bumpDrafts = useCallback(() => setDraftsTick((t) => t + 1), []);
+  // Bumped after a project is deleted. The Sidebar's `past` sessions
+  // state is fetched in a useEffect keyed only on customerUserId/session,
+  // so without this tick the rows still carry the now-dead project_id
+  // and projectGroups resurrects the deleted project as an "orphan"
+  // group with the same name — making the sidebar look unchanged until
+  // a hard reload. Bumping this re-runs the past-sessions fetch which
+  // returns the rows with project_id NULLed (ON DELETE SET NULL on the
+  // FK), so the orphan group disappears and the sessions move to General.
+  const [pastRefreshTick, setPastRefreshTick] = useState(0);
 
   // Explicit ?paywall= entry — e.g. the guest Try-RELAY funnel sends a
   // visitor here when their free 10 minutes are already used
@@ -905,6 +914,11 @@ export function RoomClient() {
   const paidRemaining = state.entitlement.paid_minutes_remaining;
   const sidebarEmail = state.auth.kind === "authed" ? state.auth.email : "";
   const sidebarCustomerUserId = state.auth.kind === "authed" ? state.auth.userId : null;
+  // Unverified guest from the Try-Relay funnel (Supabase signInAnonymously).
+  // The user menu collapses to just the wallet+free-tier readout for these
+  // users; profile / billing / log-out only appear after they upgrade by
+  // verifying an email/account.
+  const sidebarIsGuest = state.auth.kind === "authed" && state.auth.isAnonymous;
 
   const handleViewPast = useCallback((id: string | null) => {
     setViewingPastId(id);
@@ -1192,6 +1206,10 @@ export function RoomClient() {
     setDeleteProjectTarget(null);
     bumpDrafts();
     await refetchProjects();
+    // Force Sidebar to re-fetch its `past` sessions so any rows that
+    // referenced the deleted project come back with project_id NULLed
+    // and stop showing up as an orphan group in the accordion.
+    setPastRefreshTick((t) => t + 1);
   }, [refetchProjects, bumpDrafts]);
 
   // Home — return to the landing surface from anywhere in /room.
@@ -1212,7 +1230,16 @@ export function RoomClient() {
     setPendingDraft(null);
     setPreparingProjectId(null);
     setPreparingDraftId(null);
+    // Also dismiss the EndedSessionReview if it's currently up — without
+    // this, a customer who just finished a session and clicks Home stays
+    // stuck on the "Waiting for Zoom summary…" review until they hard
+    // reload. MainPane owns the `reviewDismissedFor` state, so we signal
+    // it via a bumping nonce that an effect inside MainPane watches.
+    setHomeNonce((n) => n + 1);
   }, []);
+  // Incremented each time Home is clicked. MainPane's effect uses it to
+  // dismiss any active EndedSessionReview for the current session id.
+  const [homeNonce, setHomeNonce] = useState(0);
 
   const handleCloseViewPast = useCallback(() => setViewingPastId(null), []);
   const handleNeedsCredits  = useCallback(() => setPaywallOpen("no_credits"), []);
@@ -1357,6 +1384,7 @@ export function RoomClient() {
     }
 
     await refetchProjects();
+    return projectId;
   }, [refetchProjects, state.auth]);
   const handleNeedProject   = useCallback((draft: string) => {
     // Composer typed-then-send before any session existed. Carry the draft
@@ -1424,6 +1452,7 @@ export function RoomClient() {
             <Sidebar
               email={sidebarEmail}
               customerUserId={sidebarCustomerUserId}
+              isGuest={sidebarIsGuest}
               session={state.session}
               entitlement={state.entitlement}
               employment={employment}
@@ -1445,6 +1474,7 @@ export function RoomClient() {
               onGoHome={handleGoHome}
               onPrepareSession={handlePrepareSession}
               draftsTick={draftsTick}
+              pastRefreshTick={pastRefreshTick}
               onDeleteProject={handleOpenDeleteProject}
               onPickerToast={(msg) => {
                 setPaidToast(msg);
@@ -1461,6 +1491,7 @@ export function RoomClient() {
       <Sidebar
         email={sidebarEmail}
         customerUserId={sidebarCustomerUserId}
+        isGuest={sidebarIsGuest}
         session={state.session}
         entitlement={state.entitlement}
         employment={employment}
@@ -1482,6 +1513,7 @@ export function RoomClient() {
         onGoHome={handleGoHome}
         onPrepareSession={handlePrepareSession}
         draftsTick={draftsTick}
+        pastRefreshTick={pastRefreshTick}
         onDeleteProject={handleOpenDeleteProject}
         onPickerToast={(msg) => {
           // Surface a 5-second confirmation toast from inside the
@@ -1595,6 +1627,7 @@ export function RoomClient() {
                 preparingDraftId={preparingDraftId}
                 onClosePrepare={handleClosePrepare}
                 onDraftsChanged={bumpDrafts}
+                homeNonce={homeNonce}
               />
               )}
             </main>
@@ -1794,6 +1827,7 @@ const MainPane = memo(function MainPane({
   onNewSession, selectedProjectId, onSelectProject, onStartInProject,
   accountTab, onCloseAccount, legalView, onCloseLegal,
   preparingProjectId, preparingDraftId, onClosePrepare, onDraftsChanged,
+  homeNonce,
 }: {
   state: ReturnType<typeof useCustomerSession>;
   accepted: boolean;
@@ -1839,6 +1873,11 @@ const MainPane = memo(function MainPane({
   /** Notify the parent that the drafts list changed so the sidebar
    *  re-reads from localStorage. */
   onDraftsChanged: () => void;
+  /** Bumped by RoomClient every time the customer clicks Home. We watch
+   *  it to dismiss any open EndedSessionReview locally, since that
+   *  review state lives inside this component and the parent's
+   *  handleGoHome can't reach it directly. */
+  homeNonce: number;
 }) {
   const session = state.session;
 
@@ -1846,6 +1885,15 @@ const MainPane = memo(function MainPane({
   // ended session re-shows the review. Without this the customer was
   // trapped on a stuck "Waiting for Zoom summary…" view with no exit.
   const [reviewDismissedFor, setReviewDismissedFor] = useState<string | null>(null);
+
+  // Home click → dismiss the review for the currently-ended session.
+  // Ignored on first render (homeNonce starts at 0). After the user
+  // hits Home, the next render falls through the ended-session branch
+  // and lands on BrandedLanding — no hard reload needed.
+  useEffect(() => {
+    if (homeNonce === 0) return;
+    if (session?.status === "ended") setReviewDismissedFor(session.id);
+  }, [homeNonce, session?.id, session?.status]);
 
   // Auto-close the prep view if its project disappears between renders
   // (deleted in another tab, archived, etc). Runs as an effect AFTER
@@ -1954,7 +2002,17 @@ const MainPane = memo(function MainPane({
   // No active session (or stale cancelled / abandoned one). Show the
   // branded landing instead of the chat — the user starts a new session
   // from the CTA (or from the sidebar's + New session button).
-  const inactive = !session || ["cancelled", "abandoned"].includes(session.status);
+  //
+  // Ended sessions are treated as inactive too, but ONLY once the
+  // EndedSessionReview has been dismissed for this session.id. Without
+  // that gate, clicking Home from a live chat that just transitioned
+  // to "ended" would race past the review entirely. With it, the
+  // natural flow is: live chat → EndedSessionReview → (Back or Home)
+  // → BrandedLanding. Home-clicked dismisses via the homeNonce effect
+  // above, so this falls into the inactive branch immediately.
+  const inactive = !session
+    || ["cancelled", "abandoned"].includes(session.status)
+    || (session.status === "ended" && reviewDismissedFor === session.id);
   if (inactive) {
     const selectedProject = selectedProjectId
       ? projects.find((p) => p.id === selectedProjectId) ?? null
@@ -2143,7 +2201,7 @@ function SessionPrepView({
         </button>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto max-w-2xl px-6 py-6">
           <h2
             className="text-[20px] font-semibold tracking-tight"
@@ -2368,7 +2426,11 @@ function BrandedLanding({
           this no-session landing is intentionally calm. If a project is
           selected via the sidebar, a small "Working in {project}" chip
           surfaces below the logo as quiet context. */}
-      <div className="relative flex flex-1 items-center justify-center px-6">
+      <div
+        className={`hide-scrollbar relative flex flex-1 justify-center overflow-y-auto px-6 ${
+          explainerOpen ? "items-start py-10" : "items-center"
+        }`}
+      >
         <div className="flex max-w-3xl flex-col items-center text-center">
           <Wordmark size="xl" />
 
@@ -2495,7 +2557,7 @@ function BrandedLanding({
               rhythm with one 2-column moment for the spatial
               left↔right reference. Reads like a polished spec page,
               not a dashboard widget. */}
-          <div id="relay-landing-explainer" className="mt-8 w-full text-left text-[15px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
+          <div id="relay-landing-explainer" className="mt-6 w-full max-w-2xl text-left text-[13.5px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
 
             {/* ── 1. Phone icon legend — two clean rows, no card chrome ── */}
             <div className="flex flex-col gap-4">
@@ -2536,13 +2598,13 @@ function BrandedLanding({
             </div>
 
             {/* Hairline divider between sections — much lighter than a card border */}
-            <div className="my-6 h-px w-full" style={{ backgroundColor: "color-mix(in srgb, var(--border) 50%, transparent)" }} />
+            <div className="my-5 h-px w-full" style={{ backgroundColor: "color-mix(in srgb, var(--border) 50%, transparent)" }} />
 
             {/* ── 2. Availability states — small section header + inline pills ── */}
             <div className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text-faint)" }}>
               When you tap a green icon
             </div>
-            <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-2 text-[14px]">
+            <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px]">
               <span className="inline-flex items-center gap-1.5">
                 <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: BRAND_GREEN }} />
                 <span style={{ color: "var(--text)", fontWeight: 600 }}>Online</span>
@@ -2559,11 +2621,11 @@ function BrandedLanding({
                 <span style={{ color: "var(--text-muted)" }}>— book their calendar</span>
               </span>
             </div>
-            <p className="mt-3 text-[14px]">
+            <p className="mt-3 text-[13px]">
               Don't want to wait? Pick anyone else — every engineer arrives with full project memory and an AI brief. Zero ramp-up.
             </p>
 
-            <div className="my-6 h-px w-full" style={{ backgroundColor: "color-mix(in srgb, var(--border) 50%, transparent)" }} />
+            <div className="my-5 h-px w-full" style={{ backgroundColor: "color-mix(in srgb, var(--border) 50%, transparent)" }} />
 
             {/* ── 3. Spatial UI orientation — two columns, no boxes ─── */}
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
@@ -2571,10 +2633,10 @@ function BrandedLanding({
                 <div className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--primary)" }}>
                   ← Left sidebar
                 </div>
-                <div className="mt-1.5 text-[16px] font-semibold" style={{ color: "var(--text)" }}>
+                <div className="mt-1.5 text-[15px] font-semibold" style={{ color: "var(--text)" }}>
                   Project memory
                 </div>
-                <p className="mt-1.5 text-[14px]">
+                <p className="mt-1.5 text-[13px]">
                   Every session, file, voice note, and AI summary stays with the project — not the call. New engineers join with full history. No catch-up.
                 </p>
               </div>
@@ -2582,16 +2644,16 @@ function BrandedLanding({
                 <div className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--primary)" }}>
                   Right panel →
                 </div>
-                <div className="mt-1.5 text-[16px] font-semibold" style={{ color: "var(--text)" }}>
+                <div className="mt-1.5 text-[15px] font-semibold" style={{ color: "var(--text)" }}>
                   Live chat
                 </div>
-                <p className="mt-1.5 text-[14px]">
+                <p className="mt-1.5 text-[13px]">
                   Type, attach files, record voice notes. The panel goes live when your engineer joins — anything written before is saved as a draft for them.
                 </p>
               </div>
             </div>
 
-            <div className="my-6 h-px w-full" style={{ backgroundColor: "color-mix(in srgb, var(--border) 50%, transparent)" }} />
+            <div className="my-5 h-px w-full" style={{ backgroundColor: "color-mix(in srgb, var(--border) 50%, transparent)" }} />
 
             {/* ── 4. Numbered lifecycle — single column, simple rows ── */}
             <div className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text-faint)" }}>
@@ -2640,7 +2702,7 @@ function BrandedLanding({
             </div>
 
             {/* ── 5. Pricing footnote ─────────────────────────────── */}
-            <p className="mt-8 text-center text-[13px]" style={{ color: "var(--text-faint)" }}>
+            <p className="mt-6 text-center text-[12px]" style={{ color: "var(--text-faint)" }}>
               Pay per minute. No subscription, no auto-renew.
             </p>
           </div>
@@ -3602,7 +3664,7 @@ function ChatPanelStub({
           <div className="relative min-h-0 flex-1">
           <div
             ref={scrollRef}
-            className="h-full overflow-y-auto px-3 py-4"
+            className="hide-scrollbar h-full overflow-y-auto px-3 py-4"
             style={{
               backgroundColor: "var(--background)",
               backgroundImage:
@@ -4072,7 +4134,7 @@ function ReadOnlyChatPane({
 
   return (
     <section className="flex h-full flex-col" style={{ backgroundColor: "var(--surface)" }}>
-      <div className="flex-1 overflow-y-auto px-4 py-6">
+      <div className="hide-scrollbar flex-1 overflow-y-auto px-4 py-6">
         <div className="mx-auto w-full max-w-3xl">
           {messages.length === 0 ? (
             <p className="py-12 text-center text-sm" style={{ color: "var(--text-muted)" }}>
@@ -4682,11 +4744,15 @@ type ProjectGroup = {
 };
 
 const Sidebar = memo(function Sidebar({
-  email, customerUserId, session, entitlement, employment, viewingPastId, projects,
-  selectedProjectId, onViewPast, onNewSession, onNewChat, onStartInProject, onRenameProject, onStartNewProject, onCreateProjectWithMetadata, onSelectProject, onWalletClick, onOpenProfile, onOpenBilling, onOpenLegal, onGoHome, onPrepareSession, draftsTick, onDeleteProject, onMarkProjectComplete, onPickerToast,
+  email, customerUserId, isGuest, session, entitlement, employment, viewingPastId, projects,
+  selectedProjectId, onViewPast, onNewSession, onNewChat, onStartInProject, onRenameProject, onStartNewProject, onCreateProjectWithMetadata, onSelectProject, onWalletClick, onOpenProfile, onOpenBilling, onOpenLegal, onGoHome, onPrepareSession, draftsTick, pastRefreshTick, onDeleteProject, onMarkProjectComplete, onPickerToast,
 }: {
   email: string;
   customerUserId: string | null;
+  /** True for Try-Relay funnel guests (Supabase anonymous users) who
+   *  haven't yet bound an email/account. Drives the collapsed user-menu
+   *  rendering (wallet only — no profile/billing/logout). */
+  isGuest: boolean;
   session: GuestCall | null;
   entitlement: { free_consumed_at: string | null; free_minutes_used: number; paid_minutes_remaining: number };
   employment: EmployeeInfo | null;
@@ -4720,14 +4786,16 @@ const Sidebar = memo(function Sidebar({
   /** "+ Create New Project" submit. Creates the project + writes its
    *  metadata, but does NOT start a session. The customer rings the
    *  engineer separately via the phone button on the project row or
-   *  the top-of-sidebar Connect button. */
+   *  the top-of-sidebar Connect button. Returns the new project id (or
+   *  null on failure) so the connect-flow can route the customer into
+   *  the engineer-picker step on the freshly-minted project. */
   onCreateProjectWithMetadata: (opts: {
     name: string;
     projectType: string;
     aiTools: string[];
     backend: string[];
     frontend: string[];
-  }) => Promise<void>;
+  }) => Promise<string | null>;
   /** Click on a project header — toggle that project as the current
    *  context for the no-session landing. Same id toggles off. */
   onSelectProject: (projectId: string | null) => void;
@@ -4756,6 +4824,11 @@ const Sidebar = memo(function Sidebar({
    *  localStorage read so newly-saved drafts appear immediately
    *  without a route change. */
   draftsTick: number;
+  /** Bumped after a project is deleted so this component re-fetches its
+   *  `past` sessions. Without it the stale rows keep pointing at the
+   *  dead project_id and projectGroups resurrects the deleted project
+   *  as an "orphan" group with the same name. */
+  pastRefreshTick: number;
   /** Open the 2-factor delete-project confirmation modal at the
    *  RoomClient level. */
   onDeleteProject: (projectId: string, projectName: string) => void;
@@ -5074,7 +5147,7 @@ const Sidebar = memo(function Sidebar({
         };
       }));
     })();
-  }, [customerUserId, session?.id, session?.status]);
+  }, [customerUserId, session?.id, session?.status, pastRefreshTick]);
 
   // Build the project list shown in the sidebar from BOTH the `projects`
   // table (authoritative) and any session that has a project_id but is
@@ -5286,6 +5359,7 @@ const Sidebar = memo(function Sidebar({
           {userMenuOpen && (
             <UserMenu
               email={email}
+              isGuest={isGuest}
               session={session}
               entitlement={entitlement}
               employment={employment}
@@ -5554,84 +5628,42 @@ const Sidebar = memo(function Sidebar({
           separately via the per-project phone button or the top
           Connect button, both of which use the per-project metadata
           to drive engineer skill matching. */}
-      <div className="flex-1 overflow-y-auto px-2 pb-2 pt-3">
-        <div className="mb-1 px-2.5 py-1">
-          <button
-            onClick={() => {
-              setConnectFlowMode("create-only");
-              setConnectFlow("details");
-            }}
-            title="Create a project with name + stack metadata (no engineer call yet)"
-            aria-label="Create a project with name and stack metadata"
-            className="group/cta inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-medium transition-all duration-150 ease-out hover:translate-x-0.5 hover:bg-[var(--surface-raised)]"
-            style={{ color: "var(--primary-hover)" }}
-          >
-            <Plus size={12} className="transition-transform duration-150 ease-out group-hover/cta:rotate-90" />
-            Create New Project
-          </button>
-        </div>
-
-        {/* Pinned section — sessions the customer is actively working
-            on. Always renders the header in the same color register as
-            "Create New Project" (var(--primary-hover)) so it reads as
-            part of the same "things you reach for" cluster. Sessions
-            pin/unpin via the existing Pin icon on each row (kebab
-            inside SessionRowFlat + ProjectAccordion). Hidden when no
-            pins exist so we don't show an empty header. */}
-        {(() => {
-          const pinnedSessions = past
-            .filter((s) => pinnedIds.has(s.id))
-            // Preserve pin-insertion order via the Set iteration
-            // order so a freshly-pinned session bubbles to the top.
-            .sort((a, b) => {
-              const ids = [...pinnedIds];
-              return ids.indexOf(a.id) - ids.indexOf(b.id);
-            });
-          if (pinnedSessions.length === 0) return null;
-          return (
-            <div className="mb-1 px-2.5">
-              <div
-                className="mb-1 px-0.5 text-[10px] font-semibold uppercase tracking-[0.1em]"
-                style={{ color: "var(--primary-hover)" }}
-              >
-                Pinned
-              </div>
-              <div className="flex flex-col gap-0.5">
-                {pinnedSessions.map((s) => (
-                  <SessionRowFlat
-                    key={s.id}
-                    session={s}
-                    isPinned
-                    isViewing={viewingPastId === s.id}
-                    isCurrent={
-                      !!session
-                      && s.id === session.id
-                      && !["ended", "cancelled", "abandoned"].includes(s.status)
-                    }
-                    onClick={() => onViewPast(s.id)}
-                    onTogglePin={() => togglePin(s.id)}
-                    showProjectName
-                  />
-                ))}
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* Separator between the create-project action and the filter
-            popover + project list. */}
+      <div className="hide-scrollbar flex-1 overflow-y-auto px-2 pb-2">
+        {/* Solid sticky header — "Create New Project" + the filter row,
+            wrapped in ONE sticky block so the project/session list scrolls
+            cleanly underneath with no sliver of content bleeding through
+            between two separate sticky bands (the earlier two-band setup
+            left a gap a scrolling row could peek through). Opaque
+            var(--surface) background + own pt-3 so nothing scrolls above
+            it. */}
         <div
-          className="mx-2.5 my-1.5 h-px"
-          style={{ backgroundColor: "var(--border)" }}
-          aria-hidden="true"
-        />
+          className="sticky top-0 z-20 pt-3"
+          style={{ backgroundColor: "var(--surface)" }}
+        >
+          <div className="mb-1 px-2.5 py-1">
+            <button
+              onClick={() => {
+                setConnectFlowMode("create-only");
+                setConnectFlow("details");
+              }}
+              title="Create a project with name + stack metadata (no engineer call yet)"
+              aria-label="Create a project with name and stack metadata"
+              className="group/cta inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-medium transition-all duration-150 ease-out hover:translate-x-0.5 hover:bg-[var(--surface-raised)]"
+              style={{ color: "var(--primary-hover)" }}
+            >
+              <Plus size={12} className="transition-transform duration-150 ease-out group-hover/cta:rotate-90" />
+              Create New Project
+            </button>
+          </div>
 
-        {/* Sort/filter popover — modeled on the Claude reference. A single
-            SlidersHorizontal icon button opens an inline panel with three
-            rows (Status / Group by / Sort by). Each row shows label on the
-            left, current value on the right, with a chevron-right that
-            cycles the value on click. Click outside or Escape to close. */}
-        <div ref={sortPanelRef} className="relative mb-1.5 px-2.5">
+          {/* Separator between the create-project action and the filter row. */}
+          <div
+            className="mx-2.5 my-1.5 h-px"
+            style={{ backgroundColor: "var(--border)" }}
+            aria-hidden="true"
+          />
+
+          <div ref={sortPanelRef} className="relative mb-1.5 px-2.5">
           <div className="flex items-center justify-between">
             <span
               className="text-[10px] font-semibold uppercase tracking-[0.1em]"
@@ -5728,6 +5760,51 @@ const Sidebar = memo(function Sidebar({
             </div>
           )}
         </div>
+        </div>
+
+        {/* Pinned section — sessions the customer is actively working on.
+            Renders BELOW the sticky header so it scrolls with the list
+            (a long pin list shouldn't pin itself). Hidden when nothing is
+            pinned so we don't show an empty header. */}
+        {(() => {
+          const pinnedSessions = past
+            .filter((s) => pinnedIds.has(s.id))
+            // Preserve pin-insertion order via the Set iteration order so a
+            // freshly-pinned session bubbles to the top.
+            .sort((a, b) => {
+              const ids = [...pinnedIds];
+              return ids.indexOf(a.id) - ids.indexOf(b.id);
+            });
+          if (pinnedSessions.length === 0) return null;
+          return (
+            <div className="mb-1 mt-1 px-2.5">
+              <div
+                className="mb-1 px-0.5 text-[10px] font-semibold uppercase tracking-[0.1em]"
+                style={{ color: "var(--primary-hover)" }}
+              >
+                Pinned
+              </div>
+              <div className="flex flex-col gap-0.5">
+                {pinnedSessions.map((s) => (
+                  <SessionRowFlat
+                    key={s.id}
+                    session={s}
+                    isPinned
+                    isViewing={viewingPastId === s.id}
+                    isCurrent={
+                      !!session
+                      && s.id === session.id
+                      && !["ended", "cancelled", "abandoned"].includes(s.status)
+                    }
+                    onClick={() => onViewPast(s.id)}
+                    onTogglePin={() => togglePin(s.id)}
+                    showProjectName
+                  />
+                ))}
+              </div>
+            </div>
+          );
+        })()}
 
         {(() => {
           // ONLY "Group by: Date" flips the sidebar from project
@@ -5965,6 +6042,7 @@ const Sidebar = memo(function Sidebar({
         {userMenuOpen && (
           <UserMenu
             email={email}
+            isGuest={isGuest}
             session={session}
             entitlement={entitlement}
             employment={employment}
@@ -5989,6 +6067,17 @@ const Sidebar = memo(function Sidebar({
           projects={projects.map((p) => ({ id: p.id, name: p.name }))}
           initialProjectId={selectedProjectId}
           onClose={() => setQuoteFlow(null)}
+          onCreateProject={() => {
+            // Empty-state CTA: close this modal, hop into the connect
+            // flow in "create-only" mode. The new-project wizard collects
+            // name + project type + stack, creates the project, and
+            // leaves the customer on the landing. They can re-trigger the
+            // quote modal from the sidebar once the project appears.
+            setQuoteFlow(null);
+            resetNewProjectForm();
+            setConnectFlowMode("create-only");
+            setConnectFlow("details");
+          }}
         />
       )}
 
@@ -6008,13 +6097,26 @@ const Sidebar = memo(function Sidebar({
           }
           pickerEngineers={(() => {
             if (!pickerProjectId) return [];
-            // Distinct engineer names for this project (most-recent first).
+            // Distinct engineer names for THIS project (most-recent first).
             const seen = new Map<string, { name: string; lastDate: string }>();
             for (const s of past) {
               if (s.projectId !== pickerProjectId || !s.agent) continue;
               const existing = seen.get(s.agent);
               if (!existing || new Date(s.date) > new Date(existing.lastDate)) {
                 seen.set(s.agent, { name: s.agent, lastDate: s.date });
+              }
+            }
+            // Fallback for a brand-new project (the engineer-picker step
+            // hit straight after create) where there's no history yet on
+            // this project — surface the customer's recent engineers
+            // across ALL their projects so the picker isn't empty.
+            if (seen.size === 0) {
+              for (const s of past) {
+                if (!s.agent) continue;
+                const existing = seen.get(s.agent);
+                if (!existing || new Date(s.date) > new Date(existing.lastDate)) {
+                  seen.set(s.agent, { name: s.agent, lastDate: s.date });
+                }
               }
             }
             return Array.from(seen.values()).sort(
@@ -6134,12 +6236,31 @@ const Sidebar = memo(function Sidebar({
             try {
               if (connectFlowMode === "create-only") {
                 await onCreateProjectWithMetadata(payload);
+                setConnectFlow(null);
+                setConnectFlowMode("connect");
+                resetNewProjectForm();
               } else {
-                await onStartNewProject(payload);
+                // Connect mode — used to ring immediately. New behaviour:
+                // create the project (no session yet), then transition to
+                // the engineerPicker step so the customer picks WHICH
+                // engineer to ring. Picking one starts the actual call.
+                // This makes the new-project ringing flow consistent with
+                // the existing-project flow, where engineerPicker is
+                // always the last step before the ring.
+                const newId = await onCreateProjectWithMetadata(payload);
+                resetNewProjectForm();
+                setConnectFlowMode("connect");
+                if (newId) {
+                  setPickerProjectId(newId);
+                  setConnectFlow("engineerPicker");
+                  setNewProjectSubmitting(false);
+                } else {
+                  // Project create failed silently — close the modal so
+                  // the customer doesn't get stuck on a spinner.
+                  setConnectFlow(null);
+                  setNewProjectSubmitting(false);
+                }
               }
-              setConnectFlow(null);
-              setConnectFlowMode("connect");
-              resetNewProjectForm();
             } catch (err) {
               console.warn("[connect-flow] submit failed:", err);
               setNewProjectSubmitting(false);
@@ -7265,11 +7386,17 @@ function formatEntitlement(e: EntitlementShape): string {
 // the whole sidebar tree to re-render. Owns its own 1s interval, scoped to
 // this leaf component only — render scope is one <span>.
 const WalletBalance = memo(function WalletBalance({
-  session, entitlement, employment,
+  session, entitlement, employment, multiLine = false,
 }: {
   session: GuestCall | null;
   entitlement: EntitlementShape;
   employment?: EmployeeInfo | null;
+  /** Replace the " · " separator in the readout with a newline so the
+   *  text can flow onto two lines. Used by the user-menu wallet block
+   *  where the single-line variant was too wide and squeezed the
+   *  Recharge button. Render site must pair this with `whitespace-pre-
+   *  line` (and not `truncate`) for the break to show. */
+  multiLine?: boolean;
 }) {
   // Employees draw from the dept allocation — surface the dept counter
   // here instead of the personal free/paid entitlement. Out → "Out of
@@ -7318,7 +7445,8 @@ const WalletBalance = memo(function WalletBalance({
       };
     }
   }
-  return <>{formatEntitlement(live)}</>;
+  const text = formatEntitlement(live);
+  return <>{multiLine ? text.replace(" · ", "\n") : text}</>;
 });
 
 function planLabel(
@@ -7408,9 +7536,14 @@ const EmployeeInfoBlock = memo(function EmployeeInfoBlock({ info }: { info: Empl
 
 // ── User menu dropdown (Claude-style) ─────────────────────────────────────
 const UserMenu = memo(function UserMenu({
-  email, session, entitlement, employment, onRecharge, onOpenProfile, onOpenBilling, onOpenLegal, onClose, collapsed = false,
+  email, isGuest, session, entitlement, employment, onRecharge, onOpenProfile, onOpenBilling, onOpenLegal, onClose, collapsed = false,
 }: {
   email: string;
+  /** Unverified Try-Relay guest. Hides profile / billing / log-out so
+   *  the menu collapses to just the wallet + free-tier readout. Once
+   *  they verify an email/account this flips false and the full menu
+   *  is restored. */
+  isGuest: boolean;
   session: GuestCall | null;
   entitlement: EntitlementShape;
   employment: EmployeeInfo | null;
@@ -7469,61 +7602,81 @@ const UserMenu = memo(function UserMenu({
           boxShadow: "0 10px 36px rgba(0,0,0,0.45)",
         }}
       >
-        {/* Email header */}
+        {/* Header. For guests we just show "Guest" as a single header
+            row — the email is blank for anonymous Supabase sessions, and
+            the avatar+plan row below carries no useful info before they
+            verify an account. Verified users keep the full layout. */}
         <div className="border-b px-4 py-3" style={{ borderColor: "var(--border)" }}>
           <p className="truncate text-[12px] font-medium" style={{ color: "var(--text-muted)" }}>
-            {email}
+            {isGuest ? "Guest" : email}
           </p>
         </div>
 
         {/* Plan + wallet */}
         <div className="border-b px-3 py-2" style={{ borderColor: "var(--border)" }}>
-          <div className="flex items-center justify-between rounded-lg px-1 py-2">
-            <div className="flex items-center gap-2.5">
-              <div
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold uppercase"
-                style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
-              >
-                {(email || "?")[0]}
-              </div>
-              <div>
-                <div className="text-[13px] font-medium" style={{ color: "var(--text)" }}>
-                  {email.split("@")[0]}
+          {!isGuest && (
+            <div className="flex items-center justify-between rounded-lg px-1 py-2">
+              <div className="flex items-center gap-2.5">
+                <div
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold uppercase"
+                  style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+                >
+                  {(email || "?")[0]}
                 </div>
-                <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-                  {planLabel(entitlement, employment)}
+                <div>
+                  <div className="text-[13px] font-medium" style={{ color: "var(--text)" }}>
+                    {email.split("@")[0]}
+                  </div>
+                  <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                    {planLabel(entitlement, employment)}
+                  </div>
                 </div>
               </div>
+              <Check size={14} style={{ color: BRAND_GREEN }} />
             </div>
-            <Check size={14} style={{ color: BRAND_GREEN }} />
-          </div>
+          )}
 
           {/* Wallet + Recharge — only for ordinary customers. Employees
               draw from their dept allocation (rendered below); showing
               both widgets would be confusing and the Recharge button
-              wouldn't make sense for an employee account. */}
+              wouldn't make sense for an employee account.
+
+              The wallet text gets `whitespace-pre-line` so the
+              "Free used / upgrade to continue" sentinel splits across
+              two lines (the formatter emits "\n" for that case). The
+              Recharge button is `shrink-0` + `whitespace-nowrap` so the
+              label never wraps to "Rech / arge" no matter how narrow
+              the left text gets. */}
           {!isEmployee && (
             <div
-              className="mt-1 flex items-center justify-between rounded-lg px-2 py-2"
+              className="mt-1 flex items-center justify-between gap-2 rounded-lg px-2 py-2"
               style={{ backgroundColor: BRAND_GREEN_SOFT }}
             >
-              <div className="flex items-center gap-2">
-                <Wallet size={14} style={{ color: BRAND_GREEN }} />
-                <div>
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <Wallet size={14} className="shrink-0" style={{ color: BRAND_GREEN }} />
+                <div className="min-w-0">
                   <div className="text-[12px] font-medium" style={{ color: "var(--text)" }}>
                     Wallet
                   </div>
-                  <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-                    <WalletBalance session={session} entitlement={entitlement} />
+                  {/* `whitespace-pre` (not `pre-line`) keeps the embedded
+                      \n separator but prevents soft-wrap inside each
+                      line — so "upgrade to continue" stays on one line
+                      instead of breaking after "upgrade to". The
+                      Recharge button below loses its leading icon to
+                      free the ~16px the longer text needs. */}
+                  <div
+                    className="whitespace-pre text-[11px] leading-snug"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    <WalletBalance session={session} entitlement={entitlement} multiLine />
                   </div>
                 </div>
               </div>
               <button
                 onClick={onRecharge}
-                className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium transition-opacity hover:opacity-80"
+                className="shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-medium transition-opacity hover:opacity-80"
                 style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
               >
-                <RefreshCw size={10} />
                 Recharge
               </button>
             </div>
@@ -7539,25 +7692,29 @@ const UserMenu = memo(function UserMenu({
         {/* Account actions — Profile & settings + Billing as siblings.
             Both open the AccountPane (different tabs), but Billing gets
             its own top-level entry so customers can jump straight to
-            the purchase history without first landing on Profile. */}
-        <div className="px-2 py-1.5">
-          <button
-            onClick={onOpenProfile}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-            style={{ color: "var(--text)" }}
-          >
-            <span style={{ color: "var(--text-muted)" }}><Settings size={15} /></span>
-            Profile &amp; settings
-          </button>
-          <button
-            onClick={onOpenBilling}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-            style={{ color: "var(--text)" }}
-          >
-            <span style={{ color: "var(--text-muted)" }}><Receipt size={15} /></span>
-            Billing
-          </button>
-        </div>
+            the purchase history without first landing on Profile.
+            Hidden for Try-Relay guests since they have nothing to
+            configure or pay until they verify an email/account. */}
+        {!isGuest && (
+          <div className="px-2 py-1.5">
+            <button
+              onClick={onOpenProfile}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+              style={{ color: "var(--text)" }}
+            >
+              <span style={{ color: "var(--text-muted)" }}><Settings size={15} /></span>
+              Profile &amp; settings
+            </button>
+            <button
+              onClick={onOpenBilling}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+              style={{ color: "var(--text)" }}
+            >
+              <span style={{ color: "var(--text-muted)" }}><Receipt size={15} /></span>
+              Billing
+            </button>
+          </div>
+        )}
 
         {/* Learn more — privacy + terms. Section header is non-interactive
             (it's a label, not a button) so the section feels like a grouped
@@ -7586,17 +7743,23 @@ const UserMenu = memo(function UserMenu({
         </div>
 
         {/* Log out — sits in its own section so the danger color reads
-            as a separate decision from the read-only learn-more links. */}
-        <div className="border-t px-2 py-1.5" style={{ borderColor: "var(--border)" }}>
-          <button
-            onClick={() => void handleLogout()}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-            style={{ color: "#e05c4b" }}
-          >
-            <span style={{ color: "#e05c4b" }}><LogOut size={15} /></span>
-            Log out
-          </button>
-        </div>
+            as a separate decision from the read-only learn-more links.
+            Hidden for Try-Relay guests: their session is anonymous, so
+            "log out" has no recovery path back in — until they verify an
+            account the sign-in surface can't bring them back to the same
+            wallet. They can simply close the tab instead. */}
+        {!isGuest && (
+          <div className="border-t px-2 py-1.5" style={{ borderColor: "var(--border)" }}>
+            <button
+              onClick={() => void handleLogout()}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+              style={{ color: "#e05c4b" }}
+            >
+              <span style={{ color: "#e05c4b" }}><LogOut size={15} /></span>
+              Log out
+            </button>
+          </div>
+        )}
       </div>
     </>
   );
@@ -8255,7 +8418,7 @@ const ChatPane = memo(function ChatPane({
 
   return (
     <section className="flex h-full flex-col" style={{ backgroundColor: "var(--surface)" }}>
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6">
+      <div ref={scrollRef} className="hide-scrollbar flex-1 overflow-y-auto px-4 py-6">
         <div className={`mx-auto w-full ${maxWidth}`}>
           {state.messages.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center px-2 py-20 text-center">
@@ -8283,13 +8446,27 @@ const ChatPane = memo(function ChatPane({
                   const durationSec = ended
                     ? Math.floor((new Date(ended.created_at).getTime() - new Date(m.created_at).getTime()) / 1000)
                     : undefined;
+                  // Even with no paired "ended" system message, a card
+                  // can't legitimately be ONGOING once the underlying
+                  // session has terminated — there's nothing on the
+                  // server side that could still be live. Forcing
+                  // active=false here removes the stuck "Join call"
+                  // CTA the customer sees when they end the session
+                  // before the matching meeting-ended system message
+                  // landed (e.g. they hit Cancel before the
+                  // zoom-video-sdk-end edge function got a chance to
+                  // emit it).
+                  const sessionTerminal = session?.status === "ended"
+                    || session?.status === "cancelled"
+                    || session?.status === "abandoned";
+                  const cardActive = !ended && !sessionTerminal;
                   return [
                     <MeetingChatEntry
                       key={m.id}
-                      active={!ended}
+                      active={cardActive}
                       durationSec={durationSec}
-                      joinUrl={!ended ? session?.zoom_join_url ?? null : null}
-                      onJoin={!ended ? () => void state.markJoined() : undefined}
+                      joinUrl={cardActive ? session?.zoom_join_url ?? null : null}
+                      onJoin={cardActive ? () => void state.markJoined() : undefined}
                       selfJoined={!!session?.customer_joined_at}
                       summaryBody={summary?.body ?? null}
                       recordingBody={isSupervisor ? recording?.body ?? null : null}
@@ -9430,7 +9607,20 @@ function ConnectingModal({
         <div className="mb-5 flex justify-center">
           <div
             className="relative flex items-center justify-center"
-            style={{ width: 200, height: 200, ["--primary" as string]: ringColor }}
+            style={{
+              width: 200,
+              height: 200,
+              // Only override --primary when ringColor is a literal urgency
+              // colour (amber/red). For normal urgency, ringColor IS
+              // "var(--primary)", and setting --primary to var(--primary)
+              // creates a self-referential cycle that the browser flags as
+              // invalid-at-computed-value-time — every nested var(--primary)
+              // (halo class, under-glow, ball gradient) then resolves to
+              // nothing, leaving only the white phone icon visible.
+              ...(ringColor === BRAND_GREEN
+                ? {}
+                : { ["--primary" as string]: ringColor }),
+            }}
           >
             {/* Halo rings — 3 concentric, staggered. */}
             <span aria-hidden className="relay-ringing-halo absolute inset-0 rounded-full" style={{ animationDelay: "0s" }} />

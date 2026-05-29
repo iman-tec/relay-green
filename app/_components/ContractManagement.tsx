@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { loadStripe, type Stripe as StripeJs } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
-import { FileText, Rocket, Wrench, X, Loader2, Printer, ExternalLink, CalendarClock, Check, ShieldCheck, RotateCcw } from "lucide-react";
+import { FileText, Rocket, Wrench, X, Loader2, Printer, ExternalLink, Check, ShieldCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import { useTheme } from "@/app/_components/ThemeProvider";
 import { buildStripeAppearance } from "@/lib/stripe/appearance";
@@ -70,36 +70,45 @@ export function ContractManagement() {
   const freshBids = quotes.filter((q) => q.status === "quoted" && !q.customer_viewed_at).length;
 
   return (
-    <section className="rounded-2xl border" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
-      <header className="flex items-center gap-2 px-4 py-3">
-        <FileText size={15} style={{ color: "var(--primary)" }} />
-        <h3 className="text-sm font-semibold" style={{ color: "var(--text)" }}>Contract management</h3>
+    <section className="rounded-xl border" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+      <header className="flex items-center gap-1.5 px-3 py-2">
+        <FileText size={12} style={{ color: "var(--primary)" }} />
+        <h3 className="text-[12px] font-semibold" style={{ color: "var(--text)" }}>Contract management</h3>
         {freshBids > 0 && (
-          <span className="relative ml-1 inline-flex size-2.5">
+          <span className="relative ml-1 inline-flex size-2">
             <span className="absolute inline-flex size-full animate-ping rounded-full opacity-70" style={{ background: "var(--primary)" }} />
-            <span className="relative inline-flex size-2.5 rounded-full" style={{ background: "var(--primary)" }} />
+            <span className="relative inline-flex size-2 rounded-full" style={{ background: "var(--primary)" }} />
           </span>
         )}
-        {freshBids > 0 && <span className="text-xs font-medium" style={{ color: "var(--primary)" }}>{freshBids} new bid{freshBids === 1 ? "" : "s"}</span>}
+        {freshBids > 0 && <span className="text-[10px] font-medium" style={{ color: "var(--primary)" }}>{freshBids} new</span>}
       </header>
-      <ul className="border-t" style={{ borderColor: "var(--border)" }}>
+      {/* Cap the list to about two rows tall and let the rest scroll
+          inside this section. The wrapper gets `hide-scrollbar` so the
+          customer doesn't see a desktop-style track running down the
+          middle of the sidebar — they can wheel/swipe the list
+          naturally and the scroll hint comes from the partial third
+          row when there's overflow. */}
+      <ul
+        className="hide-scrollbar overflow-y-auto border-t"
+        style={{ borderColor: "var(--border)", maxHeight: "8rem" }}
+      >
         {quotes.map((q) => {
           const golive = q.kind === "golive";
           const fresh = q.status === "quoted" && !q.customer_viewed_at;
           return (
             <li key={q.id}>
               <button type="button" onClick={() => setOpen(q)} disabled={q.status === "pending"}
-                className="flex w-full items-center gap-3 border-t px-4 py-3 text-left transition-colors first:border-t-0 hover:bg-black/[0.03] disabled:cursor-default dark:hover:bg-white/[0.03]"
+                className="flex w-full items-center gap-2 border-t px-3 py-1.5 text-left transition-colors first:border-t-0 hover:bg-black/[0.03] disabled:cursor-default dark:hover:bg-white/[0.03]"
                 style={{ borderColor: "var(--border)" }}>
-                <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg" style={{ background: "var(--primary-soft)", color: "var(--primary)" }}>
-                  {golive ? <Rocket size={14} /> : <Wrench size={14} />}
+                <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-md" style={{ background: "var(--primary-soft)", color: "var(--primary)" }}>
+                  {golive ? <Rocket size={10} /> : <Wrench size={10} />}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm" style={{ color: "var(--text)" }}>{projNames[q.project_id] ?? "Project"} <span style={{ color: "var(--text-faint)" }}>· {golive ? "Go-live" : "Maintain"}</span></div>
-                  <div className="text-xs" style={{ color: "var(--text-muted)" }}>{statusLabel(q.status)}</div>
+                  <div className="truncate text-[11.5px] leading-tight" style={{ color: "var(--text)" }}>{projNames[q.project_id] ?? "Project"} <span style={{ color: "var(--text-faint)" }}>· {golive ? "Go-live" : "Maintain"}</span></div>
+                  <div className="truncate text-[10px] leading-tight" style={{ color: "var(--text-muted)" }}>{statusLabel(q.status)}</div>
                 </div>
-                {fresh && <span className="relative inline-flex size-2.5"><span className="absolute inline-flex size-full animate-ping rounded-full opacity-70" style={{ background: "var(--primary)" }} /><span className="relative inline-flex size-2.5 rounded-full" style={{ background: "var(--primary)" }} /></span>}
-                {q.status === "committed" && <ShieldCheck size={16} style={{ color: "var(--ok)" }} />}
+                {fresh && <span className="relative inline-flex size-2"><span className="absolute inline-flex size-full animate-ping rounded-full opacity-70" style={{ background: "var(--primary)" }} /><span className="relative inline-flex size-2 rounded-full" style={{ background: "var(--primary)" }} /></span>}
+                {q.status === "committed" && <ShieldCheck size={12} style={{ color: "var(--ok)" }} />}
               </button>
             </li>
           );
@@ -121,9 +130,6 @@ function statusLabel(s: string): string {
 function BidViewer({ quote, projectName, onClose, onChanged }: { quote: Quote; projectName: string; onClose: () => void; onChanged: () => void }) {
   const sb = useRef(createClient()).current;
   const [paying, setPaying] = useState(false);
-  const [appt, setAppt] = useState(false);
-  const [changes, setChanges] = useState(false);
-  const [declining, setDeclining] = useState(false);
   const [committed, setCommitted] = useState(quote.status === "committed");
   const dialogRef = useOverlayDismiss(onClose);
 
@@ -139,7 +145,7 @@ function BidViewer({ quote, projectName, onClose, onChanged }: { quote: Quote; p
 
   return (
     <>
-      <div className="fixed inset-0 z-[var(--z-modal)]" style={{ backgroundColor: "var(--scrim)" }} onClick={() => !paying && onClose()} />
+      <div className="fixed inset-0 z-[var(--z-modal)]" style={{ backgroundColor: "var(--scrim)" }} onClick={onClose} />
       <div ref={dialogRef} role="dialog" aria-modal="true" className="fixed left-1/2 top-1/2 z-[var(--z-modal)] flex max-h-[90vh] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col gap-4 overflow-y-auto rounded-2xl border p-5 shadow-2xl"
         style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}>
         <div className="flex items-start gap-2">
@@ -148,7 +154,7 @@ function BidViewer({ quote, projectName, onClose, onChanged }: { quote: Quote; p
             <h2 className="text-[15px] font-semibold" style={{ color: "var(--text)" }}>{golive ? "Go-live" : "Maintenance"} estimate — {projectName}</h2>
             <p className="text-xs" style={{ color: "var(--text-muted)" }}>{committed ? "Contract active — work is underway." : "Review your estimate and the terms, then commit."}</p>
           </div>
-          <button type="button" onClick={() => !paying && onClose()} style={{ color: "var(--text-muted)" }}><X size={16} /></button>
+          <button type="button" onClick={onClose} aria-label="Close" style={{ color: "var(--text-muted)" }}><X size={16} /></button>
         </div>
 
         {/* PDF 1 — the one-page estimate (printable). */}
@@ -178,106 +184,21 @@ function BidViewer({ quote, projectName, onClose, onChanged }: { quote: Quote; p
           </div>
         ) : paying ? (
           <PayPanel quoteId={quote.id} amount={amount} onPaid={() => { setCommitted(true); onChanged(); }} onCancel={() => setPaying(false)} />
-        ) : appt ? (
-          <ApptPanel quoteId={quote.id} onDone={() => { setAppt(false); onChanged(); }} onCancel={() => setAppt(false)} />
-        ) : changes ? (
-          <ChangesPanel quoteId={quote.id} onDone={() => { setChanges(false); onChanged(); onClose(); }} onCancel={() => setChanges(false)} />
-        ) : declining ? (
-          <DeclinePanel quoteId={quote.id} onDone={() => { setDeclining(false); onChanged(); onClose(); }} onCancel={() => setDeclining(false)} />
         ) : (
-          <div className="flex flex-col gap-2">
-            <div className="flex gap-2">
-              <button type="button" onClick={() => setAppt(true)} className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full border px-4 py-2 text-[13px] font-medium" style={{ borderColor: "var(--border)", color: "var(--text)" }}>
-                <CalendarClock size={14} /> Ask for appointment
-              </button>
-              <button type="button" onClick={() => setPaying(true)} className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold text-white" style={{ background: "var(--primary)" }}>
-                <Check size={14} /> Accept &amp; pay {eur(amount)}
-              </button>
-            </div>
-            <div className="flex items-center justify-center gap-4 text-[12px]">
-              <button type="button" onClick={() => setChanges(true)} className="inline-flex items-center gap-1" style={{ color: "var(--text-muted)" }}>
-                <RotateCcw size={12} /> Request changes
-              </button>
-              <span style={{ color: "var(--border)" }}>·</span>
-              <button type="button" onClick={() => setDeclining(true)} className="inline-flex items-center gap-1" style={{ color: "var(--risk)" }}>
-                <X size={12} /> Decline
-              </button>
-            </div>
-          </div>
-        )}
-        {quote.appointment_requested_at && !committed && (
-          <p className="text-center text-[11px]" style={{ color: "var(--text-faint)" }}>Appointment requested — the team will reach out.</p>
+          // Single action: Accept & pay. The appointment / request-changes /
+          // decline paths were removed per product — the only way forward
+          // from a quoted bid is to accept + pay it.
+          <button
+            type="button"
+            onClick={() => setPaying(true)}
+            className="inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-[13px] font-semibold text-white"
+            style={{ background: "var(--primary)" }}
+          >
+            <Check size={14} /> Accept &amp; pay {eur(amount)}
+          </button>
         )}
       </div>
     </>
-  );
-}
-
-function ApptPanel({ quoteId, onDone, onCancel }: { quoteId: string; onDone: () => void; onCancel: () => void }) {
-  const sb = useRef(createClient()).current;
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  const submit = async () => {
-    setBusy(true);
-    try { await sb.rpc("request_quote_appointment", { _id: quoteId, _note: note.trim() || null }); onDone(); }
-    finally { setBusy(false); }
-  };
-  return (
-    <div className="flex flex-col gap-2 rounded-xl border p-3" style={{ borderColor: "var(--border)" }}>
-      <p className="text-xs" style={{ color: "var(--text-muted)" }}>Ask to talk it through with your engineer + supervisor before committing.</p>
-      <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="What would you like to discuss?" className="rounded-lg border p-2 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
-      <div className="flex justify-end gap-2">
-        <button type="button" onClick={onCancel} disabled={busy} className="rounded-full px-3 py-1.5 text-[13px] font-medium" style={{ color: "var(--text-muted)" }}>Cancel</button>
-        <button type="button" onClick={() => void submit()} disabled={busy} className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13px] font-semibold text-white" style={{ background: "var(--primary)" }}>{busy ? <Loader2 size={13} className="animate-spin" /> : <CalendarClock size={13} />} Request</button>
-      </div>
-    </div>
-  );
-}
-
-function ChangesPanel({ quoteId, onDone, onCancel }: { quoteId: string; onDone: () => void; onCancel: () => void }) {
-  const sb = useRef(createClient()).current;
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const submit = async () => {
-    if (!note.trim()) { setErr("Tell the team what to change."); return; }
-    setBusy(true); setErr(null);
-    try { const { error } = await sb.rpc("request_quote_changes", { _id: quoteId, _note: note.trim() }); if (error) throw new Error(error.message); onDone(); }
-    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't send."); setBusy(false); }
-  };
-  return (
-    <div className="flex flex-col gap-2 rounded-xl border p-3" style={{ borderColor: "var(--border)" }}>
-      <p className="text-xs" style={{ color: "var(--text-muted)" }}>Send it back for a revised bid — tell the team what to adjust (scope, price, timeline).</p>
-      <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} placeholder="What should change?" className="rounded-lg border p-2 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
-      {err && <p className="text-[12px]" style={{ color: "var(--risk)" }}>{err}</p>}
-      <div className="flex justify-end gap-2">
-        <button type="button" onClick={onCancel} disabled={busy} className="rounded-full px-3 py-1.5 text-[13px] font-medium" style={{ color: "var(--text-muted)" }}>Cancel</button>
-        <button type="button" onClick={() => void submit()} disabled={busy} className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13px] font-semibold text-white" style={{ background: "var(--primary)" }}>{busy ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />} Send for revision</button>
-      </div>
-    </div>
-  );
-}
-
-function DeclinePanel({ quoteId, onDone, onCancel }: { quoteId: string; onDone: () => void; onCancel: () => void }) {
-  const sb = useRef(createClient()).current;
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const submit = async () => {
-    setBusy(true); setErr(null);
-    try { const { error } = await sb.rpc("decline_quote", { _id: quoteId, _note: note.trim() || null }); if (error) throw new Error(error.message); onDone(); }
-    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't decline."); setBusy(false); }
-  };
-  return (
-    <div className="flex flex-col gap-2 rounded-xl border p-3" style={{ borderColor: "color-mix(in srgb, var(--risk) 30%, transparent)" }}>
-      <p className="text-xs" style={{ color: "var(--text-muted)" }}>Decline this estimate. You can always start a new request later.</p>
-      <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Reason (optional)" className="rounded-lg border p-2 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
-      {err && <p className="text-[12px]" style={{ color: "var(--risk)" }}>{err}</p>}
-      <div className="flex justify-end gap-2">
-        <button type="button" onClick={onCancel} disabled={busy} className="rounded-full px-3 py-1.5 text-[13px] font-medium" style={{ color: "var(--text-muted)" }}>Keep it</button>
-        <button type="button" onClick={() => void submit()} disabled={busy} className="inline-flex items-center gap-1.5 rounded-full border px-4 py-1.5 text-[13px] font-semibold" style={{ borderColor: "var(--risk)", color: "var(--risk)" }}>{busy ? <Loader2 size={13} className="animate-spin" /> : <X size={13} />} Decline estimate</button>
-      </div>
-    </div>
   );
 }
 
@@ -302,7 +223,14 @@ function PayPanel({ quoteId, amount, onPaid, onCancel }: { quoteId: string; amou
   }, [quoteId]);
   const appearance = useMemo(() => buildStripeAppearance(), [theme]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (err) return <div className="rounded-lg border px-3 py-2 text-[12px]" style={{ borderColor: "color-mix(in srgb, var(--risk) 30%, transparent)", color: "var(--risk)" }}>{err}</div>;
+  if (err) return (
+    <div className="flex flex-col gap-2">
+      <div className="rounded-lg border px-3 py-2 text-[12px]" style={{ borderColor: "color-mix(in srgb, var(--risk) 30%, transparent)", color: "var(--risk)" }}>{err}</div>
+      <div className="flex justify-end">
+        <button type="button" onClick={onCancel} className="rounded-full px-3.5 py-1.5 text-[13px] font-medium" style={{ color: "var(--text-muted)" }}>Back</button>
+      </div>
+    </div>
+  );
   if (!clientSecret || !sp || !pi) return <div className="flex items-center gap-2 py-4 text-[13px]" style={{ color: "var(--text-muted)" }}><Loader2 size={14} className="animate-spin" /> Preparing secure checkout…</div>;
   return (
     <Elements key={theme} stripe={sp} options={{ clientSecret, appearance }}>

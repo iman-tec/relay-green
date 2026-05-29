@@ -211,7 +211,11 @@ export function EngineerIncomingMatch() {
 
       {intake?.technologies && intake.technologies.length > 0 ? (
         <div className="flex max-w-md flex-wrap justify-center gap-1.5">
-          {intake.technologies.slice(0, 8).map((t) => (
+          {/* Dedupe before rendering — the intake can carry repeated tech
+              tags (e.g. two "Not sure" entries), and React throws
+              "two children with the same key" when the tag string is used
+              as the key. Unique-by-value keeps one chip per distinct tag. */}
+          {Array.from(new Set(intake.technologies)).slice(0, 8).map((t) => (
             <span
               key={t}
               className="rounded-full border px-2.5 py-1 text-xs"

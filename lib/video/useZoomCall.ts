@@ -172,31 +172,74 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
           return;
         }
         setStatus("joining");
+        // The Video SDK client is a process-wide singleton (zoomClient.ts)
+        // that we deliberately DON'T leave on React unmount (so the call
+        // survives HMR + parent re-renders). That creates two cases to
+        // handle when a fresh CallSurface mounts:
+        //
+        //   1. The client is already in the SAME topic we want → joining
+        //      again throws 5012 "duplicated operation"; just continue.
+        //   2. The client is still in a DIFFERENT (stale) topic from a
+        //      previous call → we MUST leave it before joining the new
+        //      one. Skipping the join here (the previous bug) left the
+        //      user stranded in the old empty room, so each side only saw
+        //      itself ("1 participant") even though both had "joined".
+        //
+        // So: read the client's current topic and compare to the target.
+        const currentTopic = (): string | null => {
+          try {
+            const info = (client as any).getSessionInfo?.();
+            const t = info?.topic;
+            return typeof t === "string" && t.length > 0 ? t : null;
+          } catch { return null; }
+        };
         try {
-          await client.join(data.topic, data.token, userName || "Relay user");
-        } catch (joinErr) {
-          // Zoom SDK errors are plain objects like {type, reason, errorCode}.
-          // String() on those yields '[object Object]', which is useless.
-          // Pull out the useful fields so the UI surfaces something
-          // actionable (e.g. INVALID_PARAMETERS / signature mismatch).
-          console.error("[useZoomCall] join failed:", joinErr);
-          if (cancelled) return;
-          let reason: string;
-          if (joinErr instanceof Error) {
-            reason = joinErr.message;
-          } else if (joinErr && typeof joinErr === "object") {
-            const e = joinErr as { type?: unknown; reason?: unknown; errorCode?: unknown };
-            const parts: string[] = [];
-            if (typeof e.type === "string") parts.push(e.type);
-            if (typeof e.errorCode === "number") parts.push(`code=${e.errorCode}`);
-            if (typeof e.reason === "string") parts.push(e.reason);
-            reason = parts.length > 0 ? parts.join(" · ") : JSON.stringify(joinErr);
+          const inTopic = currentTopic();
+          if (inTopic === data.topic) {
+            // Already in the exact room we want — nothing to do.
+            console.info("[useZoomCall] already in target topic — skipping join");
           } else {
-            reason = String(joinErr);
+            if (inTopic && inTopic !== data.topic) {
+              // Stranded in a stale session — leave it before joining the
+              // correct one, or the join would 5012 AND we'd stay split
+              // from the other participant.
+              console.info(`[useZoomCall] leaving stale topic "${inTopic}" before joining "${data.topic}"`);
+              try { await client.leave(); } catch (e) { console.warn("[useZoomCall] leave stale failed", e); }
+            }
+            await client.join(data.topic, data.token, userName || "Relay user");
           }
-          setError(`join failed: ${reason}`);
-          setStatus("error");
-          return;
+        } catch (joinErr) {
+          const code = (joinErr as { errorCode?: unknown } | null)?.errorCode;
+          if (code === 5012 && currentTopic() === data.topic) {
+            // Duplicated join against the singleton, and we're confirmed in
+            // the RIGHT topic — continue. (We do NOT swallow 5012 blindly:
+            // if it fires while we're in the wrong/no topic that's a real
+            // failure worth surfacing.)
+            console.info("[useZoomCall] join reported 5012 but already in target topic — continuing");
+          } else {
+            // Zoom SDK errors are plain objects like {type, reason, errorCode}.
+            // String() on those yields '[object Object]', which is useless.
+            // Pull out the useful fields so the UI surfaces something
+            // actionable (e.g. INVALID_PARAMETERS / signature mismatch).
+            console.error("[useZoomCall] join failed:", joinErr);
+            if (cancelled) return;
+            let reason: string;
+            if (joinErr instanceof Error) {
+              reason = joinErr.message;
+            } else if (joinErr && typeof joinErr === "object") {
+              const e = joinErr as { type?: unknown; reason?: unknown; errorCode?: unknown };
+              const parts: string[] = [];
+              if (typeof e.type === "string") parts.push(e.type);
+              if (typeof e.errorCode === "number") parts.push(`code=${e.errorCode}`);
+              if (typeof e.reason === "string") parts.push(e.reason);
+              reason = parts.length > 0 ? parts.join(" · ") : JSON.stringify(joinErr);
+            } else {
+              reason = String(joinErr);
+            }
+            setError(`join failed: ${reason}`);
+            setStatus("error");
+            return;
+          }
         }
         if (cancelled) return;
         setStatus("joined");
@@ -238,6 +281,51 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
           }
         } catch (e) { console.warn("[useZoomCall] active-share probe", e); }
 
+        // ── Auto-start mic + camera ──────────────────────────────────
+        // The call should "just work" the moment the surface mounts —
+        // the user shouldn't have to hunt for the mic/camera buttons,
+        // and a silently-unstarted media stream reads as a broken call
+        // (black tiles, "why can't they hear me"). Both are best-effort:
+        //   • startAudio() can reject on autoplay/gesture policy (mainly
+        //     Safari) — the user can still hit Unmute.
+        //   • startVideo() prompts for camera permission the first time;
+        //     if denied / no device, we log and leave the camera button
+        //     as the manual fallback.
+        // Once bVideoOn flips true, the SDK fires user-updated → refresh
+        // → VideoTile attaches the self-view via attachVideo. We do NOT
+        // auto-start when the SDK couldn't hand us a media stream.
+        try {
+          const ms = client.getMediaStream();
+          const meNow = (() => { try { return client.getCurrentUserInfo(); } catch { return null; } })();
+          if (ms) {
+            // NOTE: we intentionally do NOT auto-start audio. startAudio()
+            // run here (in the async continuation after join, outside a
+            // user gesture) frequently rejects with OPERATION_TIMEOUT and
+            // can leave the SDK's audio pipeline half-initialised so that
+            // a later muteAudio/unmuteAudio silently no-ops — the symptom
+            // being "mic toggle does nothing, nobody can hear me". Instead
+            // the mic is started on the user's first click of the mic
+            // button (see toggleMic), which is the reliable, autoplay-
+            // policy-friendly path. The button shows the muted state until
+            // then.
+            //
+            // Camera CAN be auto-started (video has no autoplay-gesture
+            // requirement). Skip if already on; the 6105 "camera is
+            // starting" / 6103 "camera taken" errors are non-fatal races
+            // (e.g. two tabs sharing one device) and are caught.
+            if (!meNow || !meNow.bVideoOn) {
+              try {
+                await ms.startVideo();
+              } catch (videoErr) {
+                console.warn("[useZoomCall] startVideo (camera) failed — enable camera manually:", videoErr);
+              }
+            }
+            if (!cancelled) refresh();
+          }
+        } catch (mediaErr) {
+          console.warn("[useZoomCall] media autostart skipped:", mediaErr);
+        }
+
         // ── Live transcription (Zoom Video SDK) ───────────────────────
         // Path 1 test: try `getLiveTranscriptionClient().startLiveTranscription()`
         // and see if our Video SDK account has the entitlement. Captions
@@ -275,9 +363,11 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
           try {
             const lt = (client as any).getLiveTranscriptionClient?.();
             if (!lt?.startLiveTranscription) {
-              console.error(
-                "[useZoomCall] Live Transcription client missing on this SDK build — getLiveTranscriptionClient() returned",
-                lt,
+              // Quiet warn (not console.error) — console.error trips the
+              // Next.js dev error overlay, and a missing LT client is an
+              // SDK-build/entitlement condition, not an app fault.
+              console.warn(
+                "[useZoomCall] Live Transcription client unavailable on this SDK build — voice captions disabled.",
               );
             } else {
               await lt.startLiveTranscription();
@@ -287,12 +377,22 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
               );
             }
           } catch (ltErr) {
-            console.error(
-              "[useZoomCall] ✗ Live Transcription FAILED to start. Likely the Video SDK account doesn't have the entitlement enabled. " +
-              "Either escalate to vsdk-help@zoom.us asking them to enable Live Transcription for app key " +
-              "or pivot to Path 2 (OpenAI Whisper streaming). Raw error:",
-              ltErr,
-            );
+            // errorCode 7300 = "Live transcription is not enabled" on the
+            // Zoom Video SDK account. This is an EXPECTED entitlement gap,
+            // not a runtime fault — log it as a warning so it doesn't
+            // surface as a red Next.js error overlay every call. Voice-only
+            // calls won't get a transcript-based summary until the
+            // entitlement is enabled (email vsdk-help@zoom.us) or Whisper
+            // streaming (Path 2) is wired; chat-based summaries are
+            // unaffected.
+            const code = (ltErr as { errorCode?: unknown } | null)?.errorCode;
+            if (code === 7300) {
+              console.warn(
+                "[useZoomCall] Live Transcription not enabled for this Video SDK account (errorCode 7300) — voice captions/summary disabled. Chat summaries still work.",
+              );
+            } else {
+              console.warn("[useZoomCall] Live Transcription failed to start:", ltErr);
+            }
           }
         }
 
@@ -397,10 +497,22 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
     if (!client) return;
     const ms = client.getMediaStream();
     try {
-      const me = client.getCurrentUserInfo();
-      const audioOn = !me?.muted;
-      if (audioOn) await ms.muteAudio();
-      else await ms.unmuteAudio();
+      const me = client.getCurrentUserInfo() as { audio?: string; muted?: boolean } | null;
+      // `audio` is '' (empty) until the SDK has actually started capturing;
+      // it becomes 'computer'/'phone' once started. If audio was never
+      // started — the post-join auto-start can time out or be blocked
+      // outside a user gesture — muteAudio/unmuteAudio are no-ops and the
+      // mic looks dead. Start it HERE, inside the real click gesture (the
+      // reliable path for browser autoplay policy). startAudio() begins
+      // unmuted, so the user can talk immediately after this first click.
+      const audioStarted = !!me?.audio;
+      if (!audioStarted) {
+        await ms.startAudio();
+        refresh();
+        return;
+      }
+      if (me?.muted) await ms.unmuteAudio();
+      else await ms.muteAudio();
       refresh();
     } catch (e) { console.warn("[useZoomCall] toggleMic", e); }
   }, [refresh]);

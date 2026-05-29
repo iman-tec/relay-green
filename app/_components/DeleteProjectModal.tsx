@@ -170,8 +170,16 @@ export function DeleteProjectModal({
           </button>
         </div>
 
-        {/* Body — three gates */}
-        <div className="flex flex-col gap-4 px-5 py-4">
+        {/* Body — three gates. Wrapped in a <form> so pressing Enter on
+            any field submits when all gates are ready. The Delete button
+            below is type="submit"; Cancel is explicitly type="button". */}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (allGatesReady) void handleConfirm();
+          }}
+          className="flex flex-col gap-4 px-5 py-4"
+        >
           <div>
             <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text-faint)" }}>
               Step 1 of 3 · Password
@@ -228,7 +236,7 @@ export function DeleteProjectModal({
               {error}
             </div>
           )}
-        </div>
+        </form>
 
         {/* Footer — Cancel + destructive Delete. Plain styled buttons
             (vs the UI Button component) so the destructive variant

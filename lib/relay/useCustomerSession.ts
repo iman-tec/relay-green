@@ -37,7 +37,7 @@ function asString(e: unknown): string {
 type AuthState =
   | { kind: "loading" }
   | { kind: "anonymous" }
-  | { kind: "authed"; userId: string; email: string };
+  | { kind: "authed"; userId: string; email: string; isAnonymous: boolean };
 
 export type Entitlement = {
   free_consumed_at: string | null;     // when their free 10-min was used up
@@ -109,6 +109,11 @@ export function useCustomerSession(): CustomerSessionState {
         kind: "authed",
         userId: data.user.id,
         email: data.user.email ?? "",
+        // Supabase tags users minted via signInAnonymously() with
+        // is_anonymous=true. Try-Relay funnel uses that path, so this is
+        // the signal for "guest who hasn't verified an email yet" —
+        // surfaced to the UI to hide profile/billing/logout entries.
+        isAnonymous: data.user.is_anonymous === true,
       });
     }, (e) => {
       if (cancelled) return;
@@ -119,7 +124,12 @@ export function useCustomerSession(): CustomerSessionState {
 
     const { data: sub } = sb.auth.onAuthStateChange((_event, sess) => {
       if (sess?.user) {
-        setAuth({ kind: "authed", userId: sess.user.id, email: sess.user.email ?? "" });
+        setAuth({
+          kind: "authed",
+          userId: sess.user.id,
+          email: sess.user.email ?? "",
+          isAnonymous: sess.user.is_anonymous === true,
+        });
       } else {
         setAuth({ kind: "anonymous" });
       }

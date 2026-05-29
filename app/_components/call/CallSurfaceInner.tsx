@@ -114,6 +114,18 @@ export function CallSurfaceInner({ sessionId, role, userName, onClose, onJoined,
   const initialising =
     call.status === "idle" || call.status === "fetching-token" || call.status === "joining";
 
+  // Distinct participant count. `call.participants` is the SDK's
+  // getAllUser() which ALREADY includes the local user, so the old
+  // `participants.length + (self ? 1 : 0)` double-counted self — a 2-person
+  // call read as "3 participants". Dedupe by userId across self +
+  // participants so it's correct regardless of whether a given SDK build
+  // includes self in getAllUser().
+  const participantCount = useMemo(() => {
+    const ids = new Set(call.participants.map((p) => p.userId));
+    if (call.self) ids.add(call.self.userId);
+    return ids.size;
+  }, [call.participants, call.self]);
+
   const headerBar = useMemo(() => (
     <div
       className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-2"
@@ -136,10 +148,10 @@ export function CallSurfaceInner({ sessionId, role, userName, onClose, onJoined,
           : "Ended"}
       </div>
       <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-        {call.participants.length + (call.self ? 1 : 0)} participant{call.participants.length === 0 ? "" : "s"}
+        {participantCount} participant{participantCount === 1 ? "" : "s"}
       </div>
     </div>
-  ), [call.status, call.participants.length, call.self, reconnecting, fatal, initialising]);
+  ), [call.status, participantCount, reconnecting, fatal, initialising]);
 
   return (
     <div
@@ -260,6 +272,14 @@ export function CallSurfaceInner({ sessionId, role, userName, onClose, onJoined,
                 participants={call.participants}
                 client={call.client}
                 forceStack={compact}
+                // Customer-side plain call: lock to side-by-side so the
+                // self-tile + engineer-tile are always both visible. The
+                // host (engineer) keeps the responsive flip because their
+                // CallSurface mounts in a thin side rail by default and a
+                // forced two-column layout there would crush tiles too
+                // small to read. The customer mounts in the main panel
+                // (52% width) where two equal columns always fit.
+                lockSideBySide={role === "guest" && !compact}
               />
             </div>
           )}
@@ -284,6 +304,8 @@ export function CallSurfaceInner({ sessionId, role, userName, onClose, onJoined,
         self={call.self}
         isHost={isHost}
         sharing={sharing}
+        someoneElseSharing={someoneElseSharing}
+        sharerName={sharerName}
         chatOpen={false}
         showChatToggle={false}
         networkQuality={call.networkQuality}

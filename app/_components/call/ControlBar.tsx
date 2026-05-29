@@ -8,6 +8,13 @@ type Props = {
   self: Participant | null;
   isHost: boolean;
   sharing: boolean;
+  /** True when ANOTHER participant currently holds the screen share. Only
+   *  one person can share at a time, so we disable this side's share
+   *  button + explain why, rather than letting a click silently fail. */
+  someoneElseSharing?: boolean;
+  /** Display name of whoever is currently sharing (for the disabled
+   *  share button's tooltip). */
+  sharerName?: string;
   showChatToggle: boolean;
   chatOpen: boolean;
   networkQuality: "good" | "fair" | "poor" | "unknown";
@@ -30,11 +37,16 @@ function pillStyle(active: boolean): React.CSSProperties {
 }
 
 export function ControlBar({
-  self, isHost, sharing, showChatToggle, chatOpen, networkQuality,
+  self, isHost, sharing, someoneElseSharing = false, sharerName,
+  showChatToggle, chatOpen, networkQuality,
   onToggleMic, onToggleCamera, onToggleShare, onToggleChat, onLeave,
 }: Props) {
   const muted = !!self?.audio.muted;
   const camOff = !self?.video.on;
+  // You can't start a share while another participant is sharing — Zoom
+  // allows one active share. Disable + explain so the handoff is obvious
+  // (the current sharer stops → this button re-enables).
+  const shareBlocked = someoneElseSharing && !sharing;
 
   return (
     <div
@@ -71,8 +83,15 @@ export function ControlBar({
           className={BTN_BASE}
           style={pillStyle(sharing)}
           onClick={onToggleShare}
+          disabled={shareBlocked}
           aria-pressed={sharing}
-          title={sharing ? "Stop sharing" : "Share screen"}
+          title={
+            sharing
+              ? "Stop sharing"
+              : shareBlocked
+                ? `${sharerName || "Someone"} is sharing — they need to stop first`
+                : "Share screen"
+          }
         >
           {sharing ? <MonitorX size={16} /> : <MonitorUp size={16} />}
         </button>

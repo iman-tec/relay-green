@@ -265,9 +265,13 @@ export function TryRelayFunnel({ onClose }: { onClose: () => void }) {
       });
 
       onClose();
-      // Land in the REAL room. ?newchat=1 shows the async chat pane while the
-      // call queues — identical to the signed-in new-chat experience.
-      router.push("/room?newchat=1");
+      // Route through the canonical ringing surface so guests get the same
+      // green ball + halo visual that every other call-initiation flow uses
+      // (signed-in /room ConnectingModal, engineer-side incoming match,
+      // etc.). MatchingClient handles the "engineer accepted → /room"
+      // hand-off itself, so the guest still lands in the live session
+      // without any extra wiring here.
+      router.push(`/intake/matching/${encodeURIComponent(intakeRow.id as string)}`);
     } catch (e) {
       setError(
         e instanceof Error ? e.message : "Could not start your session",
