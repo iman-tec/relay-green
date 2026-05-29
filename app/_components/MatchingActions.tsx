@@ -97,15 +97,29 @@ export function MatchingActions({
     onChanged?.();
   }, [intakeId, onChanged]);
 
-  // Re-ring EVERY active online engineer for this intake. match_engineer is
-  // tier-aware: with prior offers on the intake it broadcasts to all eligible
-  // engineers (first-accept-wins). Used when the rung engineer(s) declined.
+  // Re-ring EVERY online engineer for this intake at once (first-accept-wins).
+  // Goes through /api/staff/broadcast-match, NOT the match_engineer RPC: the
+  // deployed RPC gates on is_available (stuck false for online engineers, so
+  // it rings nobody). The endpoint rings anyone heartbeat-fresh. Used when the
+  // rung engineer(s) declined.
   const broadcast = useCallback(async () => {
     setWorking("broadcast");
     setError(null);
-    const { error: e } = await sbRef.current.rpc("match_engineer", { _intake_id: intakeId });
-    setWorking(null);
-    if (e) { setError(mapError(e.message)); return; }
+    try {
+      const res = await fetch("/api/staff/broadcast-match", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ intakeId }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string; offered?: number };
+      if (!res.ok) { setError(mapError(data.error ?? "")); return; }
+      if ((data.offered ?? 0) === 0) { setError("No engineers are online to ring."); return; }
+    } catch {
+      setError("Could not broadcast — try again.");
+      return;
+    } finally {
+      setWorking(null);
+    }
     onChanged?.();
   }, [intakeId, onChanged]);
 

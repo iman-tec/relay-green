@@ -285,15 +285,16 @@ function Row({ row, first, now, onChanged }: { row: MatchingRow; first: boolean;
         )}
       </Td>
       <Td>
-        {/* The manual "Broadcast to all" only appears once a broadcast
-            ROUND has been exhausted — i.e. 2+ engineers declined. After a
-            single (first) decline the broadcast fires automatically, so the
-            supervisor just gets Assign here, not a redundant broadcast
-            button. */}
+        {/* Show "Broadcast to all" the moment a session is stranded (every
+            rung engineer declined / it timed out with no-one ringing) — even
+            after a single decline. The auto-broadcast on decline normally
+            re-rings everyone, but if it found no-one (or the supervisor just
+            wants to force a fresh ring) this is the one-click way to ring
+            every online engineer again. */}
         <MatchingActions
           intakeId={row.intakeId}
           onChanged={onChanged}
-          allDeclined={row.allDeclined && row.declinedBy.length >= 2}
+          allDeclined={row.allDeclined}
         />
       </Td>
     </tr>

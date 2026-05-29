@@ -167,9 +167,21 @@ export function EngineerIncomingMatch() {
 
   const decline = useCallback(async () => {
     if (!offer || busy) return;
+    const intakeId = offer.intake_id;
     setBusy(true);
     const sb = supabaseRef.current;
     await sb.rpc("decline_match", { _offer_id: offer.id });
+    // Immediately re-ring every OTHER online engineer at once (broadcast).
+    // The decline trigger also calls match_engineer, but the deployed copy
+    // filters on the flaky is_available flag and routinely finds nobody —
+    // this endpoint rings anyone heartbeat-fresh, so the broadcast actually
+    // goes out. Best-effort: if it fails, the supervisor board is the
+    // fallback. See app/api/staff/broadcast-match/route.ts.
+    void fetch("/api/staff/broadcast-match", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ intakeId }),
+    }).catch(() => {});
     setBusy(false);
     setOffer(null);
   }, [offer, busy]);
