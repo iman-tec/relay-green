@@ -18,6 +18,7 @@ import { NextResponse } from "next/server";
 import { requireReseller } from "@/lib/reseller-auth";
 import { sendInvitationEmail } from "@/lib/admin-invite";
 import { recordInvite } from "@/lib/relay/invites";
+import { notifyResellerClientOnboarded } from "@/lib/relay/resellerNotify";
 import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
@@ -207,7 +208,10 @@ export async function POST(request: Request) {
 
   // Record the company-admin onboarding in the unified invites table so the
   // partner's invite status table tracks it (sent → accepted), uniform with
-  // every other invite. Best-effort.
+  // every other invite. The transition to 'accepted' is handled by the
+  // mark_invites_accepted_on_signin trigger when the recipient actually
+  // signs in for the first time — we do NOT mark it accepted here just
+  // because the server-side provisioning succeeded. Best-effort.
   void recordInvite(admin, {
     email: trimmedEmail,
     name: adminDisplayName.trim(),
@@ -216,6 +220,19 @@ export async function POST(request: Request) {
     scopeId: resellerId,
     companyName: org.name,
     invitedBy: actor.id,
+  });
+
+  // Fan out an in-app notification to the reseller's team so they see the
+  // new client land in their inbox. We include the actor (the partner who
+  // pressed "Onboard") — the bell is the partner's activity log; seeing
+  // your own onboarding actions there is the expected behaviour and the
+  // only way a single-owner reseller sees the event at all. Best-effort —
+  // a failed insert here must never undo the successful onboarding above.
+  void notifyResellerClientOnboarded(admin, {
+    resellerId,
+    enterpriseId:   org.id,
+    enterpriseName: org.name,
+    actorUserId:    null,
   });
 
   return NextResponse.json({

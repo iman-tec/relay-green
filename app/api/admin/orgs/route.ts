@@ -17,6 +17,7 @@
 import { NextResponse } from "next/server";
 import { requireSuperAdmin } from "@/lib/admin-auth";
 import { sendInvitationEmail } from "@/lib/admin-invite";
+import { notifyResellerClientOnboarded } from "@/lib/relay/resellerNotify";
 import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
@@ -374,6 +375,18 @@ export async function POST(request: Request) {
     if (tErr) {
       console.warn("[admin/orgs] initial transfer_to_organization failed:", tErr.message);
     }
+  }
+
+  // If this is a reseller-linked enterprise, fan out an in-app notification
+  // to the reseller's team. The actor is a super_admin (not on the team),
+  // so we don't exclude anyone. Best-effort — never fails the request.
+  if (resellerId && typeof resellerId === "string") {
+    void notifyResellerClientOnboarded(admin, {
+      resellerId,
+      enterpriseId:   org.id,
+      enterpriseName: org.name,
+      actorUserId:    null,
+    });
   }
 
   console.log(
