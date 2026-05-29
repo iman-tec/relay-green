@@ -767,7 +767,7 @@ function ResellerSummary({
           </button>
         </>
       }
-      footerHint="Channel partners cannot be hard-deleted — only suspended. Cascades convert inorganic enterprises to organic."
+      footerHint="Channel partners cannot be hard-deleted — only suspended. Suspending freezes the partner and blocks their login; reactivating restores them with their enterprises intact."
     />
   );
 }

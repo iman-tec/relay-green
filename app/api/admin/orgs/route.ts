@@ -18,6 +18,7 @@ import { NextResponse } from "next/server";
 import { requireSuperAdmin } from "@/lib/admin-auth";
 import { sendInvitationEmail } from "@/lib/admin-invite";
 import { notifyResellerClientOnboarded } from "@/lib/relay/resellerNotify";
+import { findUserInAnotherOrg, crossOrgError } from "@/lib/relay/orgGuard";
 import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
@@ -197,6 +198,16 @@ export async function POST(request: Request) {
       { error: "Need name, adminEmail, and adminDisplayName." },
       { status: 400 },
     );
+  }
+
+  // GUARD: the new org's admin email must not already belong to another
+  // enterprise — otherwise creating the org would hijack that user. "" as
+  // the target means "any existing org binding blocks" (this org has no id yet).
+  {
+    const guard = await findUserInAnotherOrg(admin, adminEmail.trim().toLowerCase(), "");
+    if (guard.blocked) {
+      return NextResponse.json({ error: crossOrgError(guard.orgName) }, { status: 409 });
+    }
   }
 
   // Optional initial minutes allocation. Per spec, the organic enterprise

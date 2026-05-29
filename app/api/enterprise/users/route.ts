@@ -21,6 +21,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireEnterpriseAdmin } from "@/lib/enterprise-auth";
 import { sendInvitationEmail } from "@/lib/admin-invite";
 import { recordInvite } from "@/lib/relay/invites";
+import { findUserInAnotherOrg, crossOrgError } from "@/lib/relay/orgGuard";
 import { ROLE, STAFF_ROLES as ALL_STAFF_ROLES } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
@@ -177,6 +178,13 @@ async function provisionMember(
 
   const trimmedEmail = email.trim().toLowerCase();
   const trimmedName  = displayName.trim();
+
+  // GUARD: refuse if this email already belongs to a different enterprise —
+  // never silently move them out of their current org.
+  const orgGuard = await findUserInAnotherOrg(admin, trimmedEmail, orgId);
+  if (orgGuard.blocked) {
+    return { ok: false, status: 409, error: crossOrgError(orgGuard.orgName) };
+  }
 
   // Cross-org guard for existing users — must come BEFORE the invite so
   // we don't send a misleading email if we're going to reject anyway.

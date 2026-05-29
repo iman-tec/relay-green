@@ -3,9 +3,10 @@
  *
  * PATCH /api/admin/resellers/:id
  *   Updates one or more of: name, email, commission, status.
- *   For status='suspended' we route through the deactivate_reseller RPC
- *   which converts inorganic enterprises to organic and preserves data.
- *   Caller must hold super_admin.
+ *   For status='suspended' we route through the deactivate_reseller RPC,
+ *   which freezes the reseller (and we ban the owner) but KEEPS its
+ *   enterprises linked (reseller_id + inorganic) so reactivating fully
+ *   restores them. Caller must hold super_admin.
  *
  * No DELETE — resellers can only be suspended; spec forbids data loss.
  */
@@ -47,11 +48,9 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
       const { error } = await admin.rpc("deactivate_reseller", { _reseller_id: id });
       if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
-      // Spec doesn't explicitly say "ban the reseller user," but the
-      // resellers row is suspended and they no longer have any
-      // inorganic enterprises (those flipped to organic). Banning the
-      // login makes the deactivation actually mean something at the
-      // session layer.
+      // The reseller row is now suspended and its enterprises stay linked
+      // (reversible). Banning the owner's login makes the suspension mean
+      // something at the session layer; reactivation unbans them below.
       if (ownerUserId) await banUser(admin, ownerUserId);
       return NextResponse.json({ ok: true, status: "suspended" });
     }
