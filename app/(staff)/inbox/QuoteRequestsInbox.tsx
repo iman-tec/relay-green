@@ -18,7 +18,9 @@ import { useOverlayDismiss } from "@/lib/relay/useOverlayDismiss";
 type Req = {
   id: string; kind: "golive" | "maintain" | string; status: string;
   customer: string; project: string; projectId: string; comments: string | null;
-  amountCents: number | null; createdAt: string; respondedAt: string | null;
+  amountCents: number | null; bidScope: string | null; bidTimeline: string | null;
+  bidValidityUntil: string | null; termsUrl: string | null;
+  createdAt: string; respondedAt: string | null;
   appointmentRequestedAt: string | null; appointmentNote: string | null;
 };
 
@@ -29,8 +31,11 @@ type Req = {
 type Category = "appointment" | "needs_bid" | "in_review" | "bid_sent" | "accepted";
 
 function categorize(r: Req): Category {
-  if (r.appointmentRequestedAt) return "appointment";
+  // 'committed' (paid/accepted) is terminal and wins over the appointment
+  // overlay — once a customer accepts, the bid belongs in Accepted even if they
+  // had earlier requested an appointment.
   if (r.status === "committed") return "accepted";
+  if (r.appointmentRequestedAt) return "appointment";
   if (r.status === "pending") return "needs_bid";
   // Bid sent by the engineer but not yet approved by a supervisor — it's NOT
   // with the customer yet, so it gets its own bucket rather than "Bid sent".
@@ -177,7 +182,11 @@ export function QuoteRequestsInbox() {
               const cat = categorize(r);
               const meta = CATEGORY_META[cat];
               const needsBid = r.status === "pending";
-              const committed = r.status === "committed";
+              // Once a bid has left the engineer's hands — sent to the customer
+              // (bid_sent), the customer asked to talk (appointment), or it's
+              // accepted — the engineer can only VIEW it. They still edit while
+              // it Needs bid or is In review (before a supervisor approves it).
+              const readOnly = cat === "appointment" || cat === "bid_sent" || cat === "accepted";
               return (
                 <li
                   key={r.id}
@@ -262,7 +271,7 @@ export function QuoteRequestsInbox() {
                     className="shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold text-white"
                     style={{ background: "var(--primary)" }}
                   >
-                    {needsBid ? "Prepare bid" : committed ? "View" : "Edit bid"}
+                    {readOnly ? "View" : needsBid ? "Prepare bid" : "Edit bid"}
                   </button>
                 </li>
               );
@@ -313,11 +322,15 @@ function FilterChip({
 
 function BidPrepModal({ req, onClose, onSent }: { req: Req; onClose: () => void; onSent: () => void }) {
   const sb = useRef(createClient()).current;
+  // View-only once the bid has left the engineer's hands (sent / appointment /
+  // accepted). Editing stays open for Needs bid + In review.
+  const cat = categorize(req);
+  const readOnly = cat === "appointment" || cat === "bid_sent" || cat === "accepted";
   const [amount, setAmount] = useState(req.amountCents != null ? String(req.amountCents / 100) : "");
-  const [scope, setScope] = useState("");
-  const [timeline, setTimeline] = useState("");
+  const [scope, setScope] = useState(req.bidScope ?? "");
+  const [timeline, setTimeline] = useState(req.bidTimeline ?? "");
   const [validity, setValidity] = useState("30");
-  const [terms, setTerms] = useState(DEFAULT_TERMS);
+  const [terms, setTerms] = useState(req.termsUrl ?? DEFAULT_TERMS);
   const [showAi, setShowAi] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -348,7 +361,7 @@ function BidPrepModal({ req, onClose, onSent }: { req: Req; onClose: () => void;
           {req.kind === "golive" ? <Rocket size={18} style={{ color: "var(--primary-hover)" }} /> : <Wrench size={18} style={{ color: "var(--primary-hover)" }} />}
           <div className="min-w-0 flex-1">
             <h2 className="text-[15px] font-semibold" style={{ color: "var(--text)" }}>
-              Bid · {req.kind === "golive" ? "Go-live" : "Maintain"} — {req.project}
+              {readOnly ? "View bid" : "Bid"} · {req.kind === "golive" ? "Go-live" : "Maintain"} — {req.project}
             </h2>
             <p className="text-xs" style={{ color: "var(--text-muted)" }}>{req.customer}{req.comments ? ` · "${req.comments}"` : ""}</p>
           </div>
@@ -374,30 +387,36 @@ function BidPrepModal({ req, onClose, onSent }: { req: Req; onClose: () => void;
 
         {/* The one-page bid. */}
         <div className="flex flex-col gap-3 border-t pt-4" style={{ borderColor: "var(--border)" }}>
-          <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}><FileText size={12} /> Bid</div>
+          <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}><FileText size={12} /> {readOnly ? "Bid (read-only)" : "Bid"}</div>
           <label className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>Amount (EUR)
-            <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" placeholder="5000" className="h-10 rounded-lg border px-3 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
+            <input value={amount} onChange={(e) => setAmount(e.target.value)} disabled={readOnly} inputMode="decimal" placeholder="5000" className="h-10 rounded-lg border px-3 text-sm disabled:opacity-70" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
           </label>
           <label className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>Scope (what's included)
-            <textarea value={scope} onChange={(e) => setScope(e.target.value)} rows={3} className="rounded-lg border p-2 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
+            <textarea value={scope} onChange={(e) => setScope(e.target.value)} disabled={readOnly} rows={3} className="rounded-lg border p-2 text-sm disabled:opacity-70" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
           </label>
           <div className="grid grid-cols-2 gap-3">
             <label className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>Timeline
-              <input value={timeline} onChange={(e) => setTimeline(e.target.value)} placeholder="3–4 weeks" className="h-10 rounded-lg border px-3 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
+              <input value={timeline} onChange={(e) => setTimeline(e.target.value)} disabled={readOnly} placeholder="3–4 weeks" className="h-10 rounded-lg border px-3 text-sm disabled:opacity-70" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
             </label>
-            <label className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>Valid for (days)
-              <input value={validity} onChange={(e) => setValidity(e.target.value)} inputMode="numeric" className="h-10 rounded-lg border px-3 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
+            <label className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>{readOnly ? "Valid until" : "Valid for (days)"}
+              {readOnly ? (
+                <input value={req.bidValidityUntil ? new Date(req.bidValidityUntil).toLocaleDateString() : "—"} disabled className="h-10 rounded-lg border px-3 text-sm disabled:opacity-70" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
+              ) : (
+                <input value={validity} onChange={(e) => setValidity(e.target.value)} inputMode="numeric" className="h-10 rounded-lg border px-3 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
+              )}
             </label>
           </div>
           <label className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>Terms &amp; Conditions link
-            <input value={terms} onChange={(e) => setTerms(e.target.value)} className="h-10 rounded-lg border px-3 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
+            <input value={terms} onChange={(e) => setTerms(e.target.value)} disabled={readOnly} className="h-10 rounded-lg border px-3 text-sm disabled:opacity-70" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
           </label>
           {err && <p className="text-[12px]" style={{ color: "var(--risk)" }}>{err}</p>}
           <div className="flex justify-end gap-2">
-            <button type="button" onClick={() => !busy && onClose()} disabled={busy} className="rounded-full px-3.5 py-1.5 text-[13px] font-medium" style={{ color: "var(--text-muted)" }}>Cancel</button>
-            <button type="button" onClick={() => void send()} disabled={busy} className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13px] font-semibold text-white" style={{ background: "var(--primary)" }}>
-              {busy ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />} Send bid
-            </button>
+            <button type="button" onClick={() => !busy && onClose()} disabled={busy} className="rounded-full px-3.5 py-1.5 text-[13px] font-medium" style={{ color: "var(--text-muted)" }}>{readOnly ? "Close" : "Cancel"}</button>
+            {!readOnly && (
+              <button type="button" onClick={() => void send()} disabled={busy} className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13px] font-semibold text-white" style={{ background: "var(--primary)" }}>
+                {busy ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />} Send bid
+              </button>
+            )}
           </div>
         </div>
       </div>

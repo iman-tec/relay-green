@@ -23,6 +23,8 @@
 # production
 /build
 
+package.json
+
 # Unsigned installers staged for code-signing.
 # Files live here until they're code-signed (Authenticode), then move
 # back to /public/downloads/ and re-add to git in a follow-up commit.

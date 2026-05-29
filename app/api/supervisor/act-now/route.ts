@@ -56,9 +56,9 @@ export async function GET() {
     admin
       .from("project_quote_requests")
       .select("id, kind, comments, status, created_at, project_id, customer_user_id, quote_amount_cents, bid_scope, bid_timeline, appointment_requested_at, appointment_note, customer_response_note")
-      .in("status", ["pending", "pending_review", "quoted"])
+      .in("status", ["pending", "pending_review", "quoted", "committed"])
       .order("created_at", { ascending: false })
-      .limit(50),
+      .limit(100),
     podEngineerIds.length
       ? admin
           .from("engineer_connect_requests")
