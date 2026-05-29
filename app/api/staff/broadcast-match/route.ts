@@ -102,7 +102,7 @@ export async function POST(req: Request) {
     admin.from("engineer_presence").select("engineer_id, last_seen_at"),
     admin.from("engineer_profiles").select("user_id, is_available"),
     admin.from("guest_calls").select("claimed_by, status").in("status", ACTIVE_CALL_STATUSES),
-    admin.from("engineer_match_offers").select("engineer_user_id").eq("intake_id", intake.id),
+    admin.from("engineer_match_offers").select("engineer_user_id, status, expires_at").eq("intake_id", intake.id),
   ]);
 
   const engineerIds = new Set(
@@ -124,8 +124,15 @@ export async function POST(req: Request) {
       .map((r) => r.claimed_by)
       .filter((id): id is string => !!id),
   );
-  const alreadyOffered = new Set(
-    ((offersRes.data ?? []) as { engineer_user_id: string }[]).map((r) => r.engineer_user_id),
+  // Exclude only engineers who are CURRENTLY ringing (a live pending offer) —
+  // NOT everyone who was ever offered. An expired offer means they didn't pick
+  // up; a manual / re-broadcast must be able to ring them again. Engineers who
+  // explicitly DECLINED are excluded separately via declined_by below.
+  const offerRows = (offersRes.data ?? []) as { engineer_user_id: string; status: string; expires_at: string }[];
+  const ringingNow = new Set(
+    offerRows
+      .filter((o) => o.status === "pending" && new Date(o.expires_at).getTime() > now)
+      .map((o) => o.engineer_user_id),
   );
   const declined = new Set(intake.declined_by ?? []);
 
@@ -137,7 +144,7 @@ export async function POST(req: Request) {
     (freshById.get(id) || availableById.get(id)) &&
     !busyIds.has(id) &&
     !declined.has(id) &&
-    !alreadyOffered.has(id),
+    !ringingNow.has(id),
   );
 
   if (eligible.length === 0) {
@@ -145,13 +152,7 @@ export async function POST(req: Request) {
     // offers out (e.g. engineer #2 declines while #3 and #4 are still
     // ringing) — don't strand a session that's actively ringing. Only fall
     // to the supervisor when nobody is ringing anymore.
-    const { count } = await admin
-      .from("engineer_match_offers")
-      .select("id", { count: "exact", head: true })
-      .eq("intake_id", intake.id)
-      .eq("status", "pending")
-      .gt("expires_at", new Date().toISOString());
-    if ((count ?? 0) > 0) {
+    if (ringingNow.size > 0) {
       return NextResponse.json({ offered: 0, stillRinging: true });
     }
     // Genuinely nobody online and nobody ringing → leave it for the supervisor.
@@ -160,7 +161,19 @@ export async function POST(req: Request) {
       .update({ reassign_needed: true, updated_at: new Date().toISOString() })
       .eq("id", intake.guest_call_id)
       .eq("status", "queued");
-    return NextResponse.json({ offered: 0, reassignNeeded: true });
+    // Breakdown so a surprising "nobody online" is debuggable from the response.
+    return NextResponse.json({
+      offered: 0,
+      reassignNeeded: true,
+      debug: {
+        engineers: engineerIds.size,
+        heartbeatFresh: [...freshById.values()].filter(Boolean).length,
+        isAvailable: [...availableById.values()].filter(Boolean).length,
+        busy: busyIds.size,
+        declined: declined.size,
+        ringingNow: ringingNow.size,
+      },
+    });
   }
 
   // 4. Fan out one pending offer per eligible engineer. Table defaults fill

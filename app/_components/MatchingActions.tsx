@@ -111,9 +111,20 @@ export function MatchingActions({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ intakeId }),
       });
-      const data = (await res.json().catch(() => ({}))) as { error?: string; offered?: number };
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string; offered?: number; stillRinging?: boolean; reassignNeeded?: boolean;
+        debug?: Record<string, number>;
+      };
       if (!res.ok) { setError(mapError(data.error ?? "")); return; }
-      if ((data.offered ?? 0) === 0) { setError("No engineers are online to ring."); return; }
+      // stillRinging: an earlier broadcast's offers are live — nobody NEW to
+      // add, but the call IS ringing. Treat as success and just refresh.
+      if ((data.offered ?? 0) === 0 && !data.stillRinging) {
+        // Log the breakdown (engineers/fresh/available/busy/declined/ringing)
+        // so a surprising "nobody online" is diagnosable from the console.
+        if (data.debug) console.warn("[broadcast] nobody eligible:", data.debug);
+        setError("No engineers are online to ring right now.");
+        return;
+      }
     } catch {
       setError("Could not broadcast — try again.");
       return;
