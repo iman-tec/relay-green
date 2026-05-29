@@ -40,13 +40,14 @@ export async function GET() {
   // record-of-work even though no further action is required.
   const { data: rows } = await admin
     .from("project_quote_requests")
-    .select("id, kind, status, comments, created_at, responded_at, project_id, customer_user_id, quote_amount_cents, appointment_requested_at, appointment_note")
+    .select("id, kind, status, comments, created_at, responded_at, project_id, customer_user_id, quote_amount_cents, bid_scope, bid_timeline, bid_validity_until, terms_url, appointment_requested_at, appointment_note")
     .in("status", ["pending", "pending_review", "quoted", "committed"])
     .order("created_at", { ascending: false })
     .limit(100);
   const qs = (rows ?? []) as {
     id: string; kind: string; status: string; comments: string | null; created_at: string; responded_at: string | null;
     project_id: string; customer_user_id: string; quote_amount_cents: number | null;
+    bid_scope: string | null; bid_timeline: string | null; bid_validity_until: string | null; terms_url: string | null;
     appointment_requested_at: string | null; appointment_note: string | null;
   }[];
   if (qs.length === 0) return NextResponse.json({ requests: [] });
@@ -72,6 +73,10 @@ export async function GET() {
       projectId: q.project_id,
       comments: q.comments,
       amountCents: q.quote_amount_cents,
+      bidScope: q.bid_scope,
+      bidTimeline: q.bid_timeline,
+      bidValidityUntil: q.bid_validity_until,
+      termsUrl: q.terms_url,
       createdAt: q.created_at,
       respondedAt: q.responded_at,
       appointmentRequestedAt: q.appointment_requested_at,

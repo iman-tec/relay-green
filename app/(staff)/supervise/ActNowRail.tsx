@@ -36,8 +36,10 @@ type Feed = { estimationRequests: Estimation[]; callbackQueue: Callback[]; escal
 type Category = "appointment" | "needs_bid" | "review" | "bid_sent" | "accepted";
 
 function categorizeEst(q: Estimation): Category {
-  if (q.appointmentRequestedAt) return "appointment";
+  // 'committed' (accepted) is terminal — wins over the appointment overlay so
+  // an accepted bid moves out of Appointment and into Accepted.
   if (q.status === "committed") return "accepted";
+  if (q.appointmentRequestedAt) return "appointment";
   if (q.status === "pending") return "needs_bid";
   if (q.status === "pending_review") return "review";
   return "bid_sent"; // quoted, no appointment
@@ -185,9 +187,16 @@ function DiveInForm({ q, onClose, onDone }: { q: Estimation; onClose: () => void
   const s = q.liveSentiment;
   const tone = !s || s.messageCount < 2 ? null : s.score >= 0.3 ? "var(--ok)" : s.score > -0.3 ? "var(--warn)" : "var(--risk)";
   const isQuoted = q.status === "quoted";
-  // Engineer-prepared bid awaiting this supervisor's approval. Sending it (as a
-  // supervisor) flips it to 'quoted' and reveals it to the customer.
-  const isReview = q.status === "pending_review";
+  // Engineer-prepared bid awaiting this supervisor's approval. Gated on the
+  // CATEGORY, not the raw status: an appointment overrides the review bucket
+  // (appointment takes precedence in categorizeEst), so a row showing
+  // "Appointment" must NOT show the "awaiting your review" banner even if its
+  // underlying status is still 'pending_review'.
+  const isReview = categorizeEst(q) === "review";
+  // Accepted/paid bids are terminal — show the bid read-only. The supervisor
+  // can't re-send a committed bid (submit_project_bid rejects it anyway), so we
+  // disable the inputs and hide the send action.
+  const isAccepted = q.status === "committed";
 
   const submit = async () => {
     const cents = Math.round(parseFloat(amount) * 100);
@@ -266,44 +275,51 @@ function DiveInForm({ q, onClose, onDone }: { q: Estimation; onClose: () => void
         {/* Bid — same one-page bid the engineer prepares. */}
         <div className="flex flex-col gap-3 border-t pt-4" style={{ borderColor: "var(--border)" }}>
           <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-            <FileText size={12} /> {isReview ? "Bid (engineer-prepared — review & send)" : isQuoted ? "Bid (sent — adjust & resend)" : "Bid"}
+            <FileText size={12} /> {isAccepted ? "Bid (accepted — read-only)" : isReview ? "Bid (engineer-prepared — review & send)" : isQuoted ? "Bid (sent — adjust & resend)" : "Bid"}
           </div>
           {isReview && (
             <p className="rounded-md px-2 py-1.5 text-[11px]" style={{ background: "color-mix(in srgb, #6366f1 12%, transparent)", color: "var(--text)" }}>
               <span className="font-semibold" style={{ color: "#6366f1" }}>Awaiting your review.</span> An engineer prepared this bid — adjust if needed, then send it to the customer.
             </p>
           )}
+          {isAccepted && (
+            <p className="rounded-md px-2 py-1.5 text-[11px]" style={{ background: "color-mix(in srgb, var(--ok) 12%, transparent)", color: "var(--text)" }}>
+              <span className="font-semibold" style={{ color: "var(--primary-hover)" }}>Accepted by the customer.</span> The contract is active — this bid is read-only.
+            </p>
+          )}
           <label className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
             Amount (EUR)
-            <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" placeholder="5000"
-              className="h-10 rounded-lg border px-3 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
+            <input value={amount} onChange={(e) => setAmount(e.target.value)} disabled={isAccepted} inputMode="decimal" placeholder="5000"
+              className="h-10 rounded-lg border px-3 text-sm disabled:opacity-70" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
           </label>
           <label className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
             Scope (what's included)
-            <textarea value={scope} onChange={(e) => setScope(e.target.value)} rows={3}
-              className="rounded-lg border p-2 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
+            <textarea value={scope} onChange={(e) => setScope(e.target.value)} disabled={isAccepted} rows={3}
+              className="rounded-lg border p-2 text-sm disabled:opacity-70" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
           </label>
           <div className="grid grid-cols-2 gap-3">
             <label className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>Timeline
-              <input value={timeline} onChange={(e) => setTimeline(e.target.value)} placeholder="3–4 weeks" className="h-10 rounded-lg border px-3 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
+              <input value={timeline} onChange={(e) => setTimeline(e.target.value)} disabled={isAccepted} placeholder="3–4 weeks" className="h-10 rounded-lg border px-3 text-sm disabled:opacity-70" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
             </label>
             <label className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>Valid for (days)
-              <input value={validity} onChange={(e) => setValidity(e.target.value)} inputMode="numeric" className="h-10 rounded-lg border px-3 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
+              <input value={validity} onChange={(e) => setValidity(e.target.value)} disabled={isAccepted} inputMode="numeric" className="h-10 rounded-lg border px-3 text-sm disabled:opacity-70" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
             </label>
           </div>
           <label className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
             Terms &amp; Conditions link
-            <input value={termsUrl} onChange={(e) => setTermsUrl(e.target.value)}
-              className="h-10 rounded-lg border px-3 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
+            <input value={termsUrl} onChange={(e) => setTermsUrl(e.target.value)} disabled={isAccepted}
+              className="h-10 rounded-lg border px-3 text-sm disabled:opacity-70" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
           </label>
           {err && <p className="text-[12px]" style={{ color: "var(--risk)" }}>{err}</p>}
           <div className="flex justify-end gap-2">
             <button type="button" onClick={() => !busy && onClose()} disabled={busy}
-              className="rounded-full px-3.5 py-1.5 text-[13px] font-medium" style={{ color: "var(--text-muted)" }}>Cancel</button>
-            <button type="button" onClick={() => void submit()} disabled={busy}
-              className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13px] font-semibold text-white" style={{ background: "var(--primary)" }}>
-              {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} {isReview ? "Approve & send" : isQuoted ? "Update bid" : "Send bid"}
-            </button>
+              className="rounded-full px-3.5 py-1.5 text-[13px] font-medium" style={{ color: "var(--text-muted)" }}>{isAccepted ? "Close" : "Cancel"}</button>
+            {!isAccepted && (
+              <button type="button" onClick={() => void submit()} disabled={busy}
+                className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13px] font-semibold text-white" style={{ background: "var(--primary)" }}>
+                {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} {isReview ? "Approve & send" : isQuoted ? "Update bid" : "Send bid"}
+              </button>
+            )}
           </div>
         </div>
     </div>
@@ -329,19 +345,17 @@ function Section({ title, count, accent, badge, children }: { title: string; cou
 
 function EstimationRow({ q, expanded, onToggle, onDone }: { q: Estimation; expanded: boolean; onToggle: () => void; onDone: () => void }) {
   const golive = q.kind === "golive";
-  // Pill reflects the bid lifecycle (independent of the appointment overlay):
-  // pending → Needs bid, pending_review → In review, quoted → Bid sent.
-  const pill =
-    q.status === "pending"        ? { label: "Needs bid", color: "var(--warn)" }
-    : q.status === "pending_review" ? { label: "In review", color: "#6366f1" }
-    :                                 { label: "Bid sent",  color: "var(--ok)" };
+  // Pill mirrors the filter bucket this row belongs to — appointment trumps the
+  // raw bid status — so it always matches the chip the supervisor filtered by
+  // (an appointment row reads "Appointment" even when its bid is already sent).
+  const meta = CATEGORY_META[categorizeEst(q)];
   return (
     <div className="rounded-xl border p-3" style={{ borderColor: "var(--primary)", background: "color-mix(in srgb, var(--primary) 7%, transparent)" }}>
       <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--primary-hover)" }}>
         {golive ? <Rocket size={12} /> : <Wrench size={12} />}
         {golive ? "Go-live" : "Maintain"}
-        <span className="rounded px-1.5 py-0.5 text-[9px]" style={{ background: `color-mix(in srgb, ${pill.color} 16%, transparent)`, color: pill.color }}>
-          {pill.label}
+        <span className="rounded px-1.5 py-0.5 text-[9px]" style={{ background: `color-mix(in srgb, ${meta.fgVar} 16%, transparent)`, color: meta.fgVar }}>
+          {meta.label}
         </span>
         <span className="ml-auto font-normal normal-case" style={{ color: "var(--text-muted)" }}>{fmtAgo(q.createdAt)}</span>
       </div>
@@ -360,6 +374,7 @@ function EstimationRow({ q, expanded, onToggle, onDone }: { q: Estimation; expan
         {expanded ? "Hide bid"
           : q.status === "pending" ? "Review & bid"
           : q.status === "pending_review" ? "Review & send"
+          : q.status === "committed" ? "View bid"
           : "Review bid"}
       </button>
       {expanded && <DiveInForm q={q} onClose={onToggle} onDone={onDone} />}
