@@ -60,6 +60,18 @@ export async function GET(request: Request) {
   if (list.length === 0) return NextResponse.json({ members: [] });
 
   const profileIds = list.map((p) => p.id);
+
+  // erased_at lives on the base `profiles` table, NOT the profiles_with_role
+  // view (the view's column list was frozen before erased_at existed).
+  // Fetch it directly and merge by id.
+  const { data: erasedRows } = await admin
+    .from("profiles")
+    .select("id, erased_at")
+    .in("id", profileIds);
+  const erasedById = new Map<string, string | null>();
+  for (const r of (erasedRows ?? []) as { id: string; erased_at: string | null }[]) {
+    erasedById.set(r.id, r.erased_at);
+  }
   const { data: roleRows } = await admin
     .from("user_role_names")
     .select("user_id, role")
@@ -71,13 +83,12 @@ export async function GET(request: Request) {
   }
 
   const { data: authPage } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-  const authByUser = new Map<string, { email: string; lastSignIn: string | null; confirmed: boolean }>();
+  const authByUser = new Map<string, { email: string; lastSignIn: string | null }>();
   for (const u of authPage?.users ?? []) {
     if (profileIds.includes(u.id)) {
       authByUser.set(u.id, {
         email:       u.email ?? "",
         lastSignIn:  u.last_sign_in_at ?? null,
-        confirmed:   Boolean(u.email_confirmed_at),
       });
     }
   }
@@ -87,16 +98,30 @@ export async function GET(request: Request) {
       const rolesForUser = rolesByUser.get(p.id) ?? new Set<string>();
       const isStaff = Array.from(rolesForUser).some((r) => STAFF_ROLE_SET.has(r));
       const auth = authByUser.get(p.id);
+      const erasedAt = erasedById.get(p.id) ?? null;
+      const erased = Boolean(erasedAt);
+      // Lifecycle status, NOT presence. The invite flow confirms the email
+      // immediately (so the temp password works), so email_confirmed_at is
+      // a useless "active" signal — it's true the instant we invite. Use
+      // last_sign_in_at instead: null = invited-but-not-yet-accepted,
+      // set = they've signed in. This is the SAME signal the invites table
+      // uses (trg_mark_invites_accepted_on_signin flips sent→accepted on
+      // first sign-in), so the Members status and the Invitations section
+      // now agree instead of contradicting each other.
+      const hasSignedIn = Boolean(auth?.lastSignIn);
       return {
         id:          p.id,
-        displayName: p.full_name ?? "",
-        email:       auth?.email ?? "",
+        // Erased members never expose name/email in API output — even though
+        // the auth row still exists, GDPR portability says no PII surfaces.
+        displayName: erased ? "" : (p.full_name ?? ""),
+        email:       erased ? "" : (auth?.email ?? ""),
         roles:       Array.from(rolesForUser),
         primaryRole: p.primary_role ?? "",
         isStaff,
-        status:      auth?.confirmed ? "active" : "pending",
-        lastSignIn:  auth?.lastSignIn,
+        status:      erased ? "erased" : hasSignedIn ? "active" : "invited",
+        lastSignIn:  erased ? null : auth?.lastSignIn,
         createdAt:   p.created_at,
+        erasedAt,
       };
     })
     .filter((m) => (scope === "staff" ? m.isStaff : !m.isStaff));
