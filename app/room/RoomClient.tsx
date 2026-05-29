@@ -280,29 +280,58 @@ export function RoomClient() {
     void (async () => {
       try {
         const sb = createClient();
-        const scope = s.project_id || "general";
+        const projectScope = s.project_id || "general";
+        // Flush BOTH the session's project bucket AND the "general"
+        // scratch bucket. A customer who typed on the no-session landing
+        // drafts under "general", but the session they then start often
+        // has a project_id (e.g. the Try-Relay flow mints a "Try Relay"
+        // project) — so reading only the project bucket missed those
+        // drafts entirely and left them stranded in "general" forever
+        // (the engineer never saw them, and they lingered in the room).
+        // Dedup so we don't double-read when projectScope IS "general".
+        const scopes = Array.from(new Set([projectScope, "general"]));
 
-        // Step 1: flush draft chat lines as guest messages.
+        // Step 1: flush draft chat lines as guest messages — merged across
+        // buckets and ordered by their original createdAt so the engineer
+        // reads them in the sequence the customer typed them.
         let postedCount = 0;
         if (typeof window !== "undefined") {
           try {
-            const raw = window.sessionStorage.getItem(stubDraftStorageKey(scope));
-            const parsed = raw ? (JSON.parse(raw) as Array<{ text?: string }>) : [];
-            const lines = Array.isArray(parsed)
-              ? parsed.map((m) => (m.text ?? "").trim()).filter((t) => t.length > 0)
-              : [];
-            if (lines.length > 0) {
-              const guestName = s.guest_name ?? "Customer";
-              const rows = lines.map((body) => ({
+            const drafts: Array<{ text: string; createdAt: number }> = [];
+            for (const scope of scopes) {
+              const raw = window.sessionStorage.getItem(stubDraftStorageKey(scope));
+              const parsed = raw ? (JSON.parse(raw) as Array<{ text?: string; createdAt?: number }>) : [];
+              if (Array.isArray(parsed)) {
+                for (const m of parsed) {
+                  const text = (m.text ?? "").trim();
+                  if (text) drafts.push({ text, createdAt: Number(m.createdAt) || 0 });
+                }
+              }
+            }
+            drafts.sort((a, b) => a.createdAt - b.createdAt);
+            if (drafts.length > 0) {
+              // Use the customer's resolved display name (profile name →
+              // real guest_name → email handle) so the engineer sees who
+              // sent these flushed drafts — never the generic "Guest".
+              const guestName = state.customerName || s.guest_name || "Customer";
+              const rows = drafts.map((d) => ({
                 guest_call_id: s.id,
                 sender_kind: "guest" as const,
                 sender_name: guestName,
-                body,
+                body: d.text,
               }));
               const { error } = await sb.from("guest_messages").insert(rows);
               if (error) throw new Error(error.message);
               postedCount = rows.length;
-              window.sessionStorage.removeItem(stubDraftStorageKey(scope));
+            }
+            // Clear EVERY scope we read — even if some had no usable lines —
+            // so a stale draft can never re-appear in the room after the
+            // call. Done regardless of insert success/failure path above
+            // only when we actually posted (so a failed insert can retry).
+            if (postedCount > 0) {
+              for (const scope of scopes) {
+                window.sessionStorage.removeItem(stubDraftStorageKey(scope));
+              }
             }
           } catch (e) {
             // Fail-soft — don't block the attachment flush below.
@@ -310,8 +339,11 @@ export function RoomClient() {
           }
         }
 
-        // Step 2: flush attachments queued under the same scope.
-        const n = await flushStubAttachments({ sb, sessionId: s.id, scope });
+        // Step 2: flush attachments queued under either scope.
+        let n = 0;
+        for (const scope of scopes) {
+          n += await flushStubAttachments({ sb, sessionId: s.id, scope });
+        }
 
         if (postedCount > 0 || n > 0) {
           await state.refresh();
@@ -1453,6 +1485,7 @@ export function RoomClient() {
               email={sidebarEmail}
               customerUserId={sidebarCustomerUserId}
               isGuest={sidebarIsGuest}
+              displayName={state.customerName}
               session={state.session}
               entitlement={state.entitlement}
               employment={employment}
@@ -1492,6 +1525,7 @@ export function RoomClient() {
         email={sidebarEmail}
         customerUserId={sidebarCustomerUserId}
         isGuest={sidebarIsGuest}
+        displayName={state.customerName}
         session={state.session}
         entitlement={state.entitlement}
         employment={employment}
@@ -4744,7 +4778,7 @@ type ProjectGroup = {
 };
 
 const Sidebar = memo(function Sidebar({
-  email, customerUserId, isGuest, session, entitlement, employment, viewingPastId, projects,
+  email, customerUserId, isGuest, displayName, session, entitlement, employment, viewingPastId, projects,
   selectedProjectId, onViewPast, onNewSession, onNewChat, onStartInProject, onRenameProject, onStartNewProject, onCreateProjectWithMetadata, onSelectProject, onWalletClick, onOpenProfile, onOpenBilling, onOpenLegal, onGoHome, onPrepareSession, draftsTick, pastRefreshTick, onDeleteProject, onMarkProjectComplete, onPickerToast,
 }: {
   email: string;
@@ -4753,6 +4787,10 @@ const Sidebar = memo(function Sidebar({
    *  haven't yet bound an email/account. Drives the collapsed user-menu
    *  rendering (wallet only — no profile/billing/logout). */
   isGuest: boolean;
+  /** Resolved customer display name (profile display_name → real
+   *  guest_name → email handle). Shown in the user pill + menu instead
+   *  of the raw email handle. */
+  displayName: string;
   session: GuestCall | null;
   entitlement: { free_consumed_at: string | null; free_minutes_used: number; paid_minutes_remaining: number };
   employment: EmployeeInfo | null;
@@ -5346,19 +5384,20 @@ const Sidebar = memo(function Sidebar({
         <div className="relative">
           <button
             onClick={() => setUserMenuOpen((v) => !v)}
-            title={email.split("@")[0]}
+            title={displayName || email.split("@")[0]}
             className="flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-150 ease-out hover:scale-110 hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5"
           >
             <div
               className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold uppercase"
               style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
             >
-              {(email || "?")[0]}
+              {(displayName || email || "?")[0]}
             </div>
           </button>
           {userMenuOpen && (
             <UserMenu
               email={email}
+              displayName={displayName}
               isGuest={isGuest}
               session={session}
               entitlement={entitlement}
@@ -6023,11 +6062,11 @@ const Sidebar = memo(function Sidebar({
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold uppercase transition-transform duration-150 ease-out group-hover/userpill:scale-110"
             style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
           >
-            {(email || "?")[0]}
+            {(displayName || email || "?")[0]}
           </div>
           <div className="min-w-0 flex-1 text-left">
             <div className="truncate text-[12px] font-medium" style={{ color: "var(--text)" }}>
-              {email.split("@")[0]}
+              {displayName || email.split("@")[0]}
             </div>
             <div className="truncate text-[10px]" style={{ color: "var(--text-muted)" }}>
               <WalletBalance session={session} entitlement={entitlement} employment={employment} />
@@ -6042,6 +6081,7 @@ const Sidebar = memo(function Sidebar({
         {userMenuOpen && (
           <UserMenu
             email={email}
+            displayName={displayName}
             isGuest={isGuest}
             session={session}
             entitlement={entitlement}
@@ -7536,9 +7576,12 @@ const EmployeeInfoBlock = memo(function EmployeeInfoBlock({ info }: { info: Empl
 
 // ── User menu dropdown (Claude-style) ─────────────────────────────────────
 const UserMenu = memo(function UserMenu({
-  email, isGuest, session, entitlement, employment, onRecharge, onOpenProfile, onOpenBilling, onOpenLegal, onClose, collapsed = false,
+  email, displayName, isGuest, session, entitlement, employment, onRecharge, onOpenProfile, onOpenBilling, onOpenLegal, onClose, collapsed = false,
 }: {
   email: string;
+  /** Resolved customer display name (profile → guest_name → email handle).
+   *  Shown as the account name instead of the raw email local-part. */
+  displayName: string;
   /** Unverified Try-Relay guest. Hides profile / billing / log-out so
    *  the menu collapses to just the wallet + free-tier readout. Once
    *  they verify an email/account this flips false and the full menu
@@ -7621,11 +7664,11 @@ const UserMenu = memo(function UserMenu({
                   className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold uppercase"
                   style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
                 >
-                  {(email || "?")[0]}
+                  {(displayName || email || "?")[0]}
                 </div>
                 <div>
                   <div className="text-[13px] font-medium" style={{ color: "var(--text)" }}>
-                    {email.split("@")[0]}
+                    {displayName || email.split("@")[0]}
                   </div>
                   <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
                     {planLabel(entitlement, employment)}
@@ -8335,6 +8378,10 @@ const ChatPane = memo(function ChatPane({
   const isSupervisor = useIsSupervisor();
   const scrollRef = useRef<HTMLDivElement>(null);
   const isEmployee = employment?.isEmployee === true;
+  // Display name for the customer's own chat bubbles. The hook resolves
+  // it (profile display_name → real guest_name → email handle); fall back
+  // to "You" only if nothing resolved.
+  const customerName = state.customerName || "You";
 
   // Auto-scroll to the latest message when the message list changes (new
   // chat lines, system entries, meeting-card transitions). Smooth scroll
@@ -8485,7 +8532,7 @@ const ChatPane = memo(function ChatPane({
                 if (m.sender_kind === "system" && m.body && isAiSummaryMessageBody(m.body)) {
                   return [<MeetingSummaryEntry key={m.id} body={m.body} />];
                 }
-                return [<Message key={m.id} message={m} />];
+                return [<Message key={m.id} message={m} selfName={customerName} />];
               })}
             </div>
           )}
@@ -8506,7 +8553,15 @@ const ChatPane = memo(function ChatPane({
   );
 });
 
-const Message = memo(function Message({ message }: { message: GuestMessage }) {
+// "Guest" / "Customer" are generic placeholders the session falls back to
+// when no real customer name is known — we never want to surface them as a
+// chat label. Treat them (and empty) as "no real name".
+function isGenericSenderName(n: string | null | undefined): boolean {
+  const t = (n ?? "").trim().toLowerCase();
+  return t === "" || t === "guest" || t === "customer";
+}
+
+const Message = memo(function Message({ message, selfName }: { message: GuestMessage; selfName?: string }) {
   if (message.sender_kind === "system") {
     return (
       <div className="flex justify-center">
@@ -8523,7 +8578,11 @@ const Message = memo(function Message({ message }: { message: GuestMessage }) {
   return (
     <div className={`flex flex-col ${mine ? "items-end" : "items-start"}`}>
       <div className="mb-0.5 px-1 text-[10px]" style={{ color: "var(--text-muted)" }}>
-        {message.sender_name ?? (mine ? "You" : "Engineer")}
+        {mine
+          // Customer's own message: prefer a real stored name, else the
+          // resolved customer display name, else "You" — never "Guest".
+          ? (isGenericSenderName(message.sender_name) ? (selfName || "You") : message.sender_name)
+          : (message.sender_name ?? "Engineer")}
       </div>
       <div
         className="flex max-w-[85%] flex-col gap-2 rounded-2xl px-3.5 py-2.5 text-sm whitespace-pre-wrap"

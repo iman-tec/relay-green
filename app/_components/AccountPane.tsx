@@ -483,7 +483,15 @@ export function AccountPane({
     })();
 
     return () => { alive = false; };
-  }, [tab, userId, billing, billingLoading]);
+    // Deps are intentionally just [tab, userId]. `billing`/`billingLoading`
+    // are read as in-effect GUARDS (don't refetch if we already have data
+    // or a fetch is in flight) but must NOT be in the dep array: including
+    // billingLoading caused the effect to re-run the moment we set it true,
+    // which tore down the in-flight fetch (alive=false) before it could
+    // setBilling/clear-loading — leaving the panel stuck on
+    // "Loading billing history…" forever.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, userId]);
 
   // Revoke the preview URL when staged file changes / unmounts.
   useEffect(() => {

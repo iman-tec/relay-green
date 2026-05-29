@@ -52,6 +52,9 @@ export type CustomerSessionState = {
   entitlement: Entitlement;             // for the profile chip
   loading: boolean;
   error: string | null;
+  /** Resolved customer display name for UI labels: profile display_name →
+   *  real session guest_name → email handle. Never the generic "Guest". */
+  customerName: string;
   // Action helpers
   recall: () => Promise<void>;
   cancel: () => Promise<void>;
@@ -89,6 +92,10 @@ export function useCustomerSession(): CustomerSessionState {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Customer's chosen display name from customer_profiles.display_name —
+  // takes priority over the email handle for chat author labels + the
+  // session guest_name. Loaded once auth resolves.
+  const [profileName, setProfileName] = useState<string | null>(null);
 
   const supabaseRef = useRef(createClient());
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -300,6 +307,26 @@ export function useCustomerSession(): CustomerSessionState {
     })();
   }, [auth.kind, "userId" in auth ? auth.userId : null, session?.status, session?.id]);
 
+  // Load the customer's profile display name once auth resolves. This is
+  // the name the customer typed in Profile & settings, and it should win
+  // over the email handle for chat author labels (what the engineer sees).
+  useEffect(() => {
+    if (auth.kind !== "authed") return;
+    const sb = supabaseRef.current;
+    let cancelled = false;
+    void (async () => {
+      const { data } = await sb
+        .from("customer_profiles")
+        .select("display_name")
+        .eq("user_id", auth.userId)
+        .maybeSingle();
+      if (cancelled) return;
+      const dn = (data as { display_name: string | null } | null)?.display_name?.trim();
+      setProfileName(dn && dn.length > 0 ? dn : null);
+    })();
+    return () => { cancelled = true; };
+  }, [auth.kind, "userId" in auth ? auth.userId : null]);
+
   // ── Realtime subscription on the session row + messages ───────────────────
   useEffect(() => {
     if (!session) return;
@@ -396,6 +423,28 @@ export function useCustomerSession(): CustomerSessionState {
     if (e) setError(e.message);
   }, [session]);
 
+  // Resolve the customer's display name for a message's sender_name.
+  // guest_calls.guest_name falls back to the generic "Guest"/"Customer"
+  // placeholder when no real name is known (notably for anonymous
+  // Try-Relay sessions); for a signed-in customer we'd rather show a real
+  // name, so derive one from the email local-part. This is what the
+  // ENGINEER sees as the chat author, so it must not say "Guest" for a
+  // known customer.
+  const resolveSenderName = useCallback((s: GuestCall | null): string => {
+    // 1. Profile display name (what the customer typed in settings) wins.
+    if (profileName && profileName.trim()) return profileName.trim();
+    // 2. A real (non-generic) guest_name on the session.
+    const gn = (s?.guest_name ?? "").trim();
+    const generic = gn === "" || gn.toLowerCase() === "guest" || gn.toLowerCase() === "customer";
+    if (!generic) return gn;
+    // 3. Email handle as a last resort.
+    if (auth.kind === "authed" && auth.email) {
+      const local = auth.email.split("@")[0]?.trim();
+      if (local) return local;
+    }
+    return gn || "Customer";
+  }, [auth, profileName]);
+
   const sendMessage = useCallback(async (body: string) => {
     if (!session || !body.trim()) return;
     if (TERMINAL_STATES.includes(session.status)) {
@@ -406,11 +455,11 @@ export function useCustomerSession(): CustomerSessionState {
     const { error: e } = await sb.from("guest_messages").insert({
       guest_call_id: session.id,
       sender_kind: "guest",
-      sender_name: session.guest_name,
+      sender_name: resolveSenderName(session),
       body: body.trim(),
     });
     if (e) setError(e.message);
-  }, [session]);
+  }, [session, resolveSenderName]);
 
   const startNewSession = useCallback(async (projectId?: string): Promise<GuestCall | null> => {
     // Clear local state so the user sees a "loading" beat instead of the
@@ -436,11 +485,11 @@ export function useCustomerSession(): CustomerSessionState {
     const { error: e } = await sb.from("guest_messages").insert({
       guest_call_id: s.id,
       sender_kind: "guest",
-      sender_name: s.guest_name,
+      sender_name: resolveSenderName(s),
       body: body.trim(),
     });
     if (e) setError(e.message);
-  }, [session, startNewSession]);
+  }, [session, startNewSession, resolveSenderName]);
 
   /** Bundled send: text + 0..N attachments arrive as a single chat bubble.
    *  Bootstraps a session if needed (mirrors sendOrStart), uploads each
@@ -477,7 +526,7 @@ export function useCustomerSession(): CustomerSessionState {
           .insert({
             guest_call_id: s.id,
             sender_kind: "guest",
-            sender_name: s.guest_name,
+            sender_name: resolveSenderName(s),
             body: text ? text : null,
           })
           .select()
@@ -507,7 +556,7 @@ export function useCustomerSession(): CustomerSessionState {
         setError(e instanceof Error ? e.message : "Send failed.");
       }
     },
-    [session, startNewSession],
+    [session, startNewSession, resolveSenderName],
   );
 
   // Memoize the refresh closure so its identity stays stable across renders
@@ -517,6 +566,10 @@ export function useCustomerSession(): CustomerSessionState {
   // Memoize the return object so consumers that wrap with React.memo don't
   // see a new reference on every render. Every entry below is already
   // useState/useCallback-stable, so this useMemo never busy-busts.
+  // Resolved customer display name for UI labels (chat self-name, draft
+  // flush). Profile name → real guest_name → email handle.
+  const customerName = resolveSenderName(session);
+
   return useMemo(() => ({
     auth,
     session,
@@ -524,6 +577,7 @@ export function useCustomerSession(): CustomerSessionState {
     entitlement,
     loading,
     error,
+    customerName,
     recall,
     cancel,
     end,
@@ -534,7 +588,7 @@ export function useCustomerSession(): CustomerSessionState {
     sendOrStart,
     sendBundle,
   }), [
-    auth, session, messages, entitlement, loading, error,
+    auth, session, messages, entitlement, loading, error, customerName,
     recall, cancel, end, markJoined, sendMessage, refresh, startNewSession, sendOrStart, sendBundle,
   ]);
 }
