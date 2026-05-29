@@ -26,6 +26,7 @@ import { AddEnterpriseDrawer } from "./_drawers/AddEnterpriseDrawer";
 import { AddDepartmentDrawer } from "./_drawers/AddDepartmentDrawer";
 import { AddEmployeeDrawer } from "./_drawers/AddEmployeeDrawer";
 import { AdminRefillDrawer, type RefillTarget } from "./_drawers/AdminRefillDrawer";
+import { AssignAdminDrawer } from "./_drawers/AssignAdminDrawer";
 
 type Member = {
   id: string; email: string; displayName: string;
@@ -72,6 +73,7 @@ export function EnterpriseTab() {
   const [editingEnt,  setEditingEnt]  = useState(false);
   const [editingDept, setEditingDept] = useState(false);
   const [refillTarget, setRefillTarget] = useState<RefillTarget | null>(null);
+  const [assignAdmin, setAssignAdmin] = useState(false);
 
   // ─ Employees + admin for the selected department (lazy load) ────────
   const [employees, setEmployees]       = useState<Employee[]>([]);
@@ -491,9 +493,11 @@ export function EnterpriseTab() {
             />
             <DepartmentAdminCard
               admin={deptAdmin}
+              deptActive={selectedDept.status === "active"}
               onResend={resendEmployeeInvite}
               onToggleStatus={toggleEmployeeStatus}
               onRemove={detachEmployee}
+              onAssign={() => setAssignAdmin(true)}
             />
             <EmployeeTable
               loading={empLoading}
@@ -564,6 +568,14 @@ export function EnterpriseTab() {
         target={refillTarget}
         onClose={() => setRefillTarget(null)}
         onRefilled={() => { setRefillTarget(null); refresh(); }}
+      />
+      <AssignAdminDrawer
+        open={assignAdmin}
+        orgId={selectedEntId}
+        deptId={selectedDeptId}
+        employees={employees.map((e) => ({ id: e.id, displayName: e.displayName, email: e.email }))}
+        onClose={() => setAssignAdmin(false)}
+        onAssigned={() => { setAssignAdmin(false); refreshEmployees(); refresh(); }}
       />
     </div>
   );
@@ -699,12 +711,14 @@ function DetailActions({
 }
 
 function DepartmentAdminCard({
-  admin, onResend, onToggleStatus, onRemove,
+  admin, deptActive, onResend, onToggleStatus, onRemove, onAssign,
 }: {
   admin: Employee | null;
+  deptActive: boolean;
   onResend: (id: string) => void;
   onToggleStatus: (id: string, currentlyActive: boolean) => void;
   onRemove: (id: string) => void;
+  onAssign: () => void;
 }) {
   return (
     <section
@@ -721,11 +735,23 @@ function DepartmentAdminCard({
         >
           Department admin
         </span>
+        {!admin && (
+          <button
+            type="button"
+            onClick={onAssign}
+            disabled={!deptActive}
+            title={deptActive ? "Assign a department admin" : "Reactivate the department first"}
+            className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+            style={{ background: "var(--primary)", color: "#fff" }}
+          >
+            <Plus className="size-3.5" /> Assign admin
+          </button>
+        )}
       </header>
       {!admin ? (
         <p className="px-4 py-4 text-xs" style={{ color: "var(--text-muted)" }}>
-          No admin assigned. The org's enterprise admin can appoint one from{" "}
-          <code>/enterprise/departments</code>.
+          No admin assigned. Promote an existing employee or invite someone by email with{" "}
+          <span style={{ color: "var(--text)" }}>Assign admin</span> above.
         </p>
       ) : (
         <div className="flex items-center gap-3 px-4 py-3">

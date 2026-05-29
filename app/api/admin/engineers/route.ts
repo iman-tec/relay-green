@@ -42,7 +42,7 @@ export async function GET() {
 
   const [{ data: profs }, { data: eprofs }, { data: authList }, { data: podRows }, { data: pods }] = await Promise.all([
     admin.from("profiles").select("id, full_name, is_onboarded").in("id", engineerIds),
-    admin.from("engineer_profiles").select("user_id, project_types, ai_tools, backend_stacks, frontend_stacks, experience_level, presence_state, is_available").in("user_id", engineerIds),
+    admin.from("engineer_profiles").select("user_id, display_alias, project_types, ai_tools, backend_stacks, frontend_stacks, experience_level, presence_state, is_available").in("user_id", engineerIds),
     admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
     admin.from("pod_members").select("user_id, pod_id").eq("pod_role", "engineer").in("user_id", engineerIds),
     admin.from("pods").select("id, name"),
@@ -50,7 +50,7 @@ export async function GET() {
 
   const nameById = new Map<string, { full_name: string | null; is_onboarded: boolean | null }>();
   for (const p of (profs ?? []) as { id: string; full_name: string | null; is_onboarded: boolean | null }[]) nameById.set(p.id, p);
-  type EP = { user_id: string; project_types: string[] | null; ai_tools: string[] | null; backend_stacks: string[] | null; frontend_stacks: string[] | null; experience_level: string | null; presence_state: string | null; is_available: boolean | null };
+  type EP = { user_id: string; display_alias: string | null; project_types: string[] | null; ai_tools: string[] | null; backend_stacks: string[] | null; frontend_stacks: string[] | null; experience_level: string | null; presence_state: string | null; is_available: boolean | null };
   const epById = new Map<string, EP>();
   for (const e of (eprofs ?? []) as EP[]) epById.set(e.user_id, e);
   const emailById = new Map<string, string>();
@@ -72,6 +72,7 @@ export async function GET() {
       userId: id,
       name: prof?.full_name ?? "Unnamed",
       email: emailById.get(id) ?? "",
+      nickname: ep?.display_alias ?? null,   // customer-facing alias
       pod: podByUser.get(id) ?? "—",
       presenceState: ep?.presence_state ?? "offline",
       isAvailable: ep?.is_available ?? false,

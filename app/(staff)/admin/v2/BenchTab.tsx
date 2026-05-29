@@ -14,7 +14,7 @@ import { Loader2, Users, CheckCircle2, CircleDashed, Pencil, CalendarOff, X, Inb
 import { createClient } from "@/lib/supabase/browser";
 
 type Engineer = {
-  userId: string; name: string; email: string; pod: string;
+  userId: string; name: string; email: string; nickname: string | null; pod: string;
   presenceState: string; isAvailable: boolean;
   projectTypes: string[]; aiTools: string[]; backendStacks: string[]; frontendStacks: string[];
   experienceLevel: string | null; onboardingComplete: boolean; onboardingPct: number;
@@ -99,8 +99,8 @@ function Matrix({ rows, onEdit }: { rows: Engineer[]; onEdit: (e: Engineer) => v
       <table className="w-full min-w-[860px] text-sm">
         <thead>
           <tr style={{ color: "var(--text-muted)" }}>
-            {["Engineer", "Pod", "Level", "Project types", "AI tools", "Backend", "Frontend", ""].map((h, i) => (
-              <th key={i} className="px-3 py-2.5 text-left text-[11px] font-medium uppercase tracking-wide">{h}</th>
+            {["Engineer", "Alias", "Pod", "Level", "Project types", "AI tools", "Backend", "Frontend", ""].map((h, i) => (
+              <th key={i} className="whitespace-nowrap px-3 py-2.5 text-left text-[11px] font-medium uppercase tracking-wide">{h}</th>
             ))}
           </tr>
         </thead>
@@ -116,6 +116,7 @@ function Matrix({ rows, onEdit }: { rows: Engineer[]; onEdit: (e: Engineer) => v
                   </div>
                 </div>
               </td>
+              <td className="whitespace-nowrap px-3 py-3" style={{ color: "var(--text-muted)" }}>{e.nickname ?? "—"}</td>
               <td className="whitespace-nowrap px-3 py-3" style={{ color: "var(--text-muted)" }}>{e.pod}</td>
               <td className="whitespace-nowrap px-3 py-3" style={{ color: "var(--text-muted)" }}>{e.experienceLevel ?? "—"}</td>
               <td className="px-3 py-3"><Tags items={e.projectTypes} /></td>
