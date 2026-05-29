@@ -41,7 +41,7 @@ export async function GET() {
   const { data: rows } = await admin
     .from("project_quote_requests")
     .select("id, kind, status, comments, created_at, responded_at, project_id, customer_user_id, quote_amount_cents, appointment_requested_at, appointment_note")
-    .in("status", ["pending", "quoted", "committed"])
+    .in("status", ["pending", "pending_review", "quoted", "committed"])
     .order("created_at", { ascending: false })
     .limit(100);
   const qs = (rows ?? []) as {

@@ -56,7 +56,7 @@ export async function GET() {
     admin
       .from("project_quote_requests")
       .select("id, kind, comments, status, created_at, project_id, customer_user_id, quote_amount_cents, bid_scope, bid_timeline, appointment_requested_at, appointment_note, customer_response_note")
-      .in("status", ["pending", "quoted"])
+      .in("status", ["pending", "pending_review", "quoted"])
       .order("created_at", { ascending: false })
       .limit(50),
     podEngineerIds.length
@@ -140,7 +140,7 @@ export async function GET() {
       return {
         id: q.id,
         kind: q.kind, // 'golive' | 'maintain'
-        status: q.status, // 'pending' (needs bid) | 'quoted' (bid sent)
+        status: q.status, // 'pending' (needs bid) | 'pending_review' (engineer bid, awaiting supervisor) | 'quoted' (sent to customer)
         customer: nameById.get(q.customer_user_id) ?? "Customer",
         project: projById.get(q.project_id) ?? "Untitled project",
         projectId: q.project_id,

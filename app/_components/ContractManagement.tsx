@@ -88,7 +88,7 @@ export function ContractManagement() {
           const fresh = q.status === "quoted" && !q.customer_viewed_at;
           return (
             <li key={q.id}>
-              <button type="button" onClick={() => setOpen(q)} disabled={q.status === "pending"}
+              <button type="button" onClick={() => setOpen(q)} disabled={q.status === "pending" || q.status === "pending_review"}
                 className="flex w-full items-center gap-3 border-t px-4 py-3 text-left transition-colors first:border-t-0 hover:bg-black/[0.03] disabled:cursor-default dark:hover:bg-white/[0.03]"
                 style={{ borderColor: "var(--border)" }}>
                 <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg" style={{ background: "var(--primary-soft)", color: "var(--primary)" }}>
@@ -112,6 +112,9 @@ export function ContractManagement() {
 
 function statusLabel(s: string): string {
   return s === "pending" ? "Request sent — awaiting the team's bid"
+    // pending_review is an internal staff state (engineer bid awaiting
+    // supervisor approval). To the customer it's still "awaiting the bid".
+    : s === "pending_review" ? "Request sent — awaiting the team's bid"
     : s === "quoted" ? "Bid ready — review & commit"
     : s === "committed" ? "Contract active"
     : s === "declined" ? "Declined"

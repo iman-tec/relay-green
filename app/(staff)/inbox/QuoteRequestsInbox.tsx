@@ -26,12 +26,15 @@ type Req = {
 // quoted/pending — once the customer asks to talk, the row leaves the
 // vanilla "Bid sent" / "Needs bid" pools so it's not double-counted and the
 // appointment signal isn't lost amongst routine queue noise.
-type Category = "appointment" | "needs_bid" | "bid_sent" | "accepted";
+type Category = "appointment" | "needs_bid" | "in_review" | "bid_sent" | "accepted";
 
 function categorize(r: Req): Category {
   if (r.appointmentRequestedAt) return "appointment";
   if (r.status === "committed") return "accepted";
   if (r.status === "pending") return "needs_bid";
+  // Bid sent by the engineer but not yet approved by a supervisor — it's NOT
+  // with the customer yet, so it gets its own bucket rather than "Bid sent".
+  if (r.status === "pending_review") return "in_review";
   return "bid_sent"; // quoted, no appointment
 }
 
@@ -48,6 +51,12 @@ const CATEGORY_META: Record<Category, { label: string; fill: string; fgVar: stri
     fgVar: "var(--warn)",
     bgTint: "color-mix(in srgb, var(--warn) 16%, transparent)",
   },
+  in_review: {
+    label: "In review",
+    fill: "#6366f1",
+    fgVar: "#6366f1",
+    bgTint: "color-mix(in srgb, #6366f1 16%, transparent)",
+  },
   bid_sent: {
     label: "Bid sent",
     fill: "var(--ok)",
@@ -62,7 +71,7 @@ const CATEGORY_META: Record<Category, { label: string; fill: string; fgVar: stri
   },
 };
 
-const FILTER_ORDER: Category[] = ["appointment", "needs_bid", "bid_sent", "accepted"];
+const FILTER_ORDER: Category[] = ["appointment", "needs_bid", "in_review", "bid_sent", "accepted"];
 
 const DEFAULT_TERMS = "/legal/contracting-terms";
 
@@ -106,7 +115,7 @@ export function QuoteRequestsInbox() {
   }, [load]);
 
   const counts = useMemo(() => {
-    const c: Record<Category, number> = { appointment: 0, needs_bid: 0, bid_sent: 0, accepted: 0 };
+    const c: Record<Category, number> = { appointment: 0, needs_bid: 0, in_review: 0, bid_sent: 0, accepted: 0 };
     for (const r of rows) c[categorize(r)]++;
     return c;
   }, [rows]);
