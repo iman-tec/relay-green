@@ -341,13 +341,24 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
     .filter((n) => !isSuperAdmin || !SUPER_ADMIN_HIDDEN.has(n.href));
 
   return (
-    <div className="flex min-h-screen" style={{ backgroundColor: "var(--background)" }}>
+    // App-shell layout: lock the document viewport with h-screen +
+    // overflow-hidden so the sidebar (a flex-row sibling at fixed width)
+    // never scrolls, and let <main> below own the only scrollable region.
+    // Pages with long content (calendar, settings, admin tables) scroll
+    // *inside* <main>; pages with their own h-screen flex layouts
+    // (dashboard, inbox, supervise) fit perfectly because <main>'s height
+    // equals the viewport.
+    <div className="flex h-screen overflow-hidden" style={{ backgroundColor: "var(--background)" }}>
       <aside
-        className={`sticky top-0 flex h-screen shrink-0 flex-col border-r ${sidebarDragging ? "" : "transition-[width] duration-200 ease-out"}`}
+        className={`flex h-full shrink-0 flex-col border-r ${sidebarDragging ? "" : "transition-[width] duration-200 ease-out"}`}
         style={{
           width: collapsed ? SIDEBAR_CLOSED_W : sidebarWidth,
           borderColor: "var(--border)",
           backgroundColor: "var(--surface)",
+          // `relative` so the drag-resize handle (absolutely positioned
+          // child below) anchors here. We no longer need `sticky top-0`
+          // because the parent wrapper is locked at viewport height with
+          // overflow-hidden — nothing scrolls past the aside.
           position: "relative",
         }}
       >
@@ -509,7 +520,15 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <main className="flex-1 min-w-0">
+      {/* Sole scroll region. flex-1 + min-w-0 + h-full + overflow-y-auto
+          is the canonical "fills remaining row width, full row height,
+          scrolls own content" pattern. Routes with internal h-screen flex
+          layouts (dashboard, inbox, supervise) naturally fit because
+          <main> equals the viewport height; routes with naturally tall
+          DOM (calendar, settings, admin tables) scroll here instead of
+          taking the document with them — which is exactly what kept the
+          sidebar moving in the original bug. */}
+      <main className="flex-1 h-full min-w-0 overflow-y-auto">
         {profilePaneOpen && engineer && guard.kind === "staff" ? (
           <EngineerProfilePane
             userId={guard.userId}

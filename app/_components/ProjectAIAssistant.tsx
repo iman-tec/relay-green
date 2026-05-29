@@ -123,7 +123,7 @@ export function ProjectAIAssistant({
       {/* Body — message thread + empty-state coaching */}
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto px-4 py-4"
+        className="hide-scrollbar flex-1 overflow-y-auto px-4 py-4"
       >
         {messages.length === 0 && !busy ? (
           <EmptyState />
@@ -204,7 +204,7 @@ function EmptyState() {
         Ask anything about this project — past sessions, files shared, stack used,
         pending next steps. The AI has full project memory.
       </p>
-      <ul className="mt-4 flex flex-col gap-1 text-left text-[11px]" style={{ color: "var(--text-faint)" }}>
+      <ul className="mt-2 flex flex-col gap-1 text-left text-[11px]" style={{ color: "var(--text-faint)" }}>
         <li>— What was last session about?</li>
         <li>— Which files has the customer shared?</li>
         <li>— What's still open from last call?</li>

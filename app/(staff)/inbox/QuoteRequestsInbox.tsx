@@ -8,9 +8,9 @@
  * customer. Realtime on project_quote_requests.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { Loader2, Rocket, Wrench, X, FileText, CalendarClock, Inbox, ChevronDown } from "lucide-react";
+import { Loader2, Rocket, Wrench, X, FileText, CalendarClock, ChevronDown, CheckCircle2, MessageCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import { ProjectAIAssistant } from "@/app/_components/ProjectAIAssistant";
 import { useOverlayDismiss } from "@/lib/relay/useOverlayDismiss";
@@ -22,12 +22,78 @@ type Req = {
   appointmentRequestedAt: string | null; appointmentNote: string | null;
 };
 
+// Mutually-exclusive buckets the engineer filters by. Appointment trumps
+// quoted/pending — once the customer asks to talk, the row leaves the
+// vanilla "Bid sent" / "Needs bid" pools so it's not double-counted and the
+// appointment signal isn't lost amongst routine queue noise.
+type Category = "appointment" | "needs_bid" | "in_review" | "bid_sent" | "accepted";
+
+function categorize(r: Req): Category {
+  if (r.appointmentRequestedAt) return "appointment";
+  if (r.status === "committed") return "accepted";
+  if (r.status === "pending") return "needs_bid";
+  // Bid sent by the engineer but not yet approved by a supervisor — it's NOT
+  // with the customer yet, so it gets its own bucket rather than "Bid sent".
+  if (r.status === "pending_review") return "in_review";
+  return "bid_sent"; // quoted, no appointment
+}
+
+const CATEGORY_META: Record<Category, { label: string; fill: string; fgVar: string; bgTint: string }> = {
+  appointment: {
+    label: "Appointment",
+    fill: "var(--primary-hover)",
+    fgVar: "var(--primary-hover)",
+    bgTint: "color-mix(in srgb, var(--primary-hover) 16%, transparent)",
+  },
+  needs_bid: {
+    label: "Needs bid",
+    fill: "var(--warn)",
+    fgVar: "var(--warn)",
+    bgTint: "color-mix(in srgb, var(--warn) 16%, transparent)",
+  },
+  in_review: {
+    label: "In review",
+    fill: "#6366f1",
+    fgVar: "#6366f1",
+    bgTint: "color-mix(in srgb, #6366f1 16%, transparent)",
+  },
+  bid_sent: {
+    label: "Bid sent",
+    fill: "var(--ok)",
+    fgVar: "var(--ok)",
+    bgTint: "color-mix(in srgb, var(--ok) 16%, transparent)",
+  },
+  accepted: {
+    label: "Accepted",
+    fill: "#3f5c2e",
+    fgVar: "#3f5c2e",
+    bgTint: "color-mix(in srgb, #3f5c2e 18%, transparent)",
+  },
+};
+
+const FILTER_ORDER: Category[] = ["appointment", "needs_bid", "in_review", "bid_sent", "accepted"];
+
 const DEFAULT_TERMS = "/legal/contracting-terms";
 
 export function QuoteRequestsInbox() {
   const [rows, setRows] = useState<Req[]>([]);
   const [loading, setLoading] = useState(true);
   const [bid, setBid] = useState<Req | null>(null);
+  // null = "show all"; otherwise filter to that single bucket.
+  const [filter, setFilter] = useState<Category | null>(null);
+  // Per-row appointment-note expansion. Set membership = expanded.
+  // Multiple rows can be expanded at once; click the capsule again to
+  // collapse. State is local-only on purpose — it shouldn't persist
+  // across mounts (a fresh visit shows everything collapsed).
+  const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
+  const toggleNote = useCallback((id: string) => {
+    setExpandedNotes((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
   const sbRef = useRef(createClient());
   const chRef = useRef<RealtimeChannel | null>(null);
 
@@ -48,47 +114,200 @@ export function QuoteRequestsInbox() {
     return () => { if (t) clearTimeout(t); sb.removeChannel(ch); clearInterval(fb); };
   }, [load]);
 
-  if (loading) return null;
-  if (rows.length === 0) return null; // quiet when empty — don't clutter the inbox
+  const counts = useMemo(() => {
+    const c: Record<Category, number> = { appointment: 0, needs_bid: 0, in_review: 0, bid_sent: 0, accepted: 0 };
+    for (const r of rows) c[categorize(r)]++;
+    return c;
+  }, [rows]);
+
+  const visibleRows = useMemo(
+    () => filter ? rows.filter((r) => categorize(r) === filter) : rows,
+    [rows, filter],
+  );
 
   return (
-    <section className="rounded-2xl border" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
-      <header className="flex items-center gap-2 border-b px-4 py-3" style={{ borderColor: "var(--border)" }}>
-        <FileText size={15} style={{ color: "var(--primary-hover)" }} />
-        <h2 className="text-sm font-semibold" style={{ color: "var(--text)" }}>Quote requests</h2>
-        <span className="text-xs" style={{ color: "var(--text-muted)" }}>{rows.length}</span>
+    <section
+      className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border"
+      style={{ borderColor: "var(--border)", background: "var(--surface)" }}
+    >
+      {/* Sticky header — title + counts + filter chips. shrink-0 so the
+          list area below can claim the rest with flex-1 and scroll
+          internally regardless of row count. */}
+      <header
+        className="shrink-0 border-b"
+        style={{ borderColor: "var(--border)" }}
+      >
+        <div className="flex items-center gap-2 px-4 pt-3">
+          <FileText size={15} style={{ color: "var(--primary-hover)" }} />
+          <h2 className="text-sm font-semibold" style={{ color: "var(--text)" }}>Quote requests</h2>
+          <span className="text-xs tabular-nums" style={{ color: "var(--text-muted)" }}>{rows.length}</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5 px-4 pb-3 pt-2">
+          {FILTER_ORDER.map((cat) => (
+            <FilterChip
+              key={cat}
+              cat={cat}
+              count={counts[cat]}
+              active={filter === cat}
+              onClick={() => setFilter((prev) => prev === cat ? null : cat)}
+            />
+          ))}
+        </div>
       </header>
-      <ul>
-        {rows.map((r) => {
-          const golive = r.kind === "golive";
-          const needsBid = r.status === "pending";
-          return (
-            <li key={r.id} className="flex items-center gap-3 border-t px-4 py-3 first:border-t-0" style={{ borderColor: "var(--border)" }}>
-              <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg" style={{ background: "var(--primary-tint)", color: "var(--primary-hover)" }}>
-                {golive ? <Rocket size={14} /> : <Wrench size={14} />}
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm" style={{ color: "var(--text)" }}>
-                  {r.project} <span style={{ color: "var(--text-faint)" }}>· {r.customer}</span>
-                </div>
-                <div className="flex items-center gap-2 text-xs" style={{ color: "var(--text-muted)" }}>
-                  <span>{golive ? "Go-live" : "Maintain"}</span>
-                  <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase" style={{ background: needsBid ? "color-mix(in srgb, var(--warn) 16%, transparent)" : "color-mix(in srgb, var(--ok) 16%, transparent)", color: needsBid ? "var(--warn)" : "var(--ok)" }}>
-                    {needsBid ? "Needs bid" : "Bid sent"}
+
+      {/* Scroll area. flex-1 + min-h-0 + overflow-y-auto is the standard
+          pattern for "fill remaining vertical space, scroll if content
+          overflows" inside a parent flex column. hide-scrollbar (defined
+          in globals.css) keeps the wheel/touch scroll working while
+          hiding the visible bar — matches the People list and Call log
+          treatment elsewhere in the inbox. */}
+      <div className="hide-scrollbar flex-1 overflow-y-auto" style={{ minHeight: 0 }}>
+        {loading ? (
+          <p className="px-4 py-6 text-center text-xs" style={{ color: "var(--text-muted)" }}>Loading…</p>
+        ) : visibleRows.length === 0 ? (
+          <p className="px-4 py-6 text-center text-xs" style={{ color: "var(--text-muted)" }}>
+            {rows.length === 0
+              ? "No quote requests yet."
+              : `No ${CATEGORY_META[filter as Category].label.toLowerCase()} requests.`}
+          </p>
+        ) : (
+          <ul>
+            {visibleRows.map((r) => {
+              const golive = r.kind === "golive";
+              const cat = categorize(r);
+              const meta = CATEGORY_META[cat];
+              const needsBid = r.status === "pending";
+              const committed = r.status === "committed";
+              return (
+                <li
+                  key={r.id}
+                  className="flex items-center gap-3 border-t px-4 py-3 first:border-t-0"
+                  style={{ borderColor: "var(--border)" }}
+                >
+                  <span
+                    className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg"
+                    style={{ background: "var(--primary-tint)", color: "var(--primary-hover)" }}
+                  >
+                    {golive ? <Rocket size={14} /> : <Wrench size={14} />}
                   </span>
-                  {r.appointmentRequestedAt && <span className="inline-flex items-center gap-1" style={{ color: "var(--primary-hover)" }}><CalendarClock size={11} /> wants to talk</span>}
-                </div>
-              </div>
-              <button type="button" onClick={() => setBid(r)}
-                className="shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold text-white" style={{ background: "var(--primary)" }}>
-                {needsBid ? "Prepare bid" : "Edit bid"}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm" style={{ color: "var(--text)" }}>
+                      {r.project} <span style={{ color: "var(--text-faint)" }}>· {r.customer}</span>
+                    </div>
+                    <div
+                      className="flex min-w-0 items-center gap-2 text-xs"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      <span className="shrink-0">{golive ? "Go-live" : "Maintain"}</span>
+                      <span
+                        className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase"
+                        style={{ background: meta.bgTint, color: meta.fgVar }}
+                      >
+                        {cat === "appointment" && <CalendarClock size={10} />}
+                        {cat === "accepted" && <CheckCircle2 size={10} />}
+                        {meta.label}
+                      </span>
+                      {/* Appointment note as a fixed-width capsule. The
+                          capsule itself never expands or shrinks so the
+                          row stays stable regardless of note length —
+                          only when the engineer clicks does the full
+                          note materialise on a separate line below.
+                          max-w pins the capsule; truncate inside hides
+                          overflow with an ellipsis so the engineer still
+                          sees a peek of the message without committing
+                          to a click. */}
+                      {cat === "appointment" && r.appointmentNote && (
+                        <button
+                          type="button"
+                          onClick={() => toggleNote(r.id)}
+                          aria-expanded={expandedNotes.has(r.id)}
+                          aria-label={expandedNotes.has(r.id) ? "Collapse customer note" : "Expand customer note"}
+                          className="inline-flex max-w-[200px] shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.05]"
+                          style={{
+                            borderColor: "color-mix(in srgb, var(--primary-hover) 35%, transparent)",
+                            color: "var(--primary-hover)",
+                            background: "color-mix(in srgb, var(--primary-hover) 8%, transparent)",
+                          }}
+                        >
+                          <MessageCircle size={9} className="shrink-0" />
+                          <span className="truncate">{r.appointmentNote}</span>
+                          <ChevronDown
+                            size={9}
+                            className="shrink-0 transition-transform"
+                            style={{ transform: expandedNotes.has(r.id) ? "rotate(180deg)" : "none" }}
+                          />
+                        </button>
+                      )}
+                    </div>
+                    {/* Expanded full-text block. Only renders on click,
+                        so non-expanded rows stay the original height.
+                        Sits inside the middle column so it auto-respects
+                        the row's left/right boundaries (icon + button). */}
+                    {cat === "appointment" && r.appointmentNote && expandedNotes.has(r.id) && (
+                      <p
+                        className="mt-1.5 whitespace-pre-wrap break-words rounded-md border px-2 py-1.5 text-xs"
+                        style={{
+                          borderColor: "color-mix(in srgb, var(--primary-hover) 30%, transparent)",
+                          background: "color-mix(in srgb, var(--primary-hover) 6%, transparent)",
+                          color: "var(--text)",
+                        }}
+                      >
+                        “{r.appointmentNote}”
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setBid(r)}
+                    className="shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold text-white"
+                    style={{ background: "var(--primary)" }}
+                  >
+                    {needsBid ? "Prepare bid" : committed ? "View" : "Edit bid"}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
       {bid && <BidPrepModal req={bid} onClose={() => setBid(null)} onSent={() => { setBid(null); void load(); }} />}
     </section>
+  );
+}
+
+function FilterChip({
+  cat, count, active, onClick,
+}: {
+  cat: Category;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  const meta = CATEGORY_META[cat];
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide transition-colors"
+      style={{
+        background: active ? meta.fill : "transparent",
+        color: active ? "#fff" : meta.fgVar,
+        borderColor: active ? meta.fill : `color-mix(in srgb, ${meta.fill} 35%, transparent)`,
+      }}
+    >
+      <span>{meta.label}</span>
+      <span
+        className="rounded-full px-1.5 text-[10px] tabular-nums"
+        style={{
+          background: active ? "rgba(255,255,255,0.22)" : `color-mix(in srgb, ${meta.fill} 16%, transparent)`,
+          color: active ? "#fff" : meta.fgVar,
+        }}
+      >
+        {count}
+      </span>
+    </button>
   );
 }
 

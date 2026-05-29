@@ -9,15 +9,16 @@
  * Updates every second + on any guest_calls change via Realtime.
  */
 
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import {
-  Eye, Loader2, ArrowUpRight, Search, AlertTriangle,
+  Eye, Loader2, ArrowUpRight, Search, AlertTriangle, LifeBuoy, Check, X,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
+import { useOverlayDismiss } from "@/lib/relay/useOverlayDismiss";
 import { humanState } from "@/lib/relay/session-status";
 import type { GuestCall } from "@/lib/supabase/types";
 import {
@@ -99,7 +100,13 @@ function engineerLabel(s: { agent_name: string | null; engineerRealName?: string
 // (most conversations happen on Zoom voice, not chat).
 const MIN_MESSAGES_FOR_AI = 2;
 
-type Tab = "all" | "waiting" | "live" | "past" | "team" | "coverage" | "matching";
+type Tab = "all" | "waiting" | "live" | "past" | "escalations" | "team" | "coverage" | "matching";
+
+// Open "engineer raised a hand" escalation, scoped to the supervisor's pod.
+// Sourced from the same /api/supervisor/act-now feed the left rail uses;
+// surfaced here as its own Live-operations tab (deliberately NOT folded into
+// the All count) so a supervisor can jump straight to who needs help.
+type Escalation = { id: string; sessionId: string; engineer: string; customer: string; reason: string; note: string | null; createdAt: string };
 
 // Per-page selector — shared by all three panels (All, Active, Past). Lifted
 // to the parent so changing "20 / page" once stays applied as you tab around.
@@ -349,6 +356,35 @@ export function SuperviseClient() {
     };
   }, [scope]);
 
+  // Open escalations for the Escalations tab. Pod-scoped supervisors only —
+  // the act-now endpoint is supervisor-gated and the rail already showed these
+  // for the same audience, so this surfaces the same data with no new access
+  // path. super_admin / unscoped viewers don't get the tab (they have toasts).
+  const [escalations, setEscalations] = useState<Escalation[]>([]);
+  const refreshEscalations = useCallback(async () => {
+    if (scope.kind !== "pod") { setEscalations([]); return; }
+    try {
+      const res = await fetch("/api/supervisor/act-now", { cache: "no-store" });
+      if (res.ok) {
+        const data = (await res.json()) as { escalations?: Escalation[] };
+        setEscalations(data.escalations ?? []);
+      }
+    } catch { /* ignore — the periodic poll + realtime will retry */ }
+  }, [scope]);
+  useEffect(() => { void refreshEscalations(); }, [refreshEscalations]);
+  useEffect(() => {
+    if (scope.kind !== "pod") return;
+    const sb = supabaseRef.current;
+    let pending: ReturnType<typeof setTimeout> | null = null;
+    const queue = () => { if (!pending) pending = setTimeout(() => { pending = null; void refreshEscalations(); }, 600); };
+    const ch = sb
+      .channel("relay-supervise-escalations")
+      .on("postgres_changes", { event: "*", schema: "public", table: "session_escalations" }, queue)
+      .subscribe();
+    const fallback = setInterval(() => { void refreshEscalations(); }, 10_000);
+    return () => { if (pending) clearTimeout(pending); sb.removeChannel(ch); clearInterval(fallback); };
+  }, [scope, refreshEscalations]);
+
   const liveSessions    = useMemo(() => sessions.filter((s) => LIVE_STATES.has(s.status)),    [sessions]);
   const waitingSessions = useMemo(() => sessions.filter((s) => WAITING_STATES.has(s.status)), [sessions]);
 
@@ -366,10 +402,10 @@ export function SuperviseClient() {
     <PagerSlotContext.Provider value={pagerSlot}>
     <div className="flex min-h-screen flex-col">
       <style>{WAITING_GLOW_CSS}</style>
-      <div className="mx-auto flex w-full max-w-screen-2xl flex-1 gap-6 px-6 pt-8 pb-6">
+      <div className="flex w-full max-w-screen-2xl flex-1 gap-6 px-6 pt-8 pb-6">
         {/* Left rail — act-now queue (pod supervisors). Sticky + self-scrolling. */}
         {scope.kind === "pod" && (
-          <aside className="hidden w-80 shrink-0 lg:block lg:sticky lg:top-8 lg:max-h-[calc(100vh-7rem)]">
+          <aside className="hidden w-96 shrink-0 lg:block lg:sticky lg:top-8 lg:max-h-[calc(100vh-7rem)]">
             <ActNowRail />
           </aside>
         )}
@@ -400,14 +436,16 @@ export function SuperviseClient() {
           tab={tab}
           setTab={setTab}
           counts={{
-            all:      liveSessions.length + waitingSessions.length + pastSessions.length,
-            waiting:  waitingSessions.length,
-            live:     liveSessions.length,
-            past:     pastSessions.length,
-            team:     0,
-            coverage: 0,
-            matching: 0,
+            all:         liveSessions.length + waitingSessions.length + pastSessions.length,
+            waiting:     waitingSessions.length,
+            live:        liveSessions.length,
+            past:        pastSessions.length,
+            escalations: escalations.length,
+            team:        0,
+            coverage:    0,
+            matching:    0,
           }}
+          showEscalations={scope.kind === "pod"}
           showMatching={scope.kind === "unscoped" || (scope.kind === "pod" && !!scope.podId)}
           showTeam={scope.kind === "pod" && !!scope.podId}
         />
@@ -422,6 +460,8 @@ export function SuperviseClient() {
             liveSessions={liveSessions}
             waitingSessions={waitingSessions}
             pastSessions={pastSessions}
+            escalations={escalations}
+            onEscalationChanged={refreshEscalations}
             perPage={perPage}
             setPerPage={setPerPage}
             matchingGlobal={scope.kind === "unscoped"}
@@ -441,7 +481,7 @@ export function SuperviseClient() {
           backgroundColor: "color-mix(in srgb, var(--background) 92%, transparent)",
         }}
       >
-        <div className="mx-auto flex w-full max-w-screen-2xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-6 py-3">
+        <div className="flex w-full max-w-screen-2xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-6 py-3">
           <HealthLegend />
           {/* Right-side portal target — each panel's PagerStrip renders here */}
           <div ref={setPagerSlot} className="flex items-center" />
@@ -706,18 +746,21 @@ function Tabs({
   tab,
   setTab,
   counts,
+  showEscalations,
   showMatching,
   showTeam,
 }: {
   tab: Tab;
   setTab: (t: Tab) => void;
   counts: Record<Tab, number>;
+  showEscalations: boolean;
   showMatching: boolean;
   showTeam: boolean;
 }) {
   const base = ["all", "waiting", "live", "past"] as const;
   const visible: readonly Tab[] = [
     ...base,
+    ...(showEscalations ? (["escalations"] as const) : []),
     ...(showTeam ? (["team", "coverage"] as const) : []),
     ...(showMatching ? (["matching"] as const) : []),
   ];
@@ -771,16 +814,21 @@ function Tabs({
 
 // ── Tab panel — chooses the right grid for the active tab ─────────────────
 function TabPanel({
-  tab, liveSessions, waitingSessions, pastSessions, perPage, setPerPage, matchingGlobal,
+  tab, liveSessions, waitingSessions, pastSessions, escalations, onEscalationChanged, perPage, setPerPage, matchingGlobal,
 }: {
   tab: Tab;
   liveSessions: SessionWithHealth[];
   waitingSessions: SessionWithHealth[];
   pastSessions: SessionWithHealth[];
+  escalations: Escalation[];
+  onEscalationChanged: () => void;
   perPage: PageSize;
   setPerPage: (n: PageSize) => void;
   matchingGlobal: boolean;
 }) {
+  if (tab === "escalations") {
+    return <EscalationsPanel escalations={escalations} onChanged={onEscalationChanged} />;
+  }
   if (tab === "team") {
     return <RosterPanel />;
   }
@@ -1435,4 +1483,124 @@ function fmtSecs(s: number) {
   const m = Math.floor(s / 60);
   const r = s % 60;
   return `${m}:${String(r).padStart(2, "0")}`;
+}
+
+// ── Escalations panel ──────────────────────────────────────────────────────
+// Every open escalation an engineer has raised, as its own Live-operations
+// tab. Watch drops into the session read-only; Resolve closes the loop with
+// an optional note. Lives outside the All grid on purpose — these aren't
+// "sessions", they're attention requests, and the supervisor wants them on
+// their own surface.
+function EscalationsPanel({ escalations, onChanged }: { escalations: Escalation[]; onChanged: () => void }) {
+  const [resolveTarget, setResolveTarget] = useState<Escalation | null>(null);
+  return (
+    <div className="flex flex-col gap-3">
+      {escalations.length === 0 ? (
+        <EmptyState title="No escalations" body="No engineers have raised a hand right now." />
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          {escalations.map((e) => <EscalationCard key={e.id} e={e} onResolve={setResolveTarget} />)}
+        </div>
+      )}
+      {resolveTarget && (
+        <ResolveEscalationModal
+          esc={resolveTarget}
+          onClose={() => setResolveTarget(null)}
+          onDone={() => { setResolveTarget(null); onChanged(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function EscalationCard({ e, onResolve }: { e: Escalation; onResolve: (e: Escalation) => void }) {
+  const router = useRouter();
+  return (
+    <Card variant="surface" className="relative p-4">
+      <span aria-hidden className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: "var(--risk)" }} />
+      <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--risk)" }}>
+        <LifeBuoy size={13} /> {e.reason}
+        <span className="ml-auto font-normal normal-case tabular-nums" style={{ color: "var(--text-muted)" }}>{fmtAgo(e.createdAt)}</span>
+      </div>
+      <div className="text-sm font-semibold" style={{ color: "var(--text)" }}>{e.engineer}</div>
+      <div className="truncate text-xs" style={{ color: "var(--text-muted)" }}>on {e.customer}</div>
+      {e.note && (
+        <p className="mt-2 max-w-prose rounded-md border px-2.5 py-2 text-[11px] leading-snug"
+          style={{ borderColor: "color-mix(in srgb, var(--risk) 30%, transparent)", background: "color-mix(in srgb, var(--risk) 8%, transparent)", color: "var(--text)" }}>
+          “{e.note}”
+        </p>
+      )}
+      <div className="mt-3 flex gap-2">
+        <button type="button" onClick={() => router.push(`/staff/session/${e.sessionId}`)}
+          className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border px-2 py-1.5 text-xs font-medium"
+          style={{ borderColor: "var(--border)", color: "var(--text)" }}>
+          <Eye size={13} /> Watch
+        </button>
+        <button type="button" onClick={() => onResolve(e)}
+          className="inline-flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1.5 text-xs font-semibold text-white"
+          style={{ background: "var(--primary)" }}>
+          <Check size={13} /> Resolve
+        </button>
+      </div>
+    </Card>
+  );
+}
+
+// Supervisor resolves an escalation with an optional note — a real,
+// theme-aware, focus-trapped dialog (moved here from the act-now rail when
+// escalations were promoted to their own tab).
+function ResolveEscalationModal({ esc, onClose, onDone }: { esc: Escalation; onClose: () => void; onDone: () => void }) {
+  const sb = useRef(createClient()).current;
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const dialogRef = useOverlayDismiss(onClose);
+
+  const submit = async () => {
+    setBusy(true); setErr(null);
+    try {
+      const { error } = await sb.rpc("resolve_escalation", { _id: esc.id, _note: note.trim() || null });
+      if (error) throw new Error(error.message);
+      onDone();
+    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't resolve."); setBusy(false); }
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 z-[var(--z-modal)]" style={{ backgroundColor: "var(--scrim)" }} onClick={() => !busy && onClose()} />
+      <div ref={dialogRef} role="dialog" aria-modal="true"
+        className="fixed left-1/2 top-1/2 z-[var(--z-modal)] w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border p-5 shadow-2xl"
+        style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}>
+        <div className="mb-3 flex items-center gap-2">
+          <Check size={16} style={{ color: "var(--primary-hover)" }} />
+          <h2 className="text-[15px] font-semibold" style={{ color: "var(--text)" }}>Resolve escalation</h2>
+          <button type="button" onClick={() => !busy && onClose()} className="ml-auto" style={{ color: "var(--text-muted)" }}><X size={16} /></button>
+        </div>
+        <p className="mb-3 text-xs" style={{ color: "var(--text-muted)" }}>{esc.reason} · {esc.engineer} on {esc.customer}</p>
+        <label className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
+          Resolution note (optional)
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} autoFocus
+            placeholder="What did you do?" className="rounded-lg border p-2 text-sm"
+            style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
+        </label>
+        {err && <p className="mt-2 text-[12px]" style={{ color: "var(--risk)" }}>{err}</p>}
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" onClick={() => !busy && onClose()} disabled={busy} className="rounded-full px-3.5 py-1.5 text-[13px] font-medium" style={{ color: "var(--text-muted)" }}>Cancel</button>
+          <button type="button" onClick={() => void submit()} disabled={busy}
+            className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13px] font-semibold text-white" style={{ background: "var(--primary)" }}>
+            {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Resolve
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function fmtAgo(iso: string): string {
+  const secs = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (secs < 60) return `${secs}s`;
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m`;
+  const h = Math.floor(mins / 60);
+  return `${h}h ${mins % 60}m`;
 }

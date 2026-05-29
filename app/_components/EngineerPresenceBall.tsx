@@ -188,15 +188,21 @@ export function EngineerPresenceBall({
         },
         (payload) => {
           const next = payload.new as { status?: string } | null;
-          const old = payload.old as { status?: string } | null;
           if (payload.eventType === "INSERT" && next?.status === "pending") {
             setIncoming(true);
             playRingtone(muted);
           } else if (payload.eventType === "UPDATE") {
-            // Any transition out of pending closes the ring (accepted /
-            // declined / expired). EngineerIncomingMatch handles the
-            // accept/decline UI; we just mirror the visual.
-            if (next && next.status !== "pending" && old?.status === "pending") {
+            // Any UPDATE that lands the row in a non-pending state closes
+            // the ring (accepted / declined / expired / cancelled).
+            //
+            // We DO NOT gate on payload.old.status — engineer_match_offers
+            // has REPLICA IDENTITY DEFAULT, so the realtime `old` payload
+            // contains ONLY the primary key. old.status is always
+            // undefined, which is why the previous "old?.status === 'pending'"
+            // guard meant the ring never cleared when a customer cancelled
+            // before the engineer picked up. The current row state is the
+            // single source of truth here: if it's not pending, stop ringing.
+            if (next && next.status !== "pending") {
               setIncoming(false);
             }
           } else if (payload.eventType === "DELETE") {
@@ -232,31 +238,33 @@ export function EngineerPresenceBall({
     return () => { alive = false; };
   }, [userId]);
 
-  // ── Auto-presence: one-way ratchet (demote-only) ──────────────────
-  // The auto-detector reflects ground truth in ONE direction: it can
-  // demote an engineer down the availability ladder, but never promote.
+  // ── Auto-presence ─────────────────────────────────────────────────
+  // The auto-detector adjusts presence in three cases:
   //
   //   • on a live call          → busy   (always — even if currently offline,
   //                                       because they're clearly engaged)
   //   • idle > 5 min WHILE online → offline (only kicks in if they were online)
-  //   • free at the PC          → NO auto-change. Engineer must
-  //                                explicitly choose "online" via the menu.
+  //   • call just ended AND we set busy AND no manual override since
+  //                              → online (restore so the matcher can ring
+  //                                       them again)
   //
-  // Why: the engineer's session starts at "offline" (DB default) so
-  // login doesn't drop them into the matcher queue before they're ready.
-  // Auto-promoting them to "online" because they merely loaded the page
-  // would re-introduce the bug we're fixing. Promotion is reserved for
-  // the manual menu pick in onSet().
+  // Otherwise: NO auto-change. The engineer's session starts at "offline"
+  // (DB default) so login doesn't drop them into the matcher queue before
+  // they're ready; auto-promoting on page-load would re-introduce that
+  // bug. The call-end → online restore is intentionally NARROW: it only
+  // fires when this hook itself put them into busy in the first place and
+  // the engineer hasn't manually changed presence since (onSet clears
+  // lastAutoWriteRef so a manual choice is preserved).
   const isOnCallRef = useRef(false);
   const isIdleRef = useRef(false);
-  // Tracks the last value we (auto) wrote to the DB. Prevents redundant
-  // writes when the same condition re-fires (e.g. multiple mousemoves
-  // both call markActive while we're already known to be active).
+  // Tracks the last value we (auto) wrote to the DB. Used for two things:
+  //   1. dedupe re-writes when the same condition re-fires.
+  //   2. gate the call-end → online restore so it only fires when WE set
+  //      busy. onSet() resets this to null to mark manual overrides.
   const lastAutoWriteRef = useRef<Presence | null>(null);
 
   const recompute = useCallback(async () => {
     const current = presenceRef.current;
-    // Decide the desired demotion (if any). Null means "no auto-change".
     let desired: Presence | null = null;
     if (isOnCallRef.current) {
       // On a call → busy. Always — engineers shouldn't appear available
@@ -268,9 +276,14 @@ export function EngineerPresenceBall({
       // Busy and then walked away should still show as Offline after 5
       // min, not "Busy forever".
       desired = "offline";
+    } else if (lastAutoWriteRef.current === "busy" && current === "busy") {
+      // Call just ended (we'd be in the on-call branch otherwise) and we
+      // were the ones who set busy. Restore to online so the matcher can
+      // start ringing them again. If they had manually clicked away from
+      // busy at any point during the call, onSet() will have reset
+      // lastAutoWriteRef to null and this branch wouldn't fire.
+      desired = "online";
     }
-    // No "else → online" branch. The engineer must explicitly choose
-    // online via the menu — auto-detection only demotes.
 
     if (desired === null) return;
     if (desired === current) return;
@@ -561,6 +574,9 @@ export function EngineerPresenceBall({
     const previous = presence;
     setPresence(next);
     setMenuOpen(false);
+    // Manual override — clear the auto-watcher's memory so the call-end
+    // restore-to-online branch doesn't undo this choice.
+    lastAutoWriteRef.current = null;
     try {
       const sb = sbRef.current;
       const { error } = await sb.rpc("set_engineer_presence", { _state: next });
