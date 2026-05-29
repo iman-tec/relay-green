@@ -285,7 +285,16 @@ function Row({ row, first, now, onChanged }: { row: MatchingRow; first: boolean;
         )}
       </Td>
       <Td>
-        <MatchingActions intakeId={row.intakeId} onChanged={onChanged} allDeclined={row.allDeclined} />
+        {/* The manual "Broadcast to all" only appears once a broadcast
+            ROUND has been exhausted — i.e. 2+ engineers declined. After a
+            single (first) decline the broadcast fires automatically, so the
+            supervisor just gets Assign here, not a redundant broadcast
+            button. */}
+        <MatchingActions
+          intakeId={row.intakeId}
+          onChanged={onChanged}
+          allDeclined={row.allDeclined && row.declinedBy.length >= 2}
+        />
       </Td>
     </tr>
   );
