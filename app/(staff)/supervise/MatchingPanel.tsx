@@ -187,7 +187,7 @@ export function MatchingPanel({
 }
 
 function Row({ row, first, now, onChanged }: { row: MatchingRow; first: boolean; now: number; onChanged: () => void }) {
-  const ringMs = new Date(row.expiresAt).getTime() - now;
+  const ringMs = row.expiresAt ? new Date(row.expiresAt).getTime() - now : 0;
   const ringS  = Math.max(0, Math.ceil(ringMs / 1000));
   const queuedMs = row.queuedAt ? now - new Date(row.queuedAt).getTime() : 0;
 
@@ -209,19 +209,34 @@ function Row({ row, first, now, onChanged }: { row: MatchingRow; first: boolean;
         </div>
       </Td>
       <Td>
-        <div className="font-medium">{row.engineer.displayName}</div>
-        <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-          {row.engineer.email}
-          {row.engineer.experienceLevel ? ` · ${row.engineer.experienceLevel}` : ""}
-        </div>
+        {row.allDeclined ? (
+          <span
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium"
+            style={{ backgroundColor: "color-mix(in srgb, var(--risk) 14%, transparent)", color: "var(--risk)" }}
+          >
+            {row.declinedBy.length <= 1 ? "Engineer declined" : "All engineers declined"}
+          </span>
+        ) : (
+          <>
+            <div className="font-medium">{row.engineer.displayName}</div>
+            <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+              {row.engineer.email}
+              {row.engineer.experienceLevel ? ` · ${row.engineer.experienceLevel}` : ""}
+            </div>
+          </>
+        )}
       </Td>
       <Td>
-        <span className="tabular-nums">{row.matchScore.toFixed(1)}</span>
+        <span className="tabular-nums">{row.allDeclined ? "—" : row.matchScore.toFixed(1)}</span>
       </Td>
       <Td>
-        <span className="tabular-nums font-medium" style={{ color: ringColor }}>
-          {ringS}s
-        </span>
+        {row.allDeclined ? (
+          <span style={{ color: "var(--text-muted)" }}>—</span>
+        ) : (
+          <span className="tabular-nums font-medium" style={{ color: ringColor }}>
+            {ringS}s
+          </span>
+        )}
       </Td>
       <Td>
         {row.declinedBy.length === 0 ? (
@@ -270,7 +285,7 @@ function Row({ row, first, now, onChanged }: { row: MatchingRow; first: boolean;
         )}
       </Td>
       <Td>
-        <MatchingActions intakeId={row.intakeId} onChanged={onChanged} />
+        <MatchingActions intakeId={row.intakeId} onChanged={onChanged} allDeclined={row.allDeclined} />
       </Td>
     </tr>
   );

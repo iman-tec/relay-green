@@ -19,7 +19,7 @@
  */
 
 import { useCallback, useRef, useState } from "react";
-import { Check, ChevronDown, Loader2, PhoneOff, UserPlus } from "lucide-react";
+import { Check, ChevronDown, Loader2, PhoneOff, UserPlus, Radio } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import type { AssignableEngineer } from "@/app/api/staff/assignable-engineers/route";
 
@@ -35,15 +35,20 @@ function mapError(message: string): string {
 export function MatchingActions({
   intakeId,
   onChanged,
+  allDeclined = false,
 }: {
   intakeId: string;
   onChanged?: () => void;
+  /** True for a session every rung engineer has already declined. Surfaces
+   *  a prominent "Broadcast to all" action (re-rings every active engineer)
+   *  as the primary next step instead of one-off manual assignment. */
+  allDeclined?: boolean;
 }) {
   const sbRef = useRef(createClient());
   const [open, setOpen] = useState(false);
   const [engineers, setEngineers] = useState<AssignableEngineer[] | null>(null);
   const [loading, setLoading] = useState(false);
-  const [working, setWorking] = useState<string | null>(null); // engineer id | "cancel"
+  const [working, setWorking] = useState<string | null>(null); // engineer id | "cancel" | "broadcast"
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -92,6 +97,18 @@ export function MatchingActions({
     onChanged?.();
   }, [intakeId, onChanged]);
 
+  // Re-ring EVERY active online engineer for this intake. match_engineer is
+  // tier-aware: with prior offers on the intake it broadcasts to all eligible
+  // engineers (first-accept-wins). Used when the rung engineer(s) declined.
+  const broadcast = useCallback(async () => {
+    setWorking("broadcast");
+    setError(null);
+    const { error: e } = await sbRef.current.rpc("match_engineer", { _intake_id: intakeId });
+    setWorking(null);
+    if (e) { setError(mapError(e.message)); return; }
+    onChanged?.();
+  }, [intakeId, onChanged]);
+
   const cancelCall = useCallback(async () => {
     setWorking("cancel");
     setError(null);
@@ -107,6 +124,21 @@ export function MatchingActions({
   return (
     <div className="relative flex flex-col items-start gap-1">
       <div className="flex items-center gap-1.5">
+        {/* After a decline, broadcasting to every active engineer is the
+            primary next step — show it first + filled. Manual Assign stays
+            available as a secondary control. */}
+        {allDeclined && (
+          <button
+            type="button"
+            onClick={() => void broadcast()}
+            disabled={working !== null}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold text-white disabled:opacity-50"
+            style={{ backgroundColor: "var(--primary)" }}
+          >
+            {working === "broadcast" ? <Loader2 size={12} className="animate-spin" /> : <Radio size={12} />}
+            Broadcast to all
+          </button>
+        )}
         {/* Assign dropdown */}
         <button
           ref={triggerRef}

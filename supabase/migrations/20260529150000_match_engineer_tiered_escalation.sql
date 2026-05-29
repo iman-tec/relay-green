@@ -98,9 +98,19 @@ BEGIN
         END AS score
     FROM user_role_names ur
     LEFT JOIN engineer_profiles ep ON ep.user_id = ur.user_id
+    LEFT JOIN engineer_presence pres ON pres.engineer_id = ur.user_id
     WHERE ur.role = 'engineer'
       AND ur.user_id <> COALESCE(_intake.customer_user_id, '00000000-0000-0000-0000-000000000000'::uuid)
-      AND COALESCE(ep.is_available, true)
+      -- "Active online": ring anyone whose heartbeat is fresh (tab open,
+      -- pinging) OR who is explicitly flagged available. We deliberately do
+      -- NOT gate solely on is_available — that flag gets stuck false by the
+      -- client-side auto-busy watcher even while the engineer is plainly
+      -- online and heartbeating, which silently shrank the broadcast pool to
+      -- nobody. Heartbeat freshness is the robust "are they here" signal.
+      AND (
+        pres.last_seen_at > now() - interval '90 seconds'
+        OR COALESCE(ep.is_available, false)
+      )
       AND ur.user_id <> ALL (COALESCE(_intake.declined_by, '{}'::uuid[]))
       AND NOT EXISTS (
         SELECT 1 FROM guest_calls gc

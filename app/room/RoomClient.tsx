@@ -31,7 +31,7 @@ import {
   Wallet, RefreshCw, Settings, LogOut, Check, Folder, Pencil, PanelRightOpen, PanelRightClose,
   Building2, FileText, Clock, Video, MoreHorizontal, UserPlus, Pin, SlidersHorizontal,
   Paperclip, Mic, Download, Music, AudioLines, ShieldCheck, Receipt, Home,
-  Trash2, Rocket, Wrench, Menu, MessageCircle, ArrowLeft,
+  Trash2, Rocket, Wrench, Menu, MessageCircle, ArrowLeft, CalendarClock,
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { ThemeTriplet } from "@/app/_components/ThemeTriplet";
@@ -9520,6 +9520,9 @@ function ConnectingModal({
 
   const [now, setNow] = useState<number>(() => Date.now());
   const [recalling, setRecalling] = useState(false);
+  // After the 90s window the customer can tap "Schedule for later"; this
+  // flips to show a short confirmation (the full booking flow ships later).
+  const [scheduleAck, setScheduleAck] = useState(false);
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
@@ -9735,24 +9738,25 @@ function ConnectingModal({
           </div>
         </div>
 
-        {/* Heading + subtitle — flips when the 90s window has elapsed
-            so the customer knows we're still trying and can recall. */}
+        {/* Heading + subtitle — flips when the 90s window has elapsed. After
+            the window we tell the customer plainly that no engineer is
+            available right now and offer to retry or schedule a time. */}
         <div className="mb-5 text-center">
           <h2 className="mb-1.5 text-xl font-medium"
             style={{ fontFamily: "var(--font-source-serif)", color: "var(--text)" }}>
-            {expired ? "Still searching…" : "Ringing your engineer"}
+            {expired ? "No engineer available" : "Ringing your engineer"}
           </h2>
           <p className="text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
             {expired
-              ? "No one's picked up just yet. Try calling again — we'll page the next available engineer."
+              ? "No one's free to take your call right now. You can try again, or schedule a time and we'll line up an engineer for you."
               : "Hang tight — we'll connect you the moment someone picks up."}
           </p>
         </div>
 
-        {/* "Call again" appears ONLY once the 3-min countdown has elapsed.
-            During the wait we deliberately show no CTA so customers don't
-            spam recalls. */}
-        {expired && (
+        {/* After the 90s window: retry + schedule. Scheduling is a stub for
+            now (the full booking flow lands later) — it shows a brief
+            confirmation so the customer knows it's noted. */}
+        {expired && !scheduleAck && (
           <button
             onClick={() => void handleCallAgain()}
             disabled={recalling}
@@ -9760,8 +9764,27 @@ function ConnectingModal({
             style={{ backgroundColor: ringColor, color: "#fff" }}
           >
             {recalling ? <Loader2 size={14} className="animate-spin" /> : <Phone size={14} />}
-            {recalling ? "Calling…" : "Call again"}
+            {recalling ? "Calling…" : "Try again"}
           </button>
+        )}
+        {expired && !scheduleAck && (
+          <button
+            onClick={() => setScheduleAck(true)}
+            className="mb-2 flex w-full items-center justify-center gap-2 rounded-full border py-2.5 text-sm font-medium transition-colors hover:bg-[var(--surface-raised)]"
+            style={{ borderColor: "var(--border)", color: "var(--text)" }}
+          >
+            <CalendarClock size={14} />
+            Schedule for later
+          </button>
+        )}
+        {expired && scheduleAck && (
+          <div
+            className="mb-2 rounded-xl border px-4 py-3 text-center text-[13px]"
+            style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)", color: "var(--text-muted)" }}
+          >
+            Got it — scheduling is coming soon. We&apos;ll reach out to set up a time
+            with an engineer. You can close this window.
+          </div>
         )}
 
         {/* Explicit cancel — destructive-ghost, the ONLY control that stops

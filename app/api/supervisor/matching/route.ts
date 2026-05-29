@@ -20,14 +20,17 @@ export const dynamic = "force-dynamic";
 export const runtime  = "nodejs";
 
 export type MatchingRow = {
-  offerId:        string;
+  offerId:        string | null;   // null for an all-declined stranded session
   intakeId:       string;
   guestCallId:    string | null;
   matchScore:     number;
-  offeredAt:      string;
-  expiresAt:      string;
+  offeredAt:      string | null;
+  expiresAt:      string | null;   // null when nobody is currently being rung
+  /** True when every rung engineer declined/expired and the session is
+   *  still queued with no one ringing — needs a manual assignment. */
+  allDeclined:    boolean;
   engineer: {
-    userId:          string;
+    userId:          string | null;
     displayName:     string;
     email:           string;
     experienceLevel: string | null;
@@ -96,22 +99,32 @@ export async function GET() {
     return NextResponse.json({ pod, rows: [] });
   }
 
-  // 3. Every offer currently being rung to one of those engineers. We
+  // 3. Pending offers currently being rung to one of those engineers. We
   //    intentionally include stale 'pending' rows whose expires_at has
   //    already passed — the advance_match trigger usually clears them
   //    within a second, but leaving them visible exposes the rare case
   //    where the sweep lags.
-  const { data: offers, error: offersErr } = await admin
-    .from("engineer_match_offers")
-    .select("id, intake_id, guest_call_id, engineer_user_id, customer_user_id, match_score, offered_at, expires_at")
-    .eq("status", "pending")
-    .in("engineer_user_id", podEngineerIds)
-    .order("expires_at", { ascending: true });
-  if (offersErr) {
-    return NextResponse.json({ error: offersErr.message }, { status: 500 });
-  }
-  if (!offers || offers.length === 0) {
-    return NextResponse.json({ pod, rows: [] });
+  // 3b. ALSO recently-closed (declined/expired) offers to those engineers,
+  //     so we can surface sessions this pod rang that NOBODY took — they'd
+  //     otherwise vanish from the board the moment the last engineer
+  //     declines, leaving the supervisor blind to a still-waiting customer.
+  const [pendRes, closedRes] = await Promise.all([
+    admin
+      .from("engineer_match_offers")
+      .select("id, intake_id, guest_call_id, engineer_user_id, customer_user_id, match_score, offered_at, expires_at")
+      .eq("status", "pending")
+      .in("engineer_user_id", podEngineerIds)
+      .order("expires_at", { ascending: true }),
+    admin
+      .from("engineer_match_offers")
+      .select("intake_id, guest_call_id")
+      .in("status", ["declined", "expired"])
+      .in("engineer_user_id", podEngineerIds)
+      .order("offered_at", { ascending: false })
+      .limit(300),
+  ]);
+  if (pendRes.error) {
+    return NextResponse.json({ error: pendRes.error.message }, { status: 500 });
   }
 
   type Offer = {
@@ -124,10 +137,27 @@ export async function GET() {
     offered_at:        string;
     expires_at:        string;
   };
-  const typedOffers = offers as Offer[];
+  const typedOffers = (pendRes.data ?? []) as Offer[];
+  const pendingIntakeIds = new Set(typedOffers.map((o) => o.intake_id));
 
-  const intakeIds    = Array.from(new Set(typedOffers.map((o) => o.intake_id)));
-  const guestCallIds = Array.from(new Set(typedOffers.map((o) => o.guest_call_id).filter((id): id is string => !!id)));
+  // Candidate stranded intakes: rang then closed, with no live pending ring.
+  // We confirm "still queued / unclaimed" against guest_calls below.
+  const strandedCandidates = new Map<string, string | null>(); // intake_id → guest_call_id
+  for (const c of (closedRes.data ?? []) as { intake_id: string; guest_call_id: string | null }[]) {
+    if (!pendingIntakeIds.has(c.intake_id) && !strandedCandidates.has(c.intake_id)) {
+      strandedCandidates.set(c.intake_id, c.guest_call_id);
+    }
+  }
+
+  if (typedOffers.length === 0 && strandedCandidates.size === 0) {
+    return NextResponse.json({ pod, rows: [] });
+  }
+
+  const intakeIds    = Array.from(new Set([...typedOffers.map((o) => o.intake_id), ...strandedCandidates.keys()]));
+  const guestCallIds = Array.from(new Set([
+    ...typedOffers.map((o) => o.guest_call_id),
+    ...strandedCandidates.values(),
+  ].filter((id): id is string => !!id)));
   const engineerIds  = Array.from(new Set(typedOffers.map((o) => o.engineer_user_id)));
 
   // 4. Intake, session, engineer profile rows for enrichment.
@@ -139,7 +169,7 @@ export async function GET() {
     guestCallIds.length
       ? admin
           .from("guest_calls")
-          .select("id, project_name, guest_name, created_at")
+          .select("id, project_name, guest_name, created_at, status, claimed_by")
           .in("id", guestCallIds)
       : Promise.resolve({ data: [] as unknown[] }),
     admin
@@ -162,6 +192,8 @@ export async function GET() {
     project_name: string | null;
     guest_name:   string | null;
     created_at:   string;
+    status:       string;
+    claimed_by:   string | null;
   };
   type EngProfile = { user_id: string; experience_level: string | null };
 
@@ -222,6 +254,7 @@ export async function GET() {
       matchScore:  Number(o.match_score),
       offeredAt:   o.offered_at,
       expiresAt:   o.expires_at,
+      allDeclined: false,
       engineer: {
         userId:          o.engineer_user_id,
         displayName:     displayNameFor(o.engineer_user_id),
@@ -242,6 +275,43 @@ export async function GET() {
       queuedAt:     call?.created_at ?? intake?.created_at ?? null,
     };
   });
+
+  // Stranded sessions: this pod rang them, every engineer declined/expired,
+  // and the session is STILL queued + unclaimed. Surface one row each so the
+  // supervisor can see "all declined" and assign manually, instead of the
+  // board going blank the moment the last engineer declines.
+  for (const [intakeId, gcId] of strandedCandidates) {
+    const call   = gcId ? callById.get(gcId) : undefined;
+    // Only truly-waiting sessions: still queued and not claimed by anyone.
+    if (!call || call.status !== "queued" || call.claimed_by) continue;
+    const intake     = intakeById.get(intakeId);
+    const customerId = intake?.customer_user_id ?? null;
+    rows.push({
+      offerId:     null,
+      intakeId,
+      guestCallId: gcId,
+      matchScore:  0,
+      offeredAt:   null,
+      expiresAt:   null,
+      allDeclined: true,
+      engineer: { userId: null, displayName: "All declined", email: "", experienceLevel: null },
+      customer: {
+        userId:      customerId,
+        displayName: customerId ? displayNameFor(customerId) : (call.guest_name ?? "Guest"),
+      },
+      projectName:  call.project_name ?? null,
+      technologies: intake?.technologies ?? [],
+      developing:   intake?.developing ?? null,
+      declinedBy:   (intake?.declined_by ?? []).map((uid) => ({
+        userId:      uid,
+        displayName: displayNameFor(uid),
+      })),
+      queuedAt:     call.created_at ?? intake?.created_at ?? null,
+    });
+  }
+
+  // All-declined sessions float to the top — they're the ones needing action.
+  rows.sort((a, b) => (a.allDeclined === b.allDeclined ? 0 : a.allDeclined ? -1 : 1));
 
   return NextResponse.json({ pod, rows });
 }
