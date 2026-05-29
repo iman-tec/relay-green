@@ -4,24 +4,17 @@
  * Customer "Contract management" — surfaces go-live / maintenance bids the
  * Relay team sent back. A blinking dot flags a freshly-arrived bid; opening it
  * marks it seen, shows the one-page estimate + the T&C link, and lets the
- * customer request an appointment or pay & commit (Stripe). On payment the
- * contract is committed and work moves to the next stage.
+ * customer either ask for an appointment to talk it through or accept the
+ * estimate. Accepting commits the contract (no online payment step —
+ * billing is arranged off-platform); work then moves to the next stage.
  *
  * Renders nothing until the customer has at least one quote request.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { loadStripe, type Stripe as StripeJs } from "@stripe/stripe-js";
-import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
-import { FileText, Rocket, Wrench, X, Loader2, Printer, ExternalLink, Check, ShieldCheck } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { FileText, Rocket, Wrench, X, Loader2, Printer, ExternalLink, Check, ShieldCheck, CalendarClock } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
-import { useTheme } from "@/app/_components/ThemeProvider";
-import { buildStripeAppearance } from "@/lib/stripe/appearance";
 import { useOverlayDismiss } from "@/lib/relay/useOverlayDismiss";
-
-const STRIPE_PK = (typeof process !== "undefined" && process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) || "";
-let _sp: Promise<StripeJs | null> | null = null;
-const stripePromise = () => { if (!STRIPE_PK) return null; if (!_sp) _sp = loadStripe(STRIPE_PK); return _sp; };
 
 const eur = (cents: number) => new Intl.NumberFormat(undefined, { style: "currency", currency: "EUR" }).format((cents || 0) / 100);
 
@@ -132,7 +125,9 @@ function statusLabel(s: string): string {
 
 function BidViewer({ quote, projectName, onClose, onChanged }: { quote: Quote; projectName: string; onClose: () => void; onChanged: () => void }) {
   const sb = useRef(createClient()).current;
-  const [paying, setPaying] = useState(false);
+  const [appt, setAppt] = useState(false);
+  const [accepting, setAccepting] = useState(false);
+  const [acceptErr, setAcceptErr] = useState<string | null>(null);
   const [committed, setCommitted] = useState(quote.status === "committed");
   const dialogRef = useOverlayDismiss(onClose);
 
@@ -145,6 +140,30 @@ function BidViewer({ quote, projectName, onClose, onChanged }: { quote: Quote; p
 
   const golive = quote.kind === "golive";
   const amount = quote.quote_amount_cents ?? 0;
+
+  // Accept the estimate WITHOUT an online payment — commits the contract
+  // server-side (billing is arranged off-platform / via the appointment).
+  const handleAccept = async () => {
+    if (accepting) return;
+    setAccepting(true);
+    setAcceptErr(null);
+    try {
+      const res = await fetch("/api/contract/accept", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quoteId: quote.id }),
+      });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(j.error ?? "Couldn't accept the estimate.");
+      }
+      setCommitted(true);
+      onChanged();
+    } catch (e) {
+      setAcceptErr(e instanceof Error ? e.message : "Couldn't accept the estimate.");
+      setAccepting(false);
+    }
+  };
 
   return (
     <>
@@ -183,90 +202,62 @@ function BidViewer({ quote, projectName, onClose, onChanged }: { quote: Quote; p
 
         {committed ? (
           <div className="flex items-center justify-center gap-2 rounded-xl border py-3 text-sm font-medium" style={{ borderColor: "var(--ok)", background: "color-mix(in srgb, var(--ok) 8%, transparent)", color: "var(--ok)" }}>
-            <ShieldCheck size={16} /> Contract committed — your engineer is on it.
+            <ShieldCheck size={16} /> Estimate accepted — your engineer is on it.
           </div>
-        ) : paying ? (
-          <PayPanel quoteId={quote.id} amount={amount} onPaid={() => { setCommitted(true); onChanged(); }} onCancel={() => setPaying(false)} />
+        ) : appt ? (
+          <ApptPanel quoteId={quote.id} onDone={() => { setAppt(false); onChanged(); }} onCancel={() => setAppt(false)} />
         ) : (
-          // Single action: Accept & pay. The appointment / request-changes /
-          // decline paths were removed per product — the only way forward
-          // from a quoted bid is to accept + pay it.
-          <button
-            type="button"
-            onClick={() => setPaying(true)}
-            className="inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-[13px] font-semibold text-white"
-            style={{ background: "var(--primary)" }}
-          >
-            <Check size={14} /> Accept &amp; pay {eur(amount)}
-          </button>
+          // Two actions: ask for an appointment to talk it through, or
+          // accept the estimate. No online payment step — accepting
+          // commits the contract and the team arranges billing.
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setAppt(true)}
+                disabled={accepting}
+                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full border px-4 py-2 text-[13px] font-medium disabled:opacity-50"
+                style={{ borderColor: "var(--border)", color: "var(--text)" }}
+              >
+                <CalendarClock size={14} /> Ask for appointment
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleAccept()}
+                disabled={accepting}
+                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50"
+                style={{ background: "var(--primary)" }}
+              >
+                {accepting ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Accept estimate
+              </button>
+            </div>
+            {acceptErr && <p className="text-center text-[12px]" style={{ color: "var(--risk)" }}>{acceptErr}</p>}
+          </div>
+        )}
+        {quote.appointment_requested_at && !committed && (
+          <p className="text-center text-[11px]" style={{ color: "var(--text-faint)" }}>Appointment requested — the team will reach out.</p>
         )}
       </div>
     </>
   );
 }
 
-function PayPanel({ quoteId, amount, onPaid, onCancel }: { quoteId: string; amount: number; onPaid: () => void; onCancel: () => void }) {
-  const { theme } = useTheme();
-  const sp = stripePromise();
-  const [clientSecret, setClientSecret] = useState<string | null>(null);
-  const [pi, setPi] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  useEffect(() => {
-    let alive = true;
-    void (async () => {
-      try {
-        const res = await fetch("/api/contract/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ quoteId }) });
-        const j = (await res.json()) as { clientSecret?: string; paymentIntentId?: string; error?: string };
-        if (!alive) return;
-        if (!res.ok || !j.clientSecret) throw new Error(j.error ?? "Couldn't start checkout.");
-        setClientSecret(j.clientSecret); setPi(j.paymentIntentId ?? null);
-      } catch (e) { if (alive) setErr(e instanceof Error ? e.message : "Checkout failed."); }
-    })();
-    return () => { alive = false; };
-  }, [quoteId]);
-  const appearance = useMemo(() => buildStripeAppearance(), [theme]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  if (err) return (
-    <div className="flex flex-col gap-2">
-      <div className="rounded-lg border px-3 py-2 text-[12px]" style={{ borderColor: "color-mix(in srgb, var(--risk) 30%, transparent)", color: "var(--risk)" }}>{err}</div>
-      <div className="flex justify-end">
-        <button type="button" onClick={onCancel} className="rounded-full px-3.5 py-1.5 text-[13px] font-medium" style={{ color: "var(--text-muted)" }}>Back</button>
-      </div>
-    </div>
-  );
-  if (!clientSecret || !sp || !pi) return <div className="flex items-center gap-2 py-4 text-[13px]" style={{ color: "var(--text-muted)" }}><Loader2 size={14} className="animate-spin" /> Preparing secure checkout…</div>;
-  return (
-    <Elements key={theme} stripe={sp} options={{ clientSecret, appearance }}>
-      <PayForm quoteId={quoteId} paymentIntentId={pi} amount={amount} onPaid={onPaid} onCancel={onCancel} />
-    </Elements>
-  );
-}
-
-function PayForm({ quoteId, paymentIntentId, amount, onPaid, onCancel }: { quoteId: string; paymentIntentId: string; amount: number; onPaid: () => void; onCancel: () => void }) {
-  const stripe = useStripe();
-  const elements = useElements();
+function ApptPanel({ quoteId, onDone, onCancel }: { quoteId: string; onDone: () => void; onCancel: () => void }) {
+  const sb = useRef(createClient()).current;
+  const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const pay = async () => {
-    if (!stripe || !elements || busy) return;
-    setBusy(true); setErr(null);
-    const { error } = await stripe.confirmPayment({ elements, redirect: "if_required" });
-    if (error) { setErr(error.message ?? "Payment failed."); setBusy(false); return; }
-    try {
-      const res = await fetch("/api/contract/commit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ quoteId, paymentIntentId }) });
-      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? "Payment took but committing failed — contact support.");
-      onPaid();
-    } catch (e) { setErr(e instanceof Error ? e.message : "Commit failed."); setBusy(false); }
+  const submit = async () => {
+    setBusy(true);
+    try { await sb.rpc("request_quote_appointment", { _id: quoteId, _note: note.trim() || null }); onDone(); }
+    finally { setBusy(false); }
   };
   return (
-    <div className="flex flex-col gap-3">
-      <PaymentElement options={{ layout: { type: "tabs", defaultCollapsed: false } }} />
-      {err && <p className="text-[12px]" style={{ color: "var(--risk)" }}>{err}</p>}
+    <div className="flex flex-col gap-2 rounded-xl border p-3" style={{ borderColor: "var(--border)" }}>
+      <p className="text-xs" style={{ color: "var(--text-muted)" }}>Ask to talk it through with your engineer + supervisor before committing.</p>
+      <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="What would you like to discuss?" className="rounded-lg border p-2 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={onCancel} disabled={busy} className="rounded-full px-3.5 py-1.5 text-[13px] font-medium" style={{ color: "var(--text-muted)" }}>Cancel</button>
-        <button type="button" onClick={() => void pay()} disabled={busy} className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13px] font-semibold text-white" style={{ background: "var(--primary)" }}>
-          {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Pay {eur(amount)} & commit
-        </button>
+        <button type="button" onClick={onCancel} disabled={busy} className="rounded-full px-3 py-1.5 text-[13px] font-medium" style={{ color: "var(--text-muted)" }}>Cancel</button>
+        <button type="button" onClick={() => void submit()} disabled={busy} className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13px] font-semibold text-white" style={{ background: "var(--primary)" }}>{busy ? <Loader2 size={13} className="animate-spin" /> : <CalendarClock size={13} />} Request</button>
       </div>
     </div>
   );
