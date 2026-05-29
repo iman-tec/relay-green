@@ -17,6 +17,8 @@
 import { NextResponse } from "next/server";
 import { requireSuperAdmin } from "@/lib/admin-auth";
 import { sendInvitationEmail } from "@/lib/admin-invite";
+import { notifyResellerClientOnboarded } from "@/lib/relay/resellerNotify";
+import { findUserInAnotherOrg, crossOrgError } from "@/lib/relay/orgGuard";
 import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
@@ -198,6 +200,16 @@ export async function POST(request: Request) {
     );
   }
 
+  // GUARD: the new org's admin email must not already belong to another
+  // enterprise — otherwise creating the org would hijack that user. "" as
+  // the target means "any existing org binding blocks" (this org has no id yet).
+  {
+    const guard = await findUserInAnotherOrg(admin, adminEmail.trim().toLowerCase(), "");
+    if (guard.blocked) {
+      return NextResponse.json({ error: crossOrgError(guard.orgName) }, { status: 409 });
+    }
+  }
+
   // Optional initial minutes allocation. Per spec, the organic enterprise
   // creation form includes a "Minutes Allocation" field; default to 0
   // when the caller omits it (e.g. legacy clients that don't yet send it).
@@ -374,6 +386,18 @@ export async function POST(request: Request) {
     if (tErr) {
       console.warn("[admin/orgs] initial transfer_to_organization failed:", tErr.message);
     }
+  }
+
+  // If this is a reseller-linked enterprise, fan out an in-app notification
+  // to the reseller's team. The actor is a super_admin (not on the team),
+  // so we don't exclude anyone. Best-effort — never fails the request.
+  if (resellerId && typeof resellerId === "string") {
+    void notifyResellerClientOnboarded(admin, {
+      resellerId,
+      enterpriseId:   org.id,
+      enterpriseName: org.name,
+      actorUserId:    null,
+    });
   }
 
   console.log(

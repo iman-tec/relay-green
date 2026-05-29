@@ -8,16 +8,17 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: ".",
   },
-  // Dev server runs on https://10.0.1.207:3000 only — both schemes whitelisted
+  // Dev server runs on https://10.0.2.129:3000 only — both schemes whitelisted
+  // (was 10.0.1.207 originally; updated for this machine's LAN IP)
   // (the http variants stay so a stray http:// link doesn't 403 the asset
   // even though every page redirects to https).
   allowedDevOrigins: [
-    "10.0.1.207",
-    "10.0.1.207:3000",
-    "10.0.1.207:3001",
-    "https://10.0.1.207",
-    "https://10.0.1.207:3000",
-    "https://10.0.1.207:3001",
+    "10.0.2.129",
+    "10.0.2.129:3000",
+    "10.0.2.129:3001",
+    "https://10.0.2.129",
+    "https://10.0.2.129:3000",
+    "https://10.0.2.129:3001",
   ],
   // The Zoom Meeting SDK (Component View) uses singleton state on `window`.
   // StrictMode's intentional double-invoke of effects causes the SDK to

@@ -16,6 +16,7 @@
 import { NextResponse } from "next/server";
 import { requireEnterpriseAdmin } from "@/lib/enterprise-auth";
 import { sendInvitationEmail } from "@/lib/admin-invite";
+import { findUserInAnotherOrg, crossOrgError } from "@/lib/relay/orgGuard";
 import { writeAccessAudit } from "@/lib/relay/accessAudit";
 import { ROLE } from "@/lib/relay/roles";
 
@@ -161,6 +162,13 @@ export async function POST(request: Request, { params }: RouteCtx) {
   const trimmedEmail = email.trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmedEmail)) {
     return NextResponse.json({ error: "Invalid email." }, { status: 400 });
+  }
+  // GUARD: don't pull in an email already bound to another enterprise.
+  {
+    const guard = await findUserInAnotherOrg(admin, trimmedEmail, orgId);
+    if (guard.blocked) {
+      return NextResponse.json({ error: crossOrgError(guard.orgName) }, { status: 409 });
+    }
   }
   const allocNum = Number(allocatedMinutes ?? 0);
   if (Number.isNaN(allocNum) || allocNum < 0) {

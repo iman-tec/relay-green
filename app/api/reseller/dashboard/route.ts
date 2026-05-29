@@ -41,7 +41,7 @@ export async function GET() {
     admin
       .from("organizations")
       .select(
-        "id, name, enterprise_code, status, allocated_minutes, used_minutes, remaining_minutes, primary_domain, created_at",
+        "id, name, enterprise_code, status, allocated_minutes, used_minutes, remaining_minutes, primary_domain, discount_pct, discount_until, created_at",
       )
       .eq("reseller_id", resellerId)
       .order("created_at", { ascending: false }),
@@ -60,6 +60,8 @@ export async function GET() {
     used_minutes:      number;
     remaining_minutes: number;
     primary_domain:    string | null;
+    discount_pct:      number | null;
+    discount_until:    string | null;
     created_at:        string;
   }>;
 
@@ -88,6 +90,8 @@ export async function GET() {
       allocatedMinutes:  Number(e.allocated_minutes ?? 0),
       usedMinutes:       Number(e.used_minutes ?? 0),
       remainingMinutes:  Number(e.remaining_minutes ?? 0),
+      discountPct:       Number(e.discount_pct ?? 0),
+      discountUntil:     e.discount_until,
       createdAt:         e.created_at,
     })),
   });

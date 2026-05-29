@@ -79,3 +79,6 @@ certificates
 # Local DB dumps — never commit
 backups/
 backup.sql
+
+# Internal working notes — keep local, don't publish.
+/Remaining changes.md

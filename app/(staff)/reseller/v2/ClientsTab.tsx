@@ -25,6 +25,7 @@ const BRAND = (typeof process !== "undefined" && process.env.NEXT_PUBLIC_BRAND_D
 type Enterprise = {
   id: string; name: string; enterpriseCode: string; status: string;
   usedMinutes: number; createdAt: string;
+  discountPct: number; discountUntil: string | null;
 };
 type Dashboard = { reseller: { commission: number }; enterprises: Enterprise[] };
 
@@ -89,6 +90,21 @@ export function ClientsTab() {
     else { navigator.clipboard?.writeText(created.url); setCopied(true); setTimeout(() => setCopied(false), 1500); }
   };
 
+  // Deactivate / reactivate a company. Suspend freezes the org + bans its
+  // members' logins (server-side); reactivate flips it back.
+  const setCompanyStatus = async (id: string, next: "suspended" | "active") => {
+    const verb = next === "suspended" ? "Deactivate" : "Reactivate";
+    const warn = next === "suspended" ? " Their members will lose access until you reactivate." : "";
+    if (!window.confirm(`${verb} this company?${warn}`)) return;
+    const res = await fetch(`/api/reseller/enterprises/${id}`, {
+      method:  "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ status: next }),
+    });
+    if (res.ok) dash.reload();
+    else window.alert(((await res.json().catch(() => ({}))) as { error?: string }).error ?? "Update failed.");
+  };
+
   const totalSpend = useMemo(() => ents.reduce((s, e) => s + spend(e), 0), [ents]);
 
   if (dash.loading) return <TabBody><LoadingState /></TabBody>;
@@ -142,13 +158,29 @@ export function ClientsTab() {
                     <h2 className="font-serif text-xl font-medium" style={{ color: "var(--text)" }}>{sel.name}</h2>
                     <p className="font-mono text-xs" style={{ color: "var(--text-muted)" }}>{sel.enterpriseCode}</p>
                   </div>
-                  <StatusBadge tone={TONE[sel.status] ?? "neutral"}>{sel.status}</StatusBadge>
+                  <div className="flex shrink-0 flex-col items-end gap-2">
+                    <StatusBadge tone={TONE[sel.status] ?? "neutral"}>{sel.status}</StatusBadge>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => setCompanyStatus(sel.id, sel.status === "active" ? "suspended" : "active")}
+                    >
+                      {sel.status === "active" ? "Deactivate" : "Reactivate"}
+                    </Button>
+                  </div>
                 </div>
                 <dl className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
                   <Metric label="Spend to date" value={eur(spend(sel))} />
                   <Metric label="Your commission" value={eur(Math.round(spend(sel) * commissionPct))} />
+                  <Metric label="Discount" value={sel.discountPct > 0 ? `${sel.discountPct}%` : "None"} />
                   <Metric label="Client since" value={new Date(sel.createdAt).toLocaleDateString()} />
                 </dl>
+                {sel.discountPct > 0 && sel.discountUntil && (
+                  <p className="mt-2 text-xs" style={{ color: "var(--text-muted)" }}>
+                    {sel.discountPct}% discount applied{" "}
+                    <strong style={{ color: "var(--text)" }}>until {new Date(sel.discountUntil).toLocaleDateString()}</strong>.
+                  </p>
+                )}
                 <p className="mt-5 text-xs leading-relaxed" style={{ color: "var(--text-faint)" }}>
                   This company manages its own departments and people. You see spend and
                   commission — not their internal teams or member details.

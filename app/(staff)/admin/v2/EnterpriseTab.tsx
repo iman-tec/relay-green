@@ -25,6 +25,9 @@ import { EditNameDrawer } from "@/app/_components/admin-v2/EditNameDrawer";
 import { AddEnterpriseDrawer } from "./_drawers/AddEnterpriseDrawer";
 import { AddDepartmentDrawer } from "./_drawers/AddDepartmentDrawer";
 import { AddEmployeeDrawer } from "./_drawers/AddEmployeeDrawer";
+import { AdminRefillDrawer, type RefillTarget } from "./_drawers/AdminRefillDrawer";
+import { AssignAdminDrawer } from "./_drawers/AssignAdminDrawer";
+import { AssignEnterpriseAdminDrawer } from "./_drawers/AssignEnterpriseAdminDrawer";
 
 type Member = {
   id: string; email: string; displayName: string;
@@ -70,6 +73,9 @@ export function EnterpriseTab() {
   const [addEmp,  setAddEmp]  = useState(false);
   const [editingEnt,  setEditingEnt]  = useState(false);
   const [editingDept, setEditingDept] = useState(false);
+  const [refillTarget, setRefillTarget] = useState<RefillTarget | null>(null);
+  const [assignAdmin, setAssignAdmin] = useState(false);
+  const [addEntAdmin, setAddEntAdmin] = useState(false);
 
   // ─ Employees + admin for the selected department (lazy load) ────────
   const [employees, setEmployees]       = useState<Employee[]>([]);
@@ -444,9 +450,19 @@ export function EnterpriseTab() {
               onEdit={() => setEditingEnt(true)}
               onToggle={(s) => setOrgStatus(selectedEnt.id, s)}
               onDelete={() => deleteOrg(selectedEnt.id)}
+              onAddMinutes={() => setRefillTarget({
+                title:      `Add minutes — ${selectedEnt.name}`,
+                endpoint:   `/api/admin/orgs/${selectedEnt.id}/refill`,
+                allocated:  selectedEnt.allocatedMinutes,
+                remaining:  selectedEnt.remainingMinutes,
+                sourceNote: selectedEnt.enterpriseType === "organic"
+                  ? "Minted to this enterprise's pool."
+                  : `Drawn from ${selectedEnt.resellerName ?? "the channel partner"}'s pool — top the partner up first if it's short.`,
+              })}
             />
             <EnterpriseAdminsSection
               admins={selectedEnt.members.filter((m) => m.roles.includes("enterprise_admin"))}
+              onAdd={() => setAddEntAdmin(true)}
               onResend={resendEmployeeInvite}
               onToggleStatus={toggleEmployeeStatus}
               onRemove={removeEnterpriseAdmin}
@@ -480,9 +496,11 @@ export function EnterpriseTab() {
             />
             <DepartmentAdminCard
               admin={deptAdmin}
+              deptActive={selectedDept.status === "active"}
               onResend={resendEmployeeInvite}
               onToggleStatus={toggleEmployeeStatus}
               onRemove={detachEmployee}
+              onAssign={() => setAssignAdmin(true)}
             />
             <EmployeeTable
               loading={empLoading}
@@ -549,6 +567,28 @@ export function EnterpriseTab() {
           onSaved={() => { setEditingDept(false); refresh(); }}
         />
       )}
+      <AdminRefillDrawer
+        target={refillTarget}
+        onClose={() => setRefillTarget(null)}
+        onRefilled={() => { setRefillTarget(null); refresh(); }}
+      />
+      <AssignAdminDrawer
+        open={assignAdmin}
+        orgId={selectedEntId}
+        deptId={selectedDeptId}
+        employees={employees.map((e) => ({ id: e.id, displayName: e.displayName, email: e.email }))}
+        onClose={() => setAssignAdmin(false)}
+        onAssigned={() => { setAssignAdmin(false); refreshEmployees(); refresh(); }}
+      />
+      <AssignEnterpriseAdminDrawer
+        open={addEntAdmin}
+        orgId={selectedEntId}
+        candidates={(selectedEnt?.members ?? [])
+          .filter((m) => !m.roles.includes("enterprise_admin"))
+          .map((m) => ({ id: m.id, displayName: m.displayName, email: m.email }))}
+        onClose={() => setAddEntAdmin(false)}
+        onAssigned={() => { setAddEntAdmin(false); refresh(); }}
+      />
     </div>
   );
 }
@@ -571,7 +611,7 @@ function EmptyState({ title, blurb }: { title: string; blurb: string }) {
 }
 
 function EnterpriseSummary({
-  ent, summary, onEdit, onToggle, onDelete,
+  ent, summary, onEdit, onToggle, onDelete, onAddMinutes,
 }: {
   ent: Enterprise;
   summary?: {
@@ -582,6 +622,7 @@ function EnterpriseSummary({
   onEdit:   () => void;
   onToggle: (next: "active" | "suspended") => void;
   onDelete: () => void;
+  onAddMinutes: () => void;
 }) {
   const badges: Badge[] = [
     { label: ent.enterpriseType === "organic" ? "Organic" : "Inorganic", tone: "neutral" },
@@ -618,6 +659,7 @@ function EnterpriseSummary({
         <DetailActions
           statusActive={ent.status === "active"}
           onEdit={onEdit}
+          onAddMinutes={onAddMinutes}
           onToggle={() => onToggle(ent.status === "active" ? "suspended" : "active")}
           onDelete={onDelete}
         />
@@ -627,15 +669,26 @@ function EnterpriseSummary({
 }
 
 function DetailActions({
-  statusActive, onEdit, onToggle, onDelete,
+  statusActive, onEdit, onToggle, onDelete, onAddMinutes,
 }: {
   statusActive: boolean;
   onEdit?:   () => void;
   onToggle: () => void;
   onDelete: () => void;
+  onAddMinutes?: () => void;
 }) {
   return (
     <>
+      {onAddMinutes && statusActive && (
+        <button
+          type="button"
+          onClick={onAddMinutes}
+          className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium"
+          style={{ background: "var(--primary)", color: "#fff" }}
+        >
+          <Plus className="size-3" /> Add minutes
+        </button>
+      )}
       {onEdit && (
         <button
           type="button"
@@ -670,12 +723,14 @@ function DetailActions({
 }
 
 function DepartmentAdminCard({
-  admin, onResend, onToggleStatus, onRemove,
+  admin, deptActive, onResend, onToggleStatus, onRemove, onAssign,
 }: {
   admin: Employee | null;
+  deptActive: boolean;
   onResend: (id: string) => void;
   onToggleStatus: (id: string, currentlyActive: boolean) => void;
   onRemove: (id: string) => void;
+  onAssign: () => void;
 }) {
   return (
     <section
@@ -692,11 +747,23 @@ function DepartmentAdminCard({
         >
           Department admin
         </span>
+        {!admin && (
+          <button
+            type="button"
+            onClick={onAssign}
+            disabled={!deptActive}
+            title={deptActive ? "Assign a department admin" : "Reactivate the department first"}
+            className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+            style={{ background: "var(--primary)", color: "#fff" }}
+          >
+            <Plus className="size-3.5" /> Assign admin
+          </button>
+        )}
       </header>
       {!admin ? (
         <p className="px-4 py-4 text-xs" style={{ color: "var(--text-muted)" }}>
-          No admin assigned. The org's enterprise admin can appoint one from{" "}
-          <code>/enterprise/departments</code>.
+          No admin assigned. Promote an existing employee or invite someone by email with{" "}
+          <span style={{ color: "var(--text)" }}>Assign admin</span> above.
         </p>
       ) : (
         <div className="flex items-center gap-3 px-4 py-3">
@@ -766,9 +833,10 @@ function DepartmentAdminCard({
 }
 
 function EnterpriseAdminsSection({
-  admins, onResend, onToggleStatus, onRemove,
+  admins, onAdd, onResend, onToggleStatus, onRemove,
 }: {
   admins: Member[];
+  onAdd: () => void;
   onResend: (id: string) => void;
   onToggleStatus: (id: string, currentlyActive: boolean) => void;
   onRemove: (id: string) => void;
@@ -778,14 +846,24 @@ function EnterpriseAdminsSection({
       className="overflow-hidden rounded-lg border"
       style={{ borderColor: "var(--border)", background: "var(--surface)" }}
     >
-      <header className="border-b px-4 py-2.5 text-xs font-semibold tracking-wide uppercase"
-        style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
-        Enterprise admins ({admins.length})
+      <header className="flex items-center justify-between border-b px-4 py-2.5"
+        style={{ borderColor: "var(--border)" }}>
+        <span className="text-xs font-semibold tracking-wide uppercase" style={{ color: "var(--text-muted)" }}>
+          Enterprise admins ({admins.length})
+        </span>
+        <button
+          type="button"
+          onClick={onAdd}
+          className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium"
+          style={{ background: "var(--primary)", color: "#fff" }}
+        >
+          <Plus className="size-3.5" /> Add admin
+        </button>
       </header>
       {admins.length === 0 ? (
         <p className="px-4 py-4 text-xs" style={{ color: "var(--text-muted)" }}>
-          No enterprise admin assigned. Add one via the org's invite flow at{" "}
-          <code>/admin/orgs/{`<id>`}/members</code>.
+          No enterprise admin assigned. Use <span style={{ color: "var(--text)" }}>Add admin</span> above to
+          promote an existing member or invite someone by email.
         </p>
       ) : (
         <ul className="flex flex-col">

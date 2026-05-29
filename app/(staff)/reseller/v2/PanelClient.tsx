@@ -15,6 +15,7 @@ import { useSearchParams } from "next/navigation";
 import { TabsHeader, type Tab } from "@/app/_components/admin-v2/TabsHeader";
 import { SignOutButton } from "@/app/_components/admin-v2/SignOutButton";
 import { UserChip } from "@/app/_components/admin-v2/UserChip";
+import { NotificationBell } from "@/app/_components/admin-v2/NotificationBell";
 import { ThemeTriplet } from "@/app/_components/ThemeTriplet";
 import { PartnerOverviewTab, type PartnerOverviewView } from "./PartnerOverviewTab";
 import { ClientsTab } from "./ClientsTab";
@@ -54,6 +55,7 @@ export function PanelClient({ me }: { me: { email: string; roleLabel: string } }
         subtitle="Channel Partner"
         rightSlot={
           <div className="flex items-center gap-2">
+            <NotificationBell />
             <ThemeTriplet />
             <UserChip email={me.email} roleLabel={me.roleLabel} />
             <SignOutButton />

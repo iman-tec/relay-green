@@ -27,6 +27,8 @@ import { Breadcrumb, type Crumb } from "@/app/_components/admin-v2/Breadcrumb";
 import { EditNameDrawer } from "@/app/_components/admin-v2/EditNameDrawer";
 import { AddDepartmentDrawer } from "./_drawers/AddDepartmentDrawer";
 import { AddEmployeeDrawer } from "./_drawers/AddEmployeeDrawer";
+import { AssignAdminDrawer } from "./_drawers/AssignAdminDrawer";
+import { RefillDepartmentDrawer } from "./_drawers/RefillDepartmentDrawer";
 
 type Enterprise = {
   id: string;
@@ -73,6 +75,8 @@ export function DepartmentsTab() {
   const [addDept, setAddDept]             = useState(false);
   const [addEmp, setAddEmp]               = useState(false);
   const [editDept, setEditDept]           = useState(false);
+  const [assignAdmin, setAssignAdmin]     = useState(false);
+  const [refillDept, setRefillDept]       = useState(false);
 
   const [employees, setEmployees]         = useState<Employee[]>([]);
   const [deptAdmin, setDeptAdmin]         = useState<Employee | null>(null);
@@ -173,7 +177,7 @@ export function DepartmentsTab() {
     } else alert((await res.json().catch(() => ({}))).error ?? "Remove failed.");
   };
   const resendInvite = async (id: string) => {
-    const res = await fetch(`/api/admin/users/${id}/resend-invite`, { method: "POST" });
+    const res = await fetch(`/api/enterprise/members/${id}/resend-invite`, { method: "POST" });
     if (res.ok) alert("Invite resent.");
     else alert((await res.json().catch(() => ({}))).error ?? "Resend failed.");
   };
@@ -181,7 +185,7 @@ export function DepartmentsTab() {
     const next = currentlyActive ? "DEACTIVATED" : "ACTIVE";
     const verb = currentlyActive ? "Deactivate" : "Reactivate";
     if (!confirm(`${verb} this user's sign-in access?`)) return;
-    const res = await fetch(`/api/admin/users/${id}`, {
+    const res = await fetch(`/api/enterprise/members/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: next }),
@@ -309,6 +313,16 @@ export function DepartmentsTab() {
               })()}
               actions={
                 <>
+                  {selDept.status === "active" && (
+                    <button
+                      type="button"
+                      onClick={() => setRefillDept(true)}
+                      className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium"
+                      style={{ background: "var(--primary)", color: "#fff" }}
+                    >
+                      <Plus className="size-3" /> Add minutes
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => setEditDept(true)}
@@ -332,9 +346,11 @@ export function DepartmentsTab() {
 
             <DepartmentAdminCard
               admin={deptAdmin}
+              deptActive={selDept.status === "active"}
               onResend={resendInvite}
               onToggleStatus={toggleStatus}
               onRemove={detachEmployee}
+              onAssign={() => setAssignAdmin(true)}
             />
 
             <EmployeeTable
@@ -382,6 +398,30 @@ export function DepartmentsTab() {
           onSaved={() => { setEditDept(false); refresh(); }}
         />
       )}
+      <AssignAdminDrawer
+        open={assignAdmin}
+        deptId={selDeptId}
+        employees={employees.map((e) => ({ id: e.id, displayName: e.displayName, email: e.email }))}
+        onClose={() => setAssignAdmin(false)}
+        onAssigned={() => {
+          setAssignAdmin(false);
+          refreshEmployees();
+          refresh();
+        }}
+      />
+      <RefillDepartmentDrawer
+        open={refillDept}
+        deptId={selDeptId}
+        deptName={selDept?.name ?? ""}
+        deptAllocated={selDept?.allocatedMinutes ?? 0}
+        deptRemaining={selDept?.remainingMinutes ?? 0}
+        enterpriseRemaining={ent?.remainingMinutes ?? 0}
+        onClose={() => setRefillDept(false)}
+        onRefilled={() => {
+          setRefillDept(false);
+          refresh();
+        }}
+      />
     </div>
   );
 }
@@ -389,25 +429,42 @@ export function DepartmentsTab() {
 // ── Subcomponents (mirror /admin/v2 patterns so the tabs feel identical) ─
 
 function DepartmentAdminCard({
-  admin, onResend, onToggleStatus, onRemove,
+  admin, deptActive, onResend, onToggleStatus, onRemove, onAssign,
 }: {
   admin: Employee | null;
+  deptActive: boolean;
   onResend: (id: string) => void;
   onToggleStatus: (id: string, currentlyActive: boolean) => void;
   onRemove: (id: string) => void;
+  onAssign: () => void;
 }) {
   return (
     <section
       className="overflow-hidden rounded-lg border"
       style={{ borderColor: "var(--border)", background: "var(--surface)" }}
     >
-      <header className="border-b px-4 py-2.5 text-xs font-semibold tracking-wide uppercase"
-        style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
-        Department admin
+      <header className="flex items-center justify-between border-b px-4 py-2.5"
+        style={{ borderColor: "var(--border)" }}>
+        <span className="text-xs font-semibold tracking-wide uppercase" style={{ color: "var(--text-muted)" }}>
+          Department admin
+        </span>
+        {!admin && (
+          <button
+            type="button"
+            onClick={onAssign}
+            disabled={!deptActive}
+            title={deptActive ? "Assign a department admin" : "Reactivate the department first"}
+            className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+            style={{ background: "var(--primary)", color: "#fff" }}
+          >
+            <Plus className="size-3.5" /> Assign admin
+          </button>
+        )}
       </header>
       {!admin ? (
         <p className="px-4 py-4 text-xs" style={{ color: "var(--text-muted)" }}>
-          No admin assigned. Add one when you create the next department, or ask a super admin to appoint.
+          No admin assigned. Promote an existing employee or invite someone by email with{" "}
+          <span style={{ color: "var(--text)" }}>Assign admin</span> above.
         </p>
       ) : (
         <div className="flex items-center gap-3 px-4 py-3">

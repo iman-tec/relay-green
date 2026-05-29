@@ -4,12 +4,18 @@
  * Shared invite status table — sent / opened / accepted / expired / revoked,
  * with resend + revoke. Reads /api/invite (scoped to the caller server-side).
  * Reused by every flow alongside InviteFlow.
+ *
+ * Subscribes to public.invites via Realtime so the table updates the
+ * instant the trg_mark_invites_accepted_on_signin trigger flips a row to
+ * 'accepted'. RLS on invites scopes events to the inviter (or super_admin),
+ * so we don't see other partners' rows.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { RotateCw, Ban, Loader2, Inbox } from "lucide-react";
 import { StatusBadge, EmptyState } from "@/app/_components/ui";
 import { useApiData } from "@/app/(staff)/enterprise/v2/_shared";
+import { createClient } from "@/lib/supabase/browser";
 
 type Invite = {
   id: string; email: string; name: string | null; role: string | null;
@@ -26,6 +32,23 @@ export function InviteStatusTable({ reloadKey = 0 }: { reloadKey?: number }) {
   const { data, loading, error, reload } = useApiData<{ invites: Invite[] }>(`/api/invite?r=${reloadKey}`);
   const rows = data?.invites ?? [];
   const [acting, setActing] = useState<string | null>(null);
+
+  // Realtime: refetch whenever any visible-to-us invite row changes.
+  // The trg_mark_invites_accepted_on_signin trigger fires on the recipient's
+  // sign-in and updates status to 'accepted'; that UPDATE arrives here as a
+  // postgres_changes event and we re-pull /api/invite to render the new state.
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel("invite-status-table")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "invites" },
+        () => { reload(); },
+      )
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [reload]);
 
   const act = async (id: string, method: "PATCH" | "DELETE") => {
     setActing(id);
