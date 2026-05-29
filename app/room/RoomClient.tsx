@@ -190,6 +190,10 @@ export function RoomClient() {
   // Video SDK in-window call surface state. Gated by NEXT_PUBLIC_USE_VIDEO_SDK
   // — when off, the legacy Meeting-SDK new-tab path is unchanged.
   const [callOpen, setCallOpen] = useState(false);
+  // Shown after a queued call auto-cancels at the 90s window with no
+  // engineer. Independent of session status so it survives the
+  // ConnectingModal unmount the cancel triggers.
+  const [noEngineerOpen, setNoEngineerOpen] = useState(false);
   // Portal target for the in-call participant tiles. Only mounted in the
   // right rail when an active screen share is in progress — at that
   // point the center column hands its space to the shared screen and the
@@ -1681,10 +1685,22 @@ export function RoomClient() {
       {state.session?.status === "queued" && !asyncChatMode && (
         <ConnectingModal
           session={state.session}
-          onRecall={state.recall}
           onCancel={state.cancel}
+          onTimeout={() => {
+            // 90s elapsed with no engineer → cancel the queued session and
+            // surface the "no engineer available" notice (which survives the
+            // modal unmount the cancel triggers).
+            setNoEngineerOpen(true);
+            void state.cancel();
+          }}
           projects={projects}
           onProjectsChanged={refetchProjects}
+        />
+      )}
+      {noEngineerOpen && (
+        <NoEngineerModal
+          onClose={() => setNoEngineerOpen(false)}
+          onTryAgain={() => { setNoEngineerOpen(false); handleNewSession(); }}
         />
       )}
       {/* Chat-first flow: the EngineerAssignedModal's "Engineer found —
@@ -9486,12 +9502,14 @@ function ProjectNameEditor({
 
 // ── Connecting Modal ───────────────────────────────────────────────────────
 function ConnectingModal({
-  session, onRecall, onCancel, projects, onProjectsChanged,
+  session, onCancel, onTimeout, projects, onProjectsChanged,
 }: {
   session: GuestCall;
-  onRecall: () => Promise<void>;
   /** Explicit cancel — actually stops ringing. Distinct from × (minimize). */
   onCancel: () => Promise<void>;
+  /** Fired ONCE when the 90s queue window elapses with no engineer. The
+   *  parent cancels the session + shows the "no engineer available" notice. */
+  onTimeout: () => void;
   projects: Project[];
   onProjectsChanged: () => void | Promise<void>;
 }) {
@@ -9511,18 +9529,14 @@ function ConnectingModal({
   }, [minimized]);
 
   // Anchor the 90-second countdown to the most recent of created_at /
-  // last_recall_at. That way clicking "Call again" naturally restarts the
-  // window — no extra timer-reset state needed on the client.
+  // last_recall_at. That way a recall naturally restarts the window — no
+  // extra timer-reset state needed on the client.
   const QUEUE_TIMEOUT_S = 90;
   const queuedAt     = new Date(session.created_at).getTime();
   const lastRecallAt = session.last_recall_at ? new Date(session.last_recall_at).getTime() : 0;
   const anchor       = Math.max(queuedAt, lastRecallAt);
 
   const [now, setNow] = useState<number>(() => Date.now());
-  const [recalling, setRecalling] = useState(false);
-  // After the 90s window the customer can tap "Schedule for later"; this
-  // flips to show a short confirmation (the full booking flow ships later).
-  const [scheduleAck, setScheduleAck] = useState(false);
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
@@ -9533,6 +9547,18 @@ function ConnectingModal({
   const expired   = remaining === 0;
   const mins      = Math.floor(remaining / 60);
   const secs      = remaining % 60;
+
+  // Auto-cancel at the 90s mark: if no engineer has picked up by the time
+  // the window elapses, fire onTimeout ONCE. The parent cancels the queued
+  // session server-side and shows the "no engineer available" notice. Fires
+  // even while minimized (this component stays mounted as the pill).
+  const timedOutRef = useRef(false);
+  useEffect(() => {
+    if (expired && !timedOutRef.current) {
+      timedOutRef.current = true;
+      onTimeout();
+    }
+  }, [expired, onTimeout]);
 
   // Elapsed shown as mm:ss counting up — honest waiting clock instead
   // of the old draining countdown ring. The 90s anchor is still used
@@ -9554,11 +9580,6 @@ function ConnectingModal({
   // full-page ringing screen (lib/relay/useRingtone.ts) so both
   // surfaces sound identical.
   useRingtone(!minimized && !expired);
-
-  const handleCallAgain = async () => {
-    setRecalling(true);
-    try { await onRecall(); } finally { setRecalling(false); }
-  };
 
   if (minimized) {
     // Top-center floating "still ringing" pill — iOS Dynamic-Island style.
@@ -9738,9 +9759,10 @@ function ConnectingModal({
           </div>
         </div>
 
-        {/* Heading + subtitle — flips when the 90s window has elapsed. After
-            the window we tell the customer plainly that no engineer is
-            available right now and offer to retry or schedule a time. */}
+        {/* Heading + subtitle. At the 90s mark the modal is auto-cancelling
+            the call (onTimeout fired) and about to hand off to the
+            "No engineer available" notice, so we just show a brief
+            transitional line here. */}
         <div className="mb-5 text-center">
           <h2 className="mb-1.5 text-xl font-medium"
             style={{ fontFamily: "var(--font-source-serif)", color: "var(--text)" }}>
@@ -9748,44 +9770,10 @@ function ConnectingModal({
           </h2>
           <p className="text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
             {expired
-              ? "No one's free to take your call right now. You can try again, or schedule a time and we'll line up an engineer for you."
+              ? "No one picked up in time — ending the call…"
               : "Hang tight — we'll connect you the moment someone picks up."}
           </p>
         </div>
-
-        {/* After the 90s window: retry + schedule. Scheduling is a stub for
-            now (the full booking flow lands later) — it shows a brief
-            confirmation so the customer knows it's noted. */}
-        {expired && !scheduleAck && (
-          <button
-            onClick={() => void handleCallAgain()}
-            disabled={recalling}
-            className="mb-2 flex w-full items-center justify-center gap-2 rounded-full py-2.5 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
-            style={{ backgroundColor: ringColor, color: "#fff" }}
-          >
-            {recalling ? <Loader2 size={14} className="animate-spin" /> : <Phone size={14} />}
-            {recalling ? "Calling…" : "Try again"}
-          </button>
-        )}
-        {expired && !scheduleAck && (
-          <button
-            onClick={() => setScheduleAck(true)}
-            className="mb-2 flex w-full items-center justify-center gap-2 rounded-full border py-2.5 text-sm font-medium transition-colors hover:bg-[var(--surface-raised)]"
-            style={{ borderColor: "var(--border)", color: "var(--text)" }}
-          >
-            <CalendarClock size={14} />
-            Schedule for later
-          </button>
-        )}
-        {expired && scheduleAck && (
-          <div
-            className="mb-2 rounded-xl border px-4 py-3 text-center text-[13px]"
-            style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)", color: "var(--text-muted)" }}
-          >
-            Got it — scheduling is coming soon. We&apos;ll reach out to set up a time
-            with an engineer. You can close this window.
-          </div>
-        )}
 
         {/* Explicit cancel — destructive-ghost, the ONLY control that stops
             ringing. × / Esc / click-outside minimize; this one cancels. */}
@@ -9802,6 +9790,98 @@ function ConnectingModal({
           Press <kbd className="rounded border border-[var(--border)] bg-[var(--surface-raised)] px-1 font-mono">Esc</kbd>{" "}
           to minimize and keep waiting — the search continues in the background.
         </p>
+      </div>
+    </div>
+  );
+}
+
+// ── No-engineer-available notice ───────────────────────────────────────────
+// Shown after a queued call auto-cancels at the 90s window with no engineer
+// having picked up. Lives at RoomClient scope (not gated on session status),
+// so it survives the ConnectingModal unmount the auto-cancel triggers.
+// Offers a retry (starts a fresh search) and a schedule-for-later stub.
+function NoEngineerModal({
+  onClose, onTryAgain,
+}: {
+  onClose: () => void;
+  onTryAgain: () => void;
+}) {
+  // Mounted only while the notice is open (parent gates with &&), so this
+  // resets to false naturally each time it reopens.
+  const [scheduleAck, setScheduleAck] = useState(false);
+
+  return (
+    <div
+      className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center px-6"
+      style={{ backgroundColor: "var(--scrim)", backdropFilter: "blur(4px)" }}
+    >
+      <div
+        className="relative w-full max-w-sm rounded-2xl border p-8 text-center shadow-xl"
+        style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}
+      >
+        <button
+          onClick={onClose}
+          aria-label="Close"
+          className="absolute right-4 top-4 opacity-50 transition-opacity hover:opacity-100"
+          style={{ color: "var(--text-muted)" }}
+        >
+          <X size={16} />
+        </button>
+
+        <div
+          className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-full"
+          style={{ backgroundColor: "var(--surface-raised)", color: "var(--text-muted)" }}
+        >
+          <PhoneOff size={28} />
+        </div>
+
+        <h2
+          className="mb-2 text-xl font-medium"
+          style={{ fontFamily: "var(--font-source-serif)", color: "var(--text)" }}
+        >
+          No engineer available
+        </h2>
+        <p className="mb-6 text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
+          No one was free to take your call after 90 seconds, so we ended the
+          search. You can try again now, or schedule a time and we&apos;ll line
+          up an engineer for you.
+        </p>
+
+        {scheduleAck ? (
+          <div
+            className="mb-2 rounded-xl border px-4 py-3 text-center text-[13px]"
+            style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)", color: "var(--text-muted)" }}
+          >
+            Got it — scheduling is coming soon. We&apos;ll reach out to set up a
+            time with an engineer. You can close this window.
+          </div>
+        ) : (
+          <>
+            <button
+              onClick={onTryAgain}
+              className="mb-2 flex w-full items-center justify-center gap-2 rounded-full py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
+              style={{ backgroundColor: BRAND_GREEN }}
+            >
+              <Phone size={14} />
+              Try again
+            </button>
+            <button
+              onClick={() => setScheduleAck(true)}
+              className="mb-2 flex w-full items-center justify-center gap-2 rounded-full border py-2.5 text-sm font-medium transition-colors hover:bg-[var(--surface-raised)]"
+              style={{ borderColor: "var(--border)", color: "var(--text)" }}
+            >
+              <CalendarClock size={14} />
+              Schedule for later
+            </button>
+          </>
+        )}
+
+        <button
+          onClick={onClose}
+          className="mt-1 w-full rounded-full px-3 py-2 text-xs font-medium text-[var(--text-muted)] transition-colors hover:text-[var(--text)]"
+        >
+          Close
+        </button>
       </div>
     </div>
   );
