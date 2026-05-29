@@ -177,7 +177,7 @@ export function DepartmentsTab() {
     } else alert((await res.json().catch(() => ({}))).error ?? "Remove failed.");
   };
   const resendInvite = async (id: string) => {
-    const res = await fetch(`/api/admin/users/${id}/resend-invite`, { method: "POST" });
+    const res = await fetch(`/api/enterprise/members/${id}/resend-invite`, { method: "POST" });
     if (res.ok) alert("Invite resent.");
     else alert((await res.json().catch(() => ({}))).error ?? "Resend failed.");
   };
@@ -185,7 +185,7 @@ export function DepartmentsTab() {
     const next = currentlyActive ? "DEACTIVATED" : "ACTIVE";
     const verb = currentlyActive ? "Deactivate" : "Reactivate";
     if (!confirm(`${verb} this user's sign-in access?`)) return;
-    const res = await fetch(`/api/admin/users/${id}`, {
+    const res = await fetch(`/api/enterprise/members/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: next }),

@@ -25,6 +25,7 @@ import { EditNameDrawer } from "@/app/_components/admin-v2/EditNameDrawer";
 import { AddEnterpriseDrawer } from "./_drawers/AddEnterpriseDrawer";
 import { AddDepartmentDrawer } from "./_drawers/AddDepartmentDrawer";
 import { AddEmployeeDrawer } from "./_drawers/AddEmployeeDrawer";
+import { AdminRefillDrawer, type RefillTarget } from "./_drawers/AdminRefillDrawer";
 
 type Member = {
   id: string; email: string; displayName: string;
@@ -70,6 +71,7 @@ export function EnterpriseTab() {
   const [addEmp,  setAddEmp]  = useState(false);
   const [editingEnt,  setEditingEnt]  = useState(false);
   const [editingDept, setEditingDept] = useState(false);
+  const [refillTarget, setRefillTarget] = useState<RefillTarget | null>(null);
 
   // ─ Employees + admin for the selected department (lazy load) ────────
   const [employees, setEmployees]       = useState<Employee[]>([]);
@@ -444,6 +446,15 @@ export function EnterpriseTab() {
               onEdit={() => setEditingEnt(true)}
               onToggle={(s) => setOrgStatus(selectedEnt.id, s)}
               onDelete={() => deleteOrg(selectedEnt.id)}
+              onAddMinutes={() => setRefillTarget({
+                title:      `Add minutes — ${selectedEnt.name}`,
+                endpoint:   `/api/admin/orgs/${selectedEnt.id}/refill`,
+                allocated:  selectedEnt.allocatedMinutes,
+                remaining:  selectedEnt.remainingMinutes,
+                sourceNote: selectedEnt.enterpriseType === "organic"
+                  ? "Minted to this enterprise's pool."
+                  : `Drawn from ${selectedEnt.resellerName ?? "the channel partner"}'s pool — top the partner up first if it's short.`,
+              })}
             />
             <EnterpriseAdminsSection
               admins={selectedEnt.members.filter((m) => m.roles.includes("enterprise_admin"))}
@@ -549,6 +560,11 @@ export function EnterpriseTab() {
           onSaved={() => { setEditingDept(false); refresh(); }}
         />
       )}
+      <AdminRefillDrawer
+        target={refillTarget}
+        onClose={() => setRefillTarget(null)}
+        onRefilled={() => { setRefillTarget(null); refresh(); }}
+      />
     </div>
   );
 }
@@ -571,7 +587,7 @@ function EmptyState({ title, blurb }: { title: string; blurb: string }) {
 }
 
 function EnterpriseSummary({
-  ent, summary, onEdit, onToggle, onDelete,
+  ent, summary, onEdit, onToggle, onDelete, onAddMinutes,
 }: {
   ent: Enterprise;
   summary?: {
@@ -582,6 +598,7 @@ function EnterpriseSummary({
   onEdit:   () => void;
   onToggle: (next: "active" | "suspended") => void;
   onDelete: () => void;
+  onAddMinutes: () => void;
 }) {
   const badges: Badge[] = [
     { label: ent.enterpriseType === "organic" ? "Organic" : "Inorganic", tone: "neutral" },
@@ -618,6 +635,7 @@ function EnterpriseSummary({
         <DetailActions
           statusActive={ent.status === "active"}
           onEdit={onEdit}
+          onAddMinutes={onAddMinutes}
           onToggle={() => onToggle(ent.status === "active" ? "suspended" : "active")}
           onDelete={onDelete}
         />
@@ -627,15 +645,26 @@ function EnterpriseSummary({
 }
 
 function DetailActions({
-  statusActive, onEdit, onToggle, onDelete,
+  statusActive, onEdit, onToggle, onDelete, onAddMinutes,
 }: {
   statusActive: boolean;
   onEdit?:   () => void;
   onToggle: () => void;
   onDelete: () => void;
+  onAddMinutes?: () => void;
 }) {
   return (
     <>
+      {onAddMinutes && statusActive && (
+        <button
+          type="button"
+          onClick={onAddMinutes}
+          className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium"
+          style={{ background: "var(--primary)", color: "#fff" }}
+        >
+          <Plus className="size-3" /> Add minutes
+        </button>
+      )}
       {onEdit && (
         <button
           type="button"

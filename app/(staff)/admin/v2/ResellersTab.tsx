@@ -29,6 +29,7 @@ import { AddResellerDrawer } from "./_drawers/AddResellerDrawer";
 import { AddEnterpriseDrawer } from "./_drawers/AddEnterpriseDrawer";
 import { AddDepartmentDrawer } from "./_drawers/AddDepartmentDrawer";
 import { AddEmployeeDrawer } from "./_drawers/AddEmployeeDrawer";
+import { AdminRefillDrawer, type RefillTarget } from "./_drawers/AdminRefillDrawer";
 
 // ── Types from the existing endpoints ────────────────────────────────
 type ResellerEnterprise = {
@@ -82,6 +83,7 @@ export function ResellersTab() {
   const [editReseller, setEditReseller] = useState(false);
   const [editEnt,      setEditEnt]      = useState(false);
   const [editDept,     setEditDept]     = useState(false);
+  const [refillTarget, setRefillTarget] = useState<RefillTarget | null>(null);
 
   // Employees for the selected department
   const [employees, setEmployees]       = useState<Employee[]>([]);
@@ -484,6 +486,13 @@ export function ResellersTab() {
               .reduce((sum, o) => sum + o.departments.reduce((s, d) => s + d.allocatedMinutes, 0), 0)}
             onEdit={() => setEditReseller(true)}
             onToggle={(s) => setResellerStatus(selReseller.id, s)}
+            onAddMinutes={() => setRefillTarget({
+              title:      `Add minutes — ${selReseller.name}`,
+              endpoint:   `/api/admin/resellers/${selReseller.id}/refill`,
+              allocated:  selReseller.allocatedMinutes,
+              remaining:  selReseller.remainingMinutes,
+              sourceNote: "Minted to this channel partner's pool. From here they distribute minutes to their enterprises.",
+            })}
           />
         )}
 
@@ -521,6 +530,13 @@ export function ResellersTab() {
               <DetailActions
                 statusActive={enterpriseRow.status === "active"}
                 onEdit={() => setEditEnt(true)}
+                onAddMinutes={() => setRefillTarget({
+                  title:      `Add minutes — ${enterpriseRow.name}`,
+                  endpoint:   `/api/admin/orgs/${enterpriseRow.id}/refill`,
+                  allocated:  enterpriseRow.allocatedMinutes,
+                  remaining:  enterpriseRow.remainingMinutes,
+                  sourceNote: `Drawn from ${selReseller?.name ?? "the channel partner"}'s pool — top the partner up first if it's short.`,
+                })}
                 onToggle={() => setOrgStatus(enterpriseRow.id, enterpriseRow.status === "active" ? "suspended" : "active")}
                 onDelete={() => deleteOrg(enterpriseRow.id)}
               />
@@ -656,6 +672,11 @@ export function ResellersTab() {
           onSaved={() => { setEditDept(false); refresh(); }}
         />
       )}
+      <AdminRefillDrawer
+        target={refillTarget}
+        onClose={() => setRefillTarget(null)}
+        onRefilled={() => { setRefillTarget(null); refresh(); }}
+      />
     </div>
   );
 }
@@ -672,12 +693,13 @@ function EmptyState({ title, blurb }: { title: string; blurb: string }) {
 }
 
 function ResellerSummary({
-  reseller, distributedAllocated, onEdit, onToggle,
+  reseller, distributedAllocated, onEdit, onToggle, onAddMinutes,
 }: {
   reseller: Reseller;
   distributedAllocated: number;
   onEdit:   () => void;
   onToggle: (next: "active" | "suspended") => void;
+  onAddMinutes: () => void;
 }) {
   const badges: Badge[] = [
     {
@@ -705,6 +727,16 @@ function ResellerSummary({
       rollupCaption={caption}
       actions={
         <>
+          {reseller.status === "active" && (
+            <button
+              type="button"
+              onClick={onAddMinutes}
+              className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium"
+              style={{ background: "var(--primary)", color: "#fff" }}
+            >
+              <Plus className="size-3" /> Add minutes
+            </button>
+          )}
           <button
             type="button"
             onClick={onEdit}
@@ -729,15 +761,26 @@ function ResellerSummary({
 }
 
 function DetailActions({
-  statusActive, onEdit, onToggle, onDelete,
+  statusActive, onEdit, onToggle, onDelete, onAddMinutes,
 }: {
   statusActive: boolean;
   onEdit?:  () => void;
   onToggle: () => void;
   onDelete: () => void;
+  onAddMinutes?: () => void;
 }) {
   return (
     <>
+      {onAddMinutes && statusActive && (
+        <button
+          type="button"
+          onClick={onAddMinutes}
+          className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium"
+          style={{ background: "var(--primary)", color: "#fff" }}
+        >
+          <Plus className="size-3" /> Add minutes
+        </button>
+      )}
       {onEdit && (
         <button
           type="button"
