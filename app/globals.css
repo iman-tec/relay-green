@@ -274,9 +274,19 @@ body {
    * page horizontally scrollable. Without this, an off-screen modal or
    * an unwrapped long URL can push the body wider than the viewport
    * and break every layout below. The 100% width pin + overflow-x
-   * clip keeps us honest. */
+   * clip keeps us honest.
+   *
+   * overflow-x: clip (not hidden) is deliberate. `hidden` makes html/body
+   * a scrolling container, which silently breaks position: sticky on any
+   * descendant — the StaffShell sidebar can't pin to the viewport because
+   * sticky resolves against the body's scrolling box instead. `clip`
+   * does the same horizontal-overflow suppression but does NOT establish
+   * a scroll container, so sticky resolves against the viewport as
+   * intended. `hidden` is kept first as a fallback for older browsers
+   * (pre-Chrome 90 / Firefox 81 / Safari 16). */
   width: 100%;
   overflow-x: hidden;
+  overflow-x: clip;
 }
 
 body {

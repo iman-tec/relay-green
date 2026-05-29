@@ -34,10 +34,14 @@ export async function GET() {
   if (!url || !key) return NextResponse.json({ error: "service_role_not_configured" }, { status: 500 });
   const admin = createAdminClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
 
+  // 'committed' joins 'pending' + 'quoted' here so the engineer-side
+  // inbox can render an "Accepted bid" filter chip with its own count —
+  // the customer-paid state still belongs in the engineer's queue as a
+  // record-of-work even though no further action is required.
   const { data: rows } = await admin
     .from("project_quote_requests")
     .select("id, kind, status, comments, created_at, responded_at, project_id, customer_user_id, quote_amount_cents, appointment_requested_at, appointment_note")
-    .in("status", ["pending", "quoted"])
+    .in("status", ["pending", "quoted", "committed"])
     .order("created_at", { ascending: false })
     .limit(100);
   const qs = (rows ?? []) as {

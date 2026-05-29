@@ -522,9 +522,17 @@ export function InboxClient() {
           />
         )}
 
-        {/* Incoming go-live / maintenance quote requests → bid prep. Quiet
-            (renders nothing) when there are none. */}
-        <div className="px-4 pt-3 empty:hidden">
+        {/* Incoming go-live / maintenance quote requests → bid prep.
+            Locked to 45% of the column height so the section is static
+            regardless of how many bids land — internal scroll inside
+            QuoteRequestsInbox handles overflow. min-h-0 lets the inner
+            flex layout actually scroll instead of stretching the wrapper.
+            flex 0 0 enforces the basis (no grow, no shrink) so a busy
+            PersonHistory below can't squeeze it. */}
+        <div
+          className="px-4 pb-3 pt-3"
+          style={{ flex: "0 0 45%", minHeight: 0 }}
+        >
           <QuoteRequestsInbox />
         </div>
 
@@ -820,7 +828,7 @@ function PersonHistory({
           avatar than the left column's row chip. The chevron at the
           left edge points back to the People list as a visual bridge. */}
       <header
-        className="relative flex items-center gap-4 border-b px-6 py-5"
+        className="relative flex items-center gap-4 border-b px-6 py-3"
         style={{
           borderColor: "var(--border)",
           backgroundColor: "color-mix(in srgb, var(--primary) 8%, transparent)",
