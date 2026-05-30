@@ -802,7 +802,7 @@ export function RoomClient() {
   //                        If absent, route to /intake?projectId=X so the
   //                        customer can fill the answers once (legacy
   //                        projects predate per-project intake).
-  const handleStartInProject = useCallback(async (projectId: string | null) => {
+  const handleStartInProject = useCallback(async (projectId: string | null, preferredEngineerId?: string) => {
     // Don't let the customer ring a new engineer while already on a call.
     if (blockNewCall()) return;
     // Entitlement check before we do anything else. Employees route
@@ -921,7 +921,29 @@ export function RoomClient() {
       .update({ guest_call_id: session.id, declined_by: [] })
       .eq("id", intake.id);
 
-    await sb.rpc("match_engineer", { _intake_id: intake.id });
+    // Directed connect: when the customer picked a specific engineer in the
+    // "Pick your engineer" modal, ring THAT engineer first via the directed
+    // endpoint. If it can't place the offer (engineer busy/offline, no prior
+    // relationship, etc. → offered:0) fall back to the generic matcher so the
+    // customer is never stranded. Without a preferred id, go straight to the
+    // generic matcher as before.
+    let directed = false;
+    if (preferredEngineerId) {
+      try {
+        const res = await fetch("/api/match/directed", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ intakeId: intake.id, engineerId: preferredEngineerId }),
+        });
+        const json = (await res.json().catch(() => ({}))) as { offered?: number };
+        directed = res.ok && (json.offered ?? 0) > 0;
+      } catch {
+        directed = false;
+      }
+    }
+    if (!directed) {
+      await sb.rpc("match_engineer", { _intake_id: intake.id });
+    }
     // Hop to the full-page matching screen (chat-while-ringing + restyled
     // chrome). On accept, MatchingClient redirects back to /room.
     router.replace(`/intake/matching/${intake.id}`);
@@ -1901,7 +1923,7 @@ const MainPane = memo(function MainPane({
    *  "× clear" affordance. */
   onSelectProject: (id: string | null) => void;
   /** Start a session directly in a given project (skips picker). */
-  onStartInProject: (projectId: string | null) => void;
+  onStartInProject: (projectId: string | null, preferredEngineerId?: string) => void;
   /** In-pane Account tab to render (Profile / Wallet / Billing /
    *  Security / Notifications), or null to render the normal session-
    *  driven view. */
@@ -4758,6 +4780,11 @@ type PastSession = {
    *  or "Session" when no AI summary / intake / first message exists. */
   topic: string;
   agent: string | null;
+  /** The engineer's auth.users id (guest_calls.claimed_by). Lets the
+   *  "Pick your engineer" Connect button ring THIS engineer directly
+   *  rather than falling through to the generic matcher. Null on legacy
+   *  rows that predate claimed_by. */
+  engineerId: string | null;
   minutes: number | null;
   date: string;
   status: SessionStatus;
@@ -4823,7 +4850,7 @@ const Sidebar = memo(function Sidebar({
   onNewChat: () => void;
   /** Inline "+" inside a project row — starts a session bound to that
    *  exact project, skipping the picker. */
-  onStartInProject: (projectId: string | null) => void;
+  onStartInProject: (projectId: string | null, preferredEngineerId?: string) => void;
   /** Inline rename on a project row. Updates projects.name + any active
    *  guest_calls.project_name in flight. */
   onRenameProject: (projectId: string, newName: string) => Promise<void>;
@@ -5030,6 +5057,62 @@ const Sidebar = memo(function Sidebar({
   // project (called from the "+ Create New Project" button). The form
   // UI is identical; only the submit handler + button label differ.
   const [connectFlowMode, setConnectFlowMode] = useState<"connect" | "create-only">("connect");
+  // Live availability for the engineers shown in the picker, keyed by
+  // engineerId. Resolved server-side (RLS blocks a customer from reading other
+  // engineers' presence) and polled while the picker is open — replaces the
+  // old i-based dummy availability that wrongly showed online engineers as
+  // Busy/Offline.
+  const [pickerPresence, setPickerPresence] = useState<Record<string, "available" | "busy" | "offline">>({});
+
+  // Distinct engineers for the picker (most-recent first), carrying each
+  // engineer's user_id so Connect can ring exactly that engineer. engineerId
+  // is taken from the most recent session that actually HAS a claimed_by, so a
+  // newer alias-only/legacy row doesn't wipe out a known id.
+  const pickerEngineers = useMemo<{ name: string; lastDate: string; engineerId: string | null }[]>(() => {
+    if (!pickerProjectId) return [];
+    const seen = new Map<string, { name: string; lastDate: string; engineerId: string | null }>();
+    const consider = (s: PastSession) => {
+      if (!s.agent) return;
+      const existing = seen.get(s.agent);
+      if (!existing) {
+        seen.set(s.agent, { name: s.agent, lastDate: s.date, engineerId: s.engineerId });
+        return;
+      }
+      if (new Date(s.date) > new Date(existing.lastDate)) existing.lastDate = s.date;
+      // Keep the first non-null id we encounter (rows are newest-first).
+      if (!existing.engineerId && s.engineerId) existing.engineerId = s.engineerId;
+    };
+    for (const s of past) if (s.projectId === pickerProjectId) consider(s);
+    // Brand-new project with no history yet → fall back to all recent engineers.
+    if (seen.size === 0) for (const s of past) consider(s);
+    return Array.from(seen.values()).sort(
+      (a, b) => new Date(b.lastDate).getTime() - new Date(a.lastDate).getTime(),
+    );
+  }, [past, pickerProjectId]);
+
+  // Poll real presence for the picker engineers while the modal is on the
+  // engineerPicker step. Immediate fetch on open, then every 12s.
+  useEffect(() => {
+    if (connectFlow !== "engineerPicker") return;
+    const ids = pickerEngineers.map((e) => e.engineerId).filter((x): x is string => !!x);
+    if (ids.length === 0) { setPickerPresence({}); return; }
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetch("/api/match/presence", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ engineerIds: ids }),
+        });
+        if (!res.ok) return;
+        const json = (await res.json()) as { presence?: Record<string, "available" | "busy" | "offline"> };
+        if (!cancelled && json.presence) setPickerPresence(json.presence);
+      } catch { /* keep last-known presence on a transient failure */ }
+    };
+    void poll();
+    const t = setInterval(poll, 12_000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [connectFlow, pickerEngineers]);
   // Form state for the new-project flow. Lives at the Sidebar level so it
   // survives back/forward navigation between the "details" and "name" steps.
   const [newProjectType, setNewProjectType] = useState<string>("");
@@ -5058,9 +5141,9 @@ const Sidebar = memo(function Sidebar({
       // sidebar reflects the live state, not just past history. The
       // currently-active session is marked with a pulse below.
       const FULL =
-        "id, guest_name, agent_name, duration_minutes, ai_summary_title, created_at, status, project_id, project_name";
+        "id, guest_name, agent_name, claimed_by, duration_minutes, ai_summary_title, created_at, status, project_id, project_name";
       const SLIM =
-        "id, guest_name, agent_name, duration_minutes, ai_summary_title, created_at, status";
+        "id, guest_name, agent_name, claimed_by, duration_minutes, ai_summary_title, created_at, status";
 
       let rows: Record<string, unknown>[] | null = null;
       let { data, error } = await sb
@@ -5193,6 +5276,7 @@ const Sidebar = memo(function Sidebar({
           title:       autoName,
           topic,
           agent:       row.agent_name as string | null,
+          engineerId:  (row.claimed_by as string | null) ?? null,
           minutes:     row.duration_minutes != null ? Math.round(Number(row.duration_minutes)) : null,
           date:        created,
           status,
@@ -6151,34 +6235,8 @@ const Sidebar = memo(function Sidebar({
               ? projectGroups.find((g) => g.key === pickerProjectId)?.name ?? null
               : null
           }
-          pickerEngineers={(() => {
-            if (!pickerProjectId) return [];
-            // Distinct engineer names for THIS project (most-recent first).
-            const seen = new Map<string, { name: string; lastDate: string }>();
-            for (const s of past) {
-              if (s.projectId !== pickerProjectId || !s.agent) continue;
-              const existing = seen.get(s.agent);
-              if (!existing || new Date(s.date) > new Date(existing.lastDate)) {
-                seen.set(s.agent, { name: s.agent, lastDate: s.date });
-              }
-            }
-            // Fallback for a brand-new project (the engineer-picker step
-            // hit straight after create) where there's no history yet on
-            // this project — surface the customer's recent engineers
-            // across ALL their projects so the picker isn't empty.
-            if (seen.size === 0) {
-              for (const s of past) {
-                if (!s.agent) continue;
-                const existing = seen.get(s.agent);
-                if (!existing || new Date(s.date) > new Date(existing.lastDate)) {
-                  seen.set(s.agent, { name: s.agent, lastDate: s.date });
-                }
-              }
-            }
-            return Array.from(seen.values()).sort(
-              (a, b) => new Date(b.lastDate).getTime() - new Date(a.lastDate).getTime(),
-            );
-          })()}
+          pickerEngineers={pickerEngineers}
+          pickerPresence={pickerPresence}
           newProjectType={newProjectType}
           setNewProjectType={setNewProjectType}
           newProjectTypeOther={newProjectTypeOther}
@@ -6209,14 +6267,17 @@ const Sidebar = memo(function Sidebar({
               onStartInProject(projectId);
             }
           }}
-          onEngineerConnect={(_engineerName) => {
-            // v1: route through the existing intake flow for this
-            // project. v2 TODO: pass _preferred_agent_id to
-            // match_engineer so the picked engineer is routed first.
+          onEngineerConnect={(_engineerName, engineerId) => {
+            // Directed connect: ring THIS engineer first. We pass their
+            // user_id (claimed_by from a past session) down into the start
+            // flow, which mints the session and places a directed offer at
+            // that engineer via /api/match/directed instead of the generic
+            // matcher. If we don't have an id (legacy session with no
+            // claimed_by) it falls back to the normal match.
             const pid = pickerProjectId;
             setConnectFlow(null);
             setPickerProjectId(null);
-            if (pid) onStartInProject(pid);
+            if (pid) onStartInProject(pid, engineerId ?? undefined);
           }}
           onEngineerRequest={(engineerName) => {
             // Busy-state request flow. The "drop a request, joins after"
@@ -6507,7 +6568,7 @@ const NEW_PROJECT_FRONTENDS: ReadonlyArray<string> = [
 
 function ConnectFlowModal({
   step, mode, projects,
-  pickerProjectId, pickerProjectName, pickerEngineers,
+  pickerProjectId, pickerProjectName, pickerEngineers, pickerPresence,
   newProjectType, setNewProjectType,
   newProjectTypeOther, setNewProjectTypeOther,
   newProjectAiTools, setNewProjectAiTools,
@@ -6528,7 +6589,8 @@ function ConnectFlowModal({
   pickerProjectName: string | null;
   /** Engineers who've worked on the picked project (deduped, most-recent
    *  first). lastDate is the most recent session they had on this project. */
-  pickerEngineers: { name: string; lastDate: string }[];
+  pickerEngineers: { name: string; lastDate: string; engineerId: string | null }[];
+  pickerPresence: Record<string, "available" | "busy" | "offline">;
   newProjectType: string;
   setNewProjectType: (s: string) => void;
   newProjectTypeOther: string;
@@ -6546,7 +6608,7 @@ function ConnectFlowModal({
   onChooseExisting: () => void;
   onPickProject: (projectId: string) => void;
   /** Picked-engineer actions (engineerPicker step). */
-  onEngineerConnect: (engineerName: string) => void;
+  onEngineerConnect: (engineerName: string, engineerId: string | null) => void;
   onEngineerRequest: (engineerName: string) => void;
   onEngineerSchedule: (engineerName: string) => void;
   /** "Request a different engineer" fallback. */
@@ -6754,19 +6816,20 @@ function ConnectFlowModal({
             </p>
 
             <div className="mt-4 flex flex-col gap-2">
-              {pickerEngineers.map((eng, i) => {
-                // v1 placeholder availability — most recent engineer is
-                // "Available", next is "Busy", everyone else is "Offline".
-                // Replace with real engineer_presence subscription in v2.
+              {pickerEngineers.map((eng) => {
+                // Real availability from the live presence poll, keyed by the
+                // engineer's user_id. Engineers with no resolvable id (legacy
+                // sessions that predate claimed_by) can't be ring-targeted or
+                // presence-checked, so they show Offline → Schedule.
                 const availability: "available" | "busy" | "offline" =
-                  i === 0 ? "available" : i === 1 ? "busy" : "offline";
+                  eng.engineerId ? (pickerPresence[eng.engineerId] ?? "offline") : "offline";
                 return (
                   <EngineerPickerRow
                     key={eng.name}
                     engineerName={eng.name}
                     lastSessionDate={eng.lastDate}
                     availability={availability}
-                    onConnect={() => onEngineerConnect(eng.name)}
+                    onConnect={() => onEngineerConnect(eng.name, eng.engineerId)}
                     onRequest={() => onEngineerRequest(eng.name)}
                     onSchedule={() => onEngineerSchedule(eng.name)}
                   />
@@ -7869,7 +7932,7 @@ const ProjectAccordion = memo(function ProjectAccordion({
   onViewPast: (id: string | null) => void;
   /** Called when the user clicks "+ Start session in this project". null
    *  is passed for the General bucket (no project id). */
-  onStartInProject: (projectId: string | null) => void;
+  onStartInProject: (projectId: string | null, preferredEngineerId?: string) => void;
   onRenameProject: (projectId: string, newName: string) => Promise<void>;
   /** Click on the project header → toggle this project as the landing
    *  CTA context. Not invoked for the General bucket. */
