@@ -181,6 +181,7 @@ export function EmployeesTab() {
         open={bulkOpen}
         onClose={() => setBulkOpen(false)}
         variant="members"
+        bulkOnly
         endpoint="/api/department/employees"
         title="Invite employees"
         onSent={() => { refresh(); setInviteKey((k) => k + 1); }}

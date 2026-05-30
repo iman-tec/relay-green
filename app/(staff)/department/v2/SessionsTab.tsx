@@ -22,9 +22,11 @@ const TONE: Record<string, "ok" | "warn" | "risk" | "neutral" | "info"> = {
   live: "ok", joining: "ok", assigned: "info", queued: "warn", grace: "warn", ending: "info",
   ended: "neutral", cancelled: "risk", abandoned: "risk", expired_free: "neutral",
 };
-// A session is "live" until it reaches a terminal state — it passes through
-// queued → assigned → joining → live → grace → ending while ongoing.
-const TERMINAL = new Set(["ended", "cancelled", "abandoned", "expired_free"]);
+// "Live" = a call that's actually connected/connecting with an engineer
+// (assigned → joining → live → grace → ending). Queued ("Connecting
+// customer…", no engineer yet) is NOT live — and a stale queued row that
+// never got reaped would otherwise linger under Live forever.
+const LIVE_STATUSES = new Set(["assigned", "joining", "live", "grace", "ending"]);
 const FILTERS = ["all", "live", "ended", "cancelled"] as const;
 
 export function SessionsTab() {
@@ -43,7 +45,7 @@ export function SessionsTab() {
     return all.filter((s) => {
       const matchesFilter =
         filter === "all"  ? true
-        : filter === "live" ? !TERMINAL.has(s.status)   // any ongoing state
+        : filter === "live" ? LIVE_STATUSES.has(s.status)
         : s.status === filter;
       if (!matchesFilter) return false;
       if (q && !(`${s.memberName} ${s.projectName ?? ""}`.toLowerCase().includes(q.toLowerCase()))) return false;
