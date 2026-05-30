@@ -33,7 +33,7 @@ type Result = { email: string; ok: boolean; error?: string; link?: string };
 
 export function InviteFlow({
   open, onClose, variant = "members", endpoint = "/api/invite",
-  title, roles, onSent,
+  title, roles, onSent, bulkOnly: bulkOnlyProp = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -43,8 +43,10 @@ export function InviteFlow({
   /** Role options for the single-invite role select (members variant). */
   roles?: { value: string; label: string }[];
   onSent?: () => void;
+  /** Hide the "Single" tab (CSV-only). Always on for the companies variant. */
+  bulkOnly?: boolean;
 }) {
-  const bulkOnly = variant === "companies";
+  const bulkOnly = variant === "companies" || bulkOnlyProp;
   const [mode, setMode] = useState<"single" | "bulk">(bulkOnly ? "bulk" : "single");
   const [email, setEmail] = useState(""); const [name, setName] = useState("");
   const [role, setRole] = useState(roles?.[0]?.value ?? "");

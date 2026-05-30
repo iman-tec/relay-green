@@ -12,6 +12,7 @@ import { useSearchParams } from "next/navigation";
 import { TabsHeader, type Tab } from "@/app/_components/admin-v2/TabsHeader";
 import { SignOutButton } from "@/app/_components/admin-v2/SignOutButton";
 import { UserChip } from "@/app/_components/admin-v2/UserChip";
+import { NotificationBell } from "@/app/_components/admin-v2/NotificationBell";
 import { ThemeTriplet } from "@/app/_components/ThemeTriplet";
 import { DeptOverviewTab, type DeptOverviewView } from "./DeptOverviewTab";
 import { SessionsTab } from "./SessionsTab";
@@ -55,6 +56,7 @@ export function PanelClient({ me }: { me: { email: string; roleLabel: string } }
         subtitle="Department"
         rightSlot={
           <div className="flex items-center gap-2">
+            <NotificationBell endpoint="/api/department/notifications" channelKey="department" />
             <ThemeTriplet />
             <UserChip email={me.email} roleLabel={me.roleLabel} />
             <SignOutButton />

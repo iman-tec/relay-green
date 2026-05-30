@@ -31,7 +31,21 @@ type NotificationItem = {
 
 type Payload = { items: NotificationItem[]; unread: number };
 
-export function NotificationBell() {
+/**
+ * Notification inbox bell. `endpoint` is the inbox base path:
+ *   GET  <endpoint>        → { items, unread }
+ *   POST <endpoint>        → mark all read
+ *   PATCH <endpoint>/:id   → mark one read
+ * Defaults to the reseller inbox for back-compat. `channelKey` just needs to
+ * be unique per mounted bell so two bells don't share a Realtime channel.
+ */
+export function NotificationBell({
+  endpoint = "/api/reseller/notifications",
+  channelKey = "reseller",
+}: {
+  endpoint?: string;
+  channelKey?: string;
+} = {}) {
   const [data, setData] = useState<Payload>({ items: [], unread: 0 });
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -39,7 +53,7 @@ export function NotificationBell() {
 
   const reload = useCallback(async () => {
     try {
-      const res = await fetch("/api/reseller/notifications", { cache: "no-store" });
+      const res = await fetch(endpoint, { cache: "no-store" });
       if (!res.ok) return;
       const json = (await res.json()) as Payload;
       setData(json);
@@ -48,7 +62,7 @@ export function NotificationBell() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [endpoint]);
 
   useEffect(() => { void reload(); }, [reload]);
 
@@ -57,7 +71,7 @@ export function NotificationBell() {
   useEffect(() => {
     const supabase = createClient();
     const channel = supabase
-      .channel("reseller-notifications-bell")
+      .channel(`${channelKey}-notifications-bell`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "notifications" },
@@ -65,7 +79,7 @@ export function NotificationBell() {
       )
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
-  }, [reload]);
+  }, [reload, channelKey]);
 
   // Tab-focus refetch — covers networks that block Realtime websockets.
   useEffect(() => {
@@ -102,12 +116,12 @@ export function NotificationBell() {
       unread: Math.max(0, d.unread - 1),
     }));
     try {
-      const res = await fetch(`/api/reseller/notifications/${id}`, { method: "PATCH" });
+      const res = await fetch(`${endpoint}/${id}`, { method: "PATCH" });
       if (!res.ok) await reload(); // server rejected — re-sync from truth.
     } catch {
       await reload();
     }
-  }, [reload]);
+  }, [reload, endpoint]);
 
   const markAll = useCallback(async () => {
     setData((d) => ({
@@ -115,12 +129,12 @@ export function NotificationBell() {
       unread: 0,
     }));
     try {
-      const res = await fetch("/api/reseller/notifications", { method: "POST" });
+      const res = await fetch(endpoint, { method: "POST" });
       if (!res.ok) await reload();
     } catch {
       await reload();
     }
-  }, [reload]);
+  }, [reload, endpoint]);
 
   const { items, unread } = data;
 

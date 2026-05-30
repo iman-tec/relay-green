@@ -97,7 +97,11 @@ export async function GET(_request: Request, { params }: RouteCtx) {
       allocatedMinutes: Number(p.allocated_minutes ?? 0),
       usedMinutes:      Number(p.used_minutes ?? 0),
       remainingMinutes: Number(p.remaining_minutes ?? 0),
-      status:           a?.banned ? "suspended" : "active",
+      // Lifecycle, not presence: banned → suspended; never-signed-in (invited
+      // but not accepted) → invited; otherwise active. email_confirmed_at is
+      // set at invite time so it can't distinguish accepted from pending —
+      // last_sign_in_at is the real "they've accepted" signal.
+      status:           a?.banned ? "suspended" : (a?.lastSignIn ? "active" : "invited"),
       lastSignIn:       a?.lastSignIn,
       createdAt:        p.created_at,
     };

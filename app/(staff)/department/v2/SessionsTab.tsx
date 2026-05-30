@@ -5,7 +5,7 @@
  * PII-minimized (own-dept member names allowed; no email/AI summary).
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { StatusBadge, EmptyState } from "@/app/_components/ui";
 import {
@@ -19,9 +19,14 @@ type Session = {
 };
 
 const TONE: Record<string, "ok" | "warn" | "risk" | "neutral" | "info"> = {
-  live: "ok", joining: "ok", assigned: "info", queued: "warn",
-  ended: "neutral", cancelled: "risk", abandoned: "risk", grace: "warn",
+  live: "ok", joining: "ok", assigned: "info", queued: "warn", grace: "warn", ending: "info",
+  ended: "neutral", cancelled: "risk", abandoned: "risk", expired_free: "neutral",
 };
+// "Live" = a call that's actually connected/connecting with an engineer
+// (assigned → joining → live → grace → ending). Queued ("Connecting
+// customer…", no engineer yet) is NOT live — and a stale queued row that
+// never got reaped would otherwise linger under Live forever.
+const LIVE_STATUSES = new Set(["assigned", "joining", "live", "grace", "ending"]);
 const FILTERS = ["all", "live", "ended", "cancelled"] as const;
 
 export function SessionsTab() {
@@ -29,10 +34,20 @@ export function SessionsTab() {
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("all");
 
+  // Keep the list current so live sessions surface without a manual reload.
+  useEffect(() => {
+    const id = setInterval(() => { reload(); }, 15000);
+    return () => clearInterval(id);
+  }, [reload]);
+
   const rows = useMemo(() => {
     const all = data?.sessions ?? [];
     return all.filter((s) => {
-      if (filter !== "all" && s.status !== filter) return false;
+      const matchesFilter =
+        filter === "all"  ? true
+        : filter === "live" ? LIVE_STATUSES.has(s.status)
+        : s.status === filter;
+      if (!matchesFilter) return false;
       if (q && !(`${s.memberName} ${s.projectName ?? ""}`.toLowerCase().includes(q.toLowerCase()))) return false;
       return true;
     });
