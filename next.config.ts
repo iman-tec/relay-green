@@ -4,9 +4,11 @@ const nextConfig: NextConfig = {
   // Pin the workspace root so a stray package-lock.json one directory up
   // (e.g. in a Claude Code worktree parent) doesn't fool Next/Turbopack
   // into picking the wrong dir and serving 404s for every app/* route.
-  // "." resolves relative to this file's location.
+  // Next 16 wants an ABSOLUTE path here (a relative "." logs a warning and
+  // is auto-resolved to cwd). process.cwd() is the project root for the npm
+  // dev/build scripts — the exact dir Next was already resolving "." to.
   turbopack: {
-    root: ".",
+    root: process.cwd(),
   },
   // Dev server runs on https://10.0.2.129:3000 only — both schemes whitelisted
   // (was 10.0.1.207 originally; updated for this machine's LAN IP)

@@ -15,6 +15,7 @@ import { useRouter } from "next/navigation";
 import { Sparkles } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import { CalendarTab } from "@/app/_components/EngineerProfilePane";
+import { MonthAvailabilityOverview } from "@/app/_components/MonthAvailabilityOverview";
 import { Toast } from "@/app/_components/ui";
 
 type Banner = { tone: "ok" | "risk" | "info"; text: string } | null;
@@ -70,6 +71,12 @@ export function CalendarPageClient() {
           <Toast tone={banner.tone}>{banner.text}</Toast>
         </div>
       )}
+
+      {/* Month-at-a-glance overview — holidays / available days / scheduled
+          calls for the next 4 weeks, above the weekly + monthly editors. */}
+      <div className="mb-6">
+        <MonthAvailabilityOverview />
+      </div>
 
       <CalendarTab userId={userId} showBanner={showBanner} />
     </div>

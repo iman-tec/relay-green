@@ -132,7 +132,8 @@ function BookingsList() {
       try {
         const res = await fetch("/api/supervisor/bookings", { cache: "no-store" });
         if (res.ok && alive) setRows(((await res.json()) as { bookings: Booking[] }).bookings ?? []);
-      } finally { if (alive) setLoading(false); }
+      } catch { /* transient fetch failure — ignore, leave list empty */ }
+      finally { if (alive) setLoading(false); }
     })();
     return () => { alive = false; };
   }, []);

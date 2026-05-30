@@ -66,6 +66,9 @@ export function ActNowRail() {
     try {
       const res = await fetch("/api/supervisor/act-now", { cache: "no-store" });
       if (res.ok) setFeed((await res.json()) as Feed);
+    } catch {
+      // Transient network/HMR blip ("Failed to fetch") — realtime + the 5s
+      // poll fallback retry. Swallow so it doesn't flood as unhandledRejection.
     } finally { setLoading(false); }
   }, []);
 

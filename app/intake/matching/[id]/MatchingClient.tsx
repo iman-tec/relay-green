@@ -41,7 +41,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Home, Volume2, VolumeX } from "lucide-react";
+import { Loader2, Home, Volume2, VolumeX, PhoneOff } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { RingingBall } from "@/app/_components/RingingBall";
 import { IntakeAssistant } from "@/app/_components/intake/IntakeAssistant";
@@ -84,6 +84,8 @@ type Phase =
   | { kind: "loading" }
   | { kind: "ringing"; livePending: Offer | null; sweepNeeded: boolean }
   | { kind: "no_engineer" }
+  // 90s (1:30) elapsed with no pickup — stop ringing, surface the busy notice.
+  | { kind: "busy" }
   | { kind: "cancelled" }
   | { kind: "accepted"; guestCallId: string };
 
@@ -92,12 +94,18 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
   const supabaseRef = useRef(createClient());
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   const [retrying, setRetrying] = useState(false);
+  // True once the customer has used their one "Try again" on the busy notice.
+  // After that the notice is terminal (Back to home only) — no perpetual retry.
+  const [busyRetried, setBusyRetried] = useState(false);
   // Bare re-render trigger — clock is computed from Date.now() at render
   // time so we don't store stale time in state. (Using a `now` state
   // captured at mount caused the very first paint to compute a negative
   // elapsedMs against ringStartRef.)
   const [, setTick] = useState(0);
   const guestCallIdRef = useRef<string | null>(null);
+  // Latches true once the 90s ringing window elapses. Keeps fetchLatest from
+  // flipping the terminal "busy" notice back to "ringing" on the next poll.
+  const timedOutRef = useRef(false);
 
   // Ringing-phase start timestamp — used to drive the elapsed-time
   // clock under the big ball. Set the first time the phase enters
@@ -109,6 +117,20 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
     if (phase.kind === "ringing" && ringStartRef.current === null) {
       ringStartRef.current = Date.now();
     }
+  }, [phase.kind]);
+
+  // Hard stop at 90s (1:30): once the ring has run that long with no pickup,
+  // stop ringing and show the "all engineers occupied" notice instead of
+  // ringing forever. Anchored to ringStartRef so it lines up exactly with the
+  // mm:ss clock the customer sees. "Try again" resets ringStartRef + this latch.
+  useEffect(() => {
+    if (phase.kind !== "ringing") return;
+    const start = ringStartRef.current ?? Date.now();
+    const fire = () => { timedOutRef.current = true; setPhase({ kind: "busy" }); };
+    const ms = start + 90_000 - Date.now();
+    if (ms <= 0) { fire(); return; }
+    const id = setTimeout(fire, ms);
+    return () => clearTimeout(id);
   }, [phase.kind]);
 
   // The ring-screen intake chat is a FIRST-TIME-GUEST onboarding moment
@@ -199,6 +221,10 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
       setPhase({ kind: "cancelled" });
       return;
     }
+    // Past the 90s window we hold the "busy" notice — a late accept (above) or
+    // an external cancel/abandon (above) still wins, but routine polling must
+    // not bounce the customer back to "ringing".
+    if (timedOutRef.current) return;
 
     const { data: offersData } = await sb
       .from("engineer_match_offers")
@@ -302,10 +328,23 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
     // to the matcher and get filtered out, even though they're actually gone.
     // Cheap UPDATE WHERE NOT EXISTS; no-op if nothing is stuck.
     try { await sb.rpc("reap_stale_assigned_sessions"); } catch { /* helper may not be deployed yet */ }
-    await sb.rpc("match_engineer", { _intake_id: intakeId });
+    // "Try again" → broadcast to EVERY online engineer at once, including ones
+    // who already declined (retry_broadcast_match clears the decline memory +
+    // prior offers first). Never rings offline engineers.
+    await sb.rpc("retry_broadcast_match", { _intake_id: intakeId });
     setRetrying(false);
     void fetchLatest();
   }, [intakeId, fetchLatest]);
+
+  // "Try again" from the busy notice — clear the latch, restart the clock, and
+  // re-ring the (still-queued) session.
+  const retryFromBusy = useCallback(() => {
+    setBusyRetried(true); // spend the single retry
+    timedOutRef.current = false;
+    ringStartRef.current = Date.now();
+    setPhase({ kind: "ringing", livePending: null, sweepNeeded: false });
+    void findAnother();
+  }, [findAnother]);
 
   const skip = useCallback(async () => {
     const sb = supabaseRef.current;
@@ -445,6 +484,34 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
                 <Button loading={retrying} onClick={findAnother}>
                   Try again
                 </Button>
+                <Button variant="secondary" onClick={skip}>
+                  Back to home
+                </Button>
+              </div>
+            </CardBody>
+          </Card>
+        )}
+
+        {phase.kind === "busy" && (
+          <Card variant="surface" className="w-full max-w-md">
+            <CardBody className="flex flex-col items-center gap-3 py-10 text-center">
+              <span className="inline-flex size-14 items-center justify-center rounded-full bg-[var(--warn-soft)] text-[var(--warn)]">
+                <PhoneOff className="size-7" />
+              </span>
+              <h1 className="font-serif text-xl text-[var(--text)]">
+                All engineers are occupied
+              </h1>
+              <p className="max-w-sm text-sm leading-relaxed text-[var(--text-muted)]">
+                {busyRetried
+                  ? "We still couldn't reach an engineer. Please try again later — they come online throughout the day."
+                  : "It looks like all our engineers are busy right now. You can try once more, or come back in a little while."}
+              </p>
+              <div className="flex gap-3 pt-3">
+                {!busyRetried && (
+                  <Button loading={retrying} onClick={retryFromBusy}>
+                    Try again
+                  </Button>
+                )}
                 <Button variant="secondary" onClick={skip}>
                   Back to home
                 </Button>

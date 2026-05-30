@@ -31,7 +31,7 @@ import {
   Wallet, RefreshCw, Settings, LogOut, Check, Folder, Pencil, PanelRightOpen, PanelRightClose,
   Building2, FileText, Clock, Video, MoreHorizontal, UserPlus, Pin, SlidersHorizontal,
   Paperclip, Mic, Download, Music, AudioLines, ShieldCheck, Receipt, Home,
-  Trash2, Rocket, Wrench, Menu, MessageCircle, ArrowLeft, CalendarClock,
+  Trash2, Rocket, Wrench, Menu, MessageCircle, ArrowLeft,
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { ThemeTriplet } from "@/app/_components/ThemeTriplet";
@@ -190,10 +190,6 @@ export function RoomClient() {
   // Video SDK in-window call surface state. Gated by NEXT_PUBLIC_USE_VIDEO_SDK
   // — when off, the legacy Meeting-SDK new-tab path is unchanged.
   const [callOpen, setCallOpen] = useState(false);
-  // Shown after a queued call auto-cancels at the 90s window with no
-  // engineer. Independent of session status so it survives the
-  // ConnectingModal unmount the cancel triggers.
-  const [noEngineerOpen, setNoEngineerOpen] = useState(false);
   // Portal target for the in-call participant tiles. Only mounted in the
   // right rail when an active screen share is in progress — at that
   // point the center column hands its space to the shared screen and the
@@ -393,6 +389,50 @@ export function RoomClient() {
   const searchParams = useSearchParams();
   const newChatParam = searchParams.get("newchat");
   const [asyncChatMode, setAsyncChatMode] = useState(false);
+  // When a queued session waits 90s (1:30) without an engineer picking up, we
+  // end the call and surface an "all engineers occupied" notice instead of
+  // ringing forever. This local flag drives that terminal modal; it's kept
+  // independent of session.status so the notice survives the session flipping
+  // to 'cancelled' when we end it. See the queue-timeout effect below.
+  const [queueTimedOut, setQueueTimedOut] = useState(false);
+  // Latest session-state accessor for timer callbacks, so the queue timer
+  // doesn't re-arm every render just because the hook returns a fresh object.
+  const sessionStateRef = useRef(state);
+  useEffect(() => { sessionStateRef.current = state; });
+  // End the call + raise the "all engineers occupied" notice at the 90s mark.
+  const handleQueueTimeout = useCallback(() => {
+    setQueueTimedOut(true);
+    void sessionStateRef.current.cancel(); // end the call so engineers stop being paged
+  }, []);
+  // Reset the notice whenever the underlying session changes (a fresh call).
+  // Keyed on id so ENDING the same session (cancel keeps the id, only flips
+  // status) doesn't clear the notice we just raised.
+  const queuedSessionId = state.session?.id;
+  useEffect(() => { setQueueTimedOut(false); }, [queuedSessionId]);
+  // Arm a precise 90s (1:30) timer anchored to created_at / last_recall_at
+  // while the session is queued. "Call again" bumps last_recall_at → re-arms
+  // the window. Mirrors the server's abandon_stale_queued_sessions() interval.
+  const queuedSession = state.session;
+  useEffect(() => {
+    // Only the ringing/queue flow times out — the async chat-first flow (no
+    // ConnectingModal) is a leave-a-message paradigm, not a live wait.
+    if (asyncChatMode || !queuedSession || queuedSession.status !== "queued" || queueTimedOut) return;
+    const anchor = Math.max(
+      new Date(queuedSession.created_at).getTime(),
+      queuedSession.last_recall_at ? new Date(queuedSession.last_recall_at).getTime() : 0,
+    );
+    const ms = anchor + 90_000 - Date.now();
+    if (ms <= 0) { handleQueueTimeout(); return; }
+    const id = setTimeout(handleQueueTimeout, ms);
+    return () => clearTimeout(id);
+  }, [queuedSession, queueTimedOut, handleQueueTimeout, asyncChatMode]);
+  // "Try again" on the busy notice → start a fresh call for the same project.
+  const handleBusyRetry = useCallback(async () => {
+    const pid = sessionStateRef.current.session?.project_id ?? undefined;
+    setQueueTimedOut(false);
+    await sessionStateRef.current.startNewSession(pid);
+  }, []);
+  const handleBusyClose = useCallback(() => { setQueueTimedOut(false); }, []);
   // Mobile-only state. The sidebar + chat panel are hidden by default
   // at viewports < md (768px). A hamburger button opens the sidebar as
   // a fixed-position drawer; a FAB opens the chat panel as a bottom
@@ -1704,26 +1744,18 @@ export function RoomClient() {
       </LaunchCallProvider>
 
       {/* Overlays */}
-      {state.session?.status === "queued" && !asyncChatMode && (
+      {state.session?.status === "queued" && !asyncChatMode && !queueTimedOut && (
         <ConnectingModal
           session={state.session}
           onCancel={state.cancel}
-          onTimeout={() => {
-            // 90s elapsed with no engineer → cancel the queued session and
-            // surface the "no engineer available" notice (which survives the
-            // modal unmount the cancel triggers).
-            setNoEngineerOpen(true);
-            void state.cancel();
-          }}
+          onTimeout={handleQueueTimeout}
           projects={projects}
           onProjectsChanged={refetchProjects}
         />
       )}
-      {noEngineerOpen && (
-        <NoEngineerModal
-          onClose={() => setNoEngineerOpen(false)}
-          onTryAgain={() => { setNoEngineerOpen(false); handleNewSession(); }}
-        />
+      {/* 90s queue timeout — the call ended with no engineer available. */}
+      {queueTimedOut && (
+        <AllEngineersBusyModal onRetry={handleBusyRetry} onClose={handleBusyClose} />
       )}
       {/* Chat-first flow: the EngineerAssignedModal's "Engineer found —
           Connecting…" overlay was designed for the old auto-mount Zoom
@@ -9858,21 +9890,21 @@ function ConnectingModal({
   );
 }
 
-// ── No-engineer-available notice ───────────────────────────────────────────
-// Shown after a queued call auto-cancels at the 90s window with no engineer
-// having picked up. Lives at RoomClient scope (not gated on session status),
-// so it survives the ConnectingModal unmount the auto-cancel triggers.
-// Offers a retry (starts a fresh search) and a schedule-for-later stub.
-function NoEngineerModal({
-  onClose, onTryAgain,
+// ── All-engineers-occupied modal (90s queue timeout) ───────────────────────
+// Terminal notice shown when a queued call waits 90s with no engineer pickup.
+// The call has already been ended by the time this renders; the customer can
+// retry (starts a fresh call) or close.
+function AllEngineersBusyModal({
+  onRetry, onClose,
 }: {
+  onRetry: () => void | Promise<void>;
   onClose: () => void;
-  onTryAgain: () => void;
 }) {
-  // Mounted only while the notice is open (parent gates with &&), so this
-  // resets to false naturally each time it reopens.
-  const [scheduleAck, setScheduleAck] = useState(false);
-
+  const [retrying, setRetrying] = useState(false);
+  const retry = async () => {
+    setRetrying(true);
+    try { await onRetry(); } finally { setRetrying(false); }
+  };
   return (
     <div
       className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center px-6"
@@ -9890,61 +9922,41 @@ function NoEngineerModal({
         >
           <X size={16} />
         </button>
-
         <div
           className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-full"
-          style={{ backgroundColor: "var(--surface-raised)", color: "var(--text-muted)" }}
+          style={{ backgroundColor: URGENT_AMBER_SOFT, color: URGENT_AMBER }}
         >
           <PhoneOff size={28} />
         </div>
-
         <h2
           className="mb-2 text-xl font-medium"
           style={{ fontFamily: "var(--font-source-serif)", color: "var(--text)" }}
         >
-          No engineer available
+          All engineers are occupied
         </h2>
         <p className="mb-6 text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
-          No one was free to take your call after 90 seconds, so we ended the
-          search. You can try again now, or schedule a time and we&apos;ll line
-          up an engineer for you.
+          It looks like all our engineers are busy right now. Please try again in
+          a little while.
         </p>
-
-        {scheduleAck ? (
-          <div
-            className="mb-2 rounded-xl border px-4 py-3 text-center text-[13px]"
-            style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)", color: "var(--text-muted)" }}
+        <div className="flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={() => void retry()}
+            disabled={retrying}
+            className="flex w-full items-center justify-center gap-2 rounded-full py-2.5 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
+            style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
           >
-            Got it — scheduling is coming soon. We&apos;ll reach out to set up a
-            time with an engineer. You can close this window.
-          </div>
-        ) : (
-          <>
-            <button
-              onClick={onTryAgain}
-              className="mb-2 flex w-full items-center justify-center gap-2 rounded-full py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
-              style={{ backgroundColor: BRAND_GREEN }}
-            >
-              <Phone size={14} />
-              Try again
-            </button>
-            <button
-              onClick={() => setScheduleAck(true)}
-              className="mb-2 flex w-full items-center justify-center gap-2 rounded-full border py-2.5 text-sm font-medium transition-colors hover:bg-[var(--surface-raised)]"
-              style={{ borderColor: "var(--border)", color: "var(--text)" }}
-            >
-              <CalendarClock size={14} />
-              Schedule for later
-            </button>
-          </>
-        )}
-
-        <button
-          onClick={onClose}
-          className="mt-1 w-full rounded-full px-3 py-2 text-xs font-medium text-[var(--text-muted)] transition-colors hover:text-[var(--text)]"
-        >
-          Close
-        </button>
+            {retrying ? <Loader2 size={14} className="animate-spin" /> : <Phone size={14} />}
+            {retrying ? "Calling…" : "Try again"}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full rounded-full px-3 py-2 text-xs font-medium text-[var(--text-muted)] transition-colors hover:text-[var(--text)]"
+          >
+            Close
+          </button>
+        </div>
       </div>
     </div>
   );

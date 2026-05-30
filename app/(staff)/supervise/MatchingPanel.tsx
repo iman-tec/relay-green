@@ -55,6 +55,10 @@ export function MatchingPanel({
       const res = await fetch(endpoint, { cache: "no-store" });
       const body = await res.json().catch(() => ({ rows: [] }));
       setRows((body.rows ?? []) as MatchingRow[]);
+    } catch {
+      // Transient network/HMR blip ("Failed to fetch") — the realtime
+      // subscription + 5s poll fallback will retry. Swallow so it doesn't
+      // surface as an unhandledRejection flooding the console.
     } finally {
       setLoading(false);
     }
