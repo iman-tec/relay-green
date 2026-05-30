@@ -475,7 +475,12 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
         userId: u.userId,
         displayName: String(u.displayName ?? "User"),
         isHost: !!u.isHost,
-        audio: { muted: !!u.muted },
+        // `audio` is '' until the SDK has actually started capturing (becomes
+        // 'computer'/'phone' once started). We start audio only on the user's
+        // first mic click (autoplay-gesture-safe), so until then treat them as
+        // muted — the mic toggle defaults to OFF and nobody is broadcasting on
+        // join. Once audio is started, reflect the real muted flag.
+        audio: { muted: u.audio ? !!u.muted : true },
         video: { on: !!u.bVideoOn },
         isCurrentUser: !!me && u.userId === me.userId,
       });

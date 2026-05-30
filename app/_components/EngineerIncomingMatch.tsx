@@ -167,21 +167,19 @@ export function EngineerIncomingMatch() {
 
   const decline = useCallback(async () => {
     if (!offer || busy) return;
-    const intakeId = offer.intake_id;
     setBusy(true);
     const sb = supabaseRef.current;
     await sb.rpc("decline_match", { _offer_id: offer.id });
-    // Immediately re-ring every OTHER online engineer at once (broadcast).
-    // The decline trigger also calls match_engineer, but the deployed copy
-    // filters on the flaky is_available flag and routinely finds nobody —
-    // this endpoint rings anyone heartbeat-fresh, so the broadcast actually
-    // goes out. Best-effort: if it fails, the supervisor board is the
-    // fallback. See app/api/staff/broadcast-match/route.ts.
-    void fetch("/api/staff/broadcast-match", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ intakeId }),
-    }).catch(() => {});
+    // decline_match fires the advance_match_on_offer_close trigger, which
+    // re-invokes match_engineer for THIS call — tiered escalation: the next
+    // single best engineer rings (not a broadcast) until two have been tried,
+    // then it broadcasts, then it flags reassign for the supervisor. We must
+    // NOT also POST /api/staff/broadcast-match here: that rings every online
+    // engineer at once, which turned every first-decline into a full
+    // broadcast. (The endpoint was a workaround from when the deployed
+    // match_engineer gated on a flaky is_available; presence is now manual and
+    // reliable, so the matcher finds online engineers on its own.) The
+    // supervisor's manual "Broadcast to all" button still uses that endpoint.
     setBusy(false);
     setOffer(null);
   }, [offer, busy]);
