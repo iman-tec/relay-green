@@ -807,9 +807,11 @@ function DepartmentAdminCard({
             {admin.status}
           </span>
           <div className="flex items-center gap-1">
-            <RowIcon title="Resend invite email" onClick={() => onResend(admin.id)}>
-              <Mail className="size-3.5" />
-            </RowIcon>
+            {admin.status === "invited" && (
+              <RowIcon title="Resend invite email" onClick={() => onResend(admin.id)}>
+                <Mail className="size-3.5" />
+              </RowIcon>
+            )}
             <RowIcon
               title={admin.status === "active" ? "Deactivate" : "Reactivate"}
               onClick={() => onToggleStatus(admin.id, admin.status === "active")}
@@ -1097,12 +1099,14 @@ function EmployeeTable({
                   </td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center justify-end gap-1">
-                      <RowIcon
-                        title="Resend invite email"
-                        onClick={() => onResend(e.id)}
-                      >
-                        <Mail className="size-3.5" />
-                      </RowIcon>
+                      {e.status === "invited" && (
+                        <RowIcon
+                          title="Resend invite email"
+                          onClick={() => onResend(e.id)}
+                        >
+                          <Mail className="size-3.5" />
+                        </RowIcon>
+                      )}
                       <RowIcon
                         title={e.status === "active" ? "Deactivate" : "Reactivate"}
                         onClick={() => onToggleStatus(e.id, e.status === "active")}

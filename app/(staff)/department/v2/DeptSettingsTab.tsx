@@ -7,7 +7,7 @@
  * (those belong to the enterprise admin / controller).
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Building2, Bell, Users, Info } from "lucide-react";
 import { Button } from "@/app/_components/ui";
 import { useApiData, num, TabBody, LoadingState, ErrorState } from "@/app/(staff)/enterprise/v2/_shared";
@@ -18,11 +18,38 @@ type Employees = {
   enterprise: { name: string; enterpriseCode: string };
   employees: Array<{ id: string }>;
 };
+type NotifPrefs = { sessions: boolean; lowMinutes: boolean; newMember: boolean };
 
 export function DeptSettingsTab() {
   const { data, loading, error, reload } = useApiData<Employees>("/api/department/employees");
-  const [notif, setNotif] = useState({ sessions: true, lowMinutes: true, newMember: true });
+  const prefsFetch = useApiData<{ prefs: NotifPrefs }>("/api/department/notification-prefs");
+  const [notif, setNotif] = useState<NotifPrefs>({ sessions: true, lowMinutes: true, newMember: true });
+  const [savingNotif, setSavingNotif] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+
+  // Sync toggles from the server once loaded.
+  const p = prefsFetch.data?.prefs;
+  useEffect(() => { if (p) setNotif(p); }, [p]);
+
+  const savePrefs = async () => {
+    setSavingNotif(true);
+    try {
+      const res = await fetch("/api/department/notification-prefs", {
+        method:  "PUT",
+        headers: { "content-type": "application/json" },
+        body:    JSON.stringify(notif),
+      });
+      if (!res.ok) {
+        const b = (await res.json().catch(() => ({}))) as { error?: string };
+        setNote(`Couldn't save preferences (${b.error ?? "unknown error"}).`);
+      } else {
+        setNote("Preferences saved.");
+        prefsFetch.reload();
+      }
+    } finally {
+      setSavingNotif(false);
+    }
+  };
 
   if (loading) return <TabBody><LoadingState /></TabBody>;
   if (error) return <TabBody><ErrorState message={error} onRetry={reload} /></TabBody>;
@@ -63,7 +90,7 @@ export function DeptSettingsTab() {
           <SettingsToggle label="New session alerts" desc="When a team member starts a session." on={notif.sessions} onChange={(v) => setNotif({ ...notif, sessions: v })} />
           <SettingsToggle label="Low-minutes warning" desc="When the department pool runs low." on={notif.lowMinutes} onChange={(v) => setNotif({ ...notif, lowMinutes: v })} />
           <SettingsToggle label="New member joined" desc="When someone is added to the department." on={notif.newMember} onChange={(v) => setNotif({ ...notif, newMember: v })} />
-          <div className="mt-3"><Button size="sm" onClick={() => setNote("TODO(api): notification prefs save not wired yet.")}>Save preferences</Button></div>
+          <div className="mt-3"><Button size="sm" disabled={savingNotif} onClick={savePrefs}>{savingNotif ? "Saving…" : "Save preferences"}</Button></div>
         </SettingsSection>
 
         {note && <p className="text-xs" style={{ color: "var(--text-muted)" }}>{note}</p>}

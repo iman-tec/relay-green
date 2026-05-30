@@ -5,7 +5,7 @@
  * PII-minimized (own-dept member names allowed; no email/AI summary).
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { StatusBadge, EmptyState } from "@/app/_components/ui";
 import {
@@ -19,9 +19,12 @@ type Session = {
 };
 
 const TONE: Record<string, "ok" | "warn" | "risk" | "neutral" | "info"> = {
-  live: "ok", joining: "ok", assigned: "info", queued: "warn",
-  ended: "neutral", cancelled: "risk", abandoned: "risk", grace: "warn",
+  live: "ok", joining: "ok", assigned: "info", queued: "warn", grace: "warn", ending: "info",
+  ended: "neutral", cancelled: "risk", abandoned: "risk", expired_free: "neutral",
 };
+// A session is "live" until it reaches a terminal state — it passes through
+// queued → assigned → joining → live → grace → ending while ongoing.
+const TERMINAL = new Set(["ended", "cancelled", "abandoned", "expired_free"]);
 const FILTERS = ["all", "live", "ended", "cancelled"] as const;
 
 export function SessionsTab() {
@@ -29,10 +32,20 @@ export function SessionsTab() {
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("all");
 
+  // Keep the list current so live sessions surface without a manual reload.
+  useEffect(() => {
+    const id = setInterval(() => { reload(); }, 15000);
+    return () => clearInterval(id);
+  }, [reload]);
+
   const rows = useMemo(() => {
     const all = data?.sessions ?? [];
     return all.filter((s) => {
-      if (filter !== "all" && s.status !== filter) return false;
+      const matchesFilter =
+        filter === "all"  ? true
+        : filter === "live" ? !TERMINAL.has(s.status)   // any ongoing state
+        : s.status === filter;
+      if (!matchesFilter) return false;
       if (q && !(`${s.memberName} ${s.projectName ?? ""}`.toLowerCase().includes(q.toLowerCase()))) return false;
       return true;
     });
