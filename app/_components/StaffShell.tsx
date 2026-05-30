@@ -76,10 +76,6 @@ const NAV: Nav[] = [
   { href: "/dashboard",            label: "Dashboard", icon: LayoutDashboard, roles: [ROLE.engineer] },
   // Engineer-only. People + per-customer session history + call log.
   { href: "/inbox",                label: "Inbox",     icon: InboxIcon,       roles: [ROLE.engineer] },
-  // Engineer-only. Weekly pattern, holidays, monthly per-date editor.
-  // Was previously a tab inside the Profile pane; promoted to a top-level
-  // destination so engineers reach it in one click.
-  { href: "/calendar",             label: "Calendar",  icon: Calendar,        roles: [ROLE.engineer] },
   // /supervise renders the platform-wide grid for super_admin + supervisor,
   // and the org-scoped grid for enterprise + department admins — see
   // app/(staff)/supervise/page.tsx.
@@ -100,9 +96,17 @@ const NAV: Nav[] = [
   // /operations is the supervisor's pod roster — engineers under them with
   // current customer + last call.
   { href: "/operations",           label: "Operations", icon: TableIcon,       roles: [ROLE.supervisor] },
+  // Weekly/monthly availability calendar — engineers AND supervisors. Same
+  // editor (CalendarTab); each user manages their own windows. Placed last so
+  // it sits under Supervise/Operations on the supervisor sidebar and after
+  // Dashboard/Inbox on the engineer sidebar.
+  { href: "/calendar",             label: "Calendar",  icon: Calendar,        roles: [ROLE.engineer, ROLE.supervisor] },
 ];
 
-const ENGINEER_ONLY_PATHS = ["/dashboard", "/inbox", "/calendar", "/staff/session"];
+// /calendar is intentionally NOT here — it's shared by engineers AND
+// supervisors (each manages their own availability), so non-engineers must not
+// be bounced off it.
+const ENGINEER_ONLY_PATHS = ["/dashboard", "/inbox", "/staff/session"];
 
 function isEngineer(roles: readonly Role[]): boolean {
   return roles.includes(ROLE.engineer);
@@ -914,6 +918,21 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
 
   const dismiss = (id: string) =>
     setAlerts((prev) => prev.filter((a) => a.id !== id));
+
+  // Auto-dismiss non-actionable toasts (reassign / urgent-session) after 10s so
+  // they don't linger on the supervisor's screen. Escalation toasts are
+  // actionable (Acknowledge & join / Snooze) and stay until the supervisor
+  // acts. Each toast is scheduled exactly once (tracked in a ref) so a
+  // re-render never resets or duplicates its timer.
+  const autoExpiredRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    for (const a of alerts) {
+      if (a.urgency === "escalation") continue;
+      if (autoExpiredRef.current.has(a.id)) continue;
+      autoExpiredRef.current.add(a.id);
+      setTimeout(() => setAlerts((prev) => prev.filter((x) => x.id !== a.id)), 10_000);
+    }
+  }, [alerts]);
 
   useEffect(() => {
     if (!isSupervisor) return;

@@ -4,9 +4,11 @@ const nextConfig: NextConfig = {
   // Pin the workspace root so a stray package-lock.json one directory up
   // (e.g. in a Claude Code worktree parent) doesn't fool Next/Turbopack
   // into picking the wrong dir and serving 404s for every app/* route.
-  // "." resolves relative to this file's location.
+  // Next 16 wants an ABSOLUTE path here (a relative "." logs a warning and
+  // is auto-resolved to cwd). process.cwd() is the project root for the npm
+  // dev/build scripts — the exact dir Next was already resolving "." to.
   turbopack: {
-    root: ".",
+    root: process.cwd(),
   },
   // Dev server runs on https://10.0.1.207:3000 only — both schemes whitelisted
   // (the http variants stay so a stray http:// link doesn't 403 the asset
@@ -18,6 +20,15 @@ const nextConfig: NextConfig = {
     "https://10.0.1.207",
     "https://10.0.1.207:3000",
     "https://10.0.1.207:3001",
+    // Current dev LAN IP — the dev script binds here (`next dev -H 10.0.3.51`).
+    // Must be whitelisted or the dev server blocks HMR/RSC requests from this
+    // origin, surfacing as "Uncaught TypeError: network error" in the browser.
+    "10.0.3.51",
+    "10.0.3.51:3000",
+    "10.0.3.51:3001",
+    "https://10.0.3.51",
+    "https://10.0.3.51:3000",
+    "https://10.0.3.51:3001",
   ],
   // The Zoom Meeting SDK (Component View) uses singleton state on `window`.
   // StrictMode's intentional double-invoke of effects causes the SDK to

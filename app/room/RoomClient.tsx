@@ -389,6 +389,50 @@ export function RoomClient() {
   const searchParams = useSearchParams();
   const newChatParam = searchParams.get("newchat");
   const [asyncChatMode, setAsyncChatMode] = useState(false);
+  // When a queued session waits 90s (1:30) without an engineer picking up, we
+  // end the call and surface an "all engineers occupied" notice instead of
+  // ringing forever. This local flag drives that terminal modal; it's kept
+  // independent of session.status so the notice survives the session flipping
+  // to 'cancelled' when we end it. See the queue-timeout effect below.
+  const [queueTimedOut, setQueueTimedOut] = useState(false);
+  // Latest session-state accessor for timer callbacks, so the queue timer
+  // doesn't re-arm every render just because the hook returns a fresh object.
+  const sessionStateRef = useRef(state);
+  useEffect(() => { sessionStateRef.current = state; });
+  // End the call + raise the "all engineers occupied" notice at the 90s mark.
+  const handleQueueTimeout = useCallback(() => {
+    setQueueTimedOut(true);
+    void sessionStateRef.current.cancel(); // end the call so engineers stop being paged
+  }, []);
+  // Reset the notice whenever the underlying session changes (a fresh call).
+  // Keyed on id so ENDING the same session (cancel keeps the id, only flips
+  // status) doesn't clear the notice we just raised.
+  const queuedSessionId = state.session?.id;
+  useEffect(() => { setQueueTimedOut(false); }, [queuedSessionId]);
+  // Arm a precise 90s (1:30) timer anchored to created_at / last_recall_at
+  // while the session is queued. "Call again" bumps last_recall_at → re-arms
+  // the window. Mirrors the server's abandon_stale_queued_sessions() interval.
+  const queuedSession = state.session;
+  useEffect(() => {
+    // Only the ringing/queue flow times out — the async chat-first flow (no
+    // ConnectingModal) is a leave-a-message paradigm, not a live wait.
+    if (asyncChatMode || !queuedSession || queuedSession.status !== "queued" || queueTimedOut) return;
+    const anchor = Math.max(
+      new Date(queuedSession.created_at).getTime(),
+      queuedSession.last_recall_at ? new Date(queuedSession.last_recall_at).getTime() : 0,
+    );
+    const ms = anchor + 90_000 - Date.now();
+    if (ms <= 0) { handleQueueTimeout(); return; }
+    const id = setTimeout(handleQueueTimeout, ms);
+    return () => clearTimeout(id);
+  }, [queuedSession, queueTimedOut, handleQueueTimeout, asyncChatMode]);
+  // "Try again" on the busy notice → start a fresh call for the same project.
+  const handleBusyRetry = useCallback(async () => {
+    const pid = sessionStateRef.current.session?.project_id ?? undefined;
+    setQueueTimedOut(false);
+    await sessionStateRef.current.startNewSession(pid);
+  }, []);
+  const handleBusyClose = useCallback(() => { setQueueTimedOut(false); }, []);
   // Mobile-only state. The sidebar + chat panel are hidden by default
   // at viewports < md (768px). A hamburger button opens the sidebar as
   // a fixed-position drawer; a FAB opens the chat panel as a bottom
@@ -1678,7 +1722,7 @@ export function RoomClient() {
       </LaunchCallProvider>
 
       {/* Overlays */}
-      {state.session?.status === "queued" && !asyncChatMode && (
+      {state.session?.status === "queued" && !asyncChatMode && !queueTimedOut && (
         <ConnectingModal
           session={state.session}
           onRecall={state.recall}
@@ -1686,6 +1730,10 @@ export function RoomClient() {
           projects={projects}
           onProjectsChanged={refetchProjects}
         />
+      )}
+      {/* 90s queue timeout — the call ended with no engineer available. */}
+      {queueTimedOut && (
+        <AllEngineersBusyModal onRetry={handleBusyRetry} onClose={handleBusyClose} />
       )}
       {/* Chat-first flow: the EngineerAssignedModal's "Engineer found —
           Connecting…" overlay was designed for the old auto-mount Zoom
@@ -9779,6 +9827,78 @@ function ConnectingModal({
           Press <kbd className="rounded border border-[var(--border)] bg-[var(--surface-raised)] px-1 font-mono">Esc</kbd>{" "}
           to minimize and keep waiting — the search continues in the background.
         </p>
+      </div>
+    </div>
+  );
+}
+
+// ── All-engineers-occupied modal (90s queue timeout) ───────────────────────
+// Terminal notice shown when a queued call waits 90s with no engineer pickup.
+// The call has already been ended by the time this renders; the customer can
+// retry (starts a fresh call) or close.
+function AllEngineersBusyModal({
+  onRetry, onClose,
+}: {
+  onRetry: () => void | Promise<void>;
+  onClose: () => void;
+}) {
+  const [retrying, setRetrying] = useState(false);
+  const retry = async () => {
+    setRetrying(true);
+    try { await onRetry(); } finally { setRetrying(false); }
+  };
+  return (
+    <div
+      className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center px-6"
+      style={{ backgroundColor: "var(--scrim)", backdropFilter: "blur(4px)" }}
+    >
+      <div
+        className="relative w-full max-w-sm rounded-2xl border p-8 text-center shadow-xl"
+        style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}
+      >
+        <button
+          onClick={onClose}
+          aria-label="Close"
+          className="absolute right-4 top-4 opacity-50 transition-opacity hover:opacity-100"
+          style={{ color: "var(--text-muted)" }}
+        >
+          <X size={16} />
+        </button>
+        <div
+          className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-full"
+          style={{ backgroundColor: URGENT_AMBER_SOFT, color: URGENT_AMBER }}
+        >
+          <PhoneOff size={28} />
+        </div>
+        <h2
+          className="mb-2 text-xl font-medium"
+          style={{ fontFamily: "var(--font-source-serif)", color: "var(--text)" }}
+        >
+          All engineers are occupied
+        </h2>
+        <p className="mb-6 text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
+          It looks like all our engineers are busy right now. Please try again in
+          a little while.
+        </p>
+        <div className="flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={() => void retry()}
+            disabled={retrying}
+            className="flex w-full items-center justify-center gap-2 rounded-full py-2.5 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
+            style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+          >
+            {retrying ? <Loader2 size={14} className="animate-spin" /> : <Phone size={14} />}
+            {retrying ? "Calling…" : "Try again"}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full rounded-full px-3 py-2 text-xs font-medium text-[var(--text-muted)] transition-colors hover:text-[var(--text)]"
+          >
+            Close
+          </button>
+        </div>
       </div>
     </div>
   );

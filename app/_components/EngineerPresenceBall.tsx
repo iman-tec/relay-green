@@ -43,11 +43,6 @@ const CALLBACK_AUTO_RING_MS = 30_000;
 
 // Idle threshold for auto-flipping the engineer to "offline" / grey
 // when no input activity is detected. 5 minutes matches Slack/Discord's
-// "auto-away" default — long enough that a focused engineer reading
-// docs isn't yanked away, short enough that a step-away-from-PC is
-// reflected promptly.
-const IDLE_MS = 5 * 60_000;
-
 function isPresence(v: unknown): v is Presence {
   return v === "online" || v === "busy" || v === "offline";
 }
@@ -256,7 +251,6 @@ export function EngineerPresenceBall({
   // the engineer hasn't manually changed presence since (onSet clears
   // lastAutoWriteRef so a manual choice is preserved).
   const isOnCallRef = useRef(false);
-  const isIdleRef = useRef(false);
   // Tracks the last value we (auto) wrote to the DB. Used for two things:
   //   1. dedupe re-writes when the same condition re-fires.
   //   2. gate the call-end → online restore so it only fires when WE set
@@ -270,12 +264,6 @@ export function EngineerPresenceBall({
       // On a call → busy. Always — engineers shouldn't appear available
       // while they're actively engaged.
       desired = "busy";
-    } else if (isIdleRef.current && current !== "offline") {
-      // Idle and currently at any non-offline state → demote to offline.
-      // Applies to both online and busy: an engineer who set themselves
-      // Busy and then walked away should still show as Offline after 5
-      // min, not "Busy forever".
-      desired = "offline";
     } else if (lastAutoWriteRef.current === "busy" && current === "busy") {
       // Call just ended (we'd be in the on-call branch otherwise) and we
       // were the ones who set busy. Restore to online so the matcher can
@@ -336,43 +324,9 @@ export function EngineerPresenceBall({
     return () => { alive = false; sb.removeChannel(ch); };
   }, [userId, recompute]);
 
-  // Idle detection — any mousemove / keypress / touch / window-focus
-  // resets the timer. Tab visibility change also counts as activity
-  // when the tab becomes visible.
-  useEffect(() => {
-    let idleTimer: ReturnType<typeof setTimeout> | null = null;
-
-    const markActive = () => {
-      if (isIdleRef.current) {
-        isIdleRef.current = false;
-        void recompute();
-      }
-      if (idleTimer) clearTimeout(idleTimer);
-      idleTimer = setTimeout(() => {
-        if (!isIdleRef.current) {
-          isIdleRef.current = true;
-          void recompute();
-        }
-      }, IDLE_MS);
-    };
-
-    const onVisibility = () => {
-      if (!document.hidden) markActive();
-    };
-
-    // Initial arm — counts mount as activity.
-    markActive();
-
-    const events: Array<keyof WindowEventMap> = ["mousemove", "keydown", "touchstart", "focus"];
-    events.forEach((ev) => window.addEventListener(ev, markActive, { passive: true }));
-    document.addEventListener("visibilitychange", onVisibility);
-
-    return () => {
-      if (idleTimer) clearTimeout(idleTimer);
-      events.forEach((ev) => window.removeEventListener(ev, markActive));
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
-  }, [recompute]);
+  // Idle auto-offline removed — presence is fully manual now. An engineer
+  // stays in whatever state they last toggled (online/busy/offline) until they
+  // change it themselves; nothing demotes them for being idle.
 
   // ── Pending-callback tracking ─────────────────────────────────────
   // Load + realtime-subscribe to engineer_connect_requests for THIS

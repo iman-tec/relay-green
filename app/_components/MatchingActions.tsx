@@ -19,6 +19,7 @@
  */
 
 import { useCallback, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Check, ChevronDown, Loader2, PhoneOff, UserPlus } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import type { AssignableEngineer } from "@/app/api/staff/assignable-engineers/route";
@@ -157,13 +158,17 @@ export function MatchingActions({
         <span className="text-[10px]" style={{ color: "var(--risk)" }}>{error}</span>
       )}
 
-      {open && (
+      {open && typeof document !== "undefined" && createPortal(
         <>
           {/* Backdrop */}
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          {/* Panel — fixed so it floats over the table, not clipped by it */}
+          <div className="fixed inset-0 z-[var(--z-modal)]" onClick={() => setOpen(false)} />
+          {/* Panel — portaled to <body> + fixed so it floats above everything.
+              Rendering it inline kept it inside the session Card, whose
+              `interactive` hover-transform makes it the containing block for
+              `position: fixed` and whose `overflow-hidden` then CLIPPED the
+              panel — so the dropdown was invisible. Portaling escapes both. */}
           <div
-            className="fixed z-50 max-h-72 w-64 overflow-y-auto rounded-lg border shadow-xl"
+            className="fixed z-[var(--z-modal)] w-64 overflow-hidden rounded-lg border shadow-xl"
             style={{ top: coords?.top ?? 0, left: coords?.left ?? 0, borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
           >
             <div className="border-b px-3 py-2 text-[10px] font-medium tracking-wide uppercase"
@@ -179,7 +184,10 @@ export function MatchingActions({
                 No engineers available to assign.
               </p>
             ) : (
-              <ul>
+              // Cap the list at ~4 rows tall; the rest scroll inside with the
+              // scrollbar hidden (hide-scrollbar, defined in globals.css) so the
+              // panel stays compact however many engineers exist.
+              <ul className="hide-scrollbar max-h-[12rem] overflow-y-auto">
                 {engineers.map((eng) => {
                   const disabled = eng.busy || working !== null;
                   return (
@@ -213,7 +221,8 @@ export function MatchingActions({
               </ul>
             )}
           </div>
-        </>
+        </>,
+        document.body,
       )}
     </div>
   );
