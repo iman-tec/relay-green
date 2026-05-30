@@ -64,7 +64,20 @@ export function DeptSettingsTab() {
         <SettingsSection icon={<Building2 size={16} />} title="Department">
           <IdentityBlock name={d?.name ?? ""} sub={`${data?.enterprise.name ?? ""} · ${num(memberCount)} members`} />
           {/* Department display name is editable by the manager; allocation is not. */}
-          <EditableField label="Department name" value={d?.name ?? ""} onSave={async () => setNote("TODO(api): department-name PATCH not wired yet.")} />
+          <EditableField label="Department name" value={d?.name ?? ""} onSave={async (v) => {
+            const next = v.trim();
+            if (!next) { setNote("Department name can't be empty."); return; }
+            const res = await fetch("/api/department", {
+              method:  "PATCH",
+              headers: { "content-type": "application/json" },
+              body:    JSON.stringify({ name: next }),
+            });
+            if (res.ok) { setNote("Department name updated."); reload(); }
+            else {
+              const b = (await res.json().catch(() => ({}))) as { error?: string };
+              setNote(b.error ?? "Couldn't update the department name.");
+            }
+          }} />
           <CopyRow label="Department code" value={d?.departmentCode ?? ""} />
           <div className="flex items-center justify-between border-t py-3" style={{ borderColor: "var(--border)" }}>
             <div className="text-xs" style={{ color: "var(--text-muted)" }}>Minute allocation</div>
