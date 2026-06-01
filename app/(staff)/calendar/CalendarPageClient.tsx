@@ -12,11 +12,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Sparkles } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import { CalendarTab } from "@/app/_components/EngineerProfilePane";
 import { MonthAvailabilityOverview } from "@/app/_components/MonthAvailabilityOverview";
-import { Toast } from "@/app/_components/ui";
+import { SectionHeader, Toast } from "@/app/_components/ui";
 
 type Banner = { tone: "ok" | "risk" | "info"; text: string } | null;
 
@@ -56,27 +55,19 @@ export function CalendarPageClient() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
-      {/* Page header — matches the dashboard's typographic register so
-          jumping between Dashboard / Inbox / Calendar feels uniform. */}
-      <header className="mb-6 flex items-baseline gap-3">
-        <Sparkles size={14} style={{ color: "var(--primary)" }} />
-        <h1 className="text-xl font-semibold" style={{ color: "var(--text)" }}>
-          Your calendar
-        </h1>
-      </header>
+    <div className="mx-auto max-w-3xl space-y-6 px-6 py-8">
+      {/* Page header — uses the shared SectionHeader so /calendar reads in the
+          same register as /operations and /schedule. */}
+      <SectionHeader
+        title="Your calendar"
+        subtitle="Your availability, holidays and booked appointments at a glance."
+      />
 
-      {banner && (
-        <div className="mb-4">
-          <Toast tone={banner.tone}>{banner.text}</Toast>
-        </div>
-      )}
+      {banner && <Toast tone={banner.tone}>{banner.text}</Toast>}
 
       {/* Month-at-a-glance overview — holidays / available days / scheduled
           calls for the next 4 weeks, above the weekly + monthly editors. */}
-      <div className="mb-6">
-        <MonthAvailabilityOverview />
-      </div>
+      <MonthAvailabilityOverview />
 
       <CalendarTab userId={userId} showBanner={showBanner} />
     </div>

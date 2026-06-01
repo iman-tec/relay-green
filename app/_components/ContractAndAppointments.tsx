@@ -18,7 +18,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { CalendarClock, Phone, Loader2 } from "lucide-react";
+import { CalendarClock, Phone, Loader2, ChevronDown } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import { ContractManagement } from "./ContractManagement";
 
@@ -45,6 +45,7 @@ export function ContractAndAppointments() {
   const [tick, setTick] = useState(0);
   const [nowMs, setNowMs] = useState(0);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -126,7 +127,12 @@ export function ContractAndAppointments() {
             background: "var(--surface)",
           }}
         >
-          <header className="flex items-center gap-1.5 px-3 py-2">
+          <button
+            type="button"
+            onClick={() => setCollapsed((c) => !c)}
+            aria-expanded={!collapsed}
+            className="flex w-full items-center gap-1.5 px-3 py-2 text-left transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.03]"
+          >
             <CalendarClock size={12} style={{ color: "var(--primary)" }} />
             <h3
               className="text-[12px] font-semibold"
@@ -142,106 +148,105 @@ export function ContractAndAppointments() {
                 {appts.length}
               </span>
             )}
-          </header>
-          <ul className="border-t" style={{ borderColor: "var(--border)" }}>
+            <ChevronDown
+              size={14}
+              className={`ml-auto shrink-0 transition-transform ${collapsed ? "" : "rotate-180"}`}
+              style={{ color: "var(--text-muted)" }}
+            />
+          </button>
+          {/* Scrollable list — shows ~one appointment; the rest scroll with a
+              visible (slim) scrollbar. */}
+          {!collapsed && (
+          <ul
+            className="snap-y snap-mandatory overflow-y-auto border-t [scrollbar-width:thin]"
+            style={{ borderColor: "var(--border)", maxHeight: "2.9rem" }}
+          >
             {appts.map((a) => {
               const started = !!a.callStartedAt;
-              // 1-min tolerance, matching the RPC's TOO_EARLY guard.
+              // Clickable exactly at the appointment time — not a minute early.
               const canStart =
-                nowMs > 0 && nowMs >= new Date(a.slotStart).getTime() - 60_000;
+                nowMs > 0 && nowMs >= new Date(a.slotStart).getTime();
               const busy = busyId === a.id;
               return (
-                <li key={a.id}>
+                <li key={a.id} className="snap-start">
                   <div
-                    className="border-t px-3 py-2 first:border-t-0"
+                    className="flex items-center gap-2 border-t px-3 py-2 first:border-t-0"
                     style={{ borderColor: "var(--border)" }}
                   >
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="inline-flex size-5 shrink-0 items-center justify-center rounded-md"
+                    <span
+                      className="inline-flex size-5 shrink-0 items-center justify-center rounded-md"
+                      style={{
+                        background: "var(--primary-soft)",
+                        color: "var(--primary)",
+                      }}
+                    >
+                      <CalendarClock size={10} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div
+                        className="truncate text-[11.5px] leading-tight"
+                        style={{ color: "var(--text)" }}
+                      >
+                        {a.projectName ?? "Appointment"}
+                      </div>
+                      <div
+                        className="truncate text-[10px] leading-tight"
                         style={{
-                          background: "var(--primary-soft)",
-                          color: "var(--primary)",
+                          color: started
+                            ? "var(--green-dot)"
+                            : canStart
+                              ? "var(--green-dot)"
+                              : "var(--text-muted)",
                         }}
                       >
-                        <CalendarClock size={10} />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div
-                          className="truncate text-[11.5px] leading-tight"
-                          style={{ color: "var(--text)" }}
-                        >
-                          {a.projectName ?? "Appointment"}
-                        </div>
-                        <div
-                          className="truncate text-[10px] leading-tight"
-                          style={{
-                            color: started
-                              ? "var(--green-dot)"
-                              : canStart
-                                ? "var(--green-dot)"
-                                : "var(--text-muted)",
-                          }}
-                        >
-                          {started
-                            ? "Call in progress"
-                            : canStart
-                              ? "It's time — start your call"
-                              : fmtWhen(a.slotStart)}
-                        </div>
+                        {started
+                          ? "Call in progress"
+                          : canStart
+                            ? "You have a call"
+                            : fmtWhen(a.slotStart)}
                       </div>
                     </div>
-
-                    <div className="mt-1.5 flex justify-end">
-                      {started ? (
-                        <span
-                          className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold"
-                          style={{
-                            background: "var(--green-dot)",
-                            color: "#fff",
-                          }}
-                        >
-                          <span className="size-1.5 animate-pulse rounded-full bg-white" />
-                          In call
-                        </span>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={!canStart || busy}
-                          onClick={() => void startCall(a.id)}
-                          title={
-                            canStart
-                              ? "Start appointment call"
-                              : "Available at the scheduled time"
-                          }
-                          className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold transition-colors disabled:cursor-default"
-                          style={
-                            canStart
-                              ? {
-                                  background: "var(--green-dot)",
-                                  color: "#fff",
-                                }
-                              : {
-                                  border: "1px solid var(--border)",
-                                  color: "var(--text-muted)",
-                                  background: "transparent",
-                                }
-                          }
-                        >
-                          {busy ? (
-                            <Loader2 size={12} className="animate-spin" />
-                          ) : (
-                            <Phone size={12} />
-                          )}
-                          Start appointment call
-                        </button>
-                      )}
-                    </div>
+                    {started ? (
+                      <span
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold"
+                        style={{ background: "var(--green-dot)", color: "#fff" }}
+                      >
+                        <span className="size-1.5 animate-pulse rounded-full bg-white" />
+                        In call
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={!canStart || busy}
+                        onClick={() => void startCall(a.id)}
+                        title={
+                          canStart ? "Call" : "Available at the scheduled time"
+                        }
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold transition-colors disabled:cursor-default"
+                        style={
+                          canStart
+                            ? { background: "var(--green-dot)", color: "#fff" }
+                            : {
+                                border: "1px solid var(--border)",
+                                color: "var(--text-muted)",
+                                background: "transparent",
+                              }
+                        }
+                      >
+                        {busy ? (
+                          <Loader2 size={12} className="animate-spin" />
+                        ) : (
+                          <Phone size={12} />
+                        )}
+                        Call
+                      </button>
+                    )}
                   </div>
                 </li>
               );
             })}
           </ul>
+          )}
         </section>
       )}
     </>

@@ -71,6 +71,10 @@ export type GuestCall = {
   // are intake-less (never auto-matched) and tagged in the supervise grid
   // (migration 20260601170000).
   is_appointment?: boolean;
+  // Appointment flow only: set when the supervisor (moderator) opens the
+  // appointment session. The customer's room drops the ring + enables the Zoom
+  // call once this (or an engineer claim) lands (migration 20260602130000).
+  supervisor_joined_at?: string | null;
   // Phase 4: project grouping. Both nullable for legacy / "General" sessions.
   project_id: string | null;
   project_name: string | null;

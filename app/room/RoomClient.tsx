@@ -200,8 +200,13 @@ function useFreeSessionLifecycle(
   const freeConsumed = entitlement.free_consumed_at != null;
   const paidMinutesRemaining = entitlement.paid_minutes_remaining;
 
+  // Appointment calls are free — no free-cap enforcement, no pivot-to-paid, no
+  // auto-end-on-expiry, no paywall. (Manual End still works via end_session.)
+  const isAppointment = !!session?.is_appointment;
   const isActive =
-    !!status && (ACTIVE_TIMER_STATES as readonly string[]).includes(status);
+    !isAppointment &&
+    !!status &&
+    (ACTIVE_TIMER_STATES as readonly string[]).includes(status);
 
   // Tick only while the session is in a state whose expiry we care about.
   useEffect(() => {
@@ -556,10 +561,13 @@ export function RoomClient() {
   useEffect(() => {
     // Only the ringing/queue flow times out — the async chat-first flow (no
     // ConnectingModal) is a leave-a-message paradigm, not a live wait.
+    // Appointments also don't time out: there's no auto-match to give up on;
+    // the customer waits in chat for the supervisor / added engineer.
     if (
       asyncChatMode ||
       !queuedSession ||
       queuedSession.status !== "queued" ||
+      queuedSession.is_appointment ||
       queueTimedOut
     )
       return;
@@ -2084,11 +2092,25 @@ export function RoomClient() {
       </LaunchCallProvider>
 
       {/* Overlays */}
+      {/* Ringing/connecting hero while queued. For an APPOINTMENT it stays up
+          only until SOMEONE joins the conversation — the moderator (supervisor)
+          OR an engineer. We treat the appointment as "joined" when any of:
+            • the supervisor opened it (supervisor_joined_at), OR
+            • an engineer claimed it (status leaves 'queued'), OR
+            • any staff/moderator message exists (sender_kind 'engineer').
+          The last one is the robust catch-all so the ring never lingers after
+          the moderator is clearly in the chat. Non-appointment flow unchanged. */}
       {state.session?.status === "queued" &&
         !asyncChatMode &&
-        !queueTimedOut && (
+        !queueTimedOut &&
+        !(
+          state.session?.is_appointment &&
+          (state.session?.supervisor_joined_at ||
+            state.messages.some((m) => m.sender_kind === "engineer"))
+        ) && (
           <ConnectingModal
             session={state.session}
+            isAppointment={!!state.session?.is_appointment}
             onCancel={state.cancel}
             onTimeout={handleQueueTimeout}
             projects={projects}
@@ -5463,7 +5485,9 @@ const FloatingStatus = memo(function FloatingStatus({
           <h2 className="truncate font-serif text-base font-medium text-[var(--text)]">
             {session?.ai_summary_title ||
               (session?.status === "queued"
-                ? "Finding your engineer…"
+                ? session?.is_appointment
+                  ? "Your appointment call"
+                  : "Finding your engineer…"
                 : "Session")}
           </h2>
         </div>
@@ -5472,8 +5496,13 @@ const FloatingStatus = memo(function FloatingStatus({
           <LiveTimer
             joinedAt={session!.assigned_at ?? session!.joined_at ?? null}
             freeMinutes={session!.free_minutes ?? 10}
-            isFreeSession={entitlement.free_consumed_at == null}
+            // Appointments are free: force count-up elapsed (never the free
+            // countdown→Expired path) and label it "free", never "paid".
+            isFreeSession={
+              entitlement.free_consumed_at == null && !session!.is_appointment
+            }
             paidExtensionAt={session!.paid_extension_at ?? null}
+            isAppointment={!!session!.is_appointment}
           />
         )}
 
@@ -5547,14 +5576,21 @@ function CallHeaderActions({
   const isLiveish = ["assigned", "joining", "live", "grace"].includes(
     session.status
   );
-  const canJoinVideoSdk = !!launchCall && isLiveish;
-  const canJoinLegacy = hasZoom && isLiveish;
+  // Appointment flow: the call is joinable once the moderator (supervisor) has
+  // joined, even before any engineer is added — so a supervisor + customer can
+  // talk on Zoom. Normal sessions are unchanged (still gated on isLiveish).
+  const apptReady =
+    session.is_appointment === true && !!session.supervisor_joined_at;
+  const canJoinVideoSdk = !!launchCall && (isLiveish || apptReady);
+  const canJoinLegacy = hasZoom && (isLiveish || apptReady);
   const canJoin = canJoinVideoSdk || canJoinLegacy;
   const tooltip = canJoin
     ? "Join the call"
-    : isLiveish
-      ? "Waiting for your engineer to start the call"
-      : "Call starts once an engineer joins";
+    : session.is_appointment
+      ? "Your call opens once the moderator joins"
+      : isLiveish
+        ? "Waiting for your engineer to start the call"
+        : "Call starts once an engineer joins";
 
   return (
     <div className="flex items-center gap-1.5">
@@ -5612,11 +5648,14 @@ function LiveTimer({
   freeMinutes,
   isFreeSession,
   paidExtensionAt,
+  isAppointment = false,
 }: {
   joinedAt: string | null;
   freeMinutes: number;
   isFreeSession: boolean;
   paidExtensionAt: string | null;
+  /** Appointment call — free; show elapsed time labelled "free", never "paid". */
+  isAppointment?: boolean;
 }) {
   const timer = useSessionTimer({
     joinedAt,
@@ -5627,20 +5666,25 @@ function LiveTimer({
   if (timer.mode === "hidden") return null;
 
   const isFree = timer.mode === "free_countdown";
-  const color = isFree
-    ? timer.isExpired
-      ? CRIT_RED
-      : timer.isWarning
-        ? URGENT_AMBER
-        : BRAND_GREEN
-    : BRAND_GREEN;
-  const suffix = isFree
-    ? timer.isExpired
-      ? "Expired"
-      : timer.isWarning
-        ? "left"
-        : "free"
-    : "paid";
+  // Appointments always read as a free elapsed clock — green, suffix "free".
+  const color = isAppointment
+    ? BRAND_GREEN
+    : isFree
+      ? timer.isExpired
+        ? CRIT_RED
+        : timer.isWarning
+          ? URGENT_AMBER
+          : BRAND_GREEN
+      : BRAND_GREEN;
+  const suffix = isAppointment
+    ? "free"
+    : isFree
+      ? timer.isExpired
+        ? "Expired"
+        : timer.isWarning
+          ? "left"
+          : "free"
+      : "paid";
 
   return (
     <span className="inline-flex shrink-0 items-baseline gap-1.5 text-xs font-medium whitespace-nowrap">
@@ -5664,6 +5708,14 @@ function LiveTimer({
 // label/color mapping from the full StatusPill but without the chip border.
 function CompactStatus({ session }: { session: GuestCall }) {
   const cfg = pillConfig(session.status, session.urgency);
+  // Appointment with the moderator present (no engineer yet) is an active chat,
+  // not a "Connecting" queue wait — don't leave it reading as still searching.
+  const label =
+    session.is_appointment &&
+    session.status === "queued" &&
+    session.supervisor_joined_at
+      ? "In appointment"
+      : cfg.label;
   return (
     <span
       className="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium tracking-wider whitespace-nowrap uppercase"
@@ -5684,7 +5736,7 @@ function CompactStatus({ session }: { session: GuestCall }) {
           style={{ backgroundColor: cfg.fg }}
         />
       </span>
-      <span className="whitespace-nowrap">{cfg.label}</span>
+      <span className="whitespace-nowrap">{label}</span>
     </span>
   );
 }
@@ -9010,7 +9062,12 @@ const WalletBalance = memo(function WalletBalance({
   // either paid_extension_at is stamped (first-timer who upgraded), or the
   // customer is a returning paid user (free already consumed) and the
   // engineer has accepted.
-  const shouldTick = !isEnded && !!assignedAt && (!!paidAt || freeConsumed);
+  // Appointment calls are free — never burn the displayed balance.
+  const shouldTick =
+    !isEnded &&
+    !session?.is_appointment &&
+    !!assignedAt &&
+    (!!paidAt || freeConsumed);
 
   // Store the clock in state so the body stays pure for the lint rule.
   const [now, setNow] = useState<number>(() => Date.now());
@@ -11420,12 +11477,15 @@ function ProjectNameEditor({
 // ── Connecting Modal ───────────────────────────────────────────────────────
 function ConnectingModal({
   session,
+  isAppointment = false,
   onCancel,
   onTimeout,
   projects,
   onProjectsChanged,
 }: {
   session: GuestCall;
+  /** Appointment flow: no auto-match → never times out; copy says "moderator". */
+  isAppointment?: boolean;
   /** Explicit cancel — actually stops ringing. Distinct from × (minimize). */
   onCancel: () => Promise<void>;
   /** Fired ONCE when the 90s queue window elapses with no engineer. The
@@ -11467,7 +11527,8 @@ function ConnectingModal({
 
   const elapsed = Math.max(0, Math.floor((now - anchor) / 1000));
   const remaining = Math.max(0, QUEUE_TIMEOUT_S - elapsed);
-  const expired = remaining === 0;
+  // Appointments don't time out — the customer waits for the moderator/engineer.
+  const expired = !isAppointment && remaining === 0;
   const mins = Math.floor(remaining / 60);
   const secs = remaining % 60;
 
@@ -11477,11 +11538,12 @@ function ConnectingModal({
   // even while minimized (this component stays mounted as the pill).
   const timedOutRef = useRef(false);
   useEffect(() => {
+    if (isAppointment) return; // appointments never auto-cancel
     if (expired && !timedOutRef.current) {
       timedOutRef.current = true;
       onTimeout();
     }
-  }, [expired, onTimeout]);
+  }, [expired, onTimeout, isAppointment]);
 
   // Elapsed shown as mm:ss counting up — honest waiting clock instead
   // of the old draining countdown ring. The 90s anchor is still used
@@ -11724,15 +11786,21 @@ function ConnectingModal({
               color: "var(--text)",
             }}
           >
-            {expired ? "No engineer available" : "Ringing your engineer"}
+            {isAppointment
+              ? "Connecting your call…"
+              : expired
+                ? "No engineer available"
+                : "Ringing your engineer"}
           </h2>
           <p
             className="text-sm leading-relaxed"
             style={{ color: "var(--text-muted)" }}
           >
-            {expired
-              ? "No one picked up in time — ending the call…"
-              : "Hang tight — we'll connect you the moment someone picks up."}
+            {isAppointment
+              ? "Hang tight — your moderator is joining."
+              : expired
+                ? "No one picked up in time — ending the call…"
+                : "Hang tight — we'll connect you the moment someone picks up."}
           </p>
         </div>
 
@@ -11744,7 +11812,7 @@ function ConnectingModal({
           className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-full border border-transparent px-3 py-2 text-xs font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--risk-soft)] hover:bg-[var(--risk-soft)] hover:text-[var(--risk)]"
         >
           <PhoneOff size={12} />
-          Cancel search
+          {isAppointment ? "Cancel call" : "Cancel search"}
         </button>
 
         <p className="mt-3 text-center text-[10px] leading-relaxed text-[var(--text-faint)]">

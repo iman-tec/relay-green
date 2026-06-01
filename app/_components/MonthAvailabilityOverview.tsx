@@ -68,7 +68,9 @@ export function MonthAvailabilityOverview() {
       if (!alive || !me) { setLoading(false); return; }
       const rangeStartKey = toDateInput(gridStart);
       const rangeEndKey = toDateInput(addDays(gridStart, 28));
-      const [wRes, dwRes, hRes, bkRes] = await Promise.all([
+      const rangeStartIso = gridStart.toISOString();
+      const rangeEndIso = addDays(gridStart, 28).toISOString();
+      const [wRes, dwRes, hRes, bkRes, sbRes] = await Promise.all([
         sb.from("engineer_availability_windows").select("weekday").eq("engineer_user_id", me),
         sb.from("engineer_date_windows").select("the_date").eq("engineer_user_id", me)
           .gte("the_date", rangeStartKey).lt("the_date", rangeEndKey),
@@ -76,15 +78,34 @@ export function MonthAvailabilityOverview() {
           .gte("holiday_date", rangeStartKey).lt("holiday_date", rangeEndKey),
         sb.from("engineer_bookings").select("id, slot_start, slot_end, notes")
           .eq("engineer_user_id", me).eq("status", "booked")
-          .gte("slot_start", gridStart.toISOString())
-          .lt("slot_start", addDays(gridStart, 28).toISOString())
+          .gte("slot_start", rangeStartIso).lt("slot_start", rangeEndIso)
+          .order("slot_start", { ascending: true }),
+        // Supervisors' own appointments live in supervisor_bookings (keyed by
+        // supervisor_user_id), so the engineer_bookings query above misses
+        // them. Pull them too — for an engineer this just returns nothing.
+        sb.from("supervisor_bookings").select("id, slot_start, slot_end, customer_name, project_name")
+          .eq("supervisor_user_id", me).eq("status", "booked")
+          .gte("slot_start", rangeStartIso).lt("slot_start", rangeEndIso)
           .order("slot_start", { ascending: true }),
       ]);
       if (!alive) return;
       if (!wRes.error) setWindows(((wRes.data ?? []) as { weekday: number }[]).map((r) => ({ weekday: r.weekday })));
       if (!dwRes.error) setDateWindows(((dwRes.data ?? []) as { the_date: string }[]).map((r) => ({ date: r.the_date })));
       if (!hRes.error) setHolidays(((hRes.data ?? []) as { holiday_date: string; label: string | null }[]).map((r) => ({ date: r.holiday_date, label: r.label })));
-      if (!bkRes.error) setBookings(((bkRes.data ?? []) as { id: string; slot_start: string; slot_end: string; notes: string | null }[]).map((r) => ({ id: r.id, slotStart: r.slot_start, slotEnd: r.slot_end, notes: r.notes })));
+      const engBookings = !bkRes.error
+        ? ((bkRes.data ?? []) as { id: string; slot_start: string; slot_end: string; notes: string | null }[]).map((r) => ({ id: r.id, slotStart: r.slot_start, slotEnd: r.slot_end, notes: r.notes }))
+        : [];
+      const supBookings = !sbRes.error
+        ? ((sbRes.data ?? []) as { id: string; slot_start: string; slot_end: string; customer_name: string | null; project_name: string | null }[]).map((r) => ({
+            id: r.id,
+            slotStart: r.slot_start,
+            slotEnd: r.slot_end,
+            notes: [r.customer_name, r.project_name].filter(Boolean).join(" · ") || null,
+          }))
+        : [];
+      setBookings(
+        [...engBookings, ...supBookings].sort((a, b) => a.slotStart.localeCompare(b.slotStart))
+      );
       setLoading(false);
     })();
     return () => { alive = false; };
@@ -119,7 +140,7 @@ export function MonthAvailabilityOverview() {
 
   return (
     <>
-      <section className="overflow-hidden rounded-xl border" style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}>
+      <section className="overflow-hidden rounded-2xl border shadow-sm" style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}>
         <header className="flex flex-wrap items-center gap-2 border-b px-4 py-2.5" style={{ borderColor: "var(--border)" }}>
           <CalendarIcon size={13} style={{ color: BRAND_GREEN }} />
           <h2 className="text-[13px] font-semibold" style={{ color: "var(--text)", fontFamily: "var(--font-source-serif)" }}>Next 4 weeks</h2>

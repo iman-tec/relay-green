@@ -162,16 +162,12 @@ export function ContractManagement({
           </button>
         )}
       </header>
-      {/* Cap the list to about two rows tall and let the rest scroll
-          inside this section. The wrapper gets `hide-scrollbar` so the
-          customer doesn't see a desktop-style track running down the
-          middle of the sidebar — they can wheel/swipe the list
-          naturally and the scroll hint comes from the partial third
-          row when there's overflow. */}
+      {/* Show at most two bids; the rest scroll inside this section with a
+          visible (slim) scrollbar so the overflow is obvious. */}
       {!collapsed && (
         <ul
-          className="hide-scrollbar overflow-y-auto border-t"
-          style={{ borderColor: "var(--border)", maxHeight: "8rem" }}
+          className="overflow-y-auto border-t [scrollbar-width:thin]"
+          style={{ borderColor: "var(--border)", maxHeight: "5.3rem" }}
         >
           {quotes.map((q) => {
             const golive = q.kind === "golive";

@@ -29,7 +29,7 @@ export type EngineerSessionState = {
   loading: boolean;
   error: string | null;
   sendMessage: (body: string) => Promise<void>;
-  sendBundle:  (payload: { text: string; files: File[] }) => Promise<void>;
+  sendBundle:  (payload: { text: string; files: File[]; senderName?: string }) => Promise<void>;
   end: (reason?: string) => Promise<void>;
   release: () => Promise<void>;
   markJoined: () => Promise<void>;
@@ -147,7 +147,7 @@ export function useEngineerSession(sessionId: string): EngineerSessionState {
 
   /** Bundled send: text + 0..N attachments as a single chat bubble. */
   const sendBundle = useCallback(
-    async (payload: { text: string; files: File[] }) => {
+    async (payload: { text: string; files: File[]; senderName?: string }) => {
       const text = payload.text.trim();
       if (!session) return;
       if (["ended", "abandoned", "cancelled"].includes(session.status)) {
@@ -175,7 +175,7 @@ export function useEngineerSession(sessionId: string): EngineerSessionState {
           .insert({
             guest_call_id: sessionId,
             sender_kind: "engineer",
-            sender_name: session.agent_name ?? "Engineer",
+            sender_name: payload.senderName ?? session.agent_name ?? "Engineer",
             body: text ? text : null,
           })
           .select()

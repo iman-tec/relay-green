@@ -39,7 +39,7 @@ import { useEngineerSession } from "@/lib/relay/useEngineerSession";
 import { useIsSupervisor, isSupervisorOnlyMessage } from "@/lib/relay/useIsSupervisor";
 import { useSessionTimer } from "@/lib/relay/useSessionTimer";
 import { humanState } from "@/lib/relay/session-status";
-import { LaunchCallProvider, isVideoSdkEnabled } from "@/lib/video/LaunchCallContext";
+import { LaunchCallProvider, useLaunchCall, isVideoSdkEnabled } from "@/lib/video/LaunchCallContext";
 import { CallSurface } from "@/app/_components/call/CallSurface";
 import type { GuestCall, GuestMessage, SessionStatus, Urgency } from "@/lib/supabase/types";
 
@@ -66,6 +66,28 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
   // permissions and never get engineer controls, even on sessions claimed
   // by another engineer that they're inspecting.
   const isSupervisor = useIsSupervisor();
+
+  // Appointment flow: the supervisor OWNS the booking and is a genuine
+  // participant, not a silent monitor. They already join the Zoom call; the
+  // only thing missing was chat. So in an is_appointment session we lift the
+  // read-only chat lock for supervisors (DB already permits the insert).
+  // Video hosting is untouched — the assigned engineer remains the Zoom host
+  // (the video token only authorises claimed_by/customer).
+  const isAppointment = !!state.session?.is_appointment;
+  const supervisorCanChat = isSupervisor && isAppointment;
+
+  // Appointment flow only: tell the customer's room that the moderator has
+  // joined, so their ring stops and the chat/Zoom call become available even
+  // before an engineer is added. Once per session; no-op for non-appointments
+  // and non-supervisors (the RPC guards both). Never touches normal sessions.
+  const supJoinedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const s = state.session;
+    if (!s || !isSupervisor || !s.is_appointment) return;
+    if (supJoinedRef.current.has(s.id)) return;
+    supJoinedRef.current.add(s.id);
+    void createClient().rpc("mark_supervisor_joined", { _session_id: s.id });
+  }, [state.session?.id, state.session?.is_appointment, isSupervisor]);
 
   // Drives whether the Zoom embed is mounted. We auto-mount the embed as
   // soon as the engineer lands on the session room (status=assigned/joining)
@@ -320,7 +342,7 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
                   }}
                 >
                   <Eye size={11} />
-                  Supervisor · read-only
+                  {supervisorCanChat ? "Supervisor · appointment" : "Supervisor · read-only"}
                 </div>
               )}
               <main className="min-h-0 flex-1 overflow-hidden">
@@ -351,7 +373,7 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
                     <CallSurface
                       sessionId={state.session.id}
                       role="host"
-                      userName={meEmail || "Engineer"}
+                      userName={isSupervisor ? "Moderator" : meEmail || "Engineer"}
                       onClose={() => setCallOpen(false)}
                       onJoined={() => void state.markJoined()}
                     />
@@ -381,7 +403,7 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
                     <ChatPane
                       state={state}
                       fullWidth
-                      readOnly={!state.isAssignedEngineer || isSupervisor}
+                      readOnly={!(state.isAssignedEngineer || supervisorCanChat)}
                       hideAiAsk
                     />
                   </div>
@@ -402,7 +424,7 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
               }}
             >
               <Eye size={11} />
-              Supervisor view · read-only
+              {supervisorCanChat ? "Supervisor view · appointment" : "Supervisor view · read-only"}
             </div>
           )}
           {!isSupervisor && (
@@ -414,7 +436,12 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
             />
           )}
           <main className="min-h-0 flex-1">
-            <MainPane state={state} isSupervisor={isSupervisor} hideAiAsk={false} />
+            <MainPane
+              state={state}
+              isSupervisor={isSupervisor}
+              supervisorCanChat={supervisorCanChat}
+              hideAiAsk={false}
+            />
           </main>
         </div>
       )}
@@ -442,10 +469,13 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
 
 // ── Layout decider ─────────────────────────────────────────────────────────
 function MainPane({
-  state, isSupervisor, hideAiAsk = false,
+  state, isSupervisor, supervisorCanChat = false, hideAiAsk = false,
 }: {
   state: ReturnType<typeof useEngineerSession>;
   isSupervisor: boolean;
+  /** Appointment flow — supervisor owns the booking, so they get the chat
+   *  composer (but still no engineer-only video controls). */
+  supervisorCanChat?: boolean;
   /** When the call surface is mounted in the right rail, the engineer's
    *  EngineerAiAsk lives there — suppress the inline one in the composer
    *  to avoid two parallel input boxes for the same backend. */
@@ -453,11 +483,13 @@ function MainPane({
 }) {
   const session = state.session!;
   const isEnded = session.status === "ended";
-  // Supervisors are always read-only monitors — they retain Supervisor
-  // permissions and never get engineer-side controls, even if claimed_by
-  // happens to match (e.g. a supervisor who claimed this session). The
-  // top-of-pane "Supervisor view · read-only" badge tells the viewer why.
+  // Supervisors are read-only monitors — except in the appointment flow,
+  // where the supervisor owns the booking and chats as a participant
+  // (supervisorCanChat). They still never get engineer-side video controls.
   const isEngineer = state.isAssignedEngineer && !isSupervisor;
+  // Who may type in the composer: the assigned engineer, or an appointment
+  // supervisor.
+  const canChat = isEngineer || supervisorCanChat;
 
   // Post-call review — chat (locked) on the left, AI summary on the right.
   if (isEnded) {
@@ -486,7 +518,7 @@ function MainPane({
   //                  The engineer can query project context without scrolling
   //                  through every past session manually.
   if (hideAiAsk) {
-    return <ChatPane state={state} fullWidth readOnly={!isEngineer} hideAiAsk />;
+    return <ChatPane state={state} fullWidth readOnly={!canChat} hideAiAsk />;
   }
   return (
     <PanelGroup direction="horizontal" autoSaveId="relay-eng-active" className="h-full">
@@ -494,7 +526,7 @@ function MainPane({
         {/* hideAiAsk: ProjectAIAssistant in the right panel handles the
             project Q&A, so suppress the inline EngineerAiAsk pill below
             the composer to avoid two parallel AI input boxes. */}
-        <ChatPane state={state} fullWidth readOnly={!isEngineer} hideAiAsk />
+        <ChatPane state={state} fullWidth readOnly={!canChat} hideAiAsk />
       </Panel>
       <Resizer />
       <Panel defaultSize={38} minSize={20} order={2}>
@@ -1322,6 +1354,11 @@ function ChatPane({
   const session = state.session!;
   const isReadOnly = readOnly || session.status === "ended";
   const isSupervisor = useIsSupervisor();
+  const launchCall = useLaunchCall();
+  // Appointment moderator: hosts the in-window Video SDK call directly (the
+  // token grants them host for is_appointment sessions). Engineers/customers
+  // keep their existing start path untouched.
+  const isApptSupervisor = isSupervisor && !!session.is_appointment;
   const maxW = fullWidth ? "max-w-3xl" : "max-w-none";
   const scrollRef = useRef<HTMLDivElement>(null);
   const [minting, setMinting] = useState(false);
@@ -1592,13 +1629,18 @@ function ChatPane({
             </div>
           ) : (
             <div className="flex flex-col gap-2">
-              {showStartMeetingButton && (
+              {(showStartMeetingButton || (isApptSupervisor && launchCall)) && (
                 <button
                   type="button"
-                  onClick={() => void handleStartMeeting()}
+                  onClick={() => {
+                    // Appointment moderator → open the in-window Video SDK call
+                    // (they're the host). Everyone else keeps the existing mint.
+                    if (isApptSupervisor && launchCall) launchCall();
+                    else void handleStartMeeting();
+                  }}
                   disabled={isReadOnly || minting}
-                  title={session.zoom_meeting_id ? "Start a new Zoom meeting" : "Start a Zoom meeting"}
-                  aria-label={session.zoom_meeting_id ? "Start a new Zoom meeting" : "Start a Zoom meeting"}
+                  title={isApptSupervisor ? "Start the call" : session.zoom_meeting_id ? "Start a new Zoom meeting" : "Start a Zoom meeting"}
+                  aria-label={isApptSupervisor ? "Start the call" : session.zoom_meeting_id ? "Start a new Zoom meeting" : "Start a Zoom meeting"}
                   className="flex h-8 w-8 shrink-0 items-center justify-center self-start rounded-full text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                   style={{ backgroundColor: BRAND_GREEN }}
                 >
@@ -1609,7 +1651,13 @@ function ChatPane({
                 disabled={isReadOnly}
                 placeholder={`Message ${session.guest_name}…`}
                 onSend={async ({ text, files }) => {
-                  await state.sendBundle({ text, files });
+                  // A supervisor participating in an appointment posts as
+                  // "Moderator" (hardcoded identity), never as the engineer.
+                  await state.sendBundle({
+                    text,
+                    files,
+                    senderName: isSupervisor ? "Moderator" : undefined,
+                  });
                 }}
               />
             </div>

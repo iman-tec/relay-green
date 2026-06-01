@@ -71,7 +71,7 @@ Deno.serve(async (req) => {
 
     const { data: session, error: sErr } = await admin
       .from("guest_calls")
-      .select("id, claimed_by, customer_user_id, video_topic")
+      .select("id, claimed_by, customer_user_id, video_topic, supervisor_user_id, is_appointment")
       .eq("id", session_id)
       .maybeSingle();
     if (sErr || !session) {
@@ -83,7 +83,13 @@ Deno.serve(async (req) => {
 
     const isEngineer = session.claimed_by === userId;
     const isCustomer = session.customer_user_id === userId;
-    if (!isEngineer && !isCustomer) {
+    // APPOINTMENT ONLY: the owning supervisor (moderator) may host the call so
+    // a supervisor + customer can talk before/without an engineer. This branch
+    // is gated on is_appointment, so the normal engineer↔customer flow is
+    // untouched (a supervisor on a regular session still gets 403 here).
+    const isAppointmentSupervisor =
+      session.is_appointment === true && session.supervisor_user_id === userId;
+    if (!isEngineer && !isCustomer && !isAppointmentSupervisor) {
       return new Response(JSON.stringify({ error: "NOT_AUTHORIZED" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -132,7 +138,9 @@ Deno.serve(async (req) => {
     const payload = {
       app_key:               ZOOM_VIDEO_SDK_KEY,
       tpc:                   topic,
-      role_type:             isEngineer ? 1 : 0,
+      // Host (1) for the engineer, or the appointment's supervisor when they're
+      // hosting the call themselves; customer joins as participant (0).
+      role_type:             isEngineer || isAppointmentSupervisor ? 1 : 0,
       version:               1,
       iat,
       exp,

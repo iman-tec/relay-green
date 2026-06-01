@@ -20,6 +20,7 @@ import { useRouter } from "next/navigation";
 import { Loader2, PhoneOff } from "lucide-react";
 import { ZoomCall as ZoomEmbed } from "@/app/_components/ZoomCall";
 import { useEngineerSession } from "@/lib/relay/useEngineerSession";
+import { useIsSupervisor } from "@/lib/relay/useIsSupervisor";
 import { createClient } from "@/lib/supabase/browser";
 
 type Viewer = { name: string; email: string };
@@ -27,6 +28,7 @@ type Viewer = { name: string; email: string };
 export function CallClient({ sessionId }: { sessionId: string }) {
   const router = useRouter();
   const state = useEngineerSession(sessionId);
+  const isSupervisor = useIsSupervisor();
   const [viewer, setViewer] = useState<Viewer | null>(null);
 
   // Fetch the auth user for ZoomEmbed's userName / userEmail props.
@@ -95,7 +97,7 @@ export function CallClient({ sessionId }: { sessionId: string }) {
     <div className="fixed inset-0 bg-black">
       <ZoomEmbed
         meetingNumber={state.session.zoom_meeting_id}
-        userName={viewer.name}
+        userName={isSupervisor ? "Moderator" : viewer.name}
         userEmail={viewer.email}
         role={role}
         fallbackJoinUrl={fallbackJoinUrl}
