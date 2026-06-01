@@ -1,21 +1,26 @@
 "use client";
 
 /*
- * Customer-side modal for booking a future slot on an Offline engineer's
- * calendar. Fetches the engineer's weekly availability windows + existing
- * bookings, then computes 30-minute open slots for the next 14 days. The
- * customer picks one → we POST through book_engineer_slot.
+ * Customer-side modal for booking a future slot on an engineer's calendar.
+ * Two-panel layout: a month calendar on the left, a duration chip + timezone
+ * picker + scrollable list of start times on the right.
  *
- * Slot math is intentionally client-side: it's timezone-sensitive and the
- * client knows the user's resolved zone, so doing it on the server would
- * need an explicit tz argument round-trip. The engineer also stores their
- * windows with an IANA timezone string, so the picker shows slots in the
- * engineer's local clock — labelled with the engineer's tz to avoid the
- * usual "1 PM their time or my time?" confusion.
+ * Slot math is client-side and timezone-correct:
+ *   • the engineer stores availability windows with an IANA timezone, so a
+ *     window's start/end MINUTES are interpreted in the ENGINEER's zone to get
+ *     an absolute instant (zonedToUtc);
+ *   • that instant is DISPLAYED in the customer-selected timezone (the dropdown
+ *     defaults to the customer's own zone);
+ *   • we book the absolute instant (toISOString) — the engineer/supervisor side
+ *     renders it back in their own clock.
+ *
+ * Only the slot START time is shown (15-min grid for engineers, 30 for
+ * supervisors). A booked slot also hides the slots within a 15-min buffer
+ * before and after it, so calls never sit back-to-back.
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Calendar as CalendarIcon, Loader2, X } from "lucide-react";
+import { Loader2, X, ChevronLeft, ChevronRight, ChevronDown, CalendarCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 
 type Window = {
@@ -44,17 +49,76 @@ type DateOverride = {
 
 type Slot = { start: Date; end: Date };
 
-const SLOT_MIN = 30;
-const DAYS_AHEAD = 14;
+// How far out we let a customer book + load calendar data for.
+const HORIZON_DAYS = 56;          // 8 weeks
+const BUFFER_MIN = 15;            // gap enforced before/after every booking
+const DURATION_OPTIONS = [10, 15, 30] as const;  // selectable booking lengths
+
+// ── timezone helpers ───────────────────────────────────────────────────────
+// Offset (ms) of `timeZone` from UTC at a given instant. Positive = ahead of
+// UTC. Single-pass formatToParts approach — robust across locales + DST.
+function tzOffsetMs(timeZone: string, at: Date): number {
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone, hour12: false,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+  const map: Record<string, string> = {};
+  for (const p of dtf.formatToParts(at)) map[p.type] = p.value;
+  const asUTC = Date.UTC(
+    +map.year, +map.month - 1, +map.day,
+    +map.hour % 24, +map.minute, +map.second,
+  );
+  return asUTC - at.getTime();
+}
+
+// Interpret (y, monthIdx, day, minutes-from-midnight) IN `timeZone` → UTC Date.
+function zonedToUtc(y: number, monthIdx: number, day: number, minutes: number, timeZone: string): Date {
+  const hh = Math.floor(minutes / 60);
+  const mm = minutes % 60;
+  const guess = Date.UTC(y, monthIdx, day, hh, mm);
+  const off = tzOffsetMs(timeZone, new Date(guess));
+  return new Date(guess - off);
+}
+
+// "UTC+05:30" style label for a zone at `now`.
+function tzShortOffset(timeZone: string, at: Date): string {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "longOffset" }).formatToParts(at);
+    const off = parts.find((p) => p.type === "timeZoneName")?.value ?? "GMT";
+    return off.replace("GMT", "UTC");
+  } catch {
+    return "UTC";
+  }
+}
+
+// Curated timezone options. The customer's own zone is prepended at runtime.
+const TZ_OPTIONS = [
+  "UTC",
+  "America/Los_Angeles", "America/Denver", "America/Chicago", "America/New_York",
+  "America/Sao_Paulo", "Europe/London", "Europe/Paris", "Europe/Berlin",
+  "Africa/Johannesburg", "Asia/Dubai", "Asia/Kolkata", "Asia/Singapore",
+  "Asia/Tokyo", "Australia/Sydney",
+];
+
+const WEEKDAY_LABELS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+const MONTHS = ["January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"];
+
+const dayKeyOf = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 export function ScheduleEngineerModal({
   engineerUserId, engineerName, projectId, onClose, onBooked,
+  durationMinutes = 15,
 }: {
   engineerUserId: string;
   engineerName: string;
   projectId: string | null;
   onClose: () => void;
   onBooked: (booking: { slotStart: string; slotEnd: string }) => void;
+  /** Booking length. 15 for engineers, 30 for supervisors. */
+  durationMinutes?: number;
 }) {
   const [windows, setWindows] = useState<Window[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -62,26 +126,48 @@ export function ScheduleEngineerModal({
   const [dateOverrides, setDateOverrides] = useState<DateOverride[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeDay, setActiveDay] = useState<Date>(() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d;
-  });
   const [booking, setBooking] = useState(false);
+  const [bookedSlot, setBookedSlot] = useState<Slot | null>(null);
+  // Captured once when the modal opens — keeps the slot useMemo pure.
+  const [nowMs] = useState(() => Date.now());
+  const [duration, setDuration] = useState<number>(durationMinutes);
+
+  const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
+  // Bookings are limited to the CURRENT WEEK only (Mon-first calendar → through
+  // the coming Sunday). No advance bookings beyond that.
+  const horizonEnd = useMemo(() => {
+    const d = new Date(today);
+    d.setDate(d.getDate() + ((7 - d.getDay()) % 7)); // getDay(): Sun=0 → end of week
+    return d;
+  }, [today]);
+
+  const [viewMonth, setViewMonth] = useState<Date>(() => new Date(today.getFullYear(), today.getMonth(), 1));
+  const [activeDay, setActiveDay] = useState<Date | null>(null);
+
+  const browserTz = useMemo(() => {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch { return "UTC"; }
+  }, []);
+  const [selectedTz, setSelectedTz] = useState<string>(browserTz);
+
+  // Dedupe + order the timezone dropdown with the customer's own zone first.
+  const tzChoices = useMemo(() => {
+    const seen = new Set<string>();
+    return [browserTz, ...TZ_OPTIONS].filter((tz) => {
+      if (seen.has(tz)) return false;
+      seen.add(tz);
+      return true;
+    });
+  }, [browserTz]);
 
   useEffect(() => {
     let alive = true;
     void (async () => {
       try {
         const sb = createClient();
-        const from = new Date();
-        from.setHours(0, 0, 0, 0);
-        const to = new Date(from);
-        to.setDate(to.getDate() + DAYS_AHEAD + 1);
+        const from = today;
+        const to = new Date(horizonEnd);
+        to.setDate(to.getDate() + 1);
 
-        // Per-date overrides (engineer_date_windows) may 404 if the
-        // migration isn't applied — degrade silently to "no overrides"
-        // so the customer side keeps working off the weekly pattern.
         const [wRes, bRes, hRes, dwRes] = await Promise.all([
           sb.from("engineer_availability_windows")
             .select("weekday, start_minute, end_minute, timezone")
@@ -107,32 +193,15 @@ export function ScheduleEngineerModal({
         if (wRes.error) throw new Error(wRes.error.message);
         if (bRes.error) throw new Error(bRes.error.message);
         if (hRes.error) throw new Error(hRes.error.message);
-        setWindows(((wRes.data ?? []) as Array<{
-          weekday: number;
-          start_minute: number;
-          end_minute: number;
-          timezone: string;
-        }>).map((r) => ({
-          weekday: r.weekday,
-          startMinute: r.start_minute,
-          endMinute: r.end_minute,
-          timezone: r.timezone,
-        })));
-        setBookings(((bRes.data ?? []) as Array<{ slot_start: string; slot_end: string }>).map((r) => ({
-          slotStart: r.slot_start,
-          slotEnd: r.slot_end,
-        })));
-        setHolidays(((hRes.data ?? []) as Array<{ holiday_date: string; label: string | null; kind: string }>).map((r) => ({
-          date: r.holiday_date,
-          label: r.label,
-          kind: r.kind,
-        })));
+        setWindows(((wRes.data ?? []) as Array<{ weekday: number; start_minute: number; end_minute: number; timezone: string }>)
+          .map((r) => ({ weekday: r.weekday, startMinute: r.start_minute, endMinute: r.end_minute, timezone: r.timezone })));
+        setBookings(((bRes.data ?? []) as Array<{ slot_start: string; slot_end: string }>)
+          .map((r) => ({ slotStart: r.slot_start, slotEnd: r.slot_end })));
+        setHolidays(((hRes.data ?? []) as Array<{ holiday_date: string; label: string | null; kind: string }>)
+          .map((r) => ({ date: r.holiday_date, label: r.label, kind: r.kind })));
         if (!dwRes.error) {
-          setDateOverrides(((dwRes.data ?? []) as Array<{ the_date: string; start_minute: number; end_minute: number }>).map((r) => ({
-            date: r.the_date,
-            startMinute: r.start_minute,
-            endMinute: r.end_minute,
-          })));
+          setDateOverrides(((dwRes.data ?? []) as Array<{ the_date: string; start_minute: number; end_minute: number }>)
+            .map((r) => ({ date: r.the_date, startMinute: r.start_minute, endMinute: r.end_minute })));
         }
       } catch (err) {
         if (!alive) return;
@@ -142,23 +211,11 @@ export function ScheduleEngineerModal({
       }
     })();
     return () => { alive = false; };
-  }, [engineerUserId]);
+  }, [engineerUserId, today, horizonEnd]);
 
-  const engineerTz = windows[0]?.timezone ?? "UTC";
+  const engineerTz = windows[0]?.timezone ?? browserTz;
 
-  // Check if the active day is a holiday for this engineer. Holidays
-  // wipe out all slots regardless of the weekly pattern.
-  const activeHoliday = useMemo(() => {
-    const dayKey = `${activeDay.getFullYear()}-${String(activeDay.getMonth() + 1).padStart(2, "0")}-${String(activeDay.getDate()).padStart(2, "0")}`;
-    return holidays.find((h) => h.date === dayKey) ?? null;
-  }, [activeDay, holidays]);
-
-  // Resolve which windows apply for a given local date — checking the
-  // per-date overrides first, then falling back to the weekly pattern.
-  // This is the model-A resolver: holiday > date_window > weekly_pattern.
-  const dayKeyOf = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-
+  const holidayDates = useMemo(() => new Set(holidays.map((h) => h.date)), [holidays]);
   const overridesByDate = useMemo(() => {
     const m = new Map<string, DateOverride[]>();
     for (const dw of dateOverrides) {
@@ -169,59 +226,87 @@ export function ScheduleEngineerModal({
     return m;
   }, [dateOverrides]);
 
-  // Compute open slots for the active day.
-  const slots: Slot[] = useMemo(() => {
-    if (activeHoliday) return [];
+  // Windows that apply to a given date: holiday → none; date-override → those;
+  // else the weekly pattern for that weekday.
+  const windowsForDate = (d: Date): Array<{ startMinute: number; endMinute: number }> => {
+    const key = dayKeyOf(d);
+    if (holidayDates.has(key)) return [];
+    const ov = overridesByDate.get(key);
+    if (ov && ov.length > 0) return ov;
+    return windows.filter((w) => w.weekday === d.getDay());
+  };
 
-    // Pick the right set of (start, end) windows for this specific date.
-    const dayKey = dayKeyOf(activeDay);
-    const overrides = overridesByDate.get(dayKey);
-    let dayWindows: Array<{ startMinute: number; endMinute: number }>;
-    if (overrides && overrides.length > 0) {
-      dayWindows = overrides;
-    } else {
-      const weekday = activeDay.getDay();
-      dayWindows = windows.filter((w) => w.weekday === weekday);
+  // A date is selectable if it's within [today, horizon], not past, and has at
+  // least one availability window (and isn't a holiday).
+  const isSelectable = (d: Date): boolean => {
+    if (d < today || d > horizonEnd) return false;
+    return windowsForDate(d).length > 0;
+  };
+
+  // Default to the first bookable day so times show immediately — no dead
+  // "pick a day" state. A manual click overrides this via activeDay.
+  const firstAvailable = useMemo(() => {
+    for (let i = 0; i <= HORIZON_DAYS; i++) {
+      const d = new Date(today); d.setDate(d.getDate() + i);
+      if (isSelectable(d)) return d;
     }
+    return null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [today, windows, holidayDates, overridesByDate]);
+  const effectiveDay = activeDay ?? firstAvailable;
+
+  // Open slots for the effective day, in absolute instants, with the buffer applied.
+  const slots: Slot[] = useMemo(() => {
+    if (!effectiveDay) return [];
+    const dayWindows = windowsForDate(effectiveDay);
     if (dayWindows.length === 0) return [];
+
+    const y = effectiveDay.getFullYear();
+    const mo = effectiveDay.getMonth();
+    const da = effectiveDay.getDate();
+    const bufferMs = BUFFER_MIN * 60_000;
+    const durMs = duration * 60_000;
 
     const out: Slot[] = [];
     for (const w of dayWindows) {
       let m = w.startMinute;
-      while (m + SLOT_MIN <= w.endMinute) {
-        const start = new Date(activeDay);
-        start.setMinutes(m);
-        const end = new Date(start);
-        end.setMinutes(end.getMinutes() + SLOT_MIN);
-        const taken = bookings.some(
-          (b) => {
-            const bs = new Date(b.slotStart).getTime();
-            const be = new Date(b.slotEnd).getTime();
-            return bs < end.getTime() && be > start.getTime();
-          },
-        );
-        const inPast = start.getTime() < Date.now();
-        if (!taken && !inPast) out.push({ start, end });
-        m += SLOT_MIN;
+      while (m + duration <= w.endMinute) {
+        const start = zonedToUtc(y, mo, da, m, engineerTz);
+        const end = new Date(start.getTime() + durMs);
+        const startMs = start.getTime();
+        const endMs = end.getTime();
+        // Block if in the past or within BUFFER of an existing booking.
+        const blocked = startMs < nowMs || bookings.some((b) => {
+          const bs = new Date(b.slotStart).getTime();
+          const be = new Date(b.slotEnd).getTime();
+          return startMs < be + bufferMs && endMs > bs - bufferMs;
+        });
+        if (!blocked) out.push({ start, end });
+        m += 15; // 15-min START grid regardless of duration
       }
     }
+    out.sort((a, b) => a.start.getTime() - b.start.getTime());
     return out;
-  }, [windows, bookings, activeDay, activeHoliday, overridesByDate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveDay, windows, bookings, holidayDates, overridesByDate, engineerTz, duration, nowMs]);
 
-  // Pre-compute holiday dates as a Set for fast day-picker rendering.
-  const holidayDates = useMemo(() => new Set(holidays.map((h) => h.date)), [holidays]);
-
-  const dayList: Date[] = useMemo(() => {
-    const out: Date[] = [];
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    for (let i = 0; i < DAYS_AHEAD; i++) {
-      const d = new Date(today);
-      d.setDate(d.getDate() + i);
-      out.push(d);
+  // Calendar grid for the visible month: 6 weeks × 7 days, Monday-first.
+  const monthCells = useMemo(() => {
+    const first = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), 1);
+    const firstWeekday = (first.getDay() + 6) % 7; // 0 = Monday
+    const gridStart = new Date(first);
+    gridStart.setDate(first.getDate() - firstWeekday);
+    const cells: Date[] = [];
+    for (let i = 0; i < 42; i++) {
+      const d = new Date(gridStart);
+      d.setDate(gridStart.getDate() + i);
+      cells.push(d);
     }
-    return out;
-  }, []);
+    return cells;
+  }, [viewMonth]);
+
+  const canPrevMonth = viewMonth > new Date(today.getFullYear(), today.getMonth(), 1);
+  const canNextMonth = viewMonth < new Date(horizonEnd.getFullYear(), horizonEnd.getMonth(), 1);
 
   const submitBooking = async (slot: Slot) => {
     setBooking(true);
@@ -235,159 +320,267 @@ export function ScheduleEngineerModal({
         _slot_end: slot.end.toISOString(),
         _notes: null,
       });
-      if (rpcErr) throw new Error(rpcErr.message);
+      if (rpcErr) {
+        // Atomic-claim loser, or any overlap → tell them to pick another.
+        const msg = /SLOT_UNAVAILABLE|duplicate|unique/i.test(rpcErr.message)
+          ? "That slot was just taken — pick another."
+          : rpcErr.message;
+        throw new Error(msg);
+      }
+      setBookedSlot(slot);
       onBooked({ slotStart: slot.start.toISOString(), slotEnd: slot.end.toISOString() });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't book the slot.");
+      // A taken slot should disappear — drop it from the list.
+      setBookings((prev) => [...prev, { slotStart: slot.start.toISOString(), slotEnd: slot.end.toISOString() }]);
     } finally {
       setBooking(false);
     }
   };
 
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center px-6"
-      style={{ backgroundColor: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}
-    >
+  const initial = (engineerName.trim()[0] ?? "?").toUpperCase();
+
+  // ── Success confirmation ───────────────────────────────────────────────────
+  if (bookedSlot) {
+    const fmt = (d: Date, opts: Intl.DateTimeFormatOptions) =>
+      new Intl.DateTimeFormat([], { timeZone: selectedTz, ...opts }).format(d);
+    return (
       <div
-        className="relative w-full max-w-md rounded-2xl border shadow-xl"
-        style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}
+        className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6"
+        style={{ backgroundColor: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}
+        onClick={onClose}
       >
-        <header
-          className="flex items-center gap-2 border-b px-5 py-4"
-          style={{ borderColor: "var(--border)" }}
+        <div
+          className="relative w-full max-w-sm rounded-2xl border p-7 text-center shadow-2xl"
+          style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}
+          onClick={(e) => e.stopPropagation()}
         >
-          <CalendarIcon size={14} style={{ color: "var(--primary)" }} />
-          <h2 className="flex-1 text-[15px] font-semibold" style={{ color: "var(--text)" }}>
-            Schedule with {engineerName}
+          <div
+            className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full"
+            style={{ backgroundColor: "var(--primary-soft)", color: "var(--primary)" }}
+          >
+            <CalendarCheck size={22} />
+          </div>
+          <h2 className="text-lg font-medium" style={{ fontFamily: "var(--font-source-serif)", color: "var(--text)" }}>
+            Session requested with {engineerName}
           </h2>
+          <p className="mt-2 text-sm" style={{ color: "var(--text-muted)" }}>
+            {fmt(bookedSlot.start, { weekday: "long", month: "long", day: "numeric" })}
+          </p>
+          <p className="mt-0.5 text-[15px] font-semibold tabular-nums" style={{ color: "var(--text)" }}>
+            {fmt(bookedSlot.start, { hour: "2-digit", minute: "2-digit", hour12: false })}
+            {" – "}
+            {fmt(bookedSlot.end, { hour: "2-digit", minute: "2-digit", hour12: false })}
+          </p>
+          <p className="mt-3 text-[12px]" style={{ color: "var(--text-muted)" }}>
+            {engineerName} has been notified. You&apos;ll get a reminder before it starts.
+          </p>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close"
-            className="flex h-8 w-8 items-center justify-center rounded-md transition-opacity hover:bg-black/5 dark:hover:bg-white/5"
-            style={{ color: "var(--text-muted)" }}
+            className="mt-5 w-full rounded-full py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            style={{ backgroundColor: "var(--primary)" }}
           >
-            <X size={16} />
+            Done
           </button>
-        </header>
+        </div>
+      </div>
+    );
+  }
 
-        {loading ? (
-          <div className="flex items-center justify-center px-5 py-10">
-            <Loader2 className="size-4 animate-spin" style={{ color: "var(--text-muted)" }} />
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6"
+      style={{ backgroundColor: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}
+      onClick={onClose}
+    >
+      <div
+        className="relative flex w-full max-w-3xl overflow-hidden rounded-2xl border shadow-2xl"
+        style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)", maxHeight: "min(90vh, 640px)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Close */}
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-md transition-colors hover:bg-white/15"
+          style={{ color: "rgba(255,255,255,0.85)" }}
+        >
+          <X size={16} />
+        </button>
+
+        {/* ── Left panel: avatar + month calendar ───────────────────────── */}
+        <div
+          className="flex w-[44%] shrink-0 flex-col items-center px-6 py-7 text-white"
+          style={{ background: "linear-gradient(160deg, var(--primary) 0%, var(--primary-hover) 100%)" }}
+        >
+          <div
+            className="flex h-16 w-16 items-center justify-center rounded-full text-2xl font-semibold"
+            style={{ backgroundColor: "rgba(255,255,255,0.18)", fontFamily: "var(--font-source-serif)" }}
+          >
+            {initial}
           </div>
-        ) : error ? (
-          <div className="px-5 py-5">
-            <p className="text-sm" style={{ color: "var(--accent-red)" }}>{error}</p>
-            {windows.length === 0 && (
-              <p className="mt-2 text-[12px]" style={{ color: "var(--text-muted)" }}>
-                This engineer hasn&apos;t published any calendar windows yet.
-              </p>
-            )}
+          <h2
+            className="mt-3 text-center text-lg font-medium leading-snug"
+            style={{ fontFamily: "var(--font-source-serif)" }}
+          >
+            Request a session with {engineerName}
+          </h2>
+
+          {/* Month nav */}
+          <div className="mt-5 flex w-full items-center justify-center gap-4">
+            <button
+              type="button"
+              disabled={!canPrevMonth}
+              onClick={() => setViewMonth((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1))}
+              className="flex h-7 w-7 items-center justify-center rounded-full transition-colors hover:bg-white/15 disabled:opacity-30"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <span className="min-w-[120px] text-center text-base font-semibold" style={{ fontFamily: "var(--font-source-serif)" }}>
+              {MONTHS[viewMonth.getMonth()]} {viewMonth.getFullYear()}
+            </span>
+            <button
+              type="button"
+              disabled={!canNextMonth}
+              onClick={() => setViewMonth((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1))}
+              className="flex h-7 w-7 items-center justify-center rounded-full transition-colors hover:bg-white/15 disabled:opacity-30"
+            >
+              <ChevronRight size={18} />
+            </button>
           </div>
-        ) : windows.length === 0 ? (
-          <div className="px-5 py-6 text-center">
-            <p className="text-sm" style={{ color: "var(--text)" }}>
-              {engineerName} hasn&apos;t set up calendar availability yet.
-            </p>
-            <p className="mt-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
-              Try requesting a different engineer or sending a connect request instead.
-            </p>
+
+          {/* Weekday header */}
+          <div className="mt-5 grid w-full grid-cols-7 gap-y-2 text-center text-[10px] font-semibold tracking-wider" style={{ color: "rgba(255,255,255,0.7)" }}>
+            {WEEKDAY_LABELS.map((w) => <div key={w}>{w}</div>)}
           </div>
-        ) : (
-          <>
-            <div className="px-5 py-3 text-[11px]" style={{ color: "var(--text-muted)" }}>
-              Times shown in <span style={{ color: "var(--text)" }}>your timezone</span> · engineer is in {engineerTz}
+
+          {/* Day grid */}
+          <div className="mt-1 grid w-full grid-cols-7 gap-y-1.5 text-center">
+            {monthCells.map((d) => {
+              const inMonth = d.getMonth() === viewMonth.getMonth();
+              const isToday = d.getTime() === today.getTime();
+              const selectable = inMonth && isSelectable(d);
+              const isActive = effectiveDay && d.getTime() === effectiveDay.getTime();
+              const isHoliday = holidayDates.has(dayKeyOf(d));
+              return (
+                <div key={d.toISOString()} className="flex justify-center">
+                  <button
+                    type="button"
+                    disabled={!selectable}
+                    onClick={() => setActiveDay(new Date(d))}
+                    className="flex h-8 w-8 items-center justify-center rounded-full text-[13px] transition-colors"
+                    style={{
+                      cursor: selectable ? "pointer" : "default",
+                      fontWeight: selectable ? 600 : 400,
+                      color: isActive
+                        ? "var(--primary)"
+                        : !inMonth ? "rgba(255,255,255,0.28)"
+                          : selectable ? "#fff" : "rgba(255,255,255,0.4)",
+                      backgroundColor: isActive ? "#fff" : isToday ? "rgba(255,255,255,0.16)" : "transparent",
+                      textDecoration: isHoliday && inMonth ? "line-through" : "none",
+                    }}
+                    title={isHoliday ? `${engineerName} is off this day` : undefined}
+                  >
+                    {d.getDate()}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ── Right panel: duration + timezone + times ──────────────────── */}
+        <div className="flex min-w-0 flex-1 flex-col px-6 py-7">
+          {loading ? (
+            <div className="flex flex-1 items-center justify-center">
+              <Loader2 className="size-5 animate-spin" style={{ color: "var(--text-muted)" }} />
             </div>
-            <div className="border-y px-3 py-2" style={{ borderColor: "var(--border)" }}>
-              <div className="flex gap-1.5 overflow-x-auto pb-1">
-                {dayList.map((d) => {
-                  const active = d.toDateString() === activeDay.toDateString();
-                  const dKey = dayKeyOf(d);
-                  const dayOverrides = overridesByDate.get(dKey);
-                  const dayWindows = (dayOverrides && dayOverrides.length > 0)
-                    ? dayOverrides
-                    : windows.filter((w) => w.weekday === d.getDay());
-                  const isHoliday = holidayDates.has(dKey);
-                  const hasAvailability = dayWindows.length > 0 && !isHoliday;
+          ) : windows.length === 0 ? (
+            <div className="flex flex-1 flex-col items-center justify-center text-center">
+              <p className="text-sm font-medium" style={{ color: "var(--text)" }}>
+                {engineerName} hasn&apos;t set up calendar availability yet.
+              </p>
+              <p className="mt-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
+                Try a different engineer, or send a connect request instead.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Duration */}
+              <h3 className="text-sm font-semibold" style={{ color: "var(--text)" }}>How long do you need?</h3>
+              <div className="mt-2 inline-flex self-start rounded-lg border p-1" style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)" }}>
+                {DURATION_OPTIONS.map((opt) => {
+                  const on = duration === opt;
                   return (
                     <button
-                      key={d.toISOString()}
+                      key={opt}
                       type="button"
-                      onClick={() => setActiveDay(d)}
-                      disabled={!hasAvailability}
-                      title={isHoliday ? "Engineer is off this day" : undefined}
-                      className="relative flex shrink-0 flex-col items-center gap-0.5 rounded-lg border px-3 py-2 transition-colors disabled:opacity-40"
+                      onClick={() => setDuration(opt)}
+                      className="rounded-md px-4 py-1.5 text-[13px] font-medium transition-colors"
                       style={{
-                        borderColor: active ? "var(--primary)" : "var(--border)",
-                        backgroundColor: active
-                          ? "var(--primary-soft)"
-                          : hasAvailability ? "var(--surface-raised)" : "transparent",
+                        backgroundColor: on ? "var(--surface)" : "transparent",
+                        color: on ? "var(--text)" : "var(--text-muted)",
+                        boxShadow: on ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
                       }}
                     >
-                      <span className="text-[9px] uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-                        {d.toLocaleDateString([], { weekday: "short" })}
-                      </span>
-                      <span
-                        className="text-[14px] font-semibold"
-                        style={{
-                          color: "var(--text)",
-                          textDecoration: isHoliday ? "line-through" : "none",
-                        }}
-                      >
-                        {d.getDate()}
-                      </span>
-                      {isHoliday && (
-                        <span
-                          aria-hidden
-                          className="absolute -top-1 right-0 h-1.5 w-1.5 rounded-full"
-                          style={{ backgroundColor: "var(--accent-red)" }}
-                        />
-                      )}
+                      {opt} min
                     </button>
                   );
                 })}
               </div>
-            </div>
-            <div className="max-h-[260px] overflow-y-auto px-5 py-4">
-              {activeHoliday ? (
-                <div className="flex flex-col items-center gap-1 py-6 text-center">
-                  <p className="text-[13px] font-medium" style={{ color: "var(--text)" }}>
-                    {engineerName} is off this day
+
+              {/* Timezone */}
+              <h3 className="mt-5 text-sm font-semibold" style={{ color: "var(--text)" }}>What time works best?</h3>
+              <div className="relative mt-1.5">
+                <select
+                  value={selectedTz}
+                  onChange={(e) => setSelectedTz(e.target.value)}
+                  className="w-full appearance-none rounded-md bg-transparent py-1 pr-7 text-[13px] font-medium outline-none"
+                  style={{ color: "var(--primary)" }}
+                >
+                  {tzChoices.map((tz) => (
+                    <option key={tz} value={tz} style={{ color: "var(--text)" }}>
+                      {tzShortOffset(tz, today)} · {tz.split("/").pop()?.replace(/_/g, " ")}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={14} className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2" style={{ color: "var(--primary)" }} />
+              </div>
+
+              {error && (
+                <p className="mt-2 text-[12px]" style={{ color: "var(--accent-red)" }}>{error}</p>
+              )}
+
+              {/* Times */}
+              <div className="mt-3 flex-1 space-y-2 overflow-y-auto pr-1">
+                {!effectiveDay ? (
+                  <p className="py-8 text-center text-[13px]" style={{ color: "var(--text-muted)" }}>
+                    No upcoming availability for {engineerName}.
                   </p>
-                  {activeHoliday.label && (
-                    <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-                      {activeHoliday.label}
-                    </p>
-                  )}
-                </div>
-              ) : slots.length === 0 ? (
-                <p className="py-6 text-center text-[12px]" style={{ color: "var(--text-muted)" }}>
-                  No open slots on this day.
-                </p>
-              ) : (
-                <div className="grid grid-cols-3 gap-1.5">
-                  {slots.map((s) => (
+                ) : slots.length === 0 ? (
+                  <p className="py-8 text-center text-[13px]" style={{ color: "var(--text-muted)" }}>
+                    No open times on {effectiveDay.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })}.
+                  </p>
+                ) : (
+                  slots.map((s) => (
                     <button
                       key={s.start.toISOString()}
                       type="button"
                       disabled={booking}
                       onClick={() => void submitBooking(s)}
-                      className="rounded-lg border px-2 py-1.5 text-[12px] font-medium transition-colors hover:bg-[var(--primary-soft)] disabled:opacity-50"
-                      style={{
-                        borderColor: "var(--border)",
-                        backgroundColor: "var(--surface-raised)",
-                        color: "var(--text)",
-                      }}
+                      className="flex w-full items-center justify-center rounded-lg border py-3 text-[15px] font-medium transition-colors hover:border-[var(--primary)] hover:bg-[var(--primary-soft)] disabled:opacity-50"
+                      style={{ borderColor: "var(--border)", color: "var(--text)" }}
                     >
-                      {s.start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                      {new Intl.DateTimeFormat([], { timeZone: selectedTz, hour: "2-digit", minute: "2-digit", hour12: false }).format(s.start)}
                     </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </>
-        )}
+                  ))
+                )}
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

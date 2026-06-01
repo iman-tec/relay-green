@@ -29,7 +29,7 @@ import {
   Plus, Send, Sparkles, Phone, X, PhoneOff, MessageSquare, Lock,
   AlertTriangle, Loader2, ChevronDown, ChevronRight, Search, PanelLeftClose, PanelLeftOpen,
   Wallet, RefreshCw, Settings, LogOut, Check, Folder, Pencil, PanelRightOpen, PanelRightClose,
-  Building2, FileText, Clock, Video, MoreHorizontal, UserPlus, Pin, SlidersHorizontal,
+  Building2, FileText, Clock, CalendarClock, Video, MoreHorizontal, UserPlus, Pin, SlidersHorizontal,
   Paperclip, Mic, Download, Music, AudioLines, ShieldCheck, Receipt, Home,
   Trash2, Rocket, Wrench, Menu, MessageCircle, ArrowLeft,
 } from "lucide-react";
@@ -38,6 +38,8 @@ import { ThemeTriplet } from "@/app/_components/ThemeTriplet";
 import { MeetingChatEntry } from "@/app/_components/MeetingChatEntry";
 import { MeetingSummaryEntry, isAiSummaryMessageBody } from "@/app/_components/MeetingSummaryEntry";
 import { PaywallModal } from "@/app/_components/PaywallModal";
+import { AppointmentPopup } from "@/app/_components/AppointmentPopup";
+import { UpcomingSessionBanner } from "@/app/_components/UpcomingSessionBanner";
 import { ChatComposer, speechRecognitionErrorMessage, queryMicPermission } from "@/app/_components/ChatComposer";
 import { AccountPane } from "@/app/_components/AccountPane";
 import { LegalPane, type LegalKind } from "@/app/_components/LegalPane";
@@ -1771,6 +1773,10 @@ export function RoomClient() {
       )}
       {state.error && state.error !== "NO_ENTITLEMENT" && <ErrorToast message={state.error} />}
       {callBlockMsg && <ErrorToast message={callBlockMsg} />}
+
+      {/* Upcoming scheduled-session indicator + at-slot-time prompt. */}
+      <UpcomingSessionBanner />
+      <AppointmentPopup />
       {paidToast && <SuccessToast message={paidToast} />}
 
       <PaywallModal
@@ -6337,24 +6343,24 @@ const Sidebar = memo(function Sidebar({
             );
             if (pid) onStartInProject(pid);
           }}
-          onEngineerSchedule={(engineerName) => {
-            // Offline-state schedule flow. The "book their calendar"
-            // experience needs the engineer_availability_windows table
-            // + booking RPCs — also tracked on the engineer-parity plan
-            // and not yet shipped. Until calendars exist, gracefully
-            // degrade to the same "request and they'll come back to
-            // you" path as Busy so the customer is never stuck.
-            //
-            // Same removal as Request: dropped the broken
-            // engineer_profiles.display_alias lookup that produced
-            // "Couldn't locate Kai's calendar."
+          onEngineerSchedule={(engineerName, engineerUserId) => {
+            // Open the calendar booking modal for this engineer. Calendars +
+            // booking RPCs now exist (engineer_availability_windows /
+            // book_engineer_slot / ScheduleEngineerModal), so this no longer
+            // "coming soon"-degrades.
             const pid = pickerProjectId;
             setConnectFlow(null);
             setPickerProjectId(null);
-            onPickerToast(
-              `Calendar booking for ${engineerName} is coming soon. We've queued a request — they'll join when they're back online.`,
-            );
-            if (pid) onStartInProject(pid);
+            if (!engineerUserId) {
+              // Legacy engineer with no resolvable user_id — can't target a
+              // calendar; fall back to the request path so they're never stuck.
+              onPickerToast(
+                `Request sent to ${engineerName} — they'll join when they're back online.`,
+              );
+              if (pid) onStartInProject(pid);
+              return;
+            }
+            setScheduleTarget({ engineerUserId, engineerName, projectId: pid });
           }}
           onPickerRequestDifferent={() => {
             // "Request a different engineer" — fall through to a fresh
@@ -6431,10 +6437,9 @@ const Sidebar = memo(function Sidebar({
           engineerName={scheduleTarget.engineerName}
           projectId={scheduleTarget.projectId}
           onClose={() => setScheduleTarget(null)}
-          onBooked={({ slotStart }) => {
-            const when = new Date(slotStart).toLocaleString();
-            setScheduleTarget(null);
-            window.alert(`Booked with ${scheduleTarget.engineerName} for ${when}.`);
+          onBooked={() => {
+            // The modal shows its own success confirmation and closes via
+            // onClose (the "Done" button). Nothing to do here for now.
           }}
         />
       )}
@@ -6642,7 +6647,7 @@ function ConnectFlowModal({
   /** Picked-engineer actions (engineerPicker step). */
   onEngineerConnect: (engineerName: string, engineerId: string | null) => void;
   onEngineerRequest: (engineerName: string) => void;
-  onEngineerSchedule: (engineerName: string) => void;
+  onEngineerSchedule: (engineerName: string, engineerUserId: string | null) => void;
   /** "Request a different engineer" fallback. */
   onPickerRequestDifferent: () => void;
   onPickerBack: () => void;
@@ -6863,7 +6868,7 @@ function ConnectFlowModal({
                     availability={availability}
                     onConnect={() => onEngineerConnect(eng.name, eng.engineerId)}
                     onRequest={() => onEngineerRequest(eng.name)}
-                    onSchedule={() => onEngineerSchedule(eng.name)}
+                    onSchedule={() => onEngineerSchedule(eng.name, eng.engineerId ?? null)}
                   />
                 );
               })}
@@ -7213,42 +7218,43 @@ function EngineerPickerRow({
         </div>
       </div>
 
-      {/* State-appropriate action */}
-      {availability === "available" && (
-        <button
-          type="button"
-          onClick={onConnect}
-          className="inline-flex shrink-0 items-center justify-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-semibold transition-opacity hover:opacity-90"
-          style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
-        >
-          <Phone size={11} />
-          Connect
-        </button>
-      )}
-      {availability === "busy" && (
-        <button
-          type="button"
-          onClick={onRequest}
-          title={`Send ${firstName} a request to connect when free`}
-          className="inline-flex shrink-0 items-center justify-center gap-1 rounded-full border px-3 py-1.5 text-[12px] font-semibold transition-colors hover:bg-[var(--surface-raised)]"
-          style={{ borderColor: "#f59e0b", color: "#b45309" }}
-        >
-          <Clock size={11} />
-          Request
-        </button>
-      )}
-      {availability === "offline" && (
+      {/* Actions: the state-appropriate "now" action, plus Schedule-for-later
+          which is available for EVERY engineer regardless of presence. */}
+      <div className="flex shrink-0 items-center gap-1.5">
+        {availability === "available" && (
+          <button
+            type="button"
+            onClick={onConnect}
+            className="inline-flex shrink-0 items-center justify-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-semibold transition-opacity hover:opacity-90"
+            style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+          >
+            <Phone size={11} />
+            Connect
+          </button>
+        )}
+        {availability === "busy" && (
+          <button
+            type="button"
+            onClick={onRequest}
+            title={`Send ${firstName} a request to connect when free`}
+            className="inline-flex shrink-0 items-center justify-center gap-1 rounded-full border px-3 py-1.5 text-[12px] font-semibold transition-colors hover:bg-[var(--surface-raised)]"
+            style={{ borderColor: "#f59e0b", color: "#b45309" }}
+          >
+            <Clock size={11} />
+            Request
+          </button>
+        )}
         <button
           type="button"
           onClick={onSchedule}
-          title={`Open ${firstName}'s calendar to schedule`}
+          title={`Open ${firstName}'s calendar to book a later slot`}
           className="inline-flex shrink-0 items-center justify-center gap-1 rounded-full border px-3 py-1.5 text-[12px] font-semibold transition-colors hover:bg-[var(--surface-raised)]"
           style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
         >
-          <Clock size={11} />
+          <CalendarClock size={11} />
           Schedule
         </button>
-      )}
+      </div>
     </div>
   );
 }
