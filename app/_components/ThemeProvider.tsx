@@ -78,13 +78,20 @@ function readThemeFromDOM(): Theme {
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  // SSR can't read the DOM, so initial server state always falls back to
-  // DEFAULT_THEME. The matching client-side useState initializer would
-  // hydrate to the same value to avoid mismatch warnings, but that
-  // leaves React's state diverged from the actual `<html class="…">`
-  // the pre-hydration script applied from localStorage. After mount we
-  // re-sync by reading the live DOM (see useEffect below).
-  const [theme, setThemeState] = useState<Theme>(() => readThemeFromDOM());
+  // Initial state MUST be identical on the server and on the client's first
+  // (hydration) render, or every theme-dependent consumer mismatches and
+  // React throws the hydration error (#418) — see RESP-09-1, where the
+  // FloatingThemeToggle's icon/aria-label rendered "dark" on the server but
+  // the client's resolved theme ("light"/cream for most geos) on hydration.
+  //
+  // The trap: `readThemeFromDOM()` returns DEFAULT_THEME on the server (no
+  // document) but the REAL `<html class>` the pre-paint script applied on the
+  // client — so using it as the initializer guarantees divergence whenever
+  // the resolved theme isn't DEFAULT_THEME. We therefore seed BOTH renders
+  // with the same constant and re-sync from the live DOM in the effect below
+  // (one post-hydration state update; the page colours are already correct
+  // via the pre-paint script, so only the toggle icon settles after mount).
+  const [theme, setThemeState] = useState<Theme>(DEFAULT_THEME);
 
   // Post-mount re-sync — picks up the class the pre-hydration script
   // applied from localStorage. Runs once; subsequent changes flow
