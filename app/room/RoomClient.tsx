@@ -4457,8 +4457,9 @@ function ChatPanelStub({
                     className="max-w-[220px] text-[12px] leading-relaxed"
                     style={{ color: "var(--text-muted)" }}
                   >
-                    Drop in your thoughts here — your engineer sees them as soon
-                    as the call connects.
+                    {isEndedish
+                      ? "This session has ended — the conversation is read-only."
+                      : "Drop in your thoughts here — your engineer sees them as soon as the call connects."}
                   </p>
                 </div>
               ) : (
@@ -4466,16 +4467,18 @@ function ChatPanelStub({
                   {/* Sticky system note at the top reminds the user that
                     these messages haven't reached an engineer yet — they
                     flush once the call goes live. */}
-                  <div
-                    className="mx-auto mb-1 rounded-full border px-2.5 py-1 text-[10px]"
-                    style={{
-                      borderColor: "var(--border)",
-                      backgroundColor: "var(--surface)",
-                      color: "var(--text-muted)",
-                    }}
-                  >
-                    Waiting for engineer · drafts saved on this device
-                  </div>
+                  {!isEndedish && (
+                    <div
+                      className="mx-auto mb-1 rounded-full border px-2.5 py-1 text-[10px]"
+                      style={{
+                        borderColor: "var(--border)",
+                        backgroundColor: "var(--surface)",
+                        color: "var(--text-muted)",
+                      }}
+                    >
+                      Waiting for engineer · drafts saved on this device
+                    </div>
+                  )}
                   {/* Render with date separators between days. WhatsApp shows
                     a centred pill ("TODAY" / "YESTERDAY" / "16 May") any
                     time the day flips — we mirror that so a long-running
@@ -4548,12 +4551,30 @@ function ChatPanelStub({
             )}
           </div>
 
+          {/* Ended sessions are read-only — once a session is over there's
+              no engineer to deliver a follow-up to, so the composer is
+              replaced with a read-only notice (matches the engineer side). */}
+          {isEndedish && (
+            <div
+              className="shrink-0 border-t px-3 py-4"
+              style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+            >
+              <div
+                className="flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-[11px] font-medium"
+                style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+              >
+                <Lock size={11} />
+                Session ended — read-only
+              </div>
+            </div>
+          )}
+
           {/* Composer — large card-style block matching the reference:
               multi-line textarea on top, action row underneath with
               paperclip (attach), mic (voice → text or voice message),
               and a labelled Send pill on the right.
-              Fully disabled in this placeholder state — wakes up when
-              a live engineer is on a call. */}
+              Hidden once the session has ended (read-only above). */}
+          {!isEndedish && (
           <div
             className="shrink-0 border-t px-3 py-5"
             style={{
@@ -4820,6 +4841,7 @@ function ChatPanelStub({
               </div>
             </div>
           </div>
+          )}
         </>
       )}
     </aside>
@@ -5826,6 +5848,193 @@ type ProjectGroup = {
   completionStatus: "active" | "completed" | "archived";
 };
 
+// ──────────────────────────────────────────────────────────────────────────
+// ScheduledSessionsBox — customer's upcoming booked sessions, shown in the
+// sidebar above the project list. Each row exposes Reschedule (frees the slot
+// via reschedule_booking, then reopens the scheduler for the same
+// engineer/project) and Cancel (cancel_booking_with_reason). Realtime-synced
+// on engineer_bookings so a booking made/cancelled elsewhere reflects here.
+// Renders nothing when the customer has no upcoming bookings.
+// ──────────────────────────────────────────────────────────────────────────
+type ScheduledBooking = {
+  id: string;
+  engineerUserId: string;
+  engineerName: string;
+  projectId: string | null;
+  projectName: string;
+  slotStart: string;
+  slotEnd: string;
+};
+
+const ScheduledSessionsBox = memo(function ScheduledSessionsBox({
+  customerUserId,
+  onReschedule,
+}: {
+  customerUserId: string | null;
+  /** Reopen the scheduler for the same engineer/project after the current
+   *  booking has been freed. Wired to the Sidebar's scheduleTarget state. */
+  onReschedule: (target: {
+    engineerUserId: string;
+    engineerName: string;
+    projectId: string | null;
+  }) => void;
+}) {
+  const sbRef = useRef(createClient());
+  const [bookings, setBookings] = useState<ScheduledBooking[]>([]);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const load = useCallback(async (uid: string) => {
+    const sb = sbRef.current;
+    // Keep a slot visible until 10 min past its end (matches AppointmentPopup
+    // grace) so a just-started/at-slot booking doesn't vanish mid-flow.
+    const fromIso = new Date(Date.now() - 10 * 60_000).toISOString();
+    const { data } = await sb
+      .from("engineer_bookings")
+      .select("id, engineer_user_id, project_id, slot_start, slot_end")
+      .eq("customer_user_id", uid)
+      .eq("status", "booked")
+      .gte("slot_end", fromIso)
+      .order("slot_start", { ascending: true });
+    const rows = (data ?? []) as Array<{
+      id: string; engineer_user_id: string; project_id: string | null;
+      slot_start: string; slot_end: string;
+    }>;
+    if (rows.length === 0) { setBookings([]); return; }
+    const engIds = [...new Set(rows.map((r) => r.engineer_user_id))];
+    const projIds = [...new Set(rows.map((r) => r.project_id).filter((x): x is string => !!x))];
+    const [engRes, projRes] = await Promise.all([
+      sb.from("engineer_profiles").select("user_id, display_alias").in("user_id", engIds),
+      projIds.length ? sb.from("projects").select("id, name").in("id", projIds) : Promise.resolve({ data: [] }),
+    ]);
+    const aliasById = new Map<string, string>();
+    for (const e of (engRes.data ?? []) as Array<{ user_id: string; display_alias: string | null }>) {
+      if (e.display_alias) aliasById.set(e.user_id, e.display_alias);
+    }
+    const nameById = new Map<string, string>();
+    for (const p of (projRes.data ?? []) as Array<{ id: string; name: string | null }>) {
+      if (p.name) nameById.set(p.id, p.name);
+    }
+    setBookings(rows.map((r) => ({
+      id: r.id,
+      engineerUserId: r.engineer_user_id,
+      engineerName: aliasById.get(r.engineer_user_id) ?? "your engineer",
+      projectId: r.project_id,
+      projectName: (r.project_id && nameById.get(r.project_id)) || "your project",
+      slotStart: r.slot_start,
+      slotEnd: r.slot_end,
+    })));
+  }, []);
+
+  useEffect(() => {
+    if (!customerUserId) return;
+    const sb = sbRef.current;
+    let alive = true;
+    let ch: ReturnType<typeof sb.channel> | null = null;
+    void (async () => {
+      await load(customerUserId);
+      if (!alive) return;
+      ch = sb
+        .channel(`sidebar-bookings-${customerUserId}`)
+        .on("postgres_changes",
+          { event: "*", schema: "public", table: "engineer_bookings", filter: `customer_user_id=eq.${customerUserId}` },
+          () => { void load(customerUserId); })
+        .subscribe();
+    })();
+    return () => { alive = false; if (ch) void sb.removeChannel(ch); };
+  }, [customerUserId, load]);
+
+  const handleReschedule = useCallback(async (b: ScheduledBooking) => {
+    if (busyId) return;
+    setBusyId(b.id);
+    try {
+      const { error } = await sbRef.current.rpc("reschedule_booking", { _id: b.id });
+      if (error) { window.alert(`Couldn't reschedule: ${error.message}`); return; }
+      setBookings((prev) => prev.filter((x) => x.id !== b.id));
+      onReschedule({ engineerUserId: b.engineerUserId, engineerName: b.engineerName, projectId: b.projectId });
+    } finally { setBusyId(null); }
+  }, [busyId, onReschedule]);
+
+  const handleCancel = useCallback(async (b: ScheduledBooking) => {
+    if (busyId) return;
+    if (typeof window !== "undefined" &&
+        !window.confirm("Cancel this scheduled session? Your engineer will be notified.")) return;
+    setBusyId(b.id);
+    try {
+      const { error } = await sbRef.current.rpc("cancel_booking_with_reason", {
+        _id: b.id, _reason: "Cancelled by customer",
+      });
+      if (error) { window.alert(`Couldn't cancel: ${error.message}`); return; }
+      setBookings((prev) => prev.filter((x) => x.id !== b.id));
+    } finally { setBusyId(null); }
+  }, [busyId]);
+
+  if (bookings.length === 0) return null;
+
+  const fmt = (iso: string) =>
+    new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+
+  return (
+    <div className="px-2 pt-2">
+      <div
+        className="overflow-hidden rounded-lg border"
+        style={{ borderColor: BRAND_GREEN_BORDER, backgroundColor: BRAND_GREEN_SOFT }}
+      >
+        <div className="flex items-center gap-1.5 px-2.5 pt-2 pb-1">
+          <CalendarClock size={12} style={{ color: BRAND_GREEN }} />
+          <span
+            className="flex-1 text-[10px] font-semibold tracking-[0.1em] uppercase"
+            style={{ color: BRAND_GREEN }}
+          >
+            Scheduled
+          </span>
+          <span className="text-[10px] tabular-nums" style={{ color: "var(--text-muted)" }}>
+            {bookings.length}
+          </span>
+        </div>
+        <ul className="flex flex-col">
+          {bookings.map((b) => {
+            const busy = busyId === b.id;
+            return (
+              <li key={b.id} className="px-2.5 py-1.5">
+                <div className="truncate text-[12px] font-medium" style={{ color: "var(--text)" }}>
+                  {b.projectName}
+                </div>
+                <div className="truncate text-[10px]" style={{ color: "var(--text-muted)" }}>
+                  {fmt(b.slotStart)} · {b.engineerName}
+                </div>
+                <div className="mt-1 flex gap-1.5">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void handleReschedule(b)}
+                    className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
+                    style={{ borderColor: "var(--border)", color: "var(--text)" }}
+                    title="Free this slot and pick a new time"
+                  >
+                    {busy ? <Loader2 size={9} className="animate-spin" /> : <RefreshCw size={9} />}
+                    Reschedule
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void handleCancel(b)}
+                    className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
+                    style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+                    title="Cancel this scheduled session"
+                  >
+                    <X size={9} />
+                    Cancel
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </div>
+  );
+});
+
 const Sidebar = memo(function Sidebar({
   email,
   customerUserId,
@@ -6560,13 +6769,29 @@ const Sidebar = memo(function Sidebar({
           <Search size={16} />
         </button>
 
-        {/* Sessions */}
+        {/* Sessions — expands the rail so the project/session list is
+            visible. Previously a no-op (no onClick); wired to match the
+            Search/Home affordances. */}
         <button
+          onClick={() => toggleCollapsed(false)}
           title="Sessions"
+          aria-label="Show sessions"
           className="flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-150 ease-out hover:scale-110 hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5"
           style={{ color: "var(--text-muted)" }}
         >
           <MessageSquare size={16} />
+        </button>
+
+        {/* New chat — async support path. Restored to the collapsed rail
+            so the entry point is reachable without expanding first. */}
+        <button
+          onClick={onNewChat}
+          title="New chat"
+          aria-label="New chat"
+          className="flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-150 ease-out hover:scale-110 hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5"
+          style={{ color: "var(--text-muted)" }}
+        >
+          <MessageCircle size={16} />
         </button>
 
         {/* Active session indicator */}
@@ -6896,6 +7121,34 @@ const Sidebar = memo(function Sidebar({
             </button>
           )}
         </div>
+
+        {/* New session / New chat entry points. The big Connect ball above
+            starts a LIVE engineer session via the project chooser; these two
+            compact buttons restore the explicit "New session" (live intake)
+            and "New chat" (async support) actions that were previously wired
+            in code but no longer rendered. */}
+        <div className="mt-0.5 flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={onNewSession}
+            title="Start a new live session"
+            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-[12px] font-medium transition-colors hover:bg-[var(--surface-raised)]"
+            style={{ borderColor: "var(--border)", color: "var(--text)" }}
+          >
+            <Phone size={13} style={{ color: "var(--primary-hover)" }} />
+            New session
+          </button>
+          <button
+            type="button"
+            onClick={onNewChat}
+            title="Start a new async chat"
+            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-[12px] font-medium transition-colors hover:bg-[var(--surface-raised)]"
+            style={{ borderColor: "var(--border)", color: "var(--text)" }}
+          >
+            <MessageCircle size={13} style={{ color: "var(--primary-hover)" }} />
+            New chat
+          </button>
+        </div>
       </div>
 
       {/* Current session callout (only when active) */}
@@ -6939,6 +7192,14 @@ const Sidebar = memo(function Sidebar({
           </button>
         </div>
       )}
+
+      {/* Upcoming scheduled sessions — with reschedule / cancel controls.
+          Sits above the project list so a booked call is the first thing
+          the customer sees. Self-hides when there are no bookings. */}
+      <ScheduledSessionsBox
+        customerUserId={customerUserId}
+        onReschedule={(t) => setScheduleTarget(t)}
+      />
 
       {/* Projects (each is a folder containing sessions). The "+ Create
           New Project" button below opens the same compact form as the
