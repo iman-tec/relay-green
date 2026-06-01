@@ -66,9 +66,17 @@ export async function DELETE(_request: Request, { params }: RouteCtx) {
   const memberIds = (memberRows ?? []).map((p: { id: string }) => p.id);
 
   if (memberIds.length) {
+    // Clear BOTH organization_id and department_id in the same update.
+    // profiles has a CHECK (profiles_dept_requires_org): a row with a
+    // department_id must also have an organization_id. Nulling org while a
+    // member still belongs to one of this org's departments would violate it
+    // ("new row for relation profiles violates check constraint
+    // profiles_dept_requires_org"). Clearing both together keeps the row valid
+    // (department_id IS NULL satisfies the check). The org's departments get
+    // cascade-deleted with the org below anyway.
     const { error: detachErr } = await admin
       .from("profiles")
-      .update({ organization_id: null })
+      .update({ organization_id: null, department_id: null })
       .in("id", memberIds);
     if (detachErr) {
       return NextResponse.json({ error: detachErr.message }, { status: 500 });
