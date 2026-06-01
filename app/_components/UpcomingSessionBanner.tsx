@@ -83,12 +83,21 @@ export function UpcomingSessionBanner() {
       const uid = u.user?.id;
       if (!alive || !uid) return;
       await load(uid);
-      ch = sb
-        .channel(`upcoming-session-${uid}`)
+      if (!alive) return;
+      // Unique topic per subscription: removeChannel() only drops the channel
+      // from the client's list asynchronously, so reusing a fixed topic can
+      // hand back the previous, still-subscribed channel — and .on() after
+      // subscribe() throws. A fresh topic each time sidesteps that race.
+      const channel = sb
+        .channel(`upcoming-session-${uid}-${crypto.randomUUID()}`)
         .on("postgres_changes",
           { event: "*", schema: "public", table: "engineer_bookings", filter: `customer_user_id=eq.${uid}` },
           () => { void load(uid); })
         .subscribe();
+      // Teardown may have fired during the awaits above (ch was still null);
+      // remove the just-created channel so it doesn't leak.
+      if (!alive) { void sb.removeChannel(channel); return; }
+      ch = channel;
     })();
     return () => { alive = false; if (ch) void sb.removeChannel(ch); };
   }, [load]);
