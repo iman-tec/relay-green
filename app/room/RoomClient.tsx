@@ -22,9 +22,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import {
-  PanelGroup, Panel, PanelResizeHandle,
-} from "react-resizable-panels";
+import { PanelGroup, Panel, PanelResizeHandle } from "react-resizable-panels";
 import {
   Plus, Send, Sparkles, Phone, X, PhoneOff, MessageSquare, Lock,
   AlertTriangle, Loader2, ChevronDown, ChevronRight, Search, PanelLeftClose, PanelLeftOpen,
@@ -36,7 +34,10 @@ import {
 import { Wordmark } from "@/app/_components/Wordmark";
 import { ThemeTriplet } from "@/app/_components/ThemeTriplet";
 import { MeetingChatEntry } from "@/app/_components/MeetingChatEntry";
-import { MeetingSummaryEntry, isAiSummaryMessageBody } from "@/app/_components/MeetingSummaryEntry";
+import {
+  MeetingSummaryEntry,
+  isAiSummaryMessageBody,
+} from "@/app/_components/MeetingSummaryEntry";
 import { PaywallModal } from "@/app/_components/PaywallModal";
 import { AppointmentPopup } from "@/app/_components/AppointmentPopup";
 import { UpcomingSessionBanner } from "@/app/_components/UpcomingSessionBanner";
@@ -46,16 +47,33 @@ import { LegalPane, type LegalKind } from "@/app/_components/LegalPane";
 import { DeleteProjectModal } from "@/app/_components/DeleteProjectModal";
 import { ScheduleEngineerModal } from "@/app/_components/ScheduleEngineerModal";
 import { MessageAttachments } from "@/app/_components/MessageAttachments";
-import { Button, EmptyState, IconButton, Modal, cn } from "@/app/_components/ui";
+import {
+  Button,
+  EmptyState,
+  IconButton,
+  Modal,
+  cn,
+} from "@/app/_components/ui";
 import { useCustomerSession } from "@/lib/relay/useCustomerSession";
-import { LaunchCallProvider, useLaunchCall, isVideoSdkEnabled } from "@/lib/video/LaunchCallContext";
+import {
+  LaunchCallProvider,
+  useLaunchCall,
+  isVideoSdkEnabled,
+} from "@/lib/video/LaunchCallContext";
 import { CallSurface } from "@/app/_components/call/CallSurface";
-import { useIsSupervisor, isSupervisorOnlyMessage } from "@/lib/relay/useIsSupervisor";
+import {
+  useIsSupervisor,
+  isSupervisorOnlyMessage,
+} from "@/lib/relay/useIsSupervisor";
 import { useSessionTimer } from "@/lib/relay/useSessionTimer";
 import { computeSessionClock } from "@/lib/relay/sessionClock";
 import { createClient } from "@/lib/supabase/browser";
 import { patchProfile, readProfile, writeStack } from "@/lib/relay/profile";
-import { readProjectMetadata, writeProjectMetadata, deleteProjectMetadata } from "@/lib/relay/projectMetadata";
+import {
+  readProjectMetadata,
+  writeProjectMetadata,
+  deleteProjectMetadata,
+} from "@/lib/relay/projectMetadata";
 import {
   readDraft as readSessionDraft,
   saveDraft as saveSessionDraft,
@@ -69,10 +87,19 @@ import { IntakeAssistant } from "@/app/_components/intake/IntakeAssistant";
 import { GlobalNewChatModal } from "@/app/_components/GlobalNewChatModal";
 import { EditableSummary } from "@/app/_components/EditableSummary";
 import { QuoteRequestModal } from "@/app/_components/QuoteRequestModal";
-import { ContractManagement } from "@/app/_components/ContractManagement";
+import { ContractAndAppointments } from "@/app/_components/ContractAndAppointments";
 import { useRingtone } from "@/lib/relay/useRingtone";
-import type { GuestCall, GuestMessage, GuestMessageAttachment, SessionStatus, Urgency } from "@/lib/supabase/types";
-import { signedDownloadUrl, validateStagedFiles } from "@/lib/relay/chatAttachments";
+import type {
+  GuestCall,
+  GuestMessage,
+  GuestMessageAttachment,
+  SessionStatus,
+  Urgency,
+} from "@/lib/supabase/types";
+import {
+  signedDownloadUrl,
+  validateStagedFiles,
+} from "@/lib/relay/chatAttachments";
 import {
   addAttachment as stubAddAttachment,
   listAttachments as stubListAttachments,
@@ -84,13 +111,14 @@ import {
 // Re-pointed to design-system CSS vars after the white-theme transformation.
 // Kept as named constants so existing call-sites (style={{ color: BRAND_GREEN }})
 // continue to work; the values themselves now resolve through globals.css.
-const BRAND_GREEN       = "var(--primary)";
-const BRAND_GREEN_SOFT  = "var(--primary-soft)";
-const BRAND_GREEN_BORDER = "color-mix(in srgb, var(--primary) 32%, transparent)";
-const URGENT_AMBER      = "var(--warn)";
+const BRAND_GREEN = "var(--primary)";
+const BRAND_GREEN_SOFT = "var(--primary-soft)";
+const BRAND_GREEN_BORDER =
+  "color-mix(in srgb, var(--primary) 32%, transparent)";
+const URGENT_AMBER = "var(--warn)";
 const URGENT_AMBER_SOFT = "var(--warn-soft)";
-const CRIT_RED          = "var(--risk)";
-const CRIT_RED_SOFT     = "var(--risk-soft)";
+const CRIT_RED = "var(--risk)";
+const CRIT_RED_SOFT = "var(--risk-soft)";
 
 // ── Free-session lifecycle hook ───────────────────────────────────────────
 // Owns the 1-second tick needed to detect free-cap expiry + buffer-expiry,
@@ -100,28 +128,38 @@ const CRIT_RED_SOFT     = "var(--risk-soft)";
 // Active states where the timer is ticking and the free 10-min cap is
 // counting. Includes pre-Zoom states because chat starts the moment the
 // engineer claims — chat + Zoom time both count toward the 10-min free cap.
-const ACTIVE_TIMER_STATES = ["assigned", "joining", "live", "grace", "expired_free"] as const;
+const ACTIVE_TIMER_STATES = [
+  "assigned",
+  "joining",
+  "live",
+  "grace",
+  "expired_free",
+] as const;
 
 function useFreeSessionLifecycle(
   session: GuestCall | null,
-  entitlement: { free_consumed_at: string | null; paid_minutes_remaining: number },
+  entitlement: {
+    free_consumed_at: string | null;
+    paid_minutes_remaining: number;
+  }
 ) {
   // `now` is the only state — replaces a tick counter and lets us derive the
   // clock in the body without reading Date.now() directly (which the lint
   // rule disallows as it's impure for render).
   const [now, setNow] = useState<number>(() => Date.now());
-  const status      = session?.status;
+  const status = session?.status;
   // Anchor the clock on assigned_at — billing starts when the engineer accepts
   // and the session/chat begins (matches the server's end_session anchor). NOT
   // tied to Zoom: starting a Zoom call mid-session never resets the clock.
-  const anchor      = session?.assigned_at ?? session?.joined_at ?? null;
+  const anchor = session?.assigned_at ?? session?.joined_at ?? null;
   const freeMinutes = session?.free_minutes ?? 10;
-  const paidExtensionAt    = session?.paid_extension_at ?? null;
-  const sessionId          = session?.id;
-  const freeConsumed       = entitlement.free_consumed_at != null;
+  const paidExtensionAt = session?.paid_extension_at ?? null;
+  const sessionId = session?.id;
+  const freeConsumed = entitlement.free_consumed_at != null;
   const paidMinutesRemaining = entitlement.paid_minutes_remaining;
 
-  const isActive = !!status && (ACTIVE_TIMER_STATES as readonly string[]).includes(status);
+  const isActive =
+    !!status && (ACTIVE_TIMER_STATES as readonly string[]).includes(status);
 
   // Tick only while the session is in a state whose expiry we care about.
   useEffect(() => {
@@ -136,11 +174,18 @@ function useFreeSessionLifecycle(
   //   • shouldEnd          free expired with no balance, OR paid balance
   //                        exhausted → hard end with the matching reason
   const clock = isActive
-    ? computeSessionClock({ anchor, now, freeMinutes, freeConsumed, paidExtensionAt, paidMinutesRemaining })
+    ? computeSessionClock({
+        anchor,
+        now,
+        freeMinutes,
+        freeConsumed,
+        paidExtensionAt,
+        paidMinutesRemaining,
+      })
     : null;
   const shouldPivot = !!clock?.shouldPivotToPaid;
-  const shouldEnd   = !!clock?.shouldEnd;
-  const endReason   = clock?.endReason ?? null;
+  const shouldEnd = !!clock?.shouldEnd;
+  const endReason = clock?.endReason ?? null;
 
   useEffect(() => {
     if (!sessionId) return;
@@ -151,7 +196,10 @@ function useFreeSessionLifecycle(
     // on the next render; billing then meters from paid_extension_at.
     if (shouldPivot) {
       if (!paidExtensionAt) {
-        void sb.from("guest_calls").update({ paid_extension_at: new Date().toISOString() }).eq("id", sessionId);
+        void sb
+          .from("guest_calls")
+          .update({ paid_extension_at: new Date().toISOString() })
+          .eq("id", sessionId);
       }
       return;
     }
@@ -163,9 +211,16 @@ function useFreeSessionLifecycle(
     // end-zoom-meeting are fire-and-forget.
     if (shouldEnd) {
       void (async () => {
-        await sb.rpc("end_session", { _session_id: sessionId, _reason: endReason ?? "free_session_expired" });
-        void sb.functions.invoke("summarize-guest-call", { body: { guest_call_id: sessionId } });
-        void sb.functions.invoke("end-zoom-meeting", { body: { session_id: sessionId } });
+        await sb.rpc("end_session", {
+          _session_id: sessionId,
+          _reason: endReason ?? "free_session_expired",
+        });
+        void sb.functions.invoke("summarize-guest-call", {
+          body: { guest_call_id: sessionId },
+        });
+        void sb.functions.invoke("end-zoom-meeting", {
+          body: { session_id: sessionId },
+        });
       })();
     }
   }, [sessionId, shouldPivot, shouldEnd, endReason, paidExtensionAt]);
@@ -177,17 +232,28 @@ function useFreeSessionLifecycle(
 type EmployeeInfo =
   | { isEmployee: false }
   | {
-      isEmployee:       true;
-      enterpriseName:   string;
-      departmentName:   string | null;
+      isEmployee: true;
+      enterpriseName: string;
+      departmentName: string | null;
       allocatedMinutes: number;
-      usedMinutes:      number;
+      usedMinutes: number;
       remainingMinutes: number;
     };
 
 export function RoomClient() {
   const router = useRouter();
-  const state  = useCustomerSession();
+  const state = useCustomerSession();
+
+  // When the customer starts a scheduled appointment from the sidebar, a fresh
+  // session is created server-side — pull it in so the room drops them into its
+  // waiting room (then it connects like any other call once the engineer hosts).
+  const refreshSession = state.refresh;
+  useEffect(() => {
+    const onStarted = () => void refreshSession();
+    window.addEventListener("relay:appointment-started", onStarted);
+    return () =>
+      window.removeEventListener("relay:appointment-started", onStarted);
+  }, [refreshSession]);
 
   // Video SDK in-window call surface state. Gated by NEXT_PUBLIC_USE_VIDEO_SDK
   // — when off, the legacy Meeting-SDK new-tab path is unchanged.
@@ -219,7 +285,9 @@ export function RoomClient() {
     let alive = true;
     (async () => {
       try {
-        const res = await fetch("/api/customer/me-employment", { cache: "no-store" });
+        const res = await fetch("/api/customer/me-employment", {
+          cache: "no-store",
+        });
         if (!res.ok) return;
         const body = (await res.json()) as EmployeeInfo;
         if (alive) setEmployment(body);
@@ -227,7 +295,9 @@ export function RoomClient() {
         /* silent — fall back to non-employee behaviour */
       }
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, []);
   const isEmployee = employment?.isEmployee === true;
 
@@ -242,13 +312,18 @@ export function RoomClient() {
   // embed), so we drive the signal from the session status directly.
   useEffect(() => {
     const bridge = (
-      window as unknown as { relay?: { setSessionActive?: (active: boolean) => void } }
+      window as unknown as {
+        relay?: { setSessionActive?: (active: boolean) => void };
+      }
     ).relay;
     if (!bridge?.setSessionActive) return;
     const status = state.session?.status;
-    const active = !!status && !["ended", "cancelled", "abandoned"].includes(status);
+    const active =
+      !!status && !["ended", "cancelled", "abandoned"].includes(status);
     bridge.setSessionActive(active);
-    return () => { bridge.setSessionActive?.(false); };
+    return () => {
+      bridge.setSessionActive?.(false);
+    };
   }, [state.session?.status]);
 
   // ── Auto-flush stub draft (text + attachments) on session ring ───
@@ -301,12 +376,20 @@ export function RoomClient() {
           try {
             const drafts: Array<{ text: string; createdAt: number }> = [];
             for (const scope of scopes) {
-              const raw = window.sessionStorage.getItem(stubDraftStorageKey(scope));
-              const parsed = raw ? (JSON.parse(raw) as Array<{ text?: string; createdAt?: number }>) : [];
+              const raw = window.sessionStorage.getItem(
+                stubDraftStorageKey(scope)
+              );
+              const parsed = raw
+                ? (JSON.parse(raw) as Array<{
+                    text?: string;
+                    createdAt?: number;
+                  }>)
+                : [];
               if (Array.isArray(parsed)) {
                 for (const m of parsed) {
                   const text = (m.text ?? "").trim();
-                  if (text) drafts.push({ text, createdAt: Number(m.createdAt) || 0 });
+                  if (text)
+                    drafts.push({ text, createdAt: Number(m.createdAt) || 0 });
                 }
               }
             }
@@ -315,7 +398,8 @@ export function RoomClient() {
               // Use the customer's resolved display name (profile name →
               // real guest_name → email handle) so the engineer sees who
               // sent these flushed drafts — never the generic "Guest".
-              const guestName = state.customerName || s.guest_name || "Customer";
+              const guestName =
+                state.customerName || s.guest_name || "Customer";
               const rows = drafts.map((d) => ({
                 guest_call_id: s.id,
                 sender_kind: "guest" as const,
@@ -337,7 +421,10 @@ export function RoomClient() {
             }
           } catch (e) {
             // Fail-soft — don't block the attachment flush below.
-            console.warn("[stub-flush] message post failed:", e instanceof Error ? e.message : e);
+            console.warn(
+              "[stub-flush] message post failed:",
+              e instanceof Error ? e.message : e
+            );
           }
         }
 
@@ -353,7 +440,10 @@ export function RoomClient() {
       } catch (err) {
         // Don't reset the ref so we don't loop on a failing flush —
         // the customer can re-attach + re-trigger by leaving + rejoining.
-        console.warn("[stub-flush] failed:", err instanceof Error ? err.message : err);
+        console.warn(
+          "[stub-flush] failed:",
+          err instanceof Error ? err.message : err
+        );
       }
     })();
   }, [state.session?.id, state.session?.status, state]);
@@ -371,7 +461,9 @@ export function RoomClient() {
   // landing reads "Start a session in {project name}" and clicking it
   // mints directly in that project. Cleared once a session is created
   // (the new session inherits the project, so the context is satisfied).
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
+    null
+  );
 
   // Legacy ?matching=<intake_id> URL hop: older intake builds (and saved
   // tabs) push to /room?matching=X. Forward to the full-page matching
@@ -400,7 +492,9 @@ export function RoomClient() {
   // Latest session-state accessor for timer callbacks, so the queue timer
   // doesn't re-arm every render just because the hook returns a fresh object.
   const sessionStateRef = useRef(state);
-  useEffect(() => { sessionStateRef.current = state; });
+  useEffect(() => {
+    sessionStateRef.current = state;
+  });
   // End the call + raise the "all engineers occupied" notice at the 90s mark.
   const handleQueueTimeout = useCallback(() => {
     setQueueTimedOut(true);
@@ -410,7 +504,9 @@ export function RoomClient() {
   // Keyed on id so ENDING the same session (cancel keeps the id, only flips
   // status) doesn't clear the notice we just raised.
   const queuedSessionId = state.session?.id;
-  useEffect(() => { setQueueTimedOut(false); }, [queuedSessionId]);
+  useEffect(() => {
+    setQueueTimedOut(false);
+  }, [queuedSessionId]);
   // Arm a precise 90s (1:30) timer anchored to created_at / last_recall_at
   // while the session is queued. "Call again" bumps last_recall_at → re-arms
   // the window. Mirrors the server's abandon_stale_queued_sessions() interval.
@@ -418,13 +514,24 @@ export function RoomClient() {
   useEffect(() => {
     // Only the ringing/queue flow times out — the async chat-first flow (no
     // ConnectingModal) is a leave-a-message paradigm, not a live wait.
-    if (asyncChatMode || !queuedSession || queuedSession.status !== "queued" || queueTimedOut) return;
+    if (
+      asyncChatMode ||
+      !queuedSession ||
+      queuedSession.status !== "queued" ||
+      queueTimedOut
+    )
+      return;
     const anchor = Math.max(
       new Date(queuedSession.created_at).getTime(),
-      queuedSession.last_recall_at ? new Date(queuedSession.last_recall_at).getTime() : 0,
+      queuedSession.last_recall_at
+        ? new Date(queuedSession.last_recall_at).getTime()
+        : 0
     );
     const ms = anchor + 90_000 - Date.now();
-    if (ms <= 0) { handleQueueTimeout(); return; }
+    if (ms <= 0) {
+      handleQueueTimeout();
+      return;
+    }
     const id = setTimeout(handleQueueTimeout, ms);
     return () => clearTimeout(id);
   }, [queuedSession, queueTimedOut, handleQueueTimeout, asyncChatMode]);
@@ -434,7 +541,9 @@ export function RoomClient() {
     setQueueTimedOut(false);
     await sessionStateRef.current.startNewSession(pid);
   }, []);
-  const handleBusyClose = useCallback(() => { setQueueTimedOut(false); }, []);
+  const handleBusyClose = useCallback(() => {
+    setQueueTimedOut(false);
+  }, []);
   // Mobile-only state. The sidebar + chat panel are hidden by default
   // at viewports < md (768px). A hamburger button opens the sidebar as
   // a fixed-position drawer; a FAB opens the chat panel as a bottom
@@ -469,7 +578,9 @@ export function RoomClient() {
         if (k && k.startsWith("relay-connecting-shown:")) keys.push(k);
       }
       keys.forEach((k) => localStorage.removeItem(k));
-    } catch { /* ignore — quota / privacy mode */ }
+    } catch {
+      /* ignore — quota / privacy mode */
+    }
   }, []);
 
   // Paywall opens when:
@@ -480,7 +591,9 @@ export function RoomClient() {
   // the dept pool, not a self-served Stripe plan. When they run out the
   // plan chip flips to "Out of credits"; topping up is their dept admin's
   // job, not theirs.
-  const [paywallOpen, setPaywallOpen] = useState<null | "free_expired" | "no_credits" | "manual">(null);
+  const [paywallOpen, setPaywallOpen] = useState<
+    null | "free_expired" | "no_credits" | "manual"
+  >(null);
   const [paidToast, setPaidToast] = useState<string | null>(null);
 
   // In-pane Account / Profile / Wallet / Billing / Security view. When
@@ -490,7 +603,9 @@ export function RoomClient() {
   // pane's Wallet tab where they can hit Recharge to open the Stripe
   // modal. Null returns to whatever view was prior (session, landing,
   // etc).
-  const [accountTab, setAccountTab] = useState<null | "profile" | "wallet" | "billing" | "security" | "notifications">(null);
+  const [accountTab, setAccountTab] = useState<
+    null | "profile" | "wallet" | "billing" | "security" | "notifications"
+  >(null);
 
   // In-pane legal document viewer (Privacy / Terms). When non-null,
   // MainPane mounts <LegalPane> in place of everything else. Like
@@ -507,11 +622,16 @@ export function RoomClient() {
   // preparingDraftId: when non-null, the prep view is editing an
   // already-saved draft (sidebar row → click → re-open). When null
   // but preparingProjectId is set, it's a fresh unsaved prep.
-  const [preparingProjectId, setPreparingProjectId] = useState<string | null>(null);
-  const [preparingDraftId,   setPreparingDraftId]   = useState<string | null>(null);
+  const [preparingProjectId, setPreparingProjectId] = useState<string | null>(
+    null
+  );
+  const [preparingDraftId, setPreparingDraftId] = useState<string | null>(null);
   // 2-factor delete-project modal target. null = modal closed.
   // { id, name } when the modal is open for a specific project.
-  const [deleteProjectTarget, setDeleteProjectTarget] = useState<{ id: string; name: string } | null>(null);
+  const [deleteProjectTarget, setDeleteProjectTarget] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   // Bumped whenever a draft is saved / deleted so the sidebar
   // re-reads from localStorage and re-renders the draft rows.
   const [draftsTick, setDraftsTick] = useState(0);
@@ -533,7 +653,9 @@ export function RoomClient() {
   const paywallParam = searchParams.get("paywall");
   useEffect(() => {
     if (!paywallParam) return;
-    setPaywallOpen(paywallParam === "no_credits" ? "no_credits" : "free_expired");
+    setPaywallOpen(
+      paywallParam === "no_credits" ? "no_credits" : "free_expired"
+    );
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
       url.searchParams.delete("paywall");
@@ -547,9 +669,20 @@ export function RoomClient() {
     const s = state.session?.status;
     // An engineer is already attached/attaching (or in wind-down / paywall
     // hold). Re-ringing here just spawns a second call — block it.
-    const onCall = !!s && ["assigned", "joining", "live", "grace", "ending", "expired_free"].includes(s);
+    const onCall =
+      !!s &&
+      [
+        "assigned",
+        "joining",
+        "live",
+        "grace",
+        "ending",
+        "expired_free",
+      ].includes(s);
     if (onCall) {
-      setCallBlockMsg("You're already on a call with an engineer — end it before starting a new one.");
+      setCallBlockMsg(
+        "You're already on a call with an engineer — end it before starting a new one."
+      );
       setTimeout(() => setCallBlockMsg(null), 4000);
     }
     return onCall;
@@ -571,7 +704,12 @@ export function RoomClient() {
       // continue); the paid case lands here once the wallet hits 0.
       setPaywallOpen("free_expired");
     }
-  }, [state.session?.status, state.session?.ended_reason, state.entitlement.paid_minutes_remaining, isEmployee]);
+  }, [
+    state.session?.status,
+    state.session?.ended_reason,
+    state.entitlement.paid_minutes_remaining,
+    isEmployee,
+  ]);
 
   // If the RPC returned NO_ENTITLEMENT, pop paywall — but skip for employees.
   useEffect(() => {
@@ -592,20 +730,29 @@ export function RoomClient() {
       setPaywallOpen(null);
       setPaidToast(`Payment received — your ${paid} plan is active.`);
       // The webhook is async; give it a couple of seconds, then refresh.
-      const t = setTimeout(() => { void state.refresh(); }, 2500);
+      const t = setTimeout(() => {
+        void state.refresh();
+      }, 2500);
       const t2 = setTimeout(() => setPaidToast(null), 5000);
       // Clean up the URL so a reload doesn't retrigger this branch
       const url = new URL(window.location.href);
       url.searchParams.delete("relay_paid");
       window.history.replaceState({}, "", url.toString());
-      return () => { clearTimeout(t); clearTimeout(t2); };
+      return () => {
+        clearTimeout(t);
+        clearTimeout(t2);
+      };
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Reset the flag whenever we leave the call (session ends or a new one starts)
   useEffect(() => {
-    if (!state.session || state.session.status === "ended" || state.session.status === "queued") {
+    if (
+      !state.session ||
+      state.session.status === "ended" ||
+      state.session.status === "queued"
+    ) {
       setAccepted(false);
     }
   }, [state.session?.id, state.session?.status]);
@@ -644,7 +791,10 @@ export function RoomClient() {
 
   // Clear past-session preview as soon as the customer starts a new session
   useEffect(() => {
-    if (state.session && !["ended","cancelled","abandoned"].includes(state.session.status)) {
+    if (
+      state.session &&
+      !["ended", "cancelled", "abandoned"].includes(state.session.status)
+    ) {
       // active session — close any past preview
       // (but leave it open if they end this one and want to keep reviewing the old one)
     }
@@ -681,7 +831,8 @@ export function RoomClient() {
     // in the sidebar"). Retry without those columns when they're
     // missing so the core sidebar functionality stays alive while the
     // retention feature degrades to "always active."
-    const baseCols = "id, name, created_at, ai_summary_title, ai_summary_overview, ai_next_steps, summary, summary_updated_at";
+    const baseCols =
+      "id, name, created_at, ai_summary_title, ai_summary_overview, ai_next_steps, summary, summary_updated_at";
     const fullCols = `${baseCols}, completion_status, completed_at`;
 
     let rows: Record<string, unknown>[] | null = null;
@@ -698,7 +849,7 @@ export function RoomClient() {
       // bailing out and freezing the sidebar.
       console.warn(
         "[refetchProjects] full SELECT failed, retrying without retention cols:",
-        fullRes.error.message,
+        fullRes.error.message
       );
       const baseRes = await sb
         .from("projects")
@@ -706,7 +857,10 @@ export function RoomClient() {
         .eq("customer_id", state.auth.userId)
         .order("created_at", { ascending: false });
       if (baseRes.error) {
-        console.warn("[refetchProjects] base SELECT also failed:", baseRes.error.message);
+        console.warn(
+          "[refetchProjects] base SELECT also failed:",
+          baseRes.error.message
+        );
         errored = true;
       } else {
         rows = baseRes.data ?? [];
@@ -716,25 +870,33 @@ export function RoomClient() {
     }
     if (errored || rows == null) return;
 
-    setProjects(rows.map((r) => ({
-      id:                r.id as string,
-      name:              r.name as string,
-      createdAt:         r.created_at as string,
-      aiSummaryTitle:    (r.ai_summary_title as string | null) ?? null,
-      aiSummaryOverview: (r.ai_summary_overview as string | null) ?? null,
-      aiNextSteps:       (Array.isArray(r.ai_next_steps) ? (r.ai_next_steps as string[]) : null),
-      summary:           (r.summary as string | null) ?? null,
-      summaryUpdatedAt:  (r.summary_updated_at as string | null) ?? null,
-      // Default to "active" when the column wasn't returned (retention
-      // migration not yet applied). The customer still sees their
-      // project; the mark-complete flow just no-ops gracefully.
-      completionStatus:  ((r.completion_status as string) === "completed" || (r.completion_status as string) === "archived")
-                            ? (r.completion_status as "completed" | "archived")
-                            : "active",
-      completedAt:       (r.completed_at as string | null) ?? null,
-    })));
+    setProjects(
+      rows.map((r) => ({
+        id: r.id as string,
+        name: r.name as string,
+        createdAt: r.created_at as string,
+        aiSummaryTitle: (r.ai_summary_title as string | null) ?? null,
+        aiSummaryOverview: (r.ai_summary_overview as string | null) ?? null,
+        aiNextSteps: Array.isArray(r.ai_next_steps)
+          ? (r.ai_next_steps as string[])
+          : null,
+        summary: (r.summary as string | null) ?? null,
+        summaryUpdatedAt: (r.summary_updated_at as string | null) ?? null,
+        // Default to "active" when the column wasn't returned (retention
+        // migration not yet applied). The customer still sees their
+        // project; the mark-complete flow just no-ops gracefully.
+        completionStatus:
+          (r.completion_status as string) === "completed" ||
+          (r.completion_status as string) === "archived"
+            ? (r.completion_status as "completed" | "archived")
+            : "active",
+        completedAt: (r.completed_at as string | null) ?? null,
+      }))
+    );
   }, [state.auth]);
-  useEffect(() => { void refetchProjects(); }, [refetchProjects, state.session?.id, state.session?.status]);
+  useEffect(() => {
+    void refetchProjects();
+  }, [refetchProjects, state.session?.id, state.session?.status]);
 
   // Track initial load so that subsequent startNewSession() calls
   // (which briefly set loading=true + session=null) don't flash a
@@ -757,80 +919,112 @@ export function RoomClient() {
   // Used by the picker pane: either pick an existing project (existingId)
   // or create a new one with a given name. Either way, start a session
   // bound to that project; if there's a pending composer draft, send it too.
-  const startSessionInProject = useCallback(async (
-    arg: ({ existingId: string } | { newName: string }) & { projectType?: string },
-  ) => {
-    const sb = createClient();
-    let projectId: string | null = null;
-
-    if ("existingId" in arg) {
-      projectId = arg.existingId;
-    } else {
-      // Create the project first. Properly surface errors — previously
-      // we only destructured { data } and silently swallowed any { error },
-      // which caused every session to land under "General" even when the
-      // user had named a project.
-      const { data, error: createErr } = await sb.rpc("create_project", { _name: arg.newName });
-      if (createErr) {
-        console.warn("[startSessionInProject] create_project failed:", createErr.message);
-        throw new Error(createErr.message);
+  const startSessionInProject = useCallback(
+    async (
+      arg: ({ existingId: string } | { newName: string }) & {
+        projectType?: string;
       }
-      if (data) {
-        const row = Array.isArray(data)
-          ? (data[0] as { id?: string })
-          : (data as { id?: string });
-        projectId = row?.id ?? null;
-        if (!projectId) {
-          console.warn("[startSessionInProject] create_project returned data but no id:", data);
+    ) => {
+      const sb = createClient();
+      let projectId: string | null = null;
+
+      if ("existingId" in arg) {
+        projectId = arg.existingId;
+      } else {
+        // Create the project first. Properly surface errors — previously
+        // we only destructured { data } and silently swallowed any { error },
+        // which caused every session to land under "General" even when the
+        // user had named a project.
+        const { data, error: createErr } = await sb.rpc("create_project", {
+          _name: arg.newName,
+        });
+        if (createErr) {
+          console.warn(
+            "[startSessionInProject] create_project failed:",
+            createErr.message
+          );
+          throw new Error(createErr.message);
+        }
+        if (data) {
+          const row = Array.isArray(data)
+            ? (data[0] as { id?: string })
+            : (data as { id?: string });
+          projectId = row?.id ?? null;
+          if (!projectId) {
+            console.warn(
+              "[startSessionInProject] create_project returned data but no id:",
+              data
+            );
+          }
         }
       }
-    }
 
-    // Before creating a new session, cancel any lingering active session in
-    // the DB. Without this, get_or_create_active_customer_session returns the
-    // old session (which has project_id = null) instead of creating a fresh
-    // one in the right project.
-    const userId = state.auth.kind === "authed" ? state.auth.userId : null;
-    if (userId) {
-      const { data: activeSessions } = await sb
-        .from("guest_calls")
-        .select("id, project_id")
-        .eq("customer_user_id", userId)
-        .in("status", ["queued", "assigned", "joining", "live", "grace", "ending", "expired_free"])
-        .order("created_at", { ascending: false })
-        .limit(1);
-      if (activeSessions && activeSessions.length > 0) {
-        const existing = activeSessions[0] as { id: string; project_id: string | null };
-        // Cancel the old session if it has a different project (or no project).
-        // If it's already in the right project, just use it (the RPC will return it).
-        if (existing.project_id !== projectId) {
-          await sb.rpc("cancel_customer_session", { _session_id: existing.id });
+      // Before creating a new session, cancel any lingering active session in
+      // the DB. Without this, get_or_create_active_customer_session returns the
+      // old session (which has project_id = null) instead of creating a fresh
+      // one in the right project.
+      const userId = state.auth.kind === "authed" ? state.auth.userId : null;
+      if (userId) {
+        const { data: activeSessions } = await sb
+          .from("guest_calls")
+          .select("id, project_id")
+          .eq("customer_user_id", userId)
+          .in("status", [
+            "queued",
+            "assigned",
+            "joining",
+            "live",
+            "grace",
+            "ending",
+            "expired_free",
+          ])
+          .order("created_at", { ascending: false })
+          .limit(1);
+        if (activeSessions && activeSessions.length > 0) {
+          const existing = activeSessions[0] as {
+            id: string;
+            project_id: string | null;
+          };
+          // Cancel the old session if it has a different project (or no project).
+          // If it's already in the right project, just use it (the RPC will return it).
+          if (existing.project_id !== projectId) {
+            await sb.rpc("cancel_customer_session", {
+              _session_id: existing.id,
+            });
+          }
         }
       }
-    }
 
-    if (pendingDraft) {
-      await state.sendOrStart(pendingDraft, projectId ?? undefined);
-      setPendingDraft(null);
-    } else {
-      await state.startNewSession(projectId ?? undefined);
-    }
-    setProjectFormOpen(false);
-    void refetchProjects();
-  }, [pendingDraft, state, refetchProjects]);
+      if (pendingDraft) {
+        await state.sendOrStart(pendingDraft, projectId ?? undefined);
+        setPendingDraft(null);
+      } else {
+        await state.startNewSession(projectId ?? undefined);
+      }
+      setProjectFormOpen(false);
+      void refetchProjects();
+    },
+    [pendingDraft, state, refetchProjects]
+  );
 
   // Picker-pane handlers — both funnel into /intake. The wizard at
   // /intake?projectId=X detects an existing intake (returning user picking
   // an old project) and short-circuits straight into match_engineer +
   // matching screen; otherwise it collects answers.
-  const handleProjectConfirmNew  = useCallback(async (_name: string) => {
-    setProjectFormOpen(false);
-    router.push("/intake");
-  }, [router]);
-  const handleProjectConfirmPick = useCallback(async (id: string) => {
-    setProjectFormOpen(false);
-    router.push(`/intake?projectId=${id}`);
-  }, [router]);
+  const handleProjectConfirmNew = useCallback(
+    async (_name: string) => {
+      setProjectFormOpen(false);
+      router.push("/intake");
+    },
+    [router]
+  );
+  const handleProjectConfirmPick = useCallback(
+    async (id: string) => {
+      setProjectFormOpen(false);
+      router.push(`/intake?projectId=${id}`);
+    },
+    [router]
+  );
 
   // Called from sidebar's "+ inside project" affordance AND from the
   // branded landing's CTA when a project is selected. Both new and
@@ -844,152 +1038,181 @@ export function RoomClient() {
   //                        If absent, route to /intake?projectId=X so the
   //                        customer can fill the answers once (legacy
   //                        projects predate per-project intake).
-  const handleStartInProject = useCallback(async (projectId: string | null, preferredEngineerId?: string) => {
-    // Don't let the customer ring a new engineer while already on a call.
-    if (blockNewCall()) return;
-    // Entitlement check before we do anything else. Employees route
-    // around it — their minutes come from the dept allocation, not the
-    // personal entitlement, and the paywall doesn't apply to them.
-    if (!isEmployee) {
-      const hasFreeLeft = !state.entitlement.free_consumed_at;
-      const hasPaidLeft = state.entitlement.paid_minutes_remaining > 0;
-      if (!hasFreeLeft && !hasPaidLeft) {
-        setPaywallOpen("no_credits");
-        return;
-      }
-    }
-    setViewingPastId(null);
-    setPendingDraft(null);
-    setSelectedProjectId(null);
-
-    if (!projectId) {
-      // Fresh project → wizard. It creates the project, writes the intake,
-      // mints the session, fires match_engineer, and redirects to /intake/matching.
-      router.push("/intake");
-      return;
-    }
-
-    const sb = createClient();
-    const userId = state.auth.kind === "authed" ? state.auth.userId : null;
-    if (!userId) {
-      router.push("/login?next=/room");
-      return;
-    }
-
-    // Does this project already have an intake?
-    let { data: intake } = await sb
-      .from("client_intakes")
-      .select("id")
-      .eq("project_id", projectId)
-      .eq("customer_user_id", userId)
-      .maybeSingle();
-
-    if (!intake) {
-      // Legacy projects — created before client_intakes was written at
-      // project-creation time. If we still have their metadata in
-      // localStorage (writeProjectMetadata was always part of the
-      // create flow), backfill the intake row inline so this customer
-      // never has to see /intake again for this project. Otherwise
-      // (truly intakeless), fall back to the wizard.
-      const meta = readProjectMetadata(projectId);
-      const profile = readProfile();
-      if (meta) {
-        const familiarity =
-          profile.techComfort === "well_experienced"  ? "Well Experienced"
-          : profile.techComfort === "semi_technical"  ? "Semi-Technical"
-          : "Totally Unknown";
-        const { data: newIntake, error: backfillErr } = await sb
-          .from("client_intakes")
-          .upsert(
-            {
-              customer_user_id: userId,
-              project_id:       projectId,
-              familiarity,
-              ai_tools_used:    meta.aiTools.join(", ") || "Other",
-              developing:       mapProjectTypeToDeveloping(meta.projectType),
-              technologies:     [...meta.backend, ...meta.frontend],
-              declined_by:      [] as string[],
-            },
-            { onConflict: "project_id,customer_user_id" },
-          )
-          .select("id")
-          .single();
-        if (!backfillErr && newIntake) {
-          intake = newIntake as { id: string };
+  const handleStartInProject = useCallback(
+    async (projectId: string | null, preferredEngineerId?: string) => {
+      // Don't let the customer ring a new engineer while already on a call.
+      if (blockNewCall()) return;
+      // Entitlement check before we do anything else. Employees route
+      // around it — their minutes come from the dept allocation, not the
+      // personal entitlement, and the paywall doesn't apply to them.
+      if (!isEmployee) {
+        const hasFreeLeft = !state.entitlement.free_consumed_at;
+        const hasPaidLeft = state.entitlement.paid_minutes_remaining > 0;
+        if (!hasFreeLeft && !hasPaidLeft) {
+          setPaywallOpen("no_credits");
+          return;
         }
       }
+      setViewingPastId(null);
+      setPendingDraft(null);
+      setSelectedProjectId(null);
+
+      if (!projectId) {
+        // Fresh project → wizard. It creates the project, writes the intake,
+        // mints the session, fires match_engineer, and redirects to /intake/matching.
+        router.push("/intake");
+        return;
+      }
+
+      const sb = createClient();
+      const userId = state.auth.kind === "authed" ? state.auth.userId : null;
+      if (!userId) {
+        router.push("/login?next=/room");
+        return;
+      }
+
+      // Does this project already have an intake?
+      let { data: intake } = await sb
+        .from("client_intakes")
+        .select("id")
+        .eq("project_id", projectId)
+        .eq("customer_user_id", userId)
+        .maybeSingle();
+
       if (!intake) {
-        router.push(`/intake?projectId=${projectId}`);
+        // Legacy projects — created before client_intakes was written at
+        // project-creation time. If we still have their metadata in
+        // localStorage (writeProjectMetadata was always part of the
+        // create flow), backfill the intake row inline so this customer
+        // never has to see /intake again for this project. Otherwise
+        // (truly intakeless), fall back to the wizard.
+        const meta = readProjectMetadata(projectId);
+        const profile = readProfile();
+        if (meta) {
+          const familiarity =
+            profile.techComfort === "well_experienced"
+              ? "Well Experienced"
+              : profile.techComfort === "semi_technical"
+                ? "Semi-Technical"
+                : "Totally Unknown";
+          const { data: newIntake, error: backfillErr } = await sb
+            .from("client_intakes")
+            .upsert(
+              {
+                customer_user_id: userId,
+                project_id: projectId,
+                familiarity,
+                ai_tools_used: meta.aiTools.join(", ") || "Other",
+                developing: mapProjectTypeToDeveloping(meta.projectType),
+                technologies: [...meta.backend, ...meta.frontend],
+                declined_by: [] as string[],
+              },
+              { onConflict: "project_id,customer_user_id" }
+            )
+            .select("id")
+            .single();
+          if (!backfillErr && newIntake) {
+            intake = newIntake as { id: string };
+          }
+        }
+        if (!intake) {
+          router.push(`/intake?projectId=${projectId}`);
+          return;
+        }
+      }
+
+      // Existing intake → start session + match, then off to the waiting screen.
+      // Cancel any lingering active session in a different project first.
+      const { data: activeSessions } = await sb
+        .from("guest_calls")
+        .select("id, project_id")
+        .eq("customer_user_id", userId)
+        .in("status", [
+          "queued",
+          "assigned",
+          "joining",
+          "live",
+          "grace",
+          "ending",
+          "expired_free",
+        ])
+        .order("created_at", { ascending: false })
+        .limit(1);
+      const lingering = (activeSessions ?? [])[0] as
+        | { id: string; project_id: string | null }
+        | undefined;
+      if (lingering && lingering.project_id !== projectId) {
+        await sb.rpc("cancel_customer_session", { _session_id: lingering.id });
+      }
+
+      const { data: callData, error: callErr } = await sb.rpc(
+        "get_or_create_active_customer_session",
+        { _project_id: projectId }
+      );
+      if (callErr) {
+        if ((callErr.message ?? "").includes("NO_ENTITLEMENT")) {
+          // Same rule as the pre-check: only open the paywall for
+          // non-employees. Employees get a silent log; the dept admin is
+          // the right escalation path.
+          if (!isEmployee) setPaywallOpen("no_credits");
+          else
+            console.warn(
+              "[handleStartInProject] employee hit NO_ENTITLEMENT — dept pool likely exhausted"
+            );
+          return;
+        }
+        console.warn(
+          "[handleStartInProject] session mint failed:",
+          callErr.message
+        );
         return;
       }
-    }
+      const session = (Array.isArray(callData) ? callData[0] : callData) as {
+        id: string;
+      } | null;
+      if (!session?.id) return;
 
-    // Existing intake → start session + match, then off to the waiting screen.
-    // Cancel any lingering active session in a different project first.
-    const { data: activeSessions } = await sb
-      .from("guest_calls")
-      .select("id, project_id")
-      .eq("customer_user_id", userId)
-      .in("status", ["queued","assigned","joining","live","grace","ending","expired_free"])
-      .order("created_at", { ascending: false })
-      .limit(1);
-    const lingering = (activeSessions ?? [])[0] as { id: string; project_id: string | null } | undefined;
-    if (lingering && lingering.project_id !== projectId) {
-      await sb.rpc("cancel_customer_session", { _session_id: lingering.id });
-    }
+      // Point the intake at the new session and clear declined_by so we can
+      // re-ring engineers who said no last time.
+      await sb
+        .from("client_intakes")
+        .update({ guest_call_id: session.id, declined_by: [] })
+        .eq("id", intake.id);
 
-    const { data: callData, error: callErr } = await sb.rpc(
-      "get_or_create_active_customer_session",
-      { _project_id: projectId },
-    );
-    if (callErr) {
-      if ((callErr.message ?? "").includes("NO_ENTITLEMENT")) {
-        // Same rule as the pre-check: only open the paywall for
-        // non-employees. Employees get a silent log; the dept admin is
-        // the right escalation path.
-        if (!isEmployee) setPaywallOpen("no_credits");
-        else console.warn("[handleStartInProject] employee hit NO_ENTITLEMENT — dept pool likely exhausted");
-        return;
+      // Directed connect: when the customer picked a specific engineer in the
+      // "Pick your engineer" modal, ring THAT engineer first via the directed
+      // endpoint. If it can't place the offer (engineer busy/offline, no prior
+      // relationship, etc. → offered:0) fall back to the generic matcher so the
+      // customer is never stranded. Without a preferred id, go straight to the
+      // generic matcher as before.
+      let directed = false;
+      if (preferredEngineerId) {
+        try {
+          const res = await fetch("/api/match/directed", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              intakeId: intake.id,
+              engineerId: preferredEngineerId,
+            }),
+          });
+          const json = (await res.json().catch(() => ({}))) as {
+            offered?: number;
+          };
+          directed = res.ok && (json.offered ?? 0) > 0;
+        } catch {
+          directed = false;
+        }
       }
-      console.warn("[handleStartInProject] session mint failed:", callErr.message);
-      return;
-    }
-    const session = (Array.isArray(callData) ? callData[0] : callData) as { id: string } | null;
-    if (!session?.id) return;
-
-    // Point the intake at the new session and clear declined_by so we can
-    // re-ring engineers who said no last time.
-    await sb.from("client_intakes")
-      .update({ guest_call_id: session.id, declined_by: [] })
-      .eq("id", intake.id);
-
-    // Directed connect: when the customer picked a specific engineer in the
-    // "Pick your engineer" modal, ring THAT engineer first via the directed
-    // endpoint. If it can't place the offer (engineer busy/offline, no prior
-    // relationship, etc. → offered:0) fall back to the generic matcher so the
-    // customer is never stranded. Without a preferred id, go straight to the
-    // generic matcher as before.
-    let directed = false;
-    if (preferredEngineerId) {
-      try {
-        const res = await fetch("/api/match/directed", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ intakeId: intake.id, engineerId: preferredEngineerId }),
-        });
-        const json = (await res.json().catch(() => ({}))) as { offered?: number };
-        directed = res.ok && (json.offered ?? 0) > 0;
-      } catch {
-        directed = false;
+      if (!directed) {
+        await sb.rpc("match_engineer", { _intake_id: intake.id });
       }
-    }
-    if (!directed) {
-      await sb.rpc("match_engineer", { _intake_id: intake.id });
-    }
-    // Hop to the full-page matching screen (chat-while-ringing + restyled
-    // chrome). On accept, MatchingClient redirects back to /room.
-    router.replace(`/intake/matching/${intake.id}`);
-  }, [state.entitlement, state.auth, router, isEmployee, blockNewCall]);
+      // Hop to the full-page matching screen (chat-while-ringing + restyled
+      // chrome). On accept, MatchingClient redirects back to /room.
+      router.replace(`/intake/matching/${intake.id}`);
+    },
+    [state.entitlement, state.auth, router, isEmployee, blockNewCall]
+  );
 
   // Toggle a project as the current "context" for the no-session landing.
   // Passing the same id again clears it. General has no real id, so it
@@ -1013,7 +1236,8 @@ export function RoomClient() {
   const freeConsumed = !!state.entitlement.free_consumed_at;
   const paidRemaining = state.entitlement.paid_minutes_remaining;
   const sidebarEmail = state.auth.kind === "authed" ? state.auth.email : "";
-  const sidebarCustomerUserId = state.auth.kind === "authed" ? state.auth.userId : null;
+  const sidebarCustomerUserId =
+    state.auth.kind === "authed" ? state.auth.userId : null;
   // Unverified guest from the Try-Relay funnel (Supabase signInAnonymously).
   // The user menu collapses to just the wallet+free-tier readout for these
   // users; profile / billing / log-out only appear after they upgrade by
@@ -1085,7 +1309,7 @@ export function RoomClient() {
       if (!projectId) {
         const { data: created, error: projErr } = await sb.rpc(
           "create_project",
-          { _name: "Chat" },
+          { _name: "Chat" }
         );
         if (projErr) throw projErr;
         const row = Array.isArray(created)
@@ -1101,10 +1325,20 @@ export function RoomClient() {
         .from("guest_calls")
         .select("id, project_id")
         .eq("customer_user_id", userId)
-        .in("status", ["queued", "assigned", "joining", "live", "grace", "ending", "expired_free"])
+        .in("status", [
+          "queued",
+          "assigned",
+          "joining",
+          "live",
+          "grace",
+          "ending",
+          "expired_free",
+        ])
         .order("created_at", { ascending: false })
         .limit(1);
-      const lingering = (actives ?? [])[0] as { id: string; project_id: string | null } | undefined;
+      const lingering = (actives ?? [])[0] as
+        | { id: string; project_id: string | null }
+        | undefined;
       if (lingering && lingering.project_id !== projectId) {
         await sb.rpc("cancel_customer_session", { _session_id: lingering.id });
       }
@@ -1112,7 +1346,7 @@ export function RoomClient() {
       // 3. Mint / re-use the session.
       const { data: callData, error: rpcErr } = await sb.rpc(
         "get_or_create_active_customer_session",
-        { _project_id: projectId },
+        { _project_id: projectId }
       );
       if (rpcErr) {
         if ((rpcErr.message ?? "").includes("NO_ENTITLEMENT")) {
@@ -1121,7 +1355,9 @@ export function RoomClient() {
         }
         throw rpcErr;
       }
-      const session = (Array.isArray(callData) ? callData[0] : callData) as { id?: string } | null;
+      const session = (Array.isArray(callData) ? callData[0] : callData) as {
+        id?: string;
+      } | null;
       if (!session?.id) throw new Error("Could not create session");
 
       // 4. Upsert a minimal intake row (uses the profile snapshot if
@@ -1156,7 +1392,9 @@ export function RoomClient() {
       // ("Website" / "Mobile App" / "IoT System" / "AIML product").
       // Without this, the upsert would fail the CHECK constraint and
       // the customer would never get an intake row.
-      const developingForIntake = mapProjectTypeToDeveloping(projectMeta?.projectType);
+      const developingForIntake = mapProjectTypeToDeveloping(
+        projectMeta?.projectType
+      );
 
       const intakePayload = {
         guest_call_id: session.id,
@@ -1242,14 +1480,17 @@ export function RoomClient() {
   // central pane is fully theirs to draft in. The phone button next
   // to the project (handleStartInProject) is what actually rings.
   // Pass a draftId to re-open an existing saved draft for editing.
-  const handlePrepareSession = useCallback((projectId: string, draftId?: string | null) => {
-    setPreparingProjectId(projectId);
-    setPreparingDraftId(draftId ?? null);
-    setSelectedProjectId(projectId);
-    setAccountTab(null);
-    setLegalView(null);
-    setViewingPastId(null);
-  }, []);
+  const handlePrepareSession = useCallback(
+    (projectId: string, draftId?: string | null) => {
+      setPreparingProjectId(projectId);
+      setPreparingDraftId(draftId ?? null);
+      setSelectedProjectId(projectId);
+      setAccountTab(null);
+      setLegalView(null);
+      setViewingPastId(null);
+    },
+    []
+  );
   const handleClosePrepare = useCallback(() => {
     setPreparingProjectId(null);
     setPreparingDraftId(null);
@@ -1261,56 +1502,76 @@ export function RoomClient() {
   // the actual delete. Sessions whose project_id pointed at the
   // deleted row become orphaned (project_id → NULL via the FK's
   // ON DELETE SET NULL) and end up in the General bucket.
-  const handleOpenDeleteProject = useCallback((projectId: string, projectName: string) => {
-    setDeleteProjectTarget({ id: projectId, name: projectName });
-  }, []);
+  const handleOpenDeleteProject = useCallback(
+    (projectId: string, projectName: string) => {
+      setDeleteProjectTarget({ id: projectId, name: projectName });
+    },
+    []
+  );
 
   // Mark complete — flips the project to 'completed' which starts the
   // 90-day retention sweeper clock. Idempotent on the server side, so we
   // don't bother with a confirmation modal: the row is reversible via
   // mark_project_active until the sweeper actually archives it.
-  const handleMarkProjectComplete = useCallback(async (projectId: string, projectName: string) => {
-    const confirmed = typeof window !== "undefined"
-      ? window.confirm(
-          `Mark "${projectName}" complete?\n\n`
-          + "This starts a 90-day retention clock. Files and chat history "
-          + "stay accessible during that window — after 90 days the "
-          + "attachments are removed (chat text stays). You can mark it "
-          + "active again any time before then."
-        )
-      : true;
-    if (!confirmed) return;
-    const sb = createClient();
-    const { error } = await sb.rpc("mark_project_complete", { _project_id: projectId });
-    if (error) {
-      if (typeof window !== "undefined") {
-        window.alert(`Couldn't mark complete: ${error.message}`);
+  const handleMarkProjectComplete = useCallback(
+    async (projectId: string, projectName: string) => {
+      const confirmed =
+        typeof window !== "undefined"
+          ? window.confirm(
+              `Mark "${projectName}" complete?\n\n` +
+                "This starts a 90-day retention clock. Files and chat history " +
+                "stay accessible during that window — after 90 days the " +
+                "attachments are removed (chat text stays). You can mark it " +
+                "active again any time before then."
+            )
+          : true;
+      if (!confirmed) return;
+      const sb = createClient();
+      const { error } = await sb.rpc("mark_project_complete", {
+        _project_id: projectId,
+      });
+      if (error) {
+        if (typeof window !== "undefined") {
+          window.alert(`Couldn't mark complete: ${error.message}`);
+        }
+        return;
       }
-      return;
-    }
-    await refetchProjects();
-  }, [refetchProjects]);
+      await refetchProjects();
+    },
+    [refetchProjects]
+  );
   const handleCloseDeleteProject = useCallback(() => {
     setDeleteProjectTarget(null);
   }, []);
-  const handleProjectDeleted = useCallback(async (projectId: string) => {
-    // Clean up local-only state tied to the project: drafts in the
-    // sidebar, project metadata (skills/aiTools/etc), any in-flight
-    // prep view, selection. Then refetch projects to drop the row
-    // from the sidebar.
-    try { deleteDraftsForProject(projectId); } catch { /* swallow */ }
-    try { deleteProjectMetadata(projectId); } catch { /* swallow */ }
-    setSelectedProjectId((prev) => (prev === projectId ? null : prev));
-    setPreparingProjectId((prev) => (prev === projectId ? null : prev));
-    setPreparingDraftId(null);
-    setDeleteProjectTarget(null);
-    bumpDrafts();
-    await refetchProjects();
-    // Force Sidebar to re-fetch its `past` sessions so any rows that
-    // referenced the deleted project come back with project_id NULLed
-    // and stop showing up as an orphan group in the accordion.
-    setPastRefreshTick((t) => t + 1);
-  }, [refetchProjects, bumpDrafts]);
+  const handleProjectDeleted = useCallback(
+    async (projectId: string) => {
+      // Clean up local-only state tied to the project: drafts in the
+      // sidebar, project metadata (skills/aiTools/etc), any in-flight
+      // prep view, selection. Then refetch projects to drop the row
+      // from the sidebar.
+      try {
+        deleteDraftsForProject(projectId);
+      } catch {
+        /* swallow */
+      }
+      try {
+        deleteProjectMetadata(projectId);
+      } catch {
+        /* swallow */
+      }
+      setSelectedProjectId((prev) => (prev === projectId ? null : prev));
+      setPreparingProjectId((prev) => (prev === projectId ? null : prev));
+      setPreparingDraftId(null);
+      setDeleteProjectTarget(null);
+      bumpDrafts();
+      await refetchProjects();
+      // Force Sidebar to re-fetch its `past` sessions so any rows that
+      // referenced the deleted project come back with project_id NULLed
+      // and stop showing up as an orphan group in the accordion.
+      setPastRefreshTick((t) => t + 1);
+    },
+    [refetchProjects, bumpDrafts]
+  );
 
   // Home — return to the landing surface from anywhere in /room.
   // Clears every side-track view (account, legal, past-session
@@ -1342,156 +1603,189 @@ export function RoomClient() {
   const [homeNonce, setHomeNonce] = useState(0);
 
   const handleCloseViewPast = useCallback(() => setViewingPastId(null), []);
-  const handleNeedsCredits  = useCallback(() => setPaywallOpen("no_credits"), []);
+  const handleNeedsCredits = useCallback(
+    () => setPaywallOpen("no_credits"),
+    []
+  );
   const handleProjectCancel = useCallback(() => setProjectFormOpen(false), []);
-  const handleRenameProject = useCallback(async (projectId: string, newName: string) => {
-    const trimmed = newName.trim();
-    if (!trimmed) return;
-    const sb = createClient();
-    await sb.from("projects").update({ name: trimmed }).eq("id", projectId);
-    // Mirror the rename onto any in-flight session row so the chat header,
-    // sidebar count, and finance feed all see the same name.
-    await sb.from("guest_calls").update({ project_name: trimmed }).eq("project_id", projectId);
-    await refetchProjects();
-  }, [refetchProjects]);
+  const handleRenameProject = useCallback(
+    async (projectId: string, newName: string) => {
+      const trimmed = newName.trim();
+      if (!trimmed) return;
+      const sb = createClient();
+      await sb.from("projects").update({ name: trimmed }).eq("id", projectId);
+      // Mirror the rename onto any in-flight session row so the chat header,
+      // sidebar count, and finance feed all see the same name.
+      await sb
+        .from("guest_calls")
+        .update({ project_name: trimmed })
+        .eq("project_id", projectId);
+      await refetchProjects();
+    },
+    [refetchProjects]
+  );
 
   // Connect-flow new-project path: persist customer's stack choices,
   // create project with the chosen name, write per-project metadata
   // for future engineer matching, AND start a session immediately.
   // Equivalent of "+ Create New Project" but with the engineer ring
   // bolted on.
-  const handleStartNewProject = useCallback(async (opts: {
-    name: string;
-    projectType: string;
-    aiTools: string[];
-    backend: string[];
-    frontend: string[];
-  }) => {
-    writeStack({
-      aiTools: opts.aiTools,
-      backend: opts.backend,
-      frontend: opts.frontend,
-    });
-    const existing = readProfile();
-    if (!existing.techComfort) {
-      patchProfile({ techComfort: "non_technical" });
-    }
-    // startSessionInProject creates the project, the guest_call, the
-    // client_intake, AND fires match_engineer. Its return value isn't
-    // currently the project id (it just throws on error); we'll capture
-    // the new project id from the post-RPC projects refetch below in
-    // order to write per-project metadata. For now, write the metadata
-    // BEFORE the call using a placeholder key, then rebind after.
-    await startSessionInProject({
-      newName: opts.name,
-      projectType: opts.projectType,
-    });
-    // After startSessionInProject completes, the projects list refetch
-    // (triggered inside the helper) lands. We look up the newly-created
-    // project by name (most recent) and pin metadata to its id so that
-    // future sessions started from the phone-on-project shortcut hit
-    // the right matching profile.
-    setTimeout(() => {
-      const latest = [...projects].sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      ).find((p) => p.name === opts.name);
-      if (latest?.id) {
-        writeProjectMetadata(latest.id, {
-          projectType: opts.projectType,
-          aiTools: opts.aiTools,
-          backend: opts.backend,
-          frontend: opts.frontend,
-        });
+  const handleStartNewProject = useCallback(
+    async (opts: {
+      name: string;
+      projectType: string;
+      aiTools: string[];
+      backend: string[];
+      frontend: string[];
+    }) => {
+      writeStack({
+        aiTools: opts.aiTools,
+        backend: opts.backend,
+        frontend: opts.frontend,
+      });
+      const existing = readProfile();
+      if (!existing.techComfort) {
+        patchProfile({ techComfort: "non_technical" });
       }
-    }, 600);
-  }, [startSessionInProject, projects]);
+      // startSessionInProject creates the project, the guest_call, the
+      // client_intake, AND fires match_engineer. Its return value isn't
+      // currently the project id (it just throws on error); we'll capture
+      // the new project id from the post-RPC projects refetch below in
+      // order to write per-project metadata. For now, write the metadata
+      // BEFORE the call using a placeholder key, then rebind after.
+      await startSessionInProject({
+        newName: opts.name,
+        projectType: opts.projectType,
+      });
+      // After startSessionInProject completes, the projects list refetch
+      // (triggered inside the helper) lands. We look up the newly-created
+      // project by name (most recent) and pin metadata to its id so that
+      // future sessions started from the phone-on-project shortcut hit
+      // the right matching profile.
+      setTimeout(() => {
+        const latest = [...projects]
+          .sort(
+            (a, b) =>
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          )
+          .find((p) => p.name === opts.name);
+        if (latest?.id) {
+          writeProjectMetadata(latest.id, {
+            projectType: opts.projectType,
+            aiTools: opts.aiTools,
+            backend: opts.backend,
+            frontend: opts.frontend,
+          });
+        }
+      }, 600);
+    },
+    [startSessionInProject, projects]
+  );
 
   // Plain create-project path (the "+ Create New Project" button). Creates
   // a project with the user's chosen name + metadata via create_project
   // RPC. Does NOT start a session or ring an engineer — the customer
   // initiates that separately via the phone button on the project row,
   // or the top-of-sidebar Connect button.
-  const handleCreateProjectWithMetadata = useCallback(async (opts: {
-    name: string;
-    projectType: string;
-    aiTools: string[];
-    backend: string[];
-    frontend: string[];
-  }) => {
-    const sb = createClient();
-    const { data, error } = await sb.rpc("create_project", { _name: opts.name });
-    if (error) {
-      console.warn("[handleCreateProjectWithMetadata] create_project failed:", error.message);
-      throw new Error(error.message);
-    }
-    const row = Array.isArray(data) ? (data[0] as { id?: string }) : (data as { id?: string });
-    const projectId = row?.id ?? null;
-    if (projectId) {
-      writeProjectMetadata(projectId, {
-        projectType: opts.projectType,
+  const handleCreateProjectWithMetadata = useCallback(
+    async (opts: {
+      name: string;
+      projectType: string;
+      aiTools: string[];
+      backend: string[];
+      frontend: string[];
+    }) => {
+      const sb = createClient();
+      const { data, error } = await sb.rpc("create_project", {
+        _name: opts.name,
+      });
+      if (error) {
+        console.warn(
+          "[handleCreateProjectWithMetadata] create_project failed:",
+          error.message
+        );
+        throw new Error(error.message);
+      }
+      const row = Array.isArray(data)
+        ? (data[0] as { id?: string })
+        : (data as { id?: string });
+      const projectId = row?.id ?? null;
+      if (projectId) {
+        writeProjectMetadata(projectId, {
+          projectType: opts.projectType,
+          aiTools: opts.aiTools,
+          backend: opts.backend,
+          frontend: opts.frontend,
+        });
+      }
+      // Also snapshot to the customer's profile so the global "Connect"
+      // button (which uses profile-level stack) reflects the most recent
+      // declared stack.
+      writeStack({
         aiTools: opts.aiTools,
         backend: opts.backend,
         frontend: opts.frontend,
       });
-    }
-    // Also snapshot to the customer's profile so the global "Connect"
-    // button (which uses profile-level stack) reflects the most recent
-    // declared stack.
-    writeStack({
-      aiTools: opts.aiTools,
-      backend: opts.backend,
-      frontend: opts.frontend,
-    });
-    const existing = readProfile();
-    if (!existing.techComfort) {
-      patchProfile({ techComfort: "non_technical" });
-    }
-
-    // ── Write the client_intakes row up-front ────────────────────────────
-    // The form already collected every signal the engineer needs to
-    // match (project type → developing, AI tools, backend, frontend).
-    // Persisting that to client_intakes NOW means a later phone-click
-    // on this project can short-circuit straight to match_engineer
-    // instead of bouncing through the "Picking up where you left off"
-    // intake wizard. guest_call_id stays null until a session actually
-    // mints; the wizard's upsert (handleStartInProject, onConflict
-    // project_id+customer_user_id) updates the same row with a session
-    // id at ring time.
-    const userId = state.auth.kind === "authed" ? state.auth.userId : null;
-    if (projectId && userId) {
-      const techComfort = readProfile().techComfort ?? "non_technical";
-      const familiarity =
-        techComfort === "well_experienced"  ? "Well Experienced"
-        : techComfort === "semi_technical"  ? "Semi-Technical"
-        : "Totally Unknown";
-      const intakePayload = {
-        customer_user_id: userId,
-        project_id:       projectId,
-        familiarity,
-        ai_tools_used:    opts.aiTools.join(", ") || "Other",
-        developing:       mapProjectTypeToDeveloping(opts.projectType),
-        technologies:     [...opts.backend, ...opts.frontend],
-        declined_by:      [] as string[],
-      };
-      const { error: intakeErr } = await sb
-        .from("client_intakes")
-        .upsert(intakePayload, { onConflict: "project_id,customer_user_id" });
-      if (intakeErr) {
-        console.warn("[handleCreateProjectWithMetadata] intake upsert failed:", intakeErr.message);
-        // Non-fatal — the project still exists, future phone-clicks
-        // will route through /intake as a fallback.
+      const existing = readProfile();
+      if (!existing.techComfort) {
+        patchProfile({ techComfort: "non_technical" });
       }
-    }
 
-    await refetchProjects();
-    return projectId;
-  }, [refetchProjects, state.auth]);
-  const handleNeedProject   = useCallback((draft: string) => {
-    // Composer typed-then-send before any session existed. Carry the draft
-    // forward and start a session in a project named after the customer.
-    setPendingDraft(draft);
-    void startSessionInProject({ newName: "project" });
-  }, [startSessionInProject]);
+      // ── Write the client_intakes row up-front ────────────────────────────
+      // The form already collected every signal the engineer needs to
+      // match (project type → developing, AI tools, backend, frontend).
+      // Persisting that to client_intakes NOW means a later phone-click
+      // on this project can short-circuit straight to match_engineer
+      // instead of bouncing through the "Picking up where you left off"
+      // intake wizard. guest_call_id stays null until a session actually
+      // mints; the wizard's upsert (handleStartInProject, onConflict
+      // project_id+customer_user_id) updates the same row with a session
+      // id at ring time.
+      const userId = state.auth.kind === "authed" ? state.auth.userId : null;
+      if (projectId && userId) {
+        const techComfort = readProfile().techComfort ?? "non_technical";
+        const familiarity =
+          techComfort === "well_experienced"
+            ? "Well Experienced"
+            : techComfort === "semi_technical"
+              ? "Semi-Technical"
+              : "Totally Unknown";
+        const intakePayload = {
+          customer_user_id: userId,
+          project_id: projectId,
+          familiarity,
+          ai_tools_used: opts.aiTools.join(", ") || "Other",
+          developing: mapProjectTypeToDeveloping(opts.projectType),
+          technologies: [...opts.backend, ...opts.frontend],
+          declined_by: [] as string[],
+        };
+        const { error: intakeErr } = await sb
+          .from("client_intakes")
+          .upsert(intakePayload, { onConflict: "project_id,customer_user_id" });
+        if (intakeErr) {
+          console.warn(
+            "[handleCreateProjectWithMetadata] intake upsert failed:",
+            intakeErr.message
+          );
+          // Non-fatal — the project still exists, future phone-clicks
+          // will route through /intake as a fallback.
+        }
+      }
+
+      await refetchProjects();
+      return projectId;
+    },
+    [refetchProjects, state.auth]
+  );
+  const handleNeedProject = useCallback(
+    (draft: string) => {
+      // Composer typed-then-send before any session existed. Carry the draft
+      // forward and start a session in a project named after the customer.
+      setPendingDraft(draft);
+      void startSessionInProject({ newName: "project" });
+    },
+    [startSessionInProject]
+  );
 
   // Only show the full-screen loader on the very first load.
   // After initialLoadDone = true, session creation happens while the project
@@ -1511,7 +1805,7 @@ export function RoomClient() {
         type="button"
         onClick={() => setMobileSidebarOpen(true)}
         aria-label="Open sidebar"
-        className="fixed left-3 top-3 z-30 flex h-11 w-11 items-center justify-center rounded-full border shadow-sm transition-transform hover:scale-105 md:hidden"
+        className="fixed top-3 left-3 z-30 flex h-11 w-11 items-center justify-center rounded-full border shadow-sm transition-transform hover:scale-105 md:hidden"
         style={{
           backgroundColor: "var(--surface)",
           borderColor: "var(--border)",
@@ -1589,71 +1883,78 @@ export function RoomClient() {
 
       {/* Desktop sidebar — hidden below md, always-in-flow above. */}
       <div className="hidden md:flex">
-      <Sidebar
-        email={sidebarEmail}
-        customerUserId={sidebarCustomerUserId}
-        isGuest={sidebarIsGuest}
-        displayName={state.customerName}
-        session={state.session}
-        entitlement={state.entitlement}
-        employment={employment}
-        viewingPastId={viewingPastId}
-        projects={projects}
-        selectedProjectId={selectedProjectId}
-        onViewPast={handleViewPast}
-        onNewSession={handleNewSession}
-        onNewChat={() => setNewChatModalOpen(true)}
-        onStartInProject={handleStartInProject}
-        onRenameProject={handleRenameProject}
-        onStartNewProject={handleStartNewProject}
-        onCreateProjectWithMetadata={handleCreateProjectWithMetadata}
-        onSelectProject={handleSelectProject}
-        onWalletClick={handleWalletClick}
-        onOpenProfile={handleOpenProfile}
-        onOpenBilling={handleOpenBilling}
-        onOpenLegal={handleOpenLegal}
-        onGoHome={handleGoHome}
-        onPrepareSession={handlePrepareSession}
-        draftsTick={draftsTick}
-        pastRefreshTick={pastRefreshTick}
-        onDeleteProject={handleOpenDeleteProject}
-        onPickerToast={(msg) => {
-          // Surface a 5-second confirmation toast from inside the
-          // engineer picker. Reuses the paidToast slot since both
-          // are short-lived "we did the thing" notifications; only
-          // one of them is ever active at a time in practice.
-          setPaidToast(msg);
-          window.setTimeout(() => setPaidToast(null), 5000);
-        }}
-        onMarkProjectComplete={handleMarkProjectComplete}
-      />
+        <Sidebar
+          email={sidebarEmail}
+          customerUserId={sidebarCustomerUserId}
+          isGuest={sidebarIsGuest}
+          displayName={state.customerName}
+          session={state.session}
+          entitlement={state.entitlement}
+          employment={employment}
+          viewingPastId={viewingPastId}
+          projects={projects}
+          selectedProjectId={selectedProjectId}
+          onViewPast={handleViewPast}
+          onNewSession={handleNewSession}
+          onNewChat={() => setNewChatModalOpen(true)}
+          onStartInProject={handleStartInProject}
+          onRenameProject={handleRenameProject}
+          onStartNewProject={handleStartNewProject}
+          onCreateProjectWithMetadata={handleCreateProjectWithMetadata}
+          onSelectProject={handleSelectProject}
+          onWalletClick={handleWalletClick}
+          onOpenProfile={handleOpenProfile}
+          onOpenBilling={handleOpenBilling}
+          onOpenLegal={handleOpenLegal}
+          onGoHome={handleGoHome}
+          onPrepareSession={handlePrepareSession}
+          draftsTick={draftsTick}
+          pastRefreshTick={pastRefreshTick}
+          onDeleteProject={handleOpenDeleteProject}
+          onPickerToast={(msg) => {
+            // Surface a 5-second confirmation toast from inside the
+            // engineer picker. Reuses the paidToast slot since both
+            // are short-lived "we did the thing" notifications; only
+            // one of them is ever active at a time in practice.
+            setPaidToast(msg);
+            window.setTimeout(() => setPaidToast(null), 5000);
+          }}
+          onMarkProjectComplete={handleMarkProjectComplete}
+        />
       </div>
 
       <LaunchCallProvider value={{ launchCall, isCallOpen: callOpen }}>
-      {/* When the call is open the customer's video gets the MAIN panel —
+        {/* When the call is open the customer's video gets the MAIN panel —
           they're here to see the engineer / their own share. Chat moves to
           the right rail. When no call is live, the main column owns the
           chat full-width as before. */}
-      <PanelGroup direction="horizontal" autoSaveId="relay-room-call-v4" className="flex min-w-0 flex-1">
-        {callOpen && state.session && (
-          <>
-            <Panel id="room-call" order={1} defaultSize={52} minSize={20}>
-              <div className="h-full w-full" style={{ background: "var(--background)" }}>
-                <CallSurface
-                  sessionId={state.session.id}
-                  role="guest"
-                  userName={state.session.guest_name ?? "Customer"}
-                  onClose={() => setCallOpen(false)}
-                  onJoined={() => void state.markJoined()}
-                  tilesPortalTarget={tilesTarget}
-                  onShareStateChange={setShareActive}
-                />
-              </div>
-            </Panel>
-            <Resizer />
-          </>
-        )}
-        {/* defaultSize + minSize MUST be stable across re-renders or
+        <PanelGroup
+          direction="horizontal"
+          autoSaveId="relay-room-call-v4"
+          className="flex min-w-0 flex-1"
+        >
+          {callOpen && state.session && (
+            <>
+              <Panel id="room-call" order={1} defaultSize={52} minSize={20}>
+                <div
+                  className="h-full w-full"
+                  style={{ background: "var(--background)" }}
+                >
+                  <CallSurface
+                    sessionId={state.session.id}
+                    role="guest"
+                    userName={state.session.guest_name ?? "Customer"}
+                    onClose={() => setCallOpen(false)}
+                    onJoined={() => void state.markJoined()}
+                    tilesPortalTarget={tilesTarget}
+                    onShareStateChange={setShareActive}
+                  />
+                </div>
+              </Panel>
+              <Resizer />
+            </>
+          )}
+          {/* defaultSize + minSize MUST be stable across re-renders or
             react-resizable-panels treats every prop change as a reset and
             the user-dragged size snaps back on the next render (which
             happens every realtime tick). Same defaults regardless of
@@ -1662,102 +1963,102 @@ export function RoomClient() {
             v4 defaultSize 48 / minSize 28 keeps the chat rail visibly open
             the moment the call mounts (previously stuck collapsed when an
             older saved width was restored from autoSaveId v3). */}
-        <Panel
-          id="room-main"
-          order={2}
-          defaultSize={48}
-          minSize={28}
-        >
-          <div className="relative flex h-full min-w-0 flex-col">
-            {/* Floating status / timer chip + end-meeting button (top-right) */}
-            <FloatingStatus
-              session={state.session}
-              entitlement={state.entitlement}
-              accepted={accepted}
-              onEnd={state.end}
-              onJoin={() => void state.markJoined()}
-            />
+          <Panel id="room-main" order={2} defaultSize={48} minSize={28}>
+            <div className="relative flex h-full min-w-0 flex-col">
+              {/* Floating status / timer chip + end-meeting button (top-right) */}
+              <FloatingStatus
+                session={state.session}
+                entitlement={state.entitlement}
+                accepted={accepted}
+                onEnd={state.end}
+                onJoin={() => void state.markJoined()}
+              />
 
-            {/* Participant tiles slot — CallSurface portals the tile grid
+              {/* Participant tiles slot — CallSurface portals the tile grid
                 into this div ONLY when a screen share is active. Tiles
                 render side-by-side at 140px tall, so the slot is sized
                 to fit ONE row (140px + 16px padding ≈ 172px) and the
                 chat reclaims the rest of the rail. */}
-            {callOpen && shareActive && (
-              <div
-                ref={setTilesTarget}
-                className="shrink-0 border-b"
-                style={{
-                  height: "172px",
-                  borderColor: "var(--border)",
-                  background: "var(--surface)",
-                }}
-                aria-label="Call participants"
-              />
-            )}
-
-            <main className="min-h-0 flex-1">
-              {asyncChatMode ? (
-                <AsyncChatPane
-                  onEscalateToCall={handleNewSession}
-                  onCloseAsyncMode={() => setAsyncChatMode(false)}
+              {callOpen && shareActive && (
+                <div
+                  ref={setTilesTarget}
+                  className="shrink-0 border-b"
+                  style={{
+                    height: "172px",
+                    borderColor: "var(--border)",
+                    background: "var(--surface)",
+                  }}
+                  aria-label="Call participants"
                 />
-              ) : (
-              <MainPane
-                state={state}
-                accepted={accepted}
-                employment={employment}
-                viewingPastId={viewingPastId}
-                onCloseViewPast={handleCloseViewPast}
-                onNeedsCredits={handleNeedsCredits}
-                projectFormOpen={projectFormOpen}
-                pendingDraft={pendingDraft}
-                projects={projects}
-                onProjectConfirmNew={handleProjectConfirmNew}
-                onProjectConfirmPick={handleProjectConfirmPick}
-                onProjectCancel={handleProjectCancel}
-                onNeedProject={handleNeedProject}
-                onNewSession={handleNewSession}
-                selectedProjectId={selectedProjectId}
-                onSelectProject={handleSelectProject}
-                onStartInProject={handleStartInProject}
-                accountTab={accountTab}
-                onCloseAccount={handleCloseAccount}
-                legalView={legalView}
-                onCloseLegal={handleCloseLegal}
-                preparingProjectId={preparingProjectId}
-                preparingDraftId={preparingDraftId}
-                onClosePrepare={handleClosePrepare}
-                onDraftsChanged={bumpDrafts}
-                homeNonce={homeNonce}
-              />
               )}
-            </main>
-          </div>
-        </Panel>
-      </PanelGroup>
 
-      {/* Summary tray sits to the right of the PanelGroup when no call is
+              <main className="min-h-0 flex-1">
+                {asyncChatMode ? (
+                  <AsyncChatPane
+                    onEscalateToCall={handleNewSession}
+                    onCloseAsyncMode={() => setAsyncChatMode(false)}
+                  />
+                ) : (
+                  <MainPane
+                    state={state}
+                    accepted={accepted}
+                    employment={employment}
+                    viewingPastId={viewingPastId}
+                    onCloseViewPast={handleCloseViewPast}
+                    onNeedsCredits={handleNeedsCredits}
+                    projectFormOpen={projectFormOpen}
+                    pendingDraft={pendingDraft}
+                    projects={projects}
+                    onProjectConfirmNew={handleProjectConfirmNew}
+                    onProjectConfirmPick={handleProjectConfirmPick}
+                    onProjectCancel={handleProjectCancel}
+                    onNeedProject={handleNeedProject}
+                    onNewSession={handleNewSession}
+                    selectedProjectId={selectedProjectId}
+                    onSelectProject={handleSelectProject}
+                    onStartInProject={handleStartInProject}
+                    accountTab={accountTab}
+                    onCloseAccount={handleCloseAccount}
+                    legalView={legalView}
+                    onCloseLegal={handleCloseLegal}
+                    preparingProjectId={preparingProjectId}
+                    preparingDraftId={preparingDraftId}
+                    onClosePrepare={handleClosePrepare}
+                    onDraftsChanged={bumpDrafts}
+                    homeNonce={homeNonce}
+                  />
+                )}
+              </main>
+            </div>
+          </Panel>
+        </PanelGroup>
+
+        {/* Summary tray sits to the right of the PanelGroup when no call is
           live. During a call the CallSurface occupies the right rail and
           the tray is hidden to avoid stacking two right rails side-by-side. */}
-      {state.session && state.session.status !== "ended" && !callOpen && (
-        <SessionSummaryTray session={state.session} />
-      )}
+        {state.session && state.session.status !== "ended" && !callOpen && (
+          <SessionSummaryTray session={state.session} />
+        )}
       </LaunchCallProvider>
 
       {/* Overlays */}
-      {state.session?.status === "queued" && !asyncChatMode && !queueTimedOut && (
-        <ConnectingModal
-          session={state.session}
-          onCancel={state.cancel}
-          onTimeout={handleQueueTimeout}
-          projects={projects}
-          onProjectsChanged={refetchProjects}
-        />
-      )}
+      {state.session?.status === "queued" &&
+        !asyncChatMode &&
+        !queueTimedOut && (
+          <ConnectingModal
+            session={state.session}
+            onCancel={state.cancel}
+            onTimeout={handleQueueTimeout}
+            projects={projects}
+            onProjectsChanged={refetchProjects}
+          />
+        )}
       {/* 90s queue timeout — the call ended with no engineer available. */}
       {queueTimedOut && (
-        <AllEngineersBusyModal onRetry={handleBusyRetry} onClose={handleBusyClose} />
+        <AllEngineersBusyModal
+          onRetry={handleBusyRetry}
+          onClose={handleBusyClose}
+        />
       )}
       {/* Chat-first flow: the EngineerAssignedModal's "Engineer found —
           Connecting…" overlay was designed for the old auto-mount Zoom
@@ -1765,13 +2066,18 @@ export function RoomClient() {
           soon as the engineer accepts, so we skip the modal entirely.
           The "Live" pill + engineer name in the header give enough
           signal that the engineer is on the other side. */}
-      {!isVideoSdkEnabled() && state.session && shouldShowEngineerAssigned(state.session) && !accepted && (
-        <EngineerAssignedModal
-          engineerName={state.session.agent_name ?? "Your engineer"}
-          onCancel={state.cancel}
-        />
+      {!isVideoSdkEnabled() &&
+        state.session &&
+        shouldShowEngineerAssigned(state.session) &&
+        !accepted && (
+          <EngineerAssignedModal
+            engineerName={state.session.agent_name ?? "Your engineer"}
+            onCancel={state.cancel}
+          />
+        )}
+      {state.error && state.error !== "NO_ENTITLEMENT" && (
+        <ErrorToast message={state.error} />
       )}
-      {state.error && state.error !== "NO_ENTITLEMENT" && <ErrorToast message={state.error} />}
       {callBlockMsg && <ErrorToast message={callBlockMsg} />}
 
       {/* Upcoming scheduled-session indicator + at-slot-time prompt. */}
@@ -1818,9 +2124,18 @@ export function RoomClient() {
         open={newChatModalOpen}
         onClose={() => setNewChatModalOpen(false)}
         projects={projects}
-        onPickProject={(id) => { setNewChatModalOpen(false); void handleStartInProject(id); }}
-        onAddProject={() => { setNewChatModalOpen(false); router.push("/intake"); }}
-        onAsyncChat={() => { setNewChatModalOpen(false); void handleNewChat(); }}
+        onPickProject={(id) => {
+          setNewChatModalOpen(false);
+          void handleStartInProject(id);
+        }}
+        onAddProject={() => {
+          setNewChatModalOpen(false);
+          router.push("/intake");
+        }}
+        onAsyncChat={() => {
+          setNewChatModalOpen(false);
+          void handleNewChat();
+        }}
       />
 
       {/* ScheduleEngineerModal is mounted inside Sidebar since the schedule
@@ -1836,7 +2151,7 @@ export function RoomClient() {
           type="button"
           onClick={() => setMobileChatOpen(true)}
           aria-label="Open chat"
-          className="fixed bottom-4 right-4 z-30 flex h-12 w-12 items-center justify-center rounded-full shadow-lg transition-transform hover:scale-105 md:hidden"
+          className="fixed right-4 bottom-4 z-30 flex h-12 w-12 items-center justify-center rounded-full shadow-lg transition-transform hover:scale-105 md:hidden"
           style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
         >
           <MessageCircle size={20} />
@@ -1861,13 +2176,22 @@ export function RoomClient() {
             {/* Drag handle + close. The handle is decorative (it's
                 pleasing to look at + signals "this can slide") and
                 the explicit close button is what actually dismisses. */}
-            <div className="flex shrink-0 items-center justify-between px-3 py-2 border-b" style={{ borderColor: "var(--border)" }}>
-              <span aria-hidden className="mx-auto h-1 w-10 rounded-full" style={{ backgroundColor: "var(--border-strong, var(--border))" }} />
+            <div
+              className="flex shrink-0 items-center justify-between border-b px-3 py-2"
+              style={{ borderColor: "var(--border)" }}
+            >
+              <span
+                aria-hidden
+                className="mx-auto h-1 w-10 rounded-full"
+                style={{
+                  backgroundColor: "var(--border-strong, var(--border))",
+                }}
+              />
               <button
                 type="button"
                 onClick={() => setMobileChatOpen(false)}
                 aria-label="Close chat"
-                className="absolute right-3 top-2 flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                className="absolute top-2 right-3 flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/5"
                 style={{ color: "var(--text-muted)" }}
               >
                 <X size={14} />
@@ -1885,16 +2209,19 @@ export function RoomClient() {
             <div className="relative flex min-h-0 flex-1 [&>aside]:!flex">
               <ChatPanelStub
                 sidebarCollapsed={false}
-                onToggleCollapsed={() => { /* no-op on mobile */ }}
+                onToggleCollapsed={() => {
+                  /* no-op on mobile */
+                }}
                 session={state.session}
-                scopeKey={state.session?.project_id || selectedProjectId || "general"}
+                scopeKey={
+                  state.session?.project_id || selectedProjectId || "general"
+                }
                 enableResize={false}
               />
             </div>
           </div>
         </>
       )}
-
     </div>
   );
 }
@@ -1902,9 +2229,10 @@ export function RoomClient() {
 // ── State helpers ──────────────────────────────────────────────────────────
 function shouldShowIncomingCall(s: GuestCall): boolean {
   return (
-    !!s.engineer_joined_at && !!s.zoom_meeting_id &&
+    !!s.engineer_joined_at &&
+    !!s.zoom_meeting_id &&
     !s.customer_joined_at &&
-    ["joining","live"].includes(s.status)
+    ["joining", "live"].includes(s.status)
   );
 }
 
@@ -1931,12 +2259,31 @@ function shouldShowEngineerAssigned(s: GuestCall): boolean {
 
 // ── Main pane (state-driven) ───────────────────────────────────────────────
 const MainPane = memo(function MainPane({
-  state, accepted, employment, viewingPastId, onCloseViewPast, onNeedsCredits,
-  projectFormOpen, pendingDraft, projects,
-  onProjectConfirmNew, onProjectConfirmPick, onProjectCancel, onNeedProject,
-  onNewSession, selectedProjectId, onSelectProject, onStartInProject,
-  accountTab, onCloseAccount, legalView, onCloseLegal,
-  preparingProjectId, preparingDraftId, onClosePrepare, onDraftsChanged,
+  state,
+  accepted,
+  employment,
+  viewingPastId,
+  onCloseViewPast,
+  onNeedsCredits,
+  projectFormOpen,
+  pendingDraft,
+  projects,
+  onProjectConfirmNew,
+  onProjectConfirmPick,
+  onProjectCancel,
+  onNeedProject,
+  onNewSession,
+  selectedProjectId,
+  onSelectProject,
+  onStartInProject,
+  accountTab,
+  onCloseAccount,
+  legalView,
+  onCloseLegal,
+  preparingProjectId,
+  preparingDraftId,
+  onClosePrepare,
+  onDraftsChanged,
   homeNonce,
 }: {
   state: ReturnType<typeof useCustomerSession>;
@@ -1948,8 +2295,8 @@ const MainPane = memo(function MainPane({
   projectFormOpen: boolean;
   pendingDraft: string | null;
   projects: Project[];
-  onProjectConfirmNew:  (name: string) => Promise<void>;
-  onProjectConfirmPick: (id: string)   => Promise<void>;
+  onProjectConfirmNew: (name: string) => Promise<void>;
+  onProjectConfirmPick: (id: string) => Promise<void>;
   onProjectCancel: () => void;
   onNeedProject: (draft: string) => void;
   /** "Start a new session" — opens the project picker. Used by the
@@ -1961,11 +2308,20 @@ const MainPane = memo(function MainPane({
    *  "× clear" affordance. */
   onSelectProject: (id: string | null) => void;
   /** Start a session directly in a given project (skips picker). */
-  onStartInProject: (projectId: string | null, preferredEngineerId?: string) => void;
+  onStartInProject: (
+    projectId: string | null,
+    preferredEngineerId?: string
+  ) => void;
   /** In-pane Account tab to render (Profile / Wallet / Billing /
    *  Security / Notifications), or null to render the normal session-
    *  driven view. */
-  accountTab: null | "profile" | "wallet" | "billing" | "security" | "notifications";
+  accountTab:
+    | null
+    | "profile"
+    | "wallet"
+    | "billing"
+    | "security"
+    | "notifications";
   /** Close the AccountPane — falls back to the prior view. */
   onCloseAccount: () => void;
   /** In-pane legal viewer (Privacy / Terms) or null for the normal view. */
@@ -1994,7 +2350,9 @@ const MainPane = memo(function MainPane({
   // EndedSessionReview "Back" dismissal — keyed on session.id so a NEW
   // ended session re-shows the review. Without this the customer was
   // trapped on a stuck "Waiting for Zoom summary…" view with no exit.
-  const [reviewDismissedFor, setReviewDismissedFor] = useState<string | null>(null);
+  const [reviewDismissedFor, setReviewDismissedFor] = useState<string | null>(
+    null
+  );
 
   // Home click → dismiss the review for the currently-ended session.
   // Ignored on first render (homeNonce starts at 0). After the user
@@ -2120,15 +2478,17 @@ const MainPane = memo(function MainPane({
   // natural flow is: live chat → EndedSessionReview → (Back or Home)
   // → BrandedLanding. Home-clicked dismisses via the homeNonce effect
   // above, so this falls into the inactive branch immediately.
-  const inactive = !session
-    || ["cancelled", "abandoned"].includes(session.status)
-    || (session.status === "ended" && reviewDismissedFor === session.id);
+  const inactive =
+    !session ||
+    ["cancelled", "abandoned"].includes(session.status) ||
+    (session.status === "ended" && reviewDismissedFor === session.id);
   if (inactive) {
     const selectedProject = selectedProjectId
-      ? projects.find((p) => p.id === selectedProjectId) ?? null
+      ? (projects.find((p) => p.id === selectedProjectId) ?? null)
       : null;
     const customerEmail = state.auth.kind === "authed" ? state.auth.email : "";
-    const customerUserId = state.auth.kind === "authed" ? state.auth.userId : null;
+    const customerUserId =
+      state.auth.kind === "authed" ? state.auth.userId : null;
     const userName = customerEmail
       ? customerEmail.split("@")[0] || customerEmail
       : "you";
@@ -2146,7 +2506,15 @@ const MainPane = memo(function MainPane({
 
   // Active session — show the chat (composer also handles new-session
   // creation as a fallback path via onNeedProject).
-  return <ChatPane state={state} fullWidth employment={employment} onNeedsCredits={onNeedsCredits} onNeedProject={onNeedProject} />;
+  return (
+    <ChatPane
+      state={state}
+      fullWidth
+      employment={employment}
+      onNeedsCredits={onNeedsCredits}
+      onNeedProject={onNeedProject}
+    />
+  );
 });
 
 // (Earlier iterations of BrandedLanding had a set of card helper
@@ -2282,19 +2650,28 @@ function SessionPrepView({
     : "Not saved yet — hit Save for later to keep this draft.";
 
   return (
-    <div className="flex h-full w-full flex-col" style={{ backgroundColor: "var(--surface)" }}>
+    <div
+      className="flex h-full w-full flex-col"
+      style={{ backgroundColor: "var(--surface)" }}
+    >
       {/* Header — project name + close. */}
       <header
         className="flex shrink-0 items-center gap-3 border-b px-6 py-4"
         style={{ borderColor: "var(--border)" }}
       >
-        <div className="flex flex-1 items-center gap-3 min-w-0">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           <Folder size={14} style={{ color: "var(--primary)" }} />
           <div className="min-w-0">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text-faint)" }}>
+            <div
+              className="text-[10px] font-semibold tracking-[0.08em] uppercase"
+              style={{ color: "var(--text-faint)" }}
+            >
               {isExisting ? "Editing draft in" : "Preparing a session in"}
             </div>
-            <div className="truncate text-[15px] font-semibold" style={{ color: "var(--text)" }}>
+            <div
+              className="truncate text-[15px] font-semibold"
+              style={{ color: "var(--text)" }}
+            >
               {project.name}
             </div>
           </div>
@@ -2315,26 +2692,39 @@ function SessionPrepView({
         <div className="mx-auto max-w-2xl px-6 py-6">
           <h2
             className="text-[20px] font-semibold tracking-tight"
-            style={{ color: "var(--text)", fontFamily: "var(--font-source-serif)" }}
+            style={{
+              color: "var(--text)",
+              fontFamily: "var(--font-source-serif)",
+            }}
           >
             Tell the engineer what you&apos;re working on.
           </h2>
-          <p className="mt-2 text-[13px]" style={{ color: "var(--text-muted)" }}>
-            Take your time. Drop the context, the bug, the goal — whatever helps. When
-            you&apos;re ready, hit <strong style={{ color: "var(--text)" }}>Call engineer</strong>{" "}
-            and they&apos;ll walk in with this in front of them. Or save it for later and
-            come back any time — your drafts live under the project in the sidebar.
+          <p
+            className="mt-2 text-[13px]"
+            style={{ color: "var(--text-muted)" }}
+          >
+            Take your time. Drop the context, the bug, the goal — whatever
+            helps. When you&apos;re ready, hit{" "}
+            <strong style={{ color: "var(--text)" }}>Call engineer</strong> and
+            they&apos;ll walk in with this in front of them. Or save it for
+            later and come back any time — your drafts live under the project in
+            the sidebar.
           </p>
 
           <div
             className="mt-5 rounded-2xl border p-4"
-            style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)" }}
+            style={{
+              borderColor: "var(--border)",
+              backgroundColor: "var(--surface-raised)",
+            }}
           >
             <textarea
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               rows={14}
-              placeholder={"What are you trying to do?\nWhat's going wrong?\nAny files / repos / screenshots you want them to see?"}
+              placeholder={
+                "What are you trying to do?\nWhat's going wrong?\nAny files / repos / screenshots you want them to see?"
+              }
               className="block w-full resize-none bg-transparent text-[14px] leading-relaxed outline-none placeholder:opacity-50"
               style={{ color: "var(--text)" }}
             />
@@ -2346,7 +2736,10 @@ function SessionPrepView({
                 aria-label="Attach file"
                 title="Attachments will travel with the call (coming soon)"
                 className="flex h-8 w-8 shrink-0 cursor-not-allowed items-center justify-center rounded-full opacity-50"
-                style={{ color: "var(--text-muted)", border: "1px solid var(--border)" }}
+                style={{
+                  color: "var(--text-muted)",
+                  border: "1px solid var(--border)",
+                }}
               >
                 <Paperclip size={14} />
               </button>
@@ -2356,7 +2749,10 @@ function SessionPrepView({
                 aria-label="Record voice"
                 title="Voice notes will travel with the call (coming soon)"
                 className="flex h-8 w-8 shrink-0 cursor-not-allowed items-center justify-center rounded-full opacity-50"
-                style={{ color: "var(--text-muted)", border: "1px solid var(--border)" }}
+                style={{
+                  color: "var(--text-muted)",
+                  border: "1px solid var(--border)",
+                }}
               >
                 <Mic size={14} />
               </button>
@@ -2426,8 +2822,12 @@ function SessionPrepView({
 // in that project; a small × clears the selection back to the generic
 // "Start a new session" flow.
 function BrandedLanding({
-  onStartNewSession, selectedProject, onStartInProject, onClearSelectedProject,
-  userName, customerUserId,
+  onStartNewSession,
+  selectedProject,
+  onStartInProject,
+  onClearSelectedProject,
+  userName,
+  customerUserId,
 }: {
   onStartNewSession: () => void;
   selectedProject: Project | null;
@@ -2461,7 +2861,9 @@ function BrandedLanding({
         setExplainerOpen(true);
         window.localStorage.setItem("relay:explainer-seen", "1");
       }
-    } catch { /* private mode / quota — fall through to collapsed */ }
+    } catch {
+      /* private mode / quota — fall through to collapsed */
+    }
   }, []);
 
   // Customer-level summary (only used when no project is selected).
@@ -2471,7 +2873,8 @@ function BrandedLanding({
     aiNextSteps: string[] | null;
     summaryUpdatedAt: string | null;
   };
-  const [customerSummary, setCustomerSummary] = useState<CustomerSummary | null>(null);
+  const [customerSummary, setCustomerSummary] =
+    useState<CustomerSummary | null>(null);
   const [customerSummaryLoading, setCustomerSummaryLoading] = useState(false);
 
   useEffect(() => {
@@ -2482,7 +2885,9 @@ function BrandedLanding({
       const sb = createClient();
       const { data } = await sb
         .from("customer_summaries")
-        .select("ai_summary_title, ai_summary_overview, ai_next_steps, summary_updated_at")
+        .select(
+          "ai_summary_title, ai_summary_overview, ai_next_steps, summary_updated_at"
+        )
         .eq("customer_id", customerUserId)
         .maybeSingle();
       if (cancelled) return;
@@ -2490,30 +2895,34 @@ function BrandedLanding({
         data
           ? {
               aiSummaryTitle: (data.ai_summary_title as string | null) ?? null,
-              aiSummaryOverview: (data.ai_summary_overview as string | null) ?? null,
-              aiNextSteps: Array.isArray(data.ai_next_steps) ? (data.ai_next_steps as string[]) : null,
-              summaryUpdatedAt: (data.summary_updated_at as string | null) ?? null,
+              aiSummaryOverview:
+                (data.ai_summary_overview as string | null) ?? null,
+              aiNextSteps: Array.isArray(data.ai_next_steps)
+                ? (data.ai_next_steps as string[])
+                : null,
+              summaryUpdatedAt:
+                (data.summary_updated_at as string | null) ?? null,
             }
-          : null,
+          : null
       );
       setCustomerSummaryLoading(false);
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [customerUserId, hasProject]);
 
   // Resolve what to render in the right rail based on selection.
-  const panelTitle = hasProject
-    ? selectedProject!.name
-    : "RELAY";
+  const panelTitle = hasProject ? selectedProject!.name : "RELAY";
   const panelSummaryTitle = hasProject
     ? selectedProject!.aiSummaryTitle
-    : customerSummary?.aiSummaryTitle ?? null;
+    : (customerSummary?.aiSummaryTitle ?? null);
   const panelSummaryOverview = hasProject
     ? selectedProject!.aiSummaryOverview
-    : customerSummary?.aiSummaryOverview ?? null;
+    : (customerSummary?.aiSummaryOverview ?? null);
   const panelNextSteps = hasProject
     ? selectedProject!.aiNextSteps
-    : customerSummary?.aiNextSteps ?? null;
+    : (customerSummary?.aiNextSteps ?? null);
   const panelEmptyHint = hasProject
     ? "A summary will appear here once a session in this project ends."
     : "A summary will appear here once your first session ends.";
@@ -2561,8 +2970,8 @@ function BrandedLanding({
               }}
             >
               human layer
-            </em>
-            {" "}for AI-built software.
+            </em>{" "}
+            for AI-built software.
           </p>
 
           {hasProject && (
@@ -2571,11 +2980,11 @@ function BrandedLanding({
                 <Folder size={16} />
               </div>
               <div className="flex min-w-0 flex-col items-start text-left">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                <span className="text-[10px] font-semibold tracking-wider text-[var(--text-muted)] uppercase">
                   Working in
                 </span>
                 <span
-                  className="max-w-[220px] truncate text-base font-semibold leading-tight text-[var(--text)]"
+                  className="max-w-[220px] truncate text-base leading-tight font-semibold text-[var(--text)]"
                   title={selectedProject!.name}
                 >
                   {selectedProject!.name}
@@ -2605,7 +3014,7 @@ function BrandedLanding({
             onClick={() => setExplainerOpen((v) => !v)}
             aria-expanded={explainerOpen}
             aria-controls="relay-landing-explainer"
-            className="group/explainer mt-10 inline-flex items-center gap-2.5 rounded-full border px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] transition-all duration-200 ease-out hover:scale-[1.02] hover:bg-[var(--surface-raised)]"
+            className="group/explainer mt-10 inline-flex items-center gap-2.5 rounded-full border px-4 py-2 text-[11px] font-semibold tracking-[0.12em] uppercase transition-all duration-200 ease-out hover:scale-[1.02] hover:bg-[var(--surface-raised)]"
             style={{
               color: "var(--text-muted)",
               borderColor: "var(--border)",
@@ -2629,7 +3038,9 @@ function BrandedLanding({
                 className="absolute h-2.5 w-[2px] rounded-full transition-all duration-200 ease-out"
                 style={{
                   backgroundColor: "currentColor",
-                  transform: explainerOpen ? "scaleY(0) rotate(90deg)" : "scaleY(1) rotate(0deg)",
+                  transform: explainerOpen
+                    ? "scaleY(0) rotate(90deg)"
+                    : "scaleY(1) rotate(0deg)",
                   opacity: explainerOpen ? 0 : 1,
                 }}
               />
@@ -2654,168 +3065,264 @@ function BrandedLanding({
               everything cleanly (no orphaned divider line). */}
           {explainerOpen && (
             <>
-          <div
-            aria-hidden
-            className="mt-6 h-px w-full max-w-md"
-            style={{ backgroundColor: "var(--border)" }}
-          />
+              <div
+                aria-hidden
+                className="mt-6 h-px w-full max-w-md"
+                style={{ backgroundColor: "var(--border)" }}
+              />
 
-          {/* How-it-works explainer — chrome-light redesign. Same
+              {/* How-it-works explainer — chrome-light redesign. Same
               content as the prior card-heavy version, but the visual
               weight comes from typography + whitespace + tiny color
               accents rather than nested bordered boxes. Single-column
               rhythm with one 2-column moment for the spatial
               left↔right reference. Reads like a polished spec page,
               not a dashboard widget. */}
-          <div id="relay-landing-explainer" className="mt-6 w-full max-w-2xl text-left text-[13.5px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
+              <div
+                id="relay-landing-explainer"
+                className="mt-6 w-full max-w-2xl text-left text-[13.5px] leading-relaxed"
+                style={{ color: "var(--text-muted)" }}
+              >
+                {/* ── 1. Phone icon legend — two clean rows, no card chrome ── */}
+                <div className="flex flex-col gap-4">
+                  <div className="flex items-start gap-3">
+                    <span
+                      className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+                      style={{
+                        backgroundColor: "#0a0a0a",
+                        color: "#ffffff",
+                        // Thin white ring keeps the black circle legible on
+                        // dark + espresso themes (otherwise it disappears
+                        // into the canvas). Low-alpha so it doesn't shout
+                        // on the light theme either.
+                        boxShadow: "inset 0 0 0 1px rgba(255, 255, 255, 0.45)",
+                      }}
+                    >
+                      <Phone size={13} />
+                    </span>
+                    <div>
+                      <span style={{ color: "var(--text)", fontWeight: 600 }}>
+                        Black
+                      </span>
+                      {" — "}
+                      No engineer yet. Tap to match a stack-fit engineer; on the
+                      call in under a minute.
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <span
+                      className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+                      style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+                    >
+                      <Phone size={13} />
+                    </span>
+                    <div>
+                      <span style={{ color: "var(--text)", fontWeight: 600 }}>
+                        Green
+                      </span>
+                      {" — "}
+                      Worked here before. Priority routes to them — swap to any
+                      other engineer any time.
+                    </div>
+                  </div>
+                </div>
 
-            {/* ── 1. Phone icon legend — two clean rows, no card chrome ── */}
-            <div className="flex flex-col gap-4">
-              <div className="flex items-start gap-3">
-                <span
-                  className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+                {/* Hairline divider between sections — much lighter than a card border */}
+                <div
+                  className="my-5 h-px w-full"
                   style={{
-                    backgroundColor: "#0a0a0a",
-                    color: "#ffffff",
-                    // Thin white ring keeps the black circle legible on
-                    // dark + espresso themes (otherwise it disappears
-                    // into the canvas). Low-alpha so it doesn't shout
-                    // on the light theme either.
-                    boxShadow: "inset 0 0 0 1px rgba(255, 255, 255, 0.45)",
+                    backgroundColor:
+                      "color-mix(in srgb, var(--border) 50%, transparent)",
                   }}
+                />
+
+                {/* ── 2. Availability states — small section header + inline pills ── */}
+                <div
+                  className="text-[11px] font-semibold tracking-[0.08em] uppercase"
+                  style={{ color: "var(--text-faint)" }}
                 >
-                  <Phone size={13} />
-                </span>
-                <div>
-                  <span style={{ color: "var(--text)", fontWeight: 600 }}>Black</span>
-                  {" — "}
-                  No engineer yet. Tap to match a stack-fit engineer; on the call in under a minute.
+                  When you tap a green icon
                 </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <span
-                  className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
-                  style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+                <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px]">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span
+                      aria-hidden
+                      className="h-1.5 w-1.5 rounded-full"
+                      style={{ backgroundColor: BRAND_GREEN }}
+                    />
+                    <span style={{ color: "var(--text)", fontWeight: 600 }}>
+                      Online
+                    </span>
+                    <span style={{ color: "var(--text-muted)" }}>
+                      — instant call, under a minute
+                    </span>
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span
+                      aria-hidden
+                      className="h-1.5 w-1.5 rounded-full"
+                      style={{ backgroundColor: "var(--warn)" }}
+                    />
+                    <span style={{ color: "var(--text)", fontWeight: 600 }}>
+                      Busy
+                    </span>
+                    <span style={{ color: "var(--text-muted)" }}>
+                      — drop a request, joins after
+                    </span>
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span
+                      aria-hidden
+                      className="h-1.5 w-1.5 rounded-full"
+                      style={{ backgroundColor: "var(--text-faint)" }}
+                    />
+                    <span style={{ color: "var(--text)", fontWeight: 600 }}>
+                      Offline
+                    </span>
+                    <span style={{ color: "var(--text-muted)" }}>
+                      — book their calendar
+                    </span>
+                  </span>
+                </div>
+                <p className="mt-3 text-[13px]">
+                  Don't want to wait? Pick anyone else — every engineer arrives
+                  with full project memory and an AI brief. Zero ramp-up.
+                </p>
+
+                <div
+                  className="my-5 h-px w-full"
+                  style={{
+                    backgroundColor:
+                      "color-mix(in srgb, var(--border) 50%, transparent)",
+                  }}
+                />
+
+                {/* ── 3. Spatial UI orientation — two columns, no boxes ─── */}
+                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                  <div>
+                    <div
+                      className="text-[11px] font-semibold tracking-[0.08em] uppercase"
+                      style={{ color: "var(--primary)" }}
+                    >
+                      ← Left sidebar
+                    </div>
+                    <div
+                      className="mt-1.5 text-[15px] font-semibold"
+                      style={{ color: "var(--text)" }}
+                    >
+                      Project memory
+                    </div>
+                    <p className="mt-1.5 text-[13px]">
+                      Every session, file, voice note, and AI summary stays with
+                      the project — not the call. New engineers join with full
+                      history. No catch-up.
+                    </p>
+                  </div>
+                  <div>
+                    <div
+                      className="text-[11px] font-semibold tracking-[0.08em] uppercase"
+                      style={{ color: "var(--primary)" }}
+                    >
+                      Right panel →
+                    </div>
+                    <div
+                      className="mt-1.5 text-[15px] font-semibold"
+                      style={{ color: "var(--text)" }}
+                    >
+                      Live chat
+                    </div>
+                    <p className="mt-1.5 text-[13px]">
+                      Type, attach files, record voice notes. The panel goes
+                      live when your engineer joins — anything written before is
+                      saved as a draft for them.
+                    </p>
+                  </div>
+                </div>
+
+                <div
+                  className="my-5 h-px w-full"
+                  style={{
+                    backgroundColor:
+                      "color-mix(in srgb, var(--border) 50%, transparent)",
+                  }}
+                />
+
+                {/* ── 4. Numbered lifecycle — single column, simple rows ── */}
+                <div
+                  className="text-[11px] font-semibold tracking-[0.08em] uppercase"
+                  style={{ color: "var(--text-faint)" }}
                 >
-                  <Phone size={13} />
-                </span>
-                <div>
-                  <span style={{ color: "var(--text)", fontWeight: 600 }}>Green</span>
-                  {" — "}
-                  Worked here before. Priority routes to them — swap to any other engineer any time.
+                  How it works
                 </div>
-              </div>
-            </div>
-
-            {/* Hairline divider between sections — much lighter than a card border */}
-            <div className="my-5 h-px w-full" style={{ backgroundColor: "color-mix(in srgb, var(--border) 50%, transparent)" }} />
-
-            {/* ── 2. Availability states — small section header + inline pills ── */}
-            <div className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text-faint)" }}>
-              When you tap a green icon
-            </div>
-            <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px]">
-              <span className="inline-flex items-center gap-1.5">
-                <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: BRAND_GREEN }} />
-                <span style={{ color: "var(--text)", fontWeight: 600 }}>Online</span>
-                <span style={{ color: "var(--text-muted)" }}>— instant call, under a minute</span>
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: "var(--warn)" }} />
-                <span style={{ color: "var(--text)", fontWeight: 600 }}>Busy</span>
-                <span style={{ color: "var(--text-muted)" }}>— drop a request, joins after</span>
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: "var(--text-faint)" }} />
-                <span style={{ color: "var(--text)", fontWeight: 600 }}>Offline</span>
-                <span style={{ color: "var(--text-muted)" }}>— book their calendar</span>
-              </span>
-            </div>
-            <p className="mt-3 text-[13px]">
-              Don't want to wait? Pick anyone else — every engineer arrives with full project memory and an AI brief. Zero ramp-up.
-            </p>
-
-            <div className="my-5 h-px w-full" style={{ backgroundColor: "color-mix(in srgb, var(--border) 50%, transparent)" }} />
-
-            {/* ── 3. Spatial UI orientation — two columns, no boxes ─── */}
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-              <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--primary)" }}>
-                  ← Left sidebar
+                <div className="mt-3 flex flex-col gap-3">
+                  <div className="flex items-start gap-3">
+                    <span
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
+                      style={{
+                        backgroundColor: "var(--primary-soft)",
+                        color: "var(--primary)",
+                      }}
+                    >
+                      1
+                    </span>
+                    <div>
+                      <span style={{ color: "var(--text)", fontWeight: 600 }}>
+                        Connect
+                      </span>
+                      {" — "}
+                      Tap a phone icon. Engineer accepts → Zoom opens with
+                      voice, chat, and screen share in one shot.
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <span
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
+                      style={{
+                        backgroundColor: "var(--primary-soft)",
+                        color: "var(--primary)",
+                      }}
+                    >
+                      2
+                    </span>
+                    <div>
+                      <span style={{ color: "var(--text)", fontWeight: 600 }}>
+                        Build
+                      </span>
+                      {" — "}
+                      Work together live. Everything stays searchable in the
+                      chat panel afterwards — no notes lost.
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <span
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
+                      style={{
+                        backgroundColor: "var(--primary-soft)",
+                        color: "var(--primary)",
+                      }}
+                    >
+                      3
+                    </span>
+                    <div>
+                      <span style={{ color: "var(--text)", fontWeight: 600 }}>
+                        Ship
+                      </span>
+                      {" — "}
+                      Hand the project off when you're ready. Your engineer
+                      keeps maintaining and enhancing it for as long as you
+                      need.
+                    </div>
+                  </div>
                 </div>
-                <div className="mt-1.5 text-[15px] font-semibold" style={{ color: "var(--text)" }}>
-                  Project memory
-                </div>
-                <p className="mt-1.5 text-[13px]">
-                  Every session, file, voice note, and AI summary stays with the project — not the call. New engineers join with full history. No catch-up.
+
+                {/* ── 5. Pricing footnote ─────────────────────────────── */}
+                <p
+                  className="mt-6 text-center text-[12px]"
+                  style={{ color: "var(--text-faint)" }}
+                >
+                  Pay per minute. No subscription, no auto-renew.
                 </p>
               </div>
-              <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--primary)" }}>
-                  Right panel →
-                </div>
-                <div className="mt-1.5 text-[15px] font-semibold" style={{ color: "var(--text)" }}>
-                  Live chat
-                </div>
-                <p className="mt-1.5 text-[13px]">
-                  Type, attach files, record voice notes. The panel goes live when your engineer joins — anything written before is saved as a draft for them.
-                </p>
-              </div>
-            </div>
-
-            <div className="my-5 h-px w-full" style={{ backgroundColor: "color-mix(in srgb, var(--border) 50%, transparent)" }} />
-
-            {/* ── 4. Numbered lifecycle — single column, simple rows ── */}
-            <div className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text-faint)" }}>
-              How it works
-            </div>
-            <div className="mt-3 flex flex-col gap-3">
-              <div className="flex items-start gap-3">
-                <span
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
-                  style={{ backgroundColor: "var(--primary-soft)", color: "var(--primary)" }}
-                >
-                  1
-                </span>
-                <div>
-                  <span style={{ color: "var(--text)", fontWeight: 600 }}>Connect</span>
-                  {" — "}
-                  Tap a phone icon. Engineer accepts → Zoom opens with voice, chat, and screen share in one shot.
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <span
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
-                  style={{ backgroundColor: "var(--primary-soft)", color: "var(--primary)" }}
-                >
-                  2
-                </span>
-                <div>
-                  <span style={{ color: "var(--text)", fontWeight: 600 }}>Build</span>
-                  {" — "}
-                  Work together live. Everything stays searchable in the chat panel afterwards — no notes lost.
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <span
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
-                  style={{ backgroundColor: "var(--primary-soft)", color: "var(--primary)" }}
-                >
-                  3
-                </span>
-                <div>
-                  <span style={{ color: "var(--text)", fontWeight: 600 }}>Ship</span>
-                  {" — "}
-                  Hand the project off when you're ready. Your engineer keeps maintaining and enhancing it for as long as you need.
-                </div>
-              </div>
-            </div>
-
-            {/* ── 5. Pricing footnote ─────────────────────────────── */}
-            <p className="mt-6 text-center text-[12px]" style={{ color: "var(--text-faint)" }}>
-              Pay per minute. No subscription, no auto-renew.
-            </p>
-          </div>
             </>
           )}
         </div>
@@ -2861,7 +3368,7 @@ function BrandedLanding({
 type LocalDraftMessage = {
   id: string;
   text: string;
-  createdAt: number;       // epoch ms — sorts independently of network state
+  createdAt: number; // epoch ms — sorts independently of network state
   /** Epoch ms of the most recent edit. null/undefined for never-edited.
    *  Drives the "(edited)" badge next to the timestamp. */
   editedAt?: number | null;
@@ -2890,8 +3397,8 @@ function sameDay(a: number, b: number): boolean {
   const db = new Date(b);
   return (
     da.getFullYear() === db.getFullYear() &&
-    da.getMonth()    === db.getMonth() &&
-    da.getDate()     === db.getDate()
+    da.getMonth() === db.getMonth() &&
+    da.getDate() === db.getDate()
   );
 }
 
@@ -2899,15 +3406,21 @@ function sameDay(a: number, b: number): boolean {
 function DateSeparatorPill({ ts }: { ts: number }) {
   const d = new Date(ts);
   const today = new Date();
-  const yesterday = new Date(); yesterday.setDate(today.getDate() - 1);
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
   let label: string;
   if (sameDay(ts, today.getTime())) label = "Today";
   else if (sameDay(ts, yesterday.getTime())) label = "Yesterday";
-  else label = d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: today.getFullYear() === d.getFullYear() ? undefined : "numeric" });
+  else
+    label = d.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: today.getFullYear() === d.getFullYear() ? undefined : "numeric",
+    });
   return (
     <div className="my-2 flex justify-center">
       <span
-        className="rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
+        className="rounded-full px-2.5 py-0.5 text-[10px] font-semibold tracking-wider uppercase"
         style={{
           backgroundColor: "color-mix(in srgb, var(--text) 8%, transparent)",
           color: "var(--text-muted)",
@@ -2934,8 +3447,17 @@ function DateSeparatorPill({ ts }: { ts: number }) {
 // been transmitted to a recipient. These drafts live on this device
 // until the engineer joins, so the customer can always edit/delete.
 function DraftBubble({
-  message, menuOpen, editing, editText, onEditTextChange,
-  onOpenMenu, onCloseMenu, onStartEdit, onSaveEdit, onCancelEdit, onDelete,
+  message,
+  menuOpen,
+  editing,
+  editText,
+  onEditTextChange,
+  onOpenMenu,
+  onCloseMenu,
+  onStartEdit,
+  onSaveEdit,
+  onCancelEdit,
+  onDelete,
 }: {
   message: LocalDraftMessage;
   menuOpen: boolean;
@@ -2981,7 +3503,9 @@ function DraftBubble({
   return (
     <div
       className="group relative flex items-start justify-end gap-1.5"
-      style={{ animation: editing ? undefined : "relay-bubble-in 180ms ease-out" }}
+      style={{
+        animation: editing ? undefined : "relay-bubble-in 180ms ease-out",
+      }}
       onTouchStart={startHold}
       onTouchEnd={cancelHold}
       onTouchCancel={cancelHold}
@@ -3003,7 +3527,9 @@ function DraftBubble({
             title="Edit / delete"
             className={cn(
               "flex h-7 w-7 items-center justify-center rounded-full border transition-opacity",
-              menuOpen ? "opacity-100" : "opacity-70 group-hover:opacity-100 focus:opacity-100",
+              menuOpen
+                ? "opacity-100"
+                : "opacity-70 group-hover:opacity-100 focus:opacity-100"
             )}
             style={{
               backgroundColor: "var(--surface)",
@@ -3016,7 +3542,7 @@ function DraftBubble({
           {menuOpen && (
             <div
               onClick={(e) => e.stopPropagation()}
-              className="absolute right-0 top-full z-20 mt-1 min-w-[150px] overflow-hidden rounded-lg border shadow-xl"
+              className="absolute top-full right-0 z-20 mt-1 min-w-[150px] overflow-hidden rounded-lg border shadow-xl"
               style={{
                 borderColor: "var(--border)",
                 backgroundColor: "var(--surface)",
@@ -3065,7 +3591,11 @@ function DraftBubble({
               value={editText}
               onChange={(e) => onEditTextChange(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                if (
+                  e.key === "Enter" &&
+                  !e.shiftKey &&
+                  !e.nativeEvent.isComposing
+                ) {
                   e.preventDefault();
                   onSaveEdit();
                 } else if (e.key === "Escape") {
@@ -3078,7 +3608,8 @@ function DraftBubble({
               style={{
                 borderColor: "var(--border)",
                 color: "var(--text)",
-                backgroundColor: "color-mix(in srgb, var(--surface) 60%, transparent)",
+                backgroundColor:
+                  "color-mix(in srgb, var(--surface) 60%, transparent)",
                 minWidth: 180,
               }}
             />
@@ -3103,7 +3634,9 @@ function DraftBubble({
           </>
         ) : (
           <>
-            <div className="whitespace-pre-wrap break-words pr-1">{message.text}</div>
+            <div className="pr-1 break-words whitespace-pre-wrap">
+              {message.text}
+            </div>
             <div
               className="mt-0.5 flex items-center justify-end gap-1 text-[9px]"
               style={{ color: "var(--text-muted)" }}
@@ -3115,7 +3648,8 @@ function DraftBubble({
               )}
               <span>
                 {new Date(message.createdAt).toLocaleTimeString("en-US", {
-                  hour: "numeric", minute: "2-digit",
+                  hour: "numeric",
+                  minute: "2-digit",
                 })}
               </span>
               {/* Single tick = saved locally. We'll show ✓✓ in green once
@@ -3125,14 +3659,17 @@ function DraftBubble({
             </div>
           </>
         )}
-
       </div>
     </div>
   );
 }
 
 function ChatPanelStub({
-  sidebarCollapsed, onToggleCollapsed, session, scopeKey = "general", enableResize = true,
+  sidebarCollapsed,
+  onToggleCollapsed,
+  session,
+  scopeKey = "general",
+  enableResize = true,
 }: {
   sidebarCollapsed: boolean;
   /**
@@ -3173,16 +3710,21 @@ function ChatPanelStub({
   // window when claimed_by is set but agent_name hasn't synced down.
   const engineerName = session?.agent_name?.trim() || null;
   const status = session?.status ?? null;
-  const isLiveish = !!status && ["assigned", "joining", "live", "grace"].includes(status);
-  const isEndedish = !!status && ["ended", "cancelled", "abandoned"].includes(status);
+  const isLiveish =
+    !!status && ["assigned", "joining", "live", "grace"].includes(status);
+  const isEndedish =
+    !!status && ["ended", "cancelled", "abandoned"].includes(status);
   const headerTitle =
-    isLiveish && engineerName ? `Chatting with ${engineerName}` :
-    isEndedish && engineerName ? `You chatted with ${engineerName}` :
-    "Engineer chat";
-  const headerSubtitle =
-    isLiveish ? "Live now" :
-    isEndedish ? "Session ended" :
-    "No active session";
+    isLiveish && engineerName
+      ? `Chatting with ${engineerName}`
+      : isEndedish && engineerName
+        ? `You chatted with ${engineerName}`
+        : "Engineer chat";
+  const headerSubtitle = isLiveish
+    ? "Live now"
+    : isEndedish
+      ? "Session ended"
+      : "No active session";
   // Start empty; the scope-load effect below populates from storage on
   // mount and on every scopeKey change. Initial state can't read from
   // storage directly because we don't know the right key until we have
@@ -3209,21 +3751,23 @@ function ChatPanelStub({
   // Only one bubble can be in edit at a time so the customer doesn't
   // lose track of partial-edit context across multiple messages.
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editText, setEditText]   = useState("");
+  const [editText, setEditText] = useState("");
 
   // Pending attachments (files picked + voice notes recorded BEFORE a
   // session exists). Persisted to IndexedDB via stubDraftAttachments
   // so a tab refresh keeps them around. We hold only metadata in
   // React state — the actual Blob bytes live in IDB. flushed to the
   // first session that goes live by the parent's auto-flush effect.
-  const [stubAttachments, setStubAttachments] = useState<StubAttachmentMeta[]>([]);
+  const [stubAttachments, setStubAttachments] = useState<StubAttachmentMeta[]>(
+    []
+  );
   const attachInputRef = useRef<HTMLInputElement>(null);
 
   // Voice-recording state: idle | recording. Mirrors the real
   // ChatComposer's tap-to-record affordance without the tap-vs-hold
   // gesture (this is a separate button from dictate, not the same one).
   const [recState, setRecState] = useState<"idle" | "recording">("idle");
-  const recorderRef       = useRef<MediaRecorder | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
   const recorderChunksRef = useRef<Blob[]>([]);
   const recorderStreamRef = useRef<MediaStream | null>(null);
 
@@ -3259,7 +3803,9 @@ function ChatPanelStub({
     void stubListAttachments(scopeKey).then((items) => {
       if (alive) setStubAttachments(items);
     });
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [scopeKey]);
 
   // Persist messages so a tab refresh doesn't erase the draft buffer.
@@ -3272,9 +3818,11 @@ function ChatPanelStub({
     try {
       window.sessionStorage.setItem(
         stubDraftStorageKey(scopeKey),
-        JSON.stringify(messages.slice(-200)),
+        JSON.stringify(messages.slice(-200))
       );
-    } catch { /* quota / privacy mode — local-only, swallow */ }
+    } catch {
+      /* quota / privacy mode — local-only, swallow */
+    }
   }, [messages, scopeKey]);
 
   // Auto-scroll the message area to the bottom when a new message arrives.
@@ -3345,11 +3893,11 @@ function ChatPanelStub({
       setEditText("");
       return;
     }
-    setMessages((prev) => prev.map((m) =>
-      m.id === editingId
-        ? { ...m, text: trimmed, editedAt: Date.now() }
-        : m,
-    ));
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === editingId ? { ...m, text: trimmed, editedAt: Date.now() } : m
+      )
+    );
     setEditingId(null);
     setEditText("");
   }, [editingId, editText]);
@@ -3383,9 +3931,12 @@ function ChatPanelStub({
   }, [openMenuId]);
 
   // Clean up the undo timer on unmount so it doesn't fire after teardown.
-  useEffect(() => () => {
-    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    },
+    []
+  );
 
   // Voice-to-text using the Web Speech API. Same shape as ChatComposer's
   // implementation but local to the stub since we don't import the full
@@ -3396,9 +3947,13 @@ function ChatPanelStub({
     if (voiceMode !== "idle") return;
     if (typeof window === "undefined") return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const Ctor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const Ctor =
+      (window as any).SpeechRecognition ||
+      (window as any).webkitSpeechRecognition;
     if (!Ctor) {
-      setVoiceMsg("Voice-to-text isn't supported in this browser. Try Chrome or Edge.");
+      setVoiceMsg(
+        "Voice-to-text isn't supported in this browser. Try Chrome or Edge."
+      );
       return;
     }
     setVoiceMsg(null);
@@ -3409,7 +3964,9 @@ function ChatPanelStub({
     // change it in site-settings.
     const permState = await queryMicPermission();
     if (permState === "denied") {
-      setVoiceMsg("Microphone is blocked for this site. Click the lock / info icon at the very left of the address bar → Site settings → Microphone → Allow → reload the page.");
+      setVoiceMsg(
+        "Microphone is blocked for this site. Click the lock / info icon at the very left of the address bar → Site settings → Microphone → Allow → reload the page."
+      );
       return;
     }
     // Only call getUserMedia when state is "granted" or "prompt".
@@ -3417,13 +3974,19 @@ function ChatPanelStub({
     // grant on record so SpeechRecognition can reuse it.
     if (navigator.mediaDevices?.getUserMedia) {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        });
         stream.getTracks().forEach((t) => t.stop());
       } catch (e) {
         if (e instanceof Error && e.name === "NotAllowedError") {
-          setVoiceMsg("You dismissed the microphone prompt. Click the mic icon again and choose Allow when your browser asks.");
+          setVoiceMsg(
+            "You dismissed the microphone prompt. Click the mic icon again and choose Allow when your browser asks."
+          );
         } else if (e instanceof Error && e.name === "NotFoundError") {
-          setVoiceMsg("No microphone detected. Check that one is plugged in and not being used by another app.");
+          setVoiceMsg(
+            "No microphone detected. Check that one is plugged in and not being used by another app."
+          );
         } else {
           setVoiceMsg("Couldn't access your microphone.");
         }
@@ -3435,7 +3998,9 @@ function ChatPanelStub({
     r.lang = navigator.language || "en-US";
     r.continuous = true;
     r.interimResults = true;
-    r.onresult = (event: { results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }> }) => {
+    r.onresult = (event: {
+      results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }>;
+    }) => {
       let finalText = "";
       let interim = "";
       for (let i = 0; i < event.results.length; i++) {
@@ -3444,7 +4009,10 @@ function ChatPanelStub({
         else interim += res[0].transcript;
       }
       const composed = [transcribeBaseRef.current, finalText, interim]
-        .filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+        .filter(Boolean)
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim();
       setDraftText(composed);
     };
     r.onerror = (e: { error: string }) => {
@@ -3463,14 +4031,20 @@ function ChatPanelStub({
     };
     recognitionRef.current = r;
     setVoiceMode("transcribing");
-    try { r.start(); } catch {
+    try {
+      r.start();
+    } catch {
       setVoiceMsg("Voice recognition couldn't start — try again in a moment.");
       setVoiceMode("idle");
     }
   }, [voiceMode, draftText]);
 
   const stopTranscribe = useCallback(() => {
-    try { recognitionRef.current?.stop(); } catch { /* noop */ }
+    try {
+      recognitionRef.current?.stop();
+    } catch {
+      /* noop */
+    }
   }, []);
 
   // ── Attachment picker (paperclip) ─────────────────────────────────
@@ -3478,32 +4052,41 @@ function ChatPanelStub({
   // whitelist + 50 MB cap), then persisted to IndexedDB via
   // stubDraftAttachments. The auto-flush in the parent RoomClient
   // moves them into the real session when one goes live.
-  const handlePickFiles = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    if (files.length === 0) return;
-    // Clear the input so picking the same file twice in a row still fires onChange.
-    e.target.value = "";
-    setVoiceMsg(null);
-    const v = validateStagedFiles(files, []);
-    if (!v.ok) {
-      setVoiceMsg(v.error);
-      return;
-    }
-    try {
-      const fresh: StubAttachmentMeta[] = [];
-      for (const c of v.classified) {
-        const meta = await stubAddAttachment(c.file, scopeKey);
-        fresh.push(meta);
+  const handlePickFiles = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(e.target.files ?? []);
+      if (files.length === 0) return;
+      // Clear the input so picking the same file twice in a row still fires onChange.
+      e.target.value = "";
+      setVoiceMsg(null);
+      const v = validateStagedFiles(files, []);
+      if (!v.ok) {
+        setVoiceMsg(v.error);
+        return;
       }
-      setStubAttachments((prev) => [...fresh, ...prev]);
-    } catch (err) {
-      setVoiceMsg(err instanceof Error ? err.message : "Couldn't stage the file.");
-    }
-  }, []);
+      try {
+        const fresh: StubAttachmentMeta[] = [];
+        for (const c of v.classified) {
+          const meta = await stubAddAttachment(c.file, scopeKey);
+          fresh.push(meta);
+        }
+        setStubAttachments((prev) => [...fresh, ...prev]);
+      } catch (err) {
+        setVoiceMsg(
+          err instanceof Error ? err.message : "Couldn't stage the file."
+        );
+      }
+    },
+    []
+  );
 
   const handleRemoveAttachment = useCallback(async (id: string) => {
     setStubAttachments((prev) => prev.filter((a) => a.id !== id));
-    try { await stubRemoveAttachment(id); } catch { /* swallow — UI already updated */ }
+    try {
+      await stubRemoveAttachment(id);
+    } catch {
+      /* swallow — UI already updated */
+    }
   }, []);
 
   // ── Voice recording (record button) ───────────────────────────────
@@ -3523,9 +4106,13 @@ function ChatPanelStub({
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (e) {
       if (e instanceof Error && e.name === "NotAllowedError") {
-        setVoiceMsg("Microphone access blocked. Click the lock icon in your browser's address bar, allow microphone, then try again.");
+        setVoiceMsg(
+          "Microphone access blocked. Click the lock icon in your browser's address bar, allow microphone, then try again."
+        );
       } else if (e instanceof Error && e.name === "NotFoundError") {
-        setVoiceMsg("No microphone detected. Check that one is plugged in and not being used by another app.");
+        setVoiceMsg(
+          "No microphone detected. Check that one is plugged in and not being used by another app."
+        );
       } else {
         setVoiceMsg("Couldn't access your microphone.");
       }
@@ -3536,20 +4123,32 @@ function ChatPanelStub({
     // MediaRecorder MIME pick — Chrome/Firefox produce webm/opus,
     // Safari produces audio/mp4. Probe in priority order; let the
     // browser pick its default if neither hint is supported.
-    const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"];
+    const candidates = [
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/mp4",
+      "audio/ogg",
+    ];
     let mime: string | undefined;
     for (const c of candidates) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if ((MediaRecorder as any).isTypeSupported?.(c)) { mime = c; break; }
+      if ((MediaRecorder as any).isTypeSupported?.(c)) {
+        mime = c;
+        break;
+      }
     }
-    const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+    const rec = mime
+      ? new MediaRecorder(stream, { mimeType: mime })
+      : new MediaRecorder(stream);
 
     recorderChunksRef.current = [];
     rec.ondataavailable = (e) => {
       if (e.data && e.data.size > 0) recorderChunksRef.current.push(e.data);
     };
     rec.onstop = async () => {
-      const blob = new Blob(recorderChunksRef.current, { type: rec.mimeType || "audio/webm" });
+      const blob = new Blob(recorderChunksRef.current, {
+        type: rec.mimeType || "audio/webm",
+      });
       recorderChunksRef.current = [];
       recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
       recorderStreamRef.current = null;
@@ -3558,14 +4157,22 @@ function ChatPanelStub({
       // Save to IDB as a normal file. mimeToExt-style suffix derived
       // from the recorder's actual MIME so download names stay sensible.
       const t = rec.mimeType || "audio/webm";
-      const ext = t.includes("webm") ? "webm" : t.includes("mp4") ? "m4a" : t.includes("ogg") ? "ogg" : "webm";
+      const ext = t.includes("webm")
+        ? "webm"
+        : t.includes("mp4")
+          ? "m4a"
+          : t.includes("ogg")
+            ? "ogg"
+            : "webm";
       const name = `voice-${new Date().toISOString().replace(/[:.]/g, "-")}.${ext}`;
       const file = new File([blob], name, { type: blob.type });
       try {
         const meta = await stubAddAttachment(file, scopeKey);
         setStubAttachments((prev) => [meta, ...prev]);
       } catch (err) {
-        setVoiceMsg(err instanceof Error ? err.message : "Couldn't save the recording.");
+        setVoiceMsg(
+          err instanceof Error ? err.message : "Couldn't save the recording."
+        );
       }
     };
     rec.onerror = () => {
@@ -3582,16 +4189,34 @@ function ChatPanelStub({
 
   const stopStubRecording = useCallback(() => {
     const r = recorderRef.current;
-    if (!r) { setRecState("idle"); return; }
-    try { r.stop(); } catch { /* already stopping */ }
+    if (!r) {
+      setRecState("idle");
+      return;
+    }
+    try {
+      r.stop();
+    } catch {
+      /* already stopping */
+    }
   }, []);
 
   // Tear-down on unmount so an abandoned mic stream doesn't keep listening.
-  useEffect(() => () => {
-    try { recognitionRef.current?.abort(); } catch { /* noop */ }
-    try { recorderRef.current?.stop(); } catch { /* noop */ }
-    recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
-  }, []);
+  useEffect(
+    () => () => {
+      try {
+        recognitionRef.current?.abort();
+      } catch {
+        /* noop */
+      }
+      try {
+        recorderRef.current?.stop();
+      } catch {
+        /* noop */
+      }
+      recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
+    },
+    []
+  );
 
   // ── Drag-to-resize state ─────────────────────────────────────────
   // Customer can drag the left edge of the panel to widen/narrow it.
@@ -3608,10 +4233,16 @@ function ChatPanelStub({
     try {
       const raw = window.localStorage.getItem("relay:chat-panel-width");
       const parsed = raw ? Number(raw) : NaN;
-      if (Number.isFinite(parsed) && parsed >= PANEL_MIN && parsed <= PANEL_MAX) {
+      if (
+        Number.isFinite(parsed) &&
+        parsed >= PANEL_MIN &&
+        parsed <= PANEL_MAX
+      ) {
         setPanelWidth(parsed);
       }
-    } catch { /* localStorage unavailable — fall through to default */ }
+    } catch {
+      /* localStorage unavailable — fall through to default */
+    }
   }, []);
 
   // Active-drag tracking: state (not ref) so the className recomputes
@@ -3619,30 +4250,36 @@ function ChatPanelStub({
   // Without this gate, every pointermove would queue a 200ms width
   // transition and the panel would lag the pointer.
   const [isDragging, setIsDragging] = useState(false);
-  const handlePointerDown = useCallback((e: React.PointerEvent) => {
-    if (!enableResize || sidebarCollapsed) return;
-    e.preventDefault();
-    setIsDragging(true);
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      if (!enableResize || sidebarCollapsed) return;
+      e.preventDefault();
+      setIsDragging(true);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
 
-    const onMove = (mv: PointerEvent) => {
-      // The panel hugs the right edge of the viewport, so the new
-      // width is simply viewportRight - pointerX. (Equivalent to
-      // dragging the LEFT edge outward = wider panel.)
-      const next = Math.max(PANEL_MIN, Math.min(PANEL_MAX, window.innerWidth - mv.clientX));
-      setPanelWidth(next);
-    };
-    const onUp = () => {
-      setIsDragging(false);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-  }, [enableResize, sidebarCollapsed]);
+      const onMove = (mv: PointerEvent) => {
+        // The panel hugs the right edge of the viewport, so the new
+        // width is simply viewportRight - pointerX. (Equivalent to
+        // dragging the LEFT edge outward = wider panel.)
+        const next = Math.max(
+          PANEL_MIN,
+          Math.min(PANEL_MAX, window.innerWidth - mv.clientX)
+        );
+        setPanelWidth(next);
+      };
+      const onUp = () => {
+        setIsDragging(false);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    [enableResize, sidebarCollapsed]
+  );
 
   // Persist on every settled width change too (covers cases where the
   // user releases outside the window — the up handler still runs but
@@ -3651,7 +4288,9 @@ function ChatPanelStub({
     if (typeof window === "undefined") return;
     try {
       window.localStorage.setItem("relay:chat-panel-width", String(panelWidth));
-    } catch { /* swallow */ }
+    } catch {
+      /* swallow */
+    }
   }, [panelWidth]);
 
   // Width selection: collapsed rail = 48px; fill-parent (mobile sheet)
@@ -3688,13 +4327,13 @@ function ChatPanelStub({
           aria-orientation="vertical"
           aria-label="Resize chat panel"
           onPointerDown={handlePointerDown}
-          className="group/resize absolute left-0 top-0 z-20 h-full w-1.5 -translate-x-1/2 cursor-col-resize"
+          className="group/resize absolute top-0 left-0 z-20 h-full w-1.5 -translate-x-1/2 cursor-col-resize"
         >
           {/* Visible 1px line on hover/drag — green so it reads as the
               app's accent rather than a generic resize ribbon. */}
           <span
             aria-hidden
-            className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 transition-colors group-hover/resize:bg-[var(--primary)]"
+            className="absolute top-0 left-1/2 h-full w-px -translate-x-1/2 transition-colors group-hover/resize:bg-[var(--primary)]"
           />
         </div>
       )}
@@ -3712,15 +4351,19 @@ function ChatPanelStub({
                 // Live sessions get a green-tinted avatar; otherwise the
                 // muted surface-raised. Matches the "live now" subtitle
                 // color so the header reads as one element.
-                backgroundColor: isLiveish ? BRAND_GREEN_SOFT : "var(--surface-raised)",
+                backgroundColor: isLiveish
+                  ? BRAND_GREEN_SOFT
+                  : "var(--surface-raised)",
                 color: isLiveish ? BRAND_GREEN : "var(--text-muted)",
               }}
             >
               {/* Show the engineer's initial when we have a name + are
                   live-ish; otherwise the generic chat icon. */}
-              {engineerName && (isLiveish || isEndedish)
-                ? engineerName[0].toUpperCase()
-                : <MessageSquare size={14} />}
+              {engineerName && (isLiveish || isEndedish) ? (
+                engineerName[0].toUpperCase()
+              ) : (
+                <MessageSquare size={14} />
+              )}
             </div>
             <div className="flex min-w-0 flex-col">
               <span
@@ -3734,9 +4377,18 @@ function ChatPanelStub({
                 style={{ color: isLiveish ? BRAND_GREEN : "var(--text-muted)" }}
               >
                 {isLiveish && (
-                  <span aria-hidden className="relative inline-flex h-1.5 w-1.5">
-                    <span className="absolute inset-0 inline-flex animate-ping rounded-full opacity-60" style={{ backgroundColor: BRAND_GREEN }} />
-                    <span className="relative h-1.5 w-1.5 rounded-full" style={{ backgroundColor: BRAND_GREEN }} />
+                  <span
+                    aria-hidden
+                    className="relative inline-flex h-1.5 w-1.5"
+                  >
+                    <span
+                      className="absolute inset-0 inline-flex animate-ping rounded-full opacity-60"
+                      style={{ backgroundColor: BRAND_GREEN }}
+                    />
+                    <span
+                      className="relative h-1.5 w-1.5 rounded-full"
+                      style={{ backgroundColor: BRAND_GREEN }}
+                    />
                   </span>
                 )}
                 {headerSubtitle}
@@ -3749,13 +4401,19 @@ function ChatPanelStub({
           onClick={onToggleCollapsed}
           className={cn(
             "flex h-7 w-7 items-center justify-center rounded-md opacity-70 transition-opacity hover:opacity-100",
-            sidebarCollapsed && "mx-auto",
+            sidebarCollapsed && "mx-auto"
           )}
           style={{ color: "var(--text-muted)" }}
-          aria-label={sidebarCollapsed ? "Expand chat panel" : "Collapse chat panel"}
+          aria-label={
+            sidebarCollapsed ? "Expand chat panel" : "Collapse chat panel"
+          }
           title={sidebarCollapsed ? "Expand" : "Collapse"}
         >
-          {sidebarCollapsed ? <PanelRightOpen size={14} /> : <PanelRightClose size={14} />}
+          {sidebarCollapsed ? (
+            <PanelRightOpen size={14} />
+          ) : (
+            <PanelRightClose size={14} />
+          )}
         </button>
       </div>
 
@@ -3772,114 +4430,121 @@ function ChatPanelStub({
               inner div is the actual scroll viewport with overflow-y-auto
               + a ref for the auto-scroll-to-bottom effect above. */}
           <div className="relative min-h-0 flex-1">
-          <div
-            ref={scrollRef}
-            className="hide-scrollbar h-full overflow-y-auto px-3 py-4"
-            style={{
-              backgroundColor: "var(--background)",
-              backgroundImage:
-                "radial-gradient(circle, color-mix(in srgb, var(--text) 4%, transparent) 1px, transparent 1px)",
-              backgroundSize: "16px 16px",
-            }}
-          >
-            {messages.length === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center px-3 text-center">
-                <div
-                  className="mb-3 flex h-10 w-10 items-center justify-center rounded-full"
-                  style={{
-                    backgroundColor: "color-mix(in srgb, var(--text) 5%, transparent)",
-                    color: "var(--text-muted)",
-                  }}
-                >
-                  <Lock size={18} />
+            <div
+              ref={scrollRef}
+              className="hide-scrollbar h-full overflow-y-auto px-3 py-4"
+              style={{
+                backgroundColor: "var(--background)",
+                backgroundImage:
+                  "radial-gradient(circle, color-mix(in srgb, var(--text) 4%, transparent) 1px, transparent 1px)",
+                backgroundSize: "16px 16px",
+              }}
+            >
+              {messages.length === 0 ? (
+                <div className="flex h-full flex-col items-center justify-center px-3 text-center">
+                  <div
+                    className="mb-3 flex h-10 w-10 items-center justify-center rounded-full"
+                    style={{
+                      backgroundColor:
+                        "color-mix(in srgb, var(--text) 5%, transparent)",
+                      color: "var(--text-muted)",
+                    }}
+                  >
+                    <Lock size={18} />
+                  </div>
+                  <p
+                    className="max-w-[220px] text-[12px] leading-relaxed"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    Drop in your thoughts here — your engineer sees them as soon
+                    as the call connects.
+                  </p>
                 </div>
-                <p
-                  className="max-w-[220px] text-[12px] leading-relaxed"
-                  style={{ color: "var(--text-muted)" }}
-                >
-                  Drop in your thoughts here — your engineer sees them as
-                  soon as the call connects.
-                </p>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-1.5 pb-2">
-                {/* Sticky system note at the top reminds the user that
+              ) : (
+                <div className="flex flex-col gap-1.5 pb-2">
+                  {/* Sticky system note at the top reminds the user that
                     these messages haven't reached an engineer yet — they
                     flush once the call goes live. */}
-                <div
-                  className="mx-auto mb-1 rounded-full border px-2.5 py-1 text-[10px]"
-                  style={{
-                    borderColor: "var(--border)",
-                    backgroundColor: "var(--surface)",
-                    color: "var(--text-muted)",
-                  }}
-                >
-                  Waiting for engineer · drafts saved on this device
-                </div>
-                {/* Render with date separators between days. WhatsApp shows
+                  <div
+                    className="mx-auto mb-1 rounded-full border px-2.5 py-1 text-[10px]"
+                    style={{
+                      borderColor: "var(--border)",
+                      backgroundColor: "var(--surface)",
+                      color: "var(--text-muted)",
+                    }}
+                  >
+                    Waiting for engineer · drafts saved on this device
+                  </div>
+                  {/* Render with date separators between days. WhatsApp shows
                     a centred pill ("TODAY" / "YESTERDAY" / "16 May") any
                     time the day flips — we mirror that so a long-running
                     draft buffer reads cleanly across multiple sessions. */}
-                {messages.map((m, idx) => {
-                  const prev = idx > 0 ? messages[idx - 1] : null;
-                  const showSeparator = !prev || !sameDay(prev.createdAt, m.createdAt);
-                  return (
-                    <div key={m.id}>
-                      {showSeparator && <DateSeparatorPill ts={m.createdAt} />}
-                      <DraftBubble
-                        message={m}
-                        menuOpen={openMenuId === m.id}
-                        editing={editingId === m.id}
-                        editText={editText}
-                        onEditTextChange={setEditText}
-                        onOpenMenu={() => setOpenMenuId(m.id)}
-                        onCloseMenu={() => setOpenMenuId(null)}
-                        onStartEdit={() => handleStartEdit(m.id, m.text)}
-                        onSaveEdit={handleSaveEdit}
-                        onCancelEdit={handleCancelEdit}
-                        onDelete={() => handleDeleteMessage(m.id)}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+                  {messages.map((m, idx) => {
+                    const prev = idx > 0 ? messages[idx - 1] : null;
+                    const showSeparator =
+                      !prev || !sameDay(prev.createdAt, m.createdAt);
+                    return (
+                      <div key={m.id}>
+                        {showSeparator && (
+                          <DateSeparatorPill ts={m.createdAt} />
+                        )}
+                        <DraftBubble
+                          message={m}
+                          menuOpen={openMenuId === m.id}
+                          editing={editingId === m.id}
+                          editText={editText}
+                          onEditTextChange={setEditText}
+                          onOpenMenu={() => setOpenMenuId(m.id)}
+                          onCloseMenu={() => setOpenMenuId(null)}
+                          onStartEdit={() => handleStartEdit(m.id, m.text)}
+                          onSaveEdit={handleSaveEdit}
+                          onCancelEdit={handleCancelEdit}
+                          onDelete={() => handleDeleteMessage(m.id)}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
 
-          {/* Undo snackbar — WhatsApp/Gmail-style. Floats above the
+            {/* Undo snackbar — WhatsApp/Gmail-style. Floats above the
               composer for 5 seconds after a send, pinned to the
               VIEWPORT bottom of the scroll area (not the scrolled
               content) by living outside the scroll div. Auto-dismisses
               after the timer; after that the bubble can still be
               deleted via its kebab menu — undo just becomes implicit. */}
-          {undoableId && (
-            <div
-              className="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center px-4"
-              style={{ animation: "relay-toast-in 200ms ease-out" }}
-            >
+            {undoableId && (
               <div
-                className="pointer-events-auto flex items-center gap-3 rounded-full border px-4 py-2"
-                style={{
-                  borderColor: "var(--border)",
-                  backgroundColor: "var(--surface)",
-                  boxShadow: "0 10px 28px rgba(0,0,0,0.35)",
-                }}
+                className="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center px-4"
+                style={{ animation: "relay-toast-in 200ms ease-out" }}
               >
-                <Check size={12} style={{ color: BRAND_GREEN }} />
-                <span className="text-[12px]" style={{ color: "var(--text)" }}>
-                  Message sent
-                </span>
-                <button
-                  type="button"
-                  onClick={handleUndoSend}
-                  className="rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                  style={{ color: BRAND_GREEN }}
+                <div
+                  className="pointer-events-auto flex items-center gap-3 rounded-full border px-4 py-2"
+                  style={{
+                    borderColor: "var(--border)",
+                    backgroundColor: "var(--surface)",
+                    boxShadow: "0 10px 28px rgba(0,0,0,0.35)",
+                  }}
                 >
-                  Undo
-                </button>
+                  <Check size={12} style={{ color: BRAND_GREEN }} />
+                  <span
+                    className="text-[12px]"
+                    style={{ color: "var(--text)" }}
+                  >
+                    Message sent
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleUndoSend}
+                    className="rounded-full px-2 py-0.5 text-[11px] font-semibold tracking-wider uppercase transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                    style={{ color: BRAND_GREEN }}
+                  >
+                    Undo
+                  </button>
+                </div>
               </div>
-            </div>
-          )}
+            )}
           </div>
 
           {/* Composer — large card-style block matching the reference:
@@ -3890,7 +4555,10 @@ function ChatPanelStub({
               a live engineer is on a call. */}
           <div
             className="shrink-0 border-t px-3 py-5"
-            style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+            style={{
+              borderColor: "var(--border)",
+              backgroundColor: "var(--surface)",
+            }}
           >
             {voiceMsg && (
               <div
@@ -3932,7 +4600,11 @@ function ChatPanelStub({
                   // drafts. IME composition (Asian languages) gets a
                   // pass — committing a character via Enter shouldn't
                   // accidentally fire the send.
-                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                  if (
+                    e.key === "Enter" &&
+                    !e.shiftKey &&
+                    !e.nativeEvent.isComposing
+                  ) {
                     e.preventDefault();
                     handleSendDraft();
                   }
@@ -3951,27 +4623,51 @@ function ChatPanelStub({
                   (image/document/audio). */}
               {stubAttachments.length > 0 && (
                 <div className="mt-2 flex flex-col gap-1.5">
-                  <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+                  <div
+                    className="text-[10px] font-semibold tracking-wider uppercase"
+                    style={{ color: "var(--text-muted)" }}
+                  >
                     Will be delivered when your engineer joins
                   </div>
                   <ul className="flex flex-col gap-1">
                     {stubAttachments.map((a) => {
-                      const Icon = a.kind === "audio" ? Music : a.kind === "image" ? FileText : FileText;
+                      const Icon =
+                        a.kind === "audio"
+                          ? Music
+                          : a.kind === "image"
+                            ? FileText
+                            : FileText;
                       return (
                         <li
                           key={a.id}
                           className="flex items-center gap-2 rounded-md border px-2 py-1.5 text-[11.5px]"
-                          style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+                          style={{
+                            borderColor: "var(--border)",
+                            backgroundColor: "var(--surface)",
+                          }}
                         >
                           <span
                             className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md"
-                            style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
+                            style={{
+                              backgroundColor: BRAND_GREEN_SOFT,
+                              color: BRAND_GREEN,
+                            }}
                           >
                             <Icon size={11} />
                           </span>
-                          <span className="min-w-0 flex-1 truncate" style={{ color: "var(--text)" }}>{a.name}</span>
-                          <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
-                            {a.size < 1024 * 1024 ? `${Math.round(a.size / 1024)} KB` : `${(a.size / (1024 * 1024)).toFixed(1)} MB`}
+                          <span
+                            className="min-w-0 flex-1 truncate"
+                            style={{ color: "var(--text)" }}
+                          >
+                            {a.name}
+                          </span>
+                          <span
+                            className="text-[10px]"
+                            style={{ color: "var(--text-muted)" }}
+                          >
+                            {a.size < 1024 * 1024
+                              ? `${Math.round(a.size / 1024)} KB`
+                              : `${(a.size / (1024 * 1024)).toFixed(1)} MB`}
                           </span>
                           <button
                             type="button"
@@ -3995,10 +4691,19 @@ function ChatPanelStub({
                   pulse below is a transient "currently recording" tell
                   that's separate from error state. */}
               {recState === "recording" && (
-                <p className="mt-2 inline-flex items-center gap-1 text-[11px]" style={{ color: BRAND_GREEN }}>
+                <p
+                  className="mt-2 inline-flex items-center gap-1 text-[11px]"
+                  style={{ color: BRAND_GREEN }}
+                >
                   <span className="relative inline-flex h-1.5 w-1.5">
-                    <span className="absolute inset-0 inline-flex animate-ping rounded-full opacity-60" style={{ backgroundColor: BRAND_GREEN }} />
-                    <span className="relative h-1.5 w-1.5 rounded-full" style={{ backgroundColor: BRAND_GREEN }} />
+                    <span
+                      className="absolute inset-0 inline-flex animate-ping rounded-full opacity-60"
+                      style={{ backgroundColor: BRAND_GREEN }}
+                    />
+                    <span
+                      className="relative h-1.5 w-1.5 rounded-full"
+                      style={{ backgroundColor: BRAND_GREEN }}
+                    />
                   </span>
                   Recording — tap mic again to finish.
                 </p>
@@ -4035,15 +4740,27 @@ function ChatPanelStub({
                     function in the stub. Click to start/stop. */}
                 <button
                   type="button"
-                  onClick={voiceMode === "transcribing" ? stopTranscribe : () => void startTranscribe()}
+                  onClick={
+                    voiceMode === "transcribing"
+                      ? stopTranscribe
+                      : () => void startTranscribe()
+                  }
                   aria-label="Dictate"
-                  title={voiceMode === "transcribing" ? "Stop dictating" : "Dictate — voice to text"}
+                  title={
+                    voiceMode === "transcribing"
+                      ? "Stop dictating"
+                      : "Dictate — voice to text"
+                  }
                   className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors"
                   style={{
-                    color: voiceMode === "transcribing" ? BRAND_GREEN : "var(--text-muted)",
-                    backgroundColor: voiceMode === "transcribing"
-                      ? "color-mix(in srgb, var(--primary) 14%, transparent)"
-                      : "transparent",
+                    color:
+                      voiceMode === "transcribing"
+                        ? BRAND_GREEN
+                        : "var(--text-muted)",
+                    backgroundColor:
+                      voiceMode === "transcribing"
+                        ? "color-mix(in srgb, var(--primary) 14%, transparent)"
+                        : "transparent",
                     border: "1px solid var(--border)",
                   }}
                 >
@@ -4053,19 +4770,36 @@ function ChatPanelStub({
                     IDB. Same flush path as paperclip-staged files. */}
                 <button
                   type="button"
-                  onClick={recState === "recording" ? stopStubRecording : () => void startStubRecording()}
-                  aria-label={recState === "recording" ? "Stop recording" : "Record voice message"}
-                  title={recState === "recording"
-                    ? "Tap to finish recording"
-                    : "Record a voice message — it'll be delivered when your engineer joins."}
+                  onClick={
+                    recState === "recording"
+                      ? stopStubRecording
+                      : () => void startStubRecording()
+                  }
+                  aria-label={
+                    recState === "recording"
+                      ? "Stop recording"
+                      : "Record voice message"
+                  }
+                  title={
+                    recState === "recording"
+                      ? "Tap to finish recording"
+                      : "Record a voice message — it'll be delivered when your engineer joins."
+                  }
                   className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors"
                   style={{
-                    color: recState === "recording" ? "#fff" : "var(--text-muted)",
-                    backgroundColor: recState === "recording" ? BRAND_GREEN : "transparent",
+                    color:
+                      recState === "recording" ? "#fff" : "var(--text-muted)",
+                    backgroundColor:
+                      recState === "recording" ? BRAND_GREEN : "transparent",
                     border: "1px solid var(--border)",
                   }}
                 >
-                  <AudioLines size={14} className={recState === "recording" ? "animate-pulse" : undefined} />
+                  <AudioLines
+                    size={14}
+                    className={
+                      recState === "recording" ? "animate-pulse" : undefined
+                    }
+                  />
                 </button>
                 <div className="flex-1" />
                 <button
@@ -4113,7 +4847,12 @@ function EndedSessionReview({
   return (
     <div className="flex h-full w-full">
       <div className="flex min-w-0 flex-1 flex-col">
-        <SummaryPanel session={session} messages={messages} currentUserId={currentUserId} onClose={onBack} />
+        <SummaryPanel
+          session={session}
+          messages={messages}
+          currentUserId={currentUserId}
+          onClose={onBack}
+        />
       </div>
       <ChatPanelStub
         sidebarCollapsed={chatCollapsed}
@@ -4158,20 +4897,33 @@ function PastSessionReview({
       const sb = createClient();
       const [{ data: r }, { data: m }] = await Promise.all([
         sb.from("guest_calls").select("*").eq("id", sessionId).maybeSingle(),
-        sb.from("guest_messages").select("*").eq("guest_call_id", sessionId).order("created_at"),
+        sb
+          .from("guest_messages")
+          .select("*")
+          .eq("guest_call_id", sessionId)
+          .order("created_at"),
       ]);
       if (cancelled) return;
       setRow((r as GuestCall | null) ?? null);
-      setMsgs(((m ?? []) as GuestMessage[]));
+      setMsgs((m ?? []) as GuestMessage[]);
       setLoading(false);
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [sessionId]);
 
   if (loading || !row) {
     return (
-      <div className="flex h-full items-center justify-center" style={{ backgroundColor: "var(--surface)" }}>
-        <Loader2 size={18} className="animate-spin" style={{ color: BRAND_GREEN }} />
+      <div
+        className="flex h-full items-center justify-center"
+        style={{ backgroundColor: "var(--surface)" }}
+      >
+        <Loader2
+          size={18}
+          className="animate-spin"
+          style={{ color: BRAND_GREEN }}
+        />
       </div>
     );
   }
@@ -4179,7 +4931,12 @@ function PastSessionReview({
   return (
     <div className="flex h-full w-full">
       <div className="flex min-w-0 flex-1 flex-col">
-        <SummaryPanel session={row} messages={msgs} onClose={onClose} currentUserId={currentUserId} />
+        <SummaryPanel
+          session={row}
+          messages={msgs}
+          onClose={onClose}
+          currentUserId={currentUserId}
+        />
       </div>
       <ChatPanelStub
         sidebarCollapsed={chatCollapsed}
@@ -4205,7 +4962,6 @@ function ReadOnlyChatPane({
   messages: GuestMessage[];
   session: GuestCall;
 }) {
-
   const isSupervisor = useIsSupervisor();
   const meetingEnded = new Map<string, GuestMessage>();
   const meetingSummary = new Map<string, GuestMessage>();
@@ -4235,7 +4991,11 @@ function ReadOnlyChatPane({
       } else if (m.body && isAiSummaryMessageBody(m.body) && lastEndedStartId) {
         meetingSummary.set(lastEndedStartId, m);
         suppressedSummaryIds.add(m.id);
-      } else if (m.body && m.body.includes("Recording available") && lastEndedStartId) {
+      } else if (
+        m.body &&
+        m.body.includes("Recording available") &&
+        lastEndedStartId
+      ) {
         meetingRecording.set(lastEndedStartId, m);
         suppressedRecordingIds.add(m.id);
       }
@@ -4243,23 +5003,36 @@ function ReadOnlyChatPane({
   }
 
   return (
-    <section className="flex h-full flex-col" style={{ backgroundColor: "var(--surface)" }}>
+    <section
+      className="flex h-full flex-col"
+      style={{ backgroundColor: "var(--surface)" }}
+    >
       <div className="hide-scrollbar flex-1 overflow-y-auto px-4 py-6">
         <div className="mx-auto w-full max-w-3xl">
           {messages.length === 0 ? (
-            <p className="py-12 text-center text-sm" style={{ color: "var(--text-muted)" }}>
+            <p
+              className="py-12 text-center text-sm"
+              style={{ color: "var(--text-muted)" }}
+            >
               No messages in this session.
             </p>
           ) : (
             <div className="space-y-3">
               {messages.flatMap((m) => {
                 if (isSupervisorOnlyMessage(m) && !isSupervisor) return [];
-                if (m.sender_kind === "system" && (m.body ?? "").includes("Zoom meeting started")) {
+                if (
+                  m.sender_kind === "system" &&
+                  (m.body ?? "").includes("Zoom meeting started")
+                ) {
                   const ended = meetingEnded.get(m.id) ?? null;
                   const summary = meetingSummary.get(m.id) ?? null;
                   const recording = meetingRecording.get(m.id) ?? null;
                   const durationSec = ended
-                    ? Math.floor((new Date(ended.created_at).getTime() - new Date(m.created_at).getTime()) / 1000)
+                    ? Math.floor(
+                        (new Date(ended.created_at).getTime() -
+                          new Date(m.created_at).getTime()) /
+                          1000
+                      )
                     : undefined;
                   // All meetings in a past session are over by definition,
                   // so the card always renders in its ended state.
@@ -4269,17 +5042,28 @@ function ReadOnlyChatPane({
                       active={false}
                       durationSec={durationSec}
                       summaryBody={summary?.body ?? null}
-                      recordingBody={isSupervisor ? recording?.body ?? null : null}
+                      recordingBody={
+                        isSupervisor ? (recording?.body ?? null) : null
+                      }
                     />,
                   ];
                 }
-                if (m.sender_kind === "system" && suppressedEndedIds.has(m.id)) {
+                if (
+                  m.sender_kind === "system" &&
+                  suppressedEndedIds.has(m.id)
+                ) {
                   return [];
                 }
-                if (m.sender_kind === "system" && suppressedSummaryIds.has(m.id)) {
+                if (
+                  m.sender_kind === "system" &&
+                  suppressedSummaryIds.has(m.id)
+                ) {
                   return [];
                 }
-                if (m.sender_kind === "system" && suppressedRecordingIds.has(m.id)) {
+                if (
+                  m.sender_kind === "system" &&
+                  suppressedRecordingIds.has(m.id)
+                ) {
                   return [];
                 }
                 return [<Message key={m.id} message={m} />];
@@ -4288,7 +5072,6 @@ function ReadOnlyChatPane({
           )}
         </div>
       </div>
-
     </section>
   );
 }
@@ -4311,9 +5094,15 @@ function SummaryPanel({
   return (
     <section
       className="flex h-full flex-col border-l"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface)",
+      }}
     >
-      <div className="flex items-center gap-2 border-b px-4 py-3" style={{ borderColor: "var(--border)" }}>
+      <div
+        className="flex items-center gap-2 border-b px-4 py-3"
+        style={{ borderColor: "var(--border)" }}
+      >
         {onClose && (
           <button
             onClick={onClose}
@@ -4325,13 +5114,23 @@ function SummaryPanel({
             Back
           </button>
         )}
-        <Sparkles size={12} style={{ color: BRAND_GREEN, marginLeft: onClose ? 4 : 0 }} />
-        <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text)" }}>
+        <Sparkles
+          size={12}
+          style={{ color: BRAND_GREEN, marginLeft: onClose ? 4 : 0 }}
+        />
+        <span
+          className="text-xs font-semibold tracking-wider uppercase"
+          style={{ color: "var(--text)" }}
+        >
           Summary
         </span>
         <div className="flex-1" />
       </div>
-      <SummaryView session={session} messages={messages} currentUserId={currentUserId} />
+      <SummaryView
+        session={session}
+        messages={messages}
+        currentUserId={currentUserId}
+      />
     </section>
   );
 }
@@ -4343,12 +5142,16 @@ function SummaryPanel({
 //   2. Or create a new project by typing its name.
 // First-time users see only the input; returning users get both.
 function ProjectPickerPane({
-  pendingText, projects, onConfirmNew, onConfirmPick, onCancel,
+  pendingText,
+  projects,
+  onConfirmNew,
+  onConfirmPick,
+  onCancel,
 }: {
   pendingText: string | null;
   projects: Project[];
-  onConfirmNew:  (name: string) => Promise<void>;
-  onConfirmPick: (id: string)   => Promise<void>;
+  onConfirmNew: (name: string) => Promise<void>;
+  onConfirmPick: (id: string) => Promise<void>;
   onCancel: () => void;
 }) {
   const [name, setName] = useState("");
@@ -4356,7 +5159,9 @@ function ProjectPickerPane({
   const [err, setErr] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { inputRef.current?.focus(); }, []);
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
 
   const handleCreate = async () => {
     if (!name.trim() || busy) return;
@@ -4365,7 +5170,9 @@ function ProjectPickerPane({
     try {
       await onConfirmNew(name.trim());
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Something went wrong — try again.");
+      setErr(
+        e instanceof Error ? e.message : "Something went wrong — try again."
+      );
       setBusy(false);
     }
   };
@@ -4377,7 +5184,9 @@ function ProjectPickerPane({
     try {
       await onConfirmPick(id);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Something went wrong — try again.");
+      setErr(
+        e instanceof Error ? e.message : "Something went wrong — try again."
+      );
       setBusy(false);
     }
   };
@@ -4392,7 +5201,7 @@ function ProjectPickerPane({
       {/* Cancel */}
       <button
         onClick={onCancel}
-        className="absolute right-4 top-4 rounded-md p-1 opacity-40 transition-opacity hover:opacity-80"
+        className="absolute top-4 right-4 rounded-md p-1 opacity-40 transition-opacity hover:opacity-80"
         style={{ color: "var(--text-muted)" }}
         aria-label="Cancel"
         title="Cancel"
@@ -4403,7 +5212,10 @@ function ProjectPickerPane({
       <div className="w-full max-w-md">
         {/* Header */}
         <div className="mb-4 flex items-center gap-3">
-          <span className="h-3 w-3 rounded-full" style={{ backgroundColor: BRAND_GREEN }} />
+          <span
+            className="h-3 w-3 rounded-full"
+            style={{ backgroundColor: BRAND_GREEN }}
+          />
           <h2
             className="text-3xl font-semibold tracking-tight sm:text-[36px]"
             style={{ color: "var(--text)", letterSpacing: "-0.02em" }}
@@ -4420,7 +5232,10 @@ function ProjectPickerPane({
         {/* Existing projects */}
         {hasProjects && (
           <>
-            <div className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text-muted)" }}>
+            <div
+              className="mb-2 px-1 text-[11px] font-semibold tracking-[0.08em] uppercase"
+              style={{ color: "var(--text-muted)" }}
+            >
               Your projects
             </div>
             <div
@@ -4432,14 +5247,23 @@ function ProjectPickerPane({
                   key={p.id}
                   onClick={() => void handlePick(p.id)}
                   disabled={busy}
-                  className="flex w-full items-center gap-2.5 border-b px-3 py-2.5 text-left transition-colors last:border-b-0 hover:bg-black/[0.03] dark:hover:bg-white/[0.03] disabled:opacity-50"
+                  className="flex w-full items-center gap-2.5 border-b px-3 py-2.5 text-left transition-colors last:border-b-0 hover:bg-black/[0.03] disabled:opacity-50 dark:hover:bg-white/[0.03]"
                   style={{ borderColor: "var(--border)" }}
                 >
-                  <Folder size={14} style={{ color: BRAND_GREEN, flexShrink: 0 }} />
-                  <span className="min-w-0 flex-1 truncate text-sm" style={{ color: "var(--text)" }}>
+                  <Folder
+                    size={14}
+                    style={{ color: BRAND_GREEN, flexShrink: 0 }}
+                  />
+                  <span
+                    className="min-w-0 flex-1 truncate text-sm"
+                    style={{ color: "var(--text)" }}
+                  >
                     {p.name}
                   </span>
-                  <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+                  <span
+                    className="text-[10px]"
+                    style={{ color: "var(--text-muted)" }}
+                  >
                     →
                   </span>
                 </button>
@@ -4448,11 +5272,20 @@ function ProjectPickerPane({
 
             {/* Divider */}
             <div className="mb-4 flex items-center gap-3">
-              <div className="flex-1 border-t" style={{ borderColor: "var(--border)" }} />
-              <span className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--text-muted)" }}>
+              <div
+                className="flex-1 border-t"
+                style={{ borderColor: "var(--border)" }}
+              />
+              <span
+                className="text-[10px] font-semibold tracking-[0.12em] uppercase"
+                style={{ color: "var(--text-muted)" }}
+              >
                 or create new
               </span>
-              <div className="flex-1 border-t" style={{ borderColor: "var(--border)" }} />
+              <div
+                className="flex-1 border-t"
+                style={{ borderColor: "var(--border)" }}
+              />
             </div>
           </>
         )}
@@ -4472,37 +5305,52 @@ function ProjectPickerPane({
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void handleCreate(); }
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                void handleCreate();
+              }
             }}
             disabled={busy}
             placeholder="e.g. Payment API, Login bug, Deploy issue…"
-            className="h-12 w-full rounded-2xl bg-transparent pl-4 pr-12 text-sm outline-none disabled:cursor-not-allowed"
+            className="h-12 w-full rounded-2xl bg-transparent pr-12 pl-4 text-sm outline-none disabled:cursor-not-allowed"
             style={{ color: "var(--text)" }}
           />
           <button
             onClick={() => void handleCreate()}
             disabled={!name.trim() || busy}
-            className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-xl transition-opacity hover:opacity-90 disabled:opacity-40"
+            className="absolute top-1/2 right-2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-xl transition-opacity hover:opacity-90 disabled:opacity-40"
             style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
           >
-            {busy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+            {busy ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Send size={14} />
+            )}
           </button>
         </div>
 
         {err && (
-          <p className="mt-2 text-[12px]" style={{ color: "var(--accent-red, #e05c4b)" }}>
+          <p
+            className="mt-2 text-[12px]"
+            style={{ color: "var(--accent-red, #e05c4b)" }}
+          >
             {err}
           </p>
         )}
 
-        <p className="mt-3 text-center text-[10px]" style={{ color: "var(--text-muted)" }}>
+        <p
+          className="mt-3 text-center text-[10px]"
+          style={{ color: "var(--text-muted)" }}
+        >
           Press Enter to create
         </p>
 
         {/* Carry-forward draft from composer */}
         {pendingText && (
-          <p className="mt-5 rounded-xl border px-3 py-2 text-[11px] italic"
-            style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
+          <p
+            className="mt-5 rounded-xl border px-3 py-2 text-[11px] italic"
+            style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+          >
             Your message: &ldquo;{pendingText}&rdquo;
           </p>
         )}
@@ -4511,15 +5359,21 @@ function ProjectPickerPane({
   );
 }
 
-
 // ── Floating status chip (top-right) ───────────────────────────────────────
 // Owns its own session timer so the 1-second tick stays local to this
 // subtree instead of cascading from RoomClient down to Sidebar/MainPane/etc.
 const FloatingStatus = memo(function FloatingStatus({
-  session, entitlement, accepted, onEnd, onJoin,
+  session,
+  entitlement,
+  accepted,
+  onEnd,
+  onJoin,
 }: {
   session: GuestCall | null;
-  entitlement: { free_consumed_at: string | null; paid_minutes_remaining: number };
+  entitlement: {
+    free_consumed_at: string | null;
+    paid_minutes_remaining: number;
+  };
   accepted: boolean;
   onEnd: (reason?: string) => Promise<void>;
   /** Same action as the in-chat "Join Zoom call" button — stamps joined + opens Zoom. */
@@ -4534,15 +5388,18 @@ const FloatingStatus = memo(function FloatingStatus({
     !!session &&
     !!session.assigned_at &&
     !["ended", "cancelled", "abandoned", "queued"].includes(session.status);
-  const showStatus = !!session && !["ended","cancelled","abandoned"].includes(session.status);
+  const showStatus =
+    !!session && !["ended", "cancelled", "abandoned"].includes(session.status);
   // End button: visible from the moment the engineer claims the session.
   // Chat is live from 'assigned' onward (the timer's anchor too — see
   // useFreeSessionLifecycle), so the customer should be able to end at
   // any point during an active session — they don't have to first click
   // Join in the Zoom card.
-  const showEnd = !!session && [
-    "assigned", "joining", "live", "grace", "ending", "expired_free",
-  ].includes(session.status);
+  const showEnd =
+    !!session &&
+    ["assigned", "joining", "live", "grace", "ending", "expired_free"].includes(
+      session.status
+    );
   void accepted; // no longer gates End; kept for future re-use if needed
   if (!showTimer && !showStatus && !showEnd) return null;
 
@@ -4554,7 +5411,7 @@ const FloatingStatus = memo(function FloatingStatus({
        *  by it. A subtle bottom border keeps it visually separate from the
        *  content without needing a backdrop blur. */}
       <div
-        className="flex shrink-0 items-center gap-3 border-b py-2 pl-16 pr-4 md:px-4"
+        className="flex shrink-0 items-center gap-3 border-b py-2 pr-4 pl-16 md:px-4"
         style={{
           backgroundColor: "var(--surface)",
           borderColor: "var(--border)",
@@ -4566,7 +5423,10 @@ const FloatingStatus = memo(function FloatingStatus({
             fixed hamburger button at top-left. */}
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <h2 className="truncate font-serif text-base font-medium text-[var(--text)]">
-            {session?.ai_summary_title || (session?.status === "queued" ? "Finding your engineer…" : "Session")}
+            {session?.ai_summary_title ||
+              (session?.status === "queued"
+                ? "Finding your engineer…"
+                : "Session")}
           </h2>
         </div>
 
@@ -4580,7 +5440,11 @@ const FloatingStatus = memo(function FloatingStatus({
         )}
 
         {showTimer && showStatus && (
-          <span aria-hidden className="h-5 w-px" style={{ backgroundColor: "var(--border)" }} />
+          <span
+            aria-hidden
+            className="h-5 w-px"
+            style={{ backgroundColor: "var(--border)" }}
+          />
         )}
 
         {showStatus && session && <CompactStatus session={session} />}
@@ -4590,7 +5454,11 @@ const FloatingStatus = memo(function FloatingStatus({
             minted the meeting; otherwise tooltipped as waiting. */}
         {showStatus && session && (
           <>
-            <span aria-hidden className="h-5 w-px" style={{ backgroundColor: "var(--border)" }} />
+            <span
+              aria-hidden
+              className="h-5 w-px"
+              style={{ backgroundColor: "var(--border)" }}
+            />
             <CallHeaderActions session={session} onJoin={onJoin} />
           </>
         )}
@@ -4598,7 +5466,7 @@ const FloatingStatus = memo(function FloatingStatus({
         {showEnd && (
           <button
             onClick={() => setConfirmEnd(true)}
-            className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold whitespace-nowrap text-white shadow-sm transition-opacity hover:opacity-90"
             style={{ backgroundColor: "var(--risk)" }}
           >
             <PhoneOff size={12} />
@@ -4610,7 +5478,10 @@ const FloatingStatus = memo(function FloatingStatus({
       {confirmEnd && (
         <ConfirmEndModal
           onCancel={() => setConfirmEnd(false)}
-          onConfirm={async () => { setConfirmEnd(false); await onEnd(); }}
+          onConfirm={async () => {
+            setConfirmEnd(false);
+            await onEnd();
+          }}
         />
       )}
     </>
@@ -4622,16 +5493,24 @@ const FloatingStatus = memo(function FloatingStatus({
 // room-w.png mock as the most obvious header control. The call button is
 // enabled the moment the engineer mints a Zoom meeting; before that it's
 // tooltipped as waiting so the user knows what to expect.
-function CallHeaderActions({ session, onJoin }: { session: GuestCall; onJoin?: () => void | Promise<void> }) {
+function CallHeaderActions({
+  session,
+  onJoin,
+}: {
+  session: GuestCall;
+  onJoin?: () => void | Promise<void>;
+}) {
   const launchCall = useLaunchCall();
   // With Video SDK enabled we don't need zoom_meeting_id — the topic is
   // derived from session.id by zoom-video-sdk-token. Still gate on isLiveish
   // so the button is only visible/enabled once the matcher has assigned
   // someone.
   const hasZoom = !!session.zoom_meeting_id;
-  const isLiveish = ["assigned", "joining", "live", "grace"].includes(session.status);
+  const isLiveish = ["assigned", "joining", "live", "grace"].includes(
+    session.status
+  );
   const canJoinVideoSdk = !!launchCall && isLiveish;
-  const canJoinLegacy   = hasZoom && isLiveish;
+  const canJoinLegacy = hasZoom && isLiveish;
   const canJoin = canJoinVideoSdk || canJoinLegacy;
   const tooltip = canJoin
     ? "Join the call"
@@ -4691,33 +5570,54 @@ function CallHeaderActions({ session, onJoin }: { session: GuestCall; onJoin?: (
 // consumed OR a paid extension is stamped on this session — both cases
 // route to paid_elapsed.
 function LiveTimer({
-  joinedAt, freeMinutes, isFreeSession, paidExtensionAt,
+  joinedAt,
+  freeMinutes,
+  isFreeSession,
+  paidExtensionAt,
 }: {
   joinedAt: string | null;
   freeMinutes: number;
   isFreeSession: boolean;
   paidExtensionAt: string | null;
 }) {
-  const timer = useSessionTimer({ joinedAt, freeMinutes, isFreeSession, paidExtensionAt });
+  const timer = useSessionTimer({
+    joinedAt,
+    freeMinutes,
+    isFreeSession,
+    paidExtensionAt,
+  });
   if (timer.mode === "hidden") return null;
 
   const isFree = timer.mode === "free_countdown";
   const color = isFree
-    ? (timer.isExpired ? CRIT_RED : timer.isWarning ? URGENT_AMBER : BRAND_GREEN)
+    ? timer.isExpired
+      ? CRIT_RED
+      : timer.isWarning
+        ? URGENT_AMBER
+        : BRAND_GREEN
     : BRAND_GREEN;
   const suffix = isFree
-    ? (timer.isExpired ? "Expired" : timer.isWarning ? "left" : "free")
+    ? timer.isExpired
+      ? "Expired"
+      : timer.isWarning
+        ? "left"
+        : "free"
     : "paid";
 
   return (
-    <span className="inline-flex shrink-0 items-baseline gap-1.5 whitespace-nowrap text-xs font-medium">
+    <span className="inline-flex shrink-0 items-baseline gap-1.5 text-xs font-medium whitespace-nowrap">
       <span
-        className="whitespace-nowrap font-semibold tabular-nums"
+        className="font-semibold whitespace-nowrap tabular-nums"
         style={{ fontFamily: "var(--font-inter)", color, fontSize: 13 }}
       >
         {timer.display}
       </span>
-      <span className="whitespace-nowrap" style={{ color: "var(--text-muted)" }}>{suffix}</span>
+      <span
+        className="whitespace-nowrap"
+        style={{ color: "var(--text-muted)" }}
+      >
+        {suffix}
+      </span>
     </span>
   );
 }
@@ -4727,22 +5627,37 @@ function LiveTimer({
 function CompactStatus({ session }: { session: GuestCall }) {
   const cfg = pillConfig(session.status, session.urgency);
   return (
-    <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-medium uppercase tracking-wider" style={{ color: cfg.fg }}>
+    <span
+      className="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium tracking-wider whitespace-nowrap uppercase"
+      style={{ color: cfg.fg }}
+    >
       <span className="relative flex h-2 w-2 shrink-0">
         {cfg.pulse && (
           <span
             className="absolute inset-0 rounded-full opacity-70"
-            style={{ backgroundColor: cfg.fg, animation: "ping 1.4s cubic-bezier(0,0,0.2,1) infinite" }}
+            style={{
+              backgroundColor: cfg.fg,
+              animation: "ping 1.4s cubic-bezier(0,0,0.2,1) infinite",
+            }}
           />
         )}
-        <span className="relative h-2 w-2 rounded-full" style={{ backgroundColor: cfg.fg }} />
+        <span
+          className="relative h-2 w-2 rounded-full"
+          style={{ backgroundColor: cfg.fg }}
+        />
       </span>
       <span className="whitespace-nowrap">{cfg.label}</span>
     </span>
   );
 }
 
-function ConfirmEndModal({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => Promise<void> }) {
+function ConfirmEndModal({
+  onCancel,
+  onConfirm,
+}: {
+  onCancel: () => void;
+  onConfirm: () => Promise<void>;
+}) {
   const [busy, setBusy] = useState(false);
   return (
     <Modal
@@ -4783,26 +5698,78 @@ function ConfirmEndModal({ onCancel, onConfirm }: { onCancel: () => void; onConf
   );
 }
 
-
 function pillConfig(status: SessionStatus, urgency: Urgency) {
   if (status === "abandoned" || status === "cancelled") {
-    return { label: "Closed", bg: "color-mix(in srgb, var(--text) 8%, transparent)", fg: "var(--text-muted)", pulse: false };
+    return {
+      label: "Closed",
+      bg: "color-mix(in srgb, var(--text) 8%, transparent)",
+      fg: "var(--text-muted)",
+      pulse: false,
+    };
   }
   if (status === "ended") {
-    return { label: "Ended", bg: "color-mix(in srgb, var(--text) 8%, transparent)", fg: "var(--text-muted)", pulse: false };
+    return {
+      label: "Ended",
+      bg: "color-mix(in srgb, var(--text) 8%, transparent)",
+      fg: "var(--text-muted)",
+      pulse: false,
+    };
   }
-  if (urgency === "critical") return { label: "Critical",        bg: CRIT_RED_SOFT,    fg: CRIT_RED,     pulse: true };
-  if (urgency === "urgent")   return { label: "Urgent",          bg: URGENT_AMBER_SOFT, fg: URGENT_AMBER, pulse: true };
+  if (urgency === "critical")
+    return { label: "Critical", bg: CRIT_RED_SOFT, fg: CRIT_RED, pulse: true };
+  if (urgency === "urgent")
+    return {
+      label: "Urgent",
+      bg: URGENT_AMBER_SOFT,
+      fg: URGENT_AMBER,
+      pulse: true,
+    };
   // "Connecting" = pre-claim queue wait. From assigned onwards the session
   // is "Live" (chat works, timer ticking), then "Joining call" while Zoom
   // is mounting, then "On call" once both are in the meeting.
-  if (status === "queued")    return { label: "Connecting",      bg: BRAND_GREEN_SOFT,  fg: BRAND_GREEN,  pulse: true };
-  if (status === "assigned")  return { label: "Live",            bg: BRAND_GREEN_SOFT,  fg: BRAND_GREEN,  pulse: true };
-  if (status === "joining")   return { label: "Joining call",    bg: BRAND_GREEN_SOFT,  fg: BRAND_GREEN,  pulse: true };
-  if (status === "live")      return { label: "On call",         bg: BRAND_GREEN_SOFT,  fg: BRAND_GREEN,  pulse: true };
-  if (status === "grace")     return { label: "Reconnecting",    bg: URGENT_AMBER_SOFT, fg: URGENT_AMBER, pulse: true };
-  if (status === "ending")    return { label: "Wrapping up",     bg: BRAND_GREEN_SOFT,  fg: BRAND_GREEN,  pulse: true };
-  return { label: status,                                          bg: BRAND_GREEN_SOFT,  fg: BRAND_GREEN,  pulse: false };
+  if (status === "queued")
+    return {
+      label: "Connecting",
+      bg: BRAND_GREEN_SOFT,
+      fg: BRAND_GREEN,
+      pulse: true,
+    };
+  if (status === "assigned")
+    return {
+      label: "Live",
+      bg: BRAND_GREEN_SOFT,
+      fg: BRAND_GREEN,
+      pulse: true,
+    };
+  if (status === "joining")
+    return {
+      label: "Joining call",
+      bg: BRAND_GREEN_SOFT,
+      fg: BRAND_GREEN,
+      pulse: true,
+    };
+  if (status === "live")
+    return {
+      label: "On call",
+      bg: BRAND_GREEN_SOFT,
+      fg: BRAND_GREEN,
+      pulse: true,
+    };
+  if (status === "grace")
+    return {
+      label: "Reconnecting",
+      bg: URGENT_AMBER_SOFT,
+      fg: URGENT_AMBER,
+      pulse: true,
+    };
+  if (status === "ending")
+    return {
+      label: "Wrapping up",
+      bg: BRAND_GREEN_SOFT,
+      fg: BRAND_GREEN,
+      pulse: true,
+    };
+  return { label: status, bg: BRAND_GREEN_SOFT, fg: BRAND_GREEN, pulse: false };
 }
 
 // ── Sidebar (claude.ai style, collapsible) ────────────────────────────────
@@ -4851,16 +5818,43 @@ type Project = {
 };
 
 type ProjectGroup = {
-  key: string;           // projectId or "general"
-  name: string;          // display name
+  key: string; // projectId or "general"
+  name: string; // display name
   sessions: PastSession[];
-  latestDate: number;    // ms timestamp — used for sorting
+  latestDate: number; // ms timestamp — used for sorting
   completionStatus: "active" | "completed" | "archived";
 };
 
 const Sidebar = memo(function Sidebar({
-  email, customerUserId, isGuest, displayName, session, entitlement, employment, viewingPastId, projects,
-  selectedProjectId, onViewPast, onNewSession, onNewChat, onStartInProject, onRenameProject, onStartNewProject, onCreateProjectWithMetadata, onSelectProject, onWalletClick, onOpenProfile, onOpenBilling, onOpenLegal, onGoHome, onPrepareSession, draftsTick, pastRefreshTick, onDeleteProject, onMarkProjectComplete, onPickerToast,
+  email,
+  customerUserId,
+  isGuest,
+  displayName,
+  session,
+  entitlement,
+  employment,
+  viewingPastId,
+  projects,
+  selectedProjectId,
+  onViewPast,
+  onNewSession,
+  onNewChat,
+  onStartInProject,
+  onRenameProject,
+  onStartNewProject,
+  onCreateProjectWithMetadata,
+  onSelectProject,
+  onWalletClick,
+  onOpenProfile,
+  onOpenBilling,
+  onOpenLegal,
+  onGoHome,
+  onPrepareSession,
+  draftsTick,
+  pastRefreshTick,
+  onDeleteProject,
+  onMarkProjectComplete,
+  onPickerToast,
 }: {
   email: string;
   customerUserId: string | null;
@@ -4873,7 +5867,11 @@ const Sidebar = memo(function Sidebar({
    *  of the raw email handle. */
   displayName: string;
   session: GuestCall | null;
-  entitlement: { free_consumed_at: string | null; free_minutes_used: number; paid_minutes_remaining: number };
+  entitlement: {
+    free_consumed_at: string | null;
+    free_minutes_used: number;
+    paid_minutes_remaining: number;
+  };
   employment: EmployeeInfo | null;
   viewingPastId: string | null;
   projects: Project[];
@@ -4888,7 +5886,10 @@ const Sidebar = memo(function Sidebar({
   onNewChat: () => void;
   /** Inline "+" inside a project row — starts a session bound to that
    *  exact project, skipping the picker. */
-  onStartInProject: (projectId: string | null, preferredEngineerId?: string) => void;
+  onStartInProject: (
+    projectId: string | null,
+    preferredEngineerId?: string
+  ) => void;
   /** Inline rename on a project row. Updates projects.name + any active
    *  guest_calls.project_name in flight. */
   onRenameProject: (projectId: string, newName: string) => Promise<void>;
@@ -4986,7 +5987,9 @@ const Sidebar = memo(function Sidebar({
   // Quote-request flow: null = closed; "golive" = ship-it lead;
   // "maintain" = ongoing maintenance/enhancement lead. Both kinds use
   // the same QuoteRequestModal component, distinguished by the prop.
-  const [quoteFlow, setQuoteFlow] = useState<"golive" | "maintain" | null>(null);
+  const [quoteFlow, setQuoteFlow] = useState<"golive" | "maintain" | null>(
+    null
+  );
   const [past, setPast] = useState<PastSession[]>([]);
   // Global search — filters both project names and session titles/agents.
   const [searchQuery, setSearchQuery] = useState("");
@@ -5003,7 +6006,9 @@ const Sidebar = memo(function Sidebar({
   //   pinnedIds — session ids the user has pinned. Persisted to
   //     localStorage so the choice survives reloads; promoting to Supabase
   //     is a follow-up that needs a guest_calls.pinned_at column.
-  const [statusFilter, setStatusFilter] = useState<"active" | "all" | "completed">("all");
+  const [statusFilter, setStatusFilter] = useState<
+    "active" | "all" | "completed"
+  >("all");
   const [groupBy, setGroupBy] = useState<"project" | "date">("project");
   const [sortBy, setSortBy] = useState<"recent" | "oldest" | "title">("recent");
   // Sort/filter popover open state — single boolean. Click the SlidersHorizontal
@@ -5051,7 +6056,7 @@ const Sidebar = memo(function Sidebar({
     try {
       window.localStorage.setItem(
         "relay_pinned_session_ids",
-        JSON.stringify([...pinnedIds]),
+        JSON.stringify([...pinnedIds])
       );
     } catch {
       /* localStorage unavailable (private window, quota, etc.) — silent */
@@ -5087,44 +6092,61 @@ const Sidebar = memo(function Sidebar({
   // Schedule-engineer modal target. When set, the modal mounts and shows
   // open 30-min slots for the engineer; null = closed. Driven by the
   // "Schedule" button on Offline engineers in the picker.
-  const [scheduleTarget, setScheduleTarget] = useState<
-    null | { engineerUserId: string; engineerName: string; projectId: string | null }
-  >(null);
+  const [scheduleTarget, setScheduleTarget] = useState<null | {
+    engineerUserId: string;
+    engineerName: string;
+    projectId: string | null;
+  }>(null);
   // Mode toggle for the form steps. "connect" (default) = submit creates
   // project + rings engineer. "create-only" = submit only creates the
   // project (called from the "+ Create New Project" button). The form
   // UI is identical; only the submit handler + button label differ.
-  const [connectFlowMode, setConnectFlowMode] = useState<"connect" | "create-only">("connect");
+  const [connectFlowMode, setConnectFlowMode] = useState<
+    "connect" | "create-only"
+  >("connect");
   // Live availability for the engineers shown in the picker, keyed by
   // engineerId. Resolved server-side (RLS blocks a customer from reading other
   // engineers' presence) and polled while the picker is open — replaces the
   // old i-based dummy availability that wrongly showed online engineers as
   // Busy/Offline.
-  const [pickerPresence, setPickerPresence] = useState<Record<string, "available" | "busy" | "offline">>({});
+  const [pickerPresence, setPickerPresence] = useState<
+    Record<string, "available" | "busy" | "offline">
+  >({});
 
   // Distinct engineers for the picker (most-recent first), carrying each
   // engineer's user_id so Connect can ring exactly that engineer. engineerId
   // is taken from the most recent session that actually HAS a claimed_by, so a
   // newer alias-only/legacy row doesn't wipe out a known id.
-  const pickerEngineers = useMemo<{ name: string; lastDate: string; engineerId: string | null }[]>(() => {
+  const pickerEngineers = useMemo<
+    { name: string; lastDate: string; engineerId: string | null }[]
+  >(() => {
     if (!pickerProjectId) return [];
-    const seen = new Map<string, { name: string; lastDate: string; engineerId: string | null }>();
+    const seen = new Map<
+      string,
+      { name: string; lastDate: string; engineerId: string | null }
+    >();
     const consider = (s: PastSession) => {
       if (!s.agent) return;
       const existing = seen.get(s.agent);
       if (!existing) {
-        seen.set(s.agent, { name: s.agent, lastDate: s.date, engineerId: s.engineerId });
+        seen.set(s.agent, {
+          name: s.agent,
+          lastDate: s.date,
+          engineerId: s.engineerId,
+        });
         return;
       }
-      if (new Date(s.date) > new Date(existing.lastDate)) existing.lastDate = s.date;
+      if (new Date(s.date) > new Date(existing.lastDate))
+        existing.lastDate = s.date;
       // Keep the first non-null id we encounter (rows are newest-first).
-      if (!existing.engineerId && s.engineerId) existing.engineerId = s.engineerId;
+      if (!existing.engineerId && s.engineerId)
+        existing.engineerId = s.engineerId;
     };
     for (const s of past) if (s.projectId === pickerProjectId) consider(s);
     // Brand-new project with no history yet → fall back to all recent engineers.
     if (seen.size === 0) for (const s of past) consider(s);
     return Array.from(seen.values()).sort(
-      (a, b) => new Date(b.lastDate).getTime() - new Date(a.lastDate).getTime(),
+      (a, b) => new Date(b.lastDate).getTime() - new Date(a.lastDate).getTime()
     );
   }, [past, pickerProjectId]);
 
@@ -5132,8 +6154,13 @@ const Sidebar = memo(function Sidebar({
   // engineerPicker step. Immediate fetch on open, then every 12s.
   useEffect(() => {
     if (connectFlow !== "engineerPicker") return;
-    const ids = pickerEngineers.map((e) => e.engineerId).filter((x): x is string => !!x);
-    if (ids.length === 0) { setPickerPresence({}); return; }
+    const ids = pickerEngineers
+      .map((e) => e.engineerId)
+      .filter((x): x is string => !!x);
+    if (ids.length === 0) {
+      setPickerPresence({});
+      return;
+    }
     let cancelled = false;
     const poll = async () => {
       try {
@@ -5143,13 +6170,20 @@ const Sidebar = memo(function Sidebar({
           body: JSON.stringify({ engineerIds: ids }),
         });
         if (!res.ok) return;
-        const json = (await res.json()) as { presence?: Record<string, "available" | "busy" | "offline"> };
+        const json = (await res.json()) as {
+          presence?: Record<string, "available" | "busy" | "offline">;
+        };
         if (!cancelled && json.presence) setPickerPresence(json.presence);
-      } catch { /* keep last-known presence on a transient failure */ }
+      } catch {
+        /* keep last-known presence on a transient failure */
+      }
     };
     void poll();
     const t = setInterval(poll, 12_000);
-    return () => { cancelled = true; clearInterval(t); };
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
   }, [connectFlow, pickerEngineers]);
   // Form state for the new-project flow. Lives at the Sidebar level so it
   // survives back/forward navigation between the "details" and "name" steps.
@@ -5212,7 +6246,10 @@ const Sidebar = memo(function Sidebar({
       // existing priority list. // TODO(api): denormalise an intake_topic
       // text column onto guest_calls so this extra query goes away.
       const sessionIds = rows.map((r) => r.id as string);
-      const intakesByCall = new Map<string, { problem: string | null; summary: string | null }>();
+      const intakesByCall = new Map<
+        string,
+        { problem: string | null; summary: string | null }
+      >();
       if (sessionIds.length > 0) {
         const { data: intakes } = await sb
           .from("client_intakes")
@@ -5254,74 +6291,82 @@ const Sidebar = memo(function Sidebar({
         }
       }
 
-      setPast(rows.map((row) => {
-        const status = row.status as SessionStatus;
-        // Synthesise a label for sessions that don't have an AI summary yet
-        // (active ones, or summary generation pending). The status hint
-        // helps the customer find a specific session.
-        // FIX 2 + follow-up — no session is named after its status.
-        // Topic priority for the auto-name:
-        //   1. ai_summary_title       (AI-generated post-call title)
-        //   2. intake_summary headline (LLM intake brief)
-        //   3. first user message (truncated, sentence-cased)
-        //   4. project_name + timestamp
-        //   5. "Session · {date}, {time}"
-        // // TODO(ai): improve via OpenAI against the full intake transcript
-        // when ai_summary_title is missing for short sessions.
-        const created = row.created_at as string;
-        const projectNameRaw = (row.project_name as string | null) ?? null;
-        const aiTitle = row.ai_summary_title as string | null;
-        const intakeBlob = intakesByCall.get(row.id as string);
-        const intakeHeadline =
-          intakeBlob?.summary
-            ? intakeBlob.summary.split("\n").map((s) => s.trim()).find(Boolean) ?? null
+      setPast(
+        rows.map((row) => {
+          const status = row.status as SessionStatus;
+          // Synthesise a label for sessions that don't have an AI summary yet
+          // (active ones, or summary generation pending). The status hint
+          // helps the customer find a specific session.
+          // FIX 2 + follow-up — no session is named after its status.
+          // Topic priority for the auto-name:
+          //   1. ai_summary_title       (AI-generated post-call title)
+          //   2. intake_summary headline (LLM intake brief)
+          //   3. first user message (truncated, sentence-cased)
+          //   4. project_name + timestamp
+          //   5. "Session · {date}, {time}"
+          // // TODO(ai): improve via OpenAI against the full intake transcript
+          // when ai_summary_title is missing for short sessions.
+          const created = row.created_at as string;
+          const projectNameRaw = (row.project_name as string | null) ?? null;
+          const aiTitle = row.ai_summary_title as string | null;
+          const intakeBlob = intakesByCall.get(row.id as string);
+          const intakeHeadline = intakeBlob?.summary
+            ? (intakeBlob.summary
+                .split("\n")
+                .map((s) => s.trim())
+                .find(Boolean) ?? null)
             : null;
-        const firstMsgRaw = intakeBlob?.problem ?? null;
-        const friendlyDate = new Date(created).toLocaleDateString(undefined, {
-          month: "short",
-          day: "numeric",
-        });
-        const friendlyTime = new Date(created).toLocaleTimeString(undefined, {
-          hour: "numeric",
-          minute: "2-digit",
-        });
-        const cleanLead = (raw: string | null, max = 60): string | null => {
-          if (!raw) return null;
-          const t = raw.replace(/\s+/g, " ").trim();
-          if (!t) return null;
-          // Take just the first sentence-ish chunk, no trailing punctuation.
-          const cut = t.split(/[.!?]\s|[\r\n]/)[0].trim();
-          const text = cut.length <= max ? cut : `${cut.slice(0, max).trim()}…`;
-          return text.charAt(0).toUpperCase() + text.slice(1);
-        };
-        // Session names are formatted as `{topic} · {date}, {time}` so a
-        // datestamp + timestamp always anchors the name and same-day
-        // sessions are distinguishable in the sidebar. Topic priority
-        // falls through ai_summary_title → intake_summary → first user
-        // message → project name → generic "Session". Date format is
-        // short month + day ("May 26"), time is locale-formatted h:mm
-        // with am/pm ("3:42 PM").
-        const topic =
-          aiTitle ||
-          cleanLead(intakeHeadline) ||
-          cleanLead(firstMsgRaw) ||
-          (projectNameRaw && projectNameRaw !== "Project"
-            ? projectNameRaw
-            : "Session");
-        const autoName = `${topic} · ${friendlyDate}, ${friendlyTime}`;
-        return {
-          id:          row.id as string,
-          title:       autoName,
-          topic,
-          agent:       row.agent_name as string | null,
-          engineerId:  (row.claimed_by as string | null) ?? null,
-          minutes:     row.duration_minutes != null ? Math.round(Number(row.duration_minutes)) : null,
-          date:        created,
-          status,
-          projectId:   (row.project_id   as string | null) ?? null,
-          projectName: projectNameRaw,
-        };
-      }));
+          const firstMsgRaw = intakeBlob?.problem ?? null;
+          const friendlyDate = new Date(created).toLocaleDateString(undefined, {
+            month: "short",
+            day: "numeric",
+          });
+          const friendlyTime = new Date(created).toLocaleTimeString(undefined, {
+            hour: "numeric",
+            minute: "2-digit",
+          });
+          const cleanLead = (raw: string | null, max = 60): string | null => {
+            if (!raw) return null;
+            const t = raw.replace(/\s+/g, " ").trim();
+            if (!t) return null;
+            // Take just the first sentence-ish chunk, no trailing punctuation.
+            const cut = t.split(/[.!?]\s|[\r\n]/)[0].trim();
+            const text =
+              cut.length <= max ? cut : `${cut.slice(0, max).trim()}…`;
+            return text.charAt(0).toUpperCase() + text.slice(1);
+          };
+          // Session names are formatted as `{topic} · {date}, {time}` so a
+          // datestamp + timestamp always anchors the name and same-day
+          // sessions are distinguishable in the sidebar. Topic priority
+          // falls through ai_summary_title → intake_summary → first user
+          // message → project name → generic "Session". Date format is
+          // short month + day ("May 26"), time is locale-formatted h:mm
+          // with am/pm ("3:42 PM").
+          const topic =
+            aiTitle ||
+            cleanLead(intakeHeadline) ||
+            cleanLead(firstMsgRaw) ||
+            (projectNameRaw && projectNameRaw !== "Project"
+              ? projectNameRaw
+              : "Session");
+          const autoName = `${topic} · ${friendlyDate}, ${friendlyTime}`;
+          return {
+            id: row.id as string,
+            title: autoName,
+            topic,
+            agent: row.agent_name as string | null,
+            engineerId: (row.claimed_by as string | null) ?? null,
+            minutes:
+              row.duration_minutes != null
+                ? Math.round(Number(row.duration_minutes))
+                : null,
+            date: created,
+            status,
+            projectId: (row.project_id as string | null) ?? null,
+            projectName: projectNameRaw,
+          };
+        })
+      );
     })();
   }, [customerUserId, session?.id, session?.status, pastRefreshTick]);
 
@@ -5343,10 +6388,13 @@ const Sidebar = memo(function Sidebar({
     const q = searchQuery.trim().toLowerCase();
     const matchSession = (s: PastSession) => {
       if (!q) return true;
-      const hay = [s.title, s.agent ?? "", s.projectName ?? ""].join(" ").toLowerCase();
+      const hay = [s.title, s.agent ?? "", s.projectName ?? ""]
+        .join(" ")
+        .toLowerCase();
       return hay.includes(q);
     };
-    const matchProjectName = (name: string) => !q || name.toLowerCase().includes(q);
+    const matchProjectName = (name: string) =>
+      !q || name.toLowerCase().includes(q);
 
     // Build a map keyed by project id.
     const map = new Map<string, ProjectGroup>();
@@ -5360,24 +6408,33 @@ const Sidebar = memo(function Sidebar({
       });
     }
     // "General" bucket for sessions with no project.
-    const general: ProjectGroup = { key: "general", name: "General", sessions: [], latestDate: 0, completionStatus: "active" };
+    const general: ProjectGroup = {
+      key: "general",
+      name: "General",
+      sessions: [],
+      latestDate: 0,
+      completionStatus: "active",
+    };
 
     for (const s of past) {
-      const g = s.projectId && map.has(s.projectId) ? map.get(s.projectId)!
-              : s.projectId ? (() => {
-                  // Orphan: project_id set but project not in the table.
-                  // Display the denormalised name from the session row.
-                  const orphan: ProjectGroup = {
-                    key: s.projectId!,
-                    name: s.projectName ?? "Unnamed project",
-                    sessions: [],
-                    latestDate: 0,
-                    completionStatus: "active",
-                  };
-                  map.set(s.projectId!, orphan);
-                  return orphan;
-                })()
-              : general;
+      const g =
+        s.projectId && map.has(s.projectId)
+          ? map.get(s.projectId)!
+          : s.projectId
+            ? (() => {
+                // Orphan: project_id set but project not in the table.
+                // Display the denormalised name from the session row.
+                const orphan: ProjectGroup = {
+                  key: s.projectId!,
+                  name: s.projectName ?? "Unnamed project",
+                  sessions: [],
+                  latestDate: 0,
+                  completionStatus: "active",
+                };
+                map.set(s.projectId!, orphan);
+                return orphan;
+              })()
+            : general;
       g.sessions.push(s);
       const t = new Date(s.date).getTime();
       if (t > g.latestDate) g.latestDate = t;
@@ -5401,18 +6458,21 @@ const Sidebar = memo(function Sidebar({
 
     // Apply status + search filters. Status filter applies unconditionally;
     // search filter only when there's a query.
-    const groups = Array.from(map.values()).map((g) => {
-      const nameHit = matchProjectName(g.name);
-      const sessions = sortSessions(g.sessions.filter(matchSession));
-      if (!q) {
-        // No search — keep the project but with status-filtered sessions.
-        return { ...g, sessions };
-      }
-      if (nameHit && sessions.length === 0 && g.sessions.length === 0) return { ...g, sessions };
-      if (sessions.length > 0) return { ...g, sessions };
-      if (nameHit) return { ...g, sessions: sortSessions(g.sessions) }; // name hit, show all (filtered) sessions
-      return null;
-    }).filter((g): g is ProjectGroup => g !== null);
+    const groups = Array.from(map.values())
+      .map((g) => {
+        const nameHit = matchProjectName(g.name);
+        const sessions = sortSessions(g.sessions.filter(matchSession));
+        if (!q) {
+          // No search — keep the project but with status-filtered sessions.
+          return { ...g, sessions };
+        }
+        if (nameHit && sessions.length === 0 && g.sessions.length === 0)
+          return { ...g, sessions };
+        if (sessions.length > 0) return { ...g, sessions };
+        if (nameHit) return { ...g, sessions: sortSessions(g.sessions) }; // name hit, show all (filtered) sessions
+        return null;
+      })
+      .filter((g): g is ProjectGroup => g !== null);
 
     // Suppress ALL "Try Relay" projects from the sidebar (regardless of
     // session count). The marketing-site Try Relay funnel auto-creates
@@ -5435,23 +6495,32 @@ const Sidebar = memo(function Sidebar({
       if (statusFilter === "all") return true;
       if (g.key === "general") return statusFilter === "active";
       if (statusFilter === "active") {
-        return g.completionStatus !== "completed" && g.completionStatus !== "archived";
+        return (
+          g.completionStatus !== "completed" &&
+          g.completionStatus !== "archived"
+        );
       }
       // statusFilter === "completed"
-      return g.completionStatus === "completed" || g.completionStatus === "archived";
+      return (
+        g.completionStatus === "completed" || g.completionStatus === "archived"
+      );
     });
 
     return statusFiltered.sort((a, b) => b.latestDate - a.latestDate);
   }, [projects, past, searchQuery, statusFilter, pinnedIds, sortBy]);
 
-  const hasActiveSession = session && !["ended", "cancelled", "abandoned"].includes(session.status);
+  const hasActiveSession =
+    session && !["ended", "cancelled", "abandoned"].includes(session.status);
 
   // ── Collapsed state: icon-only rail ──────────────────────────────────────
   if (collapsed) {
     return (
       <aside
         className="flex h-full w-12 shrink-0 flex-col items-center py-2"
-        style={{ borderRight: "1px solid var(--border)", backgroundColor: "var(--surface)" }}
+        style={{
+          borderRight: "1px solid var(--border)",
+          backgroundColor: "var(--surface)",
+        }}
       >
         {/* Expand toggle */}
         <button
@@ -5508,9 +6577,17 @@ const Sidebar = memo(function Sidebar({
             style={{ color: BRAND_GREEN }}
           >
             <span className="relative flex h-2 w-2">
-              <span className="absolute inset-0 rounded-full opacity-70"
-                style={{ backgroundColor: BRAND_GREEN, animation: "ping 1.4s cubic-bezier(0,0,0.2,1) infinite" }} />
-              <span className="relative h-2 w-2 rounded-full" style={{ backgroundColor: BRAND_GREEN }} />
+              <span
+                className="absolute inset-0 rounded-full opacity-70"
+                style={{
+                  backgroundColor: BRAND_GREEN,
+                  animation: "ping 1.4s cubic-bezier(0,0,0.2,1) infinite",
+                }}
+              />
+              <span
+                className="relative h-2 w-2 rounded-full"
+                style={{ backgroundColor: BRAND_GREEN }}
+              />
             </span>
           </button>
         )}
@@ -5540,10 +6617,22 @@ const Sidebar = memo(function Sidebar({
               session={session}
               entitlement={entitlement}
               employment={employment}
-              onRecharge={() => { setUserMenuOpen(false); onWalletClick(); }}
-              onOpenProfile={() => { setUserMenuOpen(false); onOpenProfile(); }}
-              onOpenBilling={() => { setUserMenuOpen(false); onOpenBilling(); }}
-              onOpenLegal={(kind) => { setUserMenuOpen(false); onOpenLegal(kind); }}
+              onRecharge={() => {
+                setUserMenuOpen(false);
+                onWalletClick();
+              }}
+              onOpenProfile={() => {
+                setUserMenuOpen(false);
+                onOpenProfile();
+              }}
+              onOpenBilling={() => {
+                setUserMenuOpen(false);
+                onOpenBilling();
+              }}
+              onOpenLegal={(kind) => {
+                setUserMenuOpen(false);
+                onOpenLegal(kind);
+              }}
               onClose={() => setUserMenuOpen(false)}
               collapsed
             />
@@ -5557,7 +6646,10 @@ const Sidebar = memo(function Sidebar({
   return (
     <aside
       className="flex h-full w-[260px] shrink-0 flex-col"
-      style={{ borderRight: "1px solid var(--border)", backgroundColor: "var(--surface)" }}
+      style={{
+        borderRight: "1px solid var(--border)",
+        backgroundColor: "var(--surface)",
+      }}
     >
       {/* Brand row — wordmark (clickable, returns home) + theme
           triplet + flex spacer + collapse toggle. The wordmark is
@@ -5609,13 +6701,8 @@ const Sidebar = memo(function Sidebar({
           calm dot otherwise. */}
       <div className="px-3 pb-2">
         <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--primary-tint)] px-2.5 py-1 text-[11px] font-medium text-[var(--primary-hover)]">
-          <span
-            aria-hidden
-            className="relative inline-flex size-1.5"
-          >
-            <span
-              className="absolute inset-0 inline-flex animate-ping rounded-full bg-[var(--primary)] opacity-60"
-            />
+          <span aria-hidden className="relative inline-flex size-1.5">
+            <span className="absolute inset-0 inline-flex animate-ping rounded-full bg-[var(--primary)] opacity-60" />
             <span className="relative inline-flex size-1.5 rounded-full bg-[var(--primary)]" />
           </span>
           Online
@@ -5636,121 +6723,159 @@ const Sidebar = memo(function Sidebar({
           chooser. */}
       <div className="flex flex-col gap-2 px-2 py-1">
         <div className="relative flex flex-col items-center gap-2 py-2">
-        {/* Pulsing aura — sits behind the ball, scaled larger via inset
+          {/* Pulsing aura — sits behind the ball, scaled larger via inset
             negative + opacity-pulses with the heartbeat rhythm. Color
             derived from var(--primary) via color-mix so the aura
             matches whichever brand-green the active theme resolves to
             (was hardcoded rgba(77,200,109) — a muted forest green
             that didn't match the platform palette). */}
-        <span
-          aria-hidden="true"
-          className="rk-connect-aura pointer-events-none absolute"
-          style={{
-            top: 8,
-            width: 140,
-            height: 140,
-            borderRadius: "50%",
-            background:
-              "radial-gradient(circle, " +
-              "color-mix(in srgb, var(--primary) 55%, transparent) 0%, " +
-              "color-mix(in srgb, var(--primary) 22%, transparent) 32%, " +
-              "color-mix(in srgb, var(--primary) 0%, transparent) 65%)",
-            filter: "blur(8px)",
-            zIndex: 0,
-          }}
-        />
-        <button
-          type="button"
-          onClick={() => setConnectFlow("choose")}
-          aria-label="Connect to a Relay engineer"
-          className="rk-connect-ball relative flex h-[140px] w-[140px] flex-col items-center justify-center rounded-full text-center transition-transform hover:scale-[1.03] active:scale-[0.97] focus-visible:outline-none focus-visible:ring-4"
-          style={{
-            // Ball gradient now keyed off var(--primary) — same green
-            // family as every other brand element on the page. Was the
-            // muted #4d6b40/#3f5c34 forest pair which read as a
-            // separate, dated color. The two overlay highlight/shadow
-            // gradients stay the same to keep the 3D-button look.
-            background:
-              "radial-gradient(circle at 30% 25%, rgba(255,255,255,0.32) 0%, rgba(255,255,255,0) 38%), " +
-              "radial-gradient(circle at 70% 75%, rgba(0,0,0,0.20) 0%, rgba(0,0,0,0) 55%), " +
-              "radial-gradient(circle at 50% 50%, " +
-              "var(--primary) 30%, " +
-              "color-mix(in srgb, var(--primary) 70%, #000) 100%)",
-            boxShadow:
-              "0 18px 32px color-mix(in srgb, var(--primary) 32%, transparent), " +
-              "0 6px 12px color-mix(in srgb, var(--primary) 22%, transparent), " +
-              "inset 0 -8px 14px rgba(0, 0, 0, 0.22), " +
-              "inset 0 8px 14px rgba(255, 255, 255, 0.12)",
-            zIndex: 1,
-          }}
-        >
-          <Phone size={20} style={{ color: "#fff", opacity: 0.9, marginBottom: 6 }} />
           <span
-            className="px-3 text-[13px] font-semibold leading-tight"
-            style={{ color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,0.25)" }}
+            aria-hidden="true"
+            className="rk-connect-aura pointer-events-none absolute"
+            style={{
+              top: 8,
+              width: 140,
+              height: 140,
+              borderRadius: "50%",
+              background:
+                "radial-gradient(circle, " +
+                "color-mix(in srgb, var(--primary) 55%, transparent) 0%, " +
+                "color-mix(in srgb, var(--primary) 22%, transparent) 32%, " +
+                "color-mix(in srgb, var(--primary) 0%, transparent) 65%)",
+              filter: "blur(8px)",
+              zIndex: 0,
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => setConnectFlow("choose")}
+            aria-label="Connect to a Relay engineer"
+            className="rk-connect-ball relative flex h-[140px] w-[140px] flex-col items-center justify-center rounded-full text-center transition-transform hover:scale-[1.03] focus-visible:ring-4 focus-visible:outline-none active:scale-[0.97]"
+            style={{
+              // Ball gradient now keyed off var(--primary) — same green
+              // family as every other brand element on the page. Was the
+              // muted #4d6b40/#3f5c34 forest pair which read as a
+              // separate, dated color. The two overlay highlight/shadow
+              // gradients stay the same to keep the 3D-button look.
+              background:
+                "radial-gradient(circle at 30% 25%, rgba(255,255,255,0.32) 0%, rgba(255,255,255,0) 38%), " +
+                "radial-gradient(circle at 70% 75%, rgba(0,0,0,0.20) 0%, rgba(0,0,0,0) 55%), " +
+                "radial-gradient(circle at 50% 50%, " +
+                "var(--primary) 30%, " +
+                "color-mix(in srgb, var(--primary) 70%, #000) 100%)",
+              boxShadow:
+                "0 18px 32px color-mix(in srgb, var(--primary) 32%, transparent), " +
+                "0 6px 12px color-mix(in srgb, var(--primary) 22%, transparent), " +
+                "inset 0 -8px 14px rgba(0, 0, 0, 0.22), " +
+                "inset 0 8px 14px rgba(255, 255, 255, 0.12)",
+              zIndex: 1,
+            }}
           >
-            Connect to
-            <br />
-            Relay Engineer
-          </span>
-        </button>
-        {/* Scoped keyframes for the heartbeat + aura. lub-dub rhythm: two
+            <Phone
+              size={20}
+              style={{ color: "#fff", opacity: 0.9, marginBottom: 6 }}
+            />
+            <span
+              className="px-3 text-[13px] leading-tight font-semibold"
+              style={{
+                color: "#fff",
+                textShadow: "0 1px 2px rgba(0,0,0,0.25)",
+              }}
+            >
+              Connect to
+              <br />
+              Relay Engineer
+            </span>
+          </button>
+          {/* Scoped keyframes for the heartbeat + aura. lub-dub rhythm: two
             beats per 1.6s cycle (14% peak, 28% relax, 42% bigger peak,
             then long rest). Aura scales + opacity in lockstep; ball does
             a more subtle scale to avoid fighting the hover/active
             transforms. Respects prefers-reduced-motion. */}
-        <style jsx>{`
-          .rk-connect-aura {
-            animation: rk-connect-aura 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-            transform-origin: center;
-          }
-          .rk-connect-ball {
-            animation: rk-connect-ball 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-            transform-origin: center;
-          }
-          .rk-connect-ball:hover,
-          .rk-connect-ball:active {
-            animation-play-state: paused;
-          }
-          @keyframes rk-connect-aura {
-            0%   { transform: scale(1);    opacity: 0.45; }
-            14%  { transform: scale(1.12); opacity: 0.85; }
-            28%  { transform: scale(1.04); opacity: 0.55; }
-            42%  { transform: scale(1.22); opacity: 0.95; }
-            70%, 100% { transform: scale(1); opacity: 0.45; }
-          }
-          @keyframes rk-connect-ball {
-            0%, 70%, 100% { transform: scale(1); }
-            14%           { transform: scale(1.04); }
-            42%           { transform: scale(1.06); }
-          }
-          @media (prefers-reduced-motion: reduce) {
-            .rk-connect-aura,
-            .rk-connect-ball {
-              animation: none;
-            }
+          <style jsx>{`
             .rk-connect-aura {
-              opacity: 0.6;
-              transform: scale(1.05);
+              animation: rk-connect-aura 1.6s cubic-bezier(0.4, 0, 0.2, 1)
+                infinite;
+              transform-origin: center;
             }
-          }
-        `}</style>
-        <p
-          className="text-center text-[11px]"
-          style={{ color: "var(--text-muted)" }}
-        >
-          {past.some((s) => !!s.agent)
-            ? "Pick a project to see your engineers"
-            : "Your first engineer pairs on this call"}
-        </p>
+            .rk-connect-ball {
+              animation: rk-connect-ball 1.6s cubic-bezier(0.4, 0, 0.2, 1)
+                infinite;
+              transform-origin: center;
+            }
+            .rk-connect-ball:hover,
+            .rk-connect-ball:active {
+              animation-play-state: paused;
+            }
+            @keyframes rk-connect-aura {
+              0% {
+                transform: scale(1);
+                opacity: 0.45;
+              }
+              14% {
+                transform: scale(1.12);
+                opacity: 0.85;
+              }
+              28% {
+                transform: scale(1.04);
+                opacity: 0.55;
+              }
+              42% {
+                transform: scale(1.22);
+                opacity: 0.95;
+              }
+              70%,
+              100% {
+                transform: scale(1);
+                opacity: 0.45;
+              }
+            }
+            @keyframes rk-connect-ball {
+              0%,
+              70%,
+              100% {
+                transform: scale(1);
+              }
+              14% {
+                transform: scale(1.04);
+              }
+              42% {
+                transform: scale(1.06);
+              }
+            }
+            @media (prefers-reduced-motion: reduce) {
+              .rk-connect-aura,
+              .rk-connect-ball {
+                animation: none;
+              }
+              .rk-connect-aura {
+                opacity: 0.6;
+                transform: scale(1.05);
+              }
+            }
+          `}</style>
+          <p
+            className="text-center text-[11px]"
+            style={{ color: "var(--text-muted)" }}
+          >
+            {past.some((s) => !!s.agent)
+              ? "Pick a project to see your engineers"
+              : "Your first engineer pairs on this call"}
+          </p>
         </div>
 
         {/* Search across all past sessions (title / engineer / project). */}
         <div
           className="mt-0.5 flex items-center gap-2 rounded-lg border px-2.5 py-1.5"
-          style={{ borderColor: "var(--border)", backgroundColor: "var(--background)" }}
+          style={{
+            borderColor: "var(--border)",
+            backgroundColor: "var(--background)",
+          }}
         >
-          <Search size={14} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+          <Search
+            size={14}
+            style={{ color: "var(--text-muted)", flexShrink: 0 }}
+          />
           <input
             type="text"
             value={searchQuery}
@@ -5778,18 +6903,35 @@ const Sidebar = memo(function Sidebar({
           <button
             onClick={() => onViewPast(null)}
             className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left transition-colors"
-            style={{ backgroundColor: BRAND_GREEN_SOFT, border: `1px solid ${BRAND_GREEN_BORDER}` }}
+            style={{
+              backgroundColor: BRAND_GREEN_SOFT,
+              border: `1px solid ${BRAND_GREEN_BORDER}`,
+            }}
           >
             <span className="relative flex h-2 w-2 shrink-0">
-              <span className="absolute inset-0 rounded-full opacity-70"
-                style={{ backgroundColor: BRAND_GREEN, animation: "ping 1.4s cubic-bezier(0,0,0.2,1) infinite" }} />
-              <span className="relative h-2 w-2 rounded-full" style={{ backgroundColor: BRAND_GREEN }} />
+              <span
+                className="absolute inset-0 rounded-full opacity-70"
+                style={{
+                  backgroundColor: BRAND_GREEN,
+                  animation: "ping 1.4s cubic-bezier(0,0,0.2,1) infinite",
+                }}
+              />
+              <span
+                className="relative h-2 w-2 rounded-full"
+                style={{ backgroundColor: BRAND_GREEN }}
+              />
             </span>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[13px] font-medium" style={{ color: "var(--text)" }}>
+              <div
+                className="truncate text-[13px] font-medium"
+                style={{ color: "var(--text)" }}
+              >
                 Current session
               </div>
-              <div className="truncate text-[10px]" style={{ color: "var(--text-muted)" }}>
+              <div
+                className="truncate text-[10px]"
+                style={{ color: "var(--text-muted)" }}
+              >
                 {humanState(session.status)}
               </div>
             </div>
@@ -5828,7 +6970,10 @@ const Sidebar = memo(function Sidebar({
               className="group/cta inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-medium transition-all duration-150 ease-out hover:translate-x-0.5 hover:bg-[var(--surface-raised)]"
               style={{ color: "var(--primary-hover)" }}
             >
-              <Plus size={12} className="transition-transform duration-150 ease-out group-hover/cta:rotate-90" />
+              <Plus
+                size={12}
+                className="transition-transform duration-150 ease-out group-hover/cta:rotate-90"
+              />
               Create New Project
             </button>
           </div>
@@ -5841,102 +6986,120 @@ const Sidebar = memo(function Sidebar({
           />
 
           <div ref={sortPanelRef} className="relative mb-1.5 px-2.5">
-          <div className="flex items-center justify-between">
-            <span
-              className="text-[10px] font-semibold uppercase tracking-[0.1em]"
-              style={{ color: "var(--text-muted)" }}
-            >
-              {statusFilter === "all" ? "All sessions" : statusFilter === "active" ? "Active" : "Completed"}
-              {" · "}
-              {groupBy === "project" ? "by project" : "by date"}
-            </span>
-            <button
-              type="button"
-              onClick={() => setSortPanelOpen((v) => !v)}
-              title="Filter and sort"
-              aria-label="Filter and sort"
-              aria-expanded={sortPanelOpen}
-              className={cn(
-                "inline-flex h-6 w-6 items-center justify-center rounded-md transition-colors",
-                sortPanelOpen
-                  ? "bg-[var(--surface-raised)]"
-                  : "hover:bg-[var(--surface-raised)]",
-              )}
-              style={{ color: "var(--text-muted)" }}
-            >
-              <SlidersHorizontal size={13} />
-            </button>
-          </div>
-
-          {sortPanelOpen && (
-            <div
-              className="absolute right-2 top-7 z-30 w-[228px] rounded-lg border shadow-xl"
-              style={{
-                backgroundColor: "var(--surface)",
-                borderColor: "var(--border)",
-              }}
-            >
-              <SortRow
-                label="Status"
-                value={
-                  statusFilter === "all" ? "All" : statusFilter === "active" ? "Active" : "Completed"
-                }
-                highlight={statusFilter !== "all"}
-                options={[
-                  { value: "all",       label: "All" },
-                  { value: "active",    label: "Active" },
-                  { value: "completed", label: "Completed" },
-                ]}
-                expanded={expandedSortRow === "status"}
-                onToggle={() =>
-                  setExpandedSortRow((v) => (v === "status" ? null : "status"))
-                }
-                onSelect={(v) => {
-                  setStatusFilter(v as "all" | "active" | "completed");
-                  setExpandedSortRow(null);
-                }}
-              />
-              <SortRow
-                label="Group by"
-                value={groupBy === "project" ? "Project" : "Date"}
-                highlight={groupBy !== "project"}
-                options={[
-                  { value: "project", label: "Project" },
-                  { value: "date",    label: "Date" },
-                ]}
-                expanded={expandedSortRow === "groupBy"}
-                onToggle={() =>
-                  setExpandedSortRow((v) => (v === "groupBy" ? null : "groupBy"))
-                }
-                onSelect={(v) => {
-                  setGroupBy(v as "project" | "date");
-                  setExpandedSortRow(null);
-                }}
-              />
-              <SortRow
-                label="Sort by"
-                value={
-                  sortBy === "recent" ? "Recent" : sortBy === "oldest" ? "Oldest" : "Title"
-                }
-                highlight={sortBy !== "recent"}
-                options={[
-                  { value: "recent", label: "Recent" },
-                  { value: "oldest", label: "Oldest" },
-                  { value: "title",  label: "Title (A→Z)" },
-                ]}
-                expanded={expandedSortRow === "sortBy"}
-                onToggle={() =>
-                  setExpandedSortRow((v) => (v === "sortBy" ? null : "sortBy"))
-                }
-                onSelect={(v) => {
-                  setSortBy(v as "recent" | "oldest" | "title");
-                  setExpandedSortRow(null);
-                }}
-                last
-              />
+            <div className="flex items-center justify-between">
+              <span
+                className="text-[10px] font-semibold tracking-[0.1em] uppercase"
+                style={{ color: "var(--text-muted)" }}
+              >
+                {statusFilter === "all"
+                  ? "All sessions"
+                  : statusFilter === "active"
+                    ? "Active"
+                    : "Completed"}
+                {" · "}
+                {groupBy === "project" ? "by project" : "by date"}
+              </span>
+              <button
+                type="button"
+                onClick={() => setSortPanelOpen((v) => !v)}
+                title="Filter and sort"
+                aria-label="Filter and sort"
+                aria-expanded={sortPanelOpen}
+                className={cn(
+                  "inline-flex h-6 w-6 items-center justify-center rounded-md transition-colors",
+                  sortPanelOpen
+                    ? "bg-[var(--surface-raised)]"
+                    : "hover:bg-[var(--surface-raised)]"
+                )}
+                style={{ color: "var(--text-muted)" }}
+              >
+                <SlidersHorizontal size={13} />
+              </button>
             </div>
-          )}
-        </div>
+
+            {sortPanelOpen && (
+              <div
+                className="absolute top-7 right-2 z-30 w-[228px] rounded-lg border shadow-xl"
+                style={{
+                  backgroundColor: "var(--surface)",
+                  borderColor: "var(--border)",
+                }}
+              >
+                <SortRow
+                  label="Status"
+                  value={
+                    statusFilter === "all"
+                      ? "All"
+                      : statusFilter === "active"
+                        ? "Active"
+                        : "Completed"
+                  }
+                  highlight={statusFilter !== "all"}
+                  options={[
+                    { value: "all", label: "All" },
+                    { value: "active", label: "Active" },
+                    { value: "completed", label: "Completed" },
+                  ]}
+                  expanded={expandedSortRow === "status"}
+                  onToggle={() =>
+                    setExpandedSortRow((v) =>
+                      v === "status" ? null : "status"
+                    )
+                  }
+                  onSelect={(v) => {
+                    setStatusFilter(v as "all" | "active" | "completed");
+                    setExpandedSortRow(null);
+                  }}
+                />
+                <SortRow
+                  label="Group by"
+                  value={groupBy === "project" ? "Project" : "Date"}
+                  highlight={groupBy !== "project"}
+                  options={[
+                    { value: "project", label: "Project" },
+                    { value: "date", label: "Date" },
+                  ]}
+                  expanded={expandedSortRow === "groupBy"}
+                  onToggle={() =>
+                    setExpandedSortRow((v) =>
+                      v === "groupBy" ? null : "groupBy"
+                    )
+                  }
+                  onSelect={(v) => {
+                    setGroupBy(v as "project" | "date");
+                    setExpandedSortRow(null);
+                  }}
+                />
+                <SortRow
+                  label="Sort by"
+                  value={
+                    sortBy === "recent"
+                      ? "Recent"
+                      : sortBy === "oldest"
+                        ? "Oldest"
+                        : "Title"
+                  }
+                  highlight={sortBy !== "recent"}
+                  options={[
+                    { value: "recent", label: "Recent" },
+                    { value: "oldest", label: "Oldest" },
+                    { value: "title", label: "Title (A→Z)" },
+                  ]}
+                  expanded={expandedSortRow === "sortBy"}
+                  onToggle={() =>
+                    setExpandedSortRow((v) =>
+                      v === "sortBy" ? null : "sortBy"
+                    )
+                  }
+                  onSelect={(v) => {
+                    setSortBy(v as "recent" | "oldest" | "title");
+                    setExpandedSortRow(null);
+                  }}
+                  last
+                />
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Pinned section — sessions the customer is actively working on.
@@ -5954,9 +7117,9 @@ const Sidebar = memo(function Sidebar({
             });
           if (pinnedSessions.length === 0) return null;
           return (
-            <div className="mb-1 mt-1 px-2.5">
+            <div className="mt-1 mb-1 px-2.5">
               <div
-                className="mb-1 px-0.5 text-[10px] font-semibold uppercase tracking-[0.1em]"
+                className="mb-1 px-0.5 text-[10px] font-semibold tracking-[0.1em] uppercase"
                 style={{ color: "var(--primary-hover)" }}
               >
                 Pinned
@@ -5969,9 +7132,9 @@ const Sidebar = memo(function Sidebar({
                     isPinned
                     isViewing={viewingPastId === s.id}
                     isCurrent={
-                      !!session
-                      && s.id === session.id
-                      && !["ended", "cancelled", "abandoned"].includes(s.status)
+                      !!session &&
+                      s.id === session.id &&
+                      !["ended", "cancelled", "abandoned"].includes(s.status)
                     }
                     onClick={() => onViewPast(s.id)}
                     onTogglePin={() => togglePin(s.id)}
@@ -5993,61 +7156,64 @@ const Sidebar = memo(function Sidebar({
 
           if (!isSessionView) {
             // Default view — project accordions (unchanged behavior).
-            return projectGroups.length > 0
-              ? projectGroups.map((group) => (
-                  <ProjectAccordion
-                    key={group.key}
-                    group={group}
-                    viewingPastId={viewingPastId}
-                    currentSessionId={session?.id ?? null}
-                    selectedProjectId={selectedProjectId}
-                    onViewPast={onViewPast}
-                    onStartInProject={(projectId) => {
-                      if (projectId === null) {
-                        onStartInProject(null);
-                        return;
+            return projectGroups.length > 0 ? (
+              projectGroups.map((group) => (
+                <ProjectAccordion
+                  key={group.key}
+                  group={group}
+                  viewingPastId={viewingPastId}
+                  currentSessionId={session?.id ?? null}
+                  selectedProjectId={selectedProjectId}
+                  onViewPast={onViewPast}
+                  onStartInProject={(projectId) => {
+                    if (projectId === null) {
+                      onStartInProject(null);
+                      return;
+                    }
+                    // Count distinct engineers for the project.
+                    //   0 engineers (cold) → skill-match a new engineer
+                    //     via the existing intake flow.
+                    //   1+ engineers (warm) → engineerPicker step, which
+                    //     shows the engineer(s) by name + availability
+                    //     state (Available/Busy/Offline) with state-
+                    //     appropriate actions: Connect / Request /
+                    //     Schedule. The picker also exposes the
+                    //     "Request a different engineer" fallback so
+                    //     the client in a rush can route around a busy
+                    //     or offline engineer.
+                    const distinctEngineers = new Set<string>();
+                    for (const s of past) {
+                      if (s.projectId === projectId && s.agent) {
+                        distinctEngineers.add(s.agent);
                       }
-                      // Count distinct engineers for the project.
-                      //   0 engineers (cold) → skill-match a new engineer
-                      //     via the existing intake flow.
-                      //   1+ engineers (warm) → engineerPicker step, which
-                      //     shows the engineer(s) by name + availability
-                      //     state (Available/Busy/Offline) with state-
-                      //     appropriate actions: Connect / Request /
-                      //     Schedule. The picker also exposes the
-                      //     "Request a different engineer" fallback so
-                      //     the client in a rush can route around a busy
-                      //     or offline engineer.
-                      const distinctEngineers = new Set<string>();
-                      for (const s of past) {
-                        if (s.projectId === projectId && s.agent) {
-                          distinctEngineers.add(s.agent);
-                        }
-                      }
-                      if (distinctEngineers.size >= 1) {
-                        setPickerProjectId(projectId);
-                        setConnectFlow("engineerPicker");
-                      } else {
-                        onStartInProject(projectId);
-                      }
-                    }}
-                    onRenameProject={onRenameProject}
-                    onSelectProject={onSelectProject}
-                    pinnedIds={pinnedIds}
-                    onTogglePin={togglePin}
-                    onPrepareSession={onPrepareSession}
-                    draftsTick={draftsTick}
-                    onDeleteProject={onDeleteProject}
-                    onMarkProjectComplete={onMarkProjectComplete}
-                  />
-                ))
-              : (
-                <p className="px-2 py-4 text-[11px]" style={{ color: "var(--text-muted)" }}>
-                  {searchQuery
-                    ? `No projects or sessions match "${searchQuery}".`
-                    : "Start your first project to get going."}
-                </p>
-              );
+                    }
+                    if (distinctEngineers.size >= 1) {
+                      setPickerProjectId(projectId);
+                      setConnectFlow("engineerPicker");
+                    } else {
+                      onStartInProject(projectId);
+                    }
+                  }}
+                  onRenameProject={onRenameProject}
+                  onSelectProject={onSelectProject}
+                  pinnedIds={pinnedIds}
+                  onTogglePin={togglePin}
+                  onPrepareSession={onPrepareSession}
+                  draftsTick={draftsTick}
+                  onDeleteProject={onDeleteProject}
+                  onMarkProjectComplete={onMarkProjectComplete}
+                />
+              ))
+            ) : (
+              <p
+                className="px-2 py-4 text-[11px]"
+                style={{ color: "var(--text-muted)" }}
+              >
+                {searchQuery
+                  ? `No projects or sessions match "${searchQuery}".`
+                  : "Start your first project to get going."}
+              </p>
+            );
           }
 
           // ── Session view: flatten across all projects ───────────
@@ -6058,7 +7224,10 @@ const Sidebar = memo(function Sidebar({
           const allSessions = projectGroups.flatMap((g) => g.sessions);
           if (allSessions.length === 0) {
             return (
-              <p className="px-2 py-4 text-[11px]" style={{ color: "var(--text-muted)" }}>
+              <p
+                className="px-2 py-4 text-[11px]"
+                style={{ color: "var(--text-muted)" }}
+              >
                 {searchQuery
                   ? `No sessions match "${searchQuery}".`
                   : statusFilter === "active"
@@ -6083,27 +7252,29 @@ const Sidebar = memo(function Sidebar({
               {bucketed.map((bucket) => (
                 <div key={bucket.label}>
                   <div
-                    className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-[0.08em]"
+                    className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] uppercase"
                     style={{ color: "var(--text-faint)" }}
                   >
                     {bucket.label}
                   </div>
                   <div className="flex flex-col gap-0.5">
                     {bucket.sessions.map((s) => (
-                        <SessionRowFlat
-                          key={s.id}
-                          session={s}
-                          isPinned={pinnedIds.has(s.id)}
-                          isViewing={viewingPastId === s.id}
-                          isCurrent={
-                            !!session
-                            && s.id === session.id
-                            && !["ended", "cancelled", "abandoned"].includes(s.status)
-                          }
-                          onClick={() => onViewPast(s.id)}
-                          onTogglePin={() => togglePin(s.id)}
-                          showProjectName={false}
-                        />
+                      <SessionRowFlat
+                        key={s.id}
+                        session={s}
+                        isPinned={pinnedIds.has(s.id)}
+                        isViewing={viewingPastId === s.id}
+                        isCurrent={
+                          !!session &&
+                          s.id === session.id &&
+                          !["ended", "cancelled", "abandoned"].includes(
+                            s.status
+                          )
+                        }
+                        onClick={() => onViewPast(s.id)}
+                        onTogglePin={() => togglePin(s.id)}
+                        showProjectName={false}
+                      />
                     ))}
                   </div>
                 </div>
@@ -6116,8 +7287,11 @@ const Sidebar = memo(function Sidebar({
       {/* Contract management — bids the team sent back (go-live / maintenance).
           Sits above the quote shortcuts; renders nothing until a quote exists. */}
       {!employment?.isEmployee && (
-        <div className="border-t px-2 py-2 empty:hidden" style={{ borderColor: "var(--border)" }}>
-          <ContractManagement />
+        <div
+          className="border-t px-2 py-2 empty:hidden"
+          style={{ borderColor: "var(--border)" }}
+        >
+          <ContractAndAppointments />
         </div>
       )}
 
@@ -6134,7 +7308,10 @@ const Sidebar = memo(function Sidebar({
           gate on the explicit boolean instead of `!employment` — see the
           isEmployee derivation at the top of the parent RoomClient. */}
       {!employment?.isEmployee && (
-        <div className="border-t px-2 pt-2 pb-1" style={{ borderColor: "var(--border)" }}>
+        <div
+          className="border-t px-2 pt-2 pb-1"
+          style={{ borderColor: "var(--border)" }}
+        >
           {/* group/quote class lets us drive the icon's hover state from the
               row, not just the icon itself. translateX + icon-color flip
               gives the row a small "lean in" tell on hover without yelling. */}
@@ -6150,10 +7327,16 @@ const Sidebar = memo(function Sidebar({
               <Rocket size={13} />
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block text-[12px]" style={{ color: "var(--text)" }}>
+              <span
+                className="block text-[12px]"
+                style={{ color: "var(--text)" }}
+              >
                 Quote to GoLive
               </span>
-              <span className="block text-[10px]" style={{ color: "var(--text-muted)" }}>
+              <span
+                className="block text-[10px]"
+                style={{ color: "var(--text-muted)" }}
+              >
                 Ship this project — get a quote
               </span>
             </span>
@@ -6163,7 +7346,13 @@ const Sidebar = memo(function Sidebar({
               so the two rows still read as a group, just clearly distinct.
               mx-2 indents past the buttons' left padding so it doesn't
               touch the icons. */}
-          <div className="mx-2 my-1 h-px" style={{ backgroundColor: "color-mix(in srgb, var(--border) 60%, transparent)" }} />
+          <div
+            className="mx-2 my-1 h-px"
+            style={{
+              backgroundColor:
+                "color-mix(in srgb, var(--border) 60%, transparent)",
+            }}
+          />
 
           <button
             type="button"
@@ -6177,10 +7366,16 @@ const Sidebar = memo(function Sidebar({
               <Wrench size={13} />
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block text-[12px]" style={{ color: "var(--text)" }}>
+              <span
+                className="block text-[12px]"
+                style={{ color: "var(--text)" }}
+              >
                 Quote to Maintain / Enhance
               </span>
-              <span className="block text-[10px]" style={{ color: "var(--text-muted)" }}>
+              <span
+                className="block text-[10px]"
+                style={{ color: "var(--text-muted)" }}
+              >
                 Ongoing work — get an estimate
               </span>
             </span>
@@ -6191,7 +7386,10 @@ const Sidebar = memo(function Sidebar({
       {/* Profile (bottom) — extra bottom padding lifts the user pill +
           quote shortcuts off the very edge of the viewport so the
           eye doesn't read them as "stuck at the bottom." */}
-      <div className="relative border-t p-2 pb-6" style={{ borderColor: "var(--border)" }}>
+      <div
+        className="relative border-t p-2 pb-6"
+        style={{ borderColor: "var(--border)" }}
+      >
         <button
           onClick={() => setUserMenuOpen((v) => !v)}
           className="group/userpill flex w-full items-center gap-2.5 rounded-lg px-2 py-2 transition-all duration-150 ease-out hover:translate-x-0.5 hover:bg-black/5 dark:hover:bg-white/5"
@@ -6203,11 +7401,21 @@ const Sidebar = memo(function Sidebar({
             {(displayName || email || "?")[0]}
           </div>
           <div className="min-w-0 flex-1 text-left">
-            <div className="truncate text-[12px] font-medium" style={{ color: "var(--text)" }}>
+            <div
+              className="truncate text-[12px] font-medium"
+              style={{ color: "var(--text)" }}
+            >
               {displayName || email.split("@")[0]}
             </div>
-            <div className="truncate text-[10px]" style={{ color: "var(--text-muted)" }}>
-              <WalletBalance session={session} entitlement={entitlement} employment={employment} />
+            <div
+              className="truncate text-[10px]"
+              style={{ color: "var(--text-muted)" }}
+            >
+              <WalletBalance
+                session={session}
+                entitlement={entitlement}
+                employment={employment}
+              />
             </div>
           </div>
           <ChevronDown
@@ -6224,10 +7432,22 @@ const Sidebar = memo(function Sidebar({
             session={session}
             entitlement={entitlement}
             employment={employment}
-            onRecharge={() => { setUserMenuOpen(false); onWalletClick(); }}
-            onOpenProfile={() => { setUserMenuOpen(false); onOpenProfile(); }}
-            onOpenBilling={() => { setUserMenuOpen(false); onOpenBilling(); }}
-            onOpenLegal={(kind) => { setUserMenuOpen(false); onOpenLegal(kind); }}
+            onRecharge={() => {
+              setUserMenuOpen(false);
+              onWalletClick();
+            }}
+            onOpenProfile={() => {
+              setUserMenuOpen(false);
+              onOpenProfile();
+            }}
+            onOpenBilling={() => {
+              setUserMenuOpen(false);
+              onOpenBilling();
+            }}
+            onOpenLegal={(kind) => {
+              setUserMenuOpen(false);
+              onOpenLegal(kind);
+            }}
             onClose={() => setUserMenuOpen(false)}
           />
         )}
@@ -6270,7 +7490,8 @@ const Sidebar = memo(function Sidebar({
           pickerProjectId={pickerProjectId}
           pickerProjectName={
             pickerProjectId
-              ? projectGroups.find((g) => g.key === pickerProjectId)?.name ?? null
+              ? (projectGroups.find((g) => g.key === pickerProjectId)?.name ??
+                null)
               : null
           }
           pickerEngineers={pickerEngineers}
@@ -6295,7 +7516,7 @@ const Sidebar = memo(function Sidebar({
             // project has zero engineer history, jump straight into
             // intake (no one to pick between).
             const hasEngineers = past.some(
-              (s) => s.projectId === projectId && !!s.agent,
+              (s) => s.projectId === projectId && !!s.agent
             );
             if (hasEngineers) {
               setPickerProjectId(projectId);
@@ -6339,7 +7560,7 @@ const Sidebar = memo(function Sidebar({
             setConnectFlow(null);
             setPickerProjectId(null);
             onPickerToast(
-              `Request sent to ${engineerName} — they'll join when they wrap their current call, or we'll route you to another engineer if you'd rather not wait.`,
+              `Request sent to ${engineerName} — they'll join when they wrap their current call, or we'll route you to another engineer if you'd rather not wait.`
             );
             if (pid) onStartInProject(pid);
           }}
@@ -6456,7 +7677,14 @@ const Sidebar = memo(function Sidebar({
 // so the user sees at a glance which controls are doing work. `last`
 // drops the bottom border between rows.
 function SortRow({
-  label, value, options, expanded, onToggle, onSelect, highlight, last,
+  label,
+  value,
+  options,
+  expanded,
+  onToggle,
+  onSelect,
+  highlight,
+  last,
 }: {
   label: string;
   value: string;
@@ -6553,19 +7781,19 @@ function SortRow({
 // internal dashboards and landing pages lead; CRMs and storefronts trail.
 const NEW_PROJECT_TYPES: ReadonlyArray<{ value: string; emoji: string }> = [
   { value: "Internal dashboard / KPI tracker", emoji: "📊" },
-  { value: "Marketing landing page",            emoji: "🌐" },
-  { value: "Customer portal / Web app",         emoji: "💻" },
-  { value: "Lead capture / Form tool",          emoji: "📋" },
-  { value: "Internal workflow / Automation",    emoji: "⚙️" },
-  { value: "Knowledge base / Wiki",             emoji: "📚" },
-  { value: "AI chatbot / Assistant",            emoji: "🤖" },
-  { value: "Reporting / Analytics tool",        emoji: "📈" },
-  { value: "CRM / Customer tracker",            emoji: "👥" },
-  { value: "Booking / Scheduling app",          emoji: "📅" },
-  { value: "Training / Course platform",        emoji: "🎓" },
-  { value: "E-commerce storefront",             emoji: "🛒" },
-  { value: "Mobile app",                        emoji: "📱" },
-  { value: "Other",                             emoji: "✨" },
+  { value: "Marketing landing page", emoji: "🌐" },
+  { value: "Customer portal / Web app", emoji: "💻" },
+  { value: "Lead capture / Form tool", emoji: "📋" },
+  { value: "Internal workflow / Automation", emoji: "⚙️" },
+  { value: "Knowledge base / Wiki", emoji: "📚" },
+  { value: "AI chatbot / Assistant", emoji: "🤖" },
+  { value: "Reporting / Analytics tool", emoji: "📈" },
+  { value: "CRM / Customer tracker", emoji: "👥" },
+  { value: "Booking / Scheduling app", emoji: "📅" },
+  { value: "Training / Course platform", emoji: "🎓" },
+  { value: "E-commerce storefront", emoji: "🛒" },
+  { value: "Mobile app", emoji: "📱" },
+  { value: "Other", emoji: "✨" },
 ];
 
 // The `client_intakes.developing` column has a strict CHECK constraint
@@ -6576,48 +7804,99 @@ const NEW_PROJECT_TYPES: ReadonlyArray<{ value: string; emoji: string }> = [
 // gets bounced to /intake on their next phone-click instead of straight
 // to engineer matching.
 type DevelopingKind = "Website" | "Mobile App" | "IoT System" | "AIML product";
-function mapProjectTypeToDeveloping(projectType: string | null | undefined): DevelopingKind {
+function mapProjectTypeToDeveloping(
+  projectType: string | null | undefined
+): DevelopingKind {
   if (!projectType) return "Website";
   const v = projectType.toLowerCase();
   // Direct passthroughs for callers that already supply a valid value.
-  if (v === "website")        return "Website";
-  if (v === "mobile app")     return "Mobile App";
-  if (v === "iot system")     return "IoT System";
-  if (v === "aiml product")   return "AIML product";
+  if (v === "website") return "Website";
+  if (v === "mobile app") return "Mobile App";
+  if (v === "iot system") return "IoT System";
+  if (v === "aiml product") return "AIML product";
   // Persona mapping: mobile, AI, IoT, else everything web-ish → Website.
-  if (v.includes("mobile"))                                    return "Mobile App";
-  if (v.includes("ai ") || v.includes("chatbot") || v.includes("assistant") || v.includes("aiml")) return "AIML product";
-  if (v.includes("iot") || v.includes("device") || v.includes("hardware")) return "IoT System";
+  if (v.includes("mobile")) return "Mobile App";
+  if (
+    v.includes("ai ") ||
+    v.includes("chatbot") ||
+    v.includes("assistant") ||
+    v.includes("aiml")
+  )
+    return "AIML product";
+  if (v.includes("iot") || v.includes("device") || v.includes("hardware"))
+    return "IoT System";
   return "Website";
 }
 
 // AI tools the customer might be building with. Aligned with the homepage
 // "AI tools we support" pill row + the lib/relay/profile STACK_OPTIONS.
 const NEW_PROJECT_AI_TOOLS: ReadonlyArray<string> = [
-  "Claude", "ChatGPT", "Cursor", "Lovable", "v0", "Replit", "Bolt", "Windsurf", "Other",
+  "Claude",
+  "ChatGPT",
+  "Cursor",
+  "Lovable",
+  "v0",
+  "Replit",
+  "Bolt",
+  "Windsurf",
+  "Other",
 ];
 const NEW_PROJECT_BACKENDS: ReadonlyArray<string> = [
-  "Supabase", "Firebase", "Vercel", "AWS", "Postgres", "MongoDB", "Node.js", "Python", "Not sure",
+  "Supabase",
+  "Firebase",
+  "Vercel",
+  "AWS",
+  "Postgres",
+  "MongoDB",
+  "Node.js",
+  "Python",
+  "Not sure",
 ];
 const NEW_PROJECT_FRONTENDS: ReadonlyArray<string> = [
-  "React", "Next.js", "Vue", "Plain HTML/CSS", "Tailwind", "React Native", "Flutter", "Not sure",
+  "React",
+  "Next.js",
+  "Vue",
+  "Plain HTML/CSS",
+  "Tailwind",
+  "React Native",
+  "Flutter",
+  "Not sure",
 ];
 
 function ConnectFlowModal({
-  step, mode, projects,
-  pickerProjectId, pickerProjectName, pickerEngineers, pickerPresence,
-  newProjectType, setNewProjectType,
-  newProjectTypeOther, setNewProjectTypeOther,
-  newProjectAiTools, setNewProjectAiTools,
-  newProjectBackend, setNewProjectBackend,
-  newProjectFrontend, setNewProjectFrontend,
-  newProjectName, setNewProjectName,
+  step,
+  mode,
+  projects,
+  pickerProjectId,
+  pickerProjectName,
+  pickerEngineers,
+  pickerPresence,
+  newProjectType,
+  setNewProjectType,
+  newProjectTypeOther,
+  setNewProjectTypeOther,
+  newProjectAiTools,
+  setNewProjectAiTools,
+  newProjectBackend,
+  setNewProjectBackend,
+  newProjectFrontend,
+  setNewProjectFrontend,
+  newProjectName,
+  setNewProjectName,
   submitting,
-  onChooseNew, onChooseExisting, onPickProject,
-  onEngineerConnect, onEngineerRequest, onEngineerSchedule,
-  onPickerRequestDifferent, onPickerBack,
-  onDetailsNext, onNameBack, onSubmitNewProject,
-  onBack, onClose,
+  onChooseNew,
+  onChooseExisting,
+  onPickProject,
+  onEngineerConnect,
+  onEngineerRequest,
+  onEngineerSchedule,
+  onPickerRequestDifferent,
+  onPickerBack,
+  onDetailsNext,
+  onNameBack,
+  onSubmitNewProject,
+  onBack,
+  onClose,
 }: {
   step: "choose" | "existing" | "engineerPicker" | "details" | "name";
   mode: "connect" | "create-only";
@@ -6626,7 +7905,11 @@ function ConnectFlowModal({
   pickerProjectName: string | null;
   /** Engineers who've worked on the picked project (deduped, most-recent
    *  first). lastDate is the most recent session they had on this project. */
-  pickerEngineers: { name: string; lastDate: string; engineerId: string | null }[];
+  pickerEngineers: {
+    name: string;
+    lastDate: string;
+    engineerId: string | null;
+  }[];
   pickerPresence: Record<string, "available" | "busy" | "offline">;
   newProjectType: string;
   setNewProjectType: (s: string) => void;
@@ -6659,10 +7942,10 @@ function ConnectFlowModal({
 }) {
   const toggleMultiSelect = (
     setter: React.Dispatch<React.SetStateAction<string[]>>,
-    value: string,
+    value: string
   ) => {
     setter((prev) =>
-      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value],
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
     );
   };
 
@@ -6680,7 +7963,9 @@ function ConnectFlowModal({
   const nameValid = newProjectName.trim().length > 0;
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
@@ -6696,15 +7981,18 @@ function ConnectFlowModal({
           "relative w-full rounded-2xl border p-6 shadow-2xl",
           // Wider modal for the details step (form is content-heavy);
           // narrower for the lighter steps so they don't feel sparse.
-          step === "details" ? "max-w-xl" : "max-w-md",
+          step === "details" ? "max-w-xl" : "max-w-md"
         )}
-        style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}
+        style={{
+          backgroundColor: "var(--surface)",
+          borderColor: "var(--border)",
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         <button
           onClick={onClose}
           aria-label="Close"
-          className="absolute right-4 top-4 rounded-full p-1 opacity-60 transition-opacity hover:opacity-100"
+          className="absolute top-4 right-4 rounded-full p-1 opacity-60 transition-opacity hover:opacity-100"
           style={{ color: "var(--text-muted)" }}
         >
           <X size={16} />
@@ -6722,28 +8010,37 @@ function ConnectFlowModal({
               className="mt-2 text-[13px] leading-relaxed"
               style={{ color: "var(--text-muted)" }}
             >
-              We'll route your session to the right project so the context
-              stays together.
+              We'll route your session to the right project so the context stays
+              together.
             </p>
             <div className="mt-5 flex flex-col gap-2">
               <button
                 type="button"
                 onClick={onChooseExisting}
                 disabled={projects.length === 0}
-                className="flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left transition-colors hover:bg-[var(--surface-raised)] disabled:opacity-40 disabled:cursor-not-allowed"
+                className="flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left transition-colors hover:bg-[var(--surface-raised)] disabled:cursor-not-allowed disabled:opacity-40"
                 style={{ borderColor: "var(--border)" }}
               >
                 <div>
-                  <div className="text-[14px] font-medium" style={{ color: "var(--text)" }}>
+                  <div
+                    className="text-[14px] font-medium"
+                    style={{ color: "var(--text)" }}
+                  >
                     Existing project
                   </div>
-                  <div className="mt-0.5 text-[12px]" style={{ color: "var(--text-muted)" }}>
+                  <div
+                    className="mt-0.5 text-[12px]"
+                    style={{ color: "var(--text-muted)" }}
+                  >
                     {projects.length === 0
                       ? "You don't have any projects yet — start a new one."
                       : `Pick from your ${projects.length} project${projects.length === 1 ? "" : "s"}.`}
                   </div>
                 </div>
-                <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
+                <ChevronRight
+                  size={16}
+                  style={{ color: "var(--text-muted)" }}
+                />
               </button>
               <button
                 type="button"
@@ -6752,14 +8049,23 @@ function ConnectFlowModal({
                 style={{ borderColor: "var(--border)" }}
               >
                 <div>
-                  <div className="text-[14px] font-medium" style={{ color: "var(--text)" }}>
+                  <div
+                    className="text-[14px] font-medium"
+                    style={{ color: "var(--text)" }}
+                  >
                     New project
                   </div>
-                  <div className="mt-0.5 text-[12px]" style={{ color: "var(--text-muted)" }}>
+                  <div
+                    className="mt-0.5 text-[12px]"
+                    style={{ color: "var(--text-muted)" }}
+                  >
                     Tell us what you're building, then we'll connect you.
                   </div>
                 </div>
-                <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
+                <ChevronRight
+                  size={16}
+                  style={{ color: "var(--text-muted)" }}
+                />
               </button>
             </div>
           </>
@@ -6774,7 +8080,10 @@ function ConnectFlowModal({
                 className="rounded-md p-1 transition-opacity hover:opacity-80"
                 style={{ color: "var(--text-muted)" }}
               >
-                <ChevronRight size={14} style={{ transform: "rotate(180deg)" }} />
+                <ChevronRight
+                  size={14}
+                  style={{ transform: "rotate(180deg)" }}
+                />
               </button>
               <h2
                 className="text-[18px] font-semibold"
@@ -6791,7 +8100,10 @@ function ConnectFlowModal({
             </p>
             <div className="mt-4 flex max-h-[60vh] flex-col gap-1 overflow-y-auto">
               {projects.length === 0 ? (
-                <p className="px-2 py-4 text-[13px]" style={{ color: "var(--text-muted)" }}>
+                <p
+                  className="px-2 py-4 text-[13px]"
+                  style={{ color: "var(--text-muted)" }}
+                >
                   No projects yet.
                 </p>
               ) : (
@@ -6804,13 +8116,23 @@ function ConnectFlowModal({
                     style={{ borderColor: "var(--border)" }}
                   >
                     <div className="flex min-w-0 items-center gap-2">
-                      <Folder size={13} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
-                      <span className="truncate text-[13px] font-medium" style={{ color: "var(--text)" }}>
+                      <Folder
+                        size={13}
+                        style={{ color: "var(--text-muted)", flexShrink: 0 }}
+                      />
+                      <span
+                        className="truncate text-[13px] font-medium"
+                        style={{ color: "var(--text)" }}
+                      >
                         {p.name}
                       </span>
                     </div>
-                    <span className="ml-2 shrink-0 text-[11px] tabular-nums" style={{ color: "var(--text-muted)" }}>
-                      {p.sessions.length} {p.sessions.length === 1 ? "session" : "sessions"}
+                    <span
+                      className="ml-2 shrink-0 text-[11px] tabular-nums"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      {p.sessions.length}{" "}
+                      {p.sessions.length === 1 ? "session" : "sessions"}
                     </span>
                   </button>
                 ))
@@ -6828,7 +8150,10 @@ function ConnectFlowModal({
                 className="rounded-md p-1 transition-opacity hover:opacity-80"
                 style={{ color: "var(--text-muted)" }}
               >
-                <ChevronRight size={14} style={{ transform: "rotate(180deg)" }} />
+                <ChevronRight
+                  size={14}
+                  style={{ transform: "rotate(180deg)" }}
+                />
               </button>
               <h2
                 className="text-[18px] font-semibold"
@@ -6843,9 +8168,12 @@ function ConnectFlowModal({
             >
               {pickerProjectName ? (
                 <>
-                  These engineers have worked with you on <strong style={{ color: "var(--text)" }}>{pickerProjectName}</strong>.
-                  Pick one to continue with — or request a different
-                  engineer if you need fresh eyes.
+                  These engineers have worked with you on{" "}
+                  <strong style={{ color: "var(--text)" }}>
+                    {pickerProjectName}
+                  </strong>
+                  . Pick one to continue with — or request a different engineer
+                  if you need fresh eyes.
                 </>
               ) : (
                 "Choose an engineer to connect with."
@@ -6859,14 +8187,18 @@ function ConnectFlowModal({
                 // sessions that predate claimed_by) can't be ring-targeted or
                 // presence-checked, so they show Offline → Schedule.
                 const availability: "available" | "busy" | "offline" =
-                  eng.engineerId ? (pickerPresence[eng.engineerId] ?? "offline") : "offline";
+                  eng.engineerId
+                    ? (pickerPresence[eng.engineerId] ?? "offline")
+                    : "offline";
                 return (
                   <EngineerPickerRow
                     key={eng.name}
                     engineerName={eng.name}
                     lastSessionDate={eng.lastDate}
                     availability={availability}
-                    onConnect={() => onEngineerConnect(eng.name, eng.engineerId)}
+                    onConnect={() =>
+                      onEngineerConnect(eng.name, eng.engineerId)
+                    }
                     onRequest={() => onEngineerRequest(eng.name)}
                     onSchedule={() => onEngineerSchedule(eng.name, eng.engineerId ?? null)}
                   />
@@ -6914,7 +8246,10 @@ function ConnectFlowModal({
                 className="rounded-md p-1 transition-opacity hover:opacity-80"
                 style={{ color: "var(--text-muted)" }}
               >
-                <ChevronRight size={14} style={{ transform: "rotate(180deg)" }} />
+                <ChevronRight
+                  size={14}
+                  style={{ transform: "rotate(180deg)" }}
+                />
               </button>
               <h2
                 className="text-[18px] font-semibold"
@@ -6927,8 +8262,8 @@ function ConnectFlowModal({
               className="mt-2 text-[13px] leading-relaxed"
               style={{ color: "var(--text-muted)" }}
             >
-              Pick a name you'll recognize when you come back. You can rename
-              it later.
+              Pick a name you'll recognize when you come back. You can rename it
+              later.
             </p>
             <input
               type="text"
@@ -6938,7 +8273,8 @@ function ConnectFlowModal({
               maxLength={120}
               autoFocus
               onKeyDown={(e) => {
-                if (e.key === "Enter" && nameValid && !submitting) onSubmitNewProject();
+                if (e.key === "Enter" && nameValid && !submitting)
+                  onSubmitNewProject();
               }}
               className="mt-5 w-full rounded-md border px-3 py-2.5 text-[14px] outline-none focus:ring-2"
               style={{
@@ -6990,17 +8326,23 @@ function ConnectFlowModal({
 // Groups a flat session list into Today / Yesterday / This week / Earlier
 // buckets. Empty buckets are dropped from the return value so the sidebar
 // doesn't render section headers with no content.
-function bucketSessionsByDate(sessions: PastSession[]): { label: string; sessions: PastSession[] }[] {
+function bucketSessionsByDate(
+  sessions: PastSession[]
+): { label: string; sessions: PastSession[] }[] {
   const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const todayStart = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate()
+  ).getTime();
   const yesterdayStart = todayStart - 86_400_000;
   const weekAgoStart = todayStart - 7 * 86_400_000;
 
   const buckets: { label: string; sessions: PastSession[] }[] = [
-    { label: "Today",     sessions: [] },
+    { label: "Today", sessions: [] },
     { label: "Yesterday", sessions: [] },
     { label: "This week", sessions: [] },
-    { label: "Earlier",   sessions: [] },
+    { label: "Earlier", sessions: [] },
   ];
   for (const s of sessions) {
     const t = new Date(s.date).getTime();
@@ -7018,7 +8360,13 @@ function bucketSessionsByDate(sessions: PastSession[]): { label: string; session
 // (so the user doesn't lose project context when viewing across projects).
 // Pin button overlays the top-right just like in the accordion.
 function SessionRowFlat({
-  session, isPinned, isViewing, isCurrent, onClick, onTogglePin, showProjectName = true,
+  session,
+  isPinned,
+  isViewing,
+  isCurrent,
+  onClick,
+  onTogglePin,
+  showProjectName = true,
 }: {
   session: PastSession;
   isPinned: boolean;
@@ -7032,11 +8380,17 @@ function SessionRowFlat({
    *  so existing call sites continue rendering as before. */
   showProjectName?: boolean;
 }) {
-  const isActive = !["ended", "abandoned", "cancelled"].includes(session.status);
+  const isActive = !["ended", "abandoned", "cancelled"].includes(
+    session.status
+  );
   const fmtRelDate = (d: Date) => {
     const now = new Date();
     const t = d.getTime();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const today = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate()
+    ).getTime();
     const diffDays = Math.floor((today - t) / 86_400_000);
     if (diffDays < 1) return "Today";
     if (diffDays < 2) return "Yesterday";
@@ -7044,7 +8398,7 @@ function SessionRowFlat({
     return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   };
   return (
-    <div className="relative group/session">
+    <div className="group/session relative">
       <button
         onClick={onClick}
         className={cn(
@@ -7053,13 +8407,13 @@ function SessionRowFlat({
             ? "border-[var(--primary)] bg-[var(--primary-tint)]"
             : isCurrent
               ? "border-[var(--primary)] bg-[var(--primary-tint)]/60"
-              : "border-transparent hover:border-[var(--border)] hover:bg-[var(--surface-raised)]",
+              : "border-transparent hover:border-[var(--border)] hover:bg-[var(--surface-raised)]"
         )}
       >
         <span
           className={cn(
             "relative mt-1.5 flex h-2 w-2 shrink-0 rounded-full",
-            isActive ? "bg-[var(--primary)]" : "bg-[var(--text-faint)]",
+            isActive ? "bg-[var(--primary)]" : "bg-[var(--text-faint)]"
           )}
           aria-hidden
         >
@@ -7076,7 +8430,7 @@ function SessionRowFlat({
           <div
             className={cn(
               "truncate text-[13px]",
-              isViewing || isCurrent ? "font-medium" : "",
+              isViewing || isCurrent ? "font-medium" : ""
             )}
             style={{ color: "var(--text)" }}
           >
@@ -7105,12 +8459,12 @@ function SessionRowFlat({
                 <span>·</span>
                 <span
                   className={cn(
-                    "inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider",
+                    "inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-medium tracking-wider uppercase",
                     session.status === "ended"
                       ? "bg-[var(--surface-raised)] text-[var(--text-muted)]"
                       : session.status === "cancelled"
                         ? "bg-[var(--warn-soft)] text-[var(--warn)]"
-                        : "bg-[var(--risk-soft)] text-[var(--risk)]",
+                        : "bg-[var(--risk-soft)] text-[var(--risk)]"
                   )}
                 >
                   {session.status}
@@ -7130,14 +8484,18 @@ function SessionRowFlat({
         aria-label={isPinned ? "Unpin session" : "Pin session"}
         aria-pressed={isPinned}
         className={cn(
-          "absolute right-1.5 top-1.5 inline-flex h-5 w-5 items-center justify-center rounded-md transition-all",
+          "absolute top-1.5 right-1.5 inline-flex h-5 w-5 items-center justify-center rounded-md transition-all",
           isPinned
             ? "opacity-100"
-            : "opacity-0 group-hover/session:opacity-60 hover:opacity-100",
+            : "opacity-0 group-hover/session:opacity-60 hover:opacity-100"
         )}
         style={{ color: isPinned ? BRAND_GREEN : "var(--text-muted)" }}
       >
-        <Pin size={11} fill={isPinned ? BRAND_GREEN : "none"} strokeWidth={isPinned ? 2 : 1.8} />
+        <Pin
+          size={11}
+          fill={isPinned ? BRAND_GREEN : "none"}
+          strokeWidth={isPinned ? 2 : 1.8}
+        />
       </button>
     </div>
   );
@@ -7154,8 +8512,12 @@ function SessionRowFlat({
 // engineer_presence subscriptions in v2 so Online/Busy/Offline flip
 // based on actual engineer activity.
 function EngineerPickerRow({
-  engineerName, lastSessionDate, availability,
-  onConnect, onRequest, onSchedule,
+  engineerName,
+  lastSessionDate,
+  availability,
+  onConnect,
+  onRequest,
+  onSchedule,
 }: {
   engineerName: string;
   lastSessionDate: string;
@@ -7171,8 +8533,8 @@ function EngineerPickerRow({
   });
   const stateMeta = {
     available: { dot: BRAND_GREEN, label: "Available now", ring: true },
-    busy:      { dot: "#f59e0b",   label: "Busy", ring: false },
-    offline:   { dot: "var(--text-faint)", label: "Offline", ring: false },
+    busy: { dot: "#f59e0b", label: "Busy", ring: false },
+    offline: { dot: "var(--text-faint)", label: "Offline", ring: false },
   }[availability];
 
   return (
@@ -7185,8 +8547,11 @@ function EngineerPickerRow({
         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[14px] font-semibold uppercase"
         style={{
           backgroundColor:
-            availability === "available" ? BRAND_GREEN_SOFT : "var(--surface-raised)",
-          color: availability === "available" ? BRAND_GREEN : "var(--text-muted)",
+            availability === "available"
+              ? BRAND_GREEN_SOFT
+              : "var(--surface-raised)",
+          color:
+            availability === "available" ? BRAND_GREEN : "var(--text-muted)",
         }}
       >
         {engineerName[0]}
@@ -7200,7 +8565,10 @@ function EngineerPickerRow({
         >
           {engineerName}
         </div>
-        <div className="flex items-center gap-1.5 text-[11px]" style={{ color: "var(--text-muted)" }}>
+        <div
+          className="flex items-center gap-1.5 text-[11px]"
+          style={{ color: "var(--text-muted)" }}
+        >
           <span className="relative inline-flex h-1.5 w-1.5">
             {stateMeta.ring && (
               <span
@@ -7277,13 +8645,19 @@ function EngineerPickerRow({
 //     for selected.
 function DetailsStep({
   onBack,
-  newProjectType, setNewProjectType,
-  newProjectTypeOther, setNewProjectTypeOther,
-  newProjectAiTools, setNewProjectAiTools,
-  newProjectBackend, setNewProjectBackend,
-  newProjectFrontend, setNewProjectFrontend,
+  newProjectType,
+  setNewProjectType,
+  newProjectTypeOther,
+  setNewProjectTypeOther,
+  newProjectAiTools,
+  setNewProjectAiTools,
+  newProjectBackend,
+  setNewProjectBackend,
+  newProjectFrontend,
+  setNewProjectFrontend,
   toggleMultiSelect,
-  detailsValid, onDetailsNext,
+  detailsValid,
+  onDetailsNext,
 }: {
   onBack: () => void;
   newProjectType: string;
@@ -7296,7 +8670,10 @@ function DetailsStep({
   setNewProjectBackend: React.Dispatch<React.SetStateAction<string[]>>;
   newProjectFrontend: string[];
   setNewProjectFrontend: React.Dispatch<React.SetStateAction<string[]>>;
-  toggleMultiSelect: (setter: React.Dispatch<React.SetStateAction<string[]>>, value: string) => void;
+  toggleMultiSelect: (
+    setter: React.Dispatch<React.SetStateAction<string[]>>,
+    value: string
+  ) => void;
   detailsValid: boolean;
   onDetailsNext: () => void;
 }) {
@@ -7325,8 +8702,8 @@ function DetailsStep({
         className="mt-2 text-[13px] leading-relaxed"
         style={{ color: "var(--text-muted)" }}
       >
-        Your engineer needs the shape of the project + the stack so they
-        can hit the ground running.
+        Your engineer needs the shape of the project + the stack so they can hit
+        the ground running.
       </p>
 
       <div className="mt-5 flex flex-col gap-3">
@@ -7436,7 +8813,10 @@ function DetailsStep({
 // flat list of chips. count + required show a tiny status pill next to
 // the section label — green when satisfied, red when required-and-empty.
 function FormPanel({
-  label, children, count, required,
+  label,
+  children,
+  count,
+  required,
 }: {
   label: string;
   children: React.ReactNode;
@@ -7455,7 +8835,7 @@ function FormPanel({
     >
       <div className="mb-3 flex items-center gap-2">
         <span
-          className="text-[12px] font-semibold uppercase tracking-[0.1em]"
+          className="text-[12px] font-semibold tracking-[0.1em] uppercase"
           style={{ color: "var(--text)" }}
         >
           {label}
@@ -7489,7 +8869,7 @@ function FormPanel({
 function FormSectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div
-      className="mb-2 text-[11px] font-semibold uppercase tracking-[0.1em]"
+      className="mb-2 text-[11px] font-semibold tracking-[0.1em] uppercase"
       style={{ color: "var(--text-muted)" }}
     >
       {children}
@@ -7498,7 +8878,10 @@ function FormSectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 function ChoiceChip({
-  label, emoji, selected, onClick,
+  label,
+  emoji,
+  selected,
+  onClick,
 }: {
   label: string;
   emoji?: string;
@@ -7512,9 +8895,7 @@ function ChoiceChip({
       aria-pressed={selected}
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] font-medium transition-colors",
-        selected
-          ? ""
-          : "hover:bg-[var(--surface-raised)]",
+        selected ? "" : "hover:bg-[var(--surface-raised)]"
       )}
       style={{
         borderColor: selected ? BRAND_GREEN : "var(--border)",
@@ -7528,7 +8909,11 @@ function ChoiceChip({
   );
 }
 
-type EntitlementShape = { free_consumed_at: string | null; free_minutes_used: number; paid_minutes_remaining: number };
+type EntitlementShape = {
+  free_consumed_at: string | null;
+  free_minutes_used: number;
+  paid_minutes_remaining: number;
+};
 
 function formatEntitlement(e: EntitlementShape): string {
   if (e.paid_minutes_remaining > 0) {
@@ -7543,7 +8928,10 @@ function formatEntitlement(e: EntitlementShape): string {
 // the whole sidebar tree to re-render. Owns its own 1s interval, scoped to
 // this leaf component only — render scope is one <span>.
 const WalletBalance = memo(function WalletBalance({
-  session, entitlement, employment, multiLine = false,
+  session,
+  entitlement,
+  employment,
+  multiLine = false,
 }: {
   session: GuestCall | null;
   entitlement: EntitlementShape;
@@ -7561,17 +8949,22 @@ const WalletBalance = memo(function WalletBalance({
   // to continue" (the upgrade path doesn't apply to enterprise accounts).
   if (employment?.isEmployee === true) {
     const fmt = (n: number) => Math.round(n).toLocaleString();
-    return employment.remainingMinutes > 0
-      ? <>{`${fmt(employment.remainingMinutes)} min available`}</>
-      : <>Out of credits</>;
+    return employment.remainingMinutes > 0 ? (
+      <>{`${fmt(employment.remainingMinutes)} min available`}</>
+    ) : (
+      <>Out of credits</>
+    );
   }
 
-  const paidAt       = session?.paid_extension_at ?? null;
+  const paidAt = session?.paid_extension_at ?? null;
   const freeConsumed = !!entitlement.free_consumed_at;
   // Billing ticks from assigned_at (when the engineer accepted and chat began),
   // not from Zoom — so starting a Zoom call never resets the burn.
-  const assignedAt   = session?.assigned_at ?? null;
-  const isEnded      = session?.status === "ended" || session?.status === "cancelled" || session?.status === "abandoned";
+  const assignedAt = session?.assigned_at ?? null;
+  const isEnded =
+    session?.status === "ended" ||
+    session?.status === "cancelled" ||
+    session?.status === "abandoned";
 
   // Tick the visible balance whenever paid minutes are being burned:
   // either paid_extension_at is stamped (first-timer who upgraded), or the
@@ -7598,7 +8991,10 @@ const WalletBalance = memo(function WalletBalance({
     if (paidElapsedMin > 0) {
       live = {
         ...entitlement,
-        paid_minutes_remaining: Math.max(0, entitlement.paid_minutes_remaining - paidElapsedMin),
+        paid_minutes_remaining: Math.max(
+          0,
+          entitlement.paid_minutes_remaining - paidElapsedMin
+        ),
       };
     }
   }
@@ -7608,13 +9004,15 @@ const WalletBalance = memo(function WalletBalance({
 
 function planLabel(
   e: { free_consumed_at: string | null; paid_minutes_remaining: number },
-  employment: EmployeeInfo | null,
+  employment: EmployeeInfo | null
 ): string {
   // Employees draw from their dept allocation — show "Enterprise plan" when
   // they still have minutes, "Out of credits" once the dept pool runs dry.
   // The personal entitlement (free/paid) is irrelevant for these accounts.
   if (employment?.isEmployee === true) {
-    return employment.remainingMinutes > 0 ? "Enterprise plan" : "Out of credits";
+    return employment.remainingMinutes > 0
+      ? "Enterprise plan"
+      : "Out of credits";
   }
   if (e.paid_minutes_remaining > 0) return "Paid plan";
   return "Free plan";
@@ -7626,7 +9024,11 @@ function planLabel(
 // spec we deliberately don't reveal whether the enterprise is organic or
 // inorganic. Type is hoisted to the top of the file (search for the other
 // `type EmployeeInfo` to see the canonical declaration).
-const EmployeeInfoBlock = memo(function EmployeeInfoBlock({ info }: { info: EmployeeInfo | null }) {
+const EmployeeInfoBlock = memo(function EmployeeInfoBlock({
+  info,
+}: {
+  info: EmployeeInfo | null;
+}) {
   if (!info || info.isEmployee !== true) return null;
   const fmt = (n: number) =>
     new Intl.NumberFormat(undefined).format(Math.round(n));
@@ -7693,7 +9095,18 @@ const EmployeeInfoBlock = memo(function EmployeeInfoBlock({ info }: { info: Empl
 
 // ── User menu dropdown (Claude-style) ─────────────────────────────────────
 const UserMenu = memo(function UserMenu({
-  email, displayName, isGuest, session, entitlement, employment, onRecharge, onOpenProfile, onOpenBilling, onOpenLegal, onClose, collapsed = false,
+  email,
+  displayName,
+  isGuest,
+  session,
+  entitlement,
+  employment,
+  onRecharge,
+  onOpenProfile,
+  onOpenBilling,
+  onOpenLegal,
+  onClose,
+  collapsed = false,
 }: {
   email: string;
   /** Resolved customer display name (profile → guest_name → email handle).
@@ -7735,9 +9148,17 @@ const UserMenu = memo(function UserMenu({
   // /room central pane (LegalPane → iframe with ?embed=1). The
   // standalone /legal/* routes still exist and are crawlable for SEO
   // — this is just how the in-app menu reaches them.
-  const learnMoreLinks: { icon: React.ReactNode; label: string; kind: LegalKind }[] = [
-    { icon: <ShieldCheck size={15} />, label: "Privacy Policy", kind: "privacy" },
-    { icon: <FileText size={15} />,    label: "Terms of Use",   kind: "terms"   },
+  const learnMoreLinks: {
+    icon: React.ReactNode;
+    label: string;
+    kind: LegalKind;
+  }[] = [
+    {
+      icon: <ShieldCheck size={15} />,
+      label: "Privacy Policy",
+      kind: "privacy",
+    },
+    { icon: <FileText size={15} />, label: "Terms of Use", kind: "terms" },
   ];
 
   return (
@@ -7766,14 +9187,23 @@ const UserMenu = memo(function UserMenu({
             row — the email is blank for anonymous Supabase sessions, and
             the avatar+plan row below carries no useful info before they
             verify an account. Verified users keep the full layout. */}
-        <div className="border-b px-4 py-3" style={{ borderColor: "var(--border)" }}>
-          <p className="truncate text-[12px] font-medium" style={{ color: "var(--text-muted)" }}>
+        <div
+          className="border-b px-4 py-3"
+          style={{ borderColor: "var(--border)" }}
+        >
+          <p
+            className="truncate text-[12px] font-medium"
+            style={{ color: "var(--text-muted)" }}
+          >
             {isGuest ? "Guest" : email}
           </p>
         </div>
 
         {/* Plan + wallet */}
-        <div className="border-b px-3 py-2" style={{ borderColor: "var(--border)" }}>
+        <div
+          className="border-b px-3 py-2"
+          style={{ borderColor: "var(--border)" }}
+        >
           {!isGuest && (
             <div className="flex items-center justify-between rounded-lg px-1 py-2">
               <div className="flex items-center gap-2.5">
@@ -7784,10 +9214,16 @@ const UserMenu = memo(function UserMenu({
                   {(displayName || email || "?")[0]}
                 </div>
                 <div>
-                  <div className="text-[13px] font-medium" style={{ color: "var(--text)" }}>
+                  <div
+                    className="text-[13px] font-medium"
+                    style={{ color: "var(--text)" }}
+                  >
                     {displayName || email.split("@")[0]}
                   </div>
-                  <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                  <div
+                    className="text-[11px]"
+                    style={{ color: "var(--text-muted)" }}
+                  >
                     {planLabel(entitlement, employment)}
                   </div>
                 </div>
@@ -7813,9 +9249,16 @@ const UserMenu = memo(function UserMenu({
               style={{ backgroundColor: BRAND_GREEN_SOFT }}
             >
               <div className="flex min-w-0 flex-1 items-center gap-2">
-                <Wallet size={14} className="shrink-0" style={{ color: BRAND_GREEN }} />
+                <Wallet
+                  size={14}
+                  className="shrink-0"
+                  style={{ color: BRAND_GREEN }}
+                />
                 <div className="min-w-0">
-                  <div className="text-[12px] font-medium" style={{ color: "var(--text)" }}>
+                  <div
+                    className="text-[12px] font-medium"
+                    style={{ color: "var(--text)" }}
+                  >
                     Wallet
                   </div>
                   {/* `whitespace-pre` (not `pre-line`) keeps the embedded
@@ -7825,16 +9268,20 @@ const UserMenu = memo(function UserMenu({
                       Recharge button below loses its leading icon to
                       free the ~16px the longer text needs. */}
                   <div
-                    className="whitespace-pre text-[11px] leading-snug"
+                    className="text-[11px] leading-snug whitespace-pre"
                     style={{ color: "var(--text-muted)" }}
                   >
-                    <WalletBalance session={session} entitlement={entitlement} multiLine />
+                    <WalletBalance
+                      session={session}
+                      entitlement={entitlement}
+                      multiLine
+                    />
                   </div>
                 </div>
               </div>
               <button
                 onClick={onRecharge}
-                className="shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-medium transition-opacity hover:opacity-80"
+                className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium whitespace-nowrap transition-opacity hover:opacity-80"
                 style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
               >
                 Recharge
@@ -7862,7 +9309,9 @@ const UserMenu = memo(function UserMenu({
               className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
               style={{ color: "var(--text)" }}
             >
-              <span style={{ color: "var(--text-muted)" }}><Settings size={15} /></span>
+              <span style={{ color: "var(--text-muted)" }}>
+                <Settings size={15} />
+              </span>
               Profile &amp; settings
             </button>
             <button
@@ -7870,7 +9319,9 @@ const UserMenu = memo(function UserMenu({
               className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
               style={{ color: "var(--text)" }}
             >
-              <span style={{ color: "var(--text-muted)" }}><Receipt size={15} /></span>
+              <span style={{ color: "var(--text-muted)" }}>
+                <Receipt size={15} />
+              </span>
               Billing
             </button>
           </div>
@@ -7881,9 +9332,12 @@ const UserMenu = memo(function UserMenu({
             sub-list rather than three flat menu items. Links open in a new
             tab via target="_blank" + rel="noopener noreferrer" so the
             customer doesn't lose their /room session. */}
-        <div className="border-t px-2 py-1.5" style={{ borderColor: "var(--border)" }}>
+        <div
+          className="border-t px-2 py-1.5"
+          style={{ borderColor: "var(--border)" }}
+        >
           <div
-            className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.08em]"
+            className="px-3 pt-1 pb-1 text-[10px] font-semibold tracking-[0.08em] uppercase"
             style={{ color: "var(--text-faint)" }}
           >
             Learn more
@@ -7909,13 +9363,18 @@ const UserMenu = memo(function UserMenu({
             account the sign-in surface can't bring them back to the same
             wallet. They can simply close the tab instead. */}
         {!isGuest && (
-          <div className="border-t px-2 py-1.5" style={{ borderColor: "var(--border)" }}>
+          <div
+            className="border-t px-2 py-1.5"
+            style={{ borderColor: "var(--border)" }}
+          >
             <button
               onClick={() => void handleLogout()}
               className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
               style={{ color: "#e05c4b" }}
             >
-              <span style={{ color: "#e05c4b" }}><LogOut size={15} /></span>
+              <span style={{ color: "#e05c4b" }}>
+                <LogOut size={15} />
+              </span>
               Log out
             </button>
           </div>
@@ -7927,25 +9386,38 @@ const UserMenu = memo(function UserMenu({
 
 function humanState(s: SessionStatus): string {
   switch (s) {
-    case "queued":       return "Connecting…";
-    case "assigned":     return "Live";
-    case "joining":      return "Joining call";
-    case "live":         return "On call";
-    case "grace":        return "Reconnecting";
-    case "ending":       return "Wrapping up";
-    case "ended":        return "Ended";
-    case "abandoned":    return "No engineer found";
-    case "cancelled":    return "Cancelled";
-    case "expired_free": return "Free session ended";
+    case "queued":
+      return "Connecting…";
+    case "assigned":
+      return "Live";
+    case "joining":
+      return "Joining call";
+    case "live":
+      return "On call";
+    case "grace":
+      return "Reconnecting";
+    case "ending":
+      return "Wrapping up";
+    case "ended":
+      return "Ended";
+    case "abandoned":
+      return "No engineer found";
+    case "cancelled":
+      return "Cancelled";
+    case "expired_free":
+      return "Free session ended";
   }
 }
 
 // Human-readable relative date label for session rows inside the accordion.
 function fmtRelDate(d: Date): string {
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
-  const day = new Date(d); day.setHours(0, 0, 0, 0);
-  if (day >= today)     return "Today";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const day = new Date(d);
+  day.setHours(0, 0, 0, 0);
+  if (day >= today) return "Today";
   if (day >= yesterday) return "Yesterday";
   const diff = Math.floor((today.getTime() - day.getTime()) / 86_400_000);
   if (diff < 7) return `${diff}d ago`;
@@ -7954,9 +9426,20 @@ function fmtRelDate(d: Date): string {
 
 // ── Project accordion (collapsible group in the sidebar) ───────────────────
 const ProjectAccordion = memo(function ProjectAccordion({
-  group, viewingPastId, currentSessionId, selectedProjectId,
-  onViewPast, onStartInProject, onRenameProject, onSelectProject,
-  pinnedIds, onTogglePin, onPrepareSession, draftsTick, onDeleteProject, onMarkProjectComplete,
+  group,
+  viewingPastId,
+  currentSessionId,
+  selectedProjectId,
+  onViewPast,
+  onStartInProject,
+  onRenameProject,
+  onSelectProject,
+  pinnedIds,
+  onTogglePin,
+  onPrepareSession,
+  draftsTick,
+  onDeleteProject,
+  onMarkProjectComplete,
 }: {
   group: ProjectGroup;
   viewingPastId: string | null;
@@ -7970,7 +9453,10 @@ const ProjectAccordion = memo(function ProjectAccordion({
   onViewPast: (id: string | null) => void;
   /** Called when the user clicks "+ Start session in this project". null
    *  is passed for the General bucket (no project id). */
-  onStartInProject: (projectId: string | null, preferredEngineerId?: string) => void;
+  onStartInProject: (
+    projectId: string | null,
+    preferredEngineerId?: string
+  ) => void;
   onRenameProject: (projectId: string, newName: string) => Promise<void>;
   /** Click on the project header → toggle this project as the landing
    *  CTA context. Not invoked for the General bucket. */
@@ -8052,7 +9538,7 @@ const ProjectAccordion = memo(function ProjectAccordion({
   };
 
   return (
-    <div className="mb-1 group/proj">
+    <div className="group/proj mb-1">
       {/* Project header. min-w-0 on the wrapper + button lets the long
           name actually shrink/wrap within the flex column instead of
           pushing the action buttons outside the sidebar's right edge. */}
@@ -8085,8 +9571,12 @@ const ProjectAccordion = memo(function ProjectAccordion({
               onChange={(e) => setDraftName(e.target.value)}
               onBlur={() => void commitRename()}
               onKeyDown={(e) => {
-                if (e.key === "Enter")  (e.currentTarget as HTMLInputElement).blur();
-                if (e.key === "Escape") { setRenaming(false); setDraftName(group.name); }
+                if (e.key === "Enter")
+                  (e.currentTarget as HTMLInputElement).blur();
+                if (e.key === "Escape") {
+                  setRenaming(false);
+                  setDraftName(group.name);
+                }
               }}
               className="min-w-0 flex-1 rounded-sm border px-1 py-0 text-[15px] font-semibold tracking-tight outline-none"
               style={{
@@ -8101,7 +9591,7 @@ const ProjectAccordion = memo(function ProjectAccordion({
             // long token break mid-word. leading-tight keeps the line-
             // height tight when wrapped.
             <span
-              className="min-w-0 flex-1 break-words text-[15px] font-normal leading-tight tracking-tight"
+              className="min-w-0 flex-1 text-[15px] leading-tight font-normal tracking-tight break-words"
               style={{ color: isSelected ? BRAND_GREEN : "var(--text)" }}
             >
               {group.name}
@@ -8112,15 +9602,21 @@ const ProjectAccordion = memo(function ProjectAccordion({
               retention clock has started; "Archived" is post-sweep. */}
           {!isGeneral && group.completionStatus !== "active" && (
             <span
-              className="ml-1 shrink-0 rounded-full px-1.5 py-0 text-[9px] font-semibold uppercase tracking-wider"
+              className="ml-1 shrink-0 rounded-full px-1.5 py-0 text-[9px] font-semibold tracking-wider uppercase"
               style={{
-                backgroundColor: group.completionStatus === "completed"
-                  ? "color-mix(in srgb, var(--warn) 18%, transparent)"
-                  : "color-mix(in srgb, var(--text) 8%, transparent)",
-                color: group.completionStatus === "completed" ? "var(--warn)" : "var(--text-muted)",
+                backgroundColor:
+                  group.completionStatus === "completed"
+                    ? "color-mix(in srgb, var(--warn) 18%, transparent)"
+                    : "color-mix(in srgb, var(--text) 8%, transparent)",
+                color:
+                  group.completionStatus === "completed"
+                    ? "var(--warn)"
+                    : "var(--text-muted)",
               }}
             >
-              {group.completionStatus === "completed" ? "Completed" : "Archived"}
+              {group.completionStatus === "completed"
+                ? "Completed"
+                : "Archived"}
             </span>
           )}
           {/* Session-count badge removed — the count was redundant with
@@ -8134,7 +9630,10 @@ const ProjectAccordion = memo(function ProjectAccordion({
                 phone button next door to ring the engineer who walks
                 in with the prepared context. */}
             <button
-              onClick={(e) => { e.stopPropagation(); onPrepareSession(group.key); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onPrepareSession(group.key);
+              }}
               title={`Prepare a new session in ${group.name}`}
               aria-label={`Prepare a new session in ${group.name}`}
               className="inline-flex size-6 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-[var(--surface-raised)]"
@@ -8156,9 +9655,10 @@ const ProjectAccordion = memo(function ProjectAccordion({
                 if (s.agent) distinctEngineers.add(s.agent);
               }
               const isWarm = distinctEngineers.size > 0;
-              const onlyName = distinctEngineers.size === 1
-                ? Array.from(distinctEngineers)[0]
-                : null;
+              const onlyName =
+                distinctEngineers.size === 1
+                  ? Array.from(distinctEngineers)[0]
+                  : null;
               const buttonTitle = isWarm
                 ? onlyName
                   ? `Connect with ${onlyName.split(" ")[0]} again`
@@ -8166,7 +9666,10 @@ const ProjectAccordion = memo(function ProjectAccordion({
                 : `Find an engineer for ${group.name}`;
               return (
                 <button
-                  onClick={(e) => { e.stopPropagation(); onStartInProject(group.key); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onStartInProject(group.key);
+                  }}
                   title={buttonTitle}
                   aria-label={buttonTitle}
                   className="ml-1 inline-flex size-6 shrink-0 items-center justify-center rounded-full text-white shadow-sm transition-colors hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)]"
@@ -8204,7 +9707,7 @@ const ProjectAccordion = memo(function ProjectAccordion({
               </button>
               {overflowOpen && (
                 <div
-                  className="absolute right-0 top-full z-30 mt-1 min-w-[160px] overflow-hidden rounded-lg border shadow-xl"
+                  className="absolute top-full right-0 z-30 mt-1 min-w-[160px] overflow-hidden rounded-lg border shadow-xl"
                   style={{
                     borderColor: "var(--border)",
                     backgroundColor: "var(--surface)",
@@ -8234,7 +9737,10 @@ const ProjectAccordion = memo(function ProjectAccordion({
                         onMarkProjectComplete(group.key, group.name);
                       }}
                       className="flex w-full items-center gap-2 border-t px-3 py-2 text-left text-[12px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                      style={{ color: "var(--text)", borderColor: "var(--border)" }}
+                      style={{
+                        color: "var(--text)",
+                        borderColor: "var(--border)",
+                      }}
                     >
                       <Check size={12} />
                       Mark complete
@@ -8248,7 +9754,10 @@ const ProjectAccordion = memo(function ProjectAccordion({
                       onDeleteProject(group.key, group.name);
                     }}
                     className="flex w-full items-center gap-2 border-t px-3 py-2 text-left text-[12px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                    style={{ color: "var(--accent-red)", borderColor: "var(--border)" }}
+                    style={{
+                      color: "var(--accent-red)",
+                      borderColor: "var(--border)",
+                    }}
                   >
                     <X size={12} />
                     Delete project
@@ -8272,7 +9781,7 @@ const ProjectAccordion = memo(function ProjectAccordion({
           something I prepared." Clicking a draft re-opens the prep
           view loaded with that draft. */}
       {open && (
-        <div className="ml-2 mt-0.5 space-y-0.5">
+        <div className="mt-0.5 ml-2 space-y-0.5">
           {drafts.length > 0 && (
             <>
               {drafts.map((d) => (
@@ -8287,9 +9796,11 @@ const ProjectAccordion = memo(function ProjectAccordion({
                     // overlap (both mean "in flight, not yet committed").
                     // Dashed border keeps the "not a real session"
                     // visual at a glance.
-                    borderColor: "color-mix(in srgb, var(--warn) 40%, transparent)",
+                    borderColor:
+                      "color-mix(in srgb, var(--warn) 40%, transparent)",
                     borderStyle: "dashed",
-                    backgroundColor: "color-mix(in srgb, var(--warn) 5%, transparent)",
+                    backgroundColor:
+                      "color-mix(in srgb, var(--warn) 5%, transparent)",
                   }}
                 >
                   <Pencil
@@ -8300,9 +9811,10 @@ const ProjectAccordion = memo(function ProjectAccordion({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
                       <span
-                        className="rounded-full px-1 py-0 text-[8px] font-semibold uppercase tracking-wider"
+                        className="rounded-full px-1 py-0 text-[8px] font-semibold tracking-wider uppercase"
                         style={{
-                          backgroundColor: "color-mix(in srgb, var(--warn) 18%, transparent)",
+                          backgroundColor:
+                            "color-mix(in srgb, var(--warn) 18%, transparent)",
                           color: "var(--warn)",
                         }}
                       >
@@ -8315,7 +9827,10 @@ const ProjectAccordion = memo(function ProjectAccordion({
                         {deriveDraftTitle(d)}
                       </span>
                     </div>
-                    <div className="mt-0.5 text-[10px]" style={{ color: "var(--text-muted)" }}>
+                    <div
+                      className="mt-0.5 text-[10px]"
+                      style={{ color: "var(--text-muted)" }}
+                    >
                       Saved {fmtRelDate(new Date(d.updatedAt))}
                     </div>
                   </div>
@@ -8323,149 +9838,155 @@ const ProjectAccordion = memo(function ProjectAccordion({
               ))}
             </>
           )}
-          {group.sessions.length === 0 && !isGeneral ? null : group.sessions
-              // Sorting (pin-aware + date-desc) is applied upstream in
-              // projectGroups so we can preserve it here.
-              .map((s) => {
-            const selected = viewingPastId === s.id;
-            const isActive = !["ended", "abandoned", "cancelled"].includes(s.status);
-            const isCurrent = isActive && s.id === currentSessionId;
-            const isPinned = pinnedIds.has(s.id);
-            return (
-              // Session row container — relative so the pin button can
-              // overlay the top-right corner of the row without affecting
-              // the main button's hit target.
-              <div key={s.id} className="relative group/session">
-              <button
-                onClick={() => onViewPast(isCurrent ? null : s.id)}
-                className={cn(
-                  "flex w-full items-start gap-2 rounded-lg border px-2.5 py-2 pr-7 text-left transition-all duration-150 ease-out hover:translate-x-0.5",
-                  // FIX 3 — selected session card gets a real green border
-                  // + light-green tint (was just a faint fill before),
-                  // matching the room-w.png "CORS error issues" card.
-                  selected
-                    ? "border-[var(--primary)] bg-[var(--primary-tint)]"
-                    : isCurrent
-                      ? "border-[var(--primary)] bg-[var(--primary-tint)]/60"
-                      : "border-transparent hover:border-[var(--border)] hover:bg-[var(--surface-raised)]",
-                )}
-              >
-                <span
-                  className={cn(
-                    "relative mt-1.5 flex h-2 w-2 shrink-0 rounded-full",
-                    isActive
-                      ? "bg-[var(--primary)]"
-                      : s.status === "ended"
-                        ? "bg-[var(--text-faint)]"
-                        : s.status === "cancelled"
-                          ? "bg-[var(--text-faint)]"
-                          : "bg-[var(--text-faint)]",
-                  )}
-                  aria-hidden
-                >
-                  {isActive && (
-                    <span
-                      className="absolute inset-0 inline-flex animate-ping rounded-full opacity-70"
-                      style={{ backgroundColor: BRAND_GREEN }}
-                    />
-                  )}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <div
-                      className={cn(
-                        "truncate text-[13px]",
-                        selected || isCurrent ? "font-medium" : "",
-                      )}
-                      style={{
-                        color:
-                          selected || isCurrent
-                            ? "var(--text)"
-                            : isActive
-                              ? "var(--text)"
-                              : "var(--text)",
-                      }}
-                    >
-                      {s.title}
-                    </div>
-                  </div>
-                  <div
-                    className="mt-0.5 flex items-center gap-1 text-[10px]"
-                    style={{ color: "var(--text-muted)" }}
-                  >
-                    {/* FIX 2 — status flows as a small meta tag, never as
-                        the session's name. */}
-                    {!isActive && (
-                      <>
+          {group.sessions.length === 0 && !isGeneral
+            ? null
+            : group.sessions
+                // Sorting (pin-aware + date-desc) is applied upstream in
+                // projectGroups so we can preserve it here.
+                .map((s) => {
+                  const selected = viewingPastId === s.id;
+                  const isActive = ![
+                    "ended",
+                    "abandoned",
+                    "cancelled",
+                  ].includes(s.status);
+                  const isCurrent = isActive && s.id === currentSessionId;
+                  const isPinned = pinnedIds.has(s.id);
+                  return (
+                    // Session row container — relative so the pin button can
+                    // overlay the top-right corner of the row without affecting
+                    // the main button's hit target.
+                    <div key={s.id} className="group/session relative">
+                      <button
+                        onClick={() => onViewPast(isCurrent ? null : s.id)}
+                        className={cn(
+                          "flex w-full items-start gap-2 rounded-lg border px-2.5 py-2 pr-7 text-left transition-all duration-150 ease-out hover:translate-x-0.5",
+                          // FIX 3 — selected session card gets a real green border
+                          // + light-green tint (was just a faint fill before),
+                          // matching the room-w.png "CORS error issues" card.
+                          selected
+                            ? "border-[var(--primary)] bg-[var(--primary-tint)]"
+                            : isCurrent
+                              ? "border-[var(--primary)] bg-[var(--primary-tint)]/60"
+                              : "border-transparent hover:border-[var(--border)] hover:bg-[var(--surface-raised)]"
+                        )}
+                      >
                         <span
                           className={cn(
-                            "inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider",
-                            s.status === "ended"
-                              ? "bg-[var(--surface-raised)] text-[var(--text-muted)]"
-                              : s.status === "cancelled"
-                                ? "bg-[var(--warn-soft)] text-[var(--warn)]"
-                                : "bg-[var(--risk-soft)] text-[var(--risk)]",
+                            "relative mt-1.5 flex h-2 w-2 shrink-0 rounded-full",
+                            isActive
+                              ? "bg-[var(--primary)]"
+                              : s.status === "ended"
+                                ? "bg-[var(--text-faint)]"
+                                : s.status === "cancelled"
+                                  ? "bg-[var(--text-faint)]"
+                                  : "bg-[var(--text-faint)]"
                           )}
+                          aria-hidden
                         >
-                          {s.status === "ended"
-                            ? "Ended"
-                            : s.status === "cancelled"
-                              ? "Cancelled"
-                              : "No engineer"}
+                          {isActive && (
+                            <span
+                              className="absolute inset-0 inline-flex animate-ping rounded-full opacity-70"
+                              style={{ backgroundColor: BRAND_GREEN }}
+                            />
+                          )}
                         </span>
-                      </>
-                    )}
-                    {isActive ? (
-                      <span>{humanState(s.status)}</span>
-                    ) : (
-                      <>
-                        {s.agent && <span>{s.agent}</span>}
-                        {s.agent && <span>·</span>}
-                        <span>{fmtRelDate(new Date(s.date))}</span>
-                        {s.minutes != null && s.minutes > 0 && (
-                          <>
-                            <span>·</span>
-                            <span>{s.minutes}m</span>
-                          </>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </div>
-              </button>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <div
+                              className={cn(
+                                "truncate text-[13px]",
+                                selected || isCurrent ? "font-medium" : ""
+                              )}
+                              style={{
+                                color:
+                                  selected || isCurrent
+                                    ? "var(--text)"
+                                    : isActive
+                                      ? "var(--text)"
+                                      : "var(--text)",
+                              }}
+                            >
+                              {s.title}
+                            </div>
+                          </div>
+                          <div
+                            className="mt-0.5 flex items-center gap-1 text-[10px]"
+                            style={{ color: "var(--text-muted)" }}
+                          >
+                            {/* FIX 2 — status flows as a small meta tag, never as
+                        the session's name. */}
+                            {!isActive && (
+                              <>
+                                <span
+                                  className={cn(
+                                    "inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-medium tracking-wider uppercase",
+                                    s.status === "ended"
+                                      ? "bg-[var(--surface-raised)] text-[var(--text-muted)]"
+                                      : s.status === "cancelled"
+                                        ? "bg-[var(--warn-soft)] text-[var(--warn)]"
+                                        : "bg-[var(--risk-soft)] text-[var(--risk)]"
+                                  )}
+                                >
+                                  {s.status === "ended"
+                                    ? "Ended"
+                                    : s.status === "cancelled"
+                                      ? "Cancelled"
+                                      : "No engineer"}
+                                </span>
+                              </>
+                            )}
+                            {isActive ? (
+                              <span>{humanState(s.status)}</span>
+                            ) : (
+                              <>
+                                {s.agent && <span>{s.agent}</span>}
+                                {s.agent && <span>·</span>}
+                                <span>{fmtRelDate(new Date(s.date))}</span>
+                                {s.minutes != null && s.minutes > 0 && (
+                                  <>
+                                    <span>·</span>
+                                    <span>{s.minutes}m</span>
+                                  </>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </button>
 
-                {/* Pin toggle — overlays the top-right of the session row.
+                      {/* Pin toggle — overlays the top-right of the session row.
                     Pinned sessions show a filled icon always; unpinned ones
                     only reveal the outline icon on row hover. Click pins or
                     unpins; localStorage persists the choice. */}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onTogglePin(s.id);
-                  }}
-                  title={isPinned ? "Unpin session" : "Pin session"}
-                  aria-label={isPinned ? "Unpin session" : "Pin session"}
-                  aria-pressed={isPinned}
-                  className={cn(
-                    "absolute right-1.5 top-1.5 inline-flex h-5 w-5 items-center justify-center rounded-md transition-all",
-                    isPinned
-                      ? "opacity-100"
-                      : "opacity-0 group-hover/session:opacity-60 hover:opacity-100",
-                  )}
-                  style={{
-                    color: isPinned ? BRAND_GREEN : "var(--text-muted)",
-                  }}
-                >
-                  <Pin
-                    size={11}
-                    fill={isPinned ? BRAND_GREEN : "none"}
-                    strokeWidth={isPinned ? 2 : 1.8}
-                  />
-                </button>
-              </div>
-            );
-          })}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onTogglePin(s.id);
+                        }}
+                        title={isPinned ? "Unpin session" : "Pin session"}
+                        aria-label={isPinned ? "Unpin session" : "Pin session"}
+                        aria-pressed={isPinned}
+                        className={cn(
+                          "absolute top-1.5 right-1.5 inline-flex h-5 w-5 items-center justify-center rounded-md transition-all",
+                          isPinned
+                            ? "opacity-100"
+                            : "opacity-0 group-hover/session:opacity-60 hover:opacity-100"
+                        )}
+                        style={{
+                          color: isPinned ? BRAND_GREEN : "var(--text-muted)",
+                        }}
+                      >
+                        <Pin
+                          size={11}
+                          fill={isPinned ? BRAND_GREEN : "none"}
+                          strokeWidth={isPinned ? 2 : 1.8}
+                        />
+                      </button>
+                    </div>
+                  );
+                })}
         </div>
       )}
     </div>
@@ -8474,7 +9995,11 @@ const ProjectAccordion = memo(function ProjectAccordion({
 
 // ── Chat pane ──────────────────────────────────────────────────────────────
 const ChatPane = memo(function ChatPane({
-  state, fullWidth = false, employment, onNeedsCredits, onNeedProject,
+  state,
+  fullWidth = false,
+  employment,
+  onNeedsCredits,
+  onNeedProject,
 }: {
   state: ReturnType<typeof useCustomerSession>;
   fullWidth?: boolean;
@@ -8511,8 +10036,15 @@ const ChatPane = memo(function ChatPane({
     });
   }, [state.messages.length]);
 
-  const handleSend = async ({ text, files }: { text: string; files: File[] }) => {
-    const wouldCreateNew = !session || ["cancelled", "abandoned", "ended"].includes(session.status);
+  const handleSend = async ({
+    text,
+    files,
+  }: {
+    text: string;
+    files: File[];
+  }) => {
+    const wouldCreateNew =
+      !session || ["cancelled", "abandoned", "ended"].includes(session.status);
     // Employees route around the credits guard: their minutes come from
     // the dept allocation, not the personal entitlement. The "out of
     // credits" surface for them is the dept-managed plan chip, not the
@@ -8532,7 +10064,9 @@ const ChatPane = memo(function ChatPane({
     if (wouldCreateNew) {
       try {
         if (text.trim()) sessionStorage.setItem("relay:intake:draft", text);
-      } catch { /* ignore quota / privacy mode */ }
+      } catch {
+        /* ignore quota / privacy mode */
+      }
       router.push("/intake");
       return;
     }
@@ -8573,7 +10107,11 @@ const ChatPane = memo(function ChatPane({
       } else if (m.body && isAiSummaryMessageBody(m.body) && lastEndedStartId) {
         meetingSummary.set(lastEndedStartId, m);
         suppressedSummaryIds.add(m.id);
-      } else if (m.body && m.body.includes("Recording available") && lastEndedStartId) {
+      } else if (
+        m.body &&
+        m.body.includes("Recording available") &&
+        lastEndedStartId
+      ) {
         meetingRecording.set(lastEndedStartId, m);
         suppressedRecordingIds.add(m.id);
       }
@@ -8581,13 +10119,22 @@ const ChatPane = memo(function ChatPane({
   }
 
   return (
-    <section className="flex h-full flex-col" style={{ backgroundColor: "var(--surface)" }}>
-      <div ref={scrollRef} className="hide-scrollbar flex-1 overflow-y-auto px-4 py-6">
+    <section
+      className="flex h-full flex-col"
+      style={{ backgroundColor: "var(--surface)" }}
+    >
+      <div
+        ref={scrollRef}
+        className="hide-scrollbar flex-1 overflow-y-auto px-4 py-6"
+      >
         <div className={`mx-auto w-full ${maxWidth}`}>
           {state.messages.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center px-2 py-20 text-center">
               <div className="mb-5 flex items-center gap-3">
-                <span className="h-3 w-3 rounded-full" style={{ backgroundColor: BRAND_GREEN }} />
+                <span
+                  className="h-3 w-3 rounded-full"
+                  style={{ backgroundColor: BRAND_GREEN }}
+                />
                 <h2
                   className="text-3xl font-semibold tracking-tight sm:text-[40px]"
                   style={{ color: "var(--text)", letterSpacing: "-0.02em" }}
@@ -8595,7 +10142,10 @@ const ChatPane = memo(function ChatPane({
                   How can we help today?
                 </h2>
               </div>
-              <p className="max-w-md text-base" style={{ color: "var(--text-muted)" }}>
+              <p
+                className="max-w-md text-base"
+                style={{ color: "var(--text-muted)" }}
+              >
                 Type what you&apos;re stuck on — an engineer joins in seconds.
               </p>
             </div>
@@ -8603,12 +10153,19 @@ const ChatPane = memo(function ChatPane({
             <div className="space-y-3">
               {state.messages.flatMap((m) => {
                 if (isSupervisorOnlyMessage(m) && !isSupervisor) return [];
-                if (m.sender_kind === "system" && (m.body ?? "").includes("Zoom meeting started")) {
+                if (
+                  m.sender_kind === "system" &&
+                  (m.body ?? "").includes("Zoom meeting started")
+                ) {
                   const ended = meetingEnded.get(m.id) ?? null;
                   const summary = meetingSummary.get(m.id) ?? null;
                   const recording = meetingRecording.get(m.id) ?? null;
                   const durationSec = ended
-                    ? Math.floor((new Date(ended.created_at).getTime() - new Date(m.created_at).getTime()) / 1000)
+                    ? Math.floor(
+                        (new Date(ended.created_at).getTime() -
+                          new Date(m.created_at).getTime()) /
+                          1000
+                      )
                     : undefined;
                   // Even with no paired "ended" system message, a card
                   // can't legitimately be ONGOING once the underlying
@@ -8620,36 +10177,58 @@ const ChatPane = memo(function ChatPane({
                   // landed (e.g. they hit Cancel before the
                   // zoom-video-sdk-end edge function got a chance to
                   // emit it).
-                  const sessionTerminal = session?.status === "ended"
-                    || session?.status === "cancelled"
-                    || session?.status === "abandoned";
+                  const sessionTerminal =
+                    session?.status === "ended" ||
+                    session?.status === "cancelled" ||
+                    session?.status === "abandoned";
                   const cardActive = !ended && !sessionTerminal;
                   return [
                     <MeetingChatEntry
                       key={m.id}
                       active={cardActive}
                       durationSec={durationSec}
-                      joinUrl={cardActive ? session?.zoom_join_url ?? null : null}
-                      onJoin={cardActive ? () => void state.markJoined() : undefined}
+                      joinUrl={
+                        cardActive ? (session?.zoom_join_url ?? null) : null
+                      }
+                      onJoin={
+                        cardActive ? () => void state.markJoined() : undefined
+                      }
                       selfJoined={!!session?.customer_joined_at}
                       summaryBody={summary?.body ?? null}
-                      recordingBody={isSupervisor ? recording?.body ?? null : null}
+                      recordingBody={
+                        isSupervisor ? (recording?.body ?? null) : null
+                      }
                     />,
                   ];
                 }
-                if (m.sender_kind === "system" && suppressedEndedIds.has(m.id)) {
+                if (
+                  m.sender_kind === "system" &&
+                  suppressedEndedIds.has(m.id)
+                ) {
                   return [];
                 }
-                if (m.sender_kind === "system" && suppressedSummaryIds.has(m.id)) {
+                if (
+                  m.sender_kind === "system" &&
+                  suppressedSummaryIds.has(m.id)
+                ) {
                   return [];
                 }
-                if (m.sender_kind === "system" && suppressedRecordingIds.has(m.id)) {
+                if (
+                  m.sender_kind === "system" &&
+                  suppressedRecordingIds.has(m.id)
+                ) {
                   return [];
                 }
-                if (m.sender_kind === "system" && m.body && isAiSummaryMessageBody(m.body)) {
+                if (
+                  m.sender_kind === "system" &&
+                  m.body &&
+                  isAiSummaryMessageBody(m.body)
+                ) {
                   return [<MeetingSummaryEntry key={m.id} body={m.body} />];
                 }
-                return [<Message key={m.id} message={m} selfName={customerName} />];
+                return [
+                  <Message key={m.id} message={m} selfName={customerName} />,
+                ];
               })}
             </div>
           )}
@@ -8657,11 +10236,15 @@ const ChatPane = memo(function ChatPane({
       </div>
 
       {/* Composer */}
-      <div className="px-4 pb-6 pt-2">
+      <div className="px-4 pt-2 pb-6">
         <div className={`mx-auto w-full ${maxWidth}`}>
           <ChatComposer
             disabled={isReadOnly}
-            placeholder={isReadOnly ? "This session has ended" : "Describe what you're working on…"}
+            placeholder={
+              isReadOnly
+                ? "This session has ended"
+                : "Describe what you're working on…"
+            }
             onSend={handleSend}
           />
         </div>
@@ -8678,48 +10261,78 @@ function isGenericSenderName(n: string | null | undefined): boolean {
   return t === "" || t === "guest" || t === "customer";
 }
 
-const Message = memo(function Message({ message, selfName }: { message: GuestMessage; selfName?: string }) {
+const Message = memo(function Message({
+  message,
+  selfName,
+}: {
+  message: GuestMessage;
+  selfName?: string;
+}) {
   if (message.sender_kind === "system") {
     return (
       <div className="flex justify-center">
-        <span className="inline-block rounded-full px-2.5 py-1 text-[11px]"
-          style={{ backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)", color: "var(--text-muted)" }}>
+        <span
+          className="inline-block rounded-full px-2.5 py-1 text-[11px]"
+          style={{
+            backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)",
+            color: "var(--text-muted)",
+          }}
+        >
           {message.body}
         </span>
       </div>
     );
   }
   const mine = message.sender_kind === "guest";
-  const hasAttachments = !!message.attachments && message.attachments.length > 0;
+  const hasAttachments =
+    !!message.attachments && message.attachments.length > 0;
   const hasText = !!message.body && message.body.length > 0;
   return (
     <div className={`flex flex-col ${mine ? "items-end" : "items-start"}`}>
-      <div className="mb-0.5 px-1 text-[10px]" style={{ color: "var(--text-muted)" }}>
+      <div
+        className="mb-0.5 px-1 text-[10px]"
+        style={{ color: "var(--text-muted)" }}
+      >
         {mine
-          // Customer's own message: prefer a real stored name, else the
-          // resolved customer display name, else "You" — never "Guest".
-          ? (isGenericSenderName(message.sender_name) ? (selfName || "You") : message.sender_name)
+          ? // Customer's own message: prefer a real stored name, else the
+            // resolved customer display name, else "You" — never "Guest".
+            isGenericSenderName(message.sender_name)
+            ? selfName || "You"
+            : message.sender_name
           : (message.sender_name ?? "Engineer")}
       </div>
       <div
         className="flex max-w-[85%] flex-col gap-2 rounded-2xl px-3.5 py-2.5 text-sm whitespace-pre-wrap"
         style={
           mine
-            ? { backgroundColor: BRAND_GREEN, color: "#fff", borderBottomRightRadius: 4 }
-            : { backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)", color: "var(--text)", borderBottomLeftRadius: 4 }
+            ? {
+                backgroundColor: BRAND_GREEN,
+                color: "#fff",
+                borderBottomRightRadius: 4,
+              }
+            : {
+                backgroundColor:
+                  "color-mix(in srgb, var(--text) 6%, transparent)",
+                color: "var(--text)",
+                borderBottomLeftRadius: 4,
+              }
         }
       >
-        {hasAttachments && <MessageAttachments attachments={message.attachments} />}
+        {hasAttachments && (
+          <MessageAttachments attachments={message.attachments} />
+        )}
         {hasText && <div>{message.body}</div>}
       </div>
     </div>
   );
 });
 
-
 // ── Review panel (post-ended: summary + chat history with pill tabs) ───────
 function ReviewPanel({
-  session, messages, onClose, currentUserId,
+  session,
+  messages,
+  onClose,
+  currentUserId,
 }: {
   session: GuestCall;
   messages: GuestMessage[];
@@ -8728,15 +10341,23 @@ function ReviewPanel({
   currentUserId: string | null;
 }) {
   const [tab, setTab] = useState<"summary" | "chat">("summary");
-  const messageCount = messages.filter((m) => m.sender_kind !== "system").length;
+  const messageCount = messages.filter(
+    (m) => m.sender_kind !== "system"
+  ).length;
 
   return (
     <section
       className="flex h-full flex-col border-l"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface)",
+      }}
     >
       {/* Pill tab switcher + optional close */}
-      <div className="flex items-center gap-2 border-b px-4 py-3" style={{ borderColor: "var(--border)" }}>
+      <div
+        className="flex items-center gap-2 border-b px-4 py-3"
+        style={{ borderColor: "var(--border)" }}
+      >
         <PillTab active={tab === "summary"} onClick={() => setTab("summary")}>
           <Sparkles size={11} />
           Summary
@@ -8747,7 +10368,10 @@ function ReviewPanel({
           <span
             className="ml-1 rounded-full px-1.5 py-0 text-[9px] font-semibold tabular-nums"
             style={{
-              backgroundColor: tab === "chat" ? "rgba(255,255,255,0.18)" : "color-mix(in srgb, var(--text) 10%, transparent)",
+              backgroundColor:
+                tab === "chat"
+                  ? "rgba(255,255,255,0.18)"
+                  : "color-mix(in srgb, var(--text) 10%, transparent)",
               color: tab === "chat" ? "#fff" : "var(--text-muted)",
             }}
           >
@@ -8768,7 +10392,11 @@ function ReviewPanel({
       </div>
 
       {tab === "summary" ? (
-        <SummaryView session={session} messages={messages} currentUserId={currentUserId} />
+        <SummaryView
+          session={session}
+          messages={messages}
+          currentUserId={currentUserId}
+        />
       ) : (
         <ChatHistoryView messages={messages} />
       )}
@@ -8777,7 +10405,9 @@ function ReviewPanel({
 }
 
 function PillTab({
-  active, onClick, children,
+  active,
+  onClick,
+  children,
 }: {
   active: boolean;
   onClick: () => void;
@@ -8790,7 +10420,11 @@ function PillTab({
       style={
         active
           ? { backgroundColor: BRAND_GREEN, color: "#fff" }
-          : { backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)", color: "var(--text-muted)" }
+          : {
+              backgroundColor:
+                "color-mix(in srgb, var(--text) 6%, transparent)",
+              color: "var(--text-muted)",
+            }
       }
     >
       {children}
@@ -8815,27 +10449,37 @@ function SummaryView({
   const title = session.ai_summary_title;
   const overview = session.ai_summary_overview ?? session.summary;
   const nextSteps = Array.isArray(session.ai_next_steps as unknown)
-    ? (session.ai_next_steps as unknown as Array<string | { text?: string; description?: string }>)
+    ? (session.ai_next_steps as unknown as Array<
+        string | { text?: string; description?: string }
+      >)
     : [];
-  const dur = session.duration_minutes != null ? Math.round(Number(session.duration_minutes)) : 0;
+  const dur =
+    session.duration_minutes != null
+      ? Math.round(Number(session.duration_minutes))
+      : 0;
   // Customer or engineer of THIS session may edit the AI summary. Server
   // RPC enforces this again — the UI gate just avoids dangling pencils.
   const canEdit =
     !!currentUserId &&
-    (currentUserId === session.customer_user_id || currentUserId === session.claimed_by);
+    (currentUserId === session.customer_user_id ||
+      currentUserId === session.claimed_by);
   const handleSummarySave = useCallback(
-    async (patch: { title?: string | null; overview?: string | null; nextSteps?: string[] }) => {
+    async (patch: {
+      title?: string | null;
+      overview?: string | null;
+      nextSteps?: string[];
+    }) => {
       const sb = createClient();
       // Pass NULL (= keep existing) for any field the patch didn't include.
       const { error } = await sb.rpc("update_guest_call_summary", {
         _call_id: session.id,
-        _title: patch.title === undefined ? null : patch.title ?? "",
-        _overview: patch.overview === undefined ? null : patch.overview ?? "",
+        _title: patch.title === undefined ? null : (patch.title ?? ""),
+        _overview: patch.overview === undefined ? null : (patch.overview ?? ""),
         _next_steps: patch.nextSteps === undefined ? null : patch.nextSteps,
       });
       if (error) throw new Error(error.message);
     },
-    [session.id],
+    [session.id]
   );
   // Per-call Zoom AI Companion summaries arrive as system chat messages
   // (see zoom-webhook.handleSummaryCompleted). Surface them in the sidebar
@@ -8844,7 +10488,12 @@ function SummaryView({
   // or the underscore/dot event-name pair), producing identical rows.
   const seenCompanionBodies = new Set<string>();
   const zoomCompanionMessages = messages.filter((m) => {
-    if (m.sender_kind !== "system" || !m.body || !isAiSummaryMessageBody(m.body)) return false;
+    if (
+      m.sender_kind !== "system" ||
+      !m.body ||
+      !isAiSummaryMessageBody(m.body)
+    )
+      return false;
     const key = m.body.trim();
     if (seenCompanionBodies.has(key)) return false;
     seenCompanionBodies.add(key);
@@ -8866,31 +10515,42 @@ function SummaryView({
       setWaitedTooLong(false);
       return;
     }
-    const endedAtMs = session.ended_at ? new Date(session.ended_at).getTime() : Date.now();
+    const endedAtMs = session.ended_at
+      ? new Date(session.ended_at).getTime()
+      : Date.now();
     const elapsed = Date.now() - endedAtMs;
     if (elapsed >= SUMMARY_PATIENCE_MS) {
       setWaitedTooLong(true);
       return;
     }
-    const t = setTimeout(() => setWaitedTooLong(true), SUMMARY_PATIENCE_MS - elapsed);
+    const t = setTimeout(
+      () => setWaitedTooLong(true),
+      SUMMARY_PATIENCE_MS - elapsed
+    );
     return () => clearTimeout(t);
   }, [rawState, session.ended_at]);
-  const state = (rawState === "waiting_for_transcript" && waitedTooLong)
-    ? "transcript_unavailable"
-    : rawState;
+  const state =
+    rawState === "waiting_for_transcript" && waitedTooLong
+      ? "transcript_unavailable"
+      : rawState;
   const generating =
     state === "generating_session_summary" ||
     state === "generating_zoom_summary" ||
     state === "waiting_for_transcript";
   const generatingLabel =
-    state === "waiting_for_transcript" ? "Waiting for Zoom summary…" :
-    state === "generating_zoom_summary" ? "Reading Zoom transcript…" :
-    "Generating summary…";
+    state === "waiting_for_transcript"
+      ? "Waiting for Zoom summary…"
+      : state === "generating_zoom_summary"
+        ? "Reading Zoom transcript…"
+        : "Generating summary…";
 
   return (
     <div className="flex-1 overflow-y-auto px-5 py-5">
       {/* Session meta */}
-      <div className="mb-4 flex items-center gap-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
+      <div
+        className="mb-4 flex items-center gap-2 text-[11px]"
+        style={{ color: "var(--text-muted)" }}
+      >
         <Lock size={11} />
         <span>Session ended</span>
         {dur > 0 && <span>· {dur} min</span>}
@@ -8898,7 +10558,11 @@ function SummaryView({
 
       {generating ? (
         <div className="flex flex-col items-center gap-3 py-12 text-center">
-          <Loader2 size={20} className="animate-spin" style={{ color: BRAND_GREEN }} />
+          <Loader2
+            size={20}
+            className="animate-spin"
+            style={{ color: BRAND_GREEN }}
+          />
           <p className="text-sm" style={{ color: "var(--text-muted)" }}>
             {generatingLabel}
           </p>
@@ -8908,25 +10572,38 @@ function SummaryView({
           <p className="text-sm font-medium" style={{ color: "var(--text)" }}>
             No conversation happened during this session.
           </p>
-          <p className="max-w-xs text-xs" style={{ color: "var(--text-muted)" }}>
+          <p
+            className="max-w-xs text-xs"
+            style={{ color: "var(--text-muted)" }}
+          >
             Recording wasn&apos;t started and no chat messages were exchanged.
           </p>
         </div>
       ) : state === "transcript_unavailable" && !overview ? (
         <div className="flex flex-col items-center gap-3 py-12 text-center">
           <AlertTriangle size={18} style={{ color: "var(--text-muted)" }} />
-          <p className="text-sm font-medium" style={{ color: "var(--text)" }}>Zoom summary unavailable</p>
-          <p className="max-w-xs text-xs" style={{ color: "var(--text-muted)" }}>
+          <p className="text-sm font-medium" style={{ color: "var(--text)" }}>
+            Zoom summary unavailable
+          </p>
+          <p
+            className="max-w-xs text-xs"
+            style={{ color: "var(--text-muted)" }}
+          >
             The Zoom AI Companion summary didn&apos;t arrive in time.
           </p>
         </div>
       ) : state === "summary_failed" && !overview ? (
         <div className="flex flex-col items-center gap-3 py-12 text-center">
           <AlertTriangle size={18} style={{ color: "var(--accent-red)" }} />
-          <p className="text-sm font-medium" style={{ color: "var(--text)" }}>Couldn&apos;t generate the summary</p>
+          <p className="text-sm font-medium" style={{ color: "var(--text)" }}>
+            Couldn&apos;t generate the summary
+          </p>
         </div>
       ) : !overview ? (
-        <p className="py-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>
+        <p
+          className="py-8 text-center text-sm"
+          style={{ color: "var(--text-muted)" }}
+        >
           No summary available.
         </p>
       ) : (
@@ -8943,7 +10620,10 @@ function SummaryView({
           />
           {zoomCompanionMessages.length > 0 && (
             <div className="pt-2">
-              <h3 className="mb-3 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+              <h3
+                className="mb-3 text-[10px] font-semibold tracking-wider uppercase"
+                style={{ color: "var(--text-muted)" }}
+              >
                 Zoom call summaries
               </h3>
               <div className="space-y-3">
@@ -8954,14 +10634,20 @@ function SummaryView({
                     canEdit={canEdit}
                     onEdit={async (newBody) => {
                       const sb = createClient();
-                      const { error } = await sb.rpc("update_guest_message_body", {
-                        _id: m.id, _body: newBody,
-                      });
+                      const { error } = await sb.rpc(
+                        "update_guest_message_body",
+                        {
+                          _id: m.id,
+                          _body: newBody,
+                        }
+                      );
                       if (error) throw new Error(error.message);
                     }}
                     onDelete={async () => {
                       const sb = createClient();
-                      const { error } = await sb.rpc("delete_guest_message", { _id: m.id });
+                      const { error } = await sb.rpc("delete_guest_message", {
+                        _id: m.id,
+                      });
                       if (error) throw new Error(error.message);
                     }}
                   />
@@ -8976,7 +10662,11 @@ function SummaryView({
               indefinitely. SessionDownloads renders the retention copy
               from the project row it loads internally. canEdit on the
               session participants surfaces the per-file delete trash icon. */}
-          <SessionDownloads session={session} messages={messages} canRemove={canEdit} />
+          <SessionDownloads
+            session={session}
+            messages={messages}
+            canRemove={canEdit}
+          />
         </div>
       )}
     </div>
@@ -9037,7 +10727,9 @@ function SessionDownloads({
       if (!alive) return;
       setProjectStatus((data as ProjectStatus) ?? null);
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [session.project_id]);
 
   // Pull every attachment from this session's messages into one flat list.
@@ -9067,13 +10759,18 @@ function SessionDownloads({
         text: "Files have been removed (90 days after project completion).",
       };
     }
-    if (projectStatus.completion_status === "completed" && projectStatus.completed_at) {
+    if (
+      projectStatus.completion_status === "completed" &&
+      projectStatus.completed_at
+    ) {
       const expiry = new Date(projectStatus.completed_at);
       expiry.setDate(expiry.getDate() + 90);
       return {
         tone: "warn" as const,
         text: `Available through ${expiry.toLocaleDateString("en-US", {
-          year: "numeric", month: "short", day: "numeric",
+          year: "numeric",
+          month: "short",
+          day: "numeric",
         })} · 90 days after project completion.`,
       };
     }
@@ -9105,7 +10802,9 @@ function SessionDownloads({
       parts.push("");
     }
     const steps = Array.isArray(session.ai_next_steps as unknown)
-      ? (session.ai_next_steps as unknown as Array<string | { text?: string; description?: string }>)
+      ? (session.ai_next_steps as unknown as Array<
+          string | { text?: string; description?: string }
+        >)
       : [];
     if (steps.length > 0) {
       parts.push("Next steps:");
@@ -9116,7 +10815,9 @@ function SessionDownloads({
       parts.push("");
     }
     if (session.duration_minutes != null) {
-      parts.push(`Session duration: ${Math.round(Number(session.duration_minutes))} min`);
+      parts.push(
+        `Session duration: ${Math.round(Number(session.duration_minutes))} min`
+      );
     }
     parts.push(`Session id: ${session.id}`);
     parts.push(`Generated: ${new Date().toISOString()}`);
@@ -9138,12 +10839,15 @@ function SessionDownloads({
         lines.push(`[${ts}] [system] ${m.body ?? ""}`);
         continue;
       }
-      const who = m.sender_name ?? (m.sender_kind === "guest" ? "Customer" : "Engineer");
+      const who =
+        m.sender_name ?? (m.sender_kind === "guest" ? "Customer" : "Engineer");
       const ts = new Date(m.created_at).toISOString();
       lines.push(`[${ts}] ${who}: ${m.body ?? ""}`);
       if (m.attachments && m.attachments.length > 0) {
         for (const a of m.attachments) {
-          lines.push(`    — ${a.kind}: ${a.name} (${a.mime}, ${a.size_bytes} bytes)`);
+          lines.push(
+            `    — ${a.kind}: ${a.name} (${a.mime}, ${a.size_bytes} bytes)`
+          );
         }
       }
     }
@@ -9155,7 +10859,10 @@ function SessionDownloads({
 
   return (
     <div className="pt-2">
-      <h3 className="mb-3 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+      <h3
+        className="mb-3 text-[10px] font-semibold tracking-wider uppercase"
+        style={{ color: "var(--text-muted)" }}
+      >
         Files &amp; downloads
       </h3>
 
@@ -9179,11 +10886,17 @@ function SessionDownloads({
           show as a stripped placeholder so the visual continuity stays
           even after retention. */}
       <div className="mt-4">
-        <div className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text-faint)" }}>
+        <div
+          className="mb-2 px-1 text-[10px] font-semibold tracking-[0.08em] uppercase"
+          style={{ color: "var(--text-faint)" }}
+        >
           Files exchanged
         </div>
         {attachments.length === 0 ? (
-          <p className="px-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
+          <p
+            className="px-1 text-[12px]"
+            style={{ color: "var(--text-muted)" }}
+          >
             No files were shared in this session.
           </p>
         ) : (
@@ -9206,13 +10919,18 @@ function SessionDownloads({
         <div
           className="mt-4 rounded-lg border px-3 py-2 text-[11px]"
           style={{
-            borderColor: retentionLine.tone === "warn"
-              ? "color-mix(in srgb, var(--warn) 30%, transparent)"
-              : "var(--border)",
-            backgroundColor: retentionLine.tone === "warn"
-              ? "color-mix(in srgb, var(--warn) 8%, transparent)"
-              : "var(--surface-raised)",
-            color: retentionLine.tone === "warn" ? "var(--warn)" : "var(--text-muted)",
+            borderColor:
+              retentionLine.tone === "warn"
+                ? "color-mix(in srgb, var(--warn) 30%, transparent)"
+                : "var(--border)",
+            backgroundColor:
+              retentionLine.tone === "warn"
+                ? "color-mix(in srgb, var(--warn) 8%, transparent)"
+                : "var(--surface-raised)",
+            color:
+              retentionLine.tone === "warn"
+                ? "var(--warn)"
+                : "var(--text-muted)",
           }}
         >
           {retentionLine.text}
@@ -9223,7 +10941,10 @@ function SessionDownloads({
 }
 
 function DownloadButton({
-  label, sub, onClick, disabled,
+  label,
+  sub,
+  onClick,
+  disabled,
 }: {
   label: string;
   sub: string;
@@ -9235,8 +10956,11 @@ function DownloadButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+      className="flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-white/5"
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface)",
+      }}
     >
       <span
         className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md"
@@ -9245,8 +10969,15 @@ function DownloadButton({
         <FileText size={14} />
       </span>
       <div className="min-w-0 flex-1">
-        <div className="text-[12px] font-medium" style={{ color: "var(--text)" }}>{label}</div>
-        <div className="text-[10px]" style={{ color: "var(--text-muted)" }}>{sub}</div>
+        <div
+          className="text-[12px] font-medium"
+          style={{ color: "var(--text)" }}
+        >
+          {label}
+        </div>
+        <div className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+          {sub}
+        </div>
       </div>
     </button>
   );
@@ -9293,13 +11024,18 @@ function SessionAttachmentRow({
 
   const onRemove = async () => {
     if (isPurged || removing) return;
-    if (typeof window !== "undefined" && !window.confirm("Remove this file from the session view?")) {
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm("Remove this file from the session view?")
+    ) {
       return;
     }
     setRemoving(true);
     try {
       const sb = createClient();
-      const { error } = await sb.rpc("purge_guest_message_attachment", { _id: attachment.id });
+      const { error } = await sb.rpc("purge_guest_message_attachment", {
+        _id: attachment.id,
+      });
       if (error) throw new Error(error.message);
       setOptimisticPurged(true);
     } catch {
@@ -9310,9 +11046,12 @@ function SessionAttachmentRow({
     }
   };
 
-  const Icon = attachment.kind === "image" ? FileText
-    : attachment.kind === "audio" ? Music
-    : FileText;
+  const Icon =
+    attachment.kind === "image"
+      ? FileText
+      : attachment.kind === "audio"
+        ? Music
+        : FileText;
 
   return (
     <li className="group relative">
@@ -9320,7 +11059,7 @@ function SessionAttachmentRow({
         type="button"
         onClick={() => void onClick()}
         disabled={isPurged || busy}
-        className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:cursor-not-allowed ${canRemove && !isPurged ? "pr-10" : ""}`}
+        className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors hover:bg-black/5 disabled:cursor-not-allowed dark:hover:bg-white/5 ${canRemove && !isPurged ? "pr-10" : ""}`}
         style={{
           borderColor: "var(--border)",
           backgroundColor: isPurged
@@ -9341,7 +11080,10 @@ function SessionAttachmentRow({
           <Icon size={13} />
         </span>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[12px] font-medium" style={{ color: "var(--text)" }}>
+          <div
+            className="truncate text-[12px] font-medium"
+            style={{ color: "var(--text)" }}
+          >
             {attachment.name}
           </div>
           <div className="text-[10px]" style={{ color: "var(--text-muted)" }}>
@@ -9362,10 +11104,14 @@ function SessionAttachmentRow({
           onClick={() => void onRemove()}
           disabled={removing}
           aria-label={`Remove ${attachment.name}`}
-          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 opacity-0 transition-opacity hover:bg-black/10 group-hover:opacity-100 focus:opacity-100 disabled:opacity-50 dark:hover:bg-white/10"
+          className="absolute top-1/2 right-2 -translate-y-1/2 rounded-md p-1.5 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black/10 focus:opacity-100 disabled:opacity-50 dark:hover:bg-white/10"
           style={{ color: "var(--text-muted)" }}
         >
-          {removing ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+          {removing ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : (
+            <Trash2 size={12} />
+          )}
         </button>
       )}
     </li>
@@ -9374,9 +11120,12 @@ function SessionAttachmentRow({
 
 function ChatHistoryView({ messages }: { messages: GuestMessage[] }) {
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-5 space-y-3">
+    <div className="flex-1 space-y-3 overflow-y-auto px-4 py-5">
       {messages.length === 0 ? (
-        <p className="py-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>
+        <p
+          className="py-8 text-center text-sm"
+          style={{ color: "var(--text-muted)" }}
+        >
           No messages exchanged.
         </p>
       ) : (
@@ -9390,7 +11139,7 @@ function ChatHistoryView({ messages }: { messages: GuestMessage[] }) {
 function Resizer() {
   return (
     <PanelResizeHandle
-      className="group relative w-2 cursor-col-resize transition-colors data-[resize-handle-state=drag]:bg-[--green-strong] hover:bg-[--green-soft]"
+      className="group relative w-2 cursor-col-resize transition-colors hover:bg-[--green-soft] data-[resize-handle-state=drag]:bg-[--green-strong]"
       style={
         {
           backgroundColor: "var(--border)",
@@ -9401,11 +11150,20 @@ function Resizer() {
     >
       <span
         aria-hidden
-        className="pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col gap-1 opacity-60 group-hover:opacity-100"
+        className="pointer-events-none absolute top-1/2 left-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col gap-1 opacity-60 group-hover:opacity-100"
       >
-        <span className="block h-1 w-1 rounded-full" style={{ backgroundColor: "var(--text-muted)" }} />
-        <span className="block h-1 w-1 rounded-full" style={{ backgroundColor: "var(--text-muted)" }} />
-        <span className="block h-1 w-1 rounded-full" style={{ backgroundColor: "var(--text-muted)" }} />
+        <span
+          className="block h-1 w-1 rounded-full"
+          style={{ backgroundColor: "var(--text-muted)" }}
+        />
+        <span
+          className="block h-1 w-1 rounded-full"
+          style={{ backgroundColor: "var(--text-muted)" }}
+        />
+        <span
+          className="block h-1 w-1 rounded-full"
+          style={{ backgroundColor: "var(--text-muted)" }}
+        />
       </span>
     </PanelResizeHandle>
   );
@@ -9413,20 +11171,22 @@ function Resizer() {
 
 // ── Project name editor (inline at the top of ConnectingModal) ─────────────
 function ProjectNameEditor({
-  session, projects, onProjectsChanged,
+  session,
+  projects,
+  onProjectsChanged,
 }: {
   session: GuestCall;
   projects: Project[];
   onProjectsChanged: () => void | Promise<void>;
 }) {
   const fallbackName = "project";
-  const initialName  = session.project_name ?? fallbackName;
+  const initialName = session.project_name ?? fallbackName;
 
-  const [draft,    setDraft]    = useState<string>(initialName);
-  const [saving,   setSaving]   = useState(false);
-  const [saved,    setSaved]    = useState(false);
-  const [open,     setOpen]     = useState(false);
-  const [hover,    setHover]    = useState<number>(-1);
+  const [draft, setDraft] = useState<string>(initialName);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [hover, setHover] = useState<number>(-1);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   // Keep local state in sync if the session row updates (e.g. realtime patch).
@@ -9438,7 +11198,8 @@ function ProjectNameEditor({
   useEffect(() => {
     if (!open) return;
     const onClick = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node))
+        setOpen(false);
     };
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
@@ -9466,9 +11227,15 @@ function ProjectNameEditor({
     try {
       const sb = createClient();
       if (session.project_id) {
-        await sb.from("projects").update({ name: trimmed }).eq("id", session.project_id);
+        await sb
+          .from("projects")
+          .update({ name: trimmed })
+          .eq("id", session.project_id);
       }
-      await sb.from("guest_calls").update({ project_name: trimmed }).eq("id", session.id);
+      await sb
+        .from("guest_calls")
+        .update({ project_name: trimmed })
+        .eq("id", session.id);
       await onProjectsChanged();
       flashSaved();
     } finally {
@@ -9495,14 +11262,22 @@ function ProjectNameEditor({
   return (
     <div className="mb-5">
       <div className="mb-1 flex items-center justify-between">
-        <label className="text-[10px] font-semibold uppercase tracking-[0.15em]"
-          style={{ color: "var(--text-muted)" }}>
+        <label
+          className="text-[10px] font-semibold tracking-[0.15em] uppercase"
+          style={{ color: "var(--text-muted)" }}
+        >
           Project name
         </label>
         {saving ? (
-          <Loader2 size={11} className="animate-spin" style={{ color: "var(--text-muted)" }} />
+          <Loader2
+            size={11}
+            className="animate-spin"
+            style={{ color: "var(--text-muted)" }}
+          />
         ) : saved ? (
-          <span className="text-[10px]" style={{ color: BRAND_GREEN }}>Saved</span>
+          <span className="text-[10px]" style={{ color: BRAND_GREEN }}>
+            Saved
+          </span>
         ) : null}
       </div>
       <div ref={wrapRef} className="relative">
@@ -9555,7 +11330,7 @@ function ProjectNameEditor({
               setOpen(false);
             }
           }}
-          className="w-full rounded-md border px-2.5 py-1.5 text-sm outline-none transition-colors focus:border-[var(--brand-green,#3f5c2e)]"
+          className="w-full rounded-md border px-2.5 py-1.5 text-sm transition-colors outline-none focus:border-[var(--brand-green,#3f5c2e)]"
           style={{
             borderColor: "var(--border)",
             backgroundColor: "var(--background)",
@@ -9564,7 +11339,7 @@ function ProjectNameEditor({
         />
         {open && suggestions.length > 0 && (
           <ul
-            className="absolute left-0 right-0 top-[calc(100%+4px)] z-10 max-h-56 overflow-y-auto rounded-md border py-1 shadow-lg"
+            className="absolute top-[calc(100%+4px)] right-0 left-0 z-10 max-h-56 overflow-y-auto rounded-md border py-1 shadow-lg"
             style={{
               borderColor: "var(--border)",
               backgroundColor: "var(--surface)",
@@ -9582,7 +11357,8 @@ function ProjectNameEditor({
                 }}
                 className="cursor-pointer px-2.5 py-1.5 text-sm"
                 style={{
-                  backgroundColor: i === hover ? BRAND_GREEN_SOFT : "transparent",
+                  backgroundColor:
+                    i === hover ? BRAND_GREEN_SOFT : "transparent",
                   color: "var(--text)",
                 }}
               >
@@ -9603,7 +11379,11 @@ function ProjectNameEditor({
 
 // ── Connecting Modal ───────────────────────────────────────────────────────
 function ConnectingModal({
-  session, onCancel, onTimeout, projects, onProjectsChanged,
+  session,
+  onCancel,
+  onTimeout,
+  projects,
+  onProjectsChanged,
 }: {
   session: GuestCall;
   /** Explicit cancel — actually stops ringing. Distinct from × (minimize). */
@@ -9633,9 +11413,11 @@ function ConnectingModal({
   // last_recall_at. That way a recall naturally restarts the window — no
   // extra timer-reset state needed on the client.
   const QUEUE_TIMEOUT_S = 90;
-  const queuedAt     = new Date(session.created_at).getTime();
-  const lastRecallAt = session.last_recall_at ? new Date(session.last_recall_at).getTime() : 0;
-  const anchor       = Math.max(queuedAt, lastRecallAt);
+  const queuedAt = new Date(session.created_at).getTime();
+  const lastRecallAt = session.last_recall_at
+    ? new Date(session.last_recall_at).getTime()
+    : 0;
+  const anchor = Math.max(queuedAt, lastRecallAt);
 
   const [now, setNow] = useState<number>(() => Date.now());
   useEffect(() => {
@@ -9643,11 +11425,11 @@ function ConnectingModal({
     return () => clearInterval(id);
   }, []);
 
-  const elapsed   = Math.max(0, Math.floor((now - anchor) / 1000));
+  const elapsed = Math.max(0, Math.floor((now - anchor) / 1000));
   const remaining = Math.max(0, QUEUE_TIMEOUT_S - elapsed);
-  const expired   = remaining === 0;
-  const mins      = Math.floor(remaining / 60);
-  const secs      = remaining % 60;
+  const expired = remaining === 0;
+  const mins = Math.floor(remaining / 60);
+  const secs = remaining % 60;
 
   // Auto-cancel at the 90s mark: if no engineer has picked up by the time
   // the window elapses, fire onTimeout ONCE. The parent cancels the queued
@@ -9669,12 +11451,18 @@ function ConnectingModal({
   const eSec = elapsed % 60;
   const elapsedClock = `${String(eMin).padStart(2, "0")}:${String(eSec).padStart(2, "0")}`;
 
-  const ringColor = session.urgency === "critical" ? CRIT_RED
-    : session.urgency === "urgent" ? URGENT_AMBER
-    : BRAND_GREEN;
-  const ringSoft = session.urgency === "critical" ? CRIT_RED_SOFT
-    : session.urgency === "urgent" ? URGENT_AMBER_SOFT
-    : BRAND_GREEN_SOFT;
+  const ringColor =
+    session.urgency === "critical"
+      ? CRIT_RED
+      : session.urgency === "urgent"
+        ? URGENT_AMBER
+        : BRAND_GREEN;
+  const ringSoft =
+    session.urgency === "critical"
+      ? CRIT_RED_SOFT
+      : session.urgency === "urgent"
+        ? URGENT_AMBER_SOFT
+        : BRAND_GREEN_SOFT;
 
   // Play the warm "tring tring" mechanical bell while the modal is
   // open + not minimized + not expired. Shared synthesis with the
@@ -9749,20 +11537,23 @@ function ConnectingModal({
         if (e.target === e.currentTarget) setMinimized(true);
       }}
     >
-      <div className="relative w-[calc(100vw-1.5rem)] max-w-sm max-h-[calc(100vh-2rem)] overflow-y-auto rounded-2xl border p-6 sm:p-8 shadow-xl"
-        style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
-
+      <div
+        className="relative max-h-[calc(100vh-2rem)] w-[calc(100vw-1.5rem)] max-w-sm overflow-y-auto rounded-2xl border p-6 shadow-xl sm:p-8"
+        style={{
+          backgroundColor: "var(--surface)",
+          borderColor: "var(--border)",
+        }}
+      >
         {/* Close (minimize) — top-right. Esc + click-outside do the same. */}
         <button
           type="button"
           onClick={() => setMinimized(true)}
           aria-label="Minimize — keep waiting"
           title="Minimize — keep waiting (Esc)"
-          className="absolute right-3 top-3 inline-flex size-8 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-raised)] hover:text-[var(--text)]"
+          className="absolute top-3 right-3 inline-flex size-8 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-raised)] hover:text-[var(--text)]"
         >
           <X size={15} />
         </button>
-
 
         {/* Project name editor — visible while the customer waits.
             Returning customers get a dropdown of their existing projects
@@ -9774,10 +11565,14 @@ function ConnectingModal({
         />
 
         {session.urgency !== "normal" && (
-          <div className="mb-4 flex items-center justify-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
-            style={{ backgroundColor: ringSoft, color: ringColor }}>
+          <div
+            className="mb-4 flex items-center justify-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-semibold tracking-[0.12em] uppercase"
+            style={{ backgroundColor: ringSoft, color: ringColor }}
+          >
             <AlertTriangle size={11} />
-            {session.urgency === "critical" ? "Critical priority" : "Urgent priority"}
+            {session.urgency === "critical"
+              ? "Critical priority"
+              : "Urgent priority"}
           </div>
         )}
 
@@ -9807,9 +11602,21 @@ function ConnectingModal({
             }}
           >
             {/* Halo rings — 3 concentric, staggered. */}
-            <span aria-hidden className="relay-ringing-halo absolute inset-0 rounded-full" style={{ animationDelay: "0s" }} />
-            <span aria-hidden className="relay-ringing-halo absolute inset-0 rounded-full" style={{ animationDelay: "-0.6s" }} />
-            <span aria-hidden className="relay-ringing-halo absolute inset-0 rounded-full" style={{ animationDelay: "-1.2s" }} />
+            <span
+              aria-hidden
+              className="relay-ringing-halo absolute inset-0 rounded-full"
+              style={{ animationDelay: "0s" }}
+            />
+            <span
+              aria-hidden
+              className="relay-ringing-halo absolute inset-0 rounded-full"
+              style={{ animationDelay: "-0.6s" }}
+            />
+            <span
+              aria-hidden
+              className="relay-ringing-halo absolute inset-0 rounded-full"
+              style={{ animationDelay: "-1.2s" }}
+            />
 
             {/* Under-glow — blurred radial behind the ball. */}
             <span
@@ -9839,7 +11646,12 @@ function ConnectingModal({
                 opacity: expired ? 0.55 : 1,
               }}
             >
-              <Phone size={48} className="relay-ringing-icon" style={{ color: "#fff" }} strokeWidth={1.6} />
+              <Phone
+                size={48}
+                className="relay-ringing-icon"
+                style={{ color: "#fff" }}
+                strokeWidth={1.6}
+              />
             </div>
           </div>
         </div>
@@ -9849,7 +11661,7 @@ function ConnectingModal({
             countdown-to-expiry. */}
         <div className="mb-4 text-center">
           <div
-            className="font-mono text-2xl tabular-nums tracking-[0.05em]"
+            className="font-mono text-2xl tracking-[0.05em] tabular-nums"
             style={{
               color: expired ? "var(--text-muted)" : "var(--text)",
               fontFeatureSettings: '"tnum"',
@@ -9865,11 +11677,19 @@ function ConnectingModal({
             "No engineer available" notice, so we just show a brief
             transitional line here. */}
         <div className="mb-5 text-center">
-          <h2 className="mb-1.5 text-xl font-medium"
-            style={{ fontFamily: "var(--font-source-serif)", color: "var(--text)" }}>
+          <h2
+            className="mb-1.5 text-xl font-medium"
+            style={{
+              fontFamily: "var(--font-source-serif)",
+              color: "var(--text)",
+            }}
+          >
             {expired ? "No engineer available" : "Ringing your engineer"}
           </h2>
-          <p className="text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
+          <p
+            className="text-sm leading-relaxed"
+            style={{ color: "var(--text-muted)" }}
+          >
             {expired
               ? "No one picked up in time — ending the call…"
               : "Hang tight — we'll connect you the moment someone picks up."}
@@ -9888,7 +11708,10 @@ function ConnectingModal({
         </button>
 
         <p className="mt-3 text-center text-[10px] leading-relaxed text-[var(--text-faint)]">
-          Press <kbd className="rounded border border-[var(--border)] bg-[var(--surface-raised)] px-1 font-mono">Esc</kbd>{" "}
+          Press{" "}
+          <kbd className="rounded border border-[var(--border)] bg-[var(--surface-raised)] px-1 font-mono">
+            Esc
+          </kbd>{" "}
           to minimize and keep waiting — the search continues in the background.
         </p>
       </div>
@@ -9901,7 +11724,8 @@ function ConnectingModal({
 // The call has already been ended by the time this renders; the customer can
 // retry (starts a fresh call) or close.
 function AllEngineersBusyModal({
-  onRetry, onClose,
+  onRetry,
+  onClose,
 }: {
   onRetry: () => void | Promise<void>;
   onClose: () => void;
@@ -9909,7 +11733,11 @@ function AllEngineersBusyModal({
   const [retrying, setRetrying] = useState(false);
   const retry = async () => {
     setRetrying(true);
-    try { await onRetry(); } finally { setRetrying(false); }
+    try {
+      await onRetry();
+    } finally {
+      setRetrying(false);
+    }
   };
   return (
     <div
@@ -9918,12 +11746,15 @@ function AllEngineersBusyModal({
     >
       <div
         className="relative w-full max-w-sm rounded-2xl border p-8 text-center shadow-xl"
-        style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}
+        style={{
+          backgroundColor: "var(--surface)",
+          borderColor: "var(--border)",
+        }}
       >
         <button
           onClick={onClose}
           aria-label="Close"
-          className="absolute right-4 top-4 opacity-50 transition-opacity hover:opacity-100"
+          className="absolute top-4 right-4 opacity-50 transition-opacity hover:opacity-100"
           style={{ color: "var(--text-muted)" }}
         >
           <X size={16} />
@@ -9936,13 +11767,19 @@ function AllEngineersBusyModal({
         </div>
         <h2
           className="mb-2 text-xl font-medium"
-          style={{ fontFamily: "var(--font-source-serif)", color: "var(--text)" }}
+          style={{
+            fontFamily: "var(--font-source-serif)",
+            color: "var(--text)",
+          }}
         >
           All engineers are occupied
         </h2>
-        <p className="mb-6 text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
-          It looks like all our engineers are busy right now. Please try again in
-          a little while.
+        <p
+          className="mb-6 text-sm leading-relaxed"
+          style={{ color: "var(--text-muted)" }}
+        >
+          It looks like all our engineers are busy right now. Please try again
+          in a little while.
         </p>
         <div className="flex flex-col gap-2">
           <button
@@ -9952,7 +11789,11 @@ function AllEngineersBusyModal({
             className="flex w-full items-center justify-center gap-2 rounded-full py-2.5 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
             style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
           >
-            {retrying ? <Loader2 size={14} className="animate-spin" /> : <Phone size={14} />}
+            {retrying ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Phone size={14} />
+            )}
             {retrying ? "Calling…" : "Try again"}
           </button>
           <button
@@ -9972,7 +11813,8 @@ function AllEngineersBusyModal({
 // Shows between engineer-accept (status='assigned') and engineer-joins-Zoom
 // (engineer_joined_at stamped). No timer — the engineer is on it.
 function EngineerAssignedModal({
-  engineerName, onCancel,
+  engineerName,
+  onCancel,
 }: {
   engineerName: string;
   onCancel: () => Promise<void>;
@@ -9984,12 +11826,15 @@ function EngineerAssignedModal({
     >
       <div
         className="relative w-full max-w-sm rounded-2xl border p-8 text-center shadow-xl"
-        style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}
+        style={{
+          backgroundColor: "var(--surface)",
+          borderColor: "var(--border)",
+        }}
       >
         <button
           onClick={() => void onCancel()}
           aria-label="Cancel"
-          className="absolute right-4 top-4 opacity-50 transition-opacity hover:opacity-100"
+          className="absolute top-4 right-4 opacity-50 transition-opacity hover:opacity-100"
           style={{ color: "var(--text-muted)" }}
         >
           <X size={16} />
@@ -10005,22 +11850,35 @@ function EngineerAssignedModal({
           <Sparkles size={28} />
         </div>
         <div
-          className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em]"
+          className="mb-2 text-[10px] font-semibold tracking-[0.18em] uppercase"
           style={{ color: "var(--text-muted)" }}
         >
           Engineer found
         </div>
         <h2
           className="mb-2 text-xl font-medium"
-          style={{ fontFamily: "var(--font-source-serif)", color: "var(--text)" }}
+          style={{
+            fontFamily: "var(--font-source-serif)",
+            color: "var(--text)",
+          }}
         >
           {engineerName} is connecting with you
         </h2>
-        <p className="text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
+        <p
+          className="text-sm leading-relaxed"
+          style={{ color: "var(--text-muted)" }}
+        >
           You&apos;ll be joined to the call automatically — hold tight.
         </p>
-        <div className="mt-6 inline-flex items-center gap-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
-          <Loader2 size={11} className="animate-spin" style={{ color: BRAND_GREEN }} />
+        <div
+          className="mt-6 inline-flex items-center gap-2 text-[11px]"
+          style={{ color: "var(--text-muted)" }}
+        >
+          <Loader2
+            size={11}
+            className="animate-spin"
+            style={{ color: BRAND_GREEN }}
+          />
           Connecting…
         </div>
       </div>
@@ -10038,21 +11896,29 @@ function EngineerAssignedModal({
 // ── Misc ───────────────────────────────────────────────────────────────────
 function FullScreenLoader() {
   return (
-    <div className="flex h-screen w-screen items-center justify-center"
-      style={{ backgroundColor: "var(--background)" }}>
-      <Loader2 size={24} className="animate-spin" style={{ color: BRAND_GREEN }} />
+    <div
+      className="flex h-screen w-screen items-center justify-center"
+      style={{ backgroundColor: "var(--background)" }}
+    >
+      <Loader2
+        size={24}
+        className="animate-spin"
+        style={{ color: BRAND_GREEN }}
+      />
     </div>
   );
 }
 
 function ErrorToast({ message }: { message: string }) {
   return (
-    <div className="fixed bottom-6 left-1/2 z-[var(--z-toast)] -translate-x-1/2 rounded-md border px-4 py-2 text-sm shadow-lg"
+    <div
+      className="fixed bottom-6 left-1/2 z-[var(--z-toast)] -translate-x-1/2 rounded-md border px-4 py-2 text-sm shadow-lg"
       style={{
         backgroundColor: "var(--surface)",
         borderColor: "color-mix(in srgb, var(--accent-red) 30%, transparent)",
         color: "var(--accent-red)",
-      }}>
+      }}
+    >
       {message}
     </div>
   );
@@ -10060,13 +11926,18 @@ function ErrorToast({ message }: { message: string }) {
 
 function SuccessToast({ message }: { message: string }) {
   return (
-    <div className="fixed bottom-6 left-1/2 z-[var(--z-toast)] -translate-x-1/2 inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium shadow-lg"
+    <div
+      className="fixed bottom-6 left-1/2 z-[var(--z-toast)] inline-flex -translate-x-1/2 items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium shadow-lg"
       style={{
         backgroundColor: "var(--surface)",
         borderColor: BRAND_GREEN_BORDER,
         color: BRAND_GREEN,
-      }}>
-      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: BRAND_GREEN }} />
+      }}
+    >
+      <span
+        className="h-2 w-2 rounded-full"
+        style={{ backgroundColor: BRAND_GREEN }}
+      />
       {message}
     </div>
   );
@@ -10127,7 +11998,9 @@ function SessionSummaryTray({ session }: { session: GuestCall }) {
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "client_intakes" },
-        () => { void fetchOne(); },
+        () => {
+          void fetchOne();
+        }
       )
       .subscribe();
     return () => {
@@ -10170,8 +12043,8 @@ function SessionSummaryTray({ session }: { session: GuestCall }) {
     <aside
       aria-label="Session summary"
       className={cn(
-        "hidden lg:flex shrink-0 flex-col border-l border-[var(--border)] bg-[var(--surface)] transition-[width] duration-200 ease-out",
-        open ? "w-80" : "w-10",
+        "hidden shrink-0 flex-col border-l border-[var(--border)] bg-[var(--surface)] transition-[width] duration-200 ease-out lg:flex",
+        open ? "w-80" : "w-10"
       )}
     >
       <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2">
@@ -10184,7 +12057,7 @@ function SessionSummaryTray({ session }: { session: GuestCall }) {
           {open ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
         </button>
         {open && (
-          <span className="inline-flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-[var(--text-muted)]">
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium tracking-wider text-[var(--text-muted)] uppercase">
             <FileText size={12} /> Session summary
           </span>
         )}
@@ -10193,7 +12066,10 @@ function SessionSummaryTray({ session }: { session: GuestCall }) {
             className="inline-flex items-center gap-1 rounded-full bg-[var(--primary-tint)] px-2 py-0.5 text-[10px] font-medium text-[var(--primary-hover)]"
             aria-live="polite"
           >
-            <span aria-hidden className="inline-flex size-1.5 rounded-full bg-[var(--primary)]" />
+            <span
+              aria-hidden
+              className="inline-flex size-1.5 rounded-full bg-[var(--primary)]"
+            />
             {statusLabel}
           </span>
         )}
@@ -10214,12 +12090,15 @@ function SessionSummaryTray({ session }: { session: GuestCall }) {
 
           {nextSteps.length > 0 && (
             <div>
-              <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+              <div className="mb-1.5 text-[11px] font-medium tracking-wider text-[var(--text-muted)] uppercase">
                 Next steps
               </div>
               <ul className="space-y-1.5">
                 {nextSteps.map((s, i) => (
-                  <li key={i} className="flex items-start gap-2 text-[13px] leading-snug text-[var(--text)]">
+                  <li
+                    key={i}
+                    className="flex items-start gap-2 text-[13px] leading-snug text-[var(--text)]"
+                  >
                     <span className="mt-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-full bg-[var(--primary-tint)] text-[var(--primary-hover)]">
                       <Check size={11} />
                     </span>
@@ -10232,17 +12111,17 @@ function SessionSummaryTray({ session }: { session: GuestCall }) {
 
           {intake?.intake_summary && (
             <div>
-              <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+              <div className="mb-1.5 text-[11px] font-medium tracking-wider text-[var(--text-muted)] uppercase">
                 AI summary
               </div>
-              <div className="whitespace-pre-wrap rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] px-3 py-2 text-[13px] leading-relaxed text-[var(--text)]">
+              <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap text-[var(--text)]">
                 {intake.intake_summary}
               </div>
             </div>
           )}
 
           <div>
-            <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+            <div className="mb-1.5 text-[11px] font-medium tracking-wider text-[var(--text-muted)] uppercase">
               Session details
             </div>
             <dl className="space-y-1.5 text-[12px]">
@@ -10253,7 +12132,10 @@ function SessionSummaryTray({ session }: { session: GuestCall }) {
                 <DetailRow label="Building" value={intake.developing} />
               )}
               {intake?.technologies?.length ? (
-                <DetailRow label="Stack" value={intake.technologies.join(", ")} />
+                <DetailRow
+                  label="Stack"
+                  value={intake.technologies.join(", ")}
+                />
               ) : null}
               {intake?.ai_tools_used && (
                 <DetailRow label="AI tools" value={intake.ai_tools_used} />
@@ -10305,7 +12187,10 @@ function AsyncChatPane({
     <section className="flex h-full flex-col bg-[var(--background)]">
       <div className="flex shrink-0 items-center gap-3 border-b border-[var(--border)] bg-[var(--surface)] px-4 py-2">
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          <span aria-hidden className="inline-flex size-7 items-center justify-center rounded-xl bg-[var(--primary-tint)] text-[var(--primary-hover)]">
+          <span
+            aria-hidden
+            className="inline-flex size-7 items-center justify-center rounded-xl bg-[var(--primary-tint)] text-[var(--primary-hover)]"
+          >
             <Sparkles size={14} />
           </span>
           <div className="leading-tight">
@@ -10338,10 +12223,8 @@ function AsyncChatPane({
       </div>
 
       <div className="flex flex-1 justify-center overflow-hidden p-4">
-        <div className="flex w-full max-w-2xl flex-1 min-h-0">
-          <IntakeAssistant
-            greeting="Hi! Describe what you need help with — drop a screenshot or paste an error if you have one. An engineer will pick this up; you can also tap the green call button up top to ring someone now."
-          />
+        <div className="flex min-h-0 w-full max-w-2xl flex-1">
+          <IntakeAssistant greeting="Hi! Describe what you need help with — drop a screenshot or paste an error if you have one. An engineer will pick this up; you can also tap the green call button up top to ring someone now." />
         </div>
       </div>
     </section>

@@ -9,13 +9,32 @@
  * Updates every second + on any guest_calls change via Realtime.
  */
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import {
-  Eye, Loader2, ArrowUpRight, Search, AlertTriangle, LifeBuoy, Check, X,
-  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
+  Eye,
+  Loader2,
+  ArrowUpRight,
+  Search,
+  AlertTriangle,
+  LifeBuoy,
+  Check,
+  X,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  CalendarClock,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import { useOverlayDismiss } from "@/lib/relay/useOverlayDismiss";
@@ -33,9 +52,13 @@ import {
 } from "@/app/_components/ui";
 import { MatchingPanel } from "./MatchingPanel";
 import { RosterPanel } from "./RosterPanel";
-import { CoveragePanel } from "./CoveragePanel";
+import {
+  AppointmentsPanel,
+  LiveAppointmentsSection,
+} from "./AppointmentsPanel";
 import { ActNowRail } from "./ActNowRail";
 import { SupervisorAvailabilityToggle } from "@/app/_components/SupervisorAvailabilityToggle";
+import { SupervisorNotificationBell } from "@/app/_components/SupervisorNotificationBell";
 import { MatchingActions } from "@/app/_components/MatchingActions";
 
 // Health → semantic token mapping. Lives next to the verdict helpers so
@@ -56,14 +79,14 @@ const HEALTH_VAR: Record<"green" | "amber" | "red", string> = {
   red: "var(--risk)",
 };
 
-const ACTIVE_STATES  = ["queued", "assigned", "joining", "live", "grace"];
+const ACTIVE_STATES = ["queued", "assigned", "joining", "live", "grace"];
 // 'assigned' (engineer claimed, chat live, timer running) is shown as
 // "Live" in the card chip by humanState, so it belongs in the Live tab —
 // keeping it in WAITING was a tab/label mismatch. Only 'queued' (no
 // engineer yet) is truly waiting.
-const LIVE_STATES    = new Set(["assigned", "live", "joining", "grace"]);
+const LIVE_STATES = new Set(["assigned", "live", "joining", "grace"]);
 const WAITING_STATES = new Set(["queued"]);
-const PAST_STATES    = ["ended", "cancelled", "abandoned"];
+const PAST_STATES = ["ended", "cancelled", "abandoned"];
 
 // Per-session AI health snapshot, merged onto GuestCall in the card grid.
 // Sourced from latest_session_health (DISTINCT ON session_id) — one row
@@ -88,7 +111,10 @@ type SessionWithHealth = GuestCall & {
 // Staff-only label mapping the customer-facing alias to the engineer's real
 // name, e.g. "Leo · Rahul Sharma". Renders just the alias if we couldn't
 // resolve the name, and "—" when neither is set.
-function engineerLabel(s: { agent_name: string | null; engineerRealName?: string | null }): string {
+function engineerLabel(s: {
+  agent_name: string | null;
+  engineerRealName?: string | null;
+}): string {
   const alias = s.agent_name || null;
   const real = s.engineerRealName || null;
   if (alias && real) return `${alias} · ${real}`;
@@ -100,13 +126,29 @@ function engineerLabel(s: { agent_name: string | null; engineerRealName?: string
 // (most conversations happen on Zoom voice, not chat).
 const MIN_MESSAGES_FOR_AI = 2;
 
-type Tab = "all" | "waiting" | "live" | "past" | "escalations" | "team" | "coverage" | "matching";
+type Tab =
+  | "all"
+  | "appointments"
+  | "waiting"
+  | "live"
+  | "past"
+  | "escalations"
+  | "team"
+  | "matching";
 
 // Open "engineer raised a hand" escalation, scoped to the supervisor's pod.
 // Sourced from the same /api/supervisor/act-now feed the left rail uses;
 // surfaced here as its own Live-operations tab (deliberately NOT folded into
 // the All count) so a supervisor can jump straight to who needs help.
-type Escalation = { id: string; sessionId: string; engineer: string; customer: string; reason: string; note: string | null; createdAt: string };
+type Escalation = {
+  id: string;
+  sessionId: string;
+  engineer: string;
+  customer: string;
+  reason: string;
+  note: string | null;
+  createdAt: string;
+};
 
 // Per-page selector — shared by all three panels (All, Active, Past). Lifted
 // to the parent so changing "20 / page" once stays applied as you tab around.
@@ -129,8 +171,13 @@ const WAITING_GLOW_CSS = `
     50%      { box-shadow: 0 0 14px 2px var(--glow, transparent); }
   }
   .relay-card-glow { animation: relay-pulse-glow 1.8s ease-in-out infinite; }
+  @keyframes relay-appt-glow {
+    0%, 100% { box-shadow: 0 0 0 0 transparent; }
+    50%      { box-shadow: 0 0 10px 1px color-mix(in srgb, var(--risk) 85%, transparent); }
+  }
+  .relay-appt-tag { animation: relay-appt-glow 1.5s ease-in-out infinite; }
   @media (prefers-reduced-motion: reduce) {
-    .relay-card-glow { animation: none; }
+    .relay-card-glow, .relay-appt-tag { animation: none; }
   }
 `;
 
@@ -171,21 +218,31 @@ export function SuperviseClient() {
     (async () => {
       const sb = supabaseRef.current;
       const { data: u } = await sb.auth.getUser();
-      if (cancelled || !u.user) { setScope({ kind: "pod", podId: null, meId: "" }); return; }
+      if (cancelled || !u.user) {
+        setScope({ kind: "pod", podId: null, meId: "" });
+        return;
+      }
       const [rolesRes, podRes] = await Promise.all([
         sb.from("user_role_names").select("role").eq("user_id", u.user.id),
-        sb.from("pod_members").select("pod_id").eq("user_id", u.user.id).maybeSingle(),
+        sb
+          .from("pod_members")
+          .select("pod_id")
+          .eq("user_id", u.user.id)
+          .maybeSingle(),
       ]);
       if (cancelled) return;
       const roles = (rolesRes.data ?? []).map((r: { role: string }) => r.role);
       if (roles.some((r) => UNSCOPED_ROLES.has(r))) {
         setScope({ kind: "unscoped" });
       } else {
-        const podId = (podRes.data as { pod_id?: string } | null)?.pod_id ?? null;
+        const podId =
+          (podRes.data as { pod_id?: string } | null)?.pod_id ?? null;
         setScope({ kind: "pod", podId, meId: u.user.id });
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const refresh = async () => {
@@ -204,11 +261,15 @@ export function SuperviseClient() {
     // can still watch it and nothing goes unsupervised. super_admin sees all.
     // supervisor_user_id is stamped automatically at claim + rebalanced when a
     // supervisor toggles online/offline (migration 20260524100000).
-    let liveQ = sb.from("guest_calls").select("*")
+    let liveQ = sb
+      .from("guest_calls")
+      .select("*")
       .in("status", ACTIVE_STATES)
       .order("created_at", { ascending: false })
       .limit(LIVE_LIMIT);
-    let pastQ = sb.from("guest_calls").select("*")
+    let pastQ = sb
+      .from("guest_calls")
+      .select("*")
       .in("status", PAST_STATES)
       .order("ended_at", { ascending: false, nullsFirst: false })
       .limit(200);
@@ -222,11 +283,13 @@ export function SuperviseClient() {
       // AND surface unclaimed queued ("ringing") calls — they have no pod yet,
       // so without this a pod supervisor can't see customers still waiting to
       // be picked up (only ops/super_admin could). Shared incoming queue.
-      liveQ = liveQ.or(`${base},reassign_needed.eq.true,and(status.eq.queued,claimed_by.is.null)`);
+      liveQ = liveQ.or(
+        `${base},reassign_needed.eq.true,and(status.eq.queued,claimed_by.is.null)`
+      );
       pastQ = pastQ.or(base);
     }
     const [liveRes, pastRes] = await Promise.all([liveQ, pastQ]);
-    const rows     = (liveRes.data as GuestCall[]) ?? [];
+    const rows = (liveRes.data as GuestCall[]) ?? [];
     const pastRows = (pastRes.data as GuestCall[]) ?? [];
 
     // Pull the latest AI health snapshot for every visible session (live
@@ -241,21 +304,34 @@ export function SuperviseClient() {
         .select("session_id, score, summary, computed_at, message_count")
         .in("session_id", allIds);
       healthMap = new Map(
-        (healths ?? []).map((h: { session_id: string; score: number; summary: string; computed_at: string; message_count?: number }) =>
-          [h.session_id, {
-            score:         Number(h.score),
-            summary:       h.summary,
-            computed_at:   h.computed_at,
-            message_count: h.message_count,
-          }],
-        ),
+        (healths ?? []).map(
+          (h: {
+            session_id: string;
+            score: number;
+            summary: string;
+            computed_at: string;
+            message_count?: number;
+          }) => [
+            h.session_id,
+            {
+              score: Number(h.score),
+              summary: h.summary,
+              computed_at: h.computed_at,
+              message_count: h.message_count,
+            },
+          ]
+        )
       );
     }
 
     // Resolve engineer real names (claimed_by → profiles.full_name) for the
     // staff-only alias↔identity mapping shown on each card. One round-trip.
     const engineerIds = Array.from(
-      new Set([...rows, ...pastRows].map((s) => s.claimed_by).filter((x): x is string => !!x)),
+      new Set(
+        [...rows, ...pastRows]
+          .map((s) => s.claimed_by)
+          .filter((x): x is string => !!x)
+      )
     );
     let nameById = new Map<string, string>();
     if (engineerIds.length > 0) {
@@ -266,7 +342,10 @@ export function SuperviseClient() {
       nameById = new Map(
         (profs ?? [])
           .filter((p: { full_name: string | null }) => !!p.full_name)
-          .map((p: { id: string; full_name: string | null }) => [p.id, p.full_name as string]),
+          .map((p: { id: string; full_name: string | null }) => [
+            p.id,
+            p.full_name as string,
+          ])
       );
     }
     // For sessions awaiting reassignment, resolve the intake id so the card can
@@ -283,14 +362,19 @@ export function SuperviseClient() {
       intakeByCall = new Map(
         (intakes ?? [])
           .filter((r: { guest_call_id: string | null }) => !!r.guest_call_id)
-          .map((r: { id: string; guest_call_id: string | null }) => [r.guest_call_id as string, r.id]),
+          .map((r: { id: string; guest_call_id: string | null }) => [
+            r.guest_call_id as string,
+            r.id,
+          ])
       );
     }
 
     const withName = (s: GuestCall): SessionWithHealth => ({
       ...s,
       health: healthMap.get(s.id),
-      engineerRealName: s.claimed_by ? nameById.get(s.claimed_by) ?? null : null,
+      engineerRealName: s.claimed_by
+        ? (nameById.get(s.claimed_by) ?? null)
+        : null,
       intakeId: intakeByCall.get(s.id) ?? null,
     });
 
@@ -301,7 +385,9 @@ export function SuperviseClient() {
 
   // Initial fetch runs once scope resolves. Re-runs if the viewer's pod
   // assignment changes mid-session (rare, but cheap).
-  useEffect(() => { void refresh(); }, [scope]);
+  useEffect(() => {
+    void refresh();
+  }, [scope]);
 
   // Tick every second so wait timers update live
   useEffect(() => {
@@ -329,16 +415,23 @@ export function SuperviseClient() {
     let pending: ReturnType<typeof setTimeout> | null = null;
     const queueRefresh = () => {
       if (pending) return;
-      pending = setTimeout(() => { pending = null; void refresh(); }, 600);
+      pending = setTimeout(() => {
+        pending = null;
+        void refresh();
+      }, 600);
     };
     const ch = sb
       .channel("relay-supervise")
-      .on("postgres_changes",
+      .on(
+        "postgres_changes",
         { event: "*", schema: "public", table: "guest_calls" },
-        queueRefresh)
-      .on("postgres_changes",
+        queueRefresh
+      )
+      .on(
+        "postgres_changes",
         { event: "INSERT", schema: "public", table: "session_health" },
-        queueRefresh)
+        queueRefresh
+      )
       .subscribe();
     channelRef.current = ch;
     // Aggressive polling fallback. Realtime usually delivers in under
@@ -347,7 +440,9 @@ export function SuperviseClient() {
     // the supervisor view shouldn't sit on stale data — 5s gives the
     // grid a guaranteed refresh tempo without hammering the DB. Burst-
     // protection still lives in the 600ms debouncer.
-    const fallback = setInterval(() => { void refresh(); }, 5_000);
+    const fallback = setInterval(() => {
+      void refresh();
+    }, 5_000);
     return () => {
       if (pending) clearTimeout(pending);
       sb.removeChannel(ch);
@@ -362,31 +457,60 @@ export function SuperviseClient() {
   // path. super_admin / unscoped viewers don't get the tab (they have toasts).
   const [escalations, setEscalations] = useState<Escalation[]>([]);
   const refreshEscalations = useCallback(async () => {
-    if (scope.kind !== "pod") { setEscalations([]); return; }
+    if (scope.kind !== "pod") {
+      setEscalations([]);
+      return;
+    }
     try {
       const res = await fetch("/api/supervisor/act-now", { cache: "no-store" });
       if (res.ok) {
         const data = (await res.json()) as { escalations?: Escalation[] };
         setEscalations(data.escalations ?? []);
       }
-    } catch { /* ignore — the periodic poll + realtime will retry */ }
+    } catch {
+      /* ignore — the periodic poll + realtime will retry */
+    }
   }, [scope]);
-  useEffect(() => { void refreshEscalations(); }, [refreshEscalations]);
+  useEffect(() => {
+    void refreshEscalations();
+  }, [refreshEscalations]);
   useEffect(() => {
     if (scope.kind !== "pod") return;
     const sb = supabaseRef.current;
     let pending: ReturnType<typeof setTimeout> | null = null;
-    const queue = () => { if (!pending) pending = setTimeout(() => { pending = null; void refreshEscalations(); }, 600); };
+    const queue = () => {
+      if (!pending)
+        pending = setTimeout(() => {
+          pending = null;
+          void refreshEscalations();
+        }, 600);
+    };
     const ch = sb
       .channel("relay-supervise-escalations")
-      .on("postgres_changes", { event: "*", schema: "public", table: "session_escalations" }, queue)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "session_escalations" },
+        queue
+      )
       .subscribe();
-    const fallback = setInterval(() => { void refreshEscalations(); }, 10_000);
-    return () => { if (pending) clearTimeout(pending); sb.removeChannel(ch); clearInterval(fallback); };
+    const fallback = setInterval(() => {
+      void refreshEscalations();
+    }, 10_000);
+    return () => {
+      if (pending) clearTimeout(pending);
+      sb.removeChannel(ch);
+      clearInterval(fallback);
+    };
   }, [scope, refreshEscalations]);
 
-  const liveSessions    = useMemo(() => sessions.filter((s) => LIVE_STATES.has(s.status)),    [sessions]);
-  const waitingSessions = useMemo(() => sessions.filter((s) => WAITING_STATES.has(s.status)), [sessions]);
+  const liveSessions = useMemo(
+    () => sessions.filter((s) => LIVE_STATES.has(s.status)),
+    [sessions]
+  );
+  const waitingSessions = useMemo(
+    () => sessions.filter((s) => WAITING_STATES.has(s.status)),
+    [sessions]
+  );
 
   // Portal target for each panel's PagerStrip — lives on the right side of
   // the sticky footer. State (not ref) so children re-portal once it mounts.
@@ -400,94 +524,108 @@ export function SuperviseClient() {
     // empty/loading state, and `sticky bottom-0` keeps it pinned while
     // scrolling through long lists.
     <PagerSlotContext.Provider value={pagerSlot}>
-    <div className="flex min-h-screen flex-col">
-      <style>{WAITING_GLOW_CSS}</style>
-      <div className="flex w-full max-w-screen-2xl flex-1 gap-6 px-6 pt-8 pb-6">
-        {/* Left rail — act-now queue (pod supervisors). Sticky + self-scrolling. */}
-        {scope.kind === "pod" && (
-          <aside className="hidden w-96 shrink-0 lg:block lg:sticky lg:top-8 lg:max-h-[calc(100vh-7rem)]">
-            <ActNowRail />
-          </aside>
-        )}
-        <div className="min-w-0 flex-1 space-y-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="font-serif text-3xl font-medium tracking-tight text-[var(--text)]">
-              Live operations
-            </h1>
-            <p className="mt-1.5 text-sm leading-relaxed text-[var(--text-muted)]">
-              Every active session, live. The health bar on each card tells you
-              who needs attention — healthy, shaky, or at risk. Use Join to
-              drop into a session.
-            </p>
-          </div>
-          {/* On-duty toggle — drives coverage failover. Only the supervise
-              audience (supervisor / super_admin) reaches this client. */}
-          {scope.kind !== "loading" && (
-            <div className="flex shrink-0 flex-col items-end gap-2 pt-1">
-              <SupervisorAvailabilityToggle />
-              <CoveringStrip />
-            </div>
+      <div className="flex min-h-screen flex-col">
+        <style>{WAITING_GLOW_CSS}</style>
+        <div className="flex w-full max-w-screen-2xl flex-1 gap-6 px-6 pt-8 pb-6">
+          {/* Left rail — act-now queue (pod supervisors). Sticky + self-scrolling. */}
+          {scope.kind === "pod" && (
+            <aside className="hidden w-96 shrink-0 lg:sticky lg:top-8 lg:block lg:max-h-[calc(100vh-7rem)]">
+              <ActNowRail />
+            </aside>
           )}
-        </div>
+          <div className="min-w-0 flex-1 space-y-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h1 className="font-serif text-3xl font-medium tracking-tight text-[var(--text)]">
+                  Live operations
+                </h1>
+                <p className="mt-1.5 text-sm leading-relaxed text-[var(--text-muted)]">
+                  Every active session, live. The health bar on each card tells
+                  you who needs attention — healthy, shaky, or at risk. Use Join
+                  to drop into a session.
+                </p>
+              </div>
+              {/* On-duty toggle — drives coverage failover. Only the supervise
+              audience (supervisor / super_admin) reaches this client. */}
+              {scope.kind !== "loading" && (
+                <div className="flex shrink-0 flex-col items-end gap-2 pt-1">
+                  {/* Bell sits directly before the On/Off-Duty toggle. */}
+                  <div className="flex items-center gap-2">
+                    <SupervisorNotificationBell />
+                    <SupervisorAvailabilityToggle />
+                  </div>
+                  <CoveringStrip />
+                </div>
+              )}
+            </div>
 
-        {/* Tabs: All · Waiting · Live · Past · (Matching for pod-supervisors) */}
-        <Tabs
-          tab={tab}
-          setTab={setTab}
-          counts={{
-            all:         liveSessions.length + waitingSessions.length + pastSessions.length,
-            waiting:     waitingSessions.length,
-            live:        liveSessions.length,
-            past:        pastSessions.length,
-            escalations: escalations.length,
-            team:        0,
-            coverage:    0,
-            matching:    0,
-          }}
-          showEscalations={scope.kind === "pod"}
-          showMatching={scope.kind === "unscoped" || (scope.kind === "pod" && !!scope.podId)}
-          showTeam={scope.kind === "pod" && !!scope.podId}
-        />
+            {/* Tabs: All · Waiting · Live · Past · (Matching for pod-supervisors) */}
+            <Tabs
+              tab={tab}
+              setTab={setTab}
+              counts={{
+                all:
+                  liveSessions.length +
+                  waitingSessions.length +
+                  pastSessions.length,
+                waiting: waitingSessions.length,
+                live: liveSessions.length,
+                past: pastSessions.length,
+                escalations: escalations.length,
+                team: 0,
+                appointments: 0,
+                matching: 0,
+              }}
+              showEscalations={scope.kind === "pod"}
+              showMatching={
+                scope.kind === "unscoped" ||
+                (scope.kind === "pod" && !!scope.podId)
+              }
+              showTeam={scope.kind === "pod" && !!scope.podId}
+            />
 
-        {loading ? (
-          <div className="flex justify-center py-16">
-            <Loader2 size={20} className="animate-spin text-[var(--text-muted)]" />
+            {loading ? (
+              <div className="flex justify-center py-16">
+                <Loader2
+                  size={20}
+                  className="animate-spin text-[var(--text-muted)]"
+                />
+              </div>
+            ) : (
+              <TabPanel
+                tab={tab}
+                liveSessions={liveSessions}
+                waitingSessions={waitingSessions}
+                pastSessions={pastSessions}
+                escalations={escalations}
+                onEscalationChanged={refreshEscalations}
+                perPage={perPage}
+                setPerPage={setPerPage}
+                matchingGlobal={scope.kind === "unscoped"}
+              />
+            )}
           </div>
-        ) : (
-          <TabPanel
-            tab={tab}
-            liveSessions={liveSessions}
-            waitingSessions={waitingSessions}
-            pastSessions={pastSessions}
-            escalations={escalations}
-            onEscalationChanged={refreshEscalations}
-            perPage={perPage}
-            setPerPage={setPerPage}
-            matchingGlobal={scope.kind === "unscoped"}
-          />
-        )}
         </div>
-      </div>
 
-      {/* Sticky footer — session-health legend (left) + pager slot (right).
+        {/* Sticky footer — session-health legend (left) + pager slot (right).
           Stays at viewport-bottom on short pages (via parent flex-col +
           flex-1 above) and pinned during scroll on long pages. Scoped to
           <main>, so it doesn't overlap the staff sidebar. */}
-      <div
-        className="sticky bottom-0 z-30 border-t backdrop-blur"
-        style={{
-          borderColor: "var(--border)",
-          backgroundColor: "color-mix(in srgb, var(--background) 92%, transparent)",
-        }}
-      >
-        <div className="flex w-full max-w-screen-2xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-6 py-3">
-          <HealthLegend />
-          {/* Right-side portal target — each panel's PagerStrip renders here */}
-          <div ref={setPagerSlot} className="flex items-center" />
+        <div
+          className="sticky bottom-0 z-30 border-t backdrop-blur"
+          style={{
+            borderColor: "var(--border)",
+            backgroundColor:
+              "color-mix(in srgb, var(--background) 92%, transparent)",
+          }}
+        >
+          <div className="flex w-full max-w-screen-2xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-6 py-3">
+            <HealthLegend />
+            {/* Right-side portal target — each panel's PagerStrip renders here */}
+            <div ref={setPagerSlot} className="flex items-center" />
+          </div>
         </div>
       </div>
-    </div>
     </PagerSlotContext.Provider>
   );
 }
@@ -499,21 +637,48 @@ function CoveringStrip() {
     let alive = true;
     const load = async () => {
       try {
-        const res = await fetch("/api/supervisor/covering", { cache: "no-store" });
-        if (res.ok && alive) setSups((((await res.json()) as { supervisors?: { name: string; isOnline: boolean }[] }).supervisors) ?? []);
-      } catch { /* ignore */ }
+        const res = await fetch("/api/supervisor/covering", {
+          cache: "no-store",
+        });
+        if (res.ok && alive)
+          setSups(
+            (
+              (await res.json()) as {
+                supervisors?: { name: string; isOnline: boolean }[];
+              }
+            ).supervisors ?? []
+          );
+      } catch {
+        /* ignore */
+      }
     };
     void load();
     const id = setInterval(load, 30_000);
-    return () => { alive = false; clearInterval(id); };
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
   }, []);
   if (sups.length === 0) return null;
   const online = sups.filter((s) => s.isOnline).length;
   return (
-    <div className="flex flex-wrap items-center justify-end gap-1.5" title={sups.map((s) => `${s.name}${s.isOnline ? " (on duty)" : ""}`).join("\n")}>
-      <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>{online}/{sups.length} covering</span>
+    <div
+      className="flex flex-wrap items-center justify-end gap-1.5"
+      title={sups
+        .map((s) => `${s.name}${s.isOnline ? " (on duty)" : ""}`)
+        .join("\n")}
+    >
+      <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+        {online}/{sups.length} covering
+      </span>
       {sups.slice(0, 6).map((s, i) => (
-        <span key={i} className="inline-flex size-2 rounded-full" style={{ backgroundColor: s.isOnline ? "var(--ok)" : "var(--text-faint)" }} />
+        <span
+          key={i}
+          className="inline-flex size-2 rounded-full"
+          style={{
+            backgroundColor: s.isOnline ? "var(--ok)" : "var(--text-faint)",
+          }}
+        />
       ))}
     </div>
   );
@@ -544,31 +709,37 @@ function HealthLegend() {
 type Health = "green" | "amber" | "red";
 function deriveHealth(s: SessionWithHealth): Health {
   const score = s.health?.score;
-  const msgs  = s.health?.message_count ?? 0;
+  const msgs = s.health?.message_count ?? 0;
   // Trust the AI verdict only when there's enough chat to read. Below the
   // threshold, the LLM is guessing from "(no messages)" and returning
   // score=0, which would flag every voice-only call as AMBER. Fall back
   // to the deterministic verdict instead — it's based on urgency,
   // recalls, and wait time, which are real signals.
-  if (typeof score === "number" && Number.isFinite(score) && msgs >= MIN_MESSAGES_FOR_AI) {
+  if (
+    typeof score === "number" &&
+    Number.isFinite(score) &&
+    msgs >= MIN_MESSAGES_FOR_AI
+  ) {
     if (score < -0.3) return "red";
-    if (score <  0.3) return "amber";
+    if (score < 0.3) return "amber";
     return "green";
   }
   return deriveHealthDeterministic(s);
 }
 function deriveHealthDeterministic(s: GuestCall): Health {
-  if (s.urgency === "critical")     return "red";
-  if (s.status === "grace")         return "red";
-  if (s.status === "expired_free")  return "amber";
-  if (s.urgency === "urgent")       return "amber";
-  if ((s.recall_count ?? 0) >= 2)   return "red";
-  if ((s.recall_count ?? 0) >= 1)   return "amber";
+  if (s.urgency === "critical") return "red";
+  if (s.status === "grace") return "red";
+  if (s.status === "expired_free") return "amber";
+  if (s.urgency === "urgent") return "amber";
+  if ((s.recall_count ?? 0) >= 2) return "red";
+  if ((s.recall_count ?? 0) >= 1) return "amber";
   if (s.status === "queued" && s.created_at) {
     // Queue timeout is 90s (abandon_stale_queued_sessions). Bracket the
     // pill colors so red means "about to time out" rather than a value
     // the session can never reach.
-    const waitSecs = Math.floor((Date.now() - new Date(s.created_at).getTime()) / 1000);
+    const waitSecs = Math.floor(
+      (Date.now() - new Date(s.created_at).getTime()) / 1000
+    );
     if (waitSecs >= 60) return "red";
     if (waitSecs >= 30) return "amber";
   }
@@ -590,19 +761,23 @@ function SessionTile({ session }: { session: SessionWithHealth }) {
   const aiMessageCount = session.health?.message_count ?? 0;
   // Only surface the AI summary line when the score was derived from real
   // chat. Otherwise it just shows "Quiet — no signal yet." which is noise.
-  const aiSummary = aiMessageCount >= MIN_MESSAGES_FOR_AI ? session.health?.summary : undefined;
-  const aiScore   = aiMessageCount >= MIN_MESSAGES_FOR_AI ? session.health?.score   : undefined;
+  const aiSummary =
+    aiMessageCount >= MIN_MESSAGES_FOR_AI ? session.health?.summary : undefined;
+  const aiScore =
+    aiMessageCount >= MIN_MESSAGES_FOR_AI ? session.health?.score : undefined;
 
   // "Live for" anchors on assigned_at (when the engineer accepted and chat
   // began) — the same anchor the customer countdown and engineer room use, so
   // every surface agrees. Independent of Zoom. Queued sessions count their
   // wait from created_at.
-  const inLive    = LIVE_STATES.has(session.status);
+  const inLive = LIVE_STATES.has(session.status);
   const liveLabel = inLive ? "Live for" : "Waiting";
   const elapsedAnchor = inLive
     ? (session.assigned_at ?? session.joined_at ?? session.created_at)
     : session.created_at;
-  const elapsed = Math.floor((Date.now() - new Date(elapsedAnchor).getTime()) / 1000);
+  const elapsed = Math.floor(
+    (Date.now() - new Date(elapsedAnchor).getTime()) / 1000
+  );
 
   const join = () => router.push(`/staff/session/${session.id}`);
 
@@ -629,10 +804,7 @@ function SessionTile({ session }: { session: SessionWithHealth }) {
           join();
         }
       }}
-      className={cn(
-        "relative p-4 group",
-        isWaiting && "relay-card-glow",
-      )}
+      className={cn("group relative p-4", isWaiting && "relay-card-glow")}
       style={glowVar as React.CSSProperties}
     >
       {/* Left accent bar — at-a-glance health indicator */}
@@ -646,6 +818,14 @@ function SessionTile({ session }: { session: SessionWithHealth }) {
         <StatusBadge tone={tone} compact>
           {humanState(session.status)}
         </StatusBadge>
+        {session.is_appointment && (
+          <span
+            className="relay-appt-tag inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase"
+            style={{ background: "var(--risk)", color: "#fff" }}
+          >
+            <CalendarClock size={10} /> Appointment
+          </span>
+        )}
         <StatusBadge tone={tone} compact>
           {HEALTH_LABEL[health]}
         </StatusBadge>
@@ -665,10 +845,7 @@ function SessionTile({ session }: { session: SessionWithHealth }) {
       </div>
 
       <div className="mb-3 grid grid-cols-2 gap-2 text-xs">
-        <Stat
-          label={liveLabel}
-          value={fmtSecs(elapsed)}
-        />
+        <Stat label={liveLabel} value={fmtSecs(elapsed)} />
         <Stat label="Recalls" value={String(session.recall_count ?? 0)} />
         <Stat label="Engineer" value={engineerLabel(session)} />
         <Stat label="Project" value={session.project_name ?? "—"} />
@@ -677,25 +854,31 @@ function SessionTile({ session }: { session: SessionWithHealth }) {
       {/* Declined manual assignment — supervisor reassigns from here. The
           Assign control is intake-keyed; stopPropagation so interacting with
           it doesn't navigate into the session. */}
-      {session.reassign_needed && session.status === "queued" && session.intakeId && (
-        <div
-          className="mb-3 rounded-md border px-2.5 py-2"
-          style={{
-            borderColor: "var(--risk)",
-            backgroundColor: "color-mix(in srgb, var(--risk) 12%, transparent)",
-          }}
-          onClick={(e) => e.stopPropagation()}
-          role="presentation"
-        >
-          <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: "var(--risk)" }}>
-            <AlertTriangle size={12} />
-            Engineer declined — reassign
-          </div>
-          {/* No onChanged needed — supervisor_assign clears reassign_needed on
+      {session.reassign_needed &&
+        session.status === "queued" &&
+        session.intakeId && (
+          <div
+            className="mb-3 rounded-md border px-2.5 py-2"
+            style={{
+              borderColor: "var(--risk)",
+              backgroundColor:
+                "color-mix(in srgb, var(--risk) 12%, transparent)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+            role="presentation"
+          >
+            <div
+              className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold"
+              style={{ color: "var(--risk)" }}
+            >
+              <AlertTriangle size={12} />
+              Engineer declined — reassign
+            </div>
+            {/* No onChanged needed — supervisor_assign clears reassign_needed on
               guest_calls, which this grid's realtime subscription picks up. */}
-          <MatchingActions intakeId={session.intakeId} />
-        </div>
-      )}
+            <MatchingActions intakeId={session.intakeId} />
+          </div>
+        )}
 
       {aiSummary && (
         <p
@@ -706,10 +889,14 @@ function SessionTile({ session }: { session: SessionWithHealth }) {
             color: HEALTH_VAR[health],
           }}
           title={
-            typeof aiScore === "number" ? `Sentiment score: ${aiScore.toFixed(2)}` : undefined
+            typeof aiScore === "number"
+              ? `Sentiment score: ${aiScore.toFixed(2)}`
+              : undefined
           }
         >
-          <span className="font-semibold uppercase tracking-wide opacity-80">AI · </span>
+          <span className="font-semibold tracking-wide uppercase opacity-80">
+            AI ·{" "}
+          </span>
           {aiSummary}
         </p>
       )}
@@ -733,8 +920,15 @@ function SessionTile({ session }: { session: SessionWithHealth }) {
 function Stat({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>{label}</div>
-      <div className="text-xs font-medium" style={{ color: "var(--text)" }}>{value}</div>
+      <div
+        className="text-[10px] tracking-wide uppercase"
+        style={{ color: "var(--text-muted)" }}
+      >
+        {label}
+      </div>
+      <div className="text-xs font-medium" style={{ color: "var(--text)" }}>
+        {value}
+      </div>
     </div>
   );
 }
@@ -760,19 +954,21 @@ function Tabs({
   const base = ["all", "waiting", "live", "past"] as const;
   const visible: readonly Tab[] = [
     ...base,
+    ...(showTeam ? (["appointments"] as const) : []),
     ...(showEscalations ? (["escalations"] as const) : []),
-    ...(showTeam ? (["team", "coverage"] as const) : []),
+    ...(showTeam ? (["team"] as const) : []),
     ...(showMatching ? (["matching"] as const) : []),
   ];
   return (
     <div
       role="tablist"
       aria-label="Session views"
-      className="flex items-center gap-1 overflow-x-auto border-b border-[var(--border)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      className="flex [scrollbar-width:none] items-center gap-1 overflow-x-auto border-b border-[var(--border)] [&::-webkit-scrollbar]:hidden"
     >
       {visible.map((t) => {
         const active = t === tab;
-        const showCount = t !== "matching" && t !== "team" && t !== "coverage";
+        const showCount =
+          t !== "matching" && t !== "team" && t !== "appointments";
         return (
           <button
             key={t}
@@ -780,10 +976,10 @@ function Tabs({
             aria-selected={active}
             onClick={() => setTab(t)}
             className={cn(
-              "relative inline-flex shrink-0 items-center gap-2 whitespace-nowrap px-3 py-2.5 text-sm capitalize transition-colors",
+              "relative inline-flex shrink-0 items-center gap-2 px-3 py-2.5 text-sm whitespace-nowrap capitalize transition-colors",
               active
                 ? "font-semibold text-[var(--text)]"
-                : "font-medium text-[var(--text-muted)] hover:text-[var(--text)]",
+                : "font-medium text-[var(--text-muted)] hover:text-[var(--text)]"
             )}
           >
             <span>{t}</span>
@@ -793,7 +989,7 @@ function Tabs({
                   "inline-flex min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] tabular-nums",
                   active
                     ? "bg-[var(--primary-soft)] text-[var(--primary)]"
-                    : "bg-[color-mix(in_srgb,var(--text)_8%,transparent)] text-[var(--text-muted)]",
+                    : "bg-[color-mix(in_srgb,var(--text)_8%,transparent)] text-[var(--text-muted)]"
                 )}
               >
                 {counts[t]}
@@ -802,7 +998,7 @@ function Tabs({
             {active && (
               <span
                 aria-hidden
-                className="absolute -bottom-px left-2 right-2 h-[2px] rounded-t-sm bg-[var(--primary)]"
+                className="absolute right-2 -bottom-px left-2 h-[2px] rounded-t-sm bg-[var(--primary)]"
               />
             )}
           </button>
@@ -814,7 +1010,15 @@ function Tabs({
 
 // ── Tab panel — chooses the right grid for the active tab ─────────────────
 function TabPanel({
-  tab, liveSessions, waitingSessions, pastSessions, escalations, onEscalationChanged, perPage, setPerPage, matchingGlobal,
+  tab,
+  liveSessions,
+  waitingSessions,
+  pastSessions,
+  escalations,
+  onEscalationChanged,
+  perPage,
+  setPerPage,
+  matchingGlobal,
 }: {
   tab: Tab;
   liveSessions: SessionWithHealth[];
@@ -827,18 +1031,25 @@ function TabPanel({
   matchingGlobal: boolean;
 }) {
   if (tab === "escalations") {
-    return <EscalationsPanel escalations={escalations} onChanged={onEscalationChanged} />;
+    return (
+      <EscalationsPanel
+        escalations={escalations}
+        onChanged={onEscalationChanged}
+      />
+    );
   }
   if (tab === "team") {
     return <RosterPanel />;
   }
-  if (tab === "coverage") {
-    return <CoveragePanel />;
+  if (tab === "appointments") {
+    return <AppointmentsPanel />;
   }
   if (tab === "matching") {
-    return matchingGlobal
-      ? <MatchingPanel endpoint="/api/admin/matching" scope="global" />
-      : <MatchingPanel />;
+    return matchingGlobal ? (
+      <MatchingPanel endpoint="/api/admin/matching" scope="global" />
+    ) : (
+      <MatchingPanel />
+    );
   }
   if (tab === "all") {
     return (
@@ -853,7 +1064,11 @@ function TabPanel({
   }
   if (tab === "past") {
     return (
-      <PastPanel sessions={pastSessions} perPage={perPage} setPerPage={setPerPage} />
+      <PastPanel
+        sessions={pastSessions}
+        perPage={perPage}
+        setPerPage={setPerPage}
+      />
     );
   }
   return (
@@ -875,7 +1090,11 @@ function TabPanel({
 // regrouped into Live/Waiting/Past section headers so structure is
 // preserved across page boundaries.
 function AllPanel({
-  liveSessions, waitingSessions, pastSessions, perPage, setPerPage,
+  liveSessions,
+  waitingSessions,
+  pastSessions,
+  perPage,
+  setPerPage,
 }: {
   liveSessions: SessionWithHealth[];
   waitingSessions: SessionWithHealth[];
@@ -888,9 +1107,9 @@ function AllPanel({
 
   const matchesQ = (s: SessionWithHealth, needle: string) =>
     !needle ||
-    (s.guest_name   ?? "").toLowerCase().includes(needle) ||
-    (s.guest_email  ?? "").toLowerCase().includes(needle) ||
-    (s.agent_name   ?? "").toLowerCase().includes(needle) ||
+    (s.guest_name ?? "").toLowerCase().includes(needle) ||
+    (s.guest_email ?? "").toLowerCase().includes(needle) ||
+    (s.agent_name ?? "").toLowerCase().includes(needle) ||
     (s.project_name ?? "").toLowerCase().includes(needle);
 
   // Flat ordered list — live > waiting > past, newest-within-group — used
@@ -905,23 +1124,25 @@ function AllPanel({
       return bt - at;
     };
     return [
-      ...liveSessions   .filter((s) => matchesQ(s, needle)).sort(byCreatedDesc),
+      ...liveSessions.filter((s) => matchesQ(s, needle)).sort(byCreatedDesc),
       ...waitingSessions.filter((s) => matchesQ(s, needle)).sort(byCreatedDesc),
-      ...pastSessions   .filter((s) => matchesQ(s, needle)).sort(byEndedDesc),
+      ...pastSessions.filter((s) => matchesQ(s, needle)).sort(byEndedDesc),
     ];
   }, [liveSessions, waitingSessions, pastSessions, q]);
 
   const total = ordered.length;
   const pageCount = Math.max(1, Math.ceil(total / perPage));
-  useEffect(() => { if (page > pageCount) setPage(1); }, [page, pageCount]);
+  useEffect(() => {
+    if (page > pageCount) setPage(1);
+  }, [page, pageCount]);
   const start = (page - 1) * perPage;
   const slice = ordered.slice(start, start + perPage);
 
   // Re-group the visible slice for sectioned rendering.
-  const sliceLive    = slice.filter((s) => LIVE_STATES.has(s.status));
+  const sliceLive = slice.filter((s) => LIVE_STATES.has(s.status));
   const sliceWaiting = slice.filter((s) => WAITING_STATES.has(s.status));
-  const sliceLW      = new Set([...sliceLive, ...sliceWaiting].map((s) => s.id));
-  const slicePast    = slice.filter((s) => !sliceLW.has(s.id));
+  const sliceLW = new Set([...sliceLive, ...sliceWaiting].map((s) => s.id));
+  const slicePast = slice.filter((s) => !sliceLW.has(s.id));
 
   return (
     <div className="flex flex-col gap-3">
@@ -929,14 +1150,17 @@ function AllPanel({
         <div className="relative">
           <Search
             size={12}
-            className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2"
+            className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2"
             style={{ color: "var(--text-muted)" }}
           />
           <input
             value={q}
-            onChange={(e) => { setQ(e.target.value); setPage(1); }}
+            onChange={(e) => {
+              setQ(e.target.value);
+              setPage(1);
+            }}
             placeholder="Search all sessions…"
-            className="rounded-md border py-1.5 pl-7 pr-2 text-xs outline-none"
+            className="rounded-md border py-1.5 pr-2 pl-7 text-xs outline-none"
             style={{
               borderColor: "var(--border)",
               backgroundColor: "var(--background)",
@@ -946,6 +1170,10 @@ function AllPanel({
           />
         </div>
       </div>
+
+      {/* Started appointments pin to the very top of All — they only appear
+          here once the customer has started the call (never before). */}
+      <LiveAppointmentsSection />
 
       {total === 0 ? (
         <EmptyState
@@ -957,17 +1185,23 @@ function AllPanel({
           <div className="flex flex-col gap-6">
             {sliceLive.length > 0 && (
               <Section title="Live" count={sliceLive.length}>
-                {sliceLive.map((s) => <SessionTile key={s.id} session={s} />)}
+                {sliceLive.map((s) => (
+                  <SessionTile key={s.id} session={s} />
+                ))}
               </Section>
             )}
             {sliceWaiting.length > 0 && (
               <Section title="Waiting" count={sliceWaiting.length}>
-                {sliceWaiting.map((s) => <SessionTile key={s.id} session={s} />)}
+                {sliceWaiting.map((s) => (
+                  <SessionTile key={s.id} session={s} />
+                ))}
               </Section>
             )}
             {slicePast.length > 0 && (
               <Section title="Past" count={slicePast.length}>
-                {slicePast.map((s) => <PastSessionTile key={s.id} session={s} />)}
+                {slicePast.map((s) => (
+                  <PastSessionTile key={s.id} session={s} />
+                ))}
               </Section>
             )}
           </div>
@@ -988,15 +1222,27 @@ function AllPanel({
 }
 
 function Section({
-  title, count, children,
-}: { title: string; count: number; children: React.ReactNode }) {
+  title,
+  count,
+  children,
+}: {
+  title: string;
+  count: number;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-baseline gap-2">
-        <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+        <h2
+          className="text-sm font-semibold tracking-wide uppercase"
+          style={{ color: "var(--text-muted)" }}
+        >
           {title}
         </h2>
-        <span className="text-[11px] tabular-nums" style={{ color: "var(--text-muted)" }}>
+        <span
+          className="text-[11px] tabular-nums"
+          style={{ color: "var(--text-muted)" }}
+        >
           ({count})
         </span>
       </div>
@@ -1009,7 +1255,10 @@ function Section({
 
 // ── Active (live + waiting) panel — search + sort + per-page pagination ───
 function ActivePanel({
-  tab, sessions, perPage, setPerPage,
+  tab,
+  sessions,
+  perPage,
+  setPerPage,
 }: {
   tab: "live" | "waiting";
   sessions: SessionWithHealth[];
@@ -1017,20 +1266,21 @@ function ActivePanel({
   setPerPage: (n: PageSize) => void;
 }) {
   const [q, setQ] = useState("");
-  const [sortKey, setSortKey] = useState<"recent" | "wait" | "customer" | "engineer">(
-    tab === "waiting" ? "wait" : "recent",
-  );
+  const [sortKey, setSortKey] = useState<
+    "recent" | "wait" | "customer" | "engineer"
+  >(tab === "waiting" ? "wait" : "recent");
   const [page, setPage] = useState(1);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
     let arr = sessions;
     if (needle) {
-      arr = arr.filter((s) =>
-        (s.guest_name ?? "").toLowerCase().includes(needle) ||
-        (s.guest_email ?? "").toLowerCase().includes(needle) ||
-        (s.agent_name ?? "").toLowerCase().includes(needle) ||
-        (s.project_name ?? "").toLowerCase().includes(needle),
+      arr = arr.filter(
+        (s) =>
+          (s.guest_name ?? "").toLowerCase().includes(needle) ||
+          (s.guest_email ?? "").toLowerCase().includes(needle) ||
+          (s.agent_name ?? "").toLowerCase().includes(needle) ||
+          (s.project_name ?? "").toLowerCase().includes(needle)
       );
     }
     const sorted = [...arr];
@@ -1041,42 +1291,76 @@ function ActivePanel({
           const bw = Date.now() - new Date(b.created_at).getTime();
           return bw - aw; // longest wait first
         }
-        case "customer": return (a.guest_name ?? "").localeCompare(b.guest_name ?? "");
-        case "engineer": return (a.agent_name ?? "").localeCompare(b.agent_name ?? "");
+        case "customer":
+          return (a.guest_name ?? "").localeCompare(b.guest_name ?? "");
+        case "engineer":
+          return (a.agent_name ?? "").localeCompare(b.agent_name ?? "");
         case "recent":
         default:
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+          return (
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          );
       }
     });
     return sorted;
   }, [sessions, q, sortKey]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / perPage));
-  useEffect(() => { if (page > pageCount) setPage(1); }, [page, pageCount]);
+  useEffect(() => {
+    if (page > pageCount) setPage(1);
+  }, [page, pageCount]);
   const start = (page - 1) * perPage;
   const slice = filtered.slice(start, start + perPage);
 
   return (
     <div className="flex flex-col gap-3">
       <SuperviseToolbar
-        q={q} setQ={(v) => { setQ(v); setPage(1); }}
-        sortKey={sortKey} setSortKey={(s) => { setSortKey(s as typeof sortKey); setPage(1); }}
+        q={q}
+        setQ={(v) => {
+          setQ(v);
+          setPage(1);
+        }}
+        sortKey={sortKey}
+        setSortKey={(s) => {
+          setSortKey(s as typeof sortKey);
+          setPage(1);
+        }}
         sortOptions={[
-          { value: "recent",   label: "Newest first" },
-          { value: "wait",     label: "Longest wait" },
+          { value: "recent", label: "Newest first" },
+          { value: "wait", label: "Longest wait" },
           { value: "customer", label: "Customer name" },
           { value: "engineer", label: "Engineer name" },
         ]}
-        searchPlaceholder={tab === "live" ? "Search live sessions…" : "Search waiting…"}
+        searchPlaceholder={
+          tab === "live" ? "Search live sessions…" : "Search waiting…"
+        }
       />
       {filtered.length === 0 ? (
-        tab === "live"
-          ? <EmptyState title="All quiet" body={q ? `No live sessions match "${q}".` : "No active sessions right now."} />
-          : <EmptyState title="Nothing waiting" body={q ? `No waiting sessions match "${q}".` : "No customers waiting to be picked up."} />
+        tab === "live" ? (
+          <EmptyState
+            title="All quiet"
+            body={
+              q
+                ? `No live sessions match "${q}".`
+                : "No active sessions right now."
+            }
+          />
+        ) : (
+          <EmptyState
+            title="Nothing waiting"
+            body={
+              q
+                ? `No waiting sessions match "${q}".`
+                : "No customers waiting to be picked up."
+            }
+          />
+        )
       ) : (
         <>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-            {slice.map((s) => <SessionTile key={s.id} session={s} />)}
+            {slice.map((s) => (
+              <SessionTile key={s.id} session={s} />
+            ))}
           </div>
           <PagerStrip
             showingFrom={start + 1}
@@ -1096,31 +1380,39 @@ function ActivePanel({
 
 // ── Past panel — search + sort + pager (longer list) ──────────────────────
 function PastPanel({
-  sessions, perPage, setPerPage,
+  sessions,
+  perPage,
+  setPerPage,
 }: {
   sessions: SessionWithHealth[];
   perPage: PageSize;
   setPerPage: (n: PageSize) => void;
 }) {
   const [q, setQ] = useState("");
-  const [sortKey, setSortKey] = useState<"ended" | "duration" | "sentiment" | "customer">("ended");
+  const [sortKey, setSortKey] = useState<
+    "ended" | "duration" | "sentiment" | "customer"
+  >("ended");
   const [page, setPage] = useState(1);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
     let arr = sessions;
     if (needle) {
-      arr = arr.filter((s) =>
-        (s.guest_name ?? "").toLowerCase().includes(needle) ||
-        (s.guest_email ?? "").toLowerCase().includes(needle) ||
-        (s.agent_name ?? "").toLowerCase().includes(needle) ||
-        (s.project_name ?? "").toLowerCase().includes(needle),
+      arr = arr.filter(
+        (s) =>
+          (s.guest_name ?? "").toLowerCase().includes(needle) ||
+          (s.guest_email ?? "").toLowerCase().includes(needle) ||
+          (s.agent_name ?? "").toLowerCase().includes(needle) ||
+          (s.project_name ?? "").toLowerCase().includes(needle)
       );
     }
     const sorted = [...arr];
     sorted.sort((a, b) => {
       switch (sortKey) {
-        case "duration":  return (Number(b.duration_minutes ?? 0)) - (Number(a.duration_minutes ?? 0));
+        case "duration":
+          return (
+            Number(b.duration_minutes ?? 0) - Number(a.duration_minutes ?? 0)
+          );
         case "sentiment": {
           // Unscored sessions go to the bottom — otherwise the `?? 0`
           // fallback would slot them at "neutral" and they'd outrank any
@@ -1135,7 +1427,8 @@ function PastPanel({
           if (!aHas && !bHas) return 0;
           return (bScore as number) - (aScore as number);
         }
-        case "customer":  return (a.guest_name ?? "").localeCompare(b.guest_name ?? "");
+        case "customer":
+          return (a.guest_name ?? "").localeCompare(b.guest_name ?? "");
         case "ended":
         default: {
           const at = a.ended_at ? new Date(a.ended_at).getTime() : 0;
@@ -1159,13 +1452,21 @@ function PastPanel({
   return (
     <div className="flex flex-col gap-3">
       <SuperviseToolbar
-        q={q} setQ={(v) => { setQ(v); setPage(1); }}
-        sortKey={sortKey} setSortKey={(s) => { setSortKey(s as typeof sortKey); setPage(1); }}
+        q={q}
+        setQ={(v) => {
+          setQ(v);
+          setPage(1);
+        }}
+        sortKey={sortKey}
+        setSortKey={(s) => {
+          setSortKey(s as typeof sortKey);
+          setPage(1);
+        }}
         sortOptions={[
-          { value: "ended",     label: "Newest ended" },
-          { value: "duration",  label: "Longest duration" },
+          { value: "ended", label: "Newest ended" },
+          { value: "duration", label: "Longest duration" },
           { value: "sentiment", label: "Best sentiment" },
-          { value: "customer",  label: "Customer name" },
+          { value: "customer", label: "Customer name" },
         ]}
         searchPlaceholder="Search past sessions…"
       />
@@ -1173,14 +1474,18 @@ function PastPanel({
       {filtered.length === 0 ? (
         <EmptyState
           title={sessions.length === 0 ? "No history yet" : "No matches"}
-          body={sessions.length === 0
-            ? "Once a session ends, it'll appear here."
-            : `No past sessions match "${q}".`}
+          body={
+            sessions.length === 0
+              ? "Once a session ends, it'll appear here."
+              : `No past sessions match "${q}".`
+          }
         />
       ) : (
         <>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-            {slice.map((s) => <PastSessionTile key={s.id} session={s} />)}
+            {slice.map((s) => (
+              <PastSessionTile key={s.id} session={s} />
+            ))}
           </div>
           <PagerStrip
             showingFrom={start + 1}
@@ -1203,7 +1508,12 @@ function PastPanel({
 // the panel — see PagerStrip — so the top stays clean and the controls that
 // govern pagination cluster together.
 function SuperviseToolbar({
-  q, setQ, sortKey, setSortKey, sortOptions, searchPlaceholder,
+  q,
+  setQ,
+  sortKey,
+  setSortKey,
+  sortOptions,
+  searchPlaceholder,
 }: {
   q: string;
   setQ: (v: string) => void;
@@ -1217,14 +1527,14 @@ function SuperviseToolbar({
       <div className="relative">
         <Search
           size={12}
-          className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2"
+          className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2"
           style={{ color: "var(--text-muted)" }}
         />
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder={searchPlaceholder}
-          className="rounded-md border py-1.5 pl-7 pr-2 text-xs outline-none"
+          className="rounded-md border py-1.5 pr-2 pl-7 text-xs outline-none"
           style={{
             borderColor: "var(--border)",
             backgroundColor: "var(--background)",
@@ -1244,7 +1554,9 @@ function SuperviseToolbar({
         }}
       >
         {sortOptions.map((o) => (
-          <option key={o.value} value={o.value}>Sort: {o.label}</option>
+          <option key={o.value} value={o.value}>
+            Sort: {o.label}
+          </option>
         ))}
       </select>
     </div>
@@ -1253,7 +1565,8 @@ function SuperviseToolbar({
 
 // ── Per-page dropdown ──────────────────────────────────────────────────────
 function PerPageSelect({
-  value, onChange,
+  value,
+  onChange,
 }: {
   value: PageSize;
   onChange: (n: PageSize) => void;
@@ -1271,7 +1584,9 @@ function PerPageSelect({
       }}
     >
       {PAGE_SIZE_OPTIONS.map((n) => (
-        <option key={n} value={n}>{n} / page</option>
+        <option key={n} value={n}>
+          {n} / page
+        </option>
       ))}
     </select>
   );
@@ -1282,17 +1597,23 @@ function PerPageSelect({
 // of the page (next to HealthLegend) via React portal. No inline rendering,
 // so the footer's design stays untouched.
 function PagerStrip({
-  showingFrom, showingTo, total, page, pageCount, setPage,
-  perPage, setPerPage,
+  showingFrom,
+  showingTo,
+  total,
+  page,
+  pageCount,
+  setPage,
+  perPage,
+  setPerPage,
 }: {
   showingFrom: number;
-  showingTo:   number;
-  total:       number;
-  page:        number;
-  pageCount:   number;
-  setPage:     (p: number) => void;
-  perPage:     PageSize;
-  setPerPage:  (n: PageSize) => void;
+  showingTo: number;
+  total: number;
+  page: number;
+  pageCount: number;
+  setPage: (p: number) => void;
+  perPage: PageSize;
+  setPerPage: (n: PageSize) => void;
 }) {
   const slot = useContext(PagerSlotContext);
   if (!slot) return null;
@@ -1300,27 +1621,52 @@ function PagerStrip({
     <div className="flex flex-wrap items-center gap-3">
       <PerPageSelect
         value={perPage}
-        onChange={(n) => { setPerPage(n); setPage(1); }}
+        onChange={(n) => {
+          setPerPage(n);
+          setPage(1);
+        }}
       />
-      <span className="text-[11px] tabular-nums" style={{ color: "var(--text-muted)" }}>
+      <span
+        className="text-[11px] tabular-nums"
+        style={{ color: "var(--text-muted)" }}
+      >
         Showing {showingFrom}–{showingTo} of {total}
       </span>
       <div className="flex items-center gap-1">
-        <PagerBtn onClick={() => setPage(1)}        disabled={page <= 1}><ChevronsLeft  size={12} /></PagerBtn>
-        <PagerBtn onClick={() => setPage(page - 1)} disabled={page <= 1}><ChevronLeft   size={12} /></PagerBtn>
-        <span className="px-1 text-[11px] tabular-nums" style={{ color: "var(--text-muted)" }}>
+        <PagerBtn onClick={() => setPage(1)} disabled={page <= 1}>
+          <ChevronsLeft size={12} />
+        </PagerBtn>
+        <PagerBtn onClick={() => setPage(page - 1)} disabled={page <= 1}>
+          <ChevronLeft size={12} />
+        </PagerBtn>
+        <span
+          className="px-1 text-[11px] tabular-nums"
+          style={{ color: "var(--text-muted)" }}
+        >
           {page} / {pageCount}
         </span>
-        <PagerBtn onClick={() => setPage(page + 1)}  disabled={page >= pageCount}><ChevronRight  size={12} /></PagerBtn>
-        <PagerBtn onClick={() => setPage(pageCount)} disabled={page >= pageCount}><ChevronsRight size={12} /></PagerBtn>
+        <PagerBtn
+          onClick={() => setPage(page + 1)}
+          disabled={page >= pageCount}
+        >
+          <ChevronRight size={12} />
+        </PagerBtn>
+        <PagerBtn
+          onClick={() => setPage(pageCount)}
+          disabled={page >= pageCount}
+        >
+          <ChevronsRight size={12} />
+        </PagerBtn>
       </div>
     </div>,
-    slot,
+    slot
   );
 }
 
 function PagerBtn({
-  onClick, disabled, children,
+  onClick,
+  disabled,
+  children,
 }: {
   onClick: () => void;
   disabled?: boolean;
@@ -1365,27 +1711,34 @@ function PastSessionTile({ session }: { session: SessionWithHealth }) {
   // Either source carries the post-end overall sentiment.
   const score =
     session.health?.score ??
-    (typeof session.final_sentiment_score === "number" ? session.final_sentiment_score : undefined);
+    (typeof session.final_sentiment_score === "number"
+      ? session.final_sentiment_score
+      : undefined);
   const summaryText =
-    session.health?.summary ??
-    session.final_sentiment_summary ??
-    null;
+    session.health?.summary ?? session.final_sentiment_summary ?? null;
   const hasScore = typeof score === "number" && Number.isFinite(score);
   // Post-completion thresholds match the live thresholds (±0.3) so the
   // colour mapping stays consistent across the two grids.
   const sentiment: Health | "neutral" = !hasScore
     ? "neutral"
-    : score! >= 0.3 ? "green"
-    : score! > -0.3 ? "amber"
-    : "red";
+    : score! >= 0.3
+      ? "green"
+      : score! > -0.3
+        ? "amber"
+        : "red";
   const sentimentLabel =
-    sentiment === "green"   ? "Positive"
-    : sentiment === "amber" ? "Neutral"
-    : sentiment === "red"   ? "Negative"
-    :                          "Not scored";
+    sentiment === "green"
+      ? "Positive"
+      : sentiment === "amber"
+        ? "Neutral"
+        : sentiment === "red"
+          ? "Negative"
+          : "Not scored";
 
   const barColor =
-    sentiment === "neutral" ? "var(--text-faint)" : HEALTH_VAR[sentiment as Health];
+    sentiment === "neutral"
+      ? "var(--text-faint)"
+      : HEALTH_VAR[sentiment as Health];
 
   const ended = session.ended_at ?? session.created_at;
   const durationMin = session.duration_minutes ?? null;
@@ -1405,10 +1758,10 @@ function PastSessionTile({ session }: { session: SessionWithHealth }) {
           open();
         }
       }}
-      className="relative p-4 group"
+      className="group relative p-4"
     >
       <div
-        className="absolute left-0 top-0 h-full w-1"
+        className="absolute top-0 left-0 h-full w-1"
         style={{ backgroundColor: barColor }}
       />
 
@@ -1418,10 +1771,10 @@ function PastSessionTile({ session }: { session: SessionWithHealth }) {
         </StatusBadge>
         {hasScore && (
           <span
-            className="text-[10px] tabular-nums text-[var(--text-muted)]"
+            className="text-[10px] text-[var(--text-muted)] tabular-nums"
             title={`sentiment score ${score!.toFixed(2)}`}
           >
-            {(score! >= 0 ? "+" : "")}
+            {score! >= 0 ? "+" : ""}
             {score!.toFixed(2)}
           </span>
         )}
@@ -1448,7 +1801,9 @@ function PastSessionTile({ session }: { session: SessionWithHealth }) {
         />
         <Stat
           label="Duration"
-          value={durationMin != null ? `${Math.round(Number(durationMin))} min` : "—"}
+          value={
+            durationMin != null ? `${Math.round(Number(durationMin))} min` : "—"
+          }
         />
         <Stat label="Engineer" value={engineerLabel(session)} />
         <Stat label="Project" value={session.project_name || "—"} />
@@ -1465,10 +1820,13 @@ function PastSessionTile({ session }: { session: SessionWithHealth }) {
             sentiment === "neutral"
               ? "color-mix(in srgb, var(--text-muted) 6%, transparent)"
               : `color-mix(in srgb, ${HEALTH_VAR[sentiment as Health]} 12%, transparent)`,
-          color: sentiment === "neutral" ? "var(--text-muted)" : HEALTH_VAR[sentiment as Health],
+          color:
+            sentiment === "neutral"
+              ? "var(--text-muted)"
+              : HEALTH_VAR[sentiment as Health],
         }}
       >
-        <span className="font-semibold uppercase tracking-wide opacity-80">
+        <span className="font-semibold tracking-wide uppercase opacity-80">
           Post-completion · {sentimentLabel}
           {summaryText ? " — " : ""}
         </span>
@@ -1491,54 +1849,102 @@ function fmtSecs(s: number) {
 // an optional note. Lives outside the All grid on purpose — these aren't
 // "sessions", they're attention requests, and the supervisor wants them on
 // their own surface.
-function EscalationsPanel({ escalations, onChanged }: { escalations: Escalation[]; onChanged: () => void }) {
+function EscalationsPanel({
+  escalations,
+  onChanged,
+}: {
+  escalations: Escalation[];
+  onChanged: () => void;
+}) {
   const [resolveTarget, setResolveTarget] = useState<Escalation | null>(null);
   return (
     <div className="flex flex-col gap-3">
       {escalations.length === 0 ? (
-        <EmptyState title="No escalations" body="No engineers have raised a hand right now." />
+        <EmptyState
+          title="No escalations"
+          body="No engineers have raised a hand right now."
+        />
       ) : (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-          {escalations.map((e) => <EscalationCard key={e.id} e={e} onResolve={setResolveTarget} />)}
+          {escalations.map((e) => (
+            <EscalationCard key={e.id} e={e} onResolve={setResolveTarget} />
+          ))}
         </div>
       )}
       {resolveTarget && (
         <ResolveEscalationModal
           esc={resolveTarget}
           onClose={() => setResolveTarget(null)}
-          onDone={() => { setResolveTarget(null); onChanged(); }}
+          onDone={() => {
+            setResolveTarget(null);
+            onChanged();
+          }}
         />
       )}
     </div>
   );
 }
 
-function EscalationCard({ e, onResolve }: { e: Escalation; onResolve: (e: Escalation) => void }) {
+function EscalationCard({
+  e,
+  onResolve,
+}: {
+  e: Escalation;
+  onResolve: (e: Escalation) => void;
+}) {
   const router = useRouter();
   return (
     <Card variant="surface" className="relative p-4">
-      <span aria-hidden className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: "var(--risk)" }} />
-      <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--risk)" }}>
+      <span
+        aria-hidden
+        className="absolute inset-y-0 left-0 w-1"
+        style={{ backgroundColor: "var(--risk)" }}
+      />
+      <div
+        className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase"
+        style={{ color: "var(--risk)" }}
+      >
         <LifeBuoy size={13} /> {e.reason}
-        <span className="ml-auto font-normal normal-case tabular-nums" style={{ color: "var(--text-muted)" }}>{fmtAgo(e.createdAt)}</span>
+        <span
+          className="ml-auto font-normal normal-case tabular-nums"
+          style={{ color: "var(--text-muted)" }}
+        >
+          {fmtAgo(e.createdAt)}
+        </span>
       </div>
-      <div className="text-sm font-semibold" style={{ color: "var(--text)" }}>{e.engineer}</div>
-      <div className="truncate text-xs" style={{ color: "var(--text-muted)" }}>on {e.customer}</div>
+      <div className="text-sm font-semibold" style={{ color: "var(--text)" }}>
+        {e.engineer}
+      </div>
+      <div className="truncate text-xs" style={{ color: "var(--text-muted)" }}>
+        on {e.customer}
+      </div>
       {e.note && (
-        <p className="mt-2 max-w-prose rounded-md border px-2.5 py-2 text-[11px] leading-snug"
-          style={{ borderColor: "color-mix(in srgb, var(--risk) 30%, transparent)", background: "color-mix(in srgb, var(--risk) 8%, transparent)", color: "var(--text)" }}>
+        <p
+          className="mt-2 max-w-prose rounded-md border px-2.5 py-2 text-[11px] leading-snug"
+          style={{
+            borderColor: "color-mix(in srgb, var(--risk) 30%, transparent)",
+            background: "color-mix(in srgb, var(--risk) 8%, transparent)",
+            color: "var(--text)",
+          }}
+        >
           “{e.note}”
         </p>
       )}
       <div className="mt-3 flex gap-2">
-        <button type="button" onClick={() => router.push(`/staff/session/${e.sessionId}`)}
+        <button
+          type="button"
+          onClick={() => router.push(`/staff/session/${e.sessionId}`)}
           className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border px-2 py-1.5 text-xs font-medium"
-          style={{ borderColor: "var(--border)", color: "var(--text)" }}>
+          style={{ borderColor: "var(--border)", color: "var(--text)" }}
+        >
           <Eye size={13} /> Watch
         </button>
-        <button type="button" onClick={() => onResolve(e)}
+        <button
+          type="button"
+          onClick={() => onResolve(e)}
           className="inline-flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1.5 text-xs font-semibold text-white"
-          style={{ background: "var(--primary)" }}>
+          style={{ background: "var(--primary)" }}
+        >
           <Check size={13} /> Resolve
         </button>
       </div>
@@ -1549,7 +1955,15 @@ function EscalationCard({ e, onResolve }: { e: Escalation; onResolve: (e: Escala
 // Supervisor resolves an escalation with an optional note — a real,
 // theme-aware, focus-trapped dialog (moved here from the act-now rail when
 // escalations were promoted to their own tab).
-function ResolveEscalationModal({ esc, onClose, onDone }: { esc: Escalation; onClose: () => void; onDone: () => void }) {
+function ResolveEscalationModal({
+  esc,
+  onClose,
+  onDone,
+}: {
+  esc: Escalation;
+  onClose: () => void;
+  onDone: () => void;
+}) {
   const sb = useRef(createClient()).current;
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1557,38 +1971,105 @@ function ResolveEscalationModal({ esc, onClose, onDone }: { esc: Escalation; onC
   const dialogRef = useOverlayDismiss(onClose);
 
   const submit = async () => {
-    setBusy(true); setErr(null);
+    setBusy(true);
+    setErr(null);
     try {
-      const { error } = await sb.rpc("resolve_escalation", { _id: esc.id, _note: note.trim() || null });
+      const { error } = await sb.rpc("resolve_escalation", {
+        _id: esc.id,
+        _note: note.trim() || null,
+      });
       if (error) throw new Error(error.message);
       onDone();
-    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't resolve."); setBusy(false); }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Couldn't resolve.");
+      setBusy(false);
+    }
   };
 
   return (
     <>
-      <div className="fixed inset-0 z-[var(--z-modal)]" style={{ backgroundColor: "var(--scrim)" }} onClick={() => !busy && onClose()} />
-      <div ref={dialogRef} role="dialog" aria-modal="true"
-        className="fixed left-1/2 top-1/2 z-[var(--z-modal)] w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border p-5 shadow-2xl"
-        style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}>
+      <div
+        className="fixed inset-0 z-[var(--z-modal)]"
+        style={{ backgroundColor: "var(--scrim)" }}
+        onClick={() => !busy && onClose()}
+      />
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        className="fixed top-1/2 left-1/2 z-[var(--z-modal)] w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border p-5 shadow-2xl"
+        style={{
+          borderColor: "var(--border)",
+          backgroundColor: "var(--surface)",
+        }}
+      >
         <div className="mb-3 flex items-center gap-2">
           <Check size={16} style={{ color: "var(--primary-hover)" }} />
-          <h2 className="text-[15px] font-semibold" style={{ color: "var(--text)" }}>Resolve escalation</h2>
-          <button type="button" onClick={() => !busy && onClose()} className="ml-auto" style={{ color: "var(--text-muted)" }}><X size={16} /></button>
+          <h2
+            className="text-[15px] font-semibold"
+            style={{ color: "var(--text)" }}
+          >
+            Resolve escalation
+          </h2>
+          <button
+            type="button"
+            onClick={() => !busy && onClose()}
+            className="ml-auto"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <X size={16} />
+          </button>
         </div>
-        <p className="mb-3 text-xs" style={{ color: "var(--text-muted)" }}>{esc.reason} · {esc.engineer} on {esc.customer}</p>
-        <label className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
+        <p className="mb-3 text-xs" style={{ color: "var(--text-muted)" }}>
+          {esc.reason} · {esc.engineer} on {esc.customer}
+        </p>
+        <label
+          className="flex flex-col gap-1 text-[12px]"
+          style={{ color: "var(--text-muted)" }}
+        >
           Resolution note (optional)
-          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} autoFocus
-            placeholder="What did you do?" className="rounded-lg border p-2 text-sm"
-            style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={3}
+            autoFocus
+            placeholder="What did you do?"
+            className="rounded-lg border p-2 text-sm"
+            style={{
+              borderColor: "var(--border)",
+              background: "var(--background)",
+              color: "var(--text)",
+            }}
+          />
         </label>
-        {err && <p className="mt-2 text-[12px]" style={{ color: "var(--risk)" }}>{err}</p>}
+        {err && (
+          <p className="mt-2 text-[12px]" style={{ color: "var(--risk)" }}>
+            {err}
+          </p>
+        )}
         <div className="mt-4 flex justify-end gap-2">
-          <button type="button" onClick={() => !busy && onClose()} disabled={busy} className="rounded-full px-3.5 py-1.5 text-[13px] font-medium" style={{ color: "var(--text-muted)" }}>Cancel</button>
-          <button type="button" onClick={() => void submit()} disabled={busy}
-            className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13px] font-semibold text-white" style={{ background: "var(--primary)" }}>
-            {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Resolve
+          <button
+            type="button"
+            onClick={() => !busy && onClose()}
+            disabled={busy}
+            className="rounded-full px-3.5 py-1.5 text-[13px] font-medium"
+            style={{ color: "var(--text-muted)" }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => void submit()}
+            disabled={busy}
+            className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13px] font-semibold text-white"
+            style={{ background: "var(--primary)" }}
+          >
+            {busy ? (
+              <Loader2 size={13} className="animate-spin" />
+            ) : (
+              <Check size={13} />
+            )}{" "}
+            Resolve
           </button>
         </div>
       </div>
@@ -1597,7 +2078,10 @@ function ResolveEscalationModal({ esc, onClose, onDone }: { esc: Escalation; onC
 }
 
 function fmtAgo(iso: string): string {
-  const secs = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  const secs = Math.max(
+    0,
+    Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
+  );
   if (secs < 60) return `${secs}s`;
   const mins = Math.floor(secs / 60);
   if (mins < 60) return `${mins}m`;

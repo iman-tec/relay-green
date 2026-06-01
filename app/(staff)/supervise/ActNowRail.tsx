@@ -3,46 +3,54 @@
 /*
  * Left-rail "act now" queue — the supervisor's front door to urgent work.
  *   1. Estimation requests (go-live / maintain) — pinned top, the Job-3 trigger.
- *   2. Callback queue — customers waiting on a Busy/Offline engineer, with age
- *      and an SLA-breach (>30 min) flag.
  *
  * Read feed (acting on an estimation request → dive-in/proposal lands in a
- * later step). Realtime on project_quote_requests + engineer_connect_requests,
- * 5s poll fallback, 1s tick for ages.
+ * later step). Realtime on project_quote_requests, 5s poll fallback, 1s tick
+ * for ages.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { Loader2, Rocket, Wrench, PhoneCall, AlertTriangle, Inbox, Eye, Check, FileText, Repeat, CalendarClock, ChevronDown } from "lucide-react";
+import { Loader2, Rocket, Wrench, Inbox, Eye, Check, FileText, CalendarClock, ChevronDown } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import { cn } from "@/app/_components/ui";
 import { ProjectAIAssistant } from "@/app/_components/ProjectAIAssistant";
 
 type Sentiment = { score: number; summary: string; messageCount: number };
-type Estimation = { id: string; kind: "golive" | "maintain" | string; status: string; customer: string; project: string; projectId: string; comments: string | null; amountCents: number | null; bidScope: string | null; bidTimeline: string | null; appointmentRequestedAt: string | null; appointmentNote: string | null; changeRequestNote: string | null; createdAt: string; liveSessionId: string | null; liveSentiment: Sentiment | null };
-type Callback = { id: string; customer: string; engineer: string; project: string | null; message: string | null; createdAt: string; slaBreached: boolean };
+type Estimation = { id: string; kind: "golive" | "maintain" | string; status: string; customer: string; project: string; projectId: string; comments: string | null; amountCents: number | null; bidScope: string | null; bidTimeline: string | null; appointmentRequestedAt: string | null; appointmentNote: string | null; changeRequestNote: string | null; respondedAt: string | null; createdAt: string; liveSessionId: string | null; liveSentiment: Sentiment | null };
 type Escalation = { id: string; sessionId: string; engineer: string; customer: string; reason: string; note: string | null; createdAt: string };
-type Feed = { estimationRequests: Estimation[]; callbackQueue: Callback[]; escalations: Escalation[] };
+type Feed = { estimationRequests: Estimation[]; escalations: Escalation[] };
 
 // Estimation-queue categorisation — identical buckets + colours to the
 // engineer's Quote-requests inbox (QuoteRequestsInbox) so a bid is triaged
-// the same wherever it's seen. Appointment trumps pending/quoted: once the
-// customer asks to talk, the row leaves the routine pools so it isn't
-// double-counted and the appointment signal isn't lost in queue noise.
+// the same wherever it's seen. Appointment overlays the bid only while the
+// customer's request is still *unanswered* — i.e. newer than the supervisor's
+// last send. Once the supervisor sends/updates the bid, it moves to Bid sent
+// and stays there until the customer acts again (re-requests an appointment,
+// accepts, etc.).
 // 'review' = an engineer-prepared bid (status 'pending_review') sitting in the
 // supervisor's approval queue — not yet visible to the customer. The supervisor
 // reviews/edits and sends it, which flips it to 'quoted' (Bid sent).
 type Category = "appointment" | "needs_bid" | "review" | "bid_sent" | "accepted";
 
+// An appointment request is "open" only while it's newer than the supervisor's
+// last bid send (responded_at). Sending/updating the bid answers it, so the row
+// drops back to its bid status (Bid sent) until the customer asks again.
+function hasOpenAppointment(q: Estimation): boolean {
+  if (!q.appointmentRequestedAt) return false;
+  if (!q.respondedAt) return true;
+  return new Date(q.appointmentRequestedAt).getTime() > new Date(q.respondedAt).getTime();
+}
+
 function categorizeEst(q: Estimation): Category {
   // 'committed' (accepted) is terminal — wins over the appointment overlay so
   // an accepted bid moves out of Appointment and into Accepted.
   if (q.status === "committed") return "accepted";
-  if (q.appointmentRequestedAt) return "appointment";
+  if (hasOpenAppointment(q)) return "appointment";
   if (q.status === "pending") return "needs_bid";
   if (q.status === "pending_review") return "review";
-  return "bid_sent"; // quoted, no appointment
+  return "bid_sent"; // quoted/sent, customer's turn
 }
 
 const CATEGORY_META: Record<Category, { label: string; fill: string; fgVar: string }> = {
@@ -56,7 +64,7 @@ const CATEGORY_META: Record<Category, { label: string; fill: string; fgVar: stri
 const FILTER_ORDER: Category[] = ["appointment", "needs_bid", "review", "bid_sent", "accepted"];
 
 export function ActNowRail() {
-  const [feed, setFeed] = useState<Feed>({ estimationRequests: [], callbackQueue: [], escalations: [] });
+  const [feed, setFeed] = useState<Feed>({ estimationRequests: [], escalations: [] });
   const [loading, setLoading] = useState(true);
   const [, setTick] = useState(0);
   const supabaseRef = useRef(createClient());
@@ -81,7 +89,6 @@ export function ActNowRail() {
     const ch = sb
       .channel("relay-act-now")
       .on("postgres_changes", { event: "*", schema: "public", table: "project_quote_requests" }, queue)
-      .on("postgres_changes", { event: "*", schema: "public", table: "engineer_connect_requests" }, queue)
       .subscribe();
     channelRef.current = ch;
     const fallback = setInterval(() => { void refresh(); }, 5_000);
@@ -91,21 +98,6 @@ export function ActNowRail() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   // null = show all; otherwise filter the estimation queue to one bucket.
   const [estFilter, setEstFilter] = useState<Category | null>(null);
-  const [engineers, setEngineers] = useState<{ userId: string; displayName: string }[]>([]);
-
-  useEffect(() => {
-    void (async () => {
-      try {
-        const res = await fetch("/api/supervisor/team", { cache: "no-store" });
-        if (res.ok) setEngineers((((await res.json()) as { engineers?: { userId: string; displayName: string }[] }).engineers ?? []).map((e) => ({ userId: e.userId, displayName: e.displayName })));
-      } catch { /* ignore */ }
-    })();
-  }, []);
-
-  const reassign = useCallback(async (id: string, engineerId: string) => {
-    await supabaseRef.current.rpc("reassign_connect_request", { _id: id, _new_engineer_user_id: engineerId });
-    void refresh();
-  }, [refresh]);
 
   const estCounts = useMemo(() => {
     const c: Record<Category, number> = { appointment: 0, needs_bid: 0, review: 0, bid_sent: 0, accepted: 0 };
@@ -116,8 +108,6 @@ export function ActNowRail() {
     () => (estFilter ? feed.estimationRequests.filter((q) => categorizeEst(q) === estFilter) : feed.estimationRequests),
     [feed.estimationRequests, estFilter],
   );
-
-  const breaches = feed.callbackQueue.filter((c) => c.slaBreached).length;
 
   return (
     <div className="flex h-full flex-col gap-5 overflow-y-auto pr-1">
@@ -156,15 +146,6 @@ export function ActNowRail() {
                 onDone={() => { setExpandedId(null); void refresh(); }}
               />
             ))}
-          </Section>
-
-          {/* Callback queue */}
-          <Section title="Callback queue" count={feed.callbackQueue.length}
-            accent={breaches > 0 ? "var(--risk)" : "var(--warn)"}
-            badge={breaches > 0 ? `${breaches} SLA` : undefined}>
-            {feed.callbackQueue.length === 0 ? (
-              <Empty body="No customers waiting on an engineer." />
-            ) : feed.callbackQueue.map((c) => <CallbackRow key={c.id} c={c} engineers={engineers} onReassign={reassign} />)}
           </Section>
         </>
       )}
@@ -256,8 +237,8 @@ function DiveInForm({ q, onClose, onDone }: { q: Estimation; onClose: () => void
           </div>
         )}
 
-        {/* Customer asked to talk before committing. */}
-        {q.appointmentRequestedAt && (
+        {/* Customer asked to talk and we haven't answered with a newer bid yet. */}
+        {hasOpenAppointment(q) && (
           <div className="rounded-lg border px-3 py-2 text-xs" style={{ borderColor: "var(--primary)", background: "var(--primary-tint)", color: "var(--text)" }}>
             <CalendarClock size={12} className="mr-1 inline" /> Customer requested an appointment{q.appointmentNote ? `: "${q.appointmentNote}"` : "."}
           </div>
@@ -364,7 +345,7 @@ function EstimationRow({ q, expanded, onToggle, onDone }: { q: Estimation; expan
       </div>
       <div className="mt-1.5 truncate text-sm font-medium" style={{ color: "var(--text)" }}>{q.project}</div>
       <div className="truncate text-xs" style={{ color: "var(--text-muted)" }}>{q.customer}</div>
-      {q.appointmentRequestedAt && <div className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold" style={{ color: "var(--primary-hover)" }}><CalendarClock size={10} /> wants to talk</div>}
+      {hasOpenAppointment(q) && <div className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold" style={{ color: "var(--primary-hover)" }}><CalendarClock size={10} /> wants to talk</div>}
       {q.changeRequestNote && (
         <p className="mt-1.5 rounded-md px-2 py-1 text-[11px]" style={{ background: "color-mix(in srgb, var(--warn) 12%, transparent)", color: "var(--text)" }}>
           <span className="font-semibold" style={{ color: "var(--warn)" }}>Changes requested:</span> {q.changeRequestNote}
@@ -381,41 +362,6 @@ function EstimationRow({ q, expanded, onToggle, onDone }: { q: Estimation; expan
           : "Review bid"}
       </button>
       {expanded && <DiveInForm q={q} onClose={onToggle} onDone={onDone} />}
-    </div>
-  );
-}
-
-function CallbackRow({ c, engineers, onReassign }: { c: Callback; engineers: { userId: string; displayName: string }[]; onReassign: (id: string, engineerId: string) => void }) {
-  const [reassigning, setReassigning] = useState(false);
-  return (
-    <div className="rounded-xl border p-3" style={{ borderColor: c.slaBreached ? "var(--risk)" : "var(--border)", background: c.slaBreached ? "color-mix(in srgb, var(--risk) 8%, transparent)" : "var(--surface)" }}>
-      <div className="flex items-center gap-1.5 text-xs">
-        <PhoneCall size={12} style={{ color: c.slaBreached ? "var(--risk)" : "var(--warn)" }} />
-        <span className="min-w-0 flex-1 truncate font-medium" style={{ color: "var(--text)" }}>{c.customer}</span>
-        <span className="shrink-0 tabular-nums" style={{ color: c.slaBreached ? "var(--risk)" : "var(--text-muted)" }}>{fmtAgo(c.createdAt)}</span>
-      </div>
-      <div className="mt-1 truncate text-[11px]" style={{ color: "var(--text-muted)" }}>
-        waiting on <span style={{ color: "var(--text)" }}>{c.engineer}</span>{c.project ? ` · ${c.project}` : ""}
-      </div>
-      {c.slaBreached && (
-        <div className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-semibold uppercase" style={{ color: "var(--risk)" }}>
-          <AlertTriangle size={10} /> SLA breached
-        </div>
-      )}
-      {reassigning ? (
-        <select autoFocus defaultValue="" onChange={(e) => { if (e.target.value) onReassign(c.id, e.target.value); setReassigning(false); }}
-          onBlur={() => setReassigning(false)}
-          className="mt-2 h-8 w-full rounded-md border px-2 text-[11px]" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }}>
-          <option value="" disabled>Reassign to…</option>
-          {engineers.map((eng) => <option key={eng.userId} value={eng.userId}>{eng.displayName}</option>)}
-        </select>
-      ) : (
-        <button type="button" onClick={() => setReassigning(true)}
-          className="mt-2 inline-flex w-full items-center justify-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium"
-          style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
-          <Repeat size={11} /> Reassign
-        </button>
-      )}
     </div>
   );
 }
