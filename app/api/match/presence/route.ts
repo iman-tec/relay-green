@@ -9,16 +9,16 @@
  * other engineers' active calls directly (RLS), so this service-role endpoint
  * resolves it for the specific engineers the picker is showing.
  *
- * The rule matches the matcher's own eligibility (broadcast-match /
- * match_engineer):
- *   online    = heartbeat-fresh (<90s) OR engineer_profiles.is_available
+ * Availability follows the engineer's EXPLICIT is_available toggle. A fresh
+ * heartbeat (an open staff tab) does NOT mark a toggled-off engineer online,
+ * and an idle (stale-heartbeat) engineer who is toggled on still shows
+ * available:
+ *   online    = engineer_profiles.is_available
  *   busy      = online AND currently claimed on an active call
  *   available = online AND not busy
- *   offline   = not online
+ *   offline   = is_available is false / unset
  *
- * The client polls this every ~12s while the modal is open (heartbeats land
- * every ~10s with a 90s freshness window, so a 12s poll tracks reality
- * closely without a realtime subscription that RLS would block).
+ * The client polls this every ~12s while the modal is open.
  */
 
 import { NextResponse } from "next/server";
@@ -28,7 +28,6 @@ import { createClient as createAdminClient } from "@supabase/supabase-js";
 export const dynamic = "force-dynamic";
 export const runtime  = "nodejs";
 
-const HEARTBEAT_FRESH_MS = 90_000;
 const ACTIVE_CALL_STATUSES = ["assigned", "joining", "live", "grace", "expired_free", "ending"];
 
 type Status = "available" | "busy" | "offline";
@@ -53,17 +52,11 @@ export async function POST(req: Request) {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const [presRes, profRes, busyRes] = await Promise.all([
-    admin.from("engineer_presence").select("engineer_id, last_seen_at").in("engineer_id", ids),
+  const [profRes, busyRes] = await Promise.all([
     admin.from("engineer_profiles").select("user_id, is_available").in("user_id", ids),
     admin.from("guest_calls").select("claimed_by, status").in("claimed_by", ids).in("status", ACTIVE_CALL_STATUSES),
   ]);
 
-  const now = Date.now();
-  const freshById = new Map<string, boolean>();
-  for (const p of (presRes.data ?? []) as { engineer_id: string; last_seen_at: string | null }[]) {
-    freshById.set(p.engineer_id, !!p.last_seen_at && now - new Date(p.last_seen_at).getTime() < HEARTBEAT_FRESH_MS);
-  }
   const availableById = new Map<string, boolean>();
   for (const p of (profRes.data ?? []) as { user_id: string; is_available: boolean | null }[]) {
     availableById.set(p.user_id, !!p.is_available);
@@ -76,7 +69,7 @@ export async function POST(req: Request) {
 
   const presence: Record<string, Status> = {};
   for (const id of ids) {
-    const online = freshById.get(id) || availableById.get(id);
+    const online = availableById.get(id) ?? false;
     presence[id] = !online ? "offline" : busyIds.has(id) ? "busy" : "available";
   }
 
