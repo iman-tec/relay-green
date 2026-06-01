@@ -67,6 +67,10 @@ export type GuestCall = {
   // True when a directed (manual) assignment was declined and the session is
   // awaiting a supervisor reassignment (migration 20260524170000).
   reassign_needed: boolean;
+  // True for sessions spawned from a scheduled supervisor appointment. These
+  // are intake-less (never auto-matched) and tagged in the supervise grid
+  // (migration 20260601170000).
+  is_appointment?: boolean;
   // Phase 4: project grouping. Both nullable for legacy / "General" sessions.
   project_id: string | null;
   project_name: string | null;
@@ -77,7 +81,7 @@ export type GuestCall = {
   // Defensive copy of the post-end sentiment (bugs2.txt #3). Authoritative
   // source remains session_health/latest_session_health; this row-level copy
   // lets PastSessionTile render even if the view ever misses.
-  final_sentiment_score:   number | null;
+  final_sentiment_score: number | null;
   final_sentiment_summary: string | null;
   created_at: string;
   updated_at: string;
@@ -94,20 +98,20 @@ export type SummaryState =
   | "transcript_unavailable";
 
 export type GuestMessageAttachment = {
-  id:          string;
-  message_id:  string;
-  path:        string;
-  name:        string;
-  mime:        string;
-  size_bytes:  number;
-  kind:        "image" | "document" | "audio";
-  created_at:  string;
+  id: string;
+  message_id: string;
+  path: string;
+  name: string;
+  mime: string;
+  size_bytes: number;
+  kind: "image" | "document" | "audio";
+  created_at: string;
   /** Set by the 90-day retention sweeper (purge-completed-projects edge
    *  fn) once the Storage object has been deleted. The row stays so the
    *  UI can render a "Removed after retention" placeholder rather than
    *  a broken card. */
-  purged?:     boolean;
-  purged_at?:  string | null;
+  purged?: boolean;
+  purged_at?: string | null;
 };
 
 export type GuestMessage = {

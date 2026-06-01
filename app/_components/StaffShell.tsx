@@ -23,10 +23,25 @@ import Link from "next/link";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Loader2, LogOut, ChevronDown, AlertTriangle, X,
-  PanelLeftClose, PanelLeftOpen, LayoutDashboard, Calendar,
-  Eye, Users as UsersIcon, Wallet as WalletIcon, Table as TableIcon, Inbox as InboxIcon,
-  Settings, ShieldCheck, FileText, Home,
+  Loader2,
+  LogOut,
+  ChevronDown,
+  AlertTriangle,
+  X,
+  PanelLeftClose,
+  PanelLeftOpen,
+  LayoutDashboard,
+  Calendar,
+  CalendarClock,
+  Eye,
+  Users as UsersIcon,
+  Wallet as WalletIcon,
+  Table as TableIcon,
+  Inbox as InboxIcon,
+  Settings,
+  ShieldCheck,
+  FileText,
+  Home,
 } from "lucide-react";
 import { Wordmark } from "./Wordmark";
 import { ThemeTriplet } from "./ThemeTriplet";
@@ -35,7 +50,11 @@ import { EngineerPresenceBall } from "./EngineerPresenceBall";
 import { LegalPane, type LegalKind } from "./LegalPane";
 import { useStaffGuard } from "@/lib/relay/useStaffGuard";
 import { registerDeviceAndEnforceLimit } from "@/lib/relay/deviceTracking";
-import { highestRoleLabel, highestRoleSummary, formatRole } from "@/lib/relay/role-labels";
+import {
+  highestRoleLabel,
+  highestRoleSummary,
+  formatRole,
+} from "@/lib/relay/role-labels";
 import { ROLE, type Role } from "@/lib/relay/roles";
 // TEMP 2026-05-18: legacy first-come-first-served ring disabled while
 // the push-ring path (EngineerIncomingMatch) is validated. Re-enable the
@@ -47,12 +66,12 @@ import { createClient } from "@/lib/supabase/browser";
 import { useEngineerWorkspace } from "@/lib/relay/useEngineerWorkspace";
 import type { GuestCall } from "@/lib/supabase/types";
 
-const BRAND_GREEN       = "#3f5c2e";
-const BRAND_GREEN_SOFT  = "rgba(63, 92, 46, 0.12)";
-const URGENT_AMBER      = "#d4a017";
+const BRAND_GREEN = "#3f5c2e";
+const BRAND_GREEN_SOFT = "rgba(63, 92, 46, 0.12)";
+const URGENT_AMBER = "#d4a017";
 const URGENT_AMBER_SOFT = "rgba(212, 160, 23, 0.14)";
-const CRIT_RED          = "#8b1a1a";
-const CRIT_RED_SOFT     = "rgba(139, 26, 26, 0.18)";
+const CRIT_RED = "#8b1a1a";
+const CRIT_RED_SOFT = "rgba(139, 26, 26, 0.18)";
 
 // 272px: 240 was too tight once the header gained the Home shortcut +
 // 3-icon ThemeTriplet + collapse button — the rightmost icon clipped on
@@ -73,34 +92,93 @@ type Nav = {
 // /triage was redundant once /dashboard grew Take-next + queue.
 // /settings will return when account-settings land.
 const NAV: Nav[] = [
-  { href: "/dashboard",            label: "Dashboard", icon: LayoutDashboard, roles: [ROLE.engineer] },
+  {
+    href: "/dashboard",
+    label: "Dashboard",
+    icon: LayoutDashboard,
+    roles: [ROLE.engineer],
+  },
   // Engineer-only. People + per-customer session history + call log.
-  { href: "/inbox",                label: "Inbox",     icon: InboxIcon,       roles: [ROLE.engineer] },
+  { href: "/inbox", label: "Inbox", icon: InboxIcon, roles: [ROLE.engineer] },
   // /supervise renders the platform-wide grid for super_admin + supervisor,
   // and the org-scoped grid for enterprise + department admins — see
   // app/(staff)/supervise/page.tsx.
-  { href: "/supervise",            label: "Supervise", icon: Eye,             roles: [ROLE.supervisor, ROLE.department_admin, ROLE.enterprise_admin, ROLE.super_admin] },
+  {
+    href: "/supervise",
+    label: "Supervise",
+    icon: Eye,
+    roles: [
+      ROLE.supervisor,
+      ROLE.department_admin,
+      ROLE.enterprise_admin,
+      ROLE.super_admin,
+    ],
+  },
   // super_admin's primary surface — the redesigned 4-tab panel
   // (Enterprise / Reseller / Pods / Internal Users).
-  { href: "/admin/v2",             label: "Users",     icon: UsersIcon,       roles: [ROLE.super_admin] },
+  {
+    href: "/admin/v2",
+    label: "Users",
+    icon: UsersIcon,
+    roles: [ROLE.super_admin],
+  },
   // enterprise_admin's primary surface — the redesigned Departments panel.
-  { href: "/enterprise/v2",        label: "Dashboard", icon: LayoutDashboard, roles: [ROLE.enterprise_admin] },
+  {
+    href: "/enterprise/v2",
+    label: "Dashboard",
+    icon: LayoutDashboard,
+    roles: [ROLE.enterprise_admin],
+  },
   // reseller-owner console — redesigned v2 panel (from rutul-working).
-  { href: "/reseller/v2",          label: "Channel Partner", icon: LayoutDashboard, roles: [ROLE.reseller] },
+  {
+    href: "/reseller/v2",
+    label: "Channel Partner",
+    icon: LayoutDashboard,
+    roles: [ROLE.reseller],
+  },
   // department_admin's primary surface — the redesigned Employees panel.
-  { href: "/department/v2",        label: "Department", icon: LayoutDashboard, roles: [ROLE.department_admin] },
+  {
+    href: "/department/v2",
+    label: "Department",
+    icon: LayoutDashboard,
+    roles: [ROLE.department_admin],
+  },
   // /finance is the org-level money + feedback console — enterprise_admin
   // only. Department admins don't see it; their finance scope is the
   // dept-only view at /department.
-  { href: "/finance",              label: "Finance",   icon: WalletIcon,      roles: [ROLE.enterprise_admin] },
+  {
+    href: "/finance",
+    label: "Finance",
+    icon: WalletIcon,
+    roles: [ROLE.enterprise_admin],
+  },
   // /operations is the supervisor's pod roster — engineers under them with
   // current customer + last call.
-  { href: "/operations",           label: "Operations", icon: TableIcon,       roles: [ROLE.supervisor] },
+  {
+    href: "/operations",
+    label: "Operations",
+    icon: TableIcon,
+    roles: [ROLE.supervisor],
+  },
+  // Supervisor-only. Upcoming appointments customers booked off a bid
+  // (Contract management → "Ask for appointment"). Backed by
+  // supervisor_bookings; see app/(staff)/schedule.
+  {
+    href: "/schedule",
+    label: "Schedule",
+    icon: CalendarClock,
+    roles: [ROLE.supervisor],
+  },
   // Weekly/monthly availability calendar — engineers AND supervisors. Same
   // editor (CalendarTab); each user manages their own windows. Placed last so
   // it sits under Supervise/Operations on the supervisor sidebar and after
   // Dashboard/Inbox on the engineer sidebar.
-  { href: "/calendar",             label: "Calendar",  icon: Calendar,        roles: [ROLE.engineer, ROLE.supervisor] },
+  {
+    href: "/calendar",
+    label: "Calendar",
+    icon: Calendar,
+    roles: [ROLE.engineer, ROLE.supervisor],
+  },
 ];
 
 // /calendar is intentionally NOT here — it's shared by engineers AND
@@ -123,12 +201,17 @@ function initials(email: string): string {
 
 export function StaffShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router   = useRouter();
-  const guard    = useStaffGuard();
-  const roles    = guard.kind === "staff" ? guard.roles : [];
+  const router = useRouter();
+  const guard = useStaffGuard();
+  const roles = guard.kind === "staff" ? guard.roles : [];
   const engineer = isEngineer(roles);
-  const isEnterpriseAdmin = roles.includes(ROLE.enterprise_admin) && !roles.includes(ROLE.super_admin);
-  const homeHref = isEnterpriseAdmin ? "/enterprise/v2" : engineer ? "/dashboard" : "/supervise";
+  const isEnterpriseAdmin =
+    roles.includes(ROLE.enterprise_admin) && !roles.includes(ROLE.super_admin);
+  const homeHref = isEnterpriseAdmin
+    ? "/enterprise/v2"
+    : engineer
+      ? "/dashboard"
+      : "/supervise";
 
   const [collapsed, setCollapsed] = useState(false);
 
@@ -143,38 +226,52 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
     try {
       const raw = window.localStorage.getItem("relay:staff-sidebar-width");
       const parsed = raw ? Number(raw) : NaN;
-      if (Number.isFinite(parsed) && parsed >= SIDEBAR_MIN && parsed <= SIDEBAR_MAX) {
+      if (
+        Number.isFinite(parsed) &&
+        parsed >= SIDEBAR_MIN &&
+        parsed <= SIDEBAR_MAX
+      ) {
         setSidebarWidth(parsed);
       }
-    } catch { /* fall through to default */ }
+    } catch {
+      /* fall through to default */
+    }
   }, []);
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
-      window.localStorage.setItem("relay:staff-sidebar-width", String(sidebarWidth));
-    } catch { /* ignore */ }
+      window.localStorage.setItem(
+        "relay:staff-sidebar-width",
+        String(sidebarWidth)
+      );
+    } catch {
+      /* ignore */
+    }
   }, [sidebarWidth]);
   const [sidebarDragging, setSidebarDragging] = useState(false);
-  const startSidebarDrag = useCallback((e: React.PointerEvent) => {
-    if (collapsed) return;
-    e.preventDefault();
-    setSidebarDragging(true);
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-    const onMove = (mv: PointerEvent) => {
-      const next = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, mv.clientX));
-      setSidebarWidth(next);
-    };
-    const onUp = () => {
-      setSidebarDragging(false);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-  }, [collapsed]);
+  const startSidebarDrag = useCallback(
+    (e: React.PointerEvent) => {
+      if (collapsed) return;
+      e.preventDefault();
+      setSidebarDragging(true);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      const onMove = (mv: PointerEvent) => {
+        const next = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, mv.clientX));
+        setSidebarWidth(next);
+      };
+      const onUp = () => {
+        setSidebarDragging(false);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    [collapsed]
+  );
 
   // Presence heartbeat — engineers only. The RPC self-gates with NOT_AN_ENGINEER
   // so non-engineer staff who incidentally render this shell are no-ops.
@@ -204,7 +301,9 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
       const { data } = await sb.auth.getUser();
       if (!cancelled && data.user?.email) setMeEmail(data.user.email);
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [guard.kind, meEmail]);
 
   // Restore sidebar state from localStorage on mount.
@@ -221,7 +320,9 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   const toggle = useCallback(() => {
     setCollapsed((prev) => {
       const next = !prev;
-      try { localStorage.setItem(COLLAPSED_KEY, next ? "1" : "0"); } catch {}
+      try {
+        localStorage.setItem(COLLAPSED_KEY, next ? "1" : "0");
+      } catch {}
       return next;
     });
   }, []);
@@ -229,7 +330,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   // Redirect engineer-only pages if a non-engineer somehow lands there
   // (e.g. an admin clicks a stale link). Mirrors the legacy guard.
   const inEngineerOnlyArea = ENGINEER_ONLY_PATHS.some(
-    (p) => pathname === p || pathname.startsWith(p + "/"),
+    (p) => pathname === p || pathname.startsWith(p + "/")
   );
   useEffect(() => {
     if (guard.kind === "staff" && !engineer && inEngineerOnlyArea) {
@@ -262,7 +363,11 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
         className="flex min-h-screen items-center justify-center"
         style={{ backgroundColor: "var(--background)" }}
       >
-        <Loader2 size={20} className="animate-spin" style={{ color: BRAND_GREEN }} />
+        <Loader2
+          size={20}
+          className="animate-spin"
+          style={{ color: BRAND_GREEN }}
+        />
       </div>
     );
   }
@@ -274,12 +379,15 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
         style={{ backgroundColor: "var(--background)" }}
       >
         <div className="max-w-sm text-center">
-          <h2 className="mb-2 text-lg font-semibold" style={{ color: "var(--text)" }}>
+          <h2
+            className="mb-2 text-lg font-semibold"
+            style={{ color: "var(--text)" }}
+          >
             Staff access required
           </h2>
           <p className="mb-6 text-sm" style={{ color: "var(--text-muted)" }}>
-            Your account doesn&apos;t have an engineer / supervisor / admin role yet.
-            Contact your admin or sign in with a staff account.
+            Your account doesn&apos;t have an engineer / supervisor / admin role
+            yet. Contact your admin or sign in with a staff account.
           </p>
           <div className="flex justify-center gap-2">
             <Link
@@ -307,10 +415,14 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   // (tab header). The guard still runs above, so auth + role
   // enforcement stays intact.
   const isBare =
-    pathname === "/admin/v2"      || pathname.startsWith("/admin/v2/")      ||
-    pathname === "/enterprise/v2" || pathname.startsWith("/enterprise/v2/") ||
-    pathname === "/department/v2" || pathname.startsWith("/department/v2/") ||
-    pathname === "/reseller/v2"   || pathname.startsWith("/reseller/v2/");
+    pathname === "/admin/v2" ||
+    pathname.startsWith("/admin/v2/") ||
+    pathname === "/enterprise/v2" ||
+    pathname.startsWith("/enterprise/v2/") ||
+    pathname === "/department/v2" ||
+    pathname.startsWith("/department/v2/") ||
+    pathname === "/reseller/v2" ||
+    pathname.startsWith("/reseller/v2/");
   if (isBare) {
     return (
       <div
@@ -333,14 +445,17 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   //   /supervise   (org-scoped view, branches server-side on role)
   // Without this filter, an enterprise_admin who also happens to hold
   // platform-side roles for testing would see /admin/users in the sidebar.
-  const ENT_ADMIN_ALLOW = new Set(["/enterprise/v2", "/enterprise", "/enterprise/departments"]);
+  const ENT_ADMIN_ALLOW = new Set([
+    "/enterprise/v2",
+    "/enterprise",
+    "/enterprise/departments",
+  ]);
   // Routes that super_admin should never see even when they hold the
   // underlying role for testing (e.g. dev.soni also has supervisor so she
   // can join real sessions, but /operations is a supervisor surface).
   const SUPER_ADMIN_HIDDEN = new Set(["/operations"]);
   const isSuperAdmin = roles.includes(ROLE.super_admin);
-  const navItems = NAV
-    .filter((n) => n.roles.some((r) => roles.includes(r)))
+  const navItems = NAV.filter((n) => n.roles.some((r) => roles.includes(r)))
     .filter((n) => !isEnterpriseAdmin || ENT_ADMIN_ALLOW.has(n.href))
     .filter((n) => !isSuperAdmin || !SUPER_ADMIN_HIDDEN.has(n.href));
 
@@ -352,7 +467,10 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
     // *inside* <main>; pages with their own h-screen flex layouts
     // (dashboard, inbox, supervise) fit perfectly because <main>'s height
     // equals the viewport.
-    <div className="flex h-screen overflow-hidden" style={{ backgroundColor: "var(--background)" }}>
+    <div
+      className="flex h-screen overflow-hidden"
+      style={{ backgroundColor: "var(--background)" }}
+    >
       <aside
         className={`flex h-full shrink-0 flex-col border-r ${sidebarDragging ? "" : "transition-[width] duration-200 ease-out"}`}
         style={{
@@ -376,7 +494,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
             aria-orientation="vertical"
             aria-label="Resize sidebar"
             onPointerDown={startSidebarDrag}
-            className={`group absolute right-0 top-0 z-20 h-full w-1.5 cursor-col-resize transition-colors hover:bg-[var(--primary-soft)] ${sidebarDragging ? "bg-[var(--primary)]" : ""}`}
+            className={`group absolute top-0 right-0 z-20 h-full w-1.5 cursor-col-resize transition-colors hover:bg-[var(--primary-soft)] ${sidebarDragging ? "bg-[var(--primary)]" : ""}`}
             style={{ transform: "translateX(50%)" }}
           />
         )}
@@ -401,7 +519,10 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
               <Link
                 href={homeHref}
                 className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
-                style={{ color: BRAND_GREEN, backgroundColor: BRAND_GREEN_SOFT }}
+                style={{
+                  color: BRAND_GREEN,
+                  backgroundColor: BRAND_GREEN_SOFT,
+                }}
                 aria-label="Go to dashboard"
                 title="Dashboard"
               >
@@ -471,7 +592,10 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
                 style={{ backgroundColor: "var(--border)" }}
                 aria-hidden
               />
-              <EngineerPresenceBall userId={guard.userId} collapsed={collapsed} />
+              <EngineerPresenceBall
+                userId={guard.userId}
+                collapsed={collapsed}
+              />
               <div
                 className="mx-1 my-2 h-px"
                 style={{ backgroundColor: "var(--border)" }}
@@ -487,9 +611,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
         {/* FIFO auto-ring — 30s after the engineer's session ends, if
             there's still a queue and they're online, claim the next
             customer. Empty render — pure side-effect. */}
-        {engineer && guard.kind === "staff" && (
-          <FifoAutoRing />
-        )}
+        {engineer && guard.kind === "staff" && <FifoAutoRing />}
 
         {/* Bottom: profile. Theme triplet moved to the top (next to
             wordmark + home button). When collapsed, we keep a single
@@ -532,7 +654,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
           DOM (calendar, settings, admin tables) scroll here instead of
           taking the document with them — which is exactly what kept the
           sidebar moving in the original bug. */}
-      <main className="flex-1 h-full min-w-0 overflow-y-auto">
+      <main className="h-full min-w-0 flex-1 overflow-y-auto">
         {profilePaneOpen && engineer && guard.kind === "staff" ? (
           <EngineerProfilePane
             userId={guard.userId}
@@ -620,7 +742,9 @@ function ProfileButton({
         onEmailResolved(data.user.email);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [email, onEmailResolved]);
 
   useEffect(() => {
@@ -647,13 +771,21 @@ function ProfileButton({
     // Non-engineer roles get NOT_AN_ENGINEER, which we ignore (this is a
     // best-effort cleanup; the auth.signOut below is the real gate).
     try {
-      await supabaseRef.current.rpc("set_engineer_presence", { _state: "offline" });
-    } catch { /* best-effort cleanup */ }
+      await supabaseRef.current.rpc("set_engineer_presence", {
+        _state: "offline",
+      });
+    } catch {
+      /* best-effort cleanup */
+    }
     // Supervisors go off duty on logout too, so coverage re-routes to whoever
     // is still on duty (non-supervisors get NOT_A_SUPERVISOR, which we ignore).
     try {
-      await supabaseRef.current.rpc("supervisor_set_online", { _online: false });
-    } catch { /* best-effort cleanup */ }
+      await supabaseRef.current.rpc("supervisor_set_online", {
+        _online: false,
+      });
+    } catch {
+      /* best-effort cleanup */
+    }
     await supabaseRef.current.auth.signOut();
     router.push("/staff");
   };
@@ -664,9 +796,10 @@ function ProfileButton({
   // user holds more than one. The full list lives on the hover tooltip
   // (and inside the dropdown) so the chip stays compact.
   const roleText = highestRoleSummary(roles);
-  const allRolesLabel = roles.length > 0
-    ? roles.map((r) => formatRole(r)).join(" · ")
-    : highestRoleLabel(roles);
+  const allRolesLabel =
+    roles.length > 0
+      ? roles.map((r) => formatRole(r)).join(" · ")
+      : highestRoleLabel(roles);
 
   return (
     <div ref={ref} className="relative mt-1">
@@ -676,9 +809,13 @@ function ProfileButton({
         className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
         style={{ justifyContent: collapsed ? "center" : "flex-start" }}
         aria-label="Account menu"
-        title={collapsed
-          ? `${userEmail}\n${allRolesLabel}`
-          : roles.length > 1 ? allRolesLabel : undefined}
+        title={
+          collapsed
+            ? `${userEmail}\n${allRolesLabel}`
+            : roles.length > 1
+              ? allRolesLabel
+              : undefined
+        }
       >
         <span
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
@@ -722,7 +859,7 @@ function ProfileButton({
             left: collapsed ? "100%" : 0,
             right: collapsed ? "auto" : 0,
             marginBottom: collapsed ? 0 : 8,
-            marginLeft:   collapsed ? 8 : 0,
+            marginLeft: collapsed ? 8 : 0,
             minWidth: 200,
           }}
         >
@@ -743,7 +880,10 @@ function ProfileButton({
           {engineer && (
             <button
               type="button"
-              onClick={() => { setOpen(false); onOpenProfile(); }}
+              onClick={() => {
+                setOpen(false);
+                onOpenProfile();
+              }}
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
               style={{ color: "var(--text)" }}
             >
@@ -766,14 +906,17 @@ function ProfileButton({
              same pattern the customer side uses to keep legal docs scrollable
              alongside the shell. */}
           <div
-            className="border-t px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.08em]"
+            className="border-t px-3 py-1.5 text-[10px] font-semibold tracking-[0.08em] uppercase"
             style={{ borderColor: "var(--border)", color: "var(--text-faint)" }}
           >
             Learn more
           </div>
           <button
             type="button"
-            onClick={() => { setOpen(false); onOpenLegal("privacy"); }}
+            onClick={() => {
+              setOpen(false);
+              onOpenLegal("privacy");
+            }}
             className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
             style={{ color: "var(--text)" }}
           >
@@ -782,7 +925,10 @@ function ProfileButton({
           </button>
           <button
             type="button"
-            onClick={() => { setOpen(false); onOpenLegal("terms"); }}
+            onClick={() => {
+              setOpen(false);
+              onOpenLegal("terms");
+            }}
             className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
             style={{ color: "var(--text)" }}
           >
@@ -830,7 +976,13 @@ function FifoAutoRing() {
     // Detect sessions that transitioned to "ended" since the last render.
     for (const [id, prevStatus] of lastActiveRef.current.entries()) {
       const nowStatus = currentMap.get(id);
-      const wasLive = ["assigned", "joining", "live", "grace", "expired_free"].includes(prevStatus);
+      const wasLive = [
+        "assigned",
+        "joining",
+        "live",
+        "grace",
+        "expired_free",
+      ].includes(prevStatus);
       const nowEnded = nowStatus === "ended" || !currentMap.has(id);
       if (wasLive && nowEnded && !armedRef.current.has(id)) {
         armedRef.current.add(id);
@@ -847,10 +999,13 @@ function FifoAutoRing() {
               .eq("user_id", userId)
               .maybeSingle();
             const presenceRow = (prof ?? null) as {
-              presence_state: string | null; is_available: boolean | null;
+              presence_state: string | null;
+              is_available: boolean | null;
             } | null;
             const isOnline = presenceRow
-              ? (presenceRow.presence_state === "online" || (presenceRow.presence_state == null && presenceRow.is_available === true))
+              ? presenceRow.presence_state === "online" ||
+                (presenceRow.presence_state == null &&
+                  presenceRow.is_available === true)
               : false;
             if (!isOnline) return;
 
@@ -930,7 +1085,10 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
       if (a.urgency === "escalation") continue;
       if (autoExpiredRef.current.has(a.id)) continue;
       autoExpiredRef.current.add(a.id);
-      setTimeout(() => setAlerts((prev) => prev.filter((x) => x.id !== a.id)), 10_000);
+      setTimeout(
+        () => setAlerts((prev) => prev.filter((x) => x.id !== a.id)),
+        10_000
+      );
     }
   }, [alerts]);
 
@@ -942,9 +1100,10 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
     // name-based dedupe — every supervisor load reused it, so a stale
     // subscription from a previous render would refuse the new .on()
     // with "cannot add postgres_changes after subscribe()".
-    const suffix = typeof crypto !== "undefined" && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const suffix =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     const ch = sb
       .channel(`supervisor-alerts-shell-${suffix}`)
       .on(
@@ -975,9 +1134,13 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
           }
 
           const urgent = row.urgency === "urgent" || row.urgency === "critical";
-          const liveish = ["queued", "assigned", "joining", "live", "grace"].includes(
-            row.status as string,
-          );
+          const liveish = [
+            "queued",
+            "assigned",
+            "joining",
+            "live",
+            "grace",
+          ].includes(row.status as string);
           if (!urgent || !liveish) return;
           if (seenRef.current.has(row.id)) return;
           seenRef.current.add(row.id);
@@ -990,10 +1153,12 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
               urgency: row.urgency as string,
             },
           ]);
-        },
+        }
       )
       .subscribe();
-    return () => { sb.removeChannel(ch); };
+    return () => {
+      sb.removeChannel(ch);
+    };
   }, [isSupervisor]);
 
   // Separate channel for engineer-initiated escalations. Toasts are
@@ -1004,9 +1169,10 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
   useEffect(() => {
     if (!isSupervisor) return;
     const sb = supabaseRef.current;
-    const suffix = typeof crypto !== "undefined" && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const suffix =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     const ch = sb
       .channel(`supervisor-escalations-${suffix}`)
       .on(
@@ -1036,8 +1202,9 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
               .select("guest_name")
               .eq("id", row.session_id)
               .maybeSingle();
-            const name = (data as { guest_name?: string | null } | null)?.guest_name
-              ?? "A live session";
+            const name =
+              (data as { guest_name?: string | null } | null)?.guest_name ??
+              "A live session";
             setAlerts((prev) => [
               ...prev,
               {
@@ -1051,43 +1218,48 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
             ]);
             playEscalationRingtone();
           })();
-        },
+        }
       )
       .subscribe();
-    return () => { sb.removeChannel(ch); };
+    return () => {
+      sb.removeChannel(ch);
+    };
   }, [isSupervisor]);
 
   // Acknowledge + navigate. Used by the toast's primary CTA. First
   // supervisor wins via the RPC's UPDATE-with-where-status='pending'.
-  const acknowledgeAndJoin = useCallback(async (toast: AlertToast) => {
-    if (!toast.escalationId) return;
-    const sb = supabaseRef.current;
-    const { error: e } = await sb.rpc("acknowledge_escalation", {
-      _id: toast.escalationId,
-    });
-    if (e) {
-      // ALREADY_TAKEN: surface lightly + drop the toast. Another
-      // supervisor beat us to it.
-      console.warn("[supervisor-alerts] escalation ack failed:", e.message);
+  const acknowledgeAndJoin = useCallback(
+    async (toast: AlertToast) => {
+      if (!toast.escalationId) return;
+      const sb = supabaseRef.current;
+      const { error: e } = await sb.rpc("acknowledge_escalation", {
+        _id: toast.escalationId,
+      });
+      if (e) {
+        // ALREADY_TAKEN: surface lightly + drop the toast. Another
+        // supervisor beat us to it.
+        console.warn("[supervisor-alerts] escalation ack failed:", e.message);
+        setAlerts((prev) => prev.filter((a) => a.id !== toast.id));
+        return;
+      }
       setAlerts((prev) => prev.filter((a) => a.id !== toast.id));
-      return;
-    }
-    setAlerts((prev) => prev.filter((a) => a.id !== toast.id));
-    router.push(`/staff/session/${toast.sessionId}`);
-  }, [router]);
+      router.push(`/staff/session/${toast.sessionId}`);
+    },
+    [router]
+  );
 
   if (!isSupervisor || !alerts.length) return null;
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2">
+    <div className="fixed right-6 bottom-6 z-50 flex flex-col gap-2">
       {alerts.map((a) => {
         const isEscalation = a.urgency === "escalation";
-        const tintBg = a.urgency === "critical" || isEscalation
-          ? CRIT_RED_SOFT
-          : URGENT_AMBER_SOFT;
-        const tintFg = a.urgency === "critical" || isEscalation
-          ? CRIT_RED
-          : URGENT_AMBER;
+        const tintBg =
+          a.urgency === "critical" || isEscalation
+            ? CRIT_RED_SOFT
+            : URGENT_AMBER_SOFT;
+        const tintFg =
+          a.urgency === "critical" || isEscalation ? CRIT_RED : URGENT_AMBER;
         return (
           <div
             key={a.id}
@@ -1100,9 +1272,7 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
               animation: isEscalation
                 ? "relay-toast-in 200ms ease-out"
                 : undefined,
-              boxShadow: isEscalation
-                ? `0 10px 28px ${tintFg}55`
-                : undefined,
+              boxShadow: isEscalation ? `0 10px 28px ${tintFg}55` : undefined,
             }}
           >
             <AlertTriangle size={16} style={{ color: tintFg, marginTop: 2 }} />
@@ -1137,7 +1307,10 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
                     type="button"
                     onClick={() => dismiss(a.id)}
                     className="rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                    style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+                    style={{
+                      borderColor: "var(--border)",
+                      color: "var(--text-muted)",
+                    }}
                   >
                     Snooze
                   </button>
@@ -1170,7 +1343,8 @@ function playEscalationRingtone() {
     const muted = window.localStorage.getItem(SUPERVISOR_MUTE_KEY) === "1";
     if (muted) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const Ctor = (window as any).AudioContext ?? (window as any).webkitAudioContext;
+    const Ctor =
+      (window as any).AudioContext ?? (window as any).webkitAudioContext;
     if (!Ctor) return;
     const ctx: AudioContext = new Ctor();
     const now = ctx.currentTime;
@@ -1189,11 +1363,15 @@ function playEscalationRingtone() {
     };
     // Urgent cadence: low-high-low-high two-pair pattern at higher
     // amplitude than the match-offer ringtone. Total ~1.4s.
-    beep(0.00, 520, 0.30, 0.14);
-    beep(0.32, 880, 0.30, 0.14);
-    beep(0.72, 520, 0.30, 0.14);
-    beep(1.04, 880, 0.30, 0.14);
-    setTimeout(() => { ctx.close().catch(() => { /* already closing */ }); }, 1600);
+    beep(0.0, 520, 0.3, 0.14);
+    beep(0.32, 880, 0.3, 0.14);
+    beep(0.72, 520, 0.3, 0.14);
+    beep(1.04, 880, 0.3, 0.14);
+    setTimeout(() => {
+      ctx.close().catch(() => {
+        /* already closing */
+      });
+    }, 1600);
   } catch (err) {
     console.warn("[supervisor-alerts] escalation ringtone failed:", err);
   }

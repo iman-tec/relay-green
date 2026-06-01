@@ -45,25 +45,21 @@ const STAFF_PREFIXES = [
   "/calendar",
   "/finance",
   "/operations",
+  "/schedule",
   "/settings",
   "/session-review",
   "/staff/session",
   "/staff/onboarding",
 ];
 
-const PARTNER_PREFIXES = [
-  "/reseller",
-];
+const PARTNER_PREFIXES = ["/reseller"];
 
-const BUSINESS_PREFIXES = [
-  "/enterprise",
-  "/department",
-];
+const BUSINESS_PREFIXES = ["/enterprise", "/department"];
 
 const CUSTOMER_PREFIXES = ["/room", "/account"];
 
-const STAFF_LOGIN    = "/staff";
-const PARTNER_LOGIN  = "/partner";
+const STAFF_LOGIN = "/staff";
+const PARTNER_LOGIN = "/partner";
 const BUSINESS_LOGIN = "/business";
 const CUSTOMER_LOGIN = "/login";
 
@@ -72,8 +68,8 @@ function matchesPrefix(pathname: string, prefixes: readonly string[]): boolean {
 }
 
 function loginForPath(pathname: string): string | null {
-  if (matchesPrefix(pathname, STAFF_PREFIXES))    return STAFF_LOGIN;
-  if (matchesPrefix(pathname, PARTNER_PREFIXES))  return PARTNER_LOGIN;
+  if (matchesPrefix(pathname, STAFF_PREFIXES)) return STAFF_LOGIN;
+  if (matchesPrefix(pathname, PARTNER_PREFIXES)) return PARTNER_LOGIN;
   if (matchesPrefix(pathname, BUSINESS_PREFIXES)) return BUSINESS_LOGIN;
   if (matchesPrefix(pathname, CUSTOMER_PREFIXES)) return CUSTOMER_LOGIN;
   return null;
