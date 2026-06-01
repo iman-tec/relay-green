@@ -21,8 +21,15 @@
  * Data: supervisor_bookings, RLS-scoped to the customer's own rows.
  */
 
-import { useEffect, useMemo, useState } from "react";
-import { CalendarClock, Phone, Loader2, RefreshCw, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import {
+  CalendarClock,
+  Phone,
+  Loader2,
+  RefreshCw,
+  X,
+  ChevronDown,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import { ContractManagement } from "./ContractManagement";
 import { SupervisorScheduleModal } from "./SupervisorScheduleModal";
@@ -36,8 +43,6 @@ type Appt = {
   quoteId: string | null;
 };
 
-type RangeFilter = "daily" | "weekly";
-
 // Quick-pick reasons that pre-fill the free-text box. The box stays editable
 // so the customer can refine or write their own.
 const CANCEL_REASONS = [
@@ -49,14 +54,25 @@ const CANCEL_REASONS = [
 
 const fmtWhen = (iso: string) =>
   new Date(iso).toLocaleString([], {
-    weekday: "short",
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
   });
 
-export function ContractAndAppointments() {
+export function ContractAndAppointments({
+  contractsOpen,
+  onContractsToggle,
+  appointmentsOpen,
+  onAppointmentsToggle,
+}: {
+  /** Accordion state owned by the Sidebar — opening one of the sidebar's
+   *  collapsible bars collapses the others. */
+  contractsOpen: boolean;
+  onContractsToggle: () => void;
+  appointmentsOpen: boolean;
+  onAppointmentsToggle: () => void;
+}) {
   const [sb] = useState(() => createClient());
   const [appts, setAppts] = useState<Appt[]>([]);
   const [tick, setTick] = useState(0);
@@ -64,19 +80,20 @@ export function ContractAndAppointments() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [cancelId, setCancelId] = useState<string | null>(null);
 
-  // Daily / Weekly view. Weekly is the default — the customer's mental model
-  // is "what's on this week", with Daily as a focus mode for today.
-  const [range, setRange] = useState<RangeFilter>("weekly");
-
   // Which appointment's inline cancel panel is open + the typed reason.
   const [cancelFor, setCancelFor] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState("");
+  // Which appointment row has its Change/Cancel actions expanded (toggled by
+  // clicking the project name). Collapsed by default.
+  const [actionsFor, setActionsFor] = useState<string | null>(null);
 
   // When set, the reschedule modal is open for this appointment (booking it
   // anew replaces the existing one via book_supervisor_slot's _replace_id).
-  const [reschedule, setReschedule] = useState<
-    { quoteId: string; projectName: string; bookingId: string } | null
-  >(null);
+  const [reschedule, setReschedule] = useState<{
+    quoteId: string;
+    projectName: string;
+    bookingId: string;
+  } | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -85,7 +102,9 @@ export function ContractAndAppointments() {
       if (!alive || !u.user) return;
       const { data } = await sb
         .from("supervisor_bookings")
-        .select("id, slot_start, slot_end, project_name, call_started_at, quote_id")
+        .select(
+          "id, slot_start, slot_end, project_name, call_started_at, quote_id"
+        )
         .eq("customer_user_id", u.user.id)
         .eq("status", "booked")
         .gte("slot_end", new Date().toISOString())
@@ -186,250 +205,284 @@ export function ContractAndAppointments() {
     }
   };
 
-  const hasAppt = appts.length > 0;
-
-  // Apply the Daily / Weekly filter. Daily = slots that start today; Weekly =
-  // slots that start within the next 7 days (today included). Past-but-not-yet-
-  // ended slots (slot already underway) always stay visible so an in-progress
-  // call isn't filtered out from under the customer.
-  const visible = useMemo(() => {
-    if (nowMs === 0) return appts;
-    const start = new Date(nowMs);
-    start.setHours(0, 0, 0, 0);
-    const startMs = start.getTime();
-    const endMs =
-      range === "daily" ? startMs + 24 * 60 * 60_000 : startMs + 7 * 24 * 60 * 60_000;
-    return appts.filter((a) => {
-      const s = new Date(a.slotStart).getTime();
-      const e = new Date(a.slotEnd).getTime();
-      // Underway right now → always show. Otherwise must start within range.
-      if (s <= nowMs && e > nowMs) return true;
-      return s >= startMs && s < endMs;
-    });
-  }, [appts, range, nowMs]);
-
   return (
     <>
-      <ContractManagement collapsedByDefault={hasAppt} />
+      <ContractManagement isOpen={contractsOpen} onToggle={onContractsToggle} />
 
-      {hasAppt && (
-        <section
-          className="mt-2 overflow-hidden rounded-xl border"
-          style={{ borderColor: "var(--border)", background: "var(--surface)" }}
+      <section
+        className="mt-4 overflow-hidden rounded-xl border"
+        style={{ borderColor: "var(--border)", background: "var(--surface)" }}
+      >
+        <button
+          type="button"
+          onClick={onAppointmentsToggle}
+          aria-expanded={appointmentsOpen}
+          className="flex w-full items-center gap-1.5 px-3 py-2 text-left transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.03]"
         >
-          {/* Header: title + count, with the Daily/Weekly segmented filter. */}
-          <header
-            className="flex items-center gap-2 border-b px-3 py-2"
-            style={{ borderColor: "var(--border)" }}
+          <CalendarClock size={12} style={{ color: "var(--primary)" }} />
+          <span
+            className="flex-1 text-[12px] font-semibold"
+            style={{ color: "var(--text)" }}
           >
-            <CalendarClock size={13} style={{ color: "var(--primary)" }} />
-            <h3 className="flex-1 text-[12px] font-semibold" style={{ color: "var(--text)" }}>
-              Appointments
-            </h3>
-            <SegmentedFilter value={range} onChange={setRange} />
-          </header>
+            Appointments
+          </span>
+          <span
+            className="text-[10px] font-medium tabular-nums"
+            style={{ color: "var(--text-muted)" }}
+          >
+            {appts.length}
+          </span>
+          <ChevronDown
+            size={14}
+            className={`shrink-0 transition-transform ${appointmentsOpen ? "rotate-180" : ""}`}
+            style={{ color: "var(--text-muted)" }}
+          />
+        </button>
 
-          {visible.length === 0 ? (
-            <p className="px-3 py-4 text-center text-[11px]" style={{ color: "var(--text-muted)" }}>
-              {range === "daily"
-                ? "No appointments today."
-                : "No appointments this week."}
-            </p>
-          ) : (
-            <ul>
-              {visible.map((a) => {
-                const started = !!a.callStartedAt;
-                // 1-min tolerance, matching the RPC's TOO_EARLY guard.
-                const canStart =
-                  nowMs > 0 && nowMs >= new Date(a.slotStart).getTime() - 60_000;
-                const busy = busyId === a.id;
-                const canceling = cancelId === a.id;
-                const cancelOpen = cancelFor === a.id;
-                return (
-                  <li
-                    key={a.id}
-                    className="border-t px-3 py-2.5 first:border-t-0"
-                    style={{ borderColor: "var(--border)" }}
-                  >
-                    {/* Identity row */}
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="inline-flex size-6 shrink-0 items-center justify-center rounded-md"
-                        style={{ background: "var(--primary-soft)", color: "var(--primary)" }}
+        {appointmentsOpen && appts.length === 0 && (
+          <p
+            className="border-t px-3 py-3 text-[11px]"
+            style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+          >
+            No appointments yet.
+          </p>
+        )}
+        {appointmentsOpen && appts.length > 0 && (
+          <ul className="border-t" style={{ borderColor: "var(--border)" }}>
+            {appts.map((a) => {
+              const started = !!a.callStartedAt;
+              // Goes live exactly at the slot time — no early tolerance. The
+              // RPC's TOO_EARLY guard is more lenient (1-min grace), so this
+              // just gates the UI to the precise appointment moment.
+              const canStart =
+                nowMs > 0 && nowMs >= new Date(a.slotStart).getTime();
+              const busy = busyId === a.id;
+              const canceling = cancelId === a.id;
+              const cancelOpen = cancelFor === a.id;
+              return (
+                <li
+                  key={a.id}
+                  className="border-t px-3 py-2.5 first:border-t-0"
+                  style={{ borderColor: "var(--border)" }}
+                >
+                  {/* Identity row */}
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="inline-flex size-6 shrink-0 items-center justify-center rounded-md"
+                      style={{
+                        background: "var(--primary-soft)",
+                        color: "var(--primary)",
+                      }}
+                    >
+                      <CalendarClock size={12} />
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (actionsFor === a.id) {
+                          setActionsFor(null);
+                          closeCancel();
+                        } else {
+                          setActionsFor(a.id);
+                        }
+                      }}
+                      aria-expanded={actionsFor === a.id}
+                      title="Show appointment options"
+                      className="min-w-0 flex-1 text-left"
+                    >
+                      <div
+                        className="flex items-center gap-1 truncate text-[12px] leading-tight font-medium"
+                        style={{ color: "var(--text)" }}
                       >
-                        <CalendarClock size={12} />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div
-                          className="truncate text-[12px] font-medium leading-tight"
-                          style={{ color: "var(--text)" }}
-                        >
+                        <span className="truncate">
                           {a.projectName ?? "Appointment"}
-                        </div>
-                        <div
-                          className="truncate text-[10.5px] leading-tight"
-                          style={{
-                            color: started || canStart ? "var(--green-dot)" : "var(--text-muted)",
-                          }}
-                        >
-                          {started
-                            ? "Call in progress"
-                            : canStart
-                              ? "It's time — start your call"
-                              : fmtWhen(a.slotStart)}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Action area — three mutually-exclusive states:
-                          • in call           → "In call" pill
-                          • cancelling         → reason box
-                          • otherwise          → Start (primary) + Change/Cancel */}
-                    {started ? (
-                      <div className="mt-2">
-                        <span
-                          className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[11px] font-semibold"
-                          style={{ background: "var(--green-dot)", color: "#fff" }}
-                        >
-                          <span className="size-1.5 animate-pulse rounded-full bg-white" />
-                          In call
                         </span>
-                      </div>
-                    ) : cancelOpen ? (
-                      <div className="mt-2 flex flex-col gap-2">
-                        <span
-                          className="text-[10px] font-semibold uppercase tracking-wider"
+                        <ChevronDown
+                          size={12}
+                          className={`shrink-0 transition-transform ${actionsFor === a.id ? "rotate-180" : ""}`}
                           style={{ color: "var(--text-muted)" }}
-                        >
-                          Reason for cancelling
-                        </span>
-                        <div className="flex flex-wrap gap-1">
-                          {CANCEL_REASONS.map((r) => (
-                            <button
-                              key={r}
-                              type="button"
-                              onClick={() => setCancelReason(r)}
-                              className="rounded-full border px-2 py-0.5 text-[10px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                              style={{
-                                borderColor:
-                                  cancelReason === r ? "var(--primary)" : "var(--border)",
-                                color: cancelReason === r ? "var(--primary)" : "var(--text-muted)",
-                                background:
-                                  cancelReason === r ? "var(--primary-soft)" : "transparent",
-                              }}
-                            >
-                              {r}
-                            </button>
-                          ))}
-                        </div>
-                        <textarea
-                          value={cancelReason}
-                          onChange={(e) => setCancelReason(e.target.value)}
-                          rows={2}
-                          placeholder="Add a note for your supervisor (optional)…"
-                          className="w-full resize-none rounded-lg border px-2 py-1.5 text-[11px] outline-none"
-                          style={{
-                            borderColor: "var(--border)",
-                            background: "var(--background)",
-                            color: "var(--text)",
-                          }}
                         />
-                        <div className="flex gap-1.5">
-                          <button
-                            type="button"
-                            disabled={canceling}
-                            onClick={() => void confirmCancel(a.id)}
-                            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[11px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-                            style={{ background: "var(--accent-red)" }}
-                          >
-                            {canceling ? (
-                              <Loader2 size={12} className="animate-spin" />
-                            ) : (
-                              <X size={12} />
-                            )}
-                            Cancel appointment
-                          </button>
-                          <button
-                            type="button"
-                            disabled={canceling}
-                            onClick={closeCancel}
-                            className="rounded-lg border px-3 py-2 text-[11px] font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
-                            style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
-                          >
-                            Back
-                          </button>
-                        </div>
                       </div>
+                      <div
+                        className="truncate text-[10.5px] leading-tight"
+                        style={{
+                          color:
+                            started || canStart
+                              ? "var(--green-dot)"
+                              : "var(--text-muted)",
+                        }}
+                      >
+                        {fmtWhen(a.slotStart)}
+                      </div>
+                    </button>
+                    {/* Inline call action — small, right of the project name. */}
+                    {started ? (
+                      <span
+                        className="inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold"
+                        style={{
+                          background: "var(--green-dot)",
+                          color: "#fff",
+                        }}
+                      >
+                        <span className="size-1.5 animate-pulse rounded-full bg-white" />
+                        In call
+                      </span>
                     ) : (
-                      <div className="mt-2 flex flex-col gap-1.5">
-                        {/* Primary: Start appointment call (full width). */}
+                      <button
+                        type="button"
+                        disabled={!canStart || busy}
+                        onClick={() => void startCall(a.id)}
+                        title={
+                          canStart ? "Call" : "Available at the scheduled time"
+                        }
+                        className="inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold transition-colors disabled:cursor-default"
+                        style={
+                          canStart
+                            ? { background: "var(--green-dot)", color: "#fff" }
+                            : {
+                                border: "1px solid var(--border)",
+                                color: "var(--text-muted)",
+                                background: "transparent",
+                              }
+                        }
+                      >
+                        {busy ? (
+                          <Loader2 size={10} className="animate-spin" />
+                        ) : (
+                          <Phone size={10} />
+                        )}
+                        Call
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Action area below the identity row:
+                          • cancelling → reason box
+                          • otherwise  → Change / Cancel
+                          (the call action + "In call" live inline above) */}
+                  {started ? null : cancelOpen ? (
+                    <div className="mt-2 flex flex-col gap-2">
+                      <span
+                        className="text-[10px] font-semibold tracking-wider uppercase"
+                        style={{ color: "var(--text-muted)" }}
+                      >
+                        Reason for cancelling
+                      </span>
+                      <div className="flex flex-wrap gap-1">
+                        {CANCEL_REASONS.map((r) => (
+                          <button
+                            key={r}
+                            type="button"
+                            onClick={() => setCancelReason(r)}
+                            className="rounded-full border px-2 py-0.5 text-[10px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                            style={{
+                              borderColor:
+                                cancelReason === r
+                                  ? "var(--primary)"
+                                  : "var(--border)",
+                              color:
+                                cancelReason === r
+                                  ? "var(--primary)"
+                                  : "var(--text-muted)",
+                              background:
+                                cancelReason === r
+                                  ? "var(--primary-soft)"
+                                  : "transparent",
+                            }}
+                          >
+                            {r}
+                          </button>
+                        ))}
+                      </div>
+                      <textarea
+                        value={cancelReason}
+                        onChange={(e) => setCancelReason(e.target.value)}
+                        rows={2}
+                        placeholder="Add a note for your supervisor (optional)…"
+                        className="w-full resize-none rounded-lg border px-2 py-1.5 text-[11px] outline-none"
+                        style={{
+                          borderColor: "var(--border)",
+                          background: "var(--background)",
+                          color: "var(--text)",
+                        }}
+                      />
+                      <div className="flex gap-1.5">
                         <button
                           type="button"
-                          disabled={!canStart || busy}
-                          onClick={() => void startCall(a.id)}
-                          title={
-                            canStart ? "Start appointment call" : "Available at the scheduled time"
-                          }
-                          className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[11px] font-semibold transition-colors disabled:cursor-default"
-                          style={
-                            canStart
-                              ? { background: "var(--green-dot)", color: "#fff" }
-                              : {
-                                  border: "1px solid var(--border)",
-                                  color: "var(--text-muted)",
-                                  background: "transparent",
-                                }
-                          }
+                          disabled={canceling}
+                          onClick={() => void confirmCancel(a.id)}
+                          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[11px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                          style={{ background: "var(--accent-red)" }}
                         >
-                          {busy ? (
+                          {canceling ? (
                             <Loader2 size={12} className="animate-spin" />
                           ) : (
-                            <Phone size={12} />
+                            <X size={12} />
                           )}
-                          Start appointment call
+                          Cancel appointment
                         </button>
-
-                        {/* Secondary: Change + Cancel, two equal columns. */}
-                        <div className="flex gap-1.5">
-                          <button
-                            type="button"
-                            disabled={!a.quoteId || busy}
-                            onClick={() =>
-                              a.quoteId &&
-                              setReschedule({
-                                quoteId: a.quoteId,
-                                projectName: a.projectName ?? "Appointment",
-                                bookingId: a.id,
-                              })
-                            }
-                            title="Change the appointment time"
-                            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-[11px] font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
-                            style={{ borderColor: "var(--border)", color: "var(--text)" }}
-                          >
-                            <RefreshCw size={11} />
-                            Change
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => openCancel(a.id)}
-                            title="Cancel this appointment"
-                            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-[11px] font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
-                            style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
-                          >
-                            <X size={11} />
-                            Cancel
-                          </button>
-                        </div>
+                        <button
+                          type="button"
+                          disabled={canceling}
+                          onClick={closeCancel}
+                          className="rounded-lg border px-3 py-2 text-[11px] font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
+                          style={{
+                            borderColor: "var(--border)",
+                            color: "var(--text-muted)",
+                          }}
+                        >
+                          Back
+                        </button>
                       </div>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
-      )}
+                    </div>
+                  ) : actionsFor === a.id ? (
+                    <div className="mt-2">
+                      {/* Change + Cancel, two equal columns. */}
+                      <div className="flex gap-1.5">
+                        <button
+                          type="button"
+                          disabled={!a.quoteId || busy}
+                          onClick={() =>
+                            a.quoteId &&
+                            setReschedule({
+                              quoteId: a.quoteId,
+                              projectName: a.projectName ?? "Appointment",
+                              bookingId: a.id,
+                            })
+                          }
+                          title="Change the appointment time"
+                          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-[11px] font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
+                          style={{
+                            borderColor: "var(--border)",
+                            color: "var(--text)",
+                          }}
+                        >
+                          <RefreshCw size={11} />
+                          Change
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => openCancel(a.id)}
+                          title="Cancel this appointment"
+                          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-[11px] font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
+                          style={{
+                            borderColor: "var(--border)",
+                            color: "var(--text-muted)",
+                          }}
+                        >
+                          <X size={11} />
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
 
       {reschedule && (
         <SupervisorScheduleModal
@@ -445,44 +498,5 @@ export function ContractAndAppointments() {
         />
       )}
     </>
-  );
-}
-
-// ── Daily / Weekly segmented control ────────────────────────────────────────
-function SegmentedFilter({
-  value,
-  onChange,
-}: {
-  value: RangeFilter;
-  onChange: (v: RangeFilter) => void;
-}) {
-  const opts: Array<{ key: RangeFilter; label: string }> = [
-    { key: "daily", label: "Daily" },
-    { key: "weekly", label: "Weekly" },
-  ];
-  return (
-    <div
-      className="inline-flex rounded-full border p-0.5"
-      style={{ borderColor: "var(--border)", background: "var(--background)" }}
-    >
-      {opts.map((o) => {
-        const active = value === o.key;
-        return (
-          <button
-            key={o.key}
-            type="button"
-            onClick={() => onChange(o.key)}
-            aria-pressed={active}
-            className="rounded-full px-2.5 py-0.5 text-[10px] font-semibold transition-colors"
-            style={{
-              background: active ? "var(--primary)" : "transparent",
-              color: active ? "#fff" : "var(--text-muted)",
-            }}
-          >
-            {o.label}
-          </button>
-        );
-      })}
-    </div>
   );
 }

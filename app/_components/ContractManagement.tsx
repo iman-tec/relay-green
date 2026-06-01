@@ -8,7 +8,8 @@
  * estimate. Accepting commits the contract (no online payment step —
  * billing is arranged off-platform); work then moves to the next stage.
  *
- * Renders nothing until the customer has at least one quote request.
+ * Always renders its collapsible bar (even with zero bids, showing an empty
+ * state) so the sidebar's nav set stays stable.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -53,18 +54,18 @@ type Quote = {
 };
 
 export function ContractManagement({
-  collapsedByDefault = false,
+  isOpen,
+  onToggle,
 }: {
-  /** Start collapsed (header + reopen button only). Used when the customer has
-   *  an appointment, so the appointment takes visual priority below. */
-  collapsedByDefault?: boolean;
-} = {}) {
+  /** Accordion state owned by the Sidebar — opening one of the sidebar's
+   *  collapsible bars collapses the others. */
+  isOpen: boolean;
+  onToggle: () => void;
+}) {
   const [sb] = useState(() => createClient());
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [projNames, setProjNames] = useState<Record<string, string>>({});
   const [open, setOpen] = useState<Quote | null>(null);
-  // null = follow collapsedByDefault; once the customer clicks, their choice wins.
-  const [userToggled, setUserToggled] = useState<boolean | null>(null);
 
   const load = useCallback(async () => {
     const { data: u } = await sb.auth.getUser();
@@ -110,28 +111,30 @@ export function ContractManagement({
     };
   }, [sb, load]);
 
-  if (quotes.length === 0) return null;
   const freshBids = quotes.filter(
     (q) => q.status === "quoted" && !q.customer_viewed_at
   ).length;
-  // Collapsible only when asked (an appointment exists); otherwise always open.
-  const collapsed = collapsedByDefault ? (userToggled ?? true) : false;
 
   return (
     <section
       className="rounded-xl border"
       style={{ borderColor: "var(--border)", background: "var(--surface)" }}
     >
-      <header className="flex items-center gap-1.5 px-3 py-2">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={isOpen}
+        className="flex w-full items-center gap-1.5 px-3 py-2 text-left transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.03]"
+      >
         <FileText size={12} style={{ color: "var(--primary)" }} />
-        <h3
-          className="text-[12px] font-semibold"
+        <span
+          className="flex-1 text-[12px] font-semibold"
           style={{ color: "var(--text)" }}
         >
-          Contract management
-        </h3>
+          Contract Management
+        </span>
         {freshBids > 0 && (
-          <span className="relative ml-1 inline-flex size-2">
+          <span className="relative inline-flex size-2">
             <span
               className="absolute inline-flex size-full animate-ping rounded-full opacity-70"
               style={{ background: "var(--primary)" }}
@@ -150,23 +153,31 @@ export function ContractManagement({
             {freshBids} new
           </span>
         )}
-        {collapsedByDefault && (
-          <button
-            type="button"
-            onClick={() => setUserToggled(!collapsed)}
-            aria-label={collapsed ? "Reopen contract management" : "Collapse"}
-            className="ml-auto flex size-5 items-center justify-center rounded transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-            style={{ color: "var(--text-muted)" }}
-          >
-            <ChevronDown size={14} className={collapsed ? "" : "rotate-180"} />
-          </button>
-        )}
-      </header>
-      {/* Show at most two bids; the rest scroll inside this section with a
-          visible (slim) scrollbar so the overflow is obvious. */}
-      {!collapsed && (
+        <span
+          className="text-[10px] font-medium tabular-nums"
+          style={{ color: "var(--text-muted)" }}
+        >
+          {quotes.length}
+        </span>
+        <ChevronDown
+          size={14}
+          className={`shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`}
+          style={{ color: "var(--text-muted)" }}
+        />
+      </button>
+      {isOpen && quotes.length === 0 && (
+        <p
+          className="border-t px-3 py-3 text-[11px]"
+          style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+        >
+          No bids yet.
+        </p>
+      )}
+      {/* Show at most two bids; the rest scroll inside this section. The
+          scrollbar is hidden (hide-scrollbar) — content still scrolls. */}
+      {isOpen && quotes.length > 0 && (
         <ul
-          className="overflow-y-auto border-t [scrollbar-width:thin]"
+          className="hide-scrollbar overflow-y-auto border-t"
           style={{ borderColor: "var(--border)", maxHeight: "5.3rem" }}
         >
           {quotes.map((q) => {

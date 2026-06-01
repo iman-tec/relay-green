@@ -156,15 +156,21 @@ function AppointmentTile({
           engineers?: Array<{
             userId: string;
             displayName: string;
+            available: boolean;
             busy: boolean;
           }>;
         };
+        // Only offer ONLINE engineers (is_available toggle on AND not on a
+        // live call). Busy or offline engineers are filtered out entirely —
+        // the supervisor can only ring someone who can actually pick up.
         setEngineers(
-          (body.engineers ?? []).map((e) => ({
-            id: e.userId,
-            name: e.displayName,
-            busy: e.busy,
-          }))
+          (body.engineers ?? [])
+            .filter((e) => e.available && !e.busy)
+            .map((e) => ({
+              id: e.userId,
+              name: e.displayName,
+              busy: e.busy,
+            }))
         );
       } catch {
         setEngineers([]);
@@ -388,6 +394,45 @@ export function LiveAppointmentsSection() {
     };
   }, [sb, tick]);
 
+  // The customer starting the appointment call stamps call_started_at on the
+  // booking AND creates the session (guest_calls), which carries this
+  // supervisor's id. The live card flips to "Add engineer" off call_started_at,
+  // but the 15s poll lagged that flip ~7-8s behind the waiting card.
+  // guest_calls is in the realtime publication and is the very signal that
+  // surfaces the waiting card — subscribe to it and reload the moment the
+  // supervisor's own session appears/changes, so both show together.
+  useEffect(() => {
+    let alive = true;
+    let ch: ReturnType<typeof sb.channel> | null = null;
+    void (async () => {
+      const { data: u } = await sb.auth.getUser();
+      const uid = u.user?.id;
+      if (!alive || !uid) return;
+      const channel = sb
+        .channel(`supervise-live-appts-${uid}-${crypto.randomUUID()}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "guest_calls",
+            filter: `supervisor_user_id=eq.${uid}`,
+          },
+          () => setTick((t) => t + 1),
+        )
+        .subscribe();
+      if (!alive) {
+        void sb.removeChannel(channel);
+        return;
+      }
+      ch = channel;
+    })();
+    return () => {
+      alive = false;
+      if (ch) void sb.removeChannel(ch);
+    };
+  }, [sb]);
+
   // Active = anything the supervisor can act on now (live OR due). Live first.
   const active = appts
     .filter((a) => apptState(a, now) !== "scheduled")
@@ -442,6 +487,40 @@ export function AppointmentsPanel() {
       clearInterval(id);
     };
   }, [sb, tick]);
+
+  // Realtime on guest_calls (same signal as the waiting card) so the live
+  // flip + "Add engineer" land instantly instead of on the next 15s poll.
+  useEffect(() => {
+    let alive = true;
+    let ch: ReturnType<typeof sb.channel> | null = null;
+    void (async () => {
+      const { data: u } = await sb.auth.getUser();
+      const uid = u.user?.id;
+      if (!alive || !uid) return;
+      const channel = sb
+        .channel(`supervise-appts-tab-${uid}-${crypto.randomUUID()}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "guest_calls",
+            filter: `supervisor_user_id=eq.${uid}`,
+          },
+          () => setTick((t) => t + 1),
+        )
+        .subscribe();
+      if (!alive) {
+        void sb.removeChannel(channel);
+        return;
+      }
+      ch = channel;
+    })();
+    return () => {
+      alive = false;
+      if (ch) void sb.removeChannel(ch);
+    };
+  }, [sb]);
 
   const reload = () => setTick((t) => t + 1);
   const liveAppts = appts.filter((a) => apptState(a, now) === "live");

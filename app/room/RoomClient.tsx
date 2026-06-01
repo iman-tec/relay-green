@@ -24,12 +24,52 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { PanelGroup, Panel, PanelResizeHandle } from "react-resizable-panels";
 import {
-  Plus, Send, Sparkles, Phone, X, PhoneOff, MessageSquare, Lock,
-  AlertTriangle, Loader2, ChevronDown, ChevronRight, Search, PanelLeftClose, PanelLeftOpen,
-  Wallet, RefreshCw, Settings, LogOut, Check, Folder, Pencil, PanelRightOpen, PanelRightClose,
-  Building2, FileText, Clock, CalendarClock, Video, MoreHorizontal, UserPlus, Pin, SlidersHorizontal,
-  Paperclip, Mic, Download, Music, AudioLines, ShieldCheck, Receipt, Home,
-  Trash2, Rocket, Wrench, Menu, MessageCircle, ArrowLeft,
+  Plus,
+  Send,
+  Sparkles,
+  Phone,
+  X,
+  PhoneOff,
+  MessageSquare,
+  Lock,
+  AlertTriangle,
+  Loader2,
+  ChevronDown,
+  ChevronRight,
+  Search,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Wallet,
+  RefreshCw,
+  Settings,
+  LogOut,
+  Check,
+  Folder,
+  Pencil,
+  PanelRightOpen,
+  PanelRightClose,
+  Building2,
+  FileText,
+  Clock,
+  CalendarClock,
+  Video,
+  MoreHorizontal,
+  UserPlus,
+  Pin,
+  Paperclip,
+  Mic,
+  Download,
+  Music,
+  AudioLines,
+  ShieldCheck,
+  Receipt,
+  Home,
+  Trash2,
+  Rocket,
+  Wrench,
+  Menu,
+  MessageCircle,
+  ArrowLeft,
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { ThemeTriplet } from "@/app/_components/ThemeTriplet";
@@ -41,7 +81,11 @@ import {
 import { PaywallModal } from "@/app/_components/PaywallModal";
 import { AppointmentPopup } from "@/app/_components/AppointmentPopup";
 import { UpcomingSessionBanner } from "@/app/_components/UpcomingSessionBanner";
-import { ChatComposer, speechRecognitionErrorMessage, queryMicPermission } from "@/app/_components/ChatComposer";
+import {
+  ChatComposer,
+  speechRecognitionErrorMessage,
+  queryMicPermission,
+} from "@/app/_components/ChatComposer";
 import { AccountPane } from "@/app/_components/AccountPane";
 import { LegalPane, type LegalKind } from "@/app/_components/LegalPane";
 import { DeleteProjectModal } from "@/app/_components/DeleteProjectModal";
@@ -4579,11 +4623,17 @@ function ChatPanelStub({
           {isEndedish && (
             <div
               className="shrink-0 border-t px-3 py-4"
-              style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+              style={{
+                borderColor: "var(--border)",
+                backgroundColor: "var(--surface)",
+              }}
             >
               <div
                 className="flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-[11px] font-medium"
-                style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+                style={{
+                  borderColor: "var(--border)",
+                  color: "var(--text-muted)",
+                }}
               >
                 <Lock size={11} />
                 Session ended — read-only
@@ -4597,272 +4647,272 @@ function ChatPanelStub({
               and a labelled Send pill on the right.
               Hidden once the session has ended (read-only above). */}
           {!isEndedish && (
-          <div
-            className="shrink-0 border-t px-3 py-5"
-            style={{
-              borderColor: "var(--border)",
-              backgroundColor: "var(--surface)",
-            }}
-          >
-            {voiceMsg && (
+            <div
+              className="shrink-0 border-t px-3 py-5"
+              style={{
+                borderColor: "var(--border)",
+                backgroundColor: "var(--surface)",
+              }}
+            >
+              {voiceMsg && (
+                <div
+                  className="mb-2 flex items-center justify-between gap-2 rounded-md border px-3 py-1.5 text-[11px]"
+                  style={{
+                    borderColor: "var(--border)",
+                    backgroundColor: "var(--surface-raised)",
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  <span>{voiceMsg}</span>
+                  <button
+                    type="button"
+                    onClick={() => setVoiceMsg(null)}
+                    className="opacity-60 transition-opacity hover:opacity-100"
+                    aria-label="Dismiss"
+                  >
+                    <X size={11} />
+                  </button>
+                </div>
+              )}
               <div
-                className="mb-2 flex items-center justify-between gap-2 rounded-md border px-3 py-1.5 text-[11px]"
+                className="rounded-2xl border p-5"
                 style={{
                   borderColor: "var(--border)",
                   backgroundColor: "var(--surface-raised)",
-                  color: "var(--text-muted)",
+                  boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
                 }}
               >
-                <span>{voiceMsg}</span>
-                <button
-                  type="button"
-                  onClick={() => setVoiceMsg(null)}
-                  className="opacity-60 transition-opacity hover:opacity-100"
-                  aria-label="Dismiss"
-                >
-                  <X size={11} />
-                </button>
-              </div>
-            )}
-            <div
-              className="rounded-2xl border p-5"
-              style={{
-                borderColor: "var(--border)",
-                backgroundColor: "var(--surface-raised)",
-                boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
-              }}
-            >
-              <textarea
-                rows={14}
-                value={draftText}
-                onChange={(e) => setDraftText(e.target.value)}
-                onKeyDown={(e) => {
-                  // Plain Enter sends — matches the live ChatComposer
-                  // (app/_components/ChatComposer.tsx) so users build
-                  // the same muscle memory in both surfaces.
-                  // Shift+Enter inserts a newline for multi-paragraph
-                  // drafts. IME composition (Asian languages) gets a
-                  // pass — committing a character via Enter shouldn't
-                  // accidentally fire the send.
-                  if (
-                    e.key === "Enter" &&
-                    !e.shiftKey &&
-                    !e.nativeEvent.isComposing
-                  ) {
-                    e.preventDefault();
-                    handleSendDraft();
-                  }
-                }}
-                placeholder="Message your engineer…"
-                className="block w-full resize-none bg-transparent text-[13px] leading-relaxed outline-none placeholder:opacity-60"
-                style={{ color: "var(--text)" }}
-              />
+                <textarea
+                  rows={14}
+                  value={draftText}
+                  onChange={(e) => setDraftText(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Plain Enter sends — matches the live ChatComposer
+                    // (app/_components/ChatComposer.tsx) so users build
+                    // the same muscle memory in both surfaces.
+                    // Shift+Enter inserts a newline for multi-paragraph
+                    // drafts. IME composition (Asian languages) gets a
+                    // pass — committing a character via Enter shouldn't
+                    // accidentally fire the send.
+                    if (
+                      e.key === "Enter" &&
+                      !e.shiftKey &&
+                      !e.nativeEvent.isComposing
+                    ) {
+                      e.preventDefault();
+                      handleSendDraft();
+                    }
+                  }}
+                  placeholder="Message your engineer…"
+                  className="block w-full resize-none bg-transparent text-[13px] leading-relaxed outline-none placeholder:opacity-60"
+                  style={{ color: "var(--text)" }}
+                />
 
-              {/* Pending-attachments tray — files + voice recordings staged
+                {/* Pending-attachments tray — files + voice recordings staged
                   via the paperclip / record buttons. Sits between the
                   textarea and the button row so it's clearly part of
                   the same draft. Each chip has a remove-X. The whole
                   block disappears when the queue empties. Per-row icon
                   is keyed off the chatAttachments kind classification
                   (image/document/audio). */}
-              {stubAttachments.length > 0 && (
-                <div className="mt-2 flex flex-col gap-1.5">
-                  <div
-                    className="text-[10px] font-semibold tracking-wider uppercase"
-                    style={{ color: "var(--text-muted)" }}
-                  >
-                    Will be delivered when your engineer joins
-                  </div>
-                  <ul className="flex flex-col gap-1">
-                    {stubAttachments.map((a) => {
-                      const Icon =
-                        a.kind === "audio"
-                          ? Music
-                          : a.kind === "image"
-                            ? FileText
-                            : FileText;
-                      return (
-                        <li
-                          key={a.id}
-                          className="flex items-center gap-2 rounded-md border px-2 py-1.5 text-[11.5px]"
-                          style={{
-                            borderColor: "var(--border)",
-                            backgroundColor: "var(--surface)",
-                          }}
-                        >
-                          <span
-                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md"
+                {stubAttachments.length > 0 && (
+                  <div className="mt-2 flex flex-col gap-1.5">
+                    <div
+                      className="text-[10px] font-semibold tracking-wider uppercase"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      Will be delivered when your engineer joins
+                    </div>
+                    <ul className="flex flex-col gap-1">
+                      {stubAttachments.map((a) => {
+                        const Icon =
+                          a.kind === "audio"
+                            ? Music
+                            : a.kind === "image"
+                              ? FileText
+                              : FileText;
+                        return (
+                          <li
+                            key={a.id}
+                            className="flex items-center gap-2 rounded-md border px-2 py-1.5 text-[11.5px]"
                             style={{
-                              backgroundColor: BRAND_GREEN_SOFT,
-                              color: BRAND_GREEN,
+                              borderColor: "var(--border)",
+                              backgroundColor: "var(--surface)",
                             }}
                           >
-                            <Icon size={11} />
-                          </span>
-                          <span
-                            className="min-w-0 flex-1 truncate"
-                            style={{ color: "var(--text)" }}
-                          >
-                            {a.name}
-                          </span>
-                          <span
-                            className="text-[10px]"
-                            style={{ color: "var(--text-muted)" }}
-                          >
-                            {a.size < 1024 * 1024
-                              ? `${Math.round(a.size / 1024)} KB`
-                              : `${(a.size / (1024 * 1024)).toFixed(1)} MB`}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => void handleRemoveAttachment(a.id)}
-                            aria-label={`Remove ${a.name}`}
-                            className="flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                            style={{ color: "var(--text-muted)" }}
-                          >
-                            <X size={11} />
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              )}
+                            <span
+                              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md"
+                              style={{
+                                backgroundColor: BRAND_GREEN_SOFT,
+                                color: BRAND_GREEN,
+                              }}
+                            >
+                              <Icon size={11} />
+                            </span>
+                            <span
+                              className="min-w-0 flex-1 truncate"
+                              style={{ color: "var(--text)" }}
+                            >
+                              {a.name}
+                            </span>
+                            <span
+                              className="text-[10px]"
+                              style={{ color: "var(--text-muted)" }}
+                            >
+                              {a.size < 1024 * 1024
+                                ? `${Math.round(a.size / 1024)} KB`
+                                : `${(a.size / (1024 * 1024)).toFixed(1)} MB`}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => void handleRemoveAttachment(a.id)}
+                              aria-label={`Remove ${a.name}`}
+                              className="flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                              style={{ color: "var(--text-muted)" }}
+                            >
+                              <X size={11} />
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
 
-              {/* voiceMsg renders ONCE in the pre-existing toast above
+                {/* voiceMsg renders ONCE in the pre-existing toast above
                   the composer (see ~3191 — dismissable, sits above the
                   textarea). We don't re-render it here. The record-state
                   pulse below is a transient "currently recording" tell
                   that's separate from error state. */}
-              {recState === "recording" && (
-                <p
-                  className="mt-2 inline-flex items-center gap-1 text-[11px]"
-                  style={{ color: BRAND_GREEN }}
-                >
-                  <span className="relative inline-flex h-1.5 w-1.5">
-                    <span
-                      className="absolute inset-0 inline-flex animate-ping rounded-full opacity-60"
-                      style={{ backgroundColor: BRAND_GREEN }}
-                    />
-                    <span
-                      className="relative h-1.5 w-1.5 rounded-full"
-                      style={{ backgroundColor: BRAND_GREEN }}
-                    />
-                  </span>
-                  Recording — tap mic again to finish.
-                </p>
-              )}
-              <div className="mt-2 flex items-center gap-1">
-                {/* Paperclip — picks files into the IDB-backed staging
+                {recState === "recording" && (
+                  <p
+                    className="mt-2 inline-flex items-center gap-1 text-[11px]"
+                    style={{ color: BRAND_GREEN }}
+                  >
+                    <span className="relative inline-flex h-1.5 w-1.5">
+                      <span
+                        className="absolute inset-0 inline-flex animate-ping rounded-full opacity-60"
+                        style={{ backgroundColor: BRAND_GREEN }}
+                      />
+                      <span
+                        className="relative h-1.5 w-1.5 rounded-full"
+                        style={{ backgroundColor: BRAND_GREEN }}
+                      />
+                    </span>
+                    Recording — tap mic again to finish.
+                  </p>
+                )}
+                <div className="mt-2 flex items-center gap-1">
+                  {/* Paperclip — picks files into the IDB-backed staging
                     queue. They sit there until a session goes live; the
                     parent's auto-flush effect (flushAttachmentsToSession)
                     handles the upload + guest_message_attachments insert
                     once a guest_calls row exists. */}
-                <input
-                  ref={attachInputRef}
-                  type="file"
-                  multiple
-                  className="hidden"
-                  accept=".pdf,.txt,.xlsx,.docx,image/*,audio/*"
-                  onChange={(e) => void handlePickFiles(e)}
-                />
-                <button
-                  type="button"
-                  onClick={() => attachInputRef.current?.click()}
-                  aria-label="Attach file"
-                  title="Attach a file — it'll be delivered when your engineer joins."
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                  style={{
-                    color: "var(--text-muted)",
-                    border: "1px solid var(--border)",
-                  }}
-                >
-                  <Paperclip size={14} />
-                </button>
-                {/* Voice-to-text dictation — works locally without a
+                  <input
+                    ref={attachInputRef}
+                    type="file"
+                    multiple
+                    className="hidden"
+                    accept=".pdf,.txt,.xlsx,.docx,image/*,audio/*"
+                    onChange={(e) => void handlePickFiles(e)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => attachInputRef.current?.click()}
+                    aria-label="Attach file"
+                    title="Attach a file — it'll be delivered when your engineer joins."
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                    style={{
+                      color: "var(--text-muted)",
+                      border: "1px solid var(--border)",
+                    }}
+                  >
+                    <Paperclip size={14} />
+                  </button>
+                  {/* Voice-to-text dictation — works locally without a
                     session (Web Speech API in-browser), so this DOES
                     function in the stub. Click to start/stop. */}
-                <button
-                  type="button"
-                  onClick={
-                    voiceMode === "transcribing"
-                      ? stopTranscribe
-                      : () => void startTranscribe()
-                  }
-                  aria-label="Dictate"
-                  title={
-                    voiceMode === "transcribing"
-                      ? "Stop dictating"
-                      : "Dictate — voice to text"
-                  }
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors"
-                  style={{
-                    color:
+                  <button
+                    type="button"
+                    onClick={
                       voiceMode === "transcribing"
-                        ? BRAND_GREEN
-                        : "var(--text-muted)",
-                    backgroundColor:
-                      voiceMode === "transcribing"
-                        ? "color-mix(in srgb, var(--primary) 14%, transparent)"
-                        : "transparent",
-                    border: "1px solid var(--border)",
-                  }}
-                >
-                  <Mic size={14} />
-                </button>
-                {/* Voice-recording — MediaRecorder writes the blob to
-                    IDB. Same flush path as paperclip-staged files. */}
-                <button
-                  type="button"
-                  onClick={
-                    recState === "recording"
-                      ? stopStubRecording
-                      : () => void startStubRecording()
-                  }
-                  aria-label={
-                    recState === "recording"
-                      ? "Stop recording"
-                      : "Record voice message"
-                  }
-                  title={
-                    recState === "recording"
-                      ? "Tap to finish recording"
-                      : "Record a voice message — it'll be delivered when your engineer joins."
-                  }
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors"
-                  style={{
-                    color:
-                      recState === "recording" ? "#fff" : "var(--text-muted)",
-                    backgroundColor:
-                      recState === "recording" ? BRAND_GREEN : "transparent",
-                    border: "1px solid var(--border)",
-                  }}
-                >
-                  <AudioLines
-                    size={14}
-                    className={
-                      recState === "recording" ? "animate-pulse" : undefined
+                        ? stopTranscribe
+                        : () => void startTranscribe()
                     }
-                  />
-                </button>
-                <div className="flex-1" />
-                <button
-                  type="button"
-                  onClick={handleSendDraft}
-                  disabled={!draftText.trim()}
-                  aria-label="Send"
-                  className="flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                  style={{
-                    backgroundColor: BRAND_GREEN,
-                    color: "#fff",
-                  }}
-                >
-                  <Send size={12} />
-                  Send
-                </button>
+                    aria-label="Dictate"
+                    title={
+                      voiceMode === "transcribing"
+                        ? "Stop dictating"
+                        : "Dictate — voice to text"
+                    }
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors"
+                    style={{
+                      color:
+                        voiceMode === "transcribing"
+                          ? BRAND_GREEN
+                          : "var(--text-muted)",
+                      backgroundColor:
+                        voiceMode === "transcribing"
+                          ? "color-mix(in srgb, var(--primary) 14%, transparent)"
+                          : "transparent",
+                      border: "1px solid var(--border)",
+                    }}
+                  >
+                    <Mic size={14} />
+                  </button>
+                  {/* Voice-recording — MediaRecorder writes the blob to
+                    IDB. Same flush path as paperclip-staged files. */}
+                  <button
+                    type="button"
+                    onClick={
+                      recState === "recording"
+                        ? stopStubRecording
+                        : () => void startStubRecording()
+                    }
+                    aria-label={
+                      recState === "recording"
+                        ? "Stop recording"
+                        : "Record voice message"
+                    }
+                    title={
+                      recState === "recording"
+                        ? "Tap to finish recording"
+                        : "Record a voice message — it'll be delivered when your engineer joins."
+                    }
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors"
+                    style={{
+                      color:
+                        recState === "recording" ? "#fff" : "var(--text-muted)",
+                      backgroundColor:
+                        recState === "recording" ? BRAND_GREEN : "transparent",
+                      border: "1px solid var(--border)",
+                    }}
+                  >
+                    <AudioLines
+                      size={14}
+                      className={
+                        recState === "recording" ? "animate-pulse" : undefined
+                      }
+                    />
+                  </button>
+                  <div className="flex-1" />
+                  <button
+                    type="button"
+                    onClick={handleSendDraft}
+                    disabled={!draftText.trim()}
+                    aria-label="Send"
+                    className="flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                    style={{
+                      backgroundColor: BRAND_GREEN,
+                      color: "#fff",
+                    }}
+                  >
+                    <Send size={12} />
+                    Send
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
           )}
         </>
       )}
@@ -5921,6 +5971,8 @@ type ScheduledBooking = {
 const ScheduledSessionsBox = memo(function ScheduledSessionsBox({
   customerUserId,
   onReschedule,
+  open,
+  onToggle,
 }: {
   customerUserId: string | null;
   /** Reopen the scheduler for the same engineer/project after the current
@@ -5930,10 +5982,17 @@ const ScheduledSessionsBox = memo(function ScheduledSessionsBox({
     engineerName: string;
     projectId: string | null;
   }) => void;
+  /** Accordion state — owned by the Sidebar so opening one section collapses
+   *  the others. */
+  open: boolean;
+  onToggle: () => void;
 }) {
   const sbRef = useRef(createClient());
   const [bookings, setBookings] = useState<ScheduledBooking[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Which booking row has its Reschedule/Cancel actions expanded (toggled by
+  // clicking the project name) — mirrors the Appointments card.
+  const [openId, setOpenId] = useState<string | null>(null);
 
   const load = useCallback(async (uid: string) => {
     const sb = sbRef.current;
@@ -5948,33 +6007,55 @@ const ScheduledSessionsBox = memo(function ScheduledSessionsBox({
       .gte("slot_end", fromIso)
       .order("slot_start", { ascending: true });
     const rows = (data ?? []) as Array<{
-      id: string; engineer_user_id: string; project_id: string | null;
-      slot_start: string; slot_end: string;
+      id: string;
+      engineer_user_id: string;
+      project_id: string | null;
+      slot_start: string;
+      slot_end: string;
     }>;
-    if (rows.length === 0) { setBookings([]); return; }
+    if (rows.length === 0) {
+      setBookings([]);
+      return;
+    }
     const engIds = [...new Set(rows.map((r) => r.engineer_user_id))];
-    const projIds = [...new Set(rows.map((r) => r.project_id).filter((x): x is string => !!x))];
+    const projIds = [
+      ...new Set(rows.map((r) => r.project_id).filter((x): x is string => !!x)),
+    ];
     const [engRes, projRes] = await Promise.all([
-      sb.from("engineer_profiles").select("user_id, display_alias").in("user_id", engIds),
-      projIds.length ? sb.from("projects").select("id, name").in("id", projIds) : Promise.resolve({ data: [] }),
+      sb
+        .from("engineer_profiles")
+        .select("user_id, display_alias")
+        .in("user_id", engIds),
+      projIds.length
+        ? sb.from("projects").select("id, name").in("id", projIds)
+        : Promise.resolve({ data: [] }),
     ]);
     const aliasById = new Map<string, string>();
-    for (const e of (engRes.data ?? []) as Array<{ user_id: string; display_alias: string | null }>) {
+    for (const e of (engRes.data ?? []) as Array<{
+      user_id: string;
+      display_alias: string | null;
+    }>) {
       if (e.display_alias) aliasById.set(e.user_id, e.display_alias);
     }
     const nameById = new Map<string, string>();
-    for (const p of (projRes.data ?? []) as Array<{ id: string; name: string | null }>) {
+    for (const p of (projRes.data ?? []) as Array<{
+      id: string;
+      name: string | null;
+    }>) {
       if (p.name) nameById.set(p.id, p.name);
     }
-    setBookings(rows.map((r) => ({
-      id: r.id,
-      engineerUserId: r.engineer_user_id,
-      engineerName: aliasById.get(r.engineer_user_id) ?? "your engineer",
-      projectId: r.project_id,
-      projectName: (r.project_id && nameById.get(r.project_id)) || "your project",
-      slotStart: r.slot_start,
-      slotEnd: r.slot_end,
-    })));
+    setBookings(
+      rows.map((r) => ({
+        id: r.id,
+        engineerUserId: r.engineer_user_id,
+        engineerName: aliasById.get(r.engineer_user_id) ?? "your engineer",
+        projectId: r.project_id,
+        projectName:
+          (r.project_id && nameById.get(r.project_id)) || "your project",
+        slotStart: r.slot_start,
+        slotEnd: r.slot_end,
+      }))
+    );
   }, []);
 
   useEffect(() => {
@@ -5985,107 +6066,295 @@ const ScheduledSessionsBox = memo(function ScheduledSessionsBox({
     void (async () => {
       await load(customerUserId);
       if (!alive) return;
-      ch = sb
-        .channel(`sidebar-bookings-${customerUserId}`)
-        .on("postgres_changes",
-          { event: "*", schema: "public", table: "engineer_bookings", filter: `customer_user_id=eq.${customerUserId}` },
-          () => { void load(customerUserId); })
+      // Unique topic per subscription: removeChannel() only drops the channel
+      // from the client's list asynchronously, so reusing a fixed topic can
+      // hand back the previous, still-subscribed channel — and .on() after
+      // subscribe() throws. A fresh topic each time sidesteps that race.
+      const channel = sb
+        .channel(`sidebar-bookings-${customerUserId}-${crypto.randomUUID()}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "engineer_bookings",
+            filter: `customer_user_id=eq.${customerUserId}`,
+          },
+          () => {
+            void load(customerUserId);
+          }
+        )
         .subscribe();
+      if (!alive) {
+        void sb.removeChannel(channel);
+        return;
+      }
+      ch = channel;
     })();
-    return () => { alive = false; if (ch) void sb.removeChannel(ch); };
+    return () => {
+      alive = false;
+      if (ch) void sb.removeChannel(ch);
+    };
   }, [customerUserId, load]);
 
-  const handleReschedule = useCallback(async (b: ScheduledBooking) => {
-    if (busyId) return;
-    setBusyId(b.id);
-    try {
-      const { error } = await sbRef.current.rpc("reschedule_booking", { _id: b.id });
-      if (error) { window.alert(`Couldn't reschedule: ${error.message}`); return; }
-      setBookings((prev) => prev.filter((x) => x.id !== b.id));
-      onReschedule({ engineerUserId: b.engineerUserId, engineerName: b.engineerName, projectId: b.projectId });
-    } finally { setBusyId(null); }
-  }, [busyId, onReschedule]);
+  const handleReschedule = useCallback(
+    async (b: ScheduledBooking) => {
+      if (busyId) return;
+      setBusyId(b.id);
+      try {
+        const { error } = await sbRef.current.rpc("reschedule_booking", {
+          _id: b.id,
+        });
+        if (error) {
+          window.alert(`Couldn't reschedule: ${error.message}`);
+          return;
+        }
+        setBookings((prev) => prev.filter((x) => x.id !== b.id));
+        onReschedule({
+          engineerUserId: b.engineerUserId,
+          engineerName: b.engineerName,
+          projectId: b.projectId,
+        });
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [busyId, onReschedule]
+  );
 
-  const handleCancel = useCallback(async (b: ScheduledBooking) => {
-    if (busyId) return;
-    if (typeof window !== "undefined" &&
-        !window.confirm("Cancel this scheduled session? Your engineer will be notified.")) return;
-    setBusyId(b.id);
-    try {
-      const { error } = await sbRef.current.rpc("cancel_booking_with_reason", {
-        _id: b.id, _reason: "Cancelled by customer",
-      });
-      if (error) { window.alert(`Couldn't cancel: ${error.message}`); return; }
-      setBookings((prev) => prev.filter((x) => x.id !== b.id));
-    } finally { setBusyId(null); }
-  }, [busyId]);
-
-  if (bookings.length === 0) return null;
+  const handleCancel = useCallback(
+    async (b: ScheduledBooking) => {
+      if (busyId) return;
+      if (
+        typeof window !== "undefined" &&
+        !window.confirm(
+          "Cancel this scheduled session? Your engineer will be notified."
+        )
+      )
+        return;
+      setBusyId(b.id);
+      try {
+        const { error } = await sbRef.current.rpc(
+          "cancel_booking_with_reason",
+          {
+            _id: b.id,
+            _reason: "Cancelled by customer",
+          }
+        );
+        if (error) {
+          window.alert(`Couldn't cancel: ${error.message}`);
+          return;
+        }
+        setBookings((prev) => prev.filter((x) => x.id !== b.id));
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [busyId]
+  );
 
   const fmt = (iso: string) =>
-    new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    new Date(iso).toLocaleString([], {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
 
   return (
-    <div className="px-2 pt-2">
+    <div className="px-2 py-2">
       <div
-        className="overflow-hidden rounded-lg border"
-        style={{ borderColor: BRAND_GREEN_BORDER, backgroundColor: BRAND_GREEN_SOFT }}
+        className="overflow-hidden rounded-xl border"
+        style={{ borderColor: "var(--border)", background: "var(--surface)" }}
       >
-        <div className="flex items-center gap-1.5 px-2.5 pt-2 pb-1">
-          <CalendarClock size={12} style={{ color: BRAND_GREEN }} />
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={open}
+          className="flex w-full items-center gap-1.5 px-3 py-2 text-left transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.03]"
+        >
+          <CalendarClock size={12} style={{ color: "var(--primary)" }} />
           <span
-            className="flex-1 text-[10px] font-semibold tracking-[0.1em] uppercase"
-            style={{ color: BRAND_GREEN }}
+            className="flex-1 text-[12px] font-semibold"
+            style={{ color: "var(--text)" }}
           >
-            Scheduled
+            Scheduled Calls
           </span>
-          <span className="text-[10px] tabular-nums" style={{ color: "var(--text-muted)" }}>
+          <span
+            className="text-[10px] font-medium tabular-nums"
+            style={{ color: "var(--text-muted)" }}
+          >
             {bookings.length}
           </span>
-        </div>
-        <ul className="flex flex-col">
-          {bookings.map((b) => {
-            const busy = busyId === b.id;
-            return (
-              <li key={b.id} className="px-2.5 py-1.5">
-                <div className="truncate text-[12px] font-medium" style={{ color: "var(--text)" }}>
-                  {b.projectName}
-                </div>
-                <div className="truncate text-[10px]" style={{ color: "var(--text-muted)" }}>
-                  {fmt(b.slotStart)} · {b.engineerName}
-                </div>
-                <div className="mt-1 flex gap-1.5">
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void handleReschedule(b)}
-                    className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
-                    style={{ borderColor: "var(--border)", color: "var(--text)" }}
-                    title="Free this slot and pick a new time"
-                  >
-                    {busy ? <Loader2 size={9} className="animate-spin" /> : <RefreshCw size={9} />}
-                    Reschedule
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void handleCancel(b)}
-                    className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
-                    style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
-                    title="Cancel this scheduled session"
-                  >
-                    <X size={9} />
-                    Cancel
-                  </button>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+          <ChevronDown
+            size={14}
+            className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
+            style={{ color: "var(--text-muted)" }}
+          />
+        </button>
+        {open && bookings.length === 0 && (
+          <p
+            className="border-t px-3 py-3 text-[11px]"
+            style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+          >
+            No scheduled calls yet.
+          </p>
+        )}
+        {open && bookings.length > 0 && (
+          <ul
+            className="flex [scrollbar-width:thin] flex-col overflow-y-auto border-t"
+            style={{ borderColor: "var(--border)", maxHeight: "7rem" }}
+          >
+            {bookings.map((b) => {
+              const busy = busyId === b.id;
+              const open = openId === b.id;
+              return (
+                <li
+                  key={b.id}
+                  className="border-t px-3 py-2.5 first:border-t-0"
+                  style={{ borderColor: "var(--border)" }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="inline-flex size-6 shrink-0 items-center justify-center rounded-md"
+                      style={{
+                        background: "var(--primary-soft)",
+                        color: "var(--primary)",
+                      }}
+                    >
+                      <CalendarClock size={12} />
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setOpenId(open ? null : b.id)}
+                      aria-expanded={open}
+                      title="Show options"
+                      className="min-w-0 flex-1 text-left"
+                    >
+                      <div
+                        className="flex items-center gap-1 truncate text-[12px] leading-tight font-medium"
+                        style={{ color: "var(--text)" }}
+                      >
+                        <span className="truncate">{b.projectName}</span>
+                        <ChevronDown
+                          size={12}
+                          className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
+                          style={{ color: "var(--text-muted)" }}
+                        />
+                      </div>
+                      <div
+                        className="truncate text-[10.5px] leading-tight"
+                        style={{ color: "var(--text-muted)" }}
+                      >
+                        {fmt(b.slotStart)} · {b.engineerName}
+                      </div>
+                    </button>
+                  </div>
+
+                  {open && (
+                    <div className="mt-2 flex gap-1.5">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void handleReschedule(b)}
+                        className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-[11px] font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
+                        style={{
+                          borderColor: "var(--border)",
+                          color: "var(--text)",
+                        }}
+                        title="Free this slot and pick a new time"
+                      >
+                        {busy ? (
+                          <Loader2 size={11} className="animate-spin" />
+                        ) : (
+                          <RefreshCw size={11} />
+                        )}
+                        Reschedule
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void handleCancel(b)}
+                        className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-[11px] font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
+                        style={{
+                          borderColor: "var(--border)",
+                          color: "var(--text-muted)",
+                        }}
+                        title="Cancel this scheduled session"
+                      >
+                        <X size={11} />
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
     </div>
   );
 });
+
+// Drag-to-resize a sidebar by its edge. Persists the chosen width per key in
+// localStorage so a reload keeps it. `edge="right"` for a left sidebar (handle
+// on its right side); `edge="left"` for a right sidebar.
+function useResizableWidth(opts: {
+  storageKey: string;
+  def: number;
+  min: number;
+  max: number;
+  edge: "left" | "right";
+}) {
+  const { storageKey, def, min, max, edge } = opts;
+  const [width, setWidth] = useState(def);
+  const [dragging, setDragging] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      const n = raw ? Number(raw) : NaN;
+      if (Number.isFinite(n) && n >= min && n <= max) setWidth(n);
+    } catch {
+      /* default width */
+    }
+  }, [storageKey, min, max]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(storageKey, String(width));
+    } catch {
+      /* ignore */
+    }
+  }, [storageKey, width]);
+  const startDrag = useCallback(
+    (e: React.PointerEvent) => {
+      e.preventDefault();
+      setDragging(true);
+      const startX = e.clientX;
+      const startW = width;
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      const onMove = (mv: PointerEvent) => {
+        const delta =
+          edge === "right" ? mv.clientX - startX : startX - mv.clientX;
+        setWidth(Math.max(min, Math.min(max, startW + delta)));
+      };
+      const onUp = () => {
+        setDragging(false);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    [width, edge, min, max]
+  );
+  return { width, dragging, startDrag };
+}
 
 const Sidebar = memo(function Sidebar({
   email,
@@ -6228,6 +6497,14 @@ const Sidebar = memo(function Sidebar({
   // returning users see the full hierarchy on each fresh /room landing.
   const [collapsed, setCollapsed] = useState<boolean>(false);
   const toggleCollapsed = (next: boolean) => setCollapsed(next);
+  // Drag-to-resize the expanded sidebar (handle on its right edge).
+  const leftResize = useResizableWidth({
+    storageKey: "relay:room-left-sidebar-width",
+    def: 260,
+    min: 220,
+    max: 460,
+    edge: "right",
+  });
 
   // Auto-collapse once when the session enters an engineer-engaged state
   // (assigned / joining / live). The customer's focus shifts to the chat +
@@ -6252,6 +6529,18 @@ const Sidebar = memo(function Sidebar({
   const [quoteFlow, setQuoteFlow] = useState<"golive" | "maintain" | null>(
     null
   );
+  // Accordion across the sidebar's collapsible bars (Scheduled, Contract
+  // management, Appointments, Request a Quote): only one is open at a time —
+  // opening one collapses the rest. "Request a Quote" is open on load.
+  const [openSection, setOpenSection] = useState<
+    "scheduled" | "contracts" | "appointments" | "quote" | null
+  >("quote");
+  const toggleSection = useCallback(
+    (s: "scheduled" | "contracts" | "appointments" | "quote") =>
+      setOpenSection((cur) => (cur === s ? null : s)),
+    []
+  );
+  const quoteOpen = openSection === "quote";
   const [past, setPast] = useState<PastSession[]>([]);
   // Global search — filters both project names and session titles/agents.
   const [searchQuery, setSearchQuery] = useState("");
@@ -6268,43 +6557,11 @@ const Sidebar = memo(function Sidebar({
   //   pinnedIds — session ids the user has pinned. Persisted to
   //     localStorage so the choice survives reloads; promoting to Supabase
   //     is a follow-up that needs a guest_calls.pinned_at column.
-  const [statusFilter, setStatusFilter] = useState<
-    "active" | "all" | "completed"
-  >("all");
-  const [groupBy, setGroupBy] = useState<"project" | "date">("project");
-  const [sortBy, setSortBy] = useState<"recent" | "oldest" | "title">("recent");
-  // Sort/filter popover open state — single boolean. Click the SlidersHorizontal
-  // button to toggle; click outside or the X to close.
-  const [sortPanelOpen, setSortPanelOpen] = useState(false);
-  // Which row inside the popover is currently expanded (showing its
-  // submenu of options). Only one row can be expanded at a time so the
-  // panel doesn't balloon vertically.
-  const [expandedSortRow, setExpandedSortRow] = useState<
-    null | "status" | "groupBy" | "sortBy"
-  >(null);
-  const sortPanelRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!sortPanelOpen) return;
-    const onPointerDown = (e: PointerEvent) => {
-      if (!sortPanelRef.current?.contains(e.target as Node)) {
-        setSortPanelOpen(false);
-        setExpandedSortRow(null);
-      }
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        // Esc collapses the inner submenu first, then the whole panel.
-        if (expandedSortRow !== null) setExpandedSortRow(null);
-        else setSortPanelOpen(false);
-      }
-    };
-    document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [sortPanelOpen, expandedSortRow]);
+  // Session list defaults — the filter/sort popover was removed; the projects
+  // view shows all sessions grouped by project, most-recent first.
+  const [statusFilter] = useState<"active" | "all" | "completed">("all");
+  const [groupBy] = useState<"project" | "date">("project");
+  const [sortBy] = useState<"recent" | "oldest" | "title">("recent");
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(() => {
     if (typeof window === "undefined") return new Set();
     try {
@@ -6923,12 +7180,22 @@ const Sidebar = memo(function Sidebar({
   // ── Expanded state ────────────────────────────────────────────────────────
   return (
     <aside
-      className="flex h-full w-[260px] shrink-0 flex-col"
+      className={`relative flex h-full shrink-0 flex-col ${leftResize.dragging ? "" : "transition-[width] duration-150 ease-out"}`}
       style={{
+        width: leftResize.width,
         borderRight: "1px solid var(--border)",
         backgroundColor: "var(--surface)",
       }}
     >
+      {/* Drag handle — invisible 6px hit-zone on the right edge; subtle accent
+          on hover/drag. Lets the customer stretch the sidebar. */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize sidebar"
+        onPointerDown={leftResize.startDrag}
+        className={`absolute top-0 right-0 z-30 h-full w-1.5 translate-x-1/2 cursor-col-resize transition-colors hover:bg-[var(--primary)] ${leftResize.dragging ? "bg-[var(--primary)]" : ""}`}
+      />
       {/* Brand row — wordmark (clickable, returns home) + theme
           triplet + flex spacer + collapse toggle. The wordmark is
           itself the Home affordance (universal convention), so the
@@ -6999,8 +7266,8 @@ const Sidebar = memo(function Sidebar({
           engineers per project, this top button is intentionally
           engineer-agnostic — clicking it always opens the New-vs-Existing
           chooser. */}
-      <div className="flex flex-col gap-2 px-2 py-1">
-        <div className="relative flex flex-col items-center gap-2 py-2">
+      <div className="flex flex-col gap-2 px-2 pb-1">
+        <div className="relative flex flex-col items-center gap-2 pb-2">
           {/* Pulsing aura — sits behind the ball, scaled larger via inset
             negative + opacity-pulses with the heartbeat rhythm. Color
             derived from var(--primary) via color-mix so the aura
@@ -7011,9 +7278,9 @@ const Sidebar = memo(function Sidebar({
             aria-hidden="true"
             className="rk-connect-aura pointer-events-none absolute"
             style={{
-              top: 8,
-              width: 140,
-              height: 140,
+              top: 4,
+              width: 120,
+              height: 120,
               borderRadius: "50%",
               background:
                 "radial-gradient(circle, " +
@@ -7028,7 +7295,7 @@ const Sidebar = memo(function Sidebar({
             type="button"
             onClick={() => setConnectFlow("choose")}
             aria-label="Connect to a Relay engineer"
-            className="rk-connect-ball relative flex h-[140px] w-[140px] flex-col items-center justify-center rounded-full text-center transition-transform hover:scale-[1.03] focus-visible:ring-4 focus-visible:outline-none active:scale-[0.97]"
+            className="rk-connect-ball relative flex h-[120px] w-[120px] flex-col items-center justify-center rounded-full text-center transition-transform hover:scale-[1.03] focus-visible:ring-4 focus-visible:outline-none active:scale-[0.97]"
             style={{
               // Ball gradient now keyed off var(--primary) — same green
               // family as every other brand element on the page. Was the
@@ -7050,8 +7317,8 @@ const Sidebar = memo(function Sidebar({
             }}
           >
             <Phone
-              size={20}
-              style={{ color: "#fff", opacity: 0.9, marginBottom: 6 }}
+              size={18}
+              style={{ color: "#fff", opacity: 0.9, marginBottom: 5 }}
             />
             <span
               className="px-3 text-[13px] leading-tight font-semibold"
@@ -7133,7 +7400,7 @@ const Sidebar = memo(function Sidebar({
             }
           `}</style>
           <p
-            className="text-center text-[11px]"
+            className="mt-3 text-center text-[11px]"
             style={{ color: "var(--text-muted)" }}
           >
             {past.some((s) => !!s.agent)
@@ -7172,34 +7439,6 @@ const Sidebar = memo(function Sidebar({
               <X size={12} />
             </button>
           )}
-        </div>
-
-        {/* New session / New chat entry points. The big Connect ball above
-            starts a LIVE engineer session via the project chooser; these two
-            compact buttons restore the explicit "New session" (live intake)
-            and "New chat" (async support) actions that were previously wired
-            in code but no longer rendered. */}
-        <div className="mt-0.5 flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={onNewSession}
-            title="Start a new live session"
-            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-[12px] font-medium transition-colors hover:bg-[var(--surface-raised)]"
-            style={{ borderColor: "var(--border)", color: "var(--text)" }}
-          >
-            <Phone size={13} style={{ color: "var(--primary-hover)" }} />
-            New session
-          </button>
-          <button
-            type="button"
-            onClick={onNewChat}
-            title="Start a new async chat"
-            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-[12px] font-medium transition-colors hover:bg-[var(--surface-raised)]"
-            style={{ borderColor: "var(--border)", color: "var(--text)" }}
-          >
-            <MessageCircle size={13} style={{ color: "var(--primary-hover)" }} />
-            New chat
-          </button>
         </div>
       </div>
 
@@ -7245,14 +7484,6 @@ const Sidebar = memo(function Sidebar({
         </div>
       )}
 
-      {/* Upcoming scheduled sessions — with reschedule / cancel controls.
-          Sits above the project list so a booked call is the first thing
-          the customer sees. Self-hides when there are no bookings. */}
-      <ScheduledSessionsBox
-        customerUserId={customerUserId}
-        onReschedule={(t) => setScheduleTarget(t)}
-      />
-
       {/* Projects (each is a folder containing sessions). The "+ Create
           New Project" button below opens the same compact form as the
           connect-flow new-project path, but in "create-only" mode — it
@@ -7261,322 +7492,68 @@ const Sidebar = memo(function Sidebar({
           separately via the per-project phone button or the top
           Connect button, both of which use the per-project metadata
           to drive engineer skill matching. */}
-      <div className="hide-scrollbar flex-1 overflow-y-auto px-2 pb-2">
-        {/* Solid sticky header — "Create New Project" + the filter row,
-            wrapped in ONE sticky block so the project/session list scrolls
-            cleanly underneath with no sliver of content bleeding through
-            between two separate sticky bands (the earlier two-band setup
-            left a gap a scrolling row could peek through). Opaque
-            var(--surface) background + own pt-3 so nothing scrolls above
-            it. */}
+      <div className="hide-scrollbar flex-1 overflow-y-auto px-2 pt-3 pb-2">
+        {/* Projects — header + list in ONE joint box (styled like the
+            Scheduled / Contract management cards, no collapse). */}
         <div
-          className="sticky top-0 z-20 pt-3"
-          style={{ backgroundColor: "var(--surface)" }}
+          className="overflow-hidden rounded-xl border"
+          style={{ borderColor: "var(--border)", background: "var(--surface)" }}
         >
-          <div className="mb-1 px-2.5 py-1">
+          <div className="flex items-center gap-1.5 px-3 py-2">
+            <Folder size={12} style={{ color: "var(--primary)" }} />
+            <span
+              className="text-[12px] font-semibold"
+              style={{ color: "var(--text)" }}
+            >
+              Projects
+            </span>
             <button
               onClick={() => {
                 setConnectFlowMode("create-only");
                 setConnectFlow("details");
               }}
-              title="Create a project with name + stack metadata (no engineer call yet)"
-              aria-label="Create a project with name and stack metadata"
-              className="group/cta inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-medium transition-all duration-150 ease-out hover:translate-x-0.5 hover:bg-[var(--surface-raised)]"
+              title="Create a new project"
+              aria-label="Create a new project"
+              className="group/cta ml-auto inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-medium transition-colors hover:bg-[var(--surface-raised)]"
               style={{ color: "var(--primary-hover)" }}
             >
               <Plus
                 size={12}
                 className="transition-transform duration-150 ease-out group-hover/cta:rotate-90"
               />
-              Create New Project
+              New Project
             </button>
           </div>
-
-          {/* Separator between the create-project action and the filter row. */}
-          <div
-            className="mx-2.5 my-1.5 h-px"
-            style={{ backgroundColor: "var(--border)" }}
-            aria-hidden="true"
-          />
-
-          <div ref={sortPanelRef} className="relative mb-1.5 px-2.5">
-            <div className="flex items-center justify-between">
-              <span
-                className="text-[10px] font-semibold tracking-[0.1em] uppercase"
-                style={{ color: "var(--text-muted)" }}
-              >
-                {statusFilter === "all"
-                  ? "All sessions"
-                  : statusFilter === "active"
-                    ? "Active"
-                    : "Completed"}
-                {" · "}
-                {groupBy === "project" ? "by project" : "by date"}
-              </span>
-              <button
-                type="button"
-                onClick={() => setSortPanelOpen((v) => !v)}
-                title="Filter and sort"
-                aria-label="Filter and sort"
-                aria-expanded={sortPanelOpen}
-                className={cn(
-                  "inline-flex h-6 w-6 items-center justify-center rounded-md transition-colors",
-                  sortPanelOpen
-                    ? "bg-[var(--surface-raised)]"
-                    : "hover:bg-[var(--surface-raised)]"
-                )}
-                style={{ color: "var(--text-muted)" }}
-              >
-                <SlidersHorizontal size={13} />
-              </button>
-            </div>
-
-            {sortPanelOpen && (
-              <div
-                className="absolute top-7 right-2 z-30 w-[228px] rounded-lg border shadow-xl"
-                style={{
-                  backgroundColor: "var(--surface)",
-                  borderColor: "var(--border)",
-                }}
-              >
-                <SortRow
-                  label="Status"
-                  value={
-                    statusFilter === "all"
-                      ? "All"
-                      : statusFilter === "active"
-                        ? "Active"
-                        : "Completed"
-                  }
-                  highlight={statusFilter !== "all"}
-                  options={[
-                    { value: "all", label: "All" },
-                    { value: "active", label: "Active" },
-                    { value: "completed", label: "Completed" },
-                  ]}
-                  expanded={expandedSortRow === "status"}
-                  onToggle={() =>
-                    setExpandedSortRow((v) =>
-                      v === "status" ? null : "status"
-                    )
-                  }
-                  onSelect={(v) => {
-                    setStatusFilter(v as "all" | "active" | "completed");
-                    setExpandedSortRow(null);
-                  }}
-                />
-                <SortRow
-                  label="Group by"
-                  value={groupBy === "project" ? "Project" : "Date"}
-                  highlight={groupBy !== "project"}
-                  options={[
-                    { value: "project", label: "Project" },
-                    { value: "date", label: "Date" },
-                  ]}
-                  expanded={expandedSortRow === "groupBy"}
-                  onToggle={() =>
-                    setExpandedSortRow((v) =>
-                      v === "groupBy" ? null : "groupBy"
-                    )
-                  }
-                  onSelect={(v) => {
-                    setGroupBy(v as "project" | "date");
-                    setExpandedSortRow(null);
-                  }}
-                />
-                <SortRow
-                  label="Sort by"
-                  value={
-                    sortBy === "recent"
-                      ? "Recent"
-                      : sortBy === "oldest"
-                        ? "Oldest"
-                        : "Title"
-                  }
-                  highlight={sortBy !== "recent"}
-                  options={[
-                    { value: "recent", label: "Recent" },
-                    { value: "oldest", label: "Oldest" },
-                    { value: "title", label: "Title (A→Z)" },
-                  ]}
-                  expanded={expandedSortRow === "sortBy"}
-                  onToggle={() =>
-                    setExpandedSortRow((v) =>
-                      v === "sortBy" ? null : "sortBy"
-                    )
-                  }
-                  onSelect={(v) => {
-                    setSortBy(v as "recent" | "oldest" | "title");
-                    setExpandedSortRow(null);
-                  }}
-                  last
-                />
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Pinned section — sessions the customer is actively working on.
+          {/* The (capped, scrollable) list below the header — no divider line. */}
+          <div>
+            {/* Pinned section — sessions the customer is actively working on.
             Renders BELOW the sticky header so it scrolls with the list
             (a long pin list shouldn't pin itself). Hidden when nothing is
             pinned so we don't show an empty header. */}
-        {(() => {
-          const pinnedSessions = past
-            .filter((s) => pinnedIds.has(s.id))
-            // Preserve pin-insertion order via the Set iteration order so a
-            // freshly-pinned session bubbles to the top.
-            .sort((a, b) => {
-              const ids = [...pinnedIds];
-              return ids.indexOf(a.id) - ids.indexOf(b.id);
-            });
-          if (pinnedSessions.length === 0) return null;
-          return (
-            <div className="mt-1 mb-1 px-2.5">
-              <div
-                className="mb-1 px-0.5 text-[10px] font-semibold tracking-[0.1em] uppercase"
-                style={{ color: "var(--primary-hover)" }}
-              >
-                Pinned
-              </div>
-              <div className="flex flex-col gap-0.5">
-                {pinnedSessions.map((s) => (
-                  <SessionRowFlat
-                    key={s.id}
-                    session={s}
-                    isPinned
-                    isViewing={viewingPastId === s.id}
-                    isCurrent={
-                      !!session &&
-                      s.id === session.id &&
-                      !["ended", "cancelled", "abandoned"].includes(s.status)
-                    }
-                    onClick={() => onViewPast(s.id)}
-                    onTogglePin={() => togglePin(s.id)}
-                    showProjectName
-                  />
-                ))}
-              </div>
-            </div>
-          );
-        })()}
-
-        {(() => {
-          // ONLY "Group by: Date" flips the sidebar from project
-          // accordions to a flat session list. Status filter operates
-          // at the project level (Active = projects not completed,
-          // Completed = projects marked completed/archived) and keeps
-          // the accordion view. Sort order applies in either view.
-          const isSessionView = groupBy === "date";
-
-          if (!isSessionView) {
-            // Default view — project accordions (unchanged behavior).
-            return projectGroups.length > 0 ? (
-              projectGroups.map((group) => (
-                <ProjectAccordion
-                  key={group.key}
-                  group={group}
-                  viewingPastId={viewingPastId}
-                  currentSessionId={session?.id ?? null}
-                  selectedProjectId={selectedProjectId}
-                  onViewPast={onViewPast}
-                  onStartInProject={(projectId) => {
-                    if (projectId === null) {
-                      onStartInProject(null);
-                      return;
-                    }
-                    // Count distinct engineers for the project.
-                    //   0 engineers (cold) → skill-match a new engineer
-                    //     via the existing intake flow.
-                    //   1+ engineers (warm) → engineerPicker step, which
-                    //     shows the engineer(s) by name + availability
-                    //     state (Available/Busy/Offline) with state-
-                    //     appropriate actions: Connect / Request /
-                    //     Schedule. The picker also exposes the
-                    //     "Request a different engineer" fallback so
-                    //     the client in a rush can route around a busy
-                    //     or offline engineer.
-                    const distinctEngineers = new Set<string>();
-                    for (const s of past) {
-                      if (s.projectId === projectId && s.agent) {
-                        distinctEngineers.add(s.agent);
-                      }
-                    }
-                    if (distinctEngineers.size >= 1) {
-                      setPickerProjectId(projectId);
-                      setConnectFlow("engineerPicker");
-                    } else {
-                      onStartInProject(projectId);
-                    }
-                  }}
-                  onRenameProject={onRenameProject}
-                  onSelectProject={onSelectProject}
-                  pinnedIds={pinnedIds}
-                  onTogglePin={togglePin}
-                  onPrepareSession={onPrepareSession}
-                  draftsTick={draftsTick}
-                  onDeleteProject={onDeleteProject}
-                  onMarkProjectComplete={onMarkProjectComplete}
-                />
-              ))
-            ) : (
-              <p
-                className="px-2 py-4 text-[11px]"
-                style={{ color: "var(--text-muted)" }}
-              >
-                {searchQuery
-                  ? `No projects or sessions match "${searchQuery}".`
-                  : "Start your first project to get going."}
-              </p>
-            );
-          }
-
-          // ── Session view: flatten across all projects ───────────
-          // projectGroups already applied status filter + search filter
-          // + pin-aware sort. We just flatten and (optionally) bucket
-          // by date. Each session row carries its project name so the
-          // user doesn't lose project context.
-          const allSessions = projectGroups.flatMap((g) => g.sessions);
-          if (allSessions.length === 0) {
-            return (
-              <p
-                className="px-2 py-4 text-[11px]"
-                style={{ color: "var(--text-muted)" }}
-              >
-                {searchQuery
-                  ? `No sessions match "${searchQuery}".`
-                  : statusFilter === "active"
-                    ? "No active sessions."
-                    : statusFilter === "completed"
-                      ? "No completed sessions yet."
-                      : "No sessions yet."}
-              </p>
-            );
-          }
-
-          // Date-bucketed flat list. Sessions get grouped under
-          // Today / Yesterday / This week / Earlier headers. Project
-          // names are hidden from each row (showProjectName=false)
-          // because the bucket header is doing the temporal work and
-          // the per-row project chip becomes noise in this view —
-          // the user picked Date specifically to see sessions across
-          // projects ordered by when they happened.
-          const bucketed = bucketSessionsByDate(allSessions);
-          return (
-            <div className="flex flex-col gap-3">
-              {bucketed.map((bucket) => (
-                <div key={bucket.label}>
+            {(() => {
+              const pinnedSessions = past
+                .filter((s) => pinnedIds.has(s.id))
+                // Preserve pin-insertion order via the Set iteration order so a
+                // freshly-pinned session bubbles to the top.
+                .sort((a, b) => {
+                  const ids = [...pinnedIds];
+                  return ids.indexOf(a.id) - ids.indexOf(b.id);
+                });
+              if (pinnedSessions.length === 0) return null;
+              return (
+                <div className="mt-1 mb-1 px-2.5">
                   <div
-                    className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] uppercase"
-                    style={{ color: "var(--text-faint)" }}
+                    className="mb-1 px-0.5 text-[10px] font-semibold tracking-[0.1em] uppercase"
+                    style={{ color: "var(--primary-hover)" }}
                   >
-                    {bucket.label}
+                    Pinned
                   </div>
                   <div className="flex flex-col gap-0.5">
-                    {bucket.sessions.map((s) => (
+                    {pinnedSessions.map((s) => (
                       <SessionRowFlat
                         key={s.id}
                         session={s}
-                        isPinned={pinnedIds.has(s.id)}
+                        isPinned
                         isViewing={viewingPastId === s.id}
                         isCurrent={
                           !!session &&
@@ -7587,25 +7564,180 @@ const Sidebar = memo(function Sidebar({
                         }
                         onClick={() => onViewPast(s.id)}
                         onTogglePin={() => togglePin(s.id)}
-                        showProjectName={false}
+                        showProjectName
                       />
                     ))}
                   </div>
                 </div>
-              ))}
-            </div>
-          );
-        })()}
+              );
+            })()}
+
+            {(() => {
+              // ONLY "Group by: Date" flips the sidebar from project
+              // accordions to a flat session list. Status filter operates
+              // at the project level (Active = projects not completed,
+              // Completed = projects marked completed/archived) and keeps
+              // the accordion view. Sort order applies in either view.
+              const isSessionView = groupBy === "date";
+
+              if (!isSessionView) {
+                // Default view — project accordions (unchanged behavior).
+                return projectGroups.length > 0 ? (
+                  // Cap the project list to ~5 rows; the rest scroll inside with a
+                  // slim visible scrollbar.
+                  <div
+                    className="[scrollbar-width:thin] overflow-x-hidden overflow-y-auto"
+                    style={{ maxHeight: "12rem" }}
+                  >
+                    {projectGroups.map((group) => (
+                      <ProjectAccordion
+                        key={group.key}
+                        group={group}
+                        viewingPastId={viewingPastId}
+                        currentSessionId={session?.id ?? null}
+                        selectedProjectId={selectedProjectId}
+                        onViewPast={onViewPast}
+                        onStartInProject={(projectId) => {
+                          if (projectId === null) {
+                            onStartInProject(null);
+                            return;
+                          }
+                          // Count distinct engineers for the project.
+                          //   0 engineers (cold) → skill-match a new engineer
+                          //     via the existing intake flow.
+                          //   1+ engineers (warm) → engineerPicker step, which
+                          //     shows the engineer(s) by name + availability
+                          //     state (Available/Busy/Offline) with state-
+                          //     appropriate actions: Connect / Request /
+                          //     Schedule. The picker also exposes the
+                          //     "Request a different engineer" fallback so
+                          //     the client in a rush can route around a busy
+                          //     or offline engineer.
+                          const distinctEngineers = new Set<string>();
+                          for (const s of past) {
+                            if (s.projectId === projectId && s.agent) {
+                              distinctEngineers.add(s.agent);
+                            }
+                          }
+                          if (distinctEngineers.size >= 1) {
+                            setPickerProjectId(projectId);
+                            setConnectFlow("engineerPicker");
+                          } else {
+                            onStartInProject(projectId);
+                          }
+                        }}
+                        onRenameProject={onRenameProject}
+                        onSelectProject={onSelectProject}
+                        pinnedIds={pinnedIds}
+                        onTogglePin={togglePin}
+                        onPrepareSession={onPrepareSession}
+                        draftsTick={draftsTick}
+                        onDeleteProject={onDeleteProject}
+                        onMarkProjectComplete={onMarkProjectComplete}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <p
+                    className="px-2 py-4 text-[11px]"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {searchQuery
+                      ? `No projects or sessions match "${searchQuery}".`
+                      : "Start your first project to get going."}
+                  </p>
+                );
+              }
+
+              // ── Session view: flatten across all projects ───────────
+              // projectGroups already applied status filter + search filter
+              // + pin-aware sort. We just flatten and (optionally) bucket
+              // by date. Each session row carries its project name so the
+              // user doesn't lose project context.
+              const allSessions = projectGroups.flatMap((g) => g.sessions);
+              if (allSessions.length === 0) {
+                return (
+                  <p
+                    className="px-2 py-4 text-[11px]"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {searchQuery
+                      ? `No sessions match "${searchQuery}".`
+                      : statusFilter === "active"
+                        ? "No active sessions."
+                        : statusFilter === "completed"
+                          ? "No completed sessions yet."
+                          : "No sessions yet."}
+                  </p>
+                );
+              }
+
+              // Date-bucketed flat list. Sessions get grouped under
+              // Today / Yesterday / This week / Earlier headers. Project
+              // names are hidden from each row (showProjectName=false)
+              // because the bucket header is doing the temporal work and
+              // the per-row project chip becomes noise in this view —
+              // the user picked Date specifically to see sessions across
+              // projects ordered by when they happened.
+              const bucketed = bucketSessionsByDate(allSessions);
+              return (
+                <div className="flex flex-col gap-3">
+                  {bucketed.map((bucket) => (
+                    <div key={bucket.label}>
+                      <div
+                        className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] uppercase"
+                        style={{ color: "var(--text-faint)" }}
+                      >
+                        {bucket.label}
+                      </div>
+                      <div className="flex flex-col gap-0.5">
+                        {bucket.sessions.map((s) => (
+                          <SessionRowFlat
+                            key={s.id}
+                            session={s}
+                            isPinned={pinnedIds.has(s.id)}
+                            isViewing={viewingPastId === s.id}
+                            isCurrent={
+                              !!session &&
+                              s.id === session.id &&
+                              !["ended", "cancelled", "abandoned"].includes(
+                                s.status
+                              )
+                            }
+                            onClick={() => onViewPast(s.id)}
+                            onTogglePin={() => togglePin(s.id)}
+                            showProjectName={false}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        </div>
       </div>
+
+      {/* Upcoming scheduled sessions — collapsible bar, sitting just above
+          Contract management. Self-hides when there are no bookings. */}
+      <ScheduledSessionsBox
+        customerUserId={customerUserId}
+        onReschedule={(t) => setScheduleTarget(t)}
+        open={openSection === "scheduled"}
+        onToggle={() => toggleSection("scheduled")}
+      />
 
       {/* Contract management — bids the team sent back (go-live / maintenance).
           Sits above the quote shortcuts; renders nothing until a quote exists. */}
       {!employment?.isEmployee && (
-        <div
-          className="border-t px-2 py-2 empty:hidden"
-          style={{ borderColor: "var(--border)" }}
-        >
-          <ContractAndAppointments />
+        <div className="px-2 py-2 empty:hidden">
+          <ContractAndAppointments
+            contractsOpen={openSection === "contracts"}
+            onContractsToggle={() => toggleSection("contracts")}
+            appointmentsOpen={openSection === "appointments"}
+            onAppointmentsToggle={() => toggleSection("appointments")}
+          />
         </div>
       )}
 
@@ -7623,77 +7755,54 @@ const Sidebar = memo(function Sidebar({
           isEmployee derivation at the top of the parent RoomClient. */}
       {!employment?.isEmployee && (
         <div
-          className="border-t px-2 pt-2 pb-1"
+          className="border-t px-2 py-2"
           style={{ borderColor: "var(--border)" }}
         >
-          {/* group/quote class lets us drive the icon's hover state from the
-              row, not just the icon itself. translateX + icon-color flip
-              gives the row a small "lean in" tell on hover without yelling. */}
+          {/* Collapsible "Request a Quote" — compact by default; expands to two
+              compact options: Ship it (go-live) and Maintain it (ongoing). */}
           <button
             type="button"
-            onClick={() => setQuoteFlow("golive")}
-            className="group/quote flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-all duration-150 ease-out hover:translate-x-0.5 hover:bg-black/5 dark:hover:bg-white/5"
+            onClick={() => toggleSection("quote")}
+            aria-expanded={quoteOpen}
+            className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
           >
             <span
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-all duration-150 ease-out group-hover/quote:scale-110 group-hover/quote:bg-[var(--primary)] group-hover/quote:text-white group-hover/quote:shadow-[0_0_0_3px_color-mix(in_srgb,var(--primary)_18%,transparent)]"
-              style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
+              className="text-[10px] font-semibold tracking-[0.1em] uppercase"
+              style={{ color: "var(--text-muted)" }}
             >
-              <Rocket size={13} />
+              Request a Quote
             </span>
-            <span className="min-w-0 flex-1">
-              <span
-                className="block text-[12px]"
-                style={{ color: "var(--text)" }}
-              >
-                Quote to GoLive
-              </span>
-              <span
-                className="block text-[10px]"
-                style={{ color: "var(--text-muted)" }}
-              >
-                Ship this project — get a quote
-              </span>
-            </span>
+            <ChevronDown
+              size={13}
+              className={`ml-auto shrink-0 transition-transform ${quoteOpen ? "rotate-180" : ""}`}
+              style={{ color: "var(--text-muted)" }}
+            />
           </button>
 
-          {/* Hairline separator — lighter than the section's outer border
-              so the two rows still read as a group, just clearly distinct.
-              mx-2 indents past the buttons' left padding so it doesn't
-              touch the icons. */}
-          <div
-            className="mx-2 my-1 h-px"
-            style={{
-              backgroundColor:
-                "color-mix(in srgb, var(--border) 60%, transparent)",
-            }}
-          />
-
-          <button
-            type="button"
-            onClick={() => setQuoteFlow("maintain")}
-            className="group/quote flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-all duration-150 ease-out hover:translate-x-0.5 hover:bg-black/5 dark:hover:bg-white/5"
-          >
-            <span
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-all duration-150 ease-out group-hover/quote:scale-110 group-hover/quote:bg-[var(--primary)] group-hover/quote:text-white group-hover/quote:shadow-[0_0_0_3px_color-mix(in_srgb,var(--primary)_18%,transparent)]"
-              style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
-            >
-              <Wrench size={13} />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span
-                className="block text-[12px]"
-                style={{ color: "var(--text)" }}
+          {quoteOpen && (
+            <div className="mt-1 flex gap-1.5 px-1">
+              <button
+                type="button"
+                onClick={() => setQuoteFlow("golive")}
+                title="Ship this project — get a quote"
+                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2.5 text-[13px] font-semibold transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                style={{ borderColor: "var(--border)", color: "var(--text)" }}
               >
-                Quote to Maintain / Enhance
-              </span>
-              <span
-                className="block text-[10px]"
-                style={{ color: "var(--text-muted)" }}
+                <Rocket size={14} style={{ color: "var(--primary)" }} />
+                Ship it
+              </button>
+              <button
+                type="button"
+                onClick={() => setQuoteFlow("maintain")}
+                title="Ongoing work — get an estimate"
+                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2.5 text-[13px] font-semibold transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                style={{ borderColor: "var(--border)", color: "var(--text)" }}
               >
-                Ongoing work — get an estimate
-              </span>
-            </span>
-          </button>
+                <Wrench size={14} style={{ color: "var(--primary)" }} />
+                Maintain it
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -7890,7 +7999,7 @@ const Sidebar = memo(function Sidebar({
               // Legacy engineer with no resolvable user_id — can't target a
               // calendar; fall back to the request path so they're never stuck.
               onPickerToast(
-                `Request sent to ${engineerName} — they'll join when they're back online.`,
+                `Request sent to ${engineerName} — they'll join when they're back online.`
               );
               if (pid) onStartInProject(pid);
               return;
@@ -7981,101 +8090,6 @@ const Sidebar = memo(function Sidebar({
     </aside>
   );
 });
-
-// ── Sort/filter row inside the popover panel ───────────────────────────────
-// One row per filter, with click-to-expand inline submenu. The header
-// row shows label + current value + chevron. Clicking the row toggles
-// its submenu open below; the submenu lists all available options. Click
-// an option to select it (auto-collapses the submenu). `highlight` shows
-// the value in brand green when an active (non-default) filter is set,
-// so the user sees at a glance which controls are doing work. `last`
-// drops the bottom border between rows.
-function SortRow({
-  label,
-  value,
-  options,
-  expanded,
-  onToggle,
-  onSelect,
-  highlight,
-  last,
-}: {
-  label: string;
-  value: string;
-  options: { value: string; label: string }[];
-  expanded: boolean;
-  onToggle: () => void;
-  onSelect: (value: string) => void;
-  highlight?: boolean;
-  last?: boolean;
-}) {
-  return (
-    <div
-      className={cn(!last && "border-b")}
-      style={!last ? { borderColor: "var(--border)" } : undefined}
-    >
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={expanded}
-        className="flex w-full items-center justify-between px-3 py-2.5 text-left transition-colors hover:bg-[var(--surface-raised)]"
-      >
-        <span className="text-[13px]" style={{ color: "var(--text)" }}>
-          {label}
-        </span>
-        <span className="flex items-center gap-1">
-          <span
-            className="text-[12px]"
-            style={{ color: highlight ? BRAND_GREEN : "var(--text-muted)" }}
-          >
-            {value}
-          </span>
-          <ChevronRight
-            size={12}
-            style={{
-              color: "var(--text-muted)",
-              transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
-              transition: "transform 0.15s ease",
-            }}
-          />
-        </span>
-      </button>
-
-      {expanded && (
-        <div
-          className="border-t bg-[color-mix(in_srgb,var(--text)_3%,transparent)]"
-          style={{ borderColor: "var(--border)" }}
-        >
-          {options.map((opt) => {
-            const isSelected = opt.label === value;
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => onSelect(opt.value)}
-                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition-colors hover:bg-[var(--surface-raised)]"
-                aria-pressed={isSelected}
-              >
-                <span
-                  className="text-[12px]"
-                  style={{
-                    color: isSelected ? BRAND_GREEN : "var(--text)",
-                    fontWeight: isSelected ? 500 : 400,
-                  }}
-                >
-                  {opt.label}
-                </span>
-                {isSelected && (
-                  <Check size={12} style={{ color: BRAND_GREEN }} />
-                )}
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ── Connect-flow modal ─────────────────────────────────────────────────────
 // 4-step micro-flow that runs when the customer clicks Connect on the
@@ -8244,7 +8258,10 @@ function ConnectFlowModal({
   /** Picked-engineer actions (engineerPicker step). */
   onEngineerConnect: (engineerName: string, engineerId: string | null) => void;
   onEngineerRequest: (engineerName: string) => void;
-  onEngineerSchedule: (engineerName: string, engineerUserId: string | null) => void;
+  onEngineerSchedule: (
+    engineerName: string,
+    engineerUserId: string | null
+  ) => void;
   /** "Request a different engineer" fallback. */
   onPickerRequestDifferent: () => void;
   onPickerBack: () => void;
@@ -8514,7 +8531,9 @@ function ConnectFlowModal({
                       onEngineerConnect(eng.name, eng.engineerId)
                     }
                     onRequest={() => onEngineerRequest(eng.name)}
-                    onSchedule={() => onEngineerSchedule(eng.name, eng.engineerId ?? null)}
+                    onSchedule={() =>
+                      onEngineerSchedule(eng.name, eng.engineerId ?? null)
+                    }
                   />
                 );
               })}
@@ -12302,6 +12321,14 @@ function SessionSummaryTray({ session }: { session: GuestCall }) {
     const v = window.localStorage.getItem(ROOM_TRAY_KEY);
     return v === null ? false : v === "1";
   });
+  // Drag-to-resize the open tray (handle on its left edge).
+  const rightResize = useResizableWidth({
+    storageKey: "relay:room-right-tray-width",
+    def: 320,
+    min: 280,
+    max: 520,
+    edge: "left",
+  });
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -12373,10 +12400,24 @@ function SessionSummaryTray({ session }: { session: GuestCall }) {
     <aside
       aria-label="Session summary"
       className={cn(
-        "hidden shrink-0 flex-col border-l border-[var(--border)] bg-[var(--surface)] transition-[width] duration-200 ease-out lg:flex",
-        open ? "w-80" : "w-10"
+        "relative hidden shrink-0 flex-col border-l border-[var(--border)] bg-[var(--surface)] lg:flex",
+        !open && "w-10",
+        open &&
+          !rightResize.dragging &&
+          "transition-[width] duration-200 ease-out"
       )}
+      style={open ? { width: rightResize.width } : undefined}
     >
+      {/* Drag handle — left edge; only active while the tray is open. */}
+      {open && (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize summary"
+          onPointerDown={rightResize.startDrag}
+          className={`absolute top-0 left-0 z-30 h-full w-1.5 -translate-x-1/2 cursor-col-resize transition-colors hover:bg-[var(--primary)] ${rightResize.dragging ? "bg-[var(--primary)]" : ""}`}
+        />
+      )}
       <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2">
         <button
           type="button"
