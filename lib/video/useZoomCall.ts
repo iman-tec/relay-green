@@ -39,6 +39,10 @@ export type UseZoomCallReturn = {
   self: Participant | null;
   participants: Participant[];
   activeShareUserId: number | null;
+  /** True while THIS participant is screen-sharing. Tracked explicitly (the
+   *  SDK's active-share-change is unreliable for one's own share), and reset
+   *  when the browser's native "Stop sharing" bar ends the capture. */
+  selfSharing: boolean;
   networkQuality: "good" | "fair" | "poor" | "unknown";
   leave: (endForAll?: boolean) => Promise<void>;
   toggleMic: () => Promise<void>;
@@ -87,6 +91,7 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
   const [error, setError] = useState<string | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [activeShareUserId, setActiveShareUserId] = useState<number | null>(null);
+  const [selfSharing, setSelfSharing] = useState(false);
   const [networkQuality, setNetworkQuality] = useState<"good" | "fair" | "poor" | "unknown">("unknown");
   const [tick, setTick] = useState(0); // bump to force re-render after SDK state changes
 
@@ -265,6 +270,11 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
         client.on("user-updated", onUserUpdate);
         client.on("connection-change", onConnection);
         client.on("active-share-change", onActiveShare);
+        // Fires when the user stops sharing via the browser's own "Stop
+        // sharing" bar (not our button) — keep our UI in sync so the share
+        // toggle works both ways.
+        const onPassiveStopShare = () => { setSelfSharing(false); onShareElementChange?.(null); };
+        client.on("passively-stop-share", onPassiveStopShare);
         client.on("network-quality-change", onNetwork);
 
         // Seed activeShareUserId from current room state — listeners above
@@ -281,49 +291,20 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
           }
         } catch (e) { console.warn("[useZoomCall] active-share probe", e); }
 
-        // ── Auto-start mic + camera ──────────────────────────────────
-        // The call should "just work" the moment the surface mounts —
-        // the user shouldn't have to hunt for the mic/camera buttons,
-        // and a silently-unstarted media stream reads as a broken call
-        // (black tiles, "why can't they hear me"). Both are best-effort:
-        //   • startAudio() can reject on autoplay/gesture policy (mainly
-        //     Safari) — the user can still hit Unmute.
-        //   • startVideo() prompts for camera permission the first time;
-        //     if denied / no device, we log and leave the camera button
-        //     as the manual fallback.
-        // Once bVideoOn flips true, the SDK fires user-updated → refresh
-        // → VideoTile attaches the self-view via attachVideo. We do NOT
-        // auto-start when the SDK couldn't hand us a media stream.
+        // ── Media defaults: mic + camera BOTH start OFF ───────────────
+        // We deliberately do NOT auto-start audio OR video on join. Each
+        // starts on the user's first click of its control (toggleMic /
+        // toggleCamera) — the reliable, autoplay-gesture-friendly path.
+        // Until then the self-tile shows camera-off and the mic shows muted,
+        // so nobody is broadcasting audio or video the moment they land in
+        // the call. (Auto-starting audio outside a user gesture frequently
+        // times out and leaves mute/unmute dead; auto-starting the camera was
+        // surprising — people want to choose when they appear on video.)
         try {
           const ms = client.getMediaStream();
-          const meNow = (() => { try { return client.getCurrentUserInfo(); } catch { return null; } })();
-          if (ms) {
-            // NOTE: we intentionally do NOT auto-start audio. startAudio()
-            // run here (in the async continuation after join, outside a
-            // user gesture) frequently rejects with OPERATION_TIMEOUT and
-            // can leave the SDK's audio pipeline half-initialised so that
-            // a later muteAudio/unmuteAudio silently no-ops — the symptom
-            // being "mic toggle does nothing, nobody can hear me". Instead
-            // the mic is started on the user's first click of the mic
-            // button (see toggleMic), which is the reliable, autoplay-
-            // policy-friendly path. The button shows the muted state until
-            // then.
-            //
-            // Camera CAN be auto-started (video has no autoplay-gesture
-            // requirement). Skip if already on; the 6105 "camera is
-            // starting" / 6103 "camera taken" errors are non-fatal races
-            // (e.g. two tabs sharing one device) and are caught.
-            if (!meNow || !meNow.bVideoOn) {
-              try {
-                await ms.startVideo();
-              } catch (videoErr) {
-                console.warn("[useZoomCall] startVideo (camera) failed — enable camera manually:", videoErr);
-              }
-            }
-            if (!cancelled) refresh();
-          }
+          if (ms && !cancelled) refresh();
         } catch (mediaErr) {
-          console.warn("[useZoomCall] media autostart skipped:", mediaErr);
+          console.warn("[useZoomCall] media probe skipped:", mediaErr);
         }
 
         // ── Live transcription (Zoom Video SDK) ───────────────────────
@@ -422,6 +403,7 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
             client.off("user-updated", onUserUpdate);
             client.off("connection-change", onConnection);
             client.off("active-share-change", onActiveShare);
+            client.off("passively-stop-share", onPassiveStopShare);
             client.off("network-quality-change", onNetwork);
             client.off("caption-message", onCaptionMessage);
           } catch { /* listeners may already be gone */ }
@@ -571,6 +553,7 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
             return;
           }
         } else {
+          setSelfSharing(true);
           onShareElementChange?.("canvas");
           return;
         }
@@ -589,6 +572,7 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
           console.warn("[useZoomCall] startShareScreen (video) failed", res);
           return;
         }
+        setSelfSharing(true);
         onShareElementChange?.("video");
       } catch (e) { console.warn("[useZoomCall] startShareScreen (video)", e); }
     }
@@ -599,6 +583,7 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
     if (!client) return;
     const ms = client.getMediaStream();
     try { await ms.stopShareScreen(); } catch (e) { console.warn("[useZoomCall] stopShareScreen", e); }
+    setSelfSharing(false);
     onShareElementChange?.(null);
   }, [onShareElementChange]);
 
@@ -686,6 +671,7 @@ export function useZoomCall({ sessionId, role, userName, shareCanvasRef, shareVi
     self: derived.self,
     participants,
     activeShareUserId,
+    selfSharing,
     networkQuality,
     leave,
     toggleMic,

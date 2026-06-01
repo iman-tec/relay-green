@@ -9,6 +9,16 @@
  * Public route — anyone can hit this with any email. The risk is creating
  * empty user rows for emails that never sign in. Mitigation: rate-limit
  * via a simple in-memory IP guard (good enough for early dev).
+ *
+ * ── Account-enumeration safety (SEC-API-ENUM-1) ────────────────────────
+ * This endpoint MUST NOT disclose whether an email has an account or what
+ * lifecycle state it's in. It previously returned 404 `email_not_found`
+ * (forgot + unknown) and 409 `email_exists` (first-time + existing), plus a
+ * `status: exists|created` body — each an enumeration oracle for an unauth
+ * caller. It now performs the correct server-side provisioning silently and
+ * ALWAYS returns the same neutral `{ ok: true }` regardless of account
+ * state. The only non-200s are state-independent: invalid email *format*
+ * (400), rate limit (429), server misconfig (500).
  */
 
 import { NextResponse } from "next/server";
@@ -44,11 +54,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid_email" }, { status: 400 });
   }
 
-  // `purpose` lets the caller pick which existence-check semantics apply:
-  //   "first-time" → email MUST NOT exist; we create the user.
-  //   "forgot"     → email MUST exist; we don't create.
-  //   undefined    → legacy "ensure-exists" behavior (sign-in via OTP).
-  // Anything else is treated as undefined.
+  // `purpose` selects the provisioning semantics (NOT the response shape —
+  // the response is always neutral):
+  //   "forgot"     → never create a user (a typo must not mint an account).
+  //   "first-time" → create the user if absent (brand-new signup).
+  //   undefined    → legacy "ensure-exists" sign-in: create if absent.
   const intent: "first-time" | "forgot" | "any" =
     purpose === "first-time" ? "first-time" :
     purpose === "forgot"     ? "forgot"     :
@@ -62,60 +72,30 @@ export async function POST(request: Request) {
 
   const admin = createClient(url, key, { auth: { persistSession: false } });
 
-  // Look up by email — admin.listUsers doesn't support filter, so paginate
-  // a single page (works fine while user count is small).
-  const { data } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 });
-  const existing = data?.users?.find((u) => u.email?.toLowerCase() === email.toLowerCase());
+  // Do the real provisioning work, but never let its outcome change the
+  // response. Any error is logged server-side and swallowed so the response
+  // shape can't be used to probe account state.
+  try {
+    // Look up by email — admin.listUsers doesn't support filter, so paginate
+    // a single page (works fine while user count is small).
+    const { data } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 });
+    const existing = data?.users?.find((u) => u.email?.toLowerCase() === email.toLowerCase());
 
-  if (intent === "first-time" && existing) {
-    // Admin-invited users already exist in auth.users (the invite pre-created
-    // them with email_confirm=true and no password). They genuinely are
-    // first-timing from their own perspective, so let them through the
-    // first-time flow as long as they don't yet have a password.
-    // Self-signup users who already finished setup (and have a password) get
-    // bounced — they should use "Forgot password?" instead.
-    const { data: hasPw, error: hasPwErr } = await admin.rpc(
-      "user_has_password",
-      { _user_id: existing.id },
-    );
-    if (hasPwErr) {
-      // RPC failure shouldn't trap a legitimate first-time user — log and
-      // fall back to the legacy "reject" semantics (safer than letting an
-      // already-set-up account reset itself).
-      console.warn("[prepare] user_has_password RPC error:", hasPwErr.message);
-      return NextResponse.json({ error: "email_exists" }, { status: 409 });
-    }
-    if (hasPw === true) {
-      return NextResponse.json({ error: "email_exists" }, { status: 409 });
-    }
-    // Else fall through — existing user, no password yet, treat as first-time.
-  }
-  if (intent === "forgot" && !existing) {
-    return NextResponse.json({ error: "email_not_found" }, { status: 404 });
-  }
-
-  if (existing) {
-    // Already exists — Supabase will use the Magic Link template on the next OTP call.
-    return NextResponse.json({ ok: true, status: "exists" });
-  }
-
-  // Create the user pre-confirmed. The next signInWithOtp will then use the
-  // Magic Link template (configured for OTP codes), not Confirm Signup.
-  const { error } = await admin.auth.admin.createUser({
-    email,
-    email_confirm: true,
-  });
-  if (error) {
-    // If it failed with "already registered" race, treat as success
-    // (unless the caller specifically wanted a brand-new email).
-    if (error.message.toLowerCase().includes("already")) {
-      if (intent === "first-time") {
-        return NextResponse.json({ error: "email_exists" }, { status: 409 });
+    // Only the "forgot" flow refrains from creating; for an existing account
+    // (any intent) there's nothing to do — the next OTP uses the Magic Link
+    // template either way. For first-time/legacy with no account, pre-create.
+    if (!existing && intent !== "forgot") {
+      const { error } = await admin.auth.admin.createUser({ email, email_confirm: true });
+      // "already registered" races are fine — the user exists, which is all
+      // we needed. Anything else we log but still answer neutrally.
+      if (error && !error.message.toLowerCase().includes("already")) {
+        console.warn("[prepare] createUser error:", error.message);
       }
-      return NextResponse.json({ ok: true, status: "race_resolved" });
     }
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (e) {
+    console.warn("[prepare] provisioning error:", e instanceof Error ? e.message : e);
   }
 
-  return NextResponse.json({ ok: true, status: "created" });
+  // Uniform neutral response regardless of account existence or lifecycle.
+  return NextResponse.json({ ok: true });
 }

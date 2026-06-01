@@ -415,6 +415,7 @@ export function SessionReviewClient({
           loading={loading}
           me={me}
           customerName={customerName}
+          sessionStatus={session.status}
         />
       </div>
     </div>
@@ -571,14 +572,19 @@ function ProjectTreePane({
 // + size caps) so the wire format matches the in-call composer.
 // ─────────────────────────────────────────────────────────────────────────
 function ChatPane({
-  sessionId, messages, loading, me, customerName,
+  sessionId, messages, loading, me, customerName, sessionStatus,
 }: {
   sessionId: string;
   messages: GuestMessage[];
   loading: boolean;
   me: { id: string; email: string | null; name: string | null; kind: "engineer" | "guest" | "system" } | null;
   customerName: string;
+  /** Session status — drives the read-only lock. An ended/cancelled/
+   *  abandoned session is a closed record: viewable, but no new follow-up
+   *  chat (the composer is replaced with a read-only notice). */
+  sessionStatus: string;
 }) {
+  const isEndedSession = ["ended", "cancelled", "abandoned"].includes(sessionStatus);
   // Filter out system noise from the chat view (Zoom started/ended/recording
   // stubs and AI summary bubbles) and soft-deleted messages (deleted_at set
   // by the author via the kebab → Delete action). Those belong in the
@@ -965,16 +971,22 @@ function ChatPane({
   const otherPartyName = isCustomerViewer
     ? "your engineer"
     : customerName;
-  const headerTitle = isCustomerViewer
-    ? "Engineer chat"
-    : `Chatting with ${customerName}`;
-  const headerSubtitle = "Session ended · drop a follow-up";
+  const headerTitle = isEndedSession
+    ? "Conversation"
+    : isCustomerViewer
+      ? "Engineer chat"
+      : `Chatting with ${customerName}`;
+  const headerSubtitle = isEndedSession
+    ? "Session ended · read-only"
+    : "Drop a follow-up";
   const placeholder = isCustomerViewer
     ? "Message your engineer…"
     : `Message ${customerName}…`;
-  const emptyCopy = isCustomerViewer
-    ? "Drop in your thoughts here — your engineer sees them next time they open the session."
-    : `Drop a follow-up here — ${otherPartyName} sees it next time they open the session.`;
+  const emptyCopy = isEndedSession
+    ? "This session has ended — the conversation is read-only."
+    : isCustomerViewer
+      ? "Drop in your thoughts here — your engineer sees them next time they open the session."
+      : `Drop a follow-up here — ${otherPartyName} sees it next time they open the session.`;
 
   // Initial-letter avatar used in the header. Falls back to the chat
   // bubble icon when we don't have a name yet (e.g. anonymous guest).
@@ -1098,10 +1110,30 @@ function ChatPane({
         </div>
       </div>
 
+      {/* Ended sessions are a closed record — the follow-up composer is
+          replaced with a read-only notice (matches the customer room and
+          the engineer session room). */}
+      {isEndedSession && (
+        <div
+          className="shrink-0 border-t px-3 py-4"
+          style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+        >
+          <div
+            className="flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-[11px] font-medium"
+            style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+          >
+            <Lock size={11} />
+            Session ended — read-only
+          </div>
+        </div>
+      )}
+
       {/* Composer — card-style block matching the customer side:
           multi-line textarea on top, action row underneath with paperclip
           (attach), mic (voice dictation placeholder), audio-lines (voice
-          message placeholder), and a labelled Send pill on the right. */}
+          message placeholder), and a labelled Send pill on the right.
+          Hidden once the session has ended (read-only notice above). */}
+      {!isEndedSession && (
       <div
         className="shrink-0 border-t px-3 py-5"
         style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
@@ -1304,6 +1336,7 @@ function ChatPane({
           </div>
         </div>
       </div>
+      )}
     </aside>
   );
 }

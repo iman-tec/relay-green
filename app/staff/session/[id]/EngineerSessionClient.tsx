@@ -24,8 +24,9 @@ import {
 import {
   Send, Video, PhoneOff, Loader2, ArrowLeft, RotateCw, Sparkles, Lock, Eye, LogOut,
   PanelLeftOpen, PanelLeftClose, AlertTriangle, BookOpen, ChevronRight, Check,
-  Download, LifeBuoy, X,
+  Download, LifeBuoy, X, MessageSquare,
 } from "lucide-react";
+import { FloatingDock } from "@/app/_components/FloatingDock";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { MeetingChatEntry } from "@/app/_components/MeetingChatEntry";
 import { MeetingSummaryEntry, isAiSummaryMessageBody } from "@/app/_components/MeetingSummaryEntry";
@@ -326,6 +327,7 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
        *                   so the engineer can study project history before
        *                   launching the call. */}
       {callOpen && state.session ? (
+        <>
         <PanelGroup direction="horizontal" autoSaveId="relay-eng-call-v3" className="flex min-w-0 flex-1">
           <Panel id="eng-call-ai" order={1} defaultSize={60} minSize={20}>
             <div
@@ -367,51 +369,31 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
                   onStart={() => setStarted(true)}
                 />
               )}
-              <PanelGroup direction="vertical" autoSaveId="relay-eng-call-side-inner-v2" className="min-h-0 flex-1">
-                <Panel id="eng-side-video" order={1} defaultSize={35} minSize={15}>
-                  <div className="h-full w-full" style={{ background: "var(--background)" }}>
-                    <CallSurface
-                      sessionId={state.session.id}
-                      role="host"
-                      userName={isSupervisor ? "Moderator" : meEmail || "Engineer"}
-                      onClose={() => setCallOpen(false)}
-                      onJoined={() => void state.markJoined()}
-                    />
-                  </div>
-                </Panel>
-                <PanelResizeHandle
-                  className="group relative h-2 cursor-row-resize transition-colors data-[resize-handle-state=drag]:bg-[--green-strong] hover:bg-[--green-soft]"
-                  style={
-                    {
-                      backgroundColor: "var(--border)",
-                      ["--green-soft" as string]: BRAND_GREEN_SOFT,
-                      ["--green-strong" as string]: BRAND_GREEN,
-                    } as React.CSSProperties
-                  }
-                >
-                  <span
-                    aria-hidden
-                    className="pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-row gap-1 opacity-60 group-hover:opacity-100"
-                  >
-                    <span className="block h-1 w-1 rounded-full" style={{ backgroundColor: "var(--text-muted)" }} />
-                    <span className="block h-1 w-1 rounded-full" style={{ backgroundColor: "var(--text-muted)" }} />
-                    <span className="block h-1 w-1 rounded-full" style={{ backgroundColor: "var(--text-muted)" }} />
-                  </span>
-                </PanelResizeHandle>
-                <Panel id="eng-side-chat" order={2} defaultSize={65} minSize={15}>
-                  <div className="flex h-full min-h-0 flex-col overflow-hidden border-t" style={{ borderColor: "var(--border)" }}>
-                    <ChatPane
-                      state={state}
-                      fullWidth
-                      readOnly={!(state.isAssignedEngineer || supervisorCanChat)}
-                      hideAiAsk
-                    />
-                  </div>
-                </Panel>
-              </PanelGroup>
+              {/* Zoom fills the side panel; the conversation lives in a
+                  draggable, collapsible floating chat dock so a screen-share is
+                  never cramped by the chat below it. */}
+              <div className="min-h-0 flex-1" style={{ background: "var(--background)" }}>
+                <CallSurface
+                  sessionId={state.session.id}
+                  role="host"
+                  userName={isSupervisor ? "Moderator" : meEmail || "Engineer"}
+                  onClose={() => setCallOpen(false)}
+                  onJoined={() => void state.markJoined()}
+                  wideTiles
+                />
+              </div>
             </div>
           </Panel>
         </PanelGroup>
+        <FloatingDock storageKey="eng-call-chat" title="Chat" accent icon={<MessageSquare size={22} />}>
+          <ChatPane
+            state={state}
+            fullWidth
+            readOnly={!(state.isAssignedEngineer || supervisorCanChat)}
+            hideAiAsk
+          />
+        </FloatingDock>
+        </>
       ) : (
         <div className="relative flex h-full min-w-0 flex-1 flex-col">
           {isSupervisor && (

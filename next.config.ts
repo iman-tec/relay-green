@@ -29,6 +29,23 @@ const nextConfig: NextConfig = {
   // that dev-only artifact; production has never run in StrictMode anyway.
   reactStrictMode: false,
 
+  // Login-surface URL aliases. The canonical sign-in pages live at bare
+  // /business and /partner (this is what invite emails and proxy.ts use —
+  // see SURFACE_URL in lib/relay/loginSurface.ts). But customers and tools
+  // reasonably reach for the "{surface}/login" shape too, by analogy with
+  // /login and /staff/login. Without these aliases, /business/login and
+  // /partner/login fall through to app/not-found.tsx (a 404 — flagged by
+  // RESP-09-1 as a broken "primary login surface"). Bounce them to the real
+  // surfaces instead. Temporary (307) so the canonical mapping can change
+  // later without fighting browser-cached permanent redirects; these are
+  // noindex auth pages, so SEO permanence is irrelevant.
+  async redirects() {
+    return [
+      { source: "/business/login", destination: "/business", permanent: false },
+      { source: "/partner/login", destination: "/partner", permanent: false },
+    ];
+  },
+
   // Baseline security headers for the public marketing site.
   //
   // CSP ships in REPORT-ONLY mode below so violations surface in the

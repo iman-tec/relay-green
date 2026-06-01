@@ -78,10 +78,12 @@ export function StaffLoginForm({
   }, [mode, initialEmail]);
 
   // ── Helpers ────────────────────────────────────────────────────────
-  // Staff "Forgot password?" is the only OTP path — purpose=forgot rejects
-  // unknown emails (so a typo doesn't silently create a self-signup row)
-  // and verify-otp diverts to /set-password unconditionally so the user
-  // can pick a new password.
+  // Staff "Forgot password?" is the only OTP path. purpose=forgot never
+  // creates a user (so a typo doesn't silently mint a self-signup row) but,
+  // for enumeration safety (SEC-API-ENUM-1), it no longer reveals whether the
+  // account exists — unknown emails get the same neutral outcome as known
+  // ones, simply with no code delivered. verify-otp diverts to /set-password
+  // unconditionally so a real user can pick a new password.
   const sendCode = async (target: string): Promise<boolean> => {
     const prepRes = await fetch("/api/auth/prepare", {
       method:  "POST",
@@ -90,10 +92,9 @@ export function StaffLoginForm({
     });
     if (!prepRes.ok) {
       const body = (await prepRes.json().catch(() => ({}))) as { error?: string };
-      if (body.error === "email_not_found") {
-        setError("No account found for that email — ask your admin to invite you.");
-        return false;
-      }
+      // Enumeration-safe: prepare no longer returns email_not_found, so we
+      // must not tell the user whether the account exists (SEC-API-ENUM-1).
+      // Only state-independent conditions are surfaced.
       if (body.error === "rate_limited") {
         setError("Too many attempts — wait a minute before trying again.");
         return false;
@@ -239,8 +240,8 @@ export function StaffLoginForm({
             <polyline points="20 6 9 17 4 12" />
           </svg>
           <p className="text-sm leading-relaxed" style={{ color: "var(--text)" }}>
-            We sent an 8-digit code to{" "}
-            <span style={{ fontWeight: 500 }}>{email}</span>
+            If an account exists for{" "}
+            <span style={{ fontWeight: 500 }}>{email}</span>, we&apos;ve sent an 8-digit code.
           </p>
         </div>
 
