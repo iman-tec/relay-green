@@ -7,7 +7,14 @@
  * runtime can always reach Supabase, so we proxy the call through here.
  *
  * Input  : { email }
- * Output : { ok: true } on success; { error } with a 4xx/5xx on failure.
+ * Output : { ok: true } — always, for any valid email format.
+ *
+ * Account-enumeration safety (SEC-API-ENUM-1): signInWithOtp with
+ * shouldCreateUser:false errors for a non-existent / non-actionable account.
+ * Surfacing that error (as this route used to) discloses account existence
+ * just like /api/auth/prepare did. We now swallow the send outcome, log it
+ * server-side, and always return the same neutral 200. The only non-200 is
+ * a state-independent malformed-email 400.
  */
 
 import { NextResponse } from "next/server";
@@ -29,7 +36,10 @@ export async function POST(request: Request) {
   });
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
+    // Enumeration-safe: a non-existent or non-actionable account makes
+    // Supabase error here. Never surface it — log and answer neutrally so an
+    // unauth caller can't distinguish "code sent" from "no such account".
+    console.warn("[send-otp] signInWithOtp suppressed:", error.message);
   }
   return NextResponse.json({ ok: true });
 }

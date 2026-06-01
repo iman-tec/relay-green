@@ -161,14 +161,9 @@ export function SignInForm() {
           setError("Too many attempts — wait a minute before trying again.");
           return;
         }
-        if (body.error === "email_exists") {
-          setError('That email is already registered. Use "Forgot password?" instead.');
-          return;
-        }
-        if (body.error === "email_not_found") {
-          setError('No account found for that email. Use "First time signing in?" instead.');
-          return;
-        }
+        // Note: /api/auth/prepare is enumeration-safe — it never returns
+        // email_exists / email_not_found, so we must not branch on account
+        // state here (doing so would re-introduce the SEC-API-ENUM-1 oracle).
         setError(typeof body.error === "string" ? body.error : "Could not start sign-in.");
         return;
       }
@@ -429,8 +424,9 @@ export function SignInForm() {
   // ── OTP code mode ──────────────────────────────────────────────────
   return (
     <div className="flex flex-col gap-5">
-      <Toast tone="ok" title="Code sent">
-        We sent an 8-digit code to <strong className="text-[var(--text)]">{email}</strong>.
+      <Toast tone="ok" title="Check your email">
+        If an account exists for <strong className="text-[var(--text)]">{email}</strong>, we&apos;ve
+        sent an 8-digit code.
       </Toast>
 
       <form onSubmit={handleVerifySubmit} className="flex flex-col gap-4">
