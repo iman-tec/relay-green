@@ -36,9 +36,14 @@ type Props = {
   tilesPortalTarget?: HTMLElement | null;
   /** Fires when activeShareUserId crosses null ↔ non-null. */
   onShareStateChange?: (sharing: boolean) => void;
+  /** Inline (no-share) tiles fill the full width as a single equal-width row
+   *  at a fixed height, instead of the capped/centred 4:3 gallery. Used by the
+   *  engineer session view where the call pane has the whole side column and
+   *  the centred tiles leave weird empty margins. See CallSurface.tsx. */
+  wideTiles?: boolean;
 };
 
-export function CallSurfaceInner({ sessionId, role, userName, onClose, onJoined, compact = false, tilesPortalTarget = null, onShareStateChange }: Props) {
+export function CallSurfaceInner({ sessionId, role, userName, onClose, onJoined, compact = false, tilesPortalTarget = null, onShareStateChange, wideTiles = false }: Props) {
   // Share elements are hoisted here so both the local sharer
   // (startShareScreen) and remote viewer (startShareView) can target them.
   // The SDK picks canvas vs video at runtime based on WebCodecs availability;
@@ -53,7 +58,15 @@ export function CallSurfaceInner({ sessionId, role, userName, onClose, onJoined,
     shareCanvasRef, shareVideoRef,
     onShareElementChange: setShareMode,
   });
-  const [sharing, setSharing] = useState(false);
+  // Self-share state comes straight from the hook (which tracks start/stop +
+  // the browser's native-stop), so the share button toggles reliably both ways.
+  const sharing = call.selfSharing;
+  // Deduped participant count (self + others). When there's only one person in
+  // the call, the wide-tile layout lets that single tile fill the whole pane
+  // instead of sitting at the fixed short height.
+  const inlineTileCount = call.self
+    ? 1 + call.participants.filter((p) => p.userId !== call.self!.userId).length
+    : call.participants.length;
   const someoneElseSharing =
     call.activeShareUserId !== null &&
     !!call.self &&
@@ -64,14 +77,6 @@ export function CallSurfaceInner({ sessionId, role, userName, onClose, onJoined,
     const p = call.participants.find((x) => x.userId === call.activeShareUserId);
     return p?.displayName ?? "Someone";
   }, [call.activeShareUserId, call.self, call.participants]);
-
-  // When the SDK reports an active share, mirror that into local UI state so
-  // the share button reflects reality (e.g. user stops sharing from the
-  // browser's own "Stop sharing" bar).
-  useEffect(() => {
-    if (!call.self) return;
-    setSharing(call.activeShareUserId === call.self.userId);
-  }, [call.activeShareUserId, call.self]);
 
   // When the session ends naturally (host ended-for-all, network drop past
   // grace, etc), unmount the surface.
@@ -267,20 +272,34 @@ export function CallSurfaceInner({ sessionId, role, userName, onClose, onJoined,
           )}
           {call.activeShareUserId === null && (
             <div className="absolute inset-0">
-              <TileGrid
-                self={call.self}
-                participants={call.participants}
-                client={call.client}
-                forceStack={compact}
-                // Customer-side plain call: lock to side-by-side so the
-                // self-tile + engineer-tile are always both visible. The
-                // host (engineer) keeps the responsive flip because their
-                // CallSurface mounts in a thin side rail by default and a
-                // forced two-column layout there would crush tiles too
-                // small to read. The customer mounts in the main panel
-                // (52% width) where two equal columns always fit.
-                lockSideBySide={role === "guest" && !compact}
-              />
+              {wideTiles ? (
+                // Engineer session view: tiles fill the full width as one
+                // equal-width row at a fixed height — no centred-with-margins
+                // gallery, and height stays put (width-only).
+                <TileGrid
+                  self={call.self}
+                  participants={call.participants}
+                  client={call.client}
+                  forceSideBySide
+                  // Solo → fill the whole pane; 2+ → fixed-height row.
+                  tileHeightPx={inlineTileCount <= 1 ? undefined : 340}
+                />
+              ) : (
+                <TileGrid
+                  self={call.self}
+                  participants={call.participants}
+                  client={call.client}
+                  forceStack={compact}
+                  // Customer-side plain call: lock to side-by-side so the
+                  // self-tile + engineer-tile are always both visible. The
+                  // host (engineer) keeps the responsive flip because their
+                  // CallSurface mounts in a thin side rail by default and a
+                  // forced two-column layout there would crush tiles too
+                  // small to read. The customer mounts in the main panel
+                  // (52% width) where two equal columns always fit.
+                  lockSideBySide={role === "guest" && !compact}
+                />
+              )}
             </div>
           )}
         </div>

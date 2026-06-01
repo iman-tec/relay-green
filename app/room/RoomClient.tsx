@@ -1948,6 +1948,7 @@ export function RoomClient() {
                     onJoined={() => void state.markJoined()}
                     tilesPortalTarget={tilesTarget}
                     onShareStateChange={setShareActive}
+                    wideTiles
                   />
                 </div>
               </Panel>

@@ -41,6 +41,10 @@ type CallSurfaceProps = {
    *  RoomClient uses this to mount/unmount the tiles slot in the right
    *  rail so the chat fills the rail when nobody is sharing. */
   onShareStateChange?: (sharing: boolean) => void;
+  /** Inline (no-share) tiles fill the full width as one equal-width row at a
+   *  fixed height, instead of the capped/centred 4:3 gallery. Use in the
+   *  engineer session view where the call pane owns the whole side column. */
+  wideTiles?: boolean;
 };
 
 export const CallSurface = dynamic<CallSurfaceProps>(
