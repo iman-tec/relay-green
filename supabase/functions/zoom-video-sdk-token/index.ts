@@ -89,7 +89,25 @@ Deno.serve(async (req) => {
     // untouched (a supervisor on a regular session still gets 403 here).
     const isAppointmentSupervisor =
       session.is_appointment === true && session.supervisor_user_id === userId;
+
+    // ESCALATION PULL-IN: on a normal engineer↔customer session, a supervisor
+    // who acked + joined the session's escalation may also join the Zoom call
+    // (as a participant — the engineer remains host). Authorised off
+    // session_escalations, so guest_calls / the regular flow is untouched.
+    let isEscalationSupervisor = false;
     if (!isEngineer && !isCustomer && !isAppointmentSupervisor) {
+      const { data: esc } = await admin
+        .from("session_escalations")
+        .select("id")
+        .eq("session_id", session.id)
+        .eq("supervisor_user_id", userId)
+        .in("status", ["acked", "joined"])
+        .limit(1)
+        .maybeSingle();
+      isEscalationSupervisor = !!esc;
+    }
+
+    if (!isEngineer && !isCustomer && !isAppointmentSupervisor && !isEscalationSupervisor) {
       return new Response(JSON.stringify({ error: "NOT_AUTHORIZED" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
