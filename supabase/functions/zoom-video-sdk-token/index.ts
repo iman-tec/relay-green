@@ -83,19 +83,23 @@ Deno.serve(async (req) => {
 
     const isEngineer = session.claimed_by === userId;
     const isCustomer = session.customer_user_id === userId;
-    // APPOINTMENT ONLY: the owning supervisor (moderator) may host the call so
-    // a supervisor + customer can talk before/without an engineer. This branch
-    // is gated on is_appointment, so the normal engineer↔customer flow is
-    // untouched (a supervisor on a regular session still gets 403 here).
+    // The supervisor assigned to this session may join the call. pod coverage
+    // stamps guest_calls.supervisor_user_id at claim/failover (regular
+    // engineer↔customer sessions), and the appointment flow stamps it too — so
+    // this one check covers both monitoring a live session and hosting an
+    // appointment.
+    const isSessionSupervisor = session.supervisor_user_id === userId;
+    // Only the APPOINTMENT supervisor hosts (1) — there's no engineer on an
+    // appointment. A supervisor monitoring a normal session joins as a
+    // participant (0); the engineer stays host.
     const isAppointmentSupervisor =
-      session.is_appointment === true && session.supervisor_user_id === userId;
+      session.is_appointment === true && isSessionSupervisor;
 
-    // ESCALATION PULL-IN: on a normal engineer↔customer session, a supervisor
-    // who acked + joined the session's escalation may also join the Zoom call
-    // (as a participant — the engineer remains host). Authorised off
-    // session_escalations, so guest_calls / the regular flow is untouched.
+    // ESCALATION PULL-IN fallback: a supervisor who acked + joined this
+    // session's escalation but isn't the assigned coverage supervisor may also
+    // join (as a participant). Authorised off session_escalations.
     let isEscalationSupervisor = false;
-    if (!isEngineer && !isCustomer && !isAppointmentSupervisor) {
+    if (!isEngineer && !isCustomer && !isSessionSupervisor) {
       const { data: esc } = await admin
         .from("session_escalations")
         .select("id")
@@ -107,7 +111,7 @@ Deno.serve(async (req) => {
       isEscalationSupervisor = !!esc;
     }
 
-    if (!isEngineer && !isCustomer && !isAppointmentSupervisor && !isEscalationSupervisor) {
+    if (!isEngineer && !isCustomer && !isSessionSupervisor && !isEscalationSupervisor) {
       return new Response(JSON.stringify({ error: "NOT_AUTHORIZED" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
