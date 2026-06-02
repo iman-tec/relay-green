@@ -17,7 +17,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, CheckCheck } from "lucide-react";
+import { Bell, CheckCheck, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 
 type NotificationItem = {
@@ -36,20 +36,26 @@ type Payload = { items: NotificationItem[]; unread: number };
  *   GET  <endpoint>        → { items, unread }
  *   POST <endpoint>        → mark all read
  *   PATCH <endpoint>/:id   → mark one read
+ *   DELETE <endpoint>      → clear all (only used when `clearable`)
  * Defaults to the reseller inbox for back-compat. `channelKey` just needs to
  * be unique per mounted bell so two bells don't share a Realtime channel.
+ * `clearable` opts into a "Clear all" button (endpoint must support DELETE).
  */
 export function NotificationBell({
   endpoint = "/api/reseller/notifications",
   channelKey = "reseller",
+  clearable = false,
 }: {
   endpoint?: string;
   channelKey?: string;
+  clearable?: boolean;
 } = {}) {
   const [data, setData] = useState<Payload>({ items: [], unread: 0 });
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
+  const [uid, setUid] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const reload = useCallback(async () => {
     try {
@@ -64,22 +70,43 @@ export function NotificationBell({
     }
   }, [endpoint]);
 
+  // Debounce reloads so a burst of realtime events collapses into a single
+  // fetch — each fetch re-validates auth through the proxy, so coalescing
+  // matters for staying under the auth rate limit.
+  const scheduleReload = useCallback(() => {
+    if (reloadTimer.current) clearTimeout(reloadTimer.current);
+    reloadTimer.current = setTimeout(() => { void reload(); }, 1200);
+  }, [reload]);
+
   useEffect(() => { void reload(); }, [reload]);
 
-  // Realtime: any insert/update on notifications triggers a re-fetch. RLS
-  // ensures we only receive events for our own rows.
+  // Resolve the user id from the LOCAL session (no network round-trip) so we
+  // can scope the realtime subscription to just this user's rows.
+  useEffect(() => {
+    let alive = true;
+    createClient().auth.getSession()
+      .then(({ data: s }) => { if (alive) setUid(s.session?.user?.id ?? null); })
+      .catch(() => { /* leave null — falls back to unfiltered */ });
+    return () => { alive = false; };
+  }, []);
+
+  // Realtime: re-fetch (debounced) when one of OUR notifications changes. The
+  // user_id filter avoids waking this bell on every other user's notification,
+  // which otherwise fans out into an auth-request storm.
   useEffect(() => {
     const supabase = createClient();
     const channel = supabase
       .channel(`${channelKey}-notifications-bell`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "notifications" },
-        () => { void reload(); },
+        uid
+          ? { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${uid}` }
+          : { event: "*", schema: "public", table: "notifications" },
+        () => { scheduleReload(); },
       )
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
-  }, [reload, channelKey]);
+  }, [scheduleReload, channelKey, uid]);
 
   // Tab-focus refetch — covers networks that block Realtime websockets.
   useEffect(() => {
@@ -136,6 +163,16 @@ export function NotificationBell({
     }
   }, [reload, endpoint]);
 
+  const clearAll = useCallback(async () => {
+    setData({ items: [], unread: 0 }); // optimistic
+    try {
+      const res = await fetch(endpoint, { method: "DELETE" });
+      if (!res.ok) await reload();
+    } catch {
+      await reload();
+    }
+  }, [reload, endpoint]);
+
   const { items, unread } = data;
 
   return (
@@ -183,16 +220,28 @@ export function NotificationBell({
                 </span>
               )}
             </div>
-            {unread > 0 && (
-              <button
-                type="button"
-                onClick={markAll}
-                className="inline-flex items-center gap-1 text-xs transition-colors hover:underline"
-                style={{ color: "var(--text-muted)" }}
-              >
-                <CheckCheck size={12} /> Mark all read
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              {unread > 0 && (
+                <button
+                  type="button"
+                  onClick={markAll}
+                  className="inline-flex items-center gap-1 text-xs transition-colors hover:underline"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  <CheckCheck size={12} /> Mark all read
+                </button>
+              )}
+              {clearable && items.length > 0 && (
+                <button
+                  type="button"
+                  onClick={clearAll}
+                  className="inline-flex items-center gap-1 text-xs transition-colors hover:underline"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  <Trash2 size={12} /> Clear all
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="max-h-[420px] overflow-y-auto">

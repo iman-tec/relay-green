@@ -31,7 +31,7 @@ import {
   Monitor, Plus, ShieldCheck, Sparkles, Trash2,
   TrendingUp, User, Wallet, Wrench, X, Zap,
 } from "lucide-react";
-import { Button, Input, Toast, cn } from "@/app/_components/ui";
+import { Button, Toast, cn } from "@/app/_components/ui";
 import { createClient } from "@/lib/supabase/browser";
 import {
   listMyDevices, revokeDevice, getOrCreateFingerprint, type UserDevice,
@@ -93,23 +93,10 @@ type EngineerHoliday = {
   date: string;             // ISO yyyy-mm-dd
   label: string | null;
   kind: "holiday" | "vacation" | "sick" | "personal" | "other";
+  // Set when this block came from a pod-wide holiday (Super-Admin). Such rows
+  // are read-only to the engineer/supervisor — they can't delete them.
+  podId?: string | null;
 };
-
-// India 2026 gazetted holidays — fixed-date ones are accurate; lunar/
-// religious dates are approximations the engineer can refine. Best
-// effort, not legal advice.
-const INDIA_2026_HOLIDAYS: Array<{ date: string; label: string }> = [
-  { date: "2026-01-01", label: "New Year's Day" },
-  { date: "2026-01-26", label: "Republic Day" },
-  { date: "2026-03-04", label: "Holi" },
-  { date: "2026-04-03", label: "Good Friday" },
-  { date: "2026-04-14", label: "Ambedkar Jayanti" },
-  { date: "2026-05-01", label: "Labour Day" },
-  { date: "2026-08-15", label: "Independence Day" },
-  { date: "2026-10-02", label: "Gandhi Jayanti" },
-  { date: "2026-10-20", label: "Diwali" },
-  { date: "2026-12-25", label: "Christmas Day" },
-];
 
 // ── Earnings shape ────────────────────────────────────────────────────────
 type ContractType = "build" | "golive" | "maintain";
@@ -2316,6 +2303,18 @@ function truncate(s: string, n: number): string {
 // One-off date blocks layered on top of the recurring weekly windows.
 // Customer-side ScheduleEngineerModal filters slots on these dates so the
 // engineer never gets booked on a holiday they've marked.
+type LeaveRequest = {
+  id: string;
+  startDate: string;
+  endDate: string;
+  totalDays: number;
+  reason: string;
+  kind: string;
+  status: "pending" | "approved" | "rejected";
+  rejectionReason: string | null;
+  createdAt: string;
+};
+
 function HolidaysSection({
   userId, showBanner,
 }: {
@@ -2324,65 +2323,87 @@ function HolidaysSection({
 }) {
   const sbRef = useRef(createClient());
   const [holidays, setHolidays] = useState<EngineerHoliday[]>([]);
+  const [requests, setRequests] = useState<LeaveRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [draftDate, setDraftDate] = useState("");
-  const [draftLabel, setDraftLabel] = useState("");
-  const [draftKind, setDraftKind] = useState<EngineerHoliday["kind"]>("holiday");
-  const [rangeFrom, setRangeFrom] = useState("");
-  const [rangeTo, setRangeTo] = useState("");
-  const [rangeLabel, setRangeLabel] = useState("");
 
-  // Load existing holidays for this engineer.
+  // Viewer role decides who signs off (Supervisor for engineers, SuperAdmin
+  // for supervisors) — shown in the acknowledgement note.
+  const [viewerRole, setViewerRole] = useState<"engineer" | "supervisor">("engineer");
+  const approver = viewerRole === "supervisor" ? "SuperAdmin" : "Supervisor";
+
+  // ── Request Form state ─────────────────────────────────────────────────
+  const [reqFrom, setReqFrom] = useState("");
+  const [reqTo, setReqTo] = useState("");
+  const [reqReason, setReqReason] = useState("");
+  const [ack, setAck] = useState(false);
+
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
+  const totalDays = useMemo(() => {
+    if (!reqFrom || !reqTo) return 0;
+    const a = new Date(`${reqFrom}T00:00:00`).getTime();
+    const b = new Date(`${reqTo}T00:00:00`).getTime();
+    if (b < a) return 0;
+    return Math.round((b - a) / 86_400_000) + 1;
+  }, [reqFrom, reqTo]);
+
+  const inputStyle = { borderColor: "var(--border)", backgroundColor: "var(--background)", color: "var(--text)" } as const;
+
+  const loadHolidays = useCallback(async () => {
+    const sb = sbRef.current;
+    const { data, error } = await sb
+      .from("engineer_holidays")
+      .select("holiday_date, label, kind, pod_id")
+      .eq("engineer_user_id", userId)
+      .order("holiday_date", { ascending: true });
+    if (error) { showBanner({ tone: "risk", text: error.message }); return; }
+    setHolidays(
+      ((data ?? []) as Array<{ holiday_date: string; label: string | null; kind: string; pod_id: string | null }>).map((r) => ({
+        date: r.holiday_date,
+        label: r.label,
+        kind: (["holiday", "vacation", "sick", "personal", "other"].includes(r.kind)
+          ? r.kind : "holiday") as EngineerHoliday["kind"],
+        podId: r.pod_id,
+      }))
+    );
+  }, [userId, showBanner]);
+
+  const loadRequests = useCallback(async () => {
+    const sb = sbRef.current;
+    const { data, error } = await sb
+      .from("leave_requests")
+      .select("id, start_date, end_date, total_days, reason, kind, status, rejection_reason, created_at")
+      .eq("requester_user_id", userId)
+      .order("created_at", { ascending: false });
+    if (error) return; // brand-new table / RLS hiccup — don't nag the user
+    setRequests(
+      ((data ?? []) as Array<{ id: string; start_date: string; end_date: string; total_days: number; reason: string; kind: string; status: string; rejection_reason: string | null; created_at: string }>).map((r) => ({
+        id: r.id, startDate: r.start_date, endDate: r.end_date, totalDays: r.total_days,
+        reason: r.reason, kind: r.kind,
+        status: (["pending", "approved", "rejected"].includes(r.status) ? r.status : "pending") as LeaveRequest["status"],
+        rejectionReason: r.rejection_reason, createdAt: r.created_at,
+      }))
+    );
+  }, [userId]);
+
+  // Initial load: role + holidays + own requests.
   useEffect(() => {
     const sb = sbRef.current;
     let alive = true;
     void (async () => {
-      const { data, error } = await sb
-        .from("engineer_holidays")
-        .select("holiday_date, label, kind")
-        .eq("engineer_user_id", userId)
-        .order("holiday_date", { ascending: true });
+      setLoading(true);
+      const { data: roleRows } = await sb.from("user_role_names").select("role").eq("user_id", userId);
       if (!alive) return;
-      if (error) {
-        showBanner({ tone: "risk", text: error.message });
-      } else {
-        setHolidays(
-          ((data ?? []) as Array<{ holiday_date: string; label: string | null; kind: string }>).map((r) => ({
-            date: r.holiday_date,
-            label: r.label,
-            kind: (["holiday", "vacation", "sick", "personal", "other"].includes(r.kind)
-              ? r.kind : "holiday") as EngineerHoliday["kind"],
-          }))
-        );
-      }
+      const roles = (roleRows ?? []).map((r: { role: string }) => r.role);
+      setViewerRole(roles.includes("supervisor") && !roles.includes("engineer") ? "supervisor" : "engineer");
+      await Promise.all([loadHolidays(), loadRequests()]);
+      if (!alive) return;
       setLoading(false);
     })();
     return () => { alive = false; };
-  }, [userId, showBanner]);
-
-  const addOne = useCallback(async (date: string, label: string, kind: EngineerHoliday["kind"]) => {
-    if (busy || !date) return false;
-    setBusy(true);
-    try {
-      const sb = sbRef.current;
-      const { error } = await sb.rpc("add_engineer_holiday", {
-        _date: date, _label: label, _kind: kind,
-      });
-      if (error) throw new Error(error.message);
-      setHolidays((prev) => {
-        const without = prev.filter((h) => h.date !== date);
-        return [...without, { date, label: label || null, kind }]
-          .sort((a, b) => a.date.localeCompare(b.date));
-      });
-      return true;
-    } catch (err) {
-      showBanner({ tone: "risk", text: err instanceof Error ? err.message : "Couldn't add holiday." });
-      return false;
-    } finally {
-      setBusy(false);
-    }
-  }, [busy, showBanner]);
+  }, [userId, loadHolidays, loadRequests]);
 
   const removeOne = useCallback(async (date: string) => {
     if (busy) return;
@@ -2399,102 +2420,59 @@ function HolidaysSection({
     }
   }, [busy, showBanner]);
 
-  const submitDraft = async () => {
-    if (!draftDate) {
-      showBanner({ tone: "risk", text: "Pick a date first." });
-      return;
-    }
-    const ok = await addOne(draftDate, draftLabel.trim(), draftKind);
-    if (ok) {
-      setDraftDate("");
-      setDraftLabel("");
-      setDraftKind("holiday");
-      showBanner({ tone: "ok", text: "Holiday added." });
-    }
-  };
-
-  const applyIndiaPreset = useCallback(async () => {
+  const submitRequest = async () => {
     if (busy) return;
-    if (typeof window !== "undefined" && !window.confirm("Add the 10 India 2026 national holidays?")) return;
+    if (!reqFrom || !reqTo) { showBanner({ tone: "risk", text: "Pick both start and end dates." }); return; }
+    if (reqTo < reqFrom) { showBanner({ tone: "risk", text: "End date must be on or after start date." }); return; }
+    if (!reqReason.trim()) { showBanner({ tone: "risk", text: "Please specify a reason for the leave." }); return; }
+    if (!ack) { showBanner({ tone: "risk", text: "Please tick the acknowledgement before applying." }); return; }
     setBusy(true);
     try {
       const sb = sbRef.current;
-      const { error } = await sb.rpc("add_engineer_holidays_bulk", {
-        _rows: INDIA_2026_HOLIDAYS.map((h) => ({ date: h.date, label: h.label, kind: "holiday" })),
+      const { error } = await sb.rpc("submit_leave_request", {
+        _start: reqFrom, _end: reqTo, _reason: reqReason.trim(), _kind: "vacation",
       });
       if (error) throw new Error(error.message);
-      // Refresh from server so we get the final state (avoids local merge bugs).
-      const { data } = await sb
-        .from("engineer_holidays")
-        .select("holiday_date, label, kind")
-        .eq("engineer_user_id", userId)
-        .order("holiday_date", { ascending: true });
-      setHolidays(
-        ((data ?? []) as Array<{ holiday_date: string; label: string | null; kind: string }>).map((r) => ({
-          date: r.holiday_date,
-          label: r.label,
-          kind: (["holiday", "vacation", "sick", "personal", "other"].includes(r.kind)
-            ? r.kind : "holiday") as EngineerHoliday["kind"],
-        }))
-      );
-      showBanner({ tone: "ok", text: "Added India 2026 holidays." });
+      setReqFrom(""); setReqTo(""); setReqReason(""); setAck(false);
+      await loadRequests();
+      showBanner({ tone: "ok", text: `Leave request submitted — awaiting ${approver} approval.` });
     } catch (err) {
-      showBanner({ tone: "risk", text: err instanceof Error ? err.message : "Couldn't apply preset." });
-    } finally {
-      setBusy(false);
-    }
-  }, [busy, userId, showBanner]);
-
-  const applyRange = async () => {
-    if (busy) return;
-    if (!rangeFrom || !rangeTo) {
-      showBanner({ tone: "risk", text: "Pick both start and end dates." });
-      return;
-    }
-    const from = new Date(rangeFrom);
-    const to = new Date(rangeTo);
-    if (to < from) {
-      showBanner({ tone: "risk", text: "End date must be on or after start date." });
-      return;
-    }
-    const days: Array<{ date: string; label: string; kind: string }> = [];
-    const cursor = new Date(from);
-    while (cursor <= to) {
-      days.push({
-        date: cursor.toISOString().slice(0, 10),
-        label: rangeLabel.trim() || "Vacation",
-        kind: "vacation",
-      });
-      cursor.setDate(cursor.getDate() + 1);
-    }
-    if (days.length > 60) {
-      if (typeof window !== "undefined" && !window.confirm(`Block ${days.length} days? That's a lot.`)) return;
-    }
-    setBusy(true);
-    try {
-      const sb = sbRef.current;
-      const { error } = await sb.rpc("add_engineer_holidays_bulk", { _rows: days });
-      if (error) throw new Error(error.message);
-      setHolidays((prev) => {
-        const map = new Map(prev.map((h) => [h.date, h]));
-        for (const d of days) map.set(d.date, { date: d.date, label: d.label, kind: d.kind as EngineerHoliday["kind"] });
-        return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
-      });
-      setRangeFrom("");
-      setRangeTo("");
-      setRangeLabel("");
-      showBanner({ tone: "ok", text: `Blocked ${days.length} day${days.length === 1 ? "" : "s"}.` });
-    } catch (err) {
-      showBanner({ tone: "risk", text: err instanceof Error ? err.message : "Couldn't block range." });
+      const msg = err instanceof Error ? err.message : "Couldn't submit the request.";
+      showBanner({ tone: "risk", text: /DATE_IN_PAST/.test(msg) ? "Leave can only be requested for today or a future date." : msg });
     } finally {
       setBusy(false);
     }
   };
 
-  // Group by month for the list.
+  const deleteRequest = async (id: string) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const sb = sbRef.current;
+      const { error } = await sb.rpc("delete_leave_request", { _id: id });
+      if (error) throw new Error(error.message);
+      setRequests((prev) => prev.filter((r) => r.id !== id));
+    } catch (err) {
+      showBanner({ tone: "risk", text: err instanceof Error ? err.message : "Couldn't delete the request." });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Accepted leave is shown only once — as a blocked date below. Here we keep
+  // just what's still in play: pending (awaiting a decision) and rejected.
+  const visibleRequests = useMemo(
+    () => requests.filter((r) => r.status === "pending" || r.status === "rejected"),
+    [requests],
+  );
+
+  // Group blocked dates by month for the list. Pod-wide holidays (set by the
+  // Super-Admin) are excluded here — they're read-only and already render on
+  // the month calendar above; listing them here just adds undeletable clutter.
   const groups = useMemo(() => {
     const map = new Map<string, EngineerHoliday[]>();
     for (const h of holidays) {
+      if (h.podId) continue; // pod holiday — calendar-only
       const monthKey = h.date.slice(0, 7);
       const arr = map.get(monthKey) ?? [];
       arr.push(h);
@@ -2507,136 +2485,90 @@ function HolidaysSection({
     <div className="mt-4 flex flex-col gap-4 border-t pt-6" style={{ borderColor: "var(--border)" }}>
       <SectionHead
         title="Holidays & exceptions"
-        blurb="Block specific dates on top of your weekly pattern. Customers can't book you on these days."
+        blurb={`Request leave below. Nothing is blocked on your calendar until your ${approver} approves it.`}
       />
 
-      {/* Quick adders */}
+      {/* ── Request Form ──────────────────────────────────────────────── */}
       <div
-        className="grid grid-cols-1 gap-3 rounded-xl border p-4 sm:grid-cols-2"
+        className="flex flex-col gap-3 rounded-xl border p-4"
         style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)" }}
       >
-        {/* Single-day adder */}
-        <div className="flex flex-col gap-2">
-          <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-            Add one day
-          </span>
-          <div className="flex flex-wrap items-center gap-1.5">
-            <input
-              type="date"
-              value={draftDate}
-              onChange={(e) => setDraftDate(e.target.value)}
-              className="rounded-md border px-2 py-1 text-[12px] outline-none"
-              style={{ borderColor: "var(--border)", backgroundColor: "var(--background)", color: "var(--text)" }}
-            />
-            <input
-              type="text"
-              placeholder="Label (optional)"
-              value={draftLabel}
-              onChange={(e) => setDraftLabel(e.target.value)}
-              className="flex-1 rounded-md border px-2 py-1 text-[12px] outline-none min-w-[120px]"
-              style={{ borderColor: "var(--border)", backgroundColor: "var(--background)", color: "var(--text)" }}
-            />
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5">
-            <select
-              value={draftKind}
-              onChange={(e) => setDraftKind(e.target.value as EngineerHoliday["kind"])}
-              className="rounded-md border px-2 py-1 text-[12px] outline-none"
-              style={{ borderColor: "var(--border)", backgroundColor: "var(--background)", color: "var(--text)" }}
-            >
-              <option value="holiday">Public holiday</option>
-              <option value="vacation">Vacation</option>
-              <option value="sick">Sick day</option>
-              <option value="personal">Personal</option>
-              <option value="other">Other</option>
-            </select>
-            <Button
-              variant="primary"
-              size="sm"
-              iconLeft={<Plus className="size-3.5" />}
-              loading={busy}
-              onClick={() => void submitDraft()}
-            >
-              Add
-            </Button>
-          </div>
-        </div>
-
-        {/* Range adder */}
-        <div className="flex flex-col gap-2">
-          <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-            Block a vacation range
-          </span>
-          <div className="flex flex-wrap items-center gap-1.5">
-            <input
-              type="date"
-              value={rangeFrom}
-              onChange={(e) => setRangeFrom(e.target.value)}
-              className="rounded-md border px-2 py-1 text-[12px] outline-none"
-              style={{ borderColor: "var(--border)", backgroundColor: "var(--background)", color: "var(--text)" }}
-            />
-            <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>→</span>
-            <input
-              type="date"
-              value={rangeTo}
-              onChange={(e) => setRangeTo(e.target.value)}
-              className="rounded-md border px-2 py-1 text-[12px] outline-none"
-              style={{ borderColor: "var(--border)", backgroundColor: "var(--background)", color: "var(--text)" }}
-            />
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5">
-            <input
-              type="text"
-              placeholder="Label (e.g. Goa trip)"
-              value={rangeLabel}
-              onChange={(e) => setRangeLabel(e.target.value)}
-              className="flex-1 rounded-md border px-2 py-1 text-[12px] outline-none min-w-[120px]"
-              style={{ borderColor: "var(--border)", backgroundColor: "var(--background)", color: "var(--text)" }}
-            />
-            <Button
-              variant="secondary"
-              size="sm"
-              iconLeft={<Plus className="size-3.5" />}
-              loading={busy}
-              onClick={() => void applyRange()}
-            >
-              Block range
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Presets */}
-      <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
-          Preset:
+        <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+          Request Form
         </span>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => void applyIndiaPreset()}
-          className="rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--primary-soft)] disabled:opacity-50"
-          style={{
-            borderColor: "var(--border)",
-            backgroundColor: "var(--surface)",
-            color: "var(--text)",
-          }}
-        >
-          🇮🇳 India 2026 holidays ({INDIA_2026_HOLIDAYS.length})
-        </button>
+
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1 text-[11px]" style={{ color: "var(--text-muted)" }}>
+            From
+            <input type="date" min={todayStr} value={reqFrom} onChange={(e) => setReqFrom(e.target.value)}
+              onClick={(e) => { try { e.currentTarget.showPicker?.(); } catch { /* unsupported */ } }}
+              className="cursor-pointer rounded-md border px-2 py-1 text-[12px] outline-none" style={inputStyle} />
+          </label>
+          <span className="pb-1.5 text-[12px]" style={{ color: "var(--text-muted)" }}>→</span>
+          <label className="flex flex-col gap-1 text-[11px]" style={{ color: "var(--text-muted)" }}>
+            To
+            <input type="date" min={reqFrom || todayStr} value={reqTo} onChange={(e) => setReqTo(e.target.value)}
+              onClick={(e) => { try { e.currentTarget.showPicker?.(); } catch { /* unsupported */ } }}
+              className="cursor-pointer rounded-md border px-2 py-1 text-[12px] outline-none" style={inputStyle} />
+          </label>
+          <label className="flex flex-col gap-1 text-[11px]" style={{ color: "var(--text-muted)" }}>
+            Total days
+            <div className="flex h-[30px] min-w-[64px] items-center rounded-md border px-2 text-[12px] tabular-nums"
+              style={{ borderColor: "var(--border)", backgroundColor: "var(--background)", color: totalDays ? "var(--text)" : "var(--text-faint)" }}>
+              {totalDays || "—"}
+            </div>
+          </label>
+        </div>
+
+        <label className="flex flex-col gap-1 text-[11px]" style={{ color: "var(--text-muted)" }}>
+          <span>Reason <span style={{ color: "var(--risk)" }}>*</span></span>
+          <textarea value={reqReason} onChange={(e) => setReqReason(e.target.value)} rows={3}
+            placeholder="Please specify reason for leave in detail."
+            className="resize-y rounded-md border px-2 py-1.5 text-[12px] outline-none" style={inputStyle} />
+        </label>
+
+        <label className="flex items-start gap-2 text-[12px]" style={{ color: "var(--text-muted)" }}>
+          <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} className="mt-0.5 shrink-0" />
+          <span>
+            Please make sure to obtain approval from your {approver} before
+            taking any leave. Leaves arrangements that are not approved in advance may be considered unauthorized.
+          </span>
+        </label>
+
+        <div className="flex justify-end">
+          <Button variant="primary" size="sm" iconLeft={<Plus className="size-3.5" />}
+            loading={busy} disabled={!ack || !reqReason.trim()} onClick={() => void submitRequest()}>
+            Apply
+          </Button>
+        </div>
       </div>
 
-      {/* List */}
+      {/* ── Your leave requests (pending / rejected) ──────────────────── */}
+      {visibleRequests.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <span className="px-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
+            Your leave requests
+          </span>
+          {visibleRequests.map((r) => (
+            <LeaveRequestRow key={r.id} req={r} disabled={busy} onDelete={() => void deleteRequest(r.id)} />
+          ))}
+        </div>
+      )}
+
+      {/* ── Blocked dates (approved leave + holidays) ─────────────────── */}
       {loading ? (
         <div className="flex items-center gap-2 text-[12px]" style={{ color: "var(--text-muted)" }}>
-          <Loader2 className="size-3 animate-spin" /> Loading holidays…
+          <Loader2 className="size-3 animate-spin" /> Loading…
         </div>
-      ) : holidays.length === 0 ? (
+      ) : groups.length === 0 ? (
         <p className="text-[12px]" style={{ color: "var(--text-faint)" }}>
-          No holidays blocked yet. Your full weekly availability applies.
+          No blocked dates yet. Your full weekly availability applies.
         </p>
       ) : (
         <div className="flex flex-col gap-2">
+          <span className="px-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
+            Blocked dates
+          </span>
           {groups.map(([monthKey, hs]) => {
             const monthLabel = new Date(`${monthKey}-01T00:00:00`).toLocaleDateString([], {
               month: "long",
@@ -2657,6 +2589,61 @@ function HolidaysSection({
             );
           })}
         </div>
+      )}
+    </div>
+  );
+}
+
+function LeaveRequestRow({
+  req, disabled, onDelete,
+}: {
+  req: LeaveRequest;
+  disabled: boolean;
+  onDelete: () => void;
+}) {
+  const rejected = req.status === "rejected";
+  const approved = req.status === "approved";
+  // Approved leave is locked in (and blocks the calendar) — only pending /
+  // rejected requests can be deleted by the requester.
+  const deletable = !approved;
+  const statusColor = rejected ? "var(--risk)" : approved ? "var(--ok)" : "var(--warn)";
+  const statusLabel = rejected ? "Rejected" : approved ? "Accepted" : "Pending";
+  const fmt = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
+  const range = req.startDate === req.endDate ? fmt(req.startDate) : `${fmt(req.startDate)} → ${fmt(req.endDate)}`;
+  return (
+    <div className="flex items-start gap-2 rounded-lg border px-3 py-2"
+      style={{
+        borderColor: rejected ? "var(--risk)" : approved ? "var(--ok)" : "var(--border)",
+        backgroundColor: rejected
+          ? "color-mix(in srgb, var(--risk) 8%, transparent)"
+          : approved
+            ? "color-mix(in srgb, var(--ok) 8%, transparent)"
+            : "var(--surface)",
+      }}>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px]">
+          <span style={{ color: "var(--text)" }}>{range}</span>
+          <span className="rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+            style={{ backgroundColor: `color-mix(in srgb, ${statusColor} 15%, transparent)`, color: statusColor }}>
+            {statusLabel}
+          </span>
+          <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+            · {req.totalDays} day{req.totalDays === 1 ? "" : "s"}
+          </span>
+        </div>
+        <div className="truncate text-[11px]" style={{ color: "var(--text-muted)" }}>{req.reason}</div>
+        {rejected && (
+          <div className="mt-0.5 text-[11px]" style={{ color: "var(--risk)" }}>
+            Rejection reason: {req.rejectionReason || "—"}
+          </div>
+        )}
+      </div>
+      {deletable && (
+        <button type="button" onClick={onDelete} disabled={disabled} title="Delete request" aria-label="Delete request"
+          className="inline-flex size-7 shrink-0 items-center justify-center rounded-md border disabled:opacity-50"
+          style={{ borderColor: "var(--border)", color: "var(--risk)" }}>
+          <Trash2 size={12} />
+        </button>
       )}
     </div>
   );
@@ -2702,20 +2689,31 @@ function HolidayRow({
           )}
         </div>
         <div className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-          {holiday.kind}
+          {holiday.podId ? holiday.kind : "Accepted leave"}
         </div>
       </div>
-      <button
-        type="button"
-        onClick={onRemove}
-        disabled={disabled}
-        title="Remove this holiday"
-        aria-label="Remove this holiday"
-        className="inline-flex size-7 items-center justify-center rounded-md transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
-        style={{ color: "var(--text-muted)" }}
-      >
-        <Trash2 size={12} />
-      </button>
+      {holiday.podId ? (
+        // Pod-wide holiday set by the Super-Admin — read-only here.
+        <span
+          className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium"
+          style={{ background: "var(--primary-soft)", color: "var(--primary)" }}
+          title="Set by admin for your whole pod — contact your admin to change it."
+        >
+          Set by admin
+        </span>
+      ) : (
+        <button
+          type="button"
+          onClick={onRemove}
+          disabled={disabled}
+          title="Remove this holiday"
+          aria-label="Remove this holiday"
+          className="inline-flex size-7 items-center justify-center rounded-md transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+          style={{ color: "var(--text-muted)" }}
+        >
+          <Trash2 size={12} />
+        </button>
+      )}
     </div>
   );
 }
