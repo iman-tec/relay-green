@@ -12,6 +12,7 @@ import {
   PhoneIncoming,
   X,
 } from "lucide-react";
+import { NotificationBell } from "@/app/_components/admin-v2/NotificationBell";
 
 // ── Dashboard month stats ────────────────────────────────────────────────
 // Five KPIs rendered in the bottom MonthStatsRow:
@@ -564,17 +565,20 @@ function DashboardHeader({
           {dateLabel}
         </p>
       </div>
-      {queueCount > 0 && (
-        <button
-          type="button"
-          onClick={onTakeNext}
-          className="inline-flex items-center gap-1.5 rounded-md px-3.5 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
-          style={{ backgroundColor: BRAND_GREEN }}
-        >
-          <PhoneIncoming size={13} />
-          Take next walk-in · {queueCount}
-        </button>
-      )}
+      <div className="flex items-center gap-2">
+        {queueCount > 0 && (
+          <button
+            type="button"
+            onClick={onTakeNext}
+            className="inline-flex items-center gap-1.5 rounded-md px-3.5 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+            style={{ backgroundColor: BRAND_GREEN }}
+          >
+            <PhoneIncoming size={13} />
+            Take next walk-in · {queueCount}
+          </button>
+        )}
+        <NotificationBell endpoint="/api/engineer/notifications" channelKey="engineer" clearable />
+      </div>
     </header>
   );
 }

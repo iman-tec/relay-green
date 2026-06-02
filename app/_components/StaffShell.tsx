@@ -350,6 +350,22 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
     }
   }, [pathname, engineer, profilePaneOpen]);
 
+  // Close the Profile pane when the user navigates somewhere else. The pane
+  // renders INSIDE <main> in place of the page content, so without this a
+  // sidebar nav click changes the route but the pane stays mounted and the
+  // destination never appears ("clicking Dashboard/Inbox/Calendar does
+  // nothing"). We only act on a real pathname change (tracked via ref) so
+  // opening the pane from the user menu on the current page doesn't instantly
+  // close it; navigating to /settings keeps it open (the effect above).
+  const prevPathRef = useRef(pathname);
+  useEffect(() => {
+    if (prevPathRef.current === pathname) return;
+    prevPathRef.current = pathname;
+    if (pathname !== "/settings" && profilePaneOpen) {
+      setProfilePaneOpen(false);
+    }
+  }, [pathname, profilePaneOpen]);
+
   // Device tracking — registers this browser as a device and auto-revokes
   // the oldest device when the user is over the 3-device cap. Best-effort:
   // failures are logged but never block the user. Runs once per shell

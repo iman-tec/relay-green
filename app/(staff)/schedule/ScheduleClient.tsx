@@ -198,6 +198,7 @@ export function ScheduleClient() {
             </p>
           </div>
           <TeamSchedule />
+          <TeamLeaveCalendar />
         </>
       ) : (
         <div className="flex flex-col gap-6">
@@ -292,6 +293,7 @@ export function ScheduleClient() {
             </section>
           ))}
           <TeamSchedule />
+          <TeamLeaveCalendar />
         </div>
       )}
     </div>
@@ -609,6 +611,277 @@ function TeamSchedule() {
             </div>
           );
         })}
+      </div>
+    </section>
+  );
+}
+
+// ── Team leave calendar (pod engineers' leave requests) ─────────────────────
+// Pending leave requested by engineers in this supervisor's pod. The
+// supervisor may REJECT (with a reason) — never approve; final sign-off is the
+// super-admin's. A rejection flips status to 'rejected', which also drops the
+// request from the super-admin's pending inbox. Served pod-scoped by
+// GET /api/supervisor/leave-requests; rejection routes through
+// decide_leave_request(_approve=false).
+type LeaveReq = {
+  id: string;
+  engineer: string;
+  startDate: string;
+  endDate: string;
+  totalDays: number;
+  reason: string;
+  kind: string;
+  status: "pending" | "approved";
+  createdAt: string;
+};
+
+const fmtLeaveDay = (iso: string) =>
+  new Date(`${iso}T00:00:00`).toLocaleDateString([], {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+
+const monthLabel = (iso: string) =>
+  new Date(`${iso.slice(0, 7)}-01T00:00:00`).toLocaleDateString([], {
+    month: "long",
+    year: "numeric",
+  });
+
+function TeamLeaveCalendar() {
+  const [sb] = useState(() => createClient());
+  const [rows, setRows] = useState<LeaveReq[] | null>(null);
+  const [tick, setTick] = useState(0);
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const res = await fetch("/api/supervisor/leave-requests", {
+          cache: "no-store",
+        });
+        const body = (await res.json().catch(() => ({}))) as {
+          requests?: LeaveReq[];
+        };
+        if (alive) setRows(body.requests ?? []);
+      } catch {
+        if (alive) setRows([]);
+      }
+    })();
+    const id = setInterval(() => setTick((t) => t + 1), 30_000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [sb, tick]);
+
+  const reject = async (id: string) => {
+    if (!reason.trim()) {
+      setError("Please add a reason for the rejection.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const { error: e } = await sb.rpc("decide_leave_request", {
+        _id: id,
+        _approve: false,
+        _reason: reason.trim() || null,
+      });
+      if (e) throw new Error(e.message);
+      setRejectingId(null);
+      setReason("");
+      setTick((t) => t + 1);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't reject the request.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (rows === null) {
+    return (
+      <div
+        className="mt-10 flex items-center gap-2 py-6"
+        style={{ color: "var(--text-muted)" }}
+      >
+        <Loader2 className="size-4 animate-spin" />
+        <span className="text-sm">Loading team leave…</span>
+      </div>
+    );
+  }
+  // Only render once at least one pod engineer has a request to show.
+  if (rows.length === 0) return null;
+
+  const range = (r: LeaveReq) =>
+    r.startDate === r.endDate
+      ? fmtLeaveDay(r.startDate)
+      : `${fmtLeaveDay(r.startDate)} → ${fmtLeaveDay(r.endDate)}`;
+
+  // Group by the leave's start month so the supervisor reads it month-by-month.
+  const months: { key: string; label: string; items: LeaveReq[] }[] = [];
+  for (const r of rows) {
+    const key = r.startDate.slice(0, 7);
+    const last = months[months.length - 1];
+    if (last && last.key === key) last.items.push(r);
+    else months.push({ key, label: monthLabel(r.startDate), items: [r] });
+  }
+
+  return (
+    <section className="mt-10">
+      <h2
+        className="mb-1 text-[11px] font-semibold tracking-wide uppercase"
+        style={{ color: "var(--text-muted)" }}
+      >
+        Team leave calendar
+      </h2>
+      <p className="mb-3 text-[12px]" style={{ color: "var(--text-faint)" }}>
+        Leave your pod engineers have requested. Reject a pending request (with
+        a reason); once the super-admin signs off it shows as Accepted.
+      </p>
+
+      {error && (
+        <p className="mb-3 text-[12px]" style={{ color: "var(--accent-red)" }}>
+          {error}
+        </p>
+      )}
+
+      <div className="flex flex-col gap-4">
+        {months.map((m) => (
+          <div key={m.key} className="flex flex-col gap-1.5">
+            <span
+              className="px-1 text-[10px] font-semibold uppercase tracking-wider"
+              style={{ color: "var(--text-faint)" }}
+            >
+              {m.label}
+            </span>
+            <div
+              className="overflow-hidden rounded-xl border"
+              style={{ borderColor: "var(--border)", background: "var(--surface)" }}
+            >
+              {m.items.map((r) => {
+                const accepted = r.status === "approved";
+                return (
+                  <div
+                    key={r.id}
+                    className="flex flex-col gap-2 border-b px-4 py-3 last:border-b-0"
+                    style={{ borderColor: "var(--border)" }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Avatar name={r.engineer} size="sm" />
+                      <div className="min-w-0 flex-1">
+                        <div
+                          className="flex items-center gap-2 text-[13px]"
+                          style={{ color: "var(--text)" }}
+                        >
+                          <span className="truncate font-medium">{r.engineer}</span>
+                        </div>
+                        <div
+                          className="text-[12px] tabular-nums"
+                          style={{ color: "var(--text-muted)" }}
+                        >
+                          {range(r)}{" "}
+                          <span style={{ color: "var(--text-faint)" }}>
+                            · {r.totalDays} day{r.totalDays === 1 ? "" : "s"}
+                          </span>
+                        </div>
+                        <div className="text-[12px]" style={{ color: "var(--text)" }}>
+                          <span className="font-medium" style={{ color: "var(--text-muted)" }}>
+                            Reason:{" "}
+                          </span>
+                          {r.reason}
+                        </div>
+                      </div>
+                      {accepted ? (
+                        <span
+                          className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide"
+                          style={{
+                            background: "color-mix(in srgb, var(--ok) 15%, transparent)",
+                            color: "var(--ok)",
+                          }}
+                          title="Approved by the super-admin"
+                        >
+                          Accepted
+                        </span>
+                      ) : (
+                        rejectingId !== r.id && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRejectingId(r.id);
+                              setReason("");
+                            }}
+                            className="inline-flex shrink-0 items-center gap-1 rounded-full border px-3 py-1.5 text-[12px] font-medium transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
+                            style={{
+                              borderColor: "var(--border)",
+                              color: "var(--accent-red)",
+                            }}
+                          >
+                            <X size={12} /> Reject
+                          </button>
+                        )
+                      )}
+                    </div>
+
+                    {!accepted && rejectingId === r.id && (
+                      <div
+                        className="flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2"
+                        style={{
+                          borderColor: "var(--accent-red)",
+                          background:
+                            "color-mix(in srgb, var(--accent-red) 8%, transparent)",
+                        }}
+                      >
+                        <AlertTriangle size={14} style={{ color: "var(--accent-red)" }} />
+                        <input
+                          value={reason}
+                          onChange={(e) => setReason(e.target.value)}
+                          placeholder="Reason for rejection (required — shown to the engineer)"
+                          className="h-8 min-w-[160px] flex-1 rounded-md border px-2 text-[12px] outline-none"
+                          style={{
+                            borderColor: "var(--border)",
+                            background: "var(--background)",
+                            color: "var(--text)",
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void reject(r.id)}
+                          disabled={busy || !reason.trim()}
+                          className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold text-white disabled:opacity-50"
+                          style={{ background: "var(--accent-red)" }}
+                        >
+                          {busy ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : (
+                            <X size={12} />
+                          )}{" "}
+                          Confirm reject
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRejectingId(null);
+                            setReason("");
+                          }}
+                          disabled={busy}
+                          className="rounded-full px-3 py-1.5 text-[12px] font-medium"
+                          style={{ color: "var(--text-muted)" }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </div>
     </section>
   );
