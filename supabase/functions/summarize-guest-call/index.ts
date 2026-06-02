@@ -563,6 +563,22 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Keep the RAG index current (fire-and-forget). The Node indexer parses
+    // PDFs/DOCX and re-embeds this session + the project rollup. Active only
+    // when APP_URL is set (the deployed app URL); a no-op in local dev, where
+    // the backfill script handles indexing.
+    try {
+      const appUrl = Deno.env.get("APP_URL");
+      const indexSecret = Deno.env.get("RAG_INDEX_SECRET");
+      if (appUrl && indexSecret) {
+        void fetch(`${appUrl}/api/staff/index-session`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-index-secret": indexSecret },
+          body: JSON.stringify({ session_id: guest_call_id }),
+        });
+      }
+    } catch { /* best-effort */ }
+
     return new Response(JSON.stringify({ summary }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

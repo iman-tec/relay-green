@@ -10,6 +10,10 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: process.cwd(),
   },
+  // RAG document parsers (mammoth for DOCX, unpdf for PDF) are Node libs used
+  // only in the nodejs-runtime indexing routes — keep them external so Next
+  // doesn't try to bundle their native/dynamic deps for the client/edge.
+  serverExternalPackages: ["mammoth", "unpdf", "xlsx"],
   // Dev server runs on https://10.0.2.129:3000 only — both schemes whitelisted
   // (was 10.0.1.207 originally; updated for this machine's LAN IP)
   // (the http variants stay so a stray http:// link doesn't 403 the asset

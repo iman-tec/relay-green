@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { Loader2, Rocket, Wrench, X, FileText, CalendarClock, ChevronDown, CheckCircle2, MessageCircle } from "lucide-react";
+import { Loader2, Rocket, Wrench, X, FileText, CalendarClock, ChevronDown, MessageCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import { ProjectAIAssistant } from "@/app/_components/ProjectAIAssistant";
 import { useOverlayDismiss } from "@/lib/relay/useOverlayDismiss";
@@ -79,6 +79,25 @@ const CATEGORY_META: Record<Category, { label: string; fill: string; fgVar: stri
 const FILTER_ORDER: Category[] = ["appointment", "needs_bid", "in_review", "bid_sent", "accepted"];
 
 const DEFAULT_TERMS = "/legal/contracting-terms";
+
+// Compact "2d ago" / "3h ago" relative time for the row metadata column.
+function relTime(iso: string | null): string {
+  if (!iso) return "";
+  const ms = Date.now() - new Date(iso).getTime();
+  if (Number.isNaN(ms) || ms < 60_000) return "just now";
+  const m = Math.floor(ms / 60_000);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}d ago`;
+  return `${Math.floor(d / 30)}mo ago`;
+}
+
+function fmtAmount(cents: number | null): string | null {
+  if (cents == null) return null;
+  return `$${(cents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+}
 
 export function QuoteRequestsInbox() {
   const [rows, setRows] = useState<Req[]>([]);
@@ -187,55 +206,45 @@ export function QuoteRequestsInbox() {
               // accepted — the engineer can only VIEW it. They still edit while
               // it Needs bid or is In review (before a supervisor approves it).
               const readOnly = cat === "appointment" || cat === "bid_sent" || cat === "accepted";
+              const amount = fmtAmount(r.amountCents);
+              const when = relTime(r.respondedAt ?? r.createdAt);
               return (
                 <li
                   key={r.id}
-                  className="flex items-center gap-3 border-t px-4 py-3 first:border-t-0"
-                  style={{ borderColor: "var(--border)" }}
+                  className="flex items-center gap-4 px-5 py-3.5 transition-colors hover:bg-black/[0.015] dark:hover:bg-white/[0.02]"
+                  style={{ borderTop: "1px solid color-mix(in srgb, var(--border) 60%, transparent)" }}
                 >
                   <span
-                    className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg"
+                    className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg"
                     style={{ background: "var(--primary-tint)", color: "var(--primary-hover)" }}
                   >
-                    {golive ? <Rocket size={14} /> : <Wrench size={14} />}
+                    {golive ? <Rocket size={15} /> : <Wrench size={15} />}
                   </span>
+
+                  {/* Identity — grows to fill the row; everything else is a
+                      fixed-width column to its right so the queue reads like
+                      an aligned table instead of a left-clumped list. */}
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm" style={{ color: "var(--text)" }}>
+                    <div className="truncate text-sm font-medium" style={{ color: "var(--text)" }}>
                       {r.project} <span style={{ color: "var(--text-faint)" }}>· {r.customer}</span>
                     </div>
                     <div
-                      className="flex min-w-0 items-center gap-2 text-xs"
+                      className="mt-0.5 flex min-w-0 items-center gap-2 text-xs"
                       style={{ color: "var(--text-muted)" }}
                     >
                       <span className="shrink-0">{golive ? "Go-live" : "Maintain"}</span>
-                      <span
-                        className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase"
-                        style={{ background: meta.bgTint, color: meta.fgVar }}
-                      >
-                        {cat === "appointment" && <CalendarClock size={10} />}
-                        {cat === "accepted" && <CheckCircle2 size={10} />}
-                        {meta.label}
-                      </span>
-                      {/* Appointment note as a fixed-width capsule. The
-                          capsule itself never expands or shrinks so the
-                          row stays stable regardless of note length —
-                          only when the engineer clicks does the full
-                          note materialise on a separate line below.
-                          max-w pins the capsule; truncate inside hides
-                          overflow with an ellipsis so the engineer still
-                          sees a peek of the message without committing
-                          to a click. */}
+                      {/* Appointment note as a fixed-width peek capsule —
+                          truncates inline, expands to a full block on click. */}
                       {cat === "appointment" && r.appointmentNote && (
                         <button
                           type="button"
                           onClick={() => toggleNote(r.id)}
                           aria-expanded={expandedNotes.has(r.id)}
                           aria-label={expandedNotes.has(r.id) ? "Collapse customer note" : "Expand customer note"}
-                          className="inline-flex max-w-[200px] shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.05]"
+                          className="inline-flex max-w-[220px] shrink items-center gap-1 rounded-full px-2 py-0.5 text-[10px] transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.05]"
                           style={{
-                            borderColor: "color-mix(in srgb, var(--primary-hover) 35%, transparent)",
                             color: "var(--primary-hover)",
-                            background: "color-mix(in srgb, var(--primary-hover) 8%, transparent)",
+                            background: "color-mix(in srgb, var(--primary-hover) 7%, transparent)",
                           }}
                         >
                           <MessageCircle size={9} className="shrink-0" />
@@ -248,15 +257,10 @@ export function QuoteRequestsInbox() {
                         </button>
                       )}
                     </div>
-                    {/* Expanded full-text block. Only renders on click,
-                        so non-expanded rows stay the original height.
-                        Sits inside the middle column so it auto-respects
-                        the row's left/right boundaries (icon + button). */}
                     {cat === "appointment" && r.appointmentNote && expandedNotes.has(r.id) && (
                       <p
-                        className="mt-1.5 whitespace-pre-wrap break-words rounded-md border px-2 py-1.5 text-xs"
+                        className="mt-1.5 whitespace-pre-wrap break-words rounded-md px-2 py-1.5 text-xs"
                         style={{
-                          borderColor: "color-mix(in srgb, var(--primary-hover) 30%, transparent)",
                           background: "color-mix(in srgb, var(--primary-hover) 6%, transparent)",
                           color: "var(--text)",
                         }}
@@ -265,14 +269,53 @@ export function QuoteRequestsInbox() {
                       </p>
                     )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setBid(r)}
-                    className="shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold text-white"
-                    style={{ background: "var(--primary)" }}
-                  >
-                    {readOnly ? "View" : needsBid ? "Prepare bid" : "Edit bid"}
-                  </button>
+
+                  {/* Status — subtle dot + label (no heavy filled pill). */}
+                  <div className="hidden w-28 shrink-0 items-center gap-1.5 sm:flex">
+                    <span
+                      className="size-1.5 shrink-0 rounded-full"
+                      style={{ background: meta.fill }}
+                    />
+                    <span className="truncate text-[11px] font-medium" style={{ color: meta.fgVar }}>
+                      {meta.label}
+                    </span>
+                  </div>
+
+                  {/* Amount + relative time — fills the empty mid-row space. */}
+                  <div className="hidden w-24 shrink-0 flex-col items-end leading-tight md:flex">
+                    {amount && (
+                      <span className="text-sm tabular-nums" style={{ color: "var(--text)" }}>
+                        {amount}
+                      </span>
+                    )}
+                    {when && (
+                      <span className="text-[11px]" style={{ color: "var(--text-faint)" }}>
+                        {when}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Action — ghost "View" (read-only) vs solid CTA so the
+                      column isn't a wall of green. Fixed width aligns them. */}
+                  {readOnly ? (
+                    <button
+                      type="button"
+                      onClick={() => setBid(r)}
+                      className="w-24 shrink-0 rounded-md border py-1.5 text-center text-xs font-medium transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.05]"
+                      style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+                    >
+                      View
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setBid(r)}
+                      className="w-24 shrink-0 rounded-md py-1.5 text-center text-xs font-semibold text-white transition-opacity hover:opacity-90"
+                      style={{ background: "var(--primary)" }}
+                    >
+                      {needsBid ? "Prepare bid" : "Edit bid"}
+                    </button>
+                  )}
                 </li>
               );
             })}
@@ -391,7 +434,7 @@ function BidPrepModal({ req, onClose, onSent }: { req: Req; onClose: () => void;
           <label className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>Amount (EUR)
             <input value={amount} onChange={(e) => setAmount(e.target.value)} disabled={readOnly} inputMode="decimal" placeholder="5000" className="h-10 rounded-lg border px-3 text-sm disabled:opacity-70" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
           </label>
-          <label className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>Scope (what's included)
+          <label className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>Scope (what&apos;s included)
             <textarea value={scope} onChange={(e) => setScope(e.target.value)} disabled={readOnly} rows={3} className="rounded-lg border p-2 text-sm disabled:opacity-70" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
           </label>
           <div className="grid grid-cols-2 gap-3">

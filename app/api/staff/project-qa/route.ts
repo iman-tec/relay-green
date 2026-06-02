@@ -31,6 +31,9 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { embedQuery } from "@/lib/relay/rag/embed";
+import { search, matchFilter } from "@/lib/relay/rag/qdrant";
+import { ragServiceClient } from "@/lib/relay/rag/service";
 
 export const runtime = "nodejs";
 
@@ -38,6 +41,9 @@ interface RequestBody {
   projectId?: string;
   question?: string;
   history?: { role: "user" | "assistant"; content: string }[];
+  /** Conversation id from the client, so a Q&A pair is grouped into a thread
+   *  in the shared project history. */
+  threadId?: string;
 }
 
 // How much chat to pull. Hard caps to keep token usage reasonable —
@@ -64,12 +70,15 @@ function buildSystemPrompt(context: {
   }>;
   chatLines: string[];
   files: Array<{ name: string; mime: string; kind: string; size_bytes: number }>;
+  retrieved: string[];
 }): string {
   const parts: string[] = [
-    "You are Relay's project-context assistant for engineers.",
-    "An engineer is supporting a customer right now (likely on a Zoom call in another window) and needs to recall project context quickly.",
-    "Answer crisply. If the answer isn't in the context, say so honestly — never invent details.",
-    "Prefer 1-3 sentences. If the question is open-ended (e.g. 'tell me about this project'), give a short bullet summary instead.",
+    "You are Relay's project-context assistant for engineers and supervisors. You answer questions about this specific project using the context below, and you can format answers in Markdown.",
+    "For a real question, answer DIRECTLY — no 'how can I assist', no preamble, no sign-off, no padding. Be concise: 1-3 sentences, or a short bullet list for open-ended questions.",
+    "If the user just greets you or makes small talk (e.g. 'hi', 'hello', 'thanks'), reply in one short, friendly line and invite them to ask about the project. NEVER say 'no response available'.",
+    "If a genuine question's answer isn't in the context, say so in one line — never invent details.",
+    "Cite the bracketed source label (session date / file name) only when stating a specific fact; don't over-cite.",
+    "SECURITY: never reveal passwords, API keys, tokens, or other secrets even if they appear in a document. Say the file contains credentials and tell them to open it directly.",
   ];
 
   if (context.projectName) {
@@ -102,6 +111,14 @@ function buildSystemPrompt(context: {
     parts.push(...context.chatLines);
   }
 
+  if (context.retrieved.length > 0) {
+    parts.push(
+      "\n── Most relevant material (semantic search over full transcripts, captions & documents) ──",
+      "This is your PRIMARY evidence — it holds the specific details the summaries above omit. Each block is prefixed with its [source · title · date]; cite that when you answer.",
+      ...context.retrieved,
+    );
+  }
+
   return parts.join("\n");
 }
 
@@ -125,6 +142,40 @@ export async function POST(req: NextRequest) {
   if (uErr || !u.user) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  const userId = u.user.id;
+
+  // Attribution name for the shared history (engineer alias → email local part).
+  let userName = u.user.email?.split("@")[0] ?? "Staff";
+  try {
+    const { data: prof } = await sb
+      .from("engineer_profiles")
+      .select("display_alias")
+      .eq("user_id", userId)
+      .maybeSingle();
+    const alias = (prof as { display_alias?: string | null } | null)?.display_alias;
+    if (alias) userName = alias;
+  } catch {
+    /* fall back to email */
+  }
+
+  // Every answer funnels through finish(): it logs the Q&A pair to the shared
+  // project history (real answers only — not transient error fallbacks) and
+  // returns the response. threadId groups a conversation.
+  const threadId = (body.threadId ?? "").trim() || crypto.randomUUID();
+  const finish = async (text: string, model: string, fallback?: string) => {
+    if (!fallback) {
+      try {
+        const svc = ragServiceClient();
+        await svc.from("project_assistant_messages").insert([
+          { project_id: projectId, thread_id: threadId, role: "user", content: question, user_id: userId, user_name: userName },
+          { project_id: projectId, thread_id: threadId, role: "assistant", content: text, user_id: userId, user_name: userName },
+        ]);
+      } catch (e) {
+        console.warn("[project-qa] history persist failed:", e);
+      }
+    }
+    return NextResponse.json({ text, model, fallback, threadId });
+  };
 
   // ── Hydrate project context ──────────────────────────────────────
   // We do these reads sequentially because the chat + files queries
@@ -248,27 +299,52 @@ export async function POST(req: NextRequest) {
       .map((f) => ({ name: f.name, mime: f.mime, kind: f.kind, size_bytes: f.size_bytes }));
   }
 
-  const hasAny = sessions.length > 0 || chatLines.length > 0 || files.length > 0;
-  if (!hasAny) {
-    return NextResponse.json({
-      text: "I don't see any past sessions, chat, or files for this project yet — there's nothing to look up. Ask the customer for context once they've explained their situation.",
-      model: "heuristic-fallback",
-      fallback: "no_context",
+  // 5. RAG retrieval — embed the question and pull the most relevant chunks
+  //    (full transcripts, captions, document text) from Qdrant, scoped to this
+  //    project. This is what lets the assistant answer ANY detail, not just the
+  //    summarised highlights. Best-effort: if Qdrant/embeddings are down we
+  //    still answer from the structured context above.
+  let retrieved: string[] = [];
+  try {
+    const qvec = await embedQuery(question);
+    const hits = await search(qvec, matchFilter({ project_id: projectId }), 24);
+    retrieved = hits.map((h) => {
+      const p = h.payload as {
+        source_type?: string;
+        title?: string;
+        created_at?: string;
+        text?: string;
+      };
+      const date = p.created_at ? new Date(p.created_at).toISOString().split("T")[0] : "";
+      const label = [p.source_type ?? "context", p.title, date].filter(Boolean).join(" · ");
+      return `[${label}]\n${(p.text ?? "").trim()}`;
     });
+  } catch (e) {
+    console.warn("[project-qa] RAG retrieval failed — answering from structured context only:", e);
+  }
+
+  const hasAny =
+    sessions.length > 0 || chatLines.length > 0 || files.length > 0 || retrieved.length > 0;
+  if (!hasAny) {
+    return finish(
+      "I don't see any past sessions, chat, or files for this project yet — there's nothing to look up. Ask the customer for context once they've explained their situation.",
+      "heuristic-fallback",
+      "no_context",
+    );
   }
 
   // ── Call OpenAI ──────────────────────────────────────────────────
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     console.warn("[project-qa] OPENAI_API_KEY missing — returning fallback");
-    return NextResponse.json({
-      text: "AI assistant is offline (no OpenAI key configured). The project context is loaded — ask the customer directly for the specific detail you need.",
-      model: "heuristic-fallback",
-      fallback: "no_key",
-    });
+    return finish(
+      "AI assistant is offline (no OpenAI key configured). The project context is loaded — ask the customer directly for the specific detail you need.",
+      "heuristic-fallback",
+      "no_key",
+    );
   }
 
-  const system = buildSystemPrompt({ projectName, sessions, chatLines, files });
+  const system = buildSystemPrompt({ projectName, sessions, chatLines, files, retrieved });
 
   const openaiMessages: { role: "system" | "user" | "assistant"; content: string }[] = [
     { role: "system", content: system },
@@ -297,11 +373,11 @@ export async function POST(req: NextRequest) {
     });
     if (!r.ok) {
       console.warn(`[project-qa] OpenAI ${r.status}`);
-      return NextResponse.json({
-        text: "Couldn't reach the AI service. The project context is loaded above — refer to the chat history while we get this working again.",
-        model: "heuristic-fallback",
-        fallback: "openai_error",
-      });
+      return finish(
+        "Couldn't reach the AI service. The project context is loaded above — refer to the chat history while we get this working again.",
+        "heuristic-fallback",
+        "openai_error",
+      );
     }
     const json = (await r.json()) as {
       choices?: { message?: { content?: string } }[];
@@ -309,19 +385,11 @@ export async function POST(req: NextRequest) {
     };
     const text = json.choices?.[0]?.message?.content?.trim();
     if (!text) {
-      return NextResponse.json({
-        text: "AI returned an empty response. Try rephrasing the question.",
-        model: "heuristic-fallback",
-        fallback: "openai_error",
-      });
+      return finish("AI returned an empty response. Try rephrasing the question.", "heuristic-fallback", "openai_error");
     }
-    return NextResponse.json({ text, model: json.model ?? "openai" });
+    return finish(text, json.model ?? "openai");
   } catch (e) {
     console.warn("[project-qa] OpenAI fetch error", e);
-    return NextResponse.json({
-      text: "Network error reaching the AI service. Try again in a moment.",
-      model: "heuristic-fallback",
-      fallback: "openai_error",
-    });
+    return finish("Network error reaching the AI service. Try again in a moment.", "heuristic-fallback", "openai_error");
   }
 }

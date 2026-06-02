@@ -39,6 +39,7 @@ import { GEO_COOKIE, USER_COOKIE, themeForCountry } from "./lib/relay/theme";
 const STAFF_PREFIXES = [
   "/dashboard",
   "/inbox",
+  "/quotations",
   "/triage",
   "/supervise",
   "/admin",
@@ -49,6 +50,7 @@ const STAFF_PREFIXES = [
   "/settings",
   "/session-review",
   "/staff/session",
+  "/staff/project",
   "/staff/onboarding",
 ];
 

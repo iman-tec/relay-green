@@ -25,7 +25,6 @@ import { Check, ChevronLeft, ChevronRight, Folder, Loader2, PhoneIncoming, Searc
 import { useEngineerWorkspace } from "@/lib/relay/useEngineerWorkspace";
 import { useRequireEngineerProfile } from "@/lib/relay/useRequireEngineerProfile";
 import { createClient } from "@/lib/supabase/browser";
-import { QuoteRequestsInbox } from "./QuoteRequestsInbox";
 import type { GuestCall } from "@/lib/supabase/types";
 
 type ConnectRequest = {
@@ -522,22 +521,11 @@ export function InboxClient() {
           />
         )}
 
-        {/* Incoming go-live / maintenance quote requests → bid prep.
-            Locked to 45% of the column height so the section is static
-            regardless of how many bids land — internal scroll inside
-            QuoteRequestsInbox handles overflow. min-h-0 lets the inner
-            flex layout actually scroll instead of stretching the wrapper.
-            flex 0 0 enforces the basis (no grow, no shrink) so a busy
-            PersonHistory below can't squeeze it. */}
-        <div
-          className="px-4 pb-3 pt-3"
-          style={{ flex: "0 0 45%", minHeight: 0 }}
-        >
-          <QuoteRequestsInbox />
-        </div>
-
         {selectedPerson ? (
-          <PersonHistory person={selectedPerson} onOpen={(id) => router.push(`/session-review/${id}`)} />
+          <PersonHistory
+            person={selectedPerson}
+            onOpenProject={(projectId) => router.push(`/staff/project/${projectId}`)}
+          />
         ) : requests.length === 0 ? (
           <div className="flex flex-1 items-center justify-center px-6 text-center">
             <div className="flex max-w-md flex-col items-center gap-5">
@@ -766,10 +754,10 @@ type ProjectBucket = {
 };
 
 function PersonHistory({
-  person, onOpen,
+  person, onOpenProject,
 }: {
   person: Person;
-  onOpen: (sessionId: string) => void;
+  onOpenProject: (projectId: string) => void;
 }) {
   // Bucket by project. Sessions without a project fall into a single
   // "No project" group so they're not lost — but the bucket only
@@ -795,30 +783,6 @@ function PersonHistory({
     arr.sort((a, b) => b.latestAt - a.latestAt);
     return arr;
   }, [person.sessions]);
-
-  // Track which projects are expanded. Default: the most-recent project
-  // is open on first render so the engineer doesn't have to click to see
-  // anything; other projects are collapsed.
-  const [openKeys, setOpenKeys] = useState<Set<string>>(() => {
-    const s = new Set<string>();
-    if (buckets[0]) s.add(buckets[0].key);
-    return s;
-  });
-  // Keep the "newest project open by default" behaviour stable when the
-  // person changes — re-open whatever the new newest is.
-  useEffect(() => {
-    if (buckets[0]) setOpenKeys(new Set([buckets[0].key]));
-    else setOpenKeys(new Set());
-  }, [person.key, buckets]);
-
-  const toggle = useCallback((key: string) => {
-    setOpenKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }, []);
 
   return (
     <div className="flex h-full flex-col">
@@ -873,108 +837,68 @@ function PersonHistory({
       </header>
 
       <div className="hide-scrollbar flex-1 overflow-y-auto">
-        {buckets.map((b) => {
-          const open = openKeys.has(b.key);
-          return (
-            <ProjectBucketRow
-              key={b.key}
-              bucket={b}
-              open={open}
-              onToggle={() => toggle(b.key)}
-              onOpenSession={onOpen}
-            />
-          );
-        })}
+        {buckets.map((b) => (
+          <ProjectBucketRow
+            key={b.key}
+            bucket={b}
+            canOpen={b.key !== "__none__"}
+            onOpen={() => onOpenProject(b.key)}
+          />
+        ))}
       </div>
     </div>
   );
 }
 
 function ProjectBucketRow({
-  bucket, open, onToggle, onOpenSession,
+  bucket, canOpen, onOpen,
 }: {
   bucket: ProjectBucket;
-  open: boolean;
-  onToggle: () => void;
-  onOpenSession: (sessionId: string) => void;
+  canOpen: boolean;
+  onOpen: () => void;
 }) {
-  return (
-    <div className="border-b" style={{ borderColor: "var(--border)" }}>
-      {/* Project header — clickable accordion toggle */}
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        className="flex w-full items-center gap-2.5 px-5 py-2.5 text-left transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
+  // Flat, non-expanding project row. Clicking opens the project detail page
+  // (/staff/project/[id]); the "No project" bucket isn't a real project so
+  // it stays non-interactive.
+  const inner = (
+    <>
+      <Folder size={13} style={{ color: "var(--text-muted)" }} />
+      <span className="flex-1 truncate text-[13px] font-semibold" style={{ color: "var(--text)" }}>
+        {bucket.name}
+      </span>
+      <span
+        className="rounded-full px-1.5 py-0 text-[9px] font-semibold uppercase tracking-wider"
+        style={{
+          backgroundColor: "color-mix(in srgb, var(--text) 8%, transparent)",
+          color: "var(--text-muted)",
+        }}
       >
-        <ChevronRight
-          size={12}
-          style={{
-            color: "var(--text-muted)",
-            transform: open ? "rotate(90deg)" : "rotate(0deg)",
-            transition: "transform 0.15s ease",
-          }}
-        />
-        <Folder size={12} style={{ color: open ? BRAND_GREEN : "var(--text-muted)" }} />
-        <span className="flex-1 truncate text-[13px] font-semibold" style={{ color: "var(--text)" }}>
-          {bucket.name}
-        </span>
-        <span
-          className="rounded-full px-1.5 py-0 text-[9px] font-semibold uppercase tracking-wider"
-          style={{
-            backgroundColor: "color-mix(in srgb, var(--text) 8%, transparent)",
-            color: "var(--text-muted)",
-          }}
-        >
-          {bucket.sessions.length}
-        </span>
-        <span
-          className="shrink-0 text-[10px] tabular-nums"
-          style={{ color: "var(--text-faint)" }}
-        >
-          {new Date(bucket.latestAt).toLocaleDateString([], { month: "short", day: "numeric" })}
-        </span>
-      </button>
-
-      {/* Sessions under this project — only rendered when expanded so
-          collapsed groups don't pay layout cost. */}
-      {open && (
-        <ul>
-          {bucket.sessions.map((s) => {
-            const summaryTitle = (s as { ai_summary_title?: string | null }).ai_summary_title;
-            return (
-              <li key={s.id}>
-                <button
-                  type="button"
-                  onClick={() => onOpenSession(s.id)}
-                  className="flex w-full items-center justify-between gap-3 border-t px-8 py-2 text-left transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
-                  style={{ borderColor: "var(--border)" }}
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13px]" style={{ color: "var(--text)" }}>
-                      {summaryTitle ?? "Session"}
-                    </div>
-                    <div className="mt-0.5 text-[11px]" style={{ color: "var(--text-muted)" }}>
-                      <span className="lowercase">{s.status}</span>
-                      {s.duration_minutes != null && <span> · {Math.round(Number(s.duration_minutes))}m</span>}
-                      {s.agent_name && <span> · w/ {s.agent_name}</span>}
-                    </div>
-                  </div>
-                  <span
-                    className="shrink-0 text-[11px] tabular-nums"
-                    style={{ color: "var(--text-muted)" }}
-                  >
-                    {new Date(s.created_at).toLocaleString([], {
-                      month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
-                    })}
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
+        {bucket.sessions.length}
+      </span>
+      <span
+        className="shrink-0 text-[10px] tabular-nums"
+        style={{ color: "var(--text-faint)" }}
+      >
+        {new Date(bucket.latestAt).toLocaleDateString([], { month: "short", day: "numeric" })}
+      </span>
+    </>
+  );
+  if (!canOpen) {
+    return (
+      <div className="flex items-center gap-2.5 border-b px-5 py-3" style={{ borderColor: "var(--border)" }}>
+        {inner}
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="flex w-full items-center gap-2.5 border-b px-5 py-3 text-left transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
+      style={{ borderColor: "var(--border)" }}
+    >
+      {inner}
+    </button>
   );
 }
 

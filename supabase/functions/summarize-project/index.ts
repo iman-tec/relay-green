@@ -184,6 +184,20 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Keep the RAG index's project-level chunks (meta + intake) current —
+    // fire-and-forget. No-op unless APP_URL is set (deployed app).
+    try {
+      const appUrl = Deno.env.get("APP_URL");
+      const indexSecret = Deno.env.get("RAG_INDEX_SECRET");
+      if (appUrl && indexSecret) {
+        void fetch(`${appUrl}/api/staff/index-session`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-index-secret": indexSecret },
+          body: JSON.stringify({ project_id }),
+        });
+      }
+    } catch { /* best-effort */ }
+
     return new Response(JSON.stringify({ ok: true, summarized_sessions: rows.length }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

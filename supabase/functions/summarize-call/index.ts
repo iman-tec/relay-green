@@ -210,6 +210,21 @@ Deno.serve(async (req) => {
     });
     if (insErr) return json({ error: "insert_failed", detail: insErr.message }, 500);
 
+    // Keep the RAG index current (fire-and-forget) — re-embed this session +
+    // project. No-op unless APP_URL is set (deployed app); local dev uses the
+    // backfill script.
+    try {
+      const appUrl = Deno.env.get("APP_URL");
+      const indexSecret = Deno.env.get("RAG_INDEX_SECRET");
+      if (appUrl && indexSecret) {
+        void fetch(`${appUrl}/api/staff/index-session`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-index-secret": indexSecret },
+          body: JSON.stringify({ session_id: id }),
+        });
+      }
+    } catch { /* best-effort */ }
+
     return json({ ok: true, title: aiTitle });
   } catch (e) {
     return json({ error: "unexpected", detail: String(e) }, 500);

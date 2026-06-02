@@ -100,6 +100,8 @@ const NAV: Nav[] = [
   },
   // Engineer-only. People + per-customer session history + call log.
   { href: "/inbox", label: "Inbox", icon: InboxIcon, roles: [ROLE.engineer] },
+  // Engineer-only. Global quote-request / bid queue across all customers.
+  { href: "/quotations", label: "Quotation", icon: FileText, roles: [ROLE.engineer] },
   // /supervise renders the platform-wide grid for super_admin + supervisor,
   // and the org-scoped grid for enterprise + department admins — see
   // app/(staff)/supervise/page.tsx.
@@ -184,7 +186,7 @@ const NAV: Nav[] = [
 // /calendar is intentionally NOT here — it's shared by engineers AND
 // supervisors (each manages their own availability), so non-engineers must not
 // be bounced off it.
-const ENGINEER_ONLY_PATHS = ["/dashboard", "/inbox", "/staff/session"];
+const ENGINEER_ONLY_PATHS = ["/dashboard", "/inbox", "/quotations", "/staff/session"];
 
 function isEngineer(roles: readonly Role[]): boolean {
   return roles.includes(ROLE.engineer);
