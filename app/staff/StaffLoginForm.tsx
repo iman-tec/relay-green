@@ -17,7 +17,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Briefcase, Eye, ShieldCheck, Building2 } from "lucide-react";
+import { Briefcase, Eye, EyeOff, ShieldCheck, Building2 } from "lucide-react";
 
 type Mode = "password" | "otp-email" | "otp-code";
 
@@ -55,6 +55,7 @@ export function StaffLoginForm({
   const [mode, setMode]           = useState<Mode>("password");
   const [email, setEmail]         = useState(initialEmail);
   const [password, setPwd]        = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [code, setCode]           = useState("");
   const [loading, setLoading]     = useState(false);
   const [resending, setResending] = useState(false);
@@ -371,25 +372,37 @@ export function StaffLoginForm({
           <label htmlFor="password" className="text-sm font-medium" style={{ color: "var(--text)" }}>
             Password
           </label>
-          <input
-            id="password"
-            ref={passwordRef}
-            type="password"
-            required
-            autoComplete="current-password"
-            placeholder="Your password"
-            value={password}
-            onChange={(e) => setPwd(e.target.value)}
-            disabled={loading}
-            className="w-full rounded-md border px-3.5 py-2.5 text-sm outline-none transition-colors"
-            style={{
-              borderColor: "var(--border)",
-              backgroundColor: "var(--surface)",
-              color: "var(--text)",
-            }}
-            onFocus={(e) => (e.target.style.borderColor = BRAND_GREEN)}
-            onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
-          />
+          <div className="relative">
+            <input
+              id="password"
+              ref={passwordRef}
+              type={showPassword ? "text" : "password"}
+              required
+              autoComplete="current-password"
+              placeholder="Your password"
+              value={password}
+              onChange={(e) => setPwd(e.target.value)}
+              disabled={loading}
+              className="w-full rounded-md border py-2.5 pr-11 pl-3.5 text-sm outline-none transition-colors"
+              style={{
+                borderColor: "var(--border)",
+                backgroundColor: "var(--surface)",
+                color: "var(--text)",
+              }}
+              onFocus={(e) => (e.target.style.borderColor = BRAND_GREEN)}
+              onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
+            />
+            <button
+              type="button"
+              tabIndex={-1}
+              onClick={() => setShowPassword((s) => !s)}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+              aria-pressed={showPassword}
+              className="absolute top-1/2 right-2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-raised)] hover:text-[var(--text)] focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--primary)_45%,transparent)] focus-visible:outline-none"
+            >
+              {showPassword ? <EyeOff size={16} aria-hidden /> : <Eye size={16} aria-hidden />}
+            </button>
+          </div>
         </div>
 
         {error && <ErrorBanner message={error} />}
