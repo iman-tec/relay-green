@@ -6162,7 +6162,7 @@ const ScheduledSessionsBox = memo(function ScheduledSessionsBox({
     });
 
   return (
-    <div className="px-2 py-2">
+    <div className="px-2 py-1">
       <div
         className="overflow-hidden rounded-xl border"
         style={{ borderColor: "var(--border)", background: "var(--surface)" }}
@@ -6500,8 +6500,11 @@ const Sidebar = memo(function Sidebar({
   // Drag-to-resize the expanded sidebar (handle on its right edge).
   const leftResize = useResizableWidth({
     storageKey: "relay:room-left-sidebar-width",
-    def: 260,
-    min: 220,
+    // Floor raised so the brand row + project rows never cramp; this matches
+    // the comfortable width customers settle on. def ≥ min so a stored value
+    // below the floor cleanly falls back to a comfortable default.
+    def: 300,
+    min: 280,
     max: 460,
     edge: "right",
   });
@@ -7204,17 +7207,17 @@ const Sidebar = memo(function Sidebar({
           narrow sidebars. The wordmark also gets `whitespace-nowrap`
           + `shrink-0` from Wordmark.tsx so it stays atomic even
           when squeezed. */}
-      <div className="flex h-12 items-center gap-2 px-3">
+      <div className="flex h-12 min-w-0 items-center gap-1.5 px-3">
         <button
           type="button"
           onClick={onGoHome}
           title="Return to the home landing"
           aria-label="Home"
-          className="shrink-0 rounded-md transition-opacity hover:opacity-80"
+          className="min-w-0 shrink overflow-hidden rounded-md transition-opacity hover:opacity-80"
         >
           <Wordmark size="md" />
         </button>
-        <ThemeTriplet />
+        <ThemeTriplet className="shrink-0" />
         {/* Explicit Home icon — restored per user request. Sits next to
             the ThemeTriplet so the two "global affordances" (theme +
             home) cluster together. The wordmark to the left also
@@ -7492,14 +7495,17 @@ const Sidebar = memo(function Sidebar({
           separately via the per-project phone button or the top
           Connect button, both of which use the per-project metadata
           to drive engineer skill matching. */}
-      <div className="hide-scrollbar flex-1 overflow-y-auto px-2 pt-3 pb-2">
+      <div className="flex min-h-0 flex-1 flex-col px-2 pt-3 pb-2">
         {/* Projects — header + list in ONE joint box (styled like the
-            Scheduled / Contract management cards, no collapse). */}
+            Scheduled / Contract management cards, no collapse). The card
+            fills the flex region and the LIST scrolls internally, so the
+            header below stays put (no nested/outer scroll dragging it). */}
         <div
-          className="overflow-hidden rounded-xl border"
+          className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border"
           style={{ borderColor: "var(--border)", background: "var(--surface)" }}
         >
-          <div className="flex items-center gap-1.5 px-3 py-2">
+          {/* Stationary header — shrink-0 keeps it out of the scroll area. */}
+          <div className="flex shrink-0 items-center gap-1.5 px-3 py-2">
             <Folder size={12} style={{ color: "var(--primary)" }} />
             <span
               className="text-[12px] font-semibold"
@@ -7524,8 +7530,9 @@ const Sidebar = memo(function Sidebar({
               New Project
             </button>
           </div>
-          {/* The (capped, scrollable) list below the header — no divider line. */}
-          <div>
+          {/* The scrollable list below the header — the single scroll region
+              (scrollbar hidden). The static header above never moves. */}
+          <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto">
             {/* Pinned section — sessions the customer is actively working on.
             Renders BELOW the sticky header so it scrolls with the list
             (a long pin list shouldn't pin itself). Hidden when nothing is
@@ -7582,13 +7589,10 @@ const Sidebar = memo(function Sidebar({
 
               if (!isSessionView) {
                 // Default view — project accordions (unchanged behavior).
+                // No inner height cap: the parent body owns the single scroll,
+                // so the header stays fixed and there's no nested scrollbar.
                 return projectGroups.length > 0 ? (
-                  // Cap the project list to ~5 rows; the rest scroll inside with a
-                  // slim visible scrollbar.
-                  <div
-                    className="[scrollbar-width:thin] overflow-x-hidden overflow-y-auto"
-                    style={{ maxHeight: "12rem" }}
-                  >
+                  <div className="overflow-x-hidden">
                     {projectGroups.map((group) => (
                       <ProjectAccordion
                         key={group.key}
@@ -7731,7 +7735,7 @@ const Sidebar = memo(function Sidebar({
       {/* Contract management — bids the team sent back (go-live / maintenance).
           Sits above the quote shortcuts; renders nothing until a quote exists. */}
       {!employment?.isEmployee && (
-        <div className="px-2 py-2 empty:hidden">
+        <div className="px-2 py-1 empty:hidden">
           <ContractAndAppointments
             contractsOpen={openSection === "contracts"}
             onContractsToggle={() => toggleSection("contracts")}

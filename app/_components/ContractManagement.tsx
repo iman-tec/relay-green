@@ -25,6 +25,8 @@ import {
   ShieldCheck,
   CalendarClock,
   ChevronDown,
+  Trash2,
+  ThumbsDown,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import { useOverlayDismiss } from "@/lib/relay/useOverlayDismiss";
@@ -66,6 +68,9 @@ export function ContractManagement({
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [projNames, setProjNames] = useState<Record<string, string>>({});
   const [open, setOpen] = useState<Quote | null>(null);
+  // When a row's trash icon opens the viewer, jump straight to the delete
+  // panel (with its reason pills + note) instead of the estimate actions.
+  const [openInDelete, setOpenInDelete] = useState(false);
 
   const load = useCallback(async () => {
     const { data: u } = await sb.auth.getUser();
@@ -93,6 +98,28 @@ export function ContractManagement({
     setProjNames(m);
     setQuotes(rows);
   }, [sb]);
+
+  // Seamless delete: drop the row + close the viewer immediately (optimistic),
+  // then fire the request. On failure we re-sync so the row reappears intact.
+  // Active contracts are guarded server-side and never expose a delete path.
+  const deleteQuote = useCallback(
+    async (id: string, reason: string) => {
+      setQuotes((qs) => qs.filter((x) => x.id !== id));
+      setOpen(null);
+      setOpenInDelete(false);
+      try {
+        const res = await fetch("/api/contract/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ quoteId: id, reason }),
+        });
+        if (!res.ok) throw new Error("delete_failed");
+      } catch {
+        void load();
+      }
+    },
+    [load]
+  );
 
   useEffect(() => {
     void load();
@@ -183,16 +210,25 @@ export function ContractManagement({
           {quotes.map((q) => {
             const golive = q.kind === "golive";
             const fresh = q.status === "quoted" && !q.customer_viewed_at;
+            // Active contracts can't be deleted — they're a live obligation
+            // (guarded server-side too). Every other state gets the trash.
+            const deletable = q.status !== "committed";
             return (
-              <li key={q.id}>
+              <li
+                key={q.id}
+                className="group/bid relative border-t first:border-t-0"
+                style={{ borderColor: "var(--border)" }}
+              >
                 <button
                   type="button"
-                  onClick={() => setOpen(q)}
+                  onClick={() => {
+                    setOpenInDelete(false);
+                    setOpen(q);
+                  }}
                   disabled={
                     q.status === "pending" || q.status === "pending_review"
                   }
-                  className="flex w-full items-center gap-2 border-t px-3 py-1.5 text-left transition-colors first:border-t-0 hover:bg-black/[0.03] disabled:cursor-default dark:hover:bg-white/[0.03]"
-                  style={{ borderColor: "var(--border)" }}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 pr-9 text-left transition-colors hover:bg-black/[0.03] disabled:cursor-default dark:hover:bg-white/[0.03]"
                 >
                   <span
                     className="inline-flex size-5 shrink-0 items-center justify-center rounded-md"
@@ -236,6 +272,31 @@ export function ContractManagement({
                     <ShieldCheck size={12} style={{ color: "var(--ok)" }} />
                   )}
                 </button>
+
+                {/* Quick delete — hover-revealed trash that opens the bid
+                    viewer straight onto its delete panel (reason pills + note),
+                    so every delete is captured the same way. Sits in the
+                    button's reserved right padding (pr-9) so it never collides
+                    with the fresh-dot / active badge. Hidden for live
+                    contracts. */}
+                {deletable && (
+                  <div className="absolute inset-y-0 right-1.5 flex items-center">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOpenInDelete(true);
+                        setOpen(q);
+                      }}
+                      title="Delete bid"
+                      aria-label="Delete bid"
+                      className="inline-flex size-6 items-center justify-center rounded-md opacity-0 transition-all group-hover/bid:opacity-100 hover:bg-black/5 hover:text-[var(--risk)] focus-visible:opacity-100 dark:hover:bg-white/10"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                )}
               </li>
             );
           })}
@@ -245,7 +306,12 @@ export function ContractManagement({
         <BidViewer
           quote={open}
           projectName={projNames[open.project_id] ?? "Project"}
-          onClose={() => setOpen(null)}
+          initialDelete={openInDelete}
+          onDelete={deleteQuote}
+          onClose={() => {
+            setOpen(null);
+            setOpenInDelete(false);
+          }}
           onChanged={() => {
             void load();
           }}
@@ -273,14 +339,24 @@ function statusLabel(s: string): string {
               : s;
 }
 
+// Quick-pick reasons that pre-fill the delete note (the box stays editable).
+// Mirrors the appointment-cancel pattern so the two flows feel the same.
+const DELETE_REASONS = ["No longer needed", "Created by mistake"];
+
 function BidViewer({
   quote,
   projectName,
+  initialDelete = false,
+  onDelete,
   onClose,
   onChanged,
 }: {
   quote: Quote;
   projectName: string;
+  /** Open straight onto the delete panel (set when the row trash launched us). */
+  initialDelete?: boolean;
+  /** Parent-owned optimistic delete: drops the row + closes us immediately. */
+  onDelete: (id: string, reason: string) => void;
   onClose: () => void;
   onChanged: () => void;
 }) {
@@ -289,6 +365,16 @@ function BidViewer({
   const [accepting, setAccepting] = useState(false);
   const [acceptErr, setAcceptErr] = useState<string | null>(null);
   const [committed, setCommitted] = useState(quote.status === "committed");
+  const [declined, setDeclined] = useState(quote.status === "declined");
+  // Reject (decline) — a low-friction confirm that swaps the action row into
+  // Keep / Decline, styled like the Accept + Appointment buttons.
+  const [confirmDecline, setConfirmDecline] = useState(false);
+  const [declining, setDeclining] = useState(false);
+  // Delete — a focused confirm panel (reason pills + required note). When open
+  // it replaces the estimate body so there's one unambiguous action. Opened
+  // immediately when the row trash launched the viewer.
+  const [showDelete, setShowDelete] = useState(initialDelete);
+  const [deleteReason, setDeleteReason] = useState("");
   const [booking, setBooking] = useState<{
     id: string;
     slotStart: string;
@@ -361,6 +447,43 @@ function BidViewer({
     }
   };
 
+  // Reject the bid — records 'declined' + the optional reason. The team can
+  // re-bid later; the customer can also delete it outright (handleDelete).
+  const handleDecline = async () => {
+    if (declining) return;
+    setDeclining(true);
+    setAcceptErr(null);
+    try {
+      const res = await fetch("/api/contract/decline", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quoteId: quote.id }),
+      });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(j.error ?? "Couldn't decline the estimate.");
+      }
+      setDeclined(true);
+      setConfirmDecline(false);
+      onChanged();
+    } catch (e) {
+      setAcceptErr(
+        e instanceof Error ? e.message : "Couldn't decline the estimate."
+      );
+    } finally {
+      setDeclining(false);
+    }
+  };
+
+  // Delete the request. A reason is required (button is disabled until then).
+  // The parent removes the row + closes us instantly and fires the request in
+  // the background, so deletion feels seamless and can't half-complete here.
+  const handleDelete = () => {
+    const reason = deleteReason.trim();
+    if (!reason) return;
+    onDelete(quote.id, reason);
+  };
+
   return (
     <>
       <div
@@ -394,9 +517,25 @@ function BidViewer({
             <p className="text-xs" style={{ color: "var(--text-muted)" }}>
               {committed
                 ? "Contract active — work is underway."
-                : "Review your estimate and the terms, then commit."}
+                : declined
+                  ? "You declined this estimate."
+                  : "Review your estimate and the terms, then commit."}
             </p>
           </div>
+          {/* Delete request — removes the bid from your list. Hidden once a
+              contract is active (a live obligation can't be deleted). */}
+          {!committed && (
+            <button
+              type="button"
+              onClick={() => setShowDelete((v) => !v)}
+              aria-label="Delete request"
+              title="Delete request"
+              className="rounded-md p-1 transition-colors hover:bg-black/5 hover:text-[var(--risk)] dark:hover:bg-white/10"
+              style={{ color: "var(--text-muted)" }}
+            >
+              <Trash2 size={15} />
+            </button>
+          )}
           <button
             type="button"
             onClick={onClose}
@@ -407,142 +546,330 @@ function BidViewer({
           </button>
         </div>
 
-        {/* PDF 1 — the one-page estimate (printable). */}
-        <div
-          id="relay-estimate"
-          className="rounded-xl border p-4"
-          style={{ borderColor: "var(--border)" }}
-        >
-          <div className="flex items-center justify-between">
-            <span
-              className="text-[11px] font-semibold tracking-wide uppercase"
-              style={{ color: "var(--text-muted)" }}
-            >
-              Estimate
-            </span>
-            <button
-              type="button"
-              onClick={() => window.print()}
-              className="inline-flex items-center gap-1 text-[11px]"
-              style={{ color: "var(--text-muted)" }}
-            >
-              <Printer size={12} /> Print / PDF
-            </button>
-          </div>
+        {/* Delete confirm panel — the single, focused delete action. When
+            open it REPLACES the estimate body below, so there's no competing
+            Accept/Decline button to muddy the choice. A reason is required:
+            pick a pill or type one; Delete stays disabled until then. */}
+        {showDelete && !committed ? (
           <div
-            className="mt-2 font-serif text-3xl tabular-nums"
-            style={{ color: "var(--text)" }}
-          >
-            {eur(amount)}
-          </div>
-          {quote.bid_scope && (
-            <p className="mt-3 text-sm" style={{ color: "var(--text)" }}>
-              <span className="font-medium">Scope: </span>
-              {quote.bid_scope}
-            </p>
-          )}
-          {quote.bid_timeline && (
-            <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
-              <span className="font-medium" style={{ color: "var(--text)" }}>
-                Timeline:{" "}
-              </span>
-              {quote.bid_timeline}
-            </p>
-          )}
-          {quote.bid_validity_until && (
-            <p className="mt-1 text-xs" style={{ color: "var(--text-faint)" }}>
-              Valid until{" "}
-              {new Date(quote.bid_validity_until).toLocaleDateString()}
-            </p>
-          )}
-        </div>
-
-        {/* PDF 2 — general T&C. */}
-        <a
-          href={quote.terms_url || "/legal/contracting-terms"}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-2 rounded-xl border px-4 py-3 text-sm transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
-          style={{ borderColor: "var(--border)", color: "var(--text)" }}
-        >
-          <FileText size={15} style={{ color: "var(--text-muted)" }} />
-          <span className="flex-1">General Terms &amp; Conditions</span>
-          <ExternalLink size={13} style={{ color: "var(--text-muted)" }} />
-        </a>
-
-        {committed ? (
-          <div
-            className="flex items-center justify-center gap-2 rounded-xl border py-3 text-sm font-medium"
+            className="flex flex-col gap-2 rounded-xl border px-3 py-2.5"
             style={{
-              borderColor: "var(--ok)",
-              background: "color-mix(in srgb, var(--ok) 8%, transparent)",
-              color: "var(--ok)",
+              borderColor: "var(--risk)",
+              background: "color-mix(in srgb, var(--risk) 7%, transparent)",
             }}
           >
-            <ShieldCheck size={16} /> Estimate accepted — your engineer is on
-            it.
-          </div>
-        ) : (
-          // Two actions: schedule an appointment with the supervisor to talk it
-          // through, or accept the estimate. No online payment step — accepting
-          // commits the contract and the team arranges billing.
-          <div className="flex flex-col gap-2">
-            <div className="flex gap-2">
+            <span className="text-[12.5px]" style={{ color: "var(--text)" }}>
+              Delete this request? This removes it from your list for good.
+            </span>
+            <span
+              className="text-[10px] font-semibold tracking-wider uppercase"
+              style={{ color: "var(--text-muted)" }}
+            >
+              Reason for deleting{" "}
+              <span style={{ color: "var(--risk)" }}>*</span>
+            </span>
+            <div className="flex flex-wrap gap-1">
+              {DELETE_REASONS.map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => setDeleteReason(r)}
+                  className="rounded-full border px-2 py-0.5 text-[11px] transition-colors"
+                  style={{
+                    borderColor:
+                      deleteReason === r ? "var(--risk)" : "var(--border)",
+                    color:
+                      deleteReason === r ? "var(--risk)" : "var(--text-muted)",
+                    background:
+                      deleteReason === r
+                        ? "color-mix(in srgb, var(--risk) 12%, transparent)"
+                        : "transparent",
+                  }}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+            <textarea
+              value={deleteReason}
+              onChange={(e) => setDeleteReason(e.target.value)}
+              rows={2}
+              placeholder="Tell us why you're deleting this (required)…"
+              className="w-full resize-none rounded-lg border px-2.5 py-1.5 text-[12px] outline-none"
+              style={{
+                borderColor: "var(--border)",
+                background: "var(--background)",
+                color: "var(--text)",
+              }}
+            />
+            <div className="flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setAppt(true)}
-                disabled={accepting}
-                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full border px-4 py-2 text-[13px] font-medium disabled:opacity-50"
-                style={{ borderColor: "var(--border)", color: "var(--text)" }}
+                onClick={() => setShowDelete(false)}
+                className="rounded-full px-3 py-1.5 text-[12px] font-medium"
+                style={{ color: "var(--text-muted)" }}
               >
-                <CalendarClock size={14} />{" "}
-                {booking ? "Change appointment" : "Ask for appointment"}
+                Keep
               </button>
               <button
                 type="button"
-                onClick={() => void handleAccept()}
-                disabled={accepting}
-                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50"
-                style={{ background: "var(--primary)" }}
+                onClick={handleDelete}
+                disabled={!deleteReason.trim()}
+                title={
+                  deleteReason.trim()
+                    ? "Delete this request"
+                    : "Add a reason first"
+                }
+                className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+                style={{ background: "var(--risk)" }}
               >
-                {accepting ? (
-                  <Loader2 size={14} className="animate-spin" />
-                ) : (
-                  <Check size={14} />
-                )}{" "}
-                Accept estimate
+                <Trash2 size={12} />
+                Delete
               </button>
             </div>
-            {acceptErr && (
-              <p
-                className="text-center text-[12px]"
-                style={{ color: "var(--risk)" }}
-              >
-                {acceptErr}
-              </p>
-            )}
           </div>
+        ) : (
+          <>
+            {/* ── estimate body (hidden while the delete panel is open) ── */}
+
+            {/* PDF 1 — the one-page estimate (printable). */}
+            <div
+              id="relay-estimate"
+              className="rounded-xl border p-4"
+              style={{ borderColor: "var(--border)" }}
+            >
+              <div className="flex items-center justify-between">
+                <span
+                  className="text-[11px] font-semibold tracking-wide uppercase"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  Estimate
+                </span>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="inline-flex items-center gap-1 text-[11px]"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  <Printer size={12} /> Print / PDF
+                </button>
+              </div>
+              <div
+                className="mt-2 font-serif text-3xl tabular-nums"
+                style={{ color: "var(--text)" }}
+              >
+                {eur(amount)}
+              </div>
+              {quote.bid_scope && (
+                <p className="mt-3 text-sm" style={{ color: "var(--text)" }}>
+                  <span className="font-medium">Scope: </span>
+                  {quote.bid_scope}
+                </p>
+              )}
+              {quote.bid_timeline && (
+                <p
+                  className="mt-1 text-sm"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  <span
+                    className="font-medium"
+                    style={{ color: "var(--text)" }}
+                  >
+                    Timeline:{" "}
+                  </span>
+                  {quote.bid_timeline}
+                </p>
+              )}
+              {quote.bid_validity_until && (
+                <p
+                  className="mt-1 text-xs"
+                  style={{ color: "var(--text-faint)" }}
+                >
+                  Valid until{" "}
+                  {new Date(quote.bid_validity_until).toLocaleDateString()}
+                </p>
+              )}
+            </div>
+
+            {/* PDF 2 — general T&C. */}
+            <a
+              href={quote.terms_url || "/legal/contracting-terms"}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 rounded-xl border px-4 py-3 text-sm transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
+              style={{ borderColor: "var(--border)", color: "var(--text)" }}
+            >
+              <FileText size={15} style={{ color: "var(--text-muted)" }} />
+              <span className="flex-1">General Terms &amp; Conditions</span>
+              <ExternalLink size={13} style={{ color: "var(--text-muted)" }} />
+            </a>
+
+            {committed ? (
+              <div
+                className="flex items-center justify-center gap-2 rounded-xl border py-3 text-sm font-medium"
+                style={{
+                  borderColor: "var(--ok)",
+                  background: "color-mix(in srgb, var(--ok) 8%, transparent)",
+                  color: "var(--ok)",
+                }}
+              >
+                <ShieldCheck size={16} /> Estimate accepted — your engineer is
+                on it.
+              </div>
+            ) : declined ? (
+              // Terminal: the customer rejected this estimate. The team can send a
+              // revised bid; meanwhile the request can be removed via the header
+              // trash. We still show the accept option so a change of heart is one
+              // click away.
+              <div className="flex flex-col gap-2">
+                <div
+                  className="flex items-center justify-center gap-2 rounded-xl border py-3 text-[13px] font-medium"
+                  style={{
+                    borderColor: "var(--border)",
+                    background:
+                      "color-mix(in srgb, var(--risk) 6%, transparent)",
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  <ThumbsDown size={15} /> You declined this estimate.
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleAccept()}
+                  disabled={accepting}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50"
+                  style={{ background: "var(--primary)" }}
+                >
+                  {accepting ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Check size={14} />
+                  )}{" "}
+                  Changed your mind? Accept estimate
+                </button>
+                {acceptErr && (
+                  <p
+                    className="text-center text-[12px]"
+                    style={{ color: "var(--risk)" }}
+                  >
+                    {acceptErr}
+                  </p>
+                )}
+              </div>
+            ) : (
+              // Three paths: talk it through (appointment), accept, or reject the
+              // estimate. No online payment step — accepting commits the contract
+              // and the team arranges billing.
+              <div className="flex flex-col gap-2">
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAppt(true)}
+                    disabled={accepting || declining}
+                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full border px-4 py-2 text-[13px] font-medium disabled:opacity-50"
+                    style={{
+                      borderColor: "var(--border)",
+                      color: "var(--text)",
+                    }}
+                  >
+                    <CalendarClock size={14} />{" "}
+                    {booking ? "Change appointment" : "Ask for appointment"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleAccept()}
+                    disabled={accepting || declining}
+                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50"
+                    style={{ background: "var(--primary)" }}
+                  >
+                    {accepting ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <Check size={14} />
+                    )}{" "}
+                    Accept estimate
+                  </button>
+                </div>
+
+                {/* Reject — a full-width pill consistent with the Accept +
+                Appointment buttons. Tapping it swaps in a Keep / Decline
+                confirm (same pill styling) so a misclick can't decline. */}
+                {confirmDecline ? (
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDecline(false)}
+                      disabled={declining}
+                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full border px-4 py-2 text-[13px] font-medium disabled:opacity-50"
+                      style={{
+                        borderColor: "var(--border)",
+                        color: "var(--text)",
+                      }}
+                    >
+                      Keep
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleDecline()}
+                      disabled={declining}
+                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50"
+                      style={{ background: "var(--risk)" }}
+                    >
+                      {declining ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <ThumbsDown size={14} />
+                      )}{" "}
+                      Decline estimate
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDecline(true)}
+                    disabled={accepting}
+                    className="inline-flex w-full items-center justify-center gap-1.5 rounded-full border px-4 py-2 text-[13px] font-medium transition-colors disabled:opacity-50"
+                    style={{ borderColor: "var(--risk)", color: "var(--risk)" }}
+                  >
+                    <ThumbsDown size={14} /> Decline estimate
+                  </button>
+                )}
+
+                {acceptErr && (
+                  <p
+                    className="text-center text-[12px]"
+                    style={{ color: "var(--risk)" }}
+                  >
+                    {acceptErr}
+                  </p>
+                )}
+              </div>
+            )}
+            {booking && !committed && !declined ? (
+              <p
+                className="text-center text-[11px]"
+                style={{ color: "var(--ok)" }}
+              >
+                Appointment booked for{" "}
+                {new Date(booking.slotStart).toLocaleString([], {
+                  weekday: "short",
+                  month: "short",
+                  day: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                })}{" "}
+                — see you then.
+              </p>
+            ) : quote.appointment_requested_at && !committed && !declined ? (
+              <p
+                className="text-center text-[11px]"
+                style={{ color: "var(--text-faint)" }}
+              >
+                Appointment requested — the team will reach out.
+              </p>
+            ) : null}
+          </>
         )}
-        {booking && !committed ? (
-          <p className="text-center text-[11px]" style={{ color: "var(--ok)" }}>
-            Appointment booked for{" "}
-            {new Date(booking.slotStart).toLocaleString([], {
-              weekday: "short",
-              month: "short",
-              day: "numeric",
-              hour: "numeric",
-              minute: "2-digit",
-            })}{" "}
-            — see you then.
-          </p>
-        ) : quote.appointment_requested_at && !committed ? (
-          <p
-            className="text-center text-[11px]"
-            style={{ color: "var(--text-faint)" }}
-          >
-            Appointment requested — the team will reach out.
-          </p>
-        ) : null}
       </div>
 
       {appt && !committed && (

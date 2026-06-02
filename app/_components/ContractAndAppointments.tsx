@@ -210,7 +210,7 @@ export function ContractAndAppointments({
       <ContractManagement isOpen={contractsOpen} onToggle={onContractsToggle} />
 
       <section
-        className="mt-4 overflow-hidden rounded-xl border"
+        className="mt-2 overflow-hidden rounded-xl border"
         style={{ borderColor: "var(--border)", background: "var(--surface)" }}
       >
         <button

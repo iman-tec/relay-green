@@ -10,26 +10,45 @@
  *       live          → Zoom (centre)  |  chat (right)
  *       ended         → chat (centre, locked)  |  summary + chat-history (right, pill tabs)
  *
- * No global nav inside the room. After end_session → redirect to /inbox
- * (the post-call landing screen with recent calls + take-next).
+ * No global nav inside the room. After end_session → the engineer is sent to
+ * that session's review page (/session-review/[id]); supervisor monitors go
+ * back to /inbox.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useOverlayDismiss } from "@/lib/relay/useOverlayDismiss";
 import Link from "next/link";
+import { PanelGroup, Panel, PanelResizeHandle } from "react-resizable-panels";
 import {
-  PanelGroup, Panel, PanelResizeHandle,
-} from "react-resizable-panels";
-import {
-  Send, Video, PhoneOff, Loader2, ArrowLeft, RotateCw, Sparkles, Lock, Eye, LogOut,
-  PanelLeftOpen, PanelLeftClose, AlertTriangle, BookOpen, ChevronRight, Check,
-  Download, LifeBuoy, X, MessageSquare,
+  Send,
+  Video,
+  PhoneOff,
+  Loader2,
+  ArrowLeft,
+  RotateCw,
+  Sparkles,
+  Lock,
+  Eye,
+  LogOut,
+  PanelLeftOpen,
+  PanelLeftClose,
+  AlertTriangle,
+  BookOpen,
+  ChevronRight,
+  Check,
+  Download,
+  LifeBuoy,
+  X,
+  MessageSquare,
 } from "lucide-react";
 import { FloatingDock } from "@/app/_components/FloatingDock";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { MeetingChatEntry } from "@/app/_components/MeetingChatEntry";
-import { MeetingSummaryEntry, isAiSummaryMessageBody } from "@/app/_components/MeetingSummaryEntry";
+import {
+  MeetingSummaryEntry,
+  isAiSummaryMessageBody,
+} from "@/app/_components/MeetingSummaryEntry";
 import { ChatComposer } from "@/app/_components/ChatComposer";
 import { EngineerAiAsk } from "@/app/_components/EngineerAiAsk";
 import { ProjectAIAssistant } from "@/app/_components/ProjectAIAssistant";
@@ -37,29 +56,44 @@ import { MessageAttachments } from "@/app/_components/MessageAttachments";
 import { EditableSummary } from "@/app/_components/EditableSummary";
 import { createClient } from "@/lib/supabase/browser";
 import { useEngineerSession } from "@/lib/relay/useEngineerSession";
-import { useIsSupervisor, isSupervisorOnlyMessage } from "@/lib/relay/useIsSupervisor";
+import {
+  useIsSupervisor,
+  isSupervisorOnlyMessage,
+} from "@/lib/relay/useIsSupervisor";
 import { useSessionTimer } from "@/lib/relay/useSessionTimer";
 import { humanState } from "@/lib/relay/session-status";
-import { LaunchCallProvider, useLaunchCall, isVideoSdkEnabled } from "@/lib/video/LaunchCallContext";
+import {
+  LaunchCallProvider,
+  useLaunchCall,
+  isVideoSdkEnabled,
+} from "@/lib/video/LaunchCallContext";
 import { CallSurface } from "@/app/_components/call/CallSurface";
-import type { GuestCall, GuestMessage, SessionStatus, Urgency } from "@/lib/supabase/types";
+import type {
+  GuestCall,
+  GuestMessage,
+  SessionStatus,
+  Urgency,
+} from "@/lib/supabase/types";
 
-const BRAND_GREEN        = "#3f5c2e";
-const BRAND_GREEN_SOFT   = "rgba(63, 92, 46, 0.12)";
+const BRAND_GREEN = "#3f5c2e";
+const BRAND_GREEN_SOFT = "rgba(63, 92, 46, 0.12)";
 const BRAND_GREEN_BORDER = "rgba(63, 92, 46, 0.32)";
-const URGENT_AMBER       = "#d4a017";
-const URGENT_AMBER_SOFT  = "rgba(212, 160, 23, 0.14)";
-const CRIT_RED           = "#8b1a1a";
-const CRIT_RED_SOFT      = "rgba(139, 26, 26, 0.18)";
+const URGENT_AMBER = "#d4a017";
+const URGENT_AMBER_SOFT = "rgba(212, 160, 23, 0.14)";
+const CRIT_RED = "#8b1a1a";
+const CRIT_RED_SOFT = "rgba(139, 26, 26, 0.18)";
 
 // ── Main entry ─────────────────────────────────────────────────────────────
 export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
   const router = useRouter();
-  const state  = useEngineerSession(sessionId);
+  const state = useEngineerSession(sessionId);
   // Anchor the engineer's elapsed-time display on assigned_at — when they
   // accepted and the session/chat began. Matches the customer view and the
   // server billing anchor; independent of the Zoom call.
-  const timer  = useSessionTimer(state.session?.assigned_at ?? state.session?.joined_at ?? null, state.session?.free_minutes ?? 10);
+  const timer = useSessionTimer(
+    state.session?.assigned_at ?? state.session?.joined_at ?? null,
+    state.session?.free_minutes ?? 10
+  );
   const [meEmail, setMeEmail] = useState<string>("");
   // Viewer role gate. Anyone the useIsSupervisor hook recognises as a
   // supervisor-tier viewer (supervisor / super_admin per the new taxonomy)
@@ -121,7 +155,10 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
 
   // Reset 'started' when session changes or ends
   useEffect(() => {
-    if (state.session?.status === "ended" || state.session?.status === "queued") {
+    if (
+      state.session?.status === "ended" ||
+      state.session?.status === "queued"
+    ) {
       setStarted(false);
     }
   }, [state.session?.id, state.session?.status]);
@@ -149,9 +186,15 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
     void (async () => {
       try {
         const sb = createClient();
-        const { data, error } = await sb.rpc("engineer_fetch_customer_draft", { _session_id: s.id });
+        const { data, error } = await sb.rpc("engineer_fetch_customer_draft", {
+          _session_id: s.id,
+        });
         if (cancelled || error || !data) return;
-        const draft = data as { id: string; text: string | null; customer_user_id: string };
+        const draft = data as {
+          id: string;
+          text: string | null;
+          customer_user_id: string;
+        };
         const text = (draft.text ?? "").trim();
         if (!text) return;
         // System prelude lets the engineer see "this is prep, not a live
@@ -178,8 +221,16 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
         /* best-effort handoff; chat still works without it */
       }
     })();
-    return () => { cancelled = true; };
-  }, [state.session?.id, state.session?.status, state.isAssignedEngineer, isSupervisor, state]);
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    state.session?.id,
+    state.session?.status,
+    state.isAssignedEngineer,
+    isSupervisor,
+    state,
+  ]);
 
   // Auto-start: mint Zoom (if needed) and mount the embed whenever the
   // engineer is pre-live (assigned/joining/grace). Idempotent — re-entries
@@ -194,8 +245,8 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
     const s = state.session;
     if (!s) return;
     if (!state.isAssignedEngineer) return;
-    if (isSupervisor) return;  // supervisors never auto-mint Zoom
-    if (isVideoSdkEnabled()) return;  // Video SDK owns the call surface
+    if (isSupervisor) return; // supervisors never auto-mint Zoom
+    if (isVideoSdkEnabled()) return; // Video SDK owns the call surface
     if (!["assigned", "joining", "grace"].includes(s.status)) return;
     if (started || autoMinting) return;
 
@@ -206,12 +257,18 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
       try {
         const sb = createClient();
         if (!s.zoom_meeting_id) {
-          const { data, error } = await sb.functions.invoke("mint-zoom-for-session", {
-            body: { session_id: s.id },
-          });
+          const { data, error } = await sb.functions.invoke(
+            "mint-zoom-for-session",
+            {
+              body: { session_id: s.id },
+            }
+          );
           if (cancelled) return;
           if (error || !data?.zoom_meeting_id) {
-            const msg = error?.message ?? (data?.error as string | undefined) ?? "Couldn't mint Zoom meeting";
+            const msg =
+              error?.message ??
+              (data?.error as string | undefined) ??
+              "Couldn't mint Zoom meeting";
             setAutoStartError(msg);
             setTimeout(() => setAutoStartError(null), 6000);
             return;
@@ -223,30 +280,51 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
       }
     })();
 
-    return () => { cancelled = true; };
-  }, [state.session?.id, state.session?.status, state.session?.zoom_meeting_id, started, autoMinting]);
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    state.session?.id,
+    state.session?.status,
+    state.session?.zoom_meeting_id,
+    started,
+    autoMinting,
+  ]);
 
   useEffect(() => {
     const sb = createClient();
-    sb.auth.getUser().then(({ data }) => {
-      if (data.user?.email) setMeEmail(data.user.email);
-    }, (e) => {
-      // Transient network blip / sleep/wake — recoverable on next render.
-      console.warn("[eng-session] getUser failed:", e instanceof Error ? e.message : String(e));
-    });
+    sb.auth.getUser().then(
+      ({ data }) => {
+        if (data.user?.email) setMeEmail(data.user.email);
+      },
+      (e) => {
+        // Transient network blip / sleep/wake — recoverable on next render.
+        console.warn(
+          "[eng-session] getUser failed:",
+          e instanceof Error ? e.message : String(e)
+        );
+      }
+    );
   }, []);
 
-  // Redirect to /inbox after end — that's the dedicated post-call landing.
-  // (3-second beat gives the summary edge fn time to write the AI summary
-  // before the engineer leaves the page.)
+  // After a session ends, send the engineer to that session's review page
+  // (summary + transcript + files) rather than dumping them back on /inbox —
+  // they get to look over what just happened. Supervisor monitors still land
+  // on /inbox. (3-second beat gives the summary edge fn a head start writing
+  // the AI summary before we navigate; the review page shows it once ready.)
   const prevStatusRef = useRef<SessionStatus | null>(null);
   useEffect(() => {
-    if (state.session?.status === "ended" && prevStatusRef.current && prevStatusRef.current !== "ended") {
-      const t = setTimeout(() => router.push("/inbox"), 3000);
+    if (
+      state.session?.status === "ended" &&
+      prevStatusRef.current &&
+      prevStatusRef.current !== "ended"
+    ) {
+      const dest = isSupervisor ? "/inbox" : `/session-review/${sessionId}`;
+      const t = setTimeout(() => router.push(dest), 3000);
       return () => clearTimeout(t);
     }
     prevStatusRef.current = state.session?.status ?? null;
-  }, [state.session?.status, router]);
+  }, [state.session?.status, router, isSupervisor, sessionId]);
 
   // Desktop-shell integration: hide the floating orb widget while a Relay
   // session is in flight on the engineer side. Bridge is no-op in the
@@ -255,13 +333,18 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
   // use, so we drive the signal from the session status directly.
   useEffect(() => {
     const bridge = (
-      window as unknown as { relay?: { setSessionActive?: (active: boolean) => void } }
+      window as unknown as {
+        relay?: { setSessionActive?: (active: boolean) => void };
+      }
     ).relay;
     if (!bridge?.setSessionActive) return;
     const status = state.session?.status;
-    const active = !!status && !["ended", "cancelled", "abandoned"].includes(status);
+    const active =
+      !!status && !["ended", "cancelled", "abandoned"].includes(status);
     bridge.setSessionActive(active);
-    return () => { bridge.setSessionActive?.(false); };
+    return () => {
+      bridge.setSessionActive?.(false);
+    };
   }, [state.session?.status]);
 
   // Payment-buffer watchdog: if the customer hasn't paid within 10 min of
@@ -280,22 +363,37 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
       void state.end("payment_buffer_expired");
       return;
     }
-    const t = setTimeout(() => void state.end("payment_buffer_expired"), remainingMs);
+    const t = setTimeout(
+      () => void state.end("payment_buffer_expired"),
+      remainingMs
+    );
     return () => clearTimeout(t);
   }, [sess?.status, sess?.free_expired_at, state, isSupervisor]);
 
   if (state.loading) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center" style={{ backgroundColor: "var(--background)" }}>
-        <Loader2 size={20} className="animate-spin" style={{ color: BRAND_GREEN }} />
+      <div
+        className="flex h-screen w-screen items-center justify-center"
+        style={{ backgroundColor: "var(--background)" }}
+      >
+        <Loader2
+          size={20}
+          className="animate-spin"
+          style={{ color: BRAND_GREEN }}
+        />
       </div>
     );
   }
 
   if (!state.session) {
     return (
-      <div className="mx-auto max-w-md px-6 py-16 text-center" style={{ color: "var(--text)" }}>
-        <p className="text-sm" style={{ color: "var(--text-muted)" }}>Session not found.</p>
+      <div
+        className="mx-auto max-w-md px-6 py-16 text-center"
+        style={{ color: "var(--text)" }}
+      >
+        <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+          Session not found.
+        </p>
         <button
           onClick={() => router.push("/inbox")}
           className="mt-4 text-sm underline"
@@ -309,149 +407,185 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
 
   return (
     <LaunchCallProvider value={{ launchCall, isCallOpen: callOpen }}>
-    <div
-      className="flex h-screen w-screen overflow-hidden"
-      style={{ backgroundColor: "var(--background)", color: "var(--text)" }}
-    >
-      <Sidebar engineerEmail={meEmail} session={state.session} timer={timer} isSupervisor={isSupervisor} />
+      <div
+        className="flex h-screen w-screen overflow-hidden"
+        style={{ backgroundColor: "var(--background)", color: "var(--text)" }}
+      >
+        <Sidebar
+          engineerEmail={meEmail}
+          session={state.session}
+          timer={timer}
+          isSupervisor={isSupervisor}
+        />
 
-      {/* Two layouts depending on whether the call is open:
-       *
-       *  callOpen=true  → ProjectAIAssistant gets the MAIN panel — the engineer's
-       *                   primary focus during a call is studying project context
-       *                   to ground their answers. Right rail stacks CallSurface
-       *                   (top, customer video/share) over ChatPane (bottom,
-       *                   customer conversation). All three coexist; engineer
-       *                   resizes both axes to taste.
-       *  callOpen=false → Existing two-pane MainPane (chat + ProjectAIAssistant)
-       *                   so the engineer can study project history before
-       *                   launching the call. */}
-      {callOpen && state.session ? (
-        <>
-        <PanelGroup direction="horizontal" autoSaveId="relay-eng-call-v3" className="flex min-w-0 flex-1">
-          <Panel id="eng-call-ai" order={1} defaultSize={60} minSize={20}>
-            <div
-              className="flex h-full min-h-0 flex-col overflow-hidden"
-              style={{ background: "var(--surface)" }}
+        {/* Two layouts depending on whether the call is open:
+         *
+         *  callOpen=true  → ProjectAIAssistant gets the MAIN panel — the engineer's
+         *                   primary focus during a call is studying project context
+         *                   to ground their answers. Right rail stacks CallSurface
+         *                   (top, customer video/share) over ChatPane (bottom,
+         *                   customer conversation). All three coexist; engineer
+         *                   resizes both axes to taste.
+         *  callOpen=false → Existing two-pane MainPane (chat + ProjectAIAssistant)
+         *                   so the engineer can study project history before
+         *                   launching the call. */}
+        {callOpen && state.session ? (
+          <>
+            <PanelGroup
+              direction="horizontal"
+              autoSaveId="relay-eng-call-v3"
+              className="flex min-w-0 flex-1"
             >
-              {isSupervisor && (
+              <Panel id="eng-call-ai" order={1} defaultSize={60} minSize={20}>
                 <div
-                  className="flex shrink-0 items-center justify-center gap-2 border-b px-3 py-1.5 text-[11px] font-medium uppercase tracking-wider"
+                  className="flex h-full min-h-0 flex-col overflow-hidden"
+                  style={{ background: "var(--surface)" }}
+                >
+                  {isSupervisor && (
+                    <div
+                      className="flex shrink-0 items-center justify-center gap-2 border-b px-3 py-1.5 text-[11px] font-medium tracking-wider uppercase"
+                      style={{
+                        backgroundColor:
+                          "color-mix(in srgb, var(--text) 4%, transparent)",
+                        borderColor: "var(--border)",
+                        color: "var(--text-muted)",
+                      }}
+                    >
+                      <Eye size={11} />
+                      {supervisorCanChat
+                        ? "Supervisor · appointment"
+                        : "Supervisor · read-only"}
+                    </div>
+                  )}
+                  <main className="min-h-0 flex-1 overflow-hidden">
+                    <ProjectAIAssistant
+                      projectId={state.session.project_id ?? null}
+                      projectName={state.session.project_name ?? null}
+                    />
+                  </main>
+                </div>
+              </Panel>
+              <Resizer />
+              <Panel id="eng-call-side" order={2} defaultSize={40} minSize={20}>
+                <div
+                  className="flex h-full min-h-0 flex-col overflow-hidden"
                   style={{
-                    backgroundColor: "color-mix(in srgb, var(--text) 4%, transparent)",
-                    borderColor: "var(--border)",
-                    color: "var(--text-muted)",
+                    background: "var(--surface)",
+                    borderLeft: "1px solid var(--border)",
                   }}
                 >
-                  <Eye size={11} />
-                  {supervisorCanChat ? "Supervisor · appointment" : "Supervisor · read-only"}
-                </div>
-              )}
-              <main className="min-h-0 flex-1 overflow-hidden">
-                <ProjectAIAssistant
-                  projectId={state.session.project_id ?? null}
-                  projectName={state.session.project_name ?? null}
-                />
-              </main>
-            </div>
-          </Panel>
-          <Resizer />
-          <Panel id="eng-call-side" order={2} defaultSize={40} minSize={20}>
-            <div
-              className="flex h-full min-h-0 flex-col overflow-hidden"
-              style={{ background: "var(--surface)", borderLeft: "1px solid var(--border)" }}
-            >
-              {!isSupervisor && (
-                <FloatingStatus
-                  state={state}
-                  timer={timer}
-                  started={started}
-                  onStart={() => setStarted(true)}
-                />
-              )}
-              {/* Zoom fills the side panel; the conversation lives in a
+                  {!isSupervisor && (
+                    <FloatingStatus
+                      state={state}
+                      timer={timer}
+                      started={started}
+                      onStart={() => setStarted(true)}
+                    />
+                  )}
+                  {/* Zoom fills the side panel; the conversation lives in a
                   draggable, collapsible floating chat dock so a screen-share is
                   never cramped by the chat below it. */}
-              <div className="min-h-0 flex-1" style={{ background: "var(--background)" }}>
-                <CallSurface
-                  sessionId={state.session.id}
-                  role="host"
-                  userName={isSupervisor ? "Moderator" : meEmail || "Engineer"}
-                  onClose={() => setCallOpen(false)}
-                  onJoined={() => void state.markJoined()}
-                  wideTiles
-                />
-              </div>
-            </div>
-          </Panel>
-        </PanelGroup>
-        <FloatingDock storageKey="eng-call-chat" title="Chat" accent icon={<MessageSquare size={22} />}>
-          <ChatPane
-            state={state}
-            fullWidth
-            readOnly={!(state.isAssignedEngineer || supervisorCanChat)}
-            hideAiAsk
-          />
-        </FloatingDock>
-        </>
-      ) : (
-        <div className="relative flex h-full min-w-0 flex-1 flex-col">
-          {isSupervisor && (
-            <div
-              className="flex shrink-0 items-center justify-center gap-2 border-b px-4 py-1.5 text-[11px] font-medium uppercase tracking-wider"
-              style={{
-                backgroundColor: "color-mix(in srgb, var(--text) 4%, transparent)",
-                borderColor: "var(--border)",
-                color: "var(--text-muted)",
-              }}
+                  <div
+                    className="min-h-0 flex-1"
+                    style={{ background: "var(--background)" }}
+                  >
+                    <CallSurface
+                      sessionId={state.session.id}
+                      role="host"
+                      userName={
+                        isSupervisor ? "Moderator" : meEmail || "Engineer"
+                      }
+                      onClose={() => setCallOpen(false)}
+                      onJoined={() => void state.markJoined()}
+                      wideTiles
+                    />
+                  </div>
+                </div>
+              </Panel>
+            </PanelGroup>
+            <FloatingDock
+              storageKey="eng-call-chat"
+              title="Chat"
+              accent
+              icon={<MessageSquare size={22} />}
             >
-              <Eye size={11} />
-              {supervisorCanChat ? "Supervisor view · appointment" : "Supervisor view · read-only"}
-            </div>
-          )}
-          {!isSupervisor && (
-            <FloatingStatus
-              state={state}
-              timer={timer}
-              started={started}
-              onStart={() => setStarted(true)}
-            />
-          )}
-          <main className="min-h-0 flex-1">
-            <MainPane
-              state={state}
-              isSupervisor={isSupervisor}
-              supervisorCanChat={supervisorCanChat}
-              hideAiAsk={false}
-            />
-          </main>
-        </div>
-      )}
+              <ChatPane
+                state={state}
+                fullWidth
+                readOnly={!(state.isAssignedEngineer || supervisorCanChat)}
+                hideAiAsk
+              />
+            </FloatingDock>
+          </>
+        ) : (
+          <div className="relative flex h-full min-w-0 flex-1 flex-col">
+            {isSupervisor && (
+              <div
+                className="flex shrink-0 items-center justify-center gap-2 border-b px-4 py-1.5 text-[11px] font-medium tracking-wider uppercase"
+                style={{
+                  backgroundColor:
+                    "color-mix(in srgb, var(--text) 4%, transparent)",
+                  borderColor: "var(--border)",
+                  color: "var(--text-muted)",
+                }}
+              >
+                <Eye size={11} />
+                {supervisorCanChat
+                  ? "Supervisor view · appointment"
+                  : "Supervisor view · read-only"}
+              </div>
+            )}
+            {!isSupervisor && (
+              <FloatingStatus
+                state={state}
+                timer={timer}
+                started={started}
+                onStart={() => setStarted(true)}
+              />
+            )}
+            <main className="min-h-0 flex-1">
+              <MainPane
+                state={state}
+                isSupervisor={isSupervisor}
+                supervisorCanChat={supervisorCanChat}
+                hideAiAsk={false}
+              />
+            </main>
+          </div>
+        )}
 
-      {state.error
-        && !state.error.includes("NOT_ASSIGNED_TO_YOU")
-        && !state.error.includes("NOT_AUTHORIZED")
-        && <ErrorToast message={state.error} />}
-      {autoStartError && (
-        <div
-          className="pointer-events-auto fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-md border px-4 py-2 text-xs font-medium shadow-lg"
-          style={{
-            borderColor: "color-mix(in srgb, var(--accent-red) 30%, transparent)",
-            backgroundColor: "color-mix(in srgb, var(--accent-red) 10%, transparent)",
-            color: "var(--accent-red)",
-          }}
-        >
-          Auto-start failed: {autoStartError} — tap the <span className="font-semibold">video button</span> next to Send to retry.
-        </div>
-      )}
-    </div>
+        {state.error &&
+          !state.error.includes("NOT_ASSIGNED_TO_YOU") &&
+          !state.error.includes("NOT_AUTHORIZED") && (
+            <ErrorToast message={state.error} onDismiss={state.clearError} />
+          )}
+        {autoStartError && (
+          <div
+            className="pointer-events-auto fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-md border px-4 py-2 text-xs font-medium shadow-lg"
+            style={{
+              borderColor:
+                "color-mix(in srgb, var(--accent-red) 30%, transparent)",
+              backgroundColor:
+                "color-mix(in srgb, var(--accent-red) 10%, transparent)",
+              color: "var(--accent-red)",
+            }}
+          >
+            Auto-start failed: {autoStartError} — tap the{" "}
+            <span className="font-semibold">video button</span> next to Send to
+            retry.
+          </div>
+        )}
+      </div>
     </LaunchCallProvider>
   );
 }
 
 // ── Layout decider ─────────────────────────────────────────────────────────
 function MainPane({
-  state, isSupervisor, supervisorCanChat = false, hideAiAsk = false,
+  state,
+  isSupervisor,
+  supervisorCanChat = false,
+  hideAiAsk = false,
 }: {
   state: ReturnType<typeof useEngineerSession>;
   isSupervisor: boolean;
@@ -476,7 +610,11 @@ function MainPane({
   // Post-call review — chat (locked) on the left, AI summary on the right.
   if (isEnded) {
     return (
-      <PanelGroup direction="horizontal" autoSaveId="relay-eng-review" className="h-full">
+      <PanelGroup
+        direction="horizontal"
+        autoSaveId="relay-eng-review"
+        className="h-full"
+      >
         <Panel defaultSize={60} minSize={20} order={1}>
           <ChatPane state={state} fullWidth />
         </Panel>
@@ -503,7 +641,11 @@ function MainPane({
     return <ChatPane state={state} fullWidth readOnly={!canChat} hideAiAsk />;
   }
   return (
-    <PanelGroup direction="horizontal" autoSaveId="relay-eng-active" className="h-full">
+    <PanelGroup
+      direction="horizontal"
+      autoSaveId="relay-eng-active"
+      className="h-full"
+    >
       <Panel defaultSize={62} minSize={20} order={1}>
         {/* hideAiAsk: ProjectAIAssistant in the right panel handles the
             project Q&A, so suppress the inline EngineerAiAsk pill below
@@ -531,7 +673,10 @@ type PastSession = {
 };
 
 function Sidebar({
-  engineerEmail, session, timer, isSupervisor,
+  engineerEmail,
+  session,
+  timer,
+  isSupervisor,
 }: {
   engineerEmail: string;
   session: GuestCall;
@@ -547,22 +692,29 @@ function Sidebar({
     void (async () => {
       const { data } = await sb
         .from("guest_calls")
-        .select("id, agent_name, duration_minutes, ai_summary_title, created_at, status")
+        .select(
+          "id, agent_name, duration_minutes, ai_summary_title, created_at, status"
+        )
         .eq("thread_id", session.thread_id!)
         .eq("status", "ended")
         .neq("id", session.id)
         .order("created_at", { ascending: false })
         .limit(20);
-      setPast((data ?? []).map((r) => {
-        const row = r as Record<string, unknown>;
-        return {
-          id: row.id as string,
-          title: (row.ai_summary_title as string | null) ?? "Past session",
-          agent: row.agent_name as string | null,
-          minutes: row.duration_minutes != null ? Math.round(Number(row.duration_minutes)) : null,
-          date: row.created_at as string,
-        };
-      }));
+      setPast(
+        (data ?? []).map((r) => {
+          const row = r as Record<string, unknown>;
+          return {
+            id: row.id as string,
+            title: (row.ai_summary_title as string | null) ?? "Past session",
+            agent: row.agent_name as string | null,
+            minutes:
+              row.duration_minutes != null
+                ? Math.round(Number(row.duration_minutes))
+                : null,
+            date: row.created_at as string,
+          };
+        })
+      );
     })();
   }, [session.thread_id, session.id]);
 
@@ -584,47 +736,66 @@ function Sidebar({
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
-      const raw = window.localStorage.getItem("relay:eng-session-sidebar-width");
+      const raw = window.localStorage.getItem(
+        "relay:eng-session-sidebar-width"
+      );
       const parsed = raw ? Number(raw) : NaN;
-      if (Number.isFinite(parsed) && parsed >= SIDEBAR_MIN && parsed <= SIDEBAR_MAX) {
+      if (
+        Number.isFinite(parsed) &&
+        parsed >= SIDEBAR_MIN &&
+        parsed <= SIDEBAR_MAX
+      ) {
         setSidebarWidth(parsed);
       }
-    } catch { /* fall back to default */ }
+    } catch {
+      /* fall back to default */
+    }
   }, []);
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
-      window.localStorage.setItem("relay:eng-session-sidebar-width", String(sidebarWidth));
-    } catch { /* ignore */ }
+      window.localStorage.setItem(
+        "relay:eng-session-sidebar-width",
+        String(sidebarWidth)
+      );
+    } catch {
+      /* ignore */
+    }
   }, [sidebarWidth]);
   const [sidebarDragging, setSidebarDragging] = useState(false);
-  const startSidebarDrag = useCallback((e: React.PointerEvent) => {
-    if (collapsed) return;
-    e.preventDefault();
-    setSidebarDragging(true);
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-    const onMove = (mv: PointerEvent) => {
-      const next = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, mv.clientX));
-      setSidebarWidth(next);
-    };
-    const onUp = () => {
-      setSidebarDragging(false);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-  }, [collapsed]);
+  const startSidebarDrag = useCallback(
+    (e: React.PointerEvent) => {
+      if (collapsed) return;
+      e.preventDefault();
+      setSidebarDragging(true);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      const onMove = (mv: PointerEvent) => {
+        const next = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, mv.clientX));
+        setSidebarWidth(next);
+      };
+      const onUp = () => {
+        setSidebarDragging(false);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    [collapsed]
+  );
 
   // ── Collapsed rail ──────────────────────────────────────────────────────
   if (collapsed) {
     return (
       <aside
         className="flex h-full w-14 shrink-0 flex-col items-center gap-1 py-2"
-        style={{ borderRight: "1px solid var(--border)", backgroundColor: "var(--surface)" }}
+        style={{
+          borderRight: "1px solid var(--border)",
+          backgroundColor: "var(--surface)",
+        }}
       >
         <button
           onClick={() => setCollapsed(false)}
@@ -654,7 +825,15 @@ function Sidebar({
         </div>
 
         {/* Active-session pulse — shows from claim onwards (chat counts) */}
-        {(["assigned","joining","live","grace","expired_free"] as SessionStatus[]).includes(session.status) && (
+        {(
+          [
+            "assigned",
+            "joining",
+            "live",
+            "grace",
+            "expired_free",
+          ] as SessionStatus[]
+        ).includes(session.status) && (
           <span
             title={`Session · ${timer.format}`}
             className="mt-1 flex h-9 w-9 items-center justify-center"
@@ -662,9 +841,15 @@ function Sidebar({
             <span className="relative flex h-2.5 w-2.5">
               <span
                 className="absolute inset-0 rounded-full opacity-60"
-                style={{ backgroundColor: BRAND_GREEN, animation: "ping 1.4s cubic-bezier(0,0,0.2,1) infinite" }}
+                style={{
+                  backgroundColor: BRAND_GREEN,
+                  animation: "ping 1.4s cubic-bezier(0,0,0.2,1) infinite",
+                }}
               />
-              <span className="relative h-2.5 w-2.5 rounded-full" style={{ backgroundColor: BRAND_GREEN }} />
+              <span
+                className="relative h-2.5 w-2.5 rounded-full"
+                style={{ backgroundColor: BRAND_GREEN }}
+              />
             </span>
           </span>
         )}
@@ -701,7 +886,7 @@ function Sidebar({
         aria-orientation="vertical"
         aria-label="Resize sidebar"
         onPointerDown={startSidebarDrag}
-        className={`group absolute right-0 top-0 z-20 h-full w-1.5 cursor-col-resize transition-colors hover:bg-[--green-soft] ${sidebarDragging ? "bg-[--green-strong]" : ""}`}
+        className={`group absolute top-0 right-0 z-20 h-full w-1.5 cursor-col-resize transition-colors hover:bg-[--green-soft] ${sidebarDragging ? "bg-[--green-strong]" : ""}`}
         style={
           {
             transform: "translateX(50%)",
@@ -734,10 +919,13 @@ function Sidebar({
       </div>
 
       {/* Customer card */}
-      <div className="px-3 pb-3 pt-1">
+      <div className="px-3 pt-1 pb-3">
         <div
           className="flex items-center gap-3 rounded-lg border p-3"
-          style={{ borderColor: "var(--border)", backgroundColor: "color-mix(in srgb, var(--text) 2%, transparent)" }}
+          style={{
+            borderColor: "var(--border)",
+            backgroundColor: "color-mix(in srgb, var(--text) 2%, transparent)",
+          }}
         >
           <div
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold uppercase"
@@ -746,10 +934,16 @@ function Sidebar({
             {(session.guest_name || "?")[0]}
           </div>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[13px] font-medium" style={{ color: "var(--text)" }}>
+            <div
+              className="truncate text-[13px] font-medium"
+              style={{ color: "var(--text)" }}
+            >
               {session.guest_name}
             </div>
-            <div className="truncate text-[10px]" style={{ color: "var(--text-muted)" }}>
+            <div
+              className="truncate text-[10px]"
+              style={{ color: "var(--text-muted)" }}
+            >
               {session.guest_email}
             </div>
           </div>
@@ -758,24 +952,52 @@ function Sidebar({
 
       {/* Current session pill */}
       <div className="px-2">
-        <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+        <div
+          className="px-2 py-1 text-[10px] font-semibold tracking-wider uppercase"
+          style={{ color: "var(--text-muted)" }}
+        >
           Current
         </div>
         <div
           className="flex items-center gap-2 rounded-md px-2.5 py-2"
-          style={{ backgroundColor: BRAND_GREEN_SOFT, border: `1px solid ${BRAND_GREEN_BORDER}` }}
+          style={{
+            backgroundColor: BRAND_GREEN_SOFT,
+            border: `1px solid ${BRAND_GREEN_BORDER}`,
+          }}
         >
           <span className="relative flex h-2 w-2 shrink-0">
-            <span className="absolute inset-0 rounded-full opacity-70"
-              style={{ backgroundColor: BRAND_GREEN, animation: "ping 1.4s cubic-bezier(0,0,0.2,1) infinite" }} />
-            <span className="relative h-2 w-2 rounded-full" style={{ backgroundColor: BRAND_GREEN }} />
+            <span
+              className="absolute inset-0 rounded-full opacity-70"
+              style={{
+                backgroundColor: BRAND_GREEN,
+                animation: "ping 1.4s cubic-bezier(0,0,0.2,1) infinite",
+              }}
+            />
+            <span
+              className="relative h-2 w-2 rounded-full"
+              style={{ backgroundColor: BRAND_GREEN }}
+            />
           </span>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[13px] font-medium" style={{ color: "var(--text)" }}>
+            <div
+              className="truncate text-[13px] font-medium"
+              style={{ color: "var(--text)" }}
+            >
               {humanState(session.status)}
             </div>
-            <div className="truncate text-[10px]" style={{ color: "var(--text-muted)" }}>
-              {(["assigned","joining","live","grace","expired_free"] as SessionStatus[]).includes(session.status)
+            <div
+              className="truncate text-[10px]"
+              style={{ color: "var(--text-muted)" }}
+            >
+              {(
+                [
+                  "assigned",
+                  "joining",
+                  "live",
+                  "grace",
+                  "expired_free",
+                ] as SessionStatus[]
+              ).includes(session.status)
                 ? `${humanState(session.status)} · ${timer.format}`
                 : "In session"}
             </div>
@@ -784,42 +1006,67 @@ function Sidebar({
       </div>
 
       {/* Past sessions for this customer */}
-      <div className="flex-1 overflow-y-auto px-2 pb-2 pt-3">
-        <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+      <div className="flex-1 overflow-y-auto px-2 pt-3 pb-2">
+        <div
+          className="px-2 py-1 text-[10px] font-semibold tracking-wider uppercase"
+          style={{ color: "var(--text-muted)" }}
+        >
           History with {session.guest_name?.split(" ")[0] ?? "this customer"}
         </div>
         {past.length === 0 ? (
-          <p className="px-2 py-3 text-[11px]" style={{ color: "var(--text-muted)" }}>
+          <p
+            className="px-2 py-3 text-[11px]"
+            style={{ color: "var(--text-muted)" }}
+          >
             First session with this customer.
           </p>
         ) : (
-          buckets.map(([label, items]) => items.length === 0 ? null : (
-            <div key={label} className="mt-3">
-              <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-                {label}
-              </div>
-              {items.map((s) => {
-                const isCurrent = s.id === session.id;
-                return (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => { if (!isCurrent) router.push(`/staff/session/${s.id}`); }}
-                    aria-current={isCurrent ? "page" : undefined}
-                    className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left transition-colors ${isCurrent ? "bg-black/5 dark:bg-white/5" : "hover:bg-black/5 dark:hover:bg-white/5"}`}
-                  >
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: "var(--text-muted)" }} />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-[13px]" style={{ color: "var(--text)" }}>{s.title}</div>
-                      <div className="truncate text-[10px]" style={{ color: "var(--text-muted)" }}>
-                        {s.agent ?? "Engineer"}{s.minutes != null ? ` · ${s.minutes}m` : ""}
+          buckets.map(([label, items]) =>
+            items.length === 0 ? null : (
+              <div key={label} className="mt-3">
+                <div
+                  className="px-2 py-1 text-[10px] font-semibold tracking-wider uppercase"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  {label}
+                </div>
+                {items.map((s) => {
+                  const isCurrent = s.id === session.id;
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => {
+                        if (!isCurrent) router.push(`/staff/session/${s.id}`);
+                      }}
+                      aria-current={isCurrent ? "page" : undefined}
+                      className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left transition-colors ${isCurrent ? "bg-black/5 dark:bg-white/5" : "hover:bg-black/5 dark:hover:bg-white/5"}`}
+                    >
+                      <span
+                        className="h-1.5 w-1.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: "var(--text-muted)" }}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div
+                          className="truncate text-[13px]"
+                          style={{ color: "var(--text)" }}
+                        >
+                          {s.title}
+                        </div>
+                        <div
+                          className="truncate text-[10px]"
+                          style={{ color: "var(--text-muted)" }}
+                        >
+                          {s.agent ?? "Engineer"}
+                          {s.minutes != null ? ` · ${s.minutes}m` : ""}
+                        </div>
                       </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          ))
+                    </button>
+                  );
+                })}
+              </div>
+            )
+          )
         )}
 
         {/* Project memory — every session ever run on this project, regardless
@@ -846,10 +1093,17 @@ function Sidebar({
             {(engineerEmail || "?")[0]}
           </div>
           <div className="min-w-0 flex-1 text-left">
-            <div className="truncate text-[12px] font-medium" style={{ color: "var(--text)" }}>
-              {engineerEmail.split("@")[0] || (isSupervisor ? "Supervisor" : "Engineer")}
+            <div
+              className="truncate text-[12px] font-medium"
+              style={{ color: "var(--text)" }}
+            >
+              {engineerEmail.split("@")[0] ||
+                (isSupervisor ? "Supervisor" : "Engineer")}
             </div>
-            <div className="truncate text-[10px]" style={{ color: "var(--text-muted)" }}>
+            <div
+              className="truncate text-[10px]"
+              style={{ color: "var(--text-muted)" }}
+            >
               {isSupervisor ? "Supervisor · monitoring" : "Engineer · on call"}
             </div>
           </div>
@@ -857,7 +1111,9 @@ function Sidebar({
         {/* Escalation context for this session (raised / resolved). */}
         <SessionEscalationFlag sessionId={session.id} />
         {/* Supervisors can search the whole project's chat history. */}
-        {isSupervisor && session.project_id && <ProjectChatSearch projectId={session.project_id} />}
+        {isSupervisor && session.project_id && (
+          <ProjectChatSearch projectId={session.project_id} />
+        )}
         {/* Engineers can raise a hand to their supervisor mid-call. */}
         {!isSupervisor && <EscalateButton sessionId={session.id} />}
       </div>
@@ -869,60 +1125,130 @@ function Sidebar({
 function ProjectChatSearch({ projectId }: { projectId: string }) {
   const router = useRouter();
   const [q, setQ] = useState("");
-  const [results, setResults] = useState<{ sessionId: string; senderName: string | null; senderKind: string; body: string; createdAt: string }[] | null>(null);
+  const [results, setResults] = useState<
+    | {
+        sessionId: string;
+        senderName: string | null;
+        senderKind: string;
+        body: string;
+        createdAt: string;
+      }[]
+    | null
+  >(null);
   const [busy, setBusy] = useState(false);
 
   const search = async () => {
     if (q.trim().length < 2) return;
     setBusy(true);
     try {
-      const res = await fetch(`/api/supervisor/chat-search?projectId=${encodeURIComponent(projectId)}&q=${encodeURIComponent(q.trim())}`, { cache: "no-store" });
-      const j = (await res.json().catch(() => ({}))) as { results?: typeof results };
+      const res = await fetch(
+        `/api/supervisor/chat-search?projectId=${encodeURIComponent(projectId)}&q=${encodeURIComponent(q.trim())}`,
+        { cache: "no-store" }
+      );
+      const j = (await res.json().catch(() => ({}))) as {
+        results?: typeof results;
+      };
       setResults(j.results ?? []);
-    } finally { setBusy(false); }
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
-    <div className="mt-1 rounded-lg border p-2" style={{ borderColor: "var(--border)" }}>
-      <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+    <div
+      className="mt-1 rounded-lg border p-2"
+      style={{ borderColor: "var(--border)" }}
+    >
+      <div
+        className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase"
+        style={{ color: "var(--text-muted)" }}
+      >
         <BookOpen size={12} /> Search project chat
       </div>
       <div className="flex gap-1">
-        <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void search(); }}
-          placeholder="e.g. Stripe, deadline…" className="h-8 flex-1 rounded-md border px-2 text-[12px] outline-none"
-          style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
-        <button type="button" onClick={() => void search()} disabled={busy || q.trim().length < 2}
-          className="inline-flex size-8 items-center justify-center rounded-md text-white disabled:opacity-50" style={{ background: "var(--primary)" }} aria-label="Search">
-          {busy ? <Loader2 size={13} className="animate-spin" /> : <ChevronRight size={13} />}
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void search();
+          }}
+          placeholder="e.g. Stripe, deadline…"
+          className="h-8 flex-1 rounded-md border px-2 text-[12px] outline-none"
+          style={{
+            borderColor: "var(--border)",
+            background: "var(--background)",
+            color: "var(--text)",
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => void search()}
+          disabled={busy || q.trim().length < 2}
+          className="inline-flex size-8 items-center justify-center rounded-md text-white disabled:opacity-50"
+          style={{ background: "var(--primary)" }}
+          aria-label="Search"
+        >
+          {busy ? (
+            <Loader2 size={13} className="animate-spin" />
+          ) : (
+            <ChevronRight size={13} />
+          )}
         </button>
       </div>
-      {results && (
-        results.length === 0 ? (
-          <p className="mt-2 text-[11px]" style={{ color: "var(--text-muted)" }}>No matches.</p>
+      {results &&
+        (results.length === 0 ? (
+          <p
+            className="mt-2 text-[11px]"
+            style={{ color: "var(--text-muted)" }}
+          >
+            No matches.
+          </p>
         ) : (
           <ul className="mt-2 flex max-h-48 flex-col gap-1 overflow-y-auto">
             {results.map((r, i) => (
               <li key={i}>
-                <button type="button" onClick={() => router.push(`/staff/session/${r.sessionId}`)}
-                  className="w-full rounded-md px-1.5 py-1 text-left text-[11px] transition-colors hover:bg-white/5">
+                <button
+                  type="button"
+                  onClick={() => router.push(`/staff/session/${r.sessionId}`)}
+                  className="w-full rounded-md px-1.5 py-1 text-left text-[11px] transition-colors hover:bg-white/5"
+                >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium" style={{ color: "var(--text)" }}>{r.senderName || r.senderKind}</span>
-                    <span style={{ color: "var(--text-faint)" }}>{new Date(r.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+                    <span
+                      className="font-medium"
+                      style={{ color: "var(--text)" }}
+                    >
+                      {r.senderName || r.senderKind}
+                    </span>
+                    <span style={{ color: "var(--text-faint)" }}>
+                      {new Date(r.createdAt).toLocaleDateString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                      })}
+                    </span>
                   </div>
-                  <div className="line-clamp-2" style={{ color: "var(--text-muted)" }}>{r.body}</div>
+                  <div
+                    className="line-clamp-2"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {r.body}
+                  </div>
                 </button>
               </li>
             ))}
           </ul>
-        )
-      )}
+        ))}
     </div>
   );
 }
 
 // ── G3: this session's escalation context (banner on the session view) ──────
 function SessionEscalationFlag({ sessionId }: { sessionId: string }) {
-  const [esc, setEsc] = useState<{ reason: string; status: string; note: string | null; resolution_note: string | null } | null>(null);
+  const [esc, setEsc] = useState<{
+    reason: string;
+    status: string;
+    note: string | null;
+    resolution_note: string | null;
+  } | null>(null);
   useEffect(() => {
     const sb = createClient();
     let alive = true;
@@ -934,27 +1260,73 @@ function SessionEscalationFlag({ sessionId }: { sessionId: string }) {
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (alive) setEsc((data as { reason: string; status: string; note: string | null; resolution_note: string | null } | null) ?? null);
+      if (alive)
+        setEsc(
+          (data as {
+            reason: string;
+            status: string;
+            note: string | null;
+            resolution_note: string | null;
+          } | null) ?? null
+        );
     };
     void load();
     // Realtime so a supervisor's resolve reflects here without a reload.
     const ch = sb
       .channel(`session-escalation-${sessionId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "session_escalations", filter: `session_id=eq.${sessionId}` }, () => { void load(); })
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "session_escalations",
+          filter: `session_id=eq.${sessionId}`,
+        },
+        () => {
+          void load();
+        }
+      )
       .subscribe();
-    return () => { alive = false; void sb.removeChannel(ch); };
+    return () => {
+      alive = false;
+      void sb.removeChannel(ch);
+    };
   }, [sessionId]);
   if (!esc) return null;
   const open = esc.status === "open";
   const tone = open ? "var(--risk)" : "var(--text-muted)";
   return (
-    <div className="mt-1 rounded-lg border px-2.5 py-2" style={{ borderColor: tone, background: open ? "color-mix(in srgb, var(--risk) 8%, transparent)" : "var(--surface)" }}>
-      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide" style={{ color: tone }}>
+    <div
+      className="mt-1 rounded-lg border px-2.5 py-2"
+      style={{
+        borderColor: tone,
+        background: open
+          ? "color-mix(in srgb, var(--risk) 8%, transparent)"
+          : "var(--surface)",
+      }}
+    >
+      <div
+        className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase"
+        style={{ color: tone }}
+      >
         <LifeBuoy size={12} /> Escalation · {esc.status}
       </div>
-      <div className="mt-0.5 text-[12px]" style={{ color: "var(--text)" }}>{esc.reason}</div>
-      {esc.note && <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>{esc.note}</div>}
-      {esc.resolution_note && <div className="mt-0.5 text-[11px]" style={{ color: "var(--text-faint)" }}>↳ {esc.resolution_note}</div>}
+      <div className="mt-0.5 text-[12px]" style={{ color: "var(--text)" }}>
+        {esc.reason}
+      </div>
+      {esc.note && (
+        <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+          {esc.note}
+        </div>
+      )}
+      {esc.resolution_note && (
+        <div
+          className="mt-0.5 text-[11px]"
+          style={{ color: "var(--text-faint)" }}
+        >
+          ↳ {esc.resolution_note}
+        </div>
+      )}
     </div>
   );
 }
@@ -980,61 +1352,153 @@ function EscalateButton({ sessionId }: { sessionId: string }) {
   const dialogRef = useOverlayDismiss(closeModal, open);
 
   const submit = async () => {
-    setBusy(true); setErr(null);
+    setBusy(true);
+    setErr(null);
     try {
       const { error } = await createClient().rpc("engineer_escalate_session", {
-        _session_id: sessionId, _reason: reason, _note: note.trim() || null,
+        _session_id: sessionId,
+        _reason: reason,
+        _note: note.trim() || null,
       });
       if (error) throw new Error(error.message);
       setDone(true);
-      setTimeout(() => { setOpen(false); setDone(false); setNote(""); }, 1400);
-    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't escalate."); }
-    finally { setBusy(false); }
+      setTimeout(() => {
+        setOpen(false);
+        setDone(false);
+        setNote("");
+      }, 1400);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Couldn't escalate.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)}
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
         className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-[12px] font-medium transition-colors"
-        style={{ borderColor: "color-mix(in srgb, var(--risk) 40%, transparent)", color: "var(--risk)" }}>
+        style={{
+          borderColor: "color-mix(in srgb, var(--risk) 40%, transparent)",
+          color: "var(--risk)",
+        }}
+      >
         <LifeBuoy size={13} /> Escalate to supervisor
       </button>
 
       {open && (
         <>
-          <div className="fixed inset-0 z-[var(--z-modal)]" style={{ backgroundColor: "var(--scrim)" }} onClick={() => !busy && setOpen(false)} />
-          <div ref={dialogRef} role="dialog" aria-modal="true"
-            className="fixed left-1/2 top-1/2 z-[var(--z-modal)] w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border p-5 shadow-2xl"
-            style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}>
+          <div
+            className="fixed inset-0 z-[var(--z-modal)]"
+            style={{ backgroundColor: "var(--scrim)" }}
+            onClick={() => !busy && setOpen(false)}
+          />
+          <div
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            className="fixed top-1/2 left-1/2 z-[var(--z-modal)] w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border p-5 shadow-2xl"
+            style={{
+              borderColor: "var(--border)",
+              backgroundColor: "var(--surface)",
+            }}
+          >
             <div className="mb-3 flex items-center gap-2">
               <LifeBuoy size={16} style={{ color: "var(--risk)" }} />
-              <h2 className="text-[15px] font-semibold" style={{ color: "var(--text)" }}>Escalate to supervisor</h2>
-              <button type="button" onClick={() => !busy && setOpen(false)} className="ml-auto" style={{ color: "var(--text-muted)" }}><X size={16} /></button>
+              <h2
+                className="text-[15px] font-semibold"
+                style={{ color: "var(--text)" }}
+              >
+                Escalate to supervisor
+              </h2>
+              <button
+                type="button"
+                onClick={() => !busy && setOpen(false)}
+                className="ml-auto"
+                style={{ color: "var(--text-muted)" }}
+              >
+                <X size={16} />
+              </button>
             </div>
             {done ? (
-              <p className="py-4 text-center text-sm" style={{ color: "var(--ok)" }}>Raised — your supervisor has been notified.</p>
+              <p
+                className="py-4 text-center text-sm"
+                style={{ color: "var(--ok)" }}
+              >
+                Raised — your supervisor has been notified.
+              </p>
             ) : (
               <div className="flex flex-col gap-3">
-                <label className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
+                <label
+                  className="flex flex-col gap-1 text-[12px]"
+                  style={{ color: "var(--text-muted)" }}
+                >
                   Reason
-                  <select value={reason} onChange={(e) => setReason(e.target.value)}
-                    className="h-10 rounded-lg border px-2 text-sm" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }}>
-                    {ESCALATION_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                  <select
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    className="h-10 rounded-lg border px-2 text-sm"
+                    style={{
+                      borderColor: "var(--border)",
+                      background: "var(--background)",
+                      color: "var(--text)",
+                    }}
+                  >
+                    {ESCALATION_REASONS.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
                   </select>
                 </label>
-                <label className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
+                <label
+                  className="flex flex-col gap-1 text-[12px]"
+                  style={{ color: "var(--text-muted)" }}
+                >
                   Detail (optional)
-                  <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3}
-                    placeholder="What's happening?" className="rounded-lg border p-2 text-sm"
-                    style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }} />
+                  <textarea
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    rows={3}
+                    placeholder="What's happening?"
+                    className="rounded-lg border p-2 text-sm"
+                    style={{
+                      borderColor: "var(--border)",
+                      background: "var(--background)",
+                      color: "var(--text)",
+                    }}
+                  />
                 </label>
-                {err && <p className="text-[12px]" style={{ color: "var(--risk)" }}>{err}</p>}
+                {err && (
+                  <p className="text-[12px]" style={{ color: "var(--risk)" }}>
+                    {err}
+                  </p>
+                )}
                 <div className="flex justify-end gap-2">
-                  <button type="button" onClick={() => setOpen(false)} disabled={busy}
-                    className="rounded-full px-3.5 py-1.5 text-[13px] font-medium" style={{ color: "var(--text-muted)" }}>Cancel</button>
-                  <button type="button" onClick={() => void submit()} disabled={busy}
-                    className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13px] font-semibold text-white" style={{ background: "var(--risk)" }}>
-                    {busy ? <Loader2 size={13} className="animate-spin" /> : <LifeBuoy size={13} />} Raise
+                  <button
+                    type="button"
+                    onClick={() => setOpen(false)}
+                    disabled={busy}
+                    className="rounded-full px-3.5 py-1.5 text-[13px] font-medium"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void submit()}
+                    disabled={busy}
+                    className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13px] font-semibold text-white"
+                    style={{ background: "var(--risk)" }}
+                  >
+                    {busy ? (
+                      <Loader2 size={13} className="animate-spin" />
+                    ) : (
+                      <LifeBuoy size={13} />
+                    )}{" "}
+                    Raise
                   </button>
                 </div>
               </div>
@@ -1048,7 +1512,10 @@ function EscalateButton({ sessionId }: { sessionId: string }) {
 
 // ── Floating top-right controls ────────────────────────────────────────────
 function FloatingStatus({
-  state, timer, started, onStart,
+  state,
+  timer,
+  started,
+  onStart,
 }: {
   state: ReturnType<typeof useEngineerSession>;
   timer: ReturnType<typeof useSessionTimer>;
@@ -1061,8 +1528,8 @@ function FloatingStatus({
   const [mintError, setMintError] = useState<string | null>(null);
 
   const isPreLive = ["assigned", "joining", "grace"].includes(session.status);
-  const isLive    = session.status === "live";
-  const isEnded   = session.status === "ended";
+  const isLive = session.status === "live";
+  const isEnded = session.status === "ended";
   const isExpiredFree = session.status === "expired_free";
   // Timer-active = anything where the chat-inclusive 10-min clock is running.
   // Wider than isLive so the engineer sees the count from claim onwards.
@@ -1080,7 +1547,8 @@ function FloatingStatus({
 
   let bufferRemainingLabel = "";
   if (isExpiredFree && session.free_expired_at) {
-    const remMs = 10 * 60_000 - (Date.now() - new Date(session.free_expired_at).getTime());
+    const remMs =
+      10 * 60_000 - (Date.now() - new Date(session.free_expired_at).getTime());
     const remSec = Math.max(0, Math.floor(remMs / 1000));
     bufferRemainingLabel = `${String(Math.floor(remSec / 60)).padStart(2, "0")}:${String(remSec % 60).padStart(2, "0")}`;
   }
@@ -1103,11 +1571,17 @@ function FloatingStatus({
     try {
       const sb = createClient();
       if (!hasMeeting) {
-        const { data, error } = await sb.functions.invoke("mint-zoom-for-session", {
-          body: { session_id: session.id },
-        });
+        const { data, error } = await sb.functions.invoke(
+          "mint-zoom-for-session",
+          {
+            body: { session_id: session.id },
+          }
+        );
         if (error || !data?.zoom_meeting_id) {
-          const msg = error?.message ?? (data?.error as string | undefined) ?? "Couldn't mint Zoom meeting";
+          const msg =
+            error?.message ??
+            (data?.error as string | undefined) ??
+            "Couldn't mint Zoom meeting";
           setMintError(msg);
           setTimeout(() => setMintError(null), 6000);
           return;
@@ -1123,11 +1597,17 @@ function FloatingStatus({
     return (
       <div
         className="flex shrink-0 items-center justify-end gap-2 border-b px-4 py-2"
-        style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}
+        style={{
+          backgroundColor: "var(--surface)",
+          borderColor: "var(--border)",
+        }}
       >
         <span
           className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium"
-          style={{ backgroundColor: "color-mix(in srgb, var(--text) 8%, transparent)", color: "var(--text-muted)" }}
+          style={{
+            backgroundColor: "color-mix(in srgb, var(--text) 8%, transparent)",
+            color: "var(--text-muted)",
+          }}
         >
           Session ended · returning to inbox
         </span>
@@ -1139,10 +1619,12 @@ function FloatingStatus({
     <>
       {mintError && (
         <div
-          className="pointer-events-auto absolute left-1/2 top-3 z-20 -translate-x-1/2 rounded-md border px-4 py-2 text-xs font-medium shadow-lg"
+          className="pointer-events-auto absolute top-3 left-1/2 z-20 -translate-x-1/2 rounded-md border px-4 py-2 text-xs font-medium shadow-lg"
           style={{
-            borderColor: "color-mix(in srgb, var(--accent-red) 30%, transparent)",
-            backgroundColor: "color-mix(in srgb, var(--accent-red) 10%, transparent)",
+            borderColor:
+              "color-mix(in srgb, var(--accent-red) 30%, transparent)",
+            backgroundColor:
+              "color-mix(in srgb, var(--accent-red) 10%, transparent)",
             color: "var(--accent-red)",
           }}
         >
@@ -1188,7 +1670,11 @@ function FloatingStatus({
             className="inline-flex items-center gap-1.5 text-xs font-semibold tabular-nums"
             style={{
               fontFamily: "var(--font-inter)",
-              color: timer.isExpired ? CRIT_RED : timer.isWarning ? URGENT_AMBER : BRAND_GREEN,
+              color: timer.isExpired
+                ? CRIT_RED
+                : timer.isWarning
+                  ? URGENT_AMBER
+                  : BRAND_GREEN,
             }}
           >
             {timer.format}
@@ -1233,7 +1719,10 @@ function FloatingStatus({
       {confirmEnd && (
         <ConfirmEndModal
           onCancel={() => setConfirmEnd(false)}
-          onConfirm={async () => { setConfirmEnd(false); await state.end(); }}
+          onConfirm={async () => {
+            setConfirmEnd(false);
+            await state.end();
+          }}
         />
       )}
     </>
@@ -1249,10 +1738,18 @@ function StatusPill({ session }: { session: GuestCall }) {
     >
       <span className="relative flex h-2 w-2">
         {cfg.pulse && (
-          <span className="absolute inset-0 rounded-full opacity-70"
-            style={{ backgroundColor: cfg.fg, animation: "ping 1.4s cubic-bezier(0,0,0.2,1) infinite" }} />
+          <span
+            className="absolute inset-0 rounded-full opacity-70"
+            style={{
+              backgroundColor: cfg.fg,
+              animation: "ping 1.4s cubic-bezier(0,0,0.2,1) infinite",
+            }}
+          />
         )}
-        <span className="relative h-2 w-2 rounded-full" style={{ backgroundColor: cfg.fg }} />
+        <span
+          className="relative h-2 w-2 rounded-full"
+          style={{ backgroundColor: cfg.fg }}
+        />
       </span>
       {cfg.label}
     </span>
@@ -1260,44 +1757,104 @@ function StatusPill({ session }: { session: GuestCall }) {
 }
 
 function pillConfig(status: SessionStatus, urgency: Urgency) {
-  if (urgency === "critical")   return { label: "Critical",     bg: CRIT_RED_SOFT,    fg: CRIT_RED,     pulse: true };
-  if (urgency === "urgent")     return { label: "Urgent",       bg: URGENT_AMBER_SOFT, fg: URGENT_AMBER, pulse: true };
+  if (urgency === "critical")
+    return { label: "Critical", bg: CRIT_RED_SOFT, fg: CRIT_RED, pulse: true };
+  if (urgency === "urgent")
+    return {
+      label: "Urgent",
+      bg: URGENT_AMBER_SOFT,
+      fg: URGENT_AMBER,
+      pulse: true,
+    };
   // Session is "Live" from the moment the engineer claims — chat works,
   // 10-min cap is ticking. "Joining call" specifically means a Zoom meeting
   // is being mounted. "On call" means both parties are in Zoom.
-  if (status === "assigned")    return { label: "Live",         bg: BRAND_GREEN_SOFT,  fg: BRAND_GREEN,  pulse: true };
-  if (status === "joining")     return { label: "Joining call", bg: BRAND_GREEN_SOFT,  fg: BRAND_GREEN,  pulse: true };
-  if (status === "live")        return { label: "On call",      bg: BRAND_GREEN_SOFT,  fg: BRAND_GREEN,  pulse: true };
-  if (status === "grace")       return { label: "Reconnect…",   bg: URGENT_AMBER_SOFT, fg: URGENT_AMBER, pulse: true };
-  if (status === "expired_free") return { label: "Free expired", bg: URGENT_AMBER_SOFT, fg: URGENT_AMBER, pulse: true };
+  if (status === "assigned")
+    return {
+      label: "Live",
+      bg: BRAND_GREEN_SOFT,
+      fg: BRAND_GREEN,
+      pulse: true,
+    };
+  if (status === "joining")
+    return {
+      label: "Joining call",
+      bg: BRAND_GREEN_SOFT,
+      fg: BRAND_GREEN,
+      pulse: true,
+    };
+  if (status === "live")
+    return {
+      label: "On call",
+      bg: BRAND_GREEN_SOFT,
+      fg: BRAND_GREEN,
+      pulse: true,
+    };
+  if (status === "grace")
+    return {
+      label: "Reconnect…",
+      bg: URGENT_AMBER_SOFT,
+      fg: URGENT_AMBER,
+      pulse: true,
+    };
+  if (status === "expired_free")
+    return {
+      label: "Free expired",
+      bg: URGENT_AMBER_SOFT,
+      fg: URGENT_AMBER,
+      pulse: true,
+    };
   return { label: status, bg: BRAND_GREEN_SOFT, fg: BRAND_GREEN, pulse: false };
 }
 
-function ConfirmEndModal({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => Promise<void> }) {
+function ConfirmEndModal({
+  onCancel,
+  onConfirm,
+}: {
+  onCancel: () => void;
+  onConfirm: () => Promise<void>;
+}) {
   const [busy, setBusy] = useState(false);
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center px-6"
-      style={{ backgroundColor: "rgba(0, 0, 0, 0.55)", backdropFilter: "blur(4px)" }}
+      style={{
+        backgroundColor: "rgba(0, 0, 0, 0.55)",
+        backdropFilter: "blur(4px)",
+      }}
     >
       <div
         className="relative w-full max-w-sm rounded-2xl border p-7 text-center shadow-xl"
-        style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}
+        style={{
+          backgroundColor: "var(--surface)",
+          borderColor: "var(--border)",
+        }}
       >
         <div
           className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full"
-          style={{ backgroundColor: "color-mix(in srgb, var(--accent-red) 12%, transparent)", color: "var(--accent-red)" }}
+          style={{
+            backgroundColor:
+              "color-mix(in srgb, var(--accent-red) 12%, transparent)",
+            color: "var(--accent-red)",
+          }}
         >
           <PhoneOff size={20} />
         </div>
         <h2
           className="mb-2 text-lg font-medium"
-          style={{ fontFamily: "var(--font-source-serif)", color: "var(--text)" }}
+          style={{
+            fontFamily: "var(--font-source-serif)",
+            color: "var(--text)",
+          }}
         >
           End this session?
         </h2>
-        <p className="mb-6 text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
-          The video call will close. A summary is generated; you&apos;ll return to your inbox.
+        <p
+          className="mb-6 text-sm leading-relaxed"
+          style={{ color: "var(--text-muted)" }}
+        >
+          The video call will close. A summary is generated; you&apos;ll return
+          to your inbox.
         </p>
         <div className="flex gap-2">
           <button
@@ -1309,12 +1866,23 @@ function ConfirmEndModal({ onCancel, onConfirm }: { onCancel: () => void; onConf
             Cancel
           </button>
           <button
-            onClick={async () => { setBusy(true); try { await onConfirm(); } finally { setBusy(false); } }}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await onConfirm();
+              } finally {
+                setBusy(false);
+              }
+            }}
             disabled={busy}
             className="flex-1 rounded-full py-2.5 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
             style={{ backgroundColor: "var(--accent-red)", color: "#fff" }}
           >
-            {busy ? <Loader2 size={14} className="animate-spin inline" /> : "End session"}
+            {busy ? (
+              <Loader2 size={14} className="inline animate-spin" />
+            ) : (
+              "End session"
+            )}
           </button>
         </div>
       </div>
@@ -1324,14 +1892,17 @@ function ConfirmEndModal({ onCancel, onConfirm }: { onCancel: () => void; onConf
 
 // ── Chat pane ──────────────────────────────────────────────────────────────
 function ChatPane({
-  state, fullWidth = false, readOnly = false, hideAiAsk = false,
+  state,
+  fullWidth = false,
+  readOnly = false,
+  hideAiAsk = false,
 }: {
   state: ReturnType<typeof useEngineerSession>;
   fullWidth?: boolean;
-  readOnly?: boolean;            // monitor mode — hide composer entirely
-  hideAiAsk?: boolean;            // suppress the inline EngineerAiAsk (the
-                                  //  call-rail version takes over while a
-                                  //  call surface is mounted)
+  readOnly?: boolean; // monitor mode — hide composer entirely
+  hideAiAsk?: boolean; // suppress the inline EngineerAiAsk (the
+  //  call-rail version takes over while a
+  //  call surface is mounted)
 }) {
   const session = state.session!;
   const isReadOnly = readOnly || session.status === "ended";
@@ -1347,7 +1918,10 @@ function ChatPane({
   const [mintError, setMintError] = useState<string | null>(null);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    scrollRef.current?.scrollTo({
+      top: scrollRef.current.scrollHeight,
+      behavior: "smooth",
+    });
   }, [state.messages.length]);
 
   // ── Auto-mark escalation as joined when a supervisor opens the session ─
@@ -1376,7 +1950,9 @@ function ChatPane({
       if (!row) return;
       await sb.rpc("mark_escalation_joined", { _id: row.id });
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
     // session.id changes on route navigation; readOnly + isSupervisor are
     // booleans that flip rarely. Re-running on those edges is fine.
   }, [session.id, session.status, readOnly, isSupervisor]);
@@ -1432,16 +2008,22 @@ function ChatPane({
   // Start-meeting button is visible. The per-meeting cards in the chat
   // body live alongside their corresponding "started" message — each
   // meeting is its own inline entry there.
-  const lastZoomEvent = [...state.messages].reverse().find(
-    (m) =>
-      m.sender_kind === "system" &&
-      ((m.body ?? "").includes("Zoom meeting ended") || (m.body ?? "").includes("Zoom meeting started")),
-  );
-  const zoomEnded = !!lastZoomEvent && (lastZoomEvent.body ?? "").includes("Zoom meeting ended");
+  const lastZoomEvent = [...state.messages]
+    .reverse()
+    .find(
+      (m) =>
+        m.sender_kind === "system" &&
+        ((m.body ?? "").includes("Zoom meeting ended") ||
+          (m.body ?? "").includes("Zoom meeting started"))
+    );
+  const zoomEnded =
+    !!lastZoomEvent &&
+    (lastZoomEvent.body ?? "").includes("Zoom meeting ended");
 
   // Composer-level start/restart affordance. Hidden when there's already an
   // active Zoom meeting (mint would be a no-op then) and in monitor mode.
-  const showStartMeetingButton = !readOnly && (!session.zoom_meeting_id || zoomEnded);
+  const showStartMeetingButton =
+    !readOnly && (!session.zoom_meeting_id || zoomEnded);
 
   // Join URL the engineer/monitor should open. The latest active meeting
   // always points at the current session row's URLs. Supervisors (read-only
@@ -1449,8 +2031,8 @@ function ChatPane({
   // (zoom_observer_url) so neither party sees who is watching — falling back
   // to the customer join URL for legacy rows minted before observer support.
   const zoomCardUrl = readOnly
-    ? session.zoom_observer_url ?? session.zoom_join_url
-    : session.zoom_start_url ?? session.zoom_join_url;
+    ? (session.zoom_observer_url ?? session.zoom_join_url)
+    : (session.zoom_start_url ?? session.zoom_join_url);
 
   // Pair "started" / "ended" system messages in chronological order so each
   // meeting renders as one inline mini-card. Paired endeds are suppressed.
@@ -1481,7 +2063,11 @@ function ChatPane({
       } else if (m.body && isAiSummaryMessageBody(m.body) && lastEndedStartId) {
         meetingSummary.set(lastEndedStartId, m);
         suppressedSummaryIds.add(m.id);
-      } else if (m.body && m.body.includes("Recording available") && lastEndedStartId) {
+      } else if (
+        m.body &&
+        m.body.includes("Recording available") &&
+        lastEndedStartId
+      ) {
         meetingRecording.set(lastEndedStartId, m);
         suppressedRecordingIds.add(m.id);
       }
@@ -1493,12 +2079,19 @@ function ChatPane({
   // still routing through the existing Zoom / summary / system-line
   // suppression rules.
   const renderOneMessage = (m: GuestMessage): React.ReactNode[] => {
-    if (m.sender_kind === "system" && (m.body ?? "").includes("Zoom meeting started")) {
+    if (
+      m.sender_kind === "system" &&
+      (m.body ?? "").includes("Zoom meeting started")
+    ) {
       const ended = meetingEnded.get(m.id) ?? null;
       const summary = meetingSummary.get(m.id) ?? null;
       const recording = meetingRecording.get(m.id) ?? null;
       const durationSec = ended
-        ? Math.floor((new Date(ended.created_at).getTime() - new Date(m.created_at).getTime()) / 1000)
+        ? Math.floor(
+            (new Date(ended.created_at).getTime() -
+              new Date(m.created_at).getTime()) /
+              1000
+          )
         : undefined;
       return [
         <MeetingChatEntry
@@ -1506,30 +2099,44 @@ function ChatPane({
           active={!ended}
           durationSec={durationSec}
           joinUrl={!ended ? zoomCardUrl : null}
-          onJoin={!ended && !readOnly ? () => void state.markJoined() : undefined}
+          onJoin={
+            !ended && !readOnly ? () => void state.markJoined() : undefined
+          }
           selfJoined={!readOnly && !!session.engineer_joined_at}
           onCancel={!ended && !readOnly ? handleCancelMeeting : undefined}
           summaryBody={summary?.body ?? null}
-          recordingBody={isSupervisor ? recording?.body ?? null : null}
+          recordingBody={isSupervisor ? (recording?.body ?? null) : null}
         />,
       ];
     }
     if (m.sender_kind === "system" && suppressedEndedIds.has(m.id)) return [];
     if (m.sender_kind === "system" && suppressedSummaryIds.has(m.id)) return [];
-    if (m.sender_kind === "system" && suppressedRecordingIds.has(m.id)) return [];
-    if (m.sender_kind === "system" && m.body && isAiSummaryMessageBody(m.body)) {
+    if (m.sender_kind === "system" && suppressedRecordingIds.has(m.id))
+      return [];
+    if (
+      m.sender_kind === "system" &&
+      m.body &&
+      isAiSummaryMessageBody(m.body)
+    ) {
       return [<MeetingSummaryEntry key={m.id} body={m.body} />];
     }
     return [<Message key={m.id} message={m} />];
   };
 
   return (
-    <section className="flex h-full flex-col" style={{ backgroundColor: "var(--surface)" }}>
+    <section
+      className="flex h-full flex-col"
+      style={{ backgroundColor: "var(--surface)" }}
+    >
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6">
         <div className={`mx-auto w-full ${maxW}`}>
           {state.messages.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center py-16 text-center">
-              <Sparkles size={28} style={{ color: BRAND_GREEN }} className="mb-3" />
+              <Sparkles
+                size={28}
+                style={{ color: BRAND_GREEN }}
+                className="mb-3"
+              />
               <p className="text-sm" style={{ color: "var(--text-muted)" }}>
                 Say hi to {session.guest_name}.
               </p>
@@ -1547,7 +2154,9 @@ function ChatPane({
                   const dateKey = new Date(m.created_at).toDateString();
                   if (dateKey !== lastDateKey) {
                     lastDateKey = dateKey;
-                    out.push(<DateSeparator key={`date-${m.id}`} iso={m.created_at} />);
+                    out.push(
+                      <DateSeparator key={`date-${m.id}`} iso={m.created_at} />
+                    );
                   }
                   out.push(...renderOneMessage(m));
                 }
@@ -1559,14 +2168,16 @@ function ChatPane({
       </div>
 
       {/* Composer + (optional) call banner */}
-      <div className="px-4 pb-6 pt-2">
+      <div className="px-4 pt-2 pb-6">
         <div className={`mx-auto w-full ${maxW} space-y-2`}>
           {mintError && (
             <div
               className="rounded-md border px-3 py-2 text-xs"
               style={{
-                borderColor: "color-mix(in srgb, var(--accent-red) 30%, transparent)",
-                backgroundColor: "color-mix(in srgb, var(--accent-red) 10%, transparent)",
+                borderColor:
+                  "color-mix(in srgb, var(--accent-red) 30%, transparent)",
+                backgroundColor:
+                  "color-mix(in srgb, var(--accent-red) 10%, transparent)",
                 color: "var(--accent-red)",
               }}
             >
@@ -1588,15 +2199,18 @@ function ChatPane({
             </div>
           )}
           {/* Footer:
-             *  - ended       → unified "Session ended — read-only" pill
-             *                  (same as customer's RoomClient ReadOnlyChatPane)
-             *  - live + monitor → "Read-only · monitoring this session" pill
-             *  - live + engineer → composer + icon-only Start Zoom button
-             */}
+           *  - ended       → unified "Session ended — read-only" pill
+           *                  (same as customer's RoomClient ReadOnlyChatPane)
+           *  - live + monitor → "Read-only · monitoring this session" pill
+           *  - live + engineer → composer + icon-only Start Zoom button
+           */}
           {session.status === "ended" ? (
             <div
               className="flex items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-[11px] font-medium"
-              style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+              style={{
+                borderColor: "var(--border)",
+                color: "var(--text-muted)",
+              }}
             >
               <Lock size={11} />
               Session ended — read-only
@@ -1604,7 +2218,10 @@ function ChatPane({
           ) : readOnly ? (
             <div
               className="flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-[11px] font-medium"
-              style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+              style={{
+                borderColor: "var(--border)",
+                color: "var(--text-muted)",
+              }}
             >
               <Lock size={11} />
               Read-only · monitoring this session
@@ -1621,12 +2238,28 @@ function ChatPane({
                     else void handleStartMeeting();
                   }}
                   disabled={isReadOnly || minting}
-                  title={isApptSupervisor ? "Start the call" : session.zoom_meeting_id ? "Start a new Zoom meeting" : "Start a Zoom meeting"}
-                  aria-label={isApptSupervisor ? "Start the call" : session.zoom_meeting_id ? "Start a new Zoom meeting" : "Start a Zoom meeting"}
+                  title={
+                    isApptSupervisor
+                      ? "Start the call"
+                      : session.zoom_meeting_id
+                        ? "Start a new Zoom meeting"
+                        : "Start a Zoom meeting"
+                  }
+                  aria-label={
+                    isApptSupervisor
+                      ? "Start the call"
+                      : session.zoom_meeting_id
+                        ? "Start a new Zoom meeting"
+                        : "Start a Zoom meeting"
+                  }
                   className="flex h-8 w-8 shrink-0 items-center justify-center self-start rounded-full text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                   style={{ backgroundColor: BRAND_GREEN }}
                 >
-                  {minting ? <Loader2 size={14} className="animate-spin" /> : <Video size={14} />}
+                  {minting ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Video size={14} />
+                  )}
                 </button>
               )}
               <ChatComposer
@@ -1646,10 +2279,10 @@ function ChatPane({
           )}
 
           {/* Project AI assistant — slim bar that lets the engineer
-             *  query the customer's project history (past sessions, AI
-             *  summaries, intake, files). Visible during a live session
-             *  unless the call surface is mounted (then the same panel
-             *  lives in the right rail's bottom half — see EngineerSessionClient). */}
+           *  query the customer's project history (past sessions, AI
+           *  summaries, intake, files). Visible during a live session
+           *  unless the call surface is mounted (then the same panel
+           *  lives in the right rail's bottom half — see EngineerSessionClient). */}
           {session.status !== "ended" && !hideAiAsk && (
             <EngineerAiAsk
               sessionId={session.id}
@@ -1672,36 +2305,57 @@ function Message({ message }: { message: GuestMessage }) {
   if (message.sender_kind === "system") {
     return (
       <div className="flex justify-center">
-        <span className="inline-block rounded-full px-2.5 py-1 text-[11px]"
-          style={{ backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)", color: "var(--text-muted)" }}>
+        <span
+          className="inline-block rounded-full px-2.5 py-1 text-[11px]"
+          style={{
+            backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)",
+            color: "var(--text-muted)",
+          }}
+        >
           {message.body}
         </span>
       </div>
     );
   }
   const mine = message.sender_kind === "engineer";
-  const hasAttachments = !!message.attachments && message.attachments.length > 0;
+  const hasAttachments =
+    !!message.attachments && message.attachments.length > 0;
   const hasText = !!message.body && message.body.length > 0;
   const timeLabel = new Date(message.created_at).toLocaleTimeString([], {
-    hour: "numeric", minute: "2-digit",
+    hour: "numeric",
+    minute: "2-digit",
   });
   return (
     <div
       className={`flex flex-col ${mine ? "items-end" : "items-start"}`}
       style={{ animation: "relay-bubble-in 180ms ease-out" }}
     >
-      <div className="mb-0.5 px-1 text-[10px]" style={{ color: "var(--text-muted)" }}>
+      <div
+        className="mb-0.5 px-1 text-[10px]"
+        style={{ color: "var(--text-muted)" }}
+      >
         {message.sender_name ?? (mine ? "You" : "Customer")}
       </div>
       <div
         className="flex max-w-[85%] flex-col gap-2 rounded-2xl px-3.5 py-2.5 text-sm whitespace-pre-wrap"
         style={
           mine
-            ? { backgroundColor: BRAND_GREEN, color: "#fff", borderBottomRightRadius: 4 }
-            : { backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)", color: "var(--text)", borderBottomLeftRadius: 4 }
+            ? {
+                backgroundColor: BRAND_GREEN,
+                color: "#fff",
+                borderBottomRightRadius: 4,
+              }
+            : {
+                backgroundColor:
+                  "color-mix(in srgb, var(--text) 6%, transparent)",
+                color: "var(--text)",
+                borderBottomLeftRadius: 4,
+              }
         }
       >
-        {hasAttachments && <MessageAttachments attachments={message.attachments} />}
+        {hasAttachments && (
+          <MessageAttachments attachments={message.attachments} />
+        )}
         {hasText && <div>{message.body}</div>}
         {/* Meta footer — time + WhatsApp-style status tick on own messages.
             We don't distinguish sent/delivered/read yet, so the single
@@ -1709,7 +2363,9 @@ function Message({ message }: { message: GuestMessage }) {
             the row arrived here via realtime). */}
         <div
           className="-mb-0.5 flex items-center justify-end gap-1 pt-0.5 text-[10px]"
-          style={{ color: mine ? "rgba(255,255,255,0.78)" : "var(--text-faint)" }}
+          style={{
+            color: mine ? "rgba(255,255,255,0.78)" : "var(--text-faint)",
+          }}
         >
           <span className="tabular-nums">{timeLabel}</span>
           {mine && <Check size={11} strokeWidth={2.5} />}
@@ -1725,14 +2381,22 @@ function Message({ message }: { message: GuestMessage }) {
 // date for older.
 // ──────────────────────────────────────────────────────────────────────────
 function DateSeparator({ iso }: { iso: string }) {
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
-  const d = new Date(iso); d.setHours(0, 0, 0, 0);
-  const label = d.getTime() === today.getTime()
-    ? "Today"
-    : d.getTime() === yesterday.getTime()
-      ? "Yesterday"
-      : new Date(iso).toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" });
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const d = new Date(iso);
+  d.setHours(0, 0, 0, 0);
+  const label =
+    d.getTime() === today.getTime()
+      ? "Today"
+      : d.getTime() === yesterday.getTime()
+        ? "Yesterday"
+        : new Date(iso).toLocaleDateString([], {
+            weekday: "long",
+            month: "short",
+            day: "numeric",
+          });
   return (
     <div className="flex justify-center py-1">
       <span
@@ -1765,11 +2429,20 @@ function ReviewPanel({
   return (
     <section
       className="flex h-full flex-col border-l"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface)",
+      }}
     >
-      <div className="flex items-center gap-2 border-b px-4 py-3" style={{ borderColor: "var(--border)" }}>
+      <div
+        className="flex items-center gap-2 border-b px-4 py-3"
+        style={{ borderColor: "var(--border)" }}
+      >
         <Sparkles size={12} style={{ color: BRAND_GREEN }} />
-        <span className="flex-1 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text)" }}>
+        <span
+          className="flex-1 text-xs font-semibold tracking-wider uppercase"
+          style={{ color: "var(--text)" }}
+        >
           Summary
         </span>
         {/* Plain-text transcript export — useful when the engineer opens
@@ -1783,8 +2456,13 @@ function ReviewPanel({
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
-            const tsStamp = new Date(session.created_at).toISOString().slice(0, 10);
-            const slug = (session.guest_name ?? "session").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30);
+            const tsStamp = new Date(session.created_at)
+              .toISOString()
+              .slice(0, 10);
+            const slug = (session.guest_name ?? "session")
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, "-")
+              .slice(0, 30);
             a.download = `relay-transcript-${tsStamp}-${slug}.txt`;
             document.body.appendChild(a);
             a.click();
@@ -1800,7 +2478,11 @@ function ReviewPanel({
           Transcript
         </button>
       </div>
-      <SummaryView session={session} messages={messages} currentUserId={currentUserId} />
+      <SummaryView
+        session={session}
+        messages={messages}
+        currentUserId={currentUserId}
+      />
     </section>
   );
 }
@@ -1822,14 +2504,20 @@ function SummaryView({
   const title = session.ai_summary_title;
   const overview = session.ai_summary_overview ?? session.summary;
   const nextSteps = Array.isArray(session.ai_next_steps as unknown)
-    ? (session.ai_next_steps as unknown as Array<string | { text?: string; description?: string }>)
+    ? (session.ai_next_steps as unknown as Array<
+        string | { text?: string; description?: string }
+      >)
     : [];
-  const dur = session.duration_minutes != null ? Math.round(Number(session.duration_minutes)) : 0;
+  const dur =
+    session.duration_minutes != null
+      ? Math.round(Number(session.duration_minutes))
+      : 0;
   // Engineer who claimed the session OR the customer who owns it may edit.
   // Supervisors don't have an entry here — they hit the read-only branch.
   const canEdit =
     !!currentUserId &&
-    (currentUserId === session.customer_user_id || currentUserId === session.claimed_by);
+    (currentUserId === session.customer_user_id ||
+      currentUserId === session.claimed_by);
   const handleSummarySave = async (patch: {
     title?: string | null;
     overview?: string | null;
@@ -1838,8 +2526,8 @@ function SummaryView({
     const sb = createClient();
     const { error } = await sb.rpc("update_guest_call_summary", {
       _call_id: session.id,
-      _title: patch.title === undefined ? null : patch.title ?? "",
-      _overview: patch.overview === undefined ? null : patch.overview ?? "",
+      _title: patch.title === undefined ? null : (patch.title ?? ""),
+      _overview: patch.overview === undefined ? null : (patch.overview ?? ""),
       _next_steps: patch.nextSteps === undefined ? null : patch.nextSteps,
     });
     if (error) throw new Error(error.message);
@@ -1851,7 +2539,12 @@ function SummaryView({
   // or the underscore/dot event-name pair), producing identical rows.
   const seenCompanionBodies = new Set<string>();
   const zoomCompanionMessages = messages.filter((m) => {
-    if (m.sender_kind !== "system" || !m.body || !isAiSummaryMessageBody(m.body)) return false;
+    if (
+      m.sender_kind !== "system" ||
+      !m.body ||
+      !isAiSummaryMessageBody(m.body)
+    )
+      return false;
     const key = m.body.trim();
     if (seenCompanionBodies.has(key)) return false;
     seenCompanionBodies.add(key);
@@ -1866,46 +2559,79 @@ function SummaryView({
     state === "generating_zoom_summary" ||
     state === "waiting_for_transcript";
   const generatingLabel =
-    state === "waiting_for_transcript" ? "Waiting for Zoom summary…" :
-    state === "generating_zoom_summary" ? "Reading Zoom transcript…" :
-    "Generating summary…";
+    state === "waiting_for_transcript"
+      ? "Waiting for Zoom summary…"
+      : state === "generating_zoom_summary"
+        ? "Reading Zoom transcript…"
+        : "Generating summary…";
   return (
     <div className="flex-1 overflow-y-auto px-5 py-5">
-      <div className="mb-4 flex items-center gap-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
-        <Lock size={11} /><span>Session ended</span>{dur > 0 && <span>· {dur} min</span>}
+      <div
+        className="mb-4 flex items-center gap-2 text-[11px]"
+        style={{ color: "var(--text-muted)" }}
+      >
+        <Lock size={11} />
+        <span>Session ended</span>
+        {dur > 0 && <span>· {dur} min</span>}
       </div>
       {generating ? (
         <div className="flex flex-col items-center gap-3 py-12 text-center">
-          <Loader2 size={20} className="animate-spin" style={{ color: BRAND_GREEN }} />
-          <p className="text-sm" style={{ color: "var(--text-muted)" }}>{generatingLabel}</p>
+          <Loader2
+            size={20}
+            className="animate-spin"
+            style={{ color: BRAND_GREEN }}
+          />
+          <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+            {generatingLabel}
+          </p>
         </div>
       ) : state === "no_conversation" ? (
         <div className="flex flex-col items-center gap-3 py-12 text-center">
           <p className="text-sm font-medium" style={{ color: "var(--text)" }}>
             No conversation happened during this session.
           </p>
-          <p className="max-w-xs text-xs" style={{ color: "var(--text-muted)" }}>
+          <p
+            className="max-w-xs text-xs"
+            style={{ color: "var(--text-muted)" }}
+          >
             Recording wasn&apos;t started and no chat messages were exchanged.
           </p>
         </div>
       ) : state === "transcript_unavailable" && !overview ? (
         <div className="flex flex-col items-center gap-3 py-12 text-center">
           <AlertTriangle size={18} style={{ color: "var(--text-muted)" }} />
-          <p className="text-sm font-medium" style={{ color: "var(--text)" }}>Zoom summary unavailable</p>
-          <p className="max-w-xs text-xs" style={{ color: "var(--text-muted)" }}>
-            The Zoom AI Companion summary didn&apos;t land within the watchdog window.
+          <p className="text-sm font-medium" style={{ color: "var(--text)" }}>
+            Zoom summary unavailable
+          </p>
+          <p
+            className="max-w-xs text-xs"
+            style={{ color: "var(--text-muted)" }}
+          >
+            The Zoom AI Companion summary didn&apos;t land within the watchdog
+            window.
           </p>
         </div>
       ) : state === "summary_failed" && !overview ? (
         <div className="flex flex-col items-center gap-3 py-12 text-center">
           <AlertTriangle size={18} style={{ color: "var(--accent-red)" }} />
-          <p className="text-sm font-medium" style={{ color: "var(--text)" }}>Couldn&apos;t generate the summary</p>
-          <p className="max-w-xs text-xs" style={{ color: "var(--text-muted)" }}>
-            The AI service errored. The engineer can re-run summarize-guest-call manually.
+          <p className="text-sm font-medium" style={{ color: "var(--text)" }}>
+            Couldn&apos;t generate the summary
+          </p>
+          <p
+            className="max-w-xs text-xs"
+            style={{ color: "var(--text-muted)" }}
+          >
+            The AI service errored. The engineer can re-run summarize-guest-call
+            manually.
           </p>
         </div>
       ) : !overview ? (
-        <p className="py-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>No summary available.</p>
+        <p
+          className="py-8 text-center text-sm"
+          style={{ color: "var(--text-muted)" }}
+        >
+          No summary available.
+        </p>
       ) : (
         <div className="space-y-5">
           {/* Inline-editable title / overview / next-steps. The assigned
@@ -1920,7 +2646,10 @@ function SummaryView({
           />
           {zoomCompanionMessages.length > 0 && (
             <div className="pt-2">
-              <h3 className="mb-3 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+              <h3
+                className="mb-3 text-[10px] font-semibold tracking-wider uppercase"
+                style={{ color: "var(--text-muted)" }}
+              >
                 Zoom call summaries
               </h3>
               <div className="space-y-3">
@@ -1931,14 +2660,20 @@ function SummaryView({
                     canEdit={canEdit}
                     onEdit={async (newBody) => {
                       const sb = createClient();
-                      const { error } = await sb.rpc("update_guest_message_body", {
-                        _id: m.id, _body: newBody,
-                      });
+                      const { error } = await sb.rpc(
+                        "update_guest_message_body",
+                        {
+                          _id: m.id,
+                          _body: newBody,
+                        }
+                      );
                       if (error) throw new Error(error.message);
                     }}
                     onDelete={async () => {
                       const sb = createClient();
-                      const { error } = await sb.rpc("delete_guest_message", { _id: m.id });
+                      const { error } = await sb.rpc("delete_guest_message", {
+                        _id: m.id,
+                      });
                       if (error) throw new Error(error.message);
                     }}
                   />
@@ -1956,7 +2691,7 @@ function SummaryView({
 function Resizer() {
   return (
     <PanelResizeHandle
-      className="group relative w-2 cursor-col-resize transition-colors data-[resize-handle-state=drag]:bg-[--green-strong] hover:bg-[--green-soft]"
+      className="group relative w-2 cursor-col-resize transition-colors hover:bg-[--green-soft] data-[resize-handle-state=drag]:bg-[--green-strong]"
       style={
         {
           backgroundColor: "var(--border)",
@@ -1968,27 +2703,55 @@ function Resizer() {
       {/* Centered grip dots so the handle is visually discoverable */}
       <span
         aria-hidden
-        className="pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col gap-1 opacity-60 group-hover:opacity-100"
+        className="pointer-events-none absolute top-1/2 left-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col gap-1 opacity-60 group-hover:opacity-100"
       >
-        <span className="block h-1 w-1 rounded-full" style={{ backgroundColor: "var(--text-muted)" }} />
-        <span className="block h-1 w-1 rounded-full" style={{ backgroundColor: "var(--text-muted)" }} />
-        <span className="block h-1 w-1 rounded-full" style={{ backgroundColor: "var(--text-muted)" }} />
+        <span
+          className="block h-1 w-1 rounded-full"
+          style={{ backgroundColor: "var(--text-muted)" }}
+        />
+        <span
+          className="block h-1 w-1 rounded-full"
+          style={{ backgroundColor: "var(--text-muted)" }}
+        />
+        <span
+          className="block h-1 w-1 rounded-full"
+          style={{ backgroundColor: "var(--text-muted)" }}
+        />
       </span>
     </PanelResizeHandle>
   );
 }
 
-function ErrorToast({ message }: { message: string }) {
+function ErrorToast({
+  message,
+  onDismiss,
+}: {
+  message: string;
+  onDismiss?: () => void;
+}) {
   return (
     <div
-      className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-md border px-4 py-2 text-sm shadow-lg"
+      role="alert"
+      className="fixed bottom-6 left-1/2 z-50 flex max-w-[90vw] -translate-x-1/2 items-start gap-2 rounded-md border px-4 py-2 text-sm shadow-lg"
       style={{
         backgroundColor: "var(--surface)",
         borderColor: "color-mix(in srgb, var(--accent-red) 30%, transparent)",
         color: "var(--accent-red)",
       }}
     >
-      {message}
+      <span className="min-w-0 flex-1">{message}</span>
+      {onDismiss && (
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="Dismiss"
+          title="Dismiss"
+          className="-mr-1 shrink-0 rounded p-0.5 transition-opacity hover:opacity-70"
+          style={{ color: "var(--accent-red)" }}
+        >
+          <X size={14} />
+        </button>
+      )}
     </div>
   );
 }
@@ -2013,7 +2776,10 @@ type ProjectMemoryRow = {
 };
 
 function ProjectMemorySection({
-  projectId, projectName, currentSessionId, onOpen,
+  projectId,
+  projectName,
+  currentSessionId,
+  onOpen,
 }: {
   projectId: string;
   projectName: string | null;
@@ -2030,7 +2796,9 @@ function ProjectMemorySection({
       const sb = createClient();
       const { data } = await sb
         .from("guest_calls")
-        .select("id, ai_summary_title, ai_summary_overview, agent_name, duration_minutes, created_at, status")
+        .select(
+          "id, ai_summary_title, ai_summary_overview, agent_name, duration_minutes, created_at, status"
+        )
         .eq("project_id", projectId)
         .order("created_at", { ascending: false })
         .limit(40);
@@ -2041,17 +2809,25 @@ function ProjectMemorySection({
           title: (r.ai_summary_title as string | null) ?? "Session",
           overview: (r.ai_summary_overview as string | null) ?? null,
           agent: (r.agent_name as string | null) ?? null,
-          minutes: r.duration_minutes != null ? Math.round(Number(r.duration_minutes)) : null,
+          minutes:
+            r.duration_minutes != null
+              ? Math.round(Number(r.duration_minutes))
+              : null,
           createdAt: r.created_at as string,
           status: r.status as string,
         }))
       );
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [open, projectId, rows]);
 
   return (
-    <div className="mt-5 border-t pt-3" style={{ borderColor: "var(--border)" }}>
+    <div
+      className="mt-5 border-t pt-3"
+      style={{ borderColor: "var(--border)" }}
+    >
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -2066,18 +2842,27 @@ function ProjectMemorySection({
           }}
         />
         <BookOpen size={11} style={{ color: "var(--text-muted)" }} />
-        <span className="flex-1 truncate text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+        <span
+          className="flex-1 truncate text-[10px] font-semibold tracking-wider uppercase"
+          style={{ color: "var(--text-muted)" }}
+        >
           Project memory{projectName ? ` · ${projectName}` : ""}
         </span>
       </button>
       {open && (
-        <div className="ml-2 mt-1 space-y-1">
+        <div className="mt-1 ml-2 space-y-1">
           {rows === null ? (
-            <p className="px-2 py-3 text-[11px]" style={{ color: "var(--text-muted)" }}>
+            <p
+              className="px-2 py-3 text-[11px]"
+              style={{ color: "var(--text-muted)" }}
+            >
               Loading project history…
             </p>
           ) : rows.length === 0 ? (
-            <p className="px-2 py-3 text-[11px]" style={{ color: "var(--text-muted)" }}>
+            <p
+              className="px-2 py-3 text-[11px]"
+              style={{ color: "var(--text-muted)" }}
+            >
               No prior sessions on this project.
             </p>
           ) : (
@@ -2089,17 +2874,23 @@ function ProjectMemorySection({
                   type="button"
                   disabled={isCurrent}
                   onClick={() => onOpen(r.id)}
-                  className="flex w-full flex-col gap-0.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-60"
+                  className="flex w-full flex-col gap-0.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-black/5 disabled:opacity-60 dark:hover:bg-white/5"
                   aria-current={isCurrent ? "page" : undefined}
                 >
                   <div className="flex items-center gap-2">
-                    <span className="truncate text-[12px]" style={{ color: "var(--text)" }}>
+                    <span
+                      className="truncate text-[12px]"
+                      style={{ color: "var(--text)" }}
+                    >
                       {r.title}
                     </span>
                     {isCurrent && (
                       <span
-                        className="rounded-full px-1 text-[8px] font-semibold uppercase tracking-wider"
-                        style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
+                        className="rounded-full px-1 text-[8px] font-semibold tracking-wider uppercase"
+                        style={{
+                          backgroundColor: BRAND_GREEN_SOFT,
+                          color: BRAND_GREEN,
+                        }}
                       >
                         Current
                       </span>
@@ -2113,11 +2904,17 @@ function ProjectMemorySection({
                       {r.overview}
                     </p>
                   )}
-                  <div className="text-[9px]" style={{ color: "var(--text-faint)" }}>
+                  <div
+                    className="text-[9px]"
+                    style={{ color: "var(--text-faint)" }}
+                  >
                     {r.agent ?? "Engineer"}
                     {r.minutes != null ? ` · ${r.minutes}m` : ""}
                     {" · "}
-                    {new Date(r.createdAt).toLocaleDateString([], { month: "short", day: "numeric" })}
+                    {new Date(r.createdAt).toLocaleDateString([], {
+                      month: "short",
+                      day: "numeric",
+                    })}
                   </div>
                 </button>
               );
@@ -2159,18 +2956,21 @@ function buildTranscript(session: GuestCall, messages: GuestMessage[]): string {
       if (isAiSummaryMessageBody(body)) continue;
     }
     const ts = new Date(m.created_at).toLocaleString();
-    const who = m.sender_kind === "engineer"
-      ? `Engineer${m.sender_name ? ` (${m.sender_name})` : ""}`
-      : m.sender_kind === "guest"
-        ? `Customer${m.sender_name ? ` (${m.sender_name})` : ""}`
-        : "System";
+    const who =
+      m.sender_kind === "engineer"
+        ? `Engineer${m.sender_name ? ` (${m.sender_name})` : ""}`
+        : m.sender_kind === "guest"
+          ? `Customer${m.sender_name ? ` (${m.sender_name})` : ""}`
+          : "System";
     lines.push(`[${ts}] ${who}:`);
     if (m.body && m.body.trim()) {
       for (const line of m.body.split(/\r?\n/)) lines.push(`  ${line}`);
     }
     if (m.attachments && m.attachments.length > 0) {
       for (const a of m.attachments) {
-        lines.push(`  [attachment] ${a.name} · ${a.kind} · ${a.size_bytes ?? "?"} bytes`);
+        lines.push(
+          `  [attachment] ${a.name} · ${a.kind} · ${a.size_bytes ?? "?"} bytes`
+        );
       }
     }
     lines.push("");
@@ -2180,10 +2980,18 @@ function buildTranscript(session: GuestCall, messages: GuestMessage[]): string {
 }
 
 function groupByDate(past: PastSession[]): Array<[string, PastSession[]]> {
-  const today = new Date(); today.setHours(0,0,0,0);
-  const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
-  const sevenDaysAgo = new Date(today); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-  const buckets: Record<string, PastSession[]> = { "Today": [], "Yesterday": [], "Previous 7 Days": [], "Older": [] };
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const sevenDaysAgo = new Date(today);
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const buckets: Record<string, PastSession[]> = {
+    Today: [],
+    Yesterday: [],
+    "Previous 7 Days": [],
+    Older: [],
+  };
   for (const s of past) {
     const d = new Date(s.date);
     if (d >= today) buckets.Today.push(s);

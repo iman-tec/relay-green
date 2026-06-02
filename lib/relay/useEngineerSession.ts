@@ -16,11 +16,19 @@ import { uploadOne, validateStagedFiles } from "./chatAttachments";
 function asString(e: unknown): string {
   if (!e) return "Unknown error";
   if (typeof e === "string") return e;
-  const err = e as { message?: unknown; error_description?: unknown; details?: unknown };
+  const err = e as {
+    message?: unknown;
+    error_description?: unknown;
+    details?: unknown;
+  };
   if (typeof err.message === "string") return err.message;
   if (typeof err.error_description === "string") return err.error_description;
   if (typeof err.details === "string") return err.details;
-  try { return JSON.stringify(e); } catch { return String(e); }
+  try {
+    return JSON.stringify(e);
+  } catch {
+    return String(e);
+  }
 }
 
 export type EngineerSessionState = {
@@ -28,8 +36,14 @@ export type EngineerSessionState = {
   messages: GuestMessage[];
   loading: boolean;
   error: string | null;
+  /** Dismiss the current error toast (the × button). */
+  clearError: () => void;
   sendMessage: (body: string) => Promise<void>;
-  sendBundle:  (payload: { text: string; files: File[]; senderName?: string }) => Promise<void>;
+  sendBundle: (payload: {
+    text: string;
+    files: File[];
+    senderName?: string;
+  }) => Promise<void>;
   end: (reason?: string) => Promise<void>;
   release: () => Promise<void>;
   markJoined: () => Promise<void>;
@@ -59,13 +73,24 @@ export function useEngineerSession(sessionId: string): EngineerSessionState {
       // isAssignedEngineer is correct on the very first render after load.
       const [userRes, callRes, msgRes] = await Promise.all([
         sb.auth.getUser().catch(() => ({ data: { user: null } })),
-        sb.from("guest_calls").select("*").eq("id", sessionId).maybeSingle()
-          .then((r) => r, (e) => ({ data: null, error: e })),
-        sb.from("guest_messages")
+        sb
+          .from("guest_calls")
+          .select("*")
+          .eq("id", sessionId)
+          .maybeSingle()
+          .then(
+            (r) => r,
+            (e) => ({ data: null, error: e })
+          ),
+        sb
+          .from("guest_messages")
           .select("*, attachments:guest_message_attachments(*)")
           .eq("guest_call_id", sessionId)
           .order("created_at")
-          .then((r) => r, (e) => ({ data: null, error: e })),
+          .then(
+            (r) => r,
+            (e) => ({ data: null, error: e })
+          ),
       ]);
       setViewerUserId(userRes.data.user?.id ?? null);
       if (callRes.error) {
@@ -73,7 +98,7 @@ export function useEngineerSession(sessionId: string): EngineerSessionState {
         setError(asString(callRes.error));
       }
       setSession((callRes.data as GuestCall | null) ?? null);
-      setMessages(((msgRes.data ?? []) as GuestMessage[]));
+      setMessages((msgRes.data ?? []) as GuestMessage[]);
     } catch (e) {
       if (isTransientNetworkError(e)) {
         console.warn("[eng-session] transient network blip:", asString(e));
@@ -101,14 +126,33 @@ export function useEngineerSession(sessionId: string): EngineerSessionState {
     const sb = supabaseRef.current;
     const ch = sb
       .channel(`relay-eng-session:${sessionId}`)
-      .on("postgres_changes",
-        { event: "UPDATE", schema: "public", table: "guest_calls", filter: `id=eq.${sessionId}` },
-        (p) => setSession((prev) => ({ ...(prev as GuestCall), ...(p.new as GuestCall) })))
-      .on("postgres_changes",
-        { event: "INSERT", schema: "public", table: "guest_messages", filter: `guest_call_id=eq.${sessionId}` },
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "guest_calls",
+          filter: `id=eq.${sessionId}`,
+        },
+        (p) =>
+          setSession((prev) => ({
+            ...(prev as GuestCall),
+            ...(p.new as GuestCall),
+          }))
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "guest_messages",
+          filter: `guest_call_id=eq.${sessionId}`,
+        },
         (p) => {
           const m = p.new as GuestMessage;
-          setMessages((prev) => prev.some((x) => x.id === m.id) ? prev : [...prev, m]);
+          setMessages((prev) =>
+            prev.some((x) => x.id === m.id) ? prev : [...prev, m]
+          );
           // Hydrate attachments (if any) on the next tick — realtime only
           // carries the parent row.
           void (async () => {
@@ -119,31 +163,40 @@ export function useEngineerSession(sessionId: string): EngineerSessionState {
             if (!data || data.length === 0) return;
             setMessages((prev) =>
               prev.map((x) =>
-                x.id === m.id ? { ...x, attachments: data as GuestMessage["attachments"] } : x,
-              ),
+                x.id === m.id
+                  ? { ...x, attachments: data as GuestMessage["attachments"] }
+                  : x
+              )
             );
           })();
-        })
+        }
+      )
       .subscribe();
     channelRef.current = ch;
-    return () => { sb.removeChannel(ch); channelRef.current = null; };
+    return () => {
+      sb.removeChannel(ch);
+      channelRef.current = null;
+    };
   }, [sessionId]);
 
-  const sendMessage = useCallback(async (body: string) => {
-    if (!session || !body.trim()) return;
-    if (["ended","abandoned","cancelled"].includes(session.status)) {
-      setError("This session has ended.");
-      return;
-    }
-    const sb = supabaseRef.current;
-    const { error: e } = await sb.from("guest_messages").insert({
-      guest_call_id: sessionId,
-      sender_kind: "engineer",
-      sender_name: session.agent_name ?? "Engineer",
-      body: body.trim(),
-    });
-    if (e) setError(e.message);
-  }, [session, sessionId]);
+  const sendMessage = useCallback(
+    async (body: string) => {
+      if (!session || !body.trim()) return;
+      if (["ended", "abandoned", "cancelled"].includes(session.status)) {
+        setError("This session has ended.");
+        return;
+      }
+      const sb = supabaseRef.current;
+      const { error: e } = await sb.from("guest_messages").insert({
+        guest_call_id: sessionId,
+        sender_kind: "engineer",
+        sender_name: session.agent_name ?? "Engineer",
+        body: body.trim(),
+      });
+      if (e) setError(e.message);
+    },
+    [session, sessionId]
+  );
 
   /** Bundled send: text + 0..N attachments as a single chat bubble. */
   const sendBundle = useCallback(
@@ -167,8 +220,8 @@ export function useEngineerSession(sessionId: string): EngineerSessionState {
       try {
         const uploaded = await Promise.all(
           validation.classified.map((c) =>
-            uploadOne({ sb, sessionId, file: c.file, kind: c.kind }),
-          ),
+            uploadOne({ sb, sessionId, file: c.file, kind: c.kind })
+          )
         );
         const { data: msgRow, error: mErr } = await sb
           .from("guest_messages")
@@ -202,40 +255,69 @@ export function useEngineerSession(sessionId: string): EngineerSessionState {
         setError(e instanceof Error ? e.message : "Send failed.");
       }
     },
-    [session, sessionId],
+    [session, sessionId]
   );
 
-  const end = useCallback(async (reason = "engineer_ended") => {
-    const sb = supabaseRef.current;
-    const { error: e } = await sb.rpc("end_session", { _session_id: sessionId, _reason: reason });
-    if (e) { setError(e.message); return; }
-    // Fire-and-forget: hang up Zoom (idempotent — returns ok:noop if no
-    // meeting was ever minted) AND kick off the AI summary.
-    void sb.functions.invoke("end-zoom-meeting", {
-      body: { session_id: sessionId },
-    });
-    void sb.functions.invoke("summarize-guest-call", {
-      body: { guest_call_id: sessionId },
-    });
-  }, [sessionId]);
+  const end = useCallback(
+    async (reason = "engineer_ended") => {
+      const sb = supabaseRef.current;
+      const { error: e } = await sb.rpc("end_session", {
+        _session_id: sessionId,
+        _reason: reason,
+      });
+      if (e) {
+        setError(e.message);
+        return;
+      }
+      // Fire-and-forget: hang up Zoom (idempotent — returns ok:noop if no
+      // meeting was ever minted) AND kick off the AI summary.
+      void sb.functions.invoke("end-zoom-meeting", {
+        body: { session_id: sessionId },
+      });
+      void sb.functions.invoke("summarize-guest-call", {
+        body: { guest_call_id: sessionId },
+      });
+    },
+    [sessionId]
+  );
 
   const release = useCallback(async () => {
     const sb = supabaseRef.current;
-    const { error: e } = await sb.rpc("release_session", { _session_id: sessionId });
+    const { error: e } = await sb.rpc("release_session", {
+      _session_id: sessionId,
+    });
     if (e) setError(e.message);
   }, [sessionId]);
 
   const markJoined = useCallback(async () => {
     const sb = supabaseRef.current;
-    const { error: e } = await sb.rpc("mark_joined", { _session_id: sessionId, _role: "engineer" });
+    const { error: e } = await sb.rpc("mark_joined", {
+      _session_id: sessionId,
+      _role: "engineer",
+    });
     if (e) setError(e.message);
   }, [sessionId]);
 
-  const isAssignedEngineer = !!viewerUserId && !!session?.claimed_by && viewerUserId === session.claimed_by;
+  const isAssignedEngineer =
+    !!viewerUserId &&
+    !!session?.claimed_by &&
+    viewerUserId === session.claimed_by;
+
+  const clearError = useCallback(() => setError(null), []);
 
   return {
-    session, messages, loading, error,
-    sendMessage, sendBundle, end, release, markJoined, refresh,
-    viewerUserId, isAssignedEngineer,
+    session,
+    messages,
+    loading,
+    error,
+    clearError,
+    sendMessage,
+    sendBundle,
+    end,
+    release,
+    markJoined,
+    refresh,
+    viewerUserId,
+    isAssignedEngineer,
   };
 }
