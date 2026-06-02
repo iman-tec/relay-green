@@ -326,6 +326,18 @@ pre {
   border-radius: 2px;
 }
 
+/* Text inputs / textareas / selects carry their own border + caret as the
+   focus affordance — drop the green focus ring on them everywhere (chat
+   composers, search bars, etc.). Buttons/links keep the ring for a11y. */
+input:focus,
+input:focus-visible,
+textarea:focus,
+textarea:focus-visible,
+select:focus,
+select:focus-visible {
+  outline: none;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;

@@ -25,6 +25,7 @@ import {
   ShieldCheck,
   CalendarClock,
   ChevronDown,
+  ArrowRight,
   Trash2,
   ThumbsDown,
 } from "lucide-react";
@@ -38,7 +39,7 @@ const eur = (cents: number) =>
     currency: "EUR",
   }).format((cents || 0) / 100);
 
-type Quote = {
+export type Quote = {
   id: string;
   kind: "golive" | "maintain" | string;
   status: string;
@@ -58,11 +59,15 @@ type Quote = {
 export function ContractManagement({
   isOpen,
   onToggle,
+  onNavigate,
 }: {
   /** Accordion state owned by the Sidebar — opening one of the sidebar's
    *  collapsible bars collapses the others. */
   isOpen: boolean;
   onToggle: () => void;
+  /** When set, the pill is a NAV button (→) that opens the center pane instead
+   *  of expanding inline. The inline bid list is suppressed in this mode. */
+  onNavigate?: () => void;
 }) {
   const [sb] = useState(() => createClient());
   const [quotes, setQuotes] = useState<Quote[]>([]);
@@ -142,16 +147,17 @@ export function ContractManagement({
     (q) => q.status === "quoted" && !q.customer_viewed_at
   ).length;
 
+  // Borderless pill — hidden entirely until a bid exists (Claude-style: empty
+  // sections don't clutter the sidebar).
+  if (quotes.length === 0) return null;
+
   return (
-    <section
-      className="rounded-xl border"
-      style={{ borderColor: "var(--border)", background: "var(--surface)" }}
-    >
+    <section className="overflow-hidden rounded-xl">
       <button
         type="button"
-        onClick={onToggle}
-        aria-expanded={isOpen}
-        className="flex w-full items-center gap-1.5 px-3 py-2 text-left transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.03]"
+        onClick={onNavigate ?? onToggle}
+        aria-expanded={onNavigate ? undefined : isOpen}
+        className="flex w-full items-center gap-1.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.05]"
       >
         <FileText size={12} style={{ color: "var(--primary)" }} />
         <span
@@ -186,26 +192,22 @@ export function ContractManagement({
         >
           {quotes.length}
         </span>
-        <ChevronDown
-          size={14}
-          className={`shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`}
-          style={{ color: "var(--text-muted)" }}
-        />
+        {onNavigate ? (
+          <ArrowRight size={14} style={{ color: "var(--text-muted)" }} />
+        ) : (
+          <ChevronDown
+            size={14}
+            className={`shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`}
+            style={{ color: "var(--text-muted)" }}
+          />
+        )}
       </button>
-      {isOpen && quotes.length === 0 && (
-        <p
-          className="border-t px-3 py-3 text-[11px]"
-          style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
-        >
-          No bids yet.
-        </p>
-      )}
-      {/* Show at most two bids; the rest scroll inside this section. The
-          scrollbar is hidden (hide-scrollbar) — content still scrolls. */}
-      {isOpen && quotes.length > 0 && (
+      {/* Inline bid list — suppressed in nav (→) mode (the center pane owns
+          the full list there). */}
+      {isOpen && !onNavigate && quotes.length > 0 && (
         <ul
-          className="hide-scrollbar overflow-y-auto border-t"
-          style={{ borderColor: "var(--border)", maxHeight: "5.3rem" }}
+          className="hide-scrollbar mt-0.5 overflow-y-auto"
+          style={{ maxHeight: "5.3rem" }}
         >
           {quotes.map((q) => {
             const golive = q.kind === "golive";
@@ -351,10 +353,11 @@ const DECLINE_REASONS = [
   "Scope isn't right",
 ];
 
-function BidViewer({
+export function BidViewer({
   quote,
   projectName,
   initialDelete = false,
+  inline = false,
   onDelete,
   onClose,
   onChanged,
@@ -363,6 +366,9 @@ function BidViewer({
   projectName: string;
   /** Open straight onto the delete panel (set when the row trash launched us). */
   initialDelete?: boolean;
+  /** Render in-flow (accordion under a list row) instead of as a modal popup —
+   *  no scrim, no fixed positioning, no scroll-lock. */
+  inline?: boolean;
   /** Parent-owned optimistic delete: drops the row + closes us immediately. */
   onDelete: (id: string, reason: string) => void;
   onClose: () => void;
@@ -389,7 +395,7 @@ function BidViewer({
     slotStart: string;
   } | null>(null);
   const [bkTick, setBkTick] = useState(0); // bump to reload the booking
-  const dialogRef = useOverlayDismiss(onClose);
+  const dialogRef = useOverlayDismiss(onClose, !inline);
 
   // Mark the bid seen (clears the blinking dot) on open.
   useEffect(() => {
@@ -497,19 +503,27 @@ function BidViewer({
 
   return (
     <>
-      <div
-        className="fixed inset-0 z-[var(--z-modal)]"
-        style={{ backgroundColor: "var(--scrim)" }}
-        onClick={onClose}
-      />
+      {!inline && (
+        <div
+          className="fixed inset-0 z-[var(--z-modal)]"
+          style={{ backgroundColor: "var(--scrim)" }}
+          onClick={onClose}
+        />
+      )}
       <div
         ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        className="fixed top-1/2 left-1/2 z-[var(--z-modal)] flex max-h-[90vh] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col gap-4 overflow-y-auto rounded-2xl border p-5 shadow-2xl"
+        role={inline ? undefined : "dialog"}
+        aria-modal={inline ? undefined : true}
+        className={
+          inline
+            ? "mt-1.5 flex flex-col gap-3 rounded-xl border p-4"
+            : "fixed top-1/2 left-1/2 z-[var(--z-modal)] flex max-h-[90vh] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col gap-4 overflow-y-auto rounded-2xl border p-5 shadow-2xl"
+        }
         style={{
           borderColor: "var(--border)",
-          backgroundColor: "var(--surface)",
+          backgroundColor: inline
+            ? "var(--surface-raised)"
+            : "var(--surface)",
         }}
       >
         <div className="flex items-start gap-2">

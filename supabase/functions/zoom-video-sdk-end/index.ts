@@ -150,10 +150,18 @@ Deno.serve(async (req) => {
       actor_user_id: userId,
     });
 
-    // Only the engineer/supervisor end-for-all triggers the summary chain.
+    // Only the engineer/supervisor end-for-all triggers the per-call summary.
+    // We fire summarize-CALL (not summarize-guest-call): the video call is
+    // over but the SESSION/chat keeps going, so we want the call-only recap
+    // capsule to land in the room now WITHOUT flipping status → ended (which
+    // is what summarize-guest-call does). The collective session summary is
+    // generated separately when the session itself ends.
+    // NOTE: the prior code here invoked summarize-guest-call with
+    // `{ session_id }`, but that function reads `{ guest_call_id }` — so it
+    // 400'd and never ran. summarize-call accepts either key.
     if (endForAll) {
       try {
-        void fetch(`${SUPABASE_URL}/functions/v1/summarize-guest-call`, {
+        void fetch(`${SUPABASE_URL}/functions/v1/summarize-call`, {
           method: "POST",
           headers: {
             Authorization:  `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,

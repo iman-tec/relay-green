@@ -95,12 +95,18 @@ export function useZoomCall({
   // triggers summarize-guest-call). Without hoisting, the last 0-60s of
   // voice transcript would be summarised against nothing because the
   // batched INSERT hasn't fired yet when summarize-guest-call runs.
-  type CaptionBuffer = {
+  // Each in-progress transcription sentence is keyed by its Zoom msgId. The
+  // SDK streams the SAME sentence repeatedly as it refines it (growing `text`,
+  // `done` flips true when finalized), so we REPLACE by msgId rather than
+  // append — otherwise the transcript fills with duplicated partials ("Hel",
+  // "Hello", "Hello there" …) and the summary reads as gibberish.
+  type PendingCaption = {
     speaker: string | null;
-    texts: string[];
-    windowStart: Date;
+    text: string;
+    done: boolean;
+    firstSeen: number;
   };
-  const captionBuffersRef = useRef<Map<string, CaptionBuffer>>(new Map());
+  const pendingCaptionsRef = useRef<Map<string, PendingCaption>>(new Map());
 
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -113,6 +119,12 @@ export function useZoomCall({
     "good" | "fair" | "poor" | "unknown"
   >("unknown");
   const [tick, setTick] = useState(0); // bump to force re-render after SDK state changes
+  // True once Zoom's NATIVE live transcription is running (host start or
+  // guest caption-status). When it is, the browser-side Whisper recorder
+  // below stands down — otherwise both would write session_captions and the
+  // transcript would double up. On this account native LTT is unavailable
+  // (errorCode 7300) so this stays false and Whisper is the live path.
+  const [lttActive, setLttActive] = useState(false);
 
   const refresh = useCallback(() => setTick((t) => t + 1), []);
 
@@ -124,28 +136,53 @@ export function useZoomCall({
   const flushCaptions = useCallback(
     async (force: boolean): Promise<void> => {
       if (role !== "host") return;
-      const buffers = captionBuffersRef.current;
-      const now = new Date();
-      const cutoffMs = now.getTime() - 60_000;
-      const rows: Array<{
-        session_id: string;
-        speaker: string | null;
-        text: string;
-        window_start: string;
-        window_end: string;
-      }> = [];
-      for (const [key, buf] of Array.from(buffers.entries())) {
-        if (buf.texts.length === 0) continue;
-        if (!force && buf.windowStart.getTime() > cutoffMs) continue;
-        rows.push({
-          session_id: sessionId,
-          speaker: buf.speaker,
-          text: buf.texts.join(" ").trim(),
-          window_start: buf.windowStart.toISOString(),
-          window_end: now.toISOString(),
-        });
-        buffers.delete(key);
+      const pending = pendingCaptionsRef.current;
+      const now = Date.now();
+      // A sentence is ready to persist once finalized (done). As a safety net
+      // for SDK builds that don't reliably flip `done`, also commit sentences
+      // that have gone stale (idle > 60s), and on force (teardown / final
+      // leave) commit everything so the tail of the call is never lost.
+      const STALE_MS = 60_000;
+      const ready: Array<{ speaker: string | null; text: string; ts: number }> =
+        [];
+      for (const [msgId, c] of Array.from(pending.entries())) {
+        const text = c.text.trim();
+        if (!text) {
+          pending.delete(msgId);
+          continue;
+        }
+        if (c.done || force || now - c.firstSeen > STALE_MS) {
+          ready.push({ speaker: c.speaker, text, ts: c.firstSeen });
+          pending.delete(msgId);
+        }
       }
+      if (ready.length === 0) return;
+      ready.sort((a, b) => a.ts - b.ts);
+      // One row per speaker for this flush window, sentences in time order.
+      const bySpeaker = new Map<
+        string,
+        { speaker: string | null; texts: string[]; start: number; end: number }
+      >();
+      for (const r of ready) {
+        const key = r.speaker ?? "__null__";
+        let g = bySpeaker.get(key);
+        if (!g) {
+          g = { speaker: r.speaker, texts: [], start: r.ts, end: r.ts };
+          bySpeaker.set(key, g);
+        }
+        g.texts.push(r.text);
+        g.start = Math.min(g.start, r.ts);
+        g.end = Math.max(g.end, r.ts);
+      }
+      const rows = Array.from(bySpeaker.values())
+        .map((g) => ({
+          session_id: sessionId,
+          speaker: g.speaker,
+          text: g.texts.join(" ").replace(/\s+/g, " ").trim(),
+          window_start: new Date(g.start).toISOString(),
+          window_end: new Date(g.end).toISOString(),
+        }))
+        .filter((r) => r.text.length > 0);
       if (rows.length === 0) return;
       try {
         const { error: insErr } = await supabaseRef.current
@@ -368,30 +405,72 @@ export function useZoomCall({
         // Path 1 test: try `getLiveTranscriptionClient().startLiveTranscription()`
         // and see if our Video SDK account has the entitlement. Captions
         // arrive via the `caption-message` event on the main client (not
-        // on the live-transcription client). The buffer + flush logic
-        // lives at component scope (captionBuffersRef + flushCaptions
+        // on the live-transcription client). The pending-caption map + flush
+        // logic live at component scope (pendingCaptionsRef + flushCaptions
         // above) so leave() can await a final flush BEFORE invoking
         // summarize-guest-call — otherwise the last 0-60s of voice
         // transcript would never reach the summary.
         const onCaptionMessage = (payload: {
+          msgId?: string;
           userId?: number;
           displayName?: string;
           text?: string;
+          source?: number;
+          timestamp?: number;
           done?: boolean;
         }) => {
           const text = (payload?.text ?? "").trim();
           if (!text) return;
+          // source: 4 = ASR (voice), 1 = manually-typed caption, 2 = external
+          // captioner. Keep voice + manual; drop the rest. Tolerate a missing
+          // source (older builds) by keeping it.
+          if (
+            payload.source != null &&
+            payload.source !== 4 &&
+            payload.source !== 1
+          )
+            return;
+          const msgId =
+            payload.msgId ??
+            `${payload.userId ?? "u"}-${payload.timestamp ?? text.length}`;
           const speaker =
             payload.displayName ??
-            (payload.userId ? `User ${payload.userId}` : "Unknown");
-          let buf = captionBuffersRef.current.get(speaker);
-          if (!buf) {
-            buf = { speaker, texts: [], windowStart: new Date() };
-            captionBuffersRef.current.set(speaker, buf);
-          }
-          buf.texts.push(text);
+            (payload.userId ? `User ${payload.userId}` : null);
+          const prev = pendingCaptionsRef.current.get(msgId);
+          // Zoom re-sends the SAME sentence with growing `text` as it refines
+          // it — REPLACE by msgId (don't append) so partial fragments don't
+          // pile up. `done` latches true once the sentence is finalized.
+          pendingCaptionsRef.current.set(msgId, {
+            speaker,
+            text,
+            done: !!payload.done || (prev?.done ?? false),
+            firstSeen: prev?.firstSeen ?? Date.now(),
+          });
         };
         client.on("caption-message", onCaptionMessage);
+
+        // Guest side: in Individual transcription mode each participant must
+        // declare their own speaking language or their audio isn't
+        // transcribed. The host can't set it for them, so when the host turns
+        // captions on (caption-status → autoCaption) the guest sets English
+        // once. (The host sets its own below, at startLiveTranscription time.)
+        let guestLangSet = false;
+        const onCaptionStatus = (payload: { autoCaption?: boolean }) => {
+          if (role === "host" || !payload?.autoCaption || guestLangSet) return;
+          guestLangSet = true;
+          setLttActive(true); // host turned native ASR on → stand down Whisper
+          try {
+            const lt = (client as any).getLiveTranscriptionClient?.();
+            void lt?.setSpeakingLanguage?.("en");
+            console.info(
+              "[useZoomCall] guest speaking language set to en for live transcription"
+            );
+          } catch (e) {
+            console.warn("[useZoomCall] setSpeakingLanguage(guest):", e);
+          }
+        };
+        client.on("caption-status", onCaptionStatus);
+
         const flushInterval = window.setInterval(() => {
           void flushCaptions(false);
         }, 60_000);
@@ -412,11 +491,37 @@ export function useZoomCall({
                 "[useZoomCall] Live Transcription client unavailable on this SDK build — voice captions disabled."
               );
             } else {
+              // Set the host's own speaking language first (Individual mode).
+              // Harmless if the SDK no-ops it; improves ASR accuracy.
+              try {
+                await lt.setSpeakingLanguage?.("en");
+              } catch (slErr) {
+                console.warn("[useZoomCall] setSpeakingLanguage(host):", slErr);
+              }
               await lt.startLiveTranscription();
               liveTranscriptionStarted = true;
-              console.info(
-                "[useZoomCall] ✓ Live Transcription STARTED — captions will stream into session_captions every ~60s"
-              );
+              setLttActive(true); // native ASR live → Whisper recorder stands down
+              // Read status back — the surest signal of the account's ASR
+              // entitlement. LTT can "start" yet expose NO transcription
+              // languages, in which case no voice captions ever arrive; that
+              // is an account provisioning gap (contact vsdk-help@zoom.us),
+              // not a bug in this code.
+              try {
+                const st = lt.getLiveTranscriptionStatus?.();
+                if (st && !st.transcriptionLanguage) {
+                  console.warn(
+                    "[useZoomCall] Live Transcription started but NO transcription languages are provisioned on this Video SDK account — voice captions will not flow. Account entitlement gap (contact vsdk-help@zoom.us)."
+                  );
+                } else {
+                  console.info(
+                    `[useZoomCall] ✓ Live Transcription STARTED (languages: ${st?.transcriptionLanguage ?? "?"}) — captions stream into session_captions every ~60s`
+                  );
+                }
+              } catch {
+                console.info(
+                  "[useZoomCall] ✓ Live Transcription STARTED — captions stream into session_captions every ~60s"
+                );
+              }
             }
           } catch (ltErr) {
             // errorCode 7300 = "Live transcription is not enabled" on the
@@ -479,6 +584,7 @@ export function useZoomCall({
             client.off("passively-stop-share", onPassiveStopShare);
             client.off("network-quality-change", onNetwork);
             client.off("caption-message", onCaptionMessage);
+            client.off("caption-status", onCaptionStatus);
           } catch {
             /* listeners may already be gone */
           }
@@ -563,6 +669,137 @@ export function useZoomCall({
   useEffect(() => {
     setParticipants(derived.all);
   }, [derived.all]);
+
+  // ── Whisper live transcription (fallback for missing Zoom ASR) ─────────
+  // Zoom's native Live Transcription is unavailable on this Video SDK account
+  // (errorCode 7300), so each participant records their OWN mic in ~30s
+  // independently-decodable slices and ships them to the `transcribe-chunk`
+  // edge function, which runs Whisper and appends to session_captions. We
+  // record only while THIS user's mic is on (privacy + no Whisper spend on
+  // silence) and only while native ASR is NOT running (lttActive) so the two
+  // paths never double-write. Each side records a single clean speaker, so
+  // the `speaker` label is exact.
+  const selfMicOn = !!derived.self && !derived.self.audio.muted;
+  useEffect(() => {
+    if (status !== "joined" || !selfMicOn || lttActive) return;
+    if (
+      typeof navigator === "undefined" ||
+      !navigator.mediaDevices?.getUserMedia ||
+      typeof MediaRecorder === "undefined"
+    ) {
+      return;
+    }
+    const mime = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find(
+      (m) => {
+        try {
+          return MediaRecorder.isTypeSupported(m);
+        } catch {
+          return false;
+        }
+      }
+    );
+    if (!mime) {
+      console.warn(
+        "[useZoomCall] MediaRecorder has no supported audio mime — Whisper transcription disabled"
+      );
+      return;
+    }
+
+    const CHUNK_MS = 30_000;
+    let active = true;
+    let stream: MediaStream | null = null;
+    let recorder: MediaRecorder | null = null;
+    let cycleTimer: number | null = null;
+
+    const upload = async (blob: Blob, startedAt: number) => {
+      // Skip near-silent/keyframe-only slices — the edge function double-checks
+      // size too, but bailing here saves an upload round-trip.
+      if (blob.size < 2000) return;
+      try {
+        const ext = mime.includes("mp4") ? "mp4" : "webm";
+        const fd = new FormData();
+        fd.append("file", blob, `chunk.${ext}`);
+        fd.append("session_id", sessionId);
+        fd.append("speaker", userName || "");
+        fd.append("started_at", new Date(startedAt).toISOString());
+        await supabaseRef.current.functions.invoke("transcribe-chunk", {
+          body: fd,
+        });
+      } catch (e) {
+        console.warn("[useZoomCall] whisper upload failed:", e);
+      }
+    };
+
+    // Each cycle records ONE complete file (stop→start gives independently
+    // decodable slices; a single recorder with a timeslice would emit
+    // fragments only the first of which has a usable header).
+    const cycle = () => {
+      if (!active || !stream) return;
+      let rec: MediaRecorder;
+      try {
+        rec = new MediaRecorder(stream, { mimeType: mime });
+      } catch (e) {
+        console.warn("[useZoomCall] MediaRecorder construction failed:", e);
+        return;
+      }
+      recorder = rec;
+      const parts: BlobPart[] = [];
+      const startedAt = Date.now();
+      rec.ondataavailable = (ev) => {
+        if (ev.data && ev.data.size > 0) parts.push(ev.data);
+      };
+      rec.onstop = () => {
+        void upload(new Blob(parts, { type: mime }), startedAt);
+        if (active) cycle(); // roll straight into the next slice
+      };
+      try {
+        rec.start();
+      } catch (e) {
+        console.warn("[useZoomCall] MediaRecorder start failed:", e);
+        return;
+      }
+      cycleTimer = window.setTimeout(() => {
+        try {
+          if (rec.state !== "inactive") rec.stop();
+        } catch {
+          /* already stopped */
+        }
+      }, CHUNK_MS);
+    };
+
+    (async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true },
+        });
+      } catch (e) {
+        console.warn(
+          "[useZoomCall] getUserMedia for transcription unavailable:",
+          e
+        );
+        return;
+      }
+      if (!active) {
+        stream.getTracks().forEach((t) => t.stop());
+        stream = null;
+        return;
+      }
+      cycle();
+    })();
+
+    return () => {
+      active = false;
+      if (cycleTimer != null) window.clearTimeout(cycleTimer);
+      // Stop the in-flight recorder — its onstop still fires and uploads the
+      // final partial slice, but `active=false` prevents a new cycle.
+      try {
+        if (recorder && recorder.state !== "inactive") recorder.stop();
+      } catch {
+        /* already stopped */
+      }
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+    };
+  }, [status, selfMicOn, lttActive, sessionId, userName]);
 
   // Participant-list safety net. We track the roster off the SDK's
   // user-added / user-removed / user-updated events, but those can be

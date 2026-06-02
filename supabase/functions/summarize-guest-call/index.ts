@@ -353,6 +353,34 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ── Per-call summary capsule ─────────────────────────────────────────
+    // The customer-facing "Call summary" card (MeetingSummaryEntry) renders
+    // any system message whose body contains "AI Companion summary", parsed
+    // as: header line → title → overview → "Next steps:" bullets. That card
+    // used to be fed only by Zoom's AI Companion webhook (meeting.summary_
+    // completed), which never fires for Video SDK sessions. We now post the
+    // same-shaped message ourselves from the OpenAI summary built off the
+    // Whisper voice transcript + chat, so the capsule fills regardless of
+    // Zoom's ASR/Companion entitlements.
+    //
+    // Insert ONCE: skip if any AI-Companion-shaped system message already
+    // exists for this call (`companionBlocks`, computed above). That makes
+    // re-runs idempotent and never clobbers a card the customer has edited,
+    // and it defers to a real Zoom Companion summary if one ever arrives.
+    if (!openAiFailed && companionBlocks.length === 0 && aiTitle) {
+      const capsuleLines = ["🤖 AI Companion summary", aiTitle];
+      if (aiOverview) capsuleLines.push(aiOverview);
+      if (aiNextSteps.length > 0) {
+        capsuleLines.push("", "Next steps:", ...aiNextSteps.map((s) => `• ${s}`));
+      }
+      await supabase.from("guest_messages").insert({
+        guest_call_id,
+        sender_kind: "system",
+        sender_name: "Relay",
+        body: capsuleLines.join("\n"),
+      });
+    }
+
     // ── Post-session sentiment score ─────────────────────────────────────────
     // Feeds the colored health bar on the supervise pit and the feedback
     // feed in /finance.

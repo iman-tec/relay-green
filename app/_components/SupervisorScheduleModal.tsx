@@ -692,6 +692,8 @@ export function SupervisorScheduleModal({
         _replace_id: replaceBookingId ?? null,
       });
       if (rpcErr) throw new Error(friendlyError(rpcErr.message));
+      // Refresh the sidebar pill + center view immediately.
+      window.dispatchEvent(new Event("relay:scheduled-changed"));
       onBooked({
         slotStart: slot.start.toISOString(),
         slotEnd: slot.end.toISOString(),

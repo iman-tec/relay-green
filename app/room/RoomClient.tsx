@@ -131,7 +131,13 @@ import { IntakeAssistant } from "@/app/_components/intake/IntakeAssistant";
 import { GlobalNewChatModal } from "@/app/_components/GlobalNewChatModal";
 import { EditableSummary } from "@/app/_components/EditableSummary";
 import { QuoteRequestModal } from "@/app/_components/QuoteRequestModal";
-import { ContractAndAppointments } from "@/app/_components/ContractAndAppointments";
+import { ContractManagement } from "@/app/_components/ContractManagement";
+import { ScheduledCallsPill } from "@/app/_components/ScheduledCallsPill";
+import { ProjectsCenterView } from "@/app/_components/ProjectsCenterView";
+import { CenterPaneShell } from "@/app/_components/CenterPaneShell";
+import { ScheduledCenterView } from "@/app/_components/ScheduledCenterView";
+import { ContractsCenterView } from "@/app/_components/ContractsCenterView";
+import { NotificationBell } from "@/app/_components/NotificationBell";
 import { useRingtone } from "@/lib/relay/useRingtone";
 import type {
   GuestCall,
@@ -307,6 +313,15 @@ export function RoomClient() {
   // Video SDK in-window call surface state. Gated by NEXT_PUBLIC_USE_VIDEO_SDK
   // — when off, the legacy Meeting-SDK new-tab path is unchanged.
   const [callOpen, setCallOpen] = useState(false);
+  // Center-pane view: when set, the main area shows a full-pane Projects /
+  // Scheduled / Contracts view (opened from the sidebar's "→" pills /
+  // "All projects" footer) instead of the connect/session landing. A back
+  // affordance clears it; a "Return to call" affordance jumps to a live call.
+  const [centerView, setCenterView] = useState<
+    "projects" | "scheduled" | "contracts" | null
+  >(null);
+  // Collapse state for the chat rail shown beside a center view.
+  const [centerChatCollapsed, setCenterChatCollapsed] = useState(false);
   // Portal target for the in-call participant tiles. Only mounted in the
   // right rail when an active screen share is in progress — at that
   // point the center column hands its space to the shared screen and the
@@ -1928,6 +1943,7 @@ export function RoomClient() {
                 window.setTimeout(() => setPaidToast(null), 5000);
               }}
               onMarkProjectComplete={handleMarkProjectComplete}
+              onOpenCenter={setCenterView}
             />
           </div>
         </>
@@ -1972,6 +1988,7 @@ export function RoomClient() {
             window.setTimeout(() => setPaidToast(null), 5000);
           }}
           onMarkProjectComplete={handleMarkProjectComplete}
+          onOpenCenter={setCenterView}
         />
       </div>
 
@@ -2018,14 +2035,19 @@ export function RoomClient() {
             older saved width was restored from autoSaveId v3). */}
           <Panel id="room-main" order={2} defaultSize={48} minSize={28}>
             <div className="relative flex h-full min-w-0 flex-col">
-              {/* Floating status / timer chip + end-meeting button (top-right) */}
-              <FloatingStatus
-                session={state.session}
-                entitlement={state.entitlement}
-                accepted={accepted}
-                onEnd={state.end}
-                onJoin={() => void state.markJoined()}
-              />
+              {/* Floating status / timer chip + end-meeting button (top-right).
+                  Hidden while a center view is open — that view owns the top
+                  bar (Back + Return-to-call) and we keep the notification bell
+                  clear of the session chrome. */}
+              {!centerView && (
+                <FloatingStatus
+                  session={state.session}
+                  entitlement={state.entitlement}
+                  accepted={accepted}
+                  onEnd={state.end}
+                  onJoin={() => void state.markJoined()}
+                />
+              )}
 
               {/* Participant tiles slot — CallSurface portals the tile grid
                 into this div ONLY when a screen share is active. Tiles
@@ -2046,7 +2068,82 @@ export function RoomClient() {
               )}
 
               <main className="min-h-0 flex-1">
-                {asyncChatMode ? (
+                {centerView ? (
+                  <div className="flex h-full w-full">
+                    <div className="relative min-w-0 flex-1 overflow-hidden">
+                      <div className="absolute top-3 right-4 z-30">
+                        <NotificationBell
+                          customerUserId={sidebarCustomerUserId}
+                        />
+                      </div>
+                      {centerView === "projects" ? (
+                  <ProjectsCenterView
+                    projects={projects}
+                    customerUserId={sidebarCustomerUserId}
+                    hasActiveSession={
+                      !!state.session &&
+                      !["ended", "cancelled", "abandoned"].includes(
+                        state.session.status
+                      )
+                    }
+                    onSelectProject={(id) => handleSelectProject(id)}
+                    onViewPast={(id) => {
+                      handleViewPast(id);
+                      setCenterView(null);
+                    }}
+                    onNewProject={() => setCenterView(null)}
+                    onReturnToCall={() => {
+                      setCenterView(null);
+                      setCallOpen(true);
+                    }}
+                    onClose={() => setCenterView(null)}
+                  />
+                ) : centerView === "scheduled" ? (
+                  <CenterPaneShell
+                    title="Scheduled Calls"
+                    hasActiveSession={
+                      !!state.session &&
+                      !["ended", "cancelled", "abandoned"].includes(
+                        state.session.status
+                      )
+                    }
+                    onReturnToCall={() => {
+                      setCenterView(null);
+                      setCallOpen(true);
+                    }}
+                    onClose={() => setCenterView(null)}
+                  >
+                    <ScheduledCenterView customerUserId={sidebarCustomerUserId} />
+                  </CenterPaneShell>
+                ) : (
+                  <CenterPaneShell
+                    title="Contract Management"
+                    hasActiveSession={
+                      !!state.session &&
+                      !["ended", "cancelled", "abandoned"].includes(
+                        state.session.status
+                      )
+                    }
+                    onReturnToCall={() => {
+                      setCenterView(null);
+                      setCallOpen(true);
+                    }}
+                    onClose={() => setCenterView(null)}
+                  >
+                    <ContractsCenterView customerUserId={sidebarCustomerUserId} />
+                  </CenterPaneShell>
+                      )}
+                    </div>
+                    <ChatPanelStub
+                      sidebarCollapsed={centerChatCollapsed}
+                      onToggleCollapsed={() =>
+                        setCenterChatCollapsed((v) => !v)
+                      }
+                      session={state.session ?? undefined}
+                      scopeKey={selectedProjectId || "general"}
+                    />
+                  </div>
+                ) : asyncChatMode ? (
                   <AsyncChatPane
                     onEscalateToCall={handleNewSession}
                     onCloseAsyncMode={() => setAsyncChatMode(false)}
@@ -2062,6 +2159,7 @@ export function RoomClient() {
                     projectFormOpen={projectFormOpen}
                     pendingDraft={pendingDraft}
                     projects={projects}
+                    customerUserId={sidebarCustomerUserId}
                     onProjectConfirmNew={handleProjectConfirmNew}
                     onProjectConfirmPick={handleProjectConfirmPick}
                     onProjectCancel={handleProjectCancel}
@@ -2335,6 +2433,7 @@ const MainPane = memo(function MainPane({
   projectFormOpen,
   pendingDraft,
   projects,
+  customerUserId,
   onProjectConfirmNew,
   onProjectConfirmPick,
   onProjectCancel,
@@ -2362,6 +2461,7 @@ const MainPane = memo(function MainPane({
   projectFormOpen: boolean;
   pendingDraft: string | null;
   projects: Project[];
+  customerUserId: string | null;
   onProjectConfirmNew: (name: string) => Promise<void>;
   onProjectConfirmPick: (id: string) => Promise<void>;
   onProjectCancel: () => void;
@@ -3017,6 +3117,10 @@ function BrandedLanding({
           explainerOpen ? "items-start py-10" : "items-center"
         }`}
       >
+        {/* Notification bell — top-right of the center pane (left of chat). */}
+        <div className="absolute top-3 right-4 z-30">
+          <NotificationBell customerUserId={customerUserId} />
+        </div>
         <div className="flex max-w-3xl flex-col items-center text-center">
           <Wordmark size="xl" />
 
@@ -4648,7 +4752,7 @@ function ChatPanelStub({
               Hidden once the session has ended (read-only above). */}
           {!isEndedish && (
             <div
-              className="shrink-0 border-t px-3 py-5"
+              className="shrink-0 border-t px-3 py-3"
               style={{
                 borderColor: "var(--border)",
                 backgroundColor: "var(--surface)",
@@ -4675,7 +4779,7 @@ function ChatPanelStub({
                 </div>
               )}
               <div
-                className="rounded-2xl border p-5"
+                className="rounded-2xl border p-3"
                 style={{
                   borderColor: "var(--border)",
                   backgroundColor: "var(--surface-raised)",
@@ -4683,7 +4787,7 @@ function ChatPanelStub({
                 }}
               >
                 <textarea
-                  rows={14}
+                  rows={4}
                   value={draftText}
                   onChange={(e) => setDraftText(e.target.value)}
                   onKeyDown={(e) => {
@@ -5950,352 +6054,6 @@ type ProjectGroup = {
   completionStatus: "active" | "completed" | "archived";
 };
 
-// ──────────────────────────────────────────────────────────────────────────
-// ScheduledSessionsBox — customer's upcoming booked sessions, shown in the
-// sidebar above the project list. Each row exposes Reschedule (frees the slot
-// via reschedule_booking, then reopens the scheduler for the same
-// engineer/project) and Cancel (cancel_booking_with_reason). Realtime-synced
-// on engineer_bookings so a booking made/cancelled elsewhere reflects here.
-// Renders nothing when the customer has no upcoming bookings.
-// ──────────────────────────────────────────────────────────────────────────
-type ScheduledBooking = {
-  id: string;
-  engineerUserId: string;
-  engineerName: string;
-  projectId: string | null;
-  projectName: string;
-  slotStart: string;
-  slotEnd: string;
-};
-
-const ScheduledSessionsBox = memo(function ScheduledSessionsBox({
-  customerUserId,
-  onReschedule,
-  open,
-  onToggle,
-}: {
-  customerUserId: string | null;
-  /** Reopen the scheduler for the same engineer/project after the current
-   *  booking has been freed. Wired to the Sidebar's scheduleTarget state. */
-  onReschedule: (target: {
-    engineerUserId: string;
-    engineerName: string;
-    projectId: string | null;
-  }) => void;
-  /** Accordion state — owned by the Sidebar so opening one section collapses
-   *  the others. */
-  open: boolean;
-  onToggle: () => void;
-}) {
-  const sbRef = useRef(createClient());
-  const [bookings, setBookings] = useState<ScheduledBooking[]>([]);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  // Which booking row has its Reschedule/Cancel actions expanded (toggled by
-  // clicking the project name) — mirrors the Appointments card.
-  const [openId, setOpenId] = useState<string | null>(null);
-
-  const load = useCallback(async (uid: string) => {
-    const sb = sbRef.current;
-    // Keep a slot visible until 10 min past its end (matches AppointmentPopup
-    // grace) so a just-started/at-slot booking doesn't vanish mid-flow.
-    const fromIso = new Date(Date.now() - 10 * 60_000).toISOString();
-    const { data } = await sb
-      .from("engineer_bookings")
-      .select("id, engineer_user_id, project_id, slot_start, slot_end")
-      .eq("customer_user_id", uid)
-      .eq("status", "booked")
-      .gte("slot_end", fromIso)
-      .order("slot_start", { ascending: true });
-    const rows = (data ?? []) as Array<{
-      id: string;
-      engineer_user_id: string;
-      project_id: string | null;
-      slot_start: string;
-      slot_end: string;
-    }>;
-    if (rows.length === 0) {
-      setBookings([]);
-      return;
-    }
-    const engIds = [...new Set(rows.map((r) => r.engineer_user_id))];
-    const projIds = [
-      ...new Set(rows.map((r) => r.project_id).filter((x): x is string => !!x)),
-    ];
-    const [engRes, projRes] = await Promise.all([
-      sb
-        .from("engineer_profiles")
-        .select("user_id, display_alias")
-        .in("user_id", engIds),
-      projIds.length
-        ? sb.from("projects").select("id, name").in("id", projIds)
-        : Promise.resolve({ data: [] }),
-    ]);
-    const aliasById = new Map<string, string>();
-    for (const e of (engRes.data ?? []) as Array<{
-      user_id: string;
-      display_alias: string | null;
-    }>) {
-      if (e.display_alias) aliasById.set(e.user_id, e.display_alias);
-    }
-    const nameById = new Map<string, string>();
-    for (const p of (projRes.data ?? []) as Array<{
-      id: string;
-      name: string | null;
-    }>) {
-      if (p.name) nameById.set(p.id, p.name);
-    }
-    setBookings(
-      rows.map((r) => ({
-        id: r.id,
-        engineerUserId: r.engineer_user_id,
-        engineerName: aliasById.get(r.engineer_user_id) ?? "your engineer",
-        projectId: r.project_id,
-        projectName:
-          (r.project_id && nameById.get(r.project_id)) || "your project",
-        slotStart: r.slot_start,
-        slotEnd: r.slot_end,
-      }))
-    );
-  }, []);
-
-  useEffect(() => {
-    if (!customerUserId) return;
-    const sb = sbRef.current;
-    let alive = true;
-    let ch: ReturnType<typeof sb.channel> | null = null;
-    void (async () => {
-      await load(customerUserId);
-      if (!alive) return;
-      // Unique topic per subscription: removeChannel() only drops the channel
-      // from the client's list asynchronously, so reusing a fixed topic can
-      // hand back the previous, still-subscribed channel — and .on() after
-      // subscribe() throws. A fresh topic each time sidesteps that race.
-      const channel = sb
-        .channel(`sidebar-bookings-${customerUserId}-${crypto.randomUUID()}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "engineer_bookings",
-            filter: `customer_user_id=eq.${customerUserId}`,
-          },
-          () => {
-            void load(customerUserId);
-          }
-        )
-        .subscribe();
-      if (!alive) {
-        void sb.removeChannel(channel);
-        return;
-      }
-      ch = channel;
-    })();
-    return () => {
-      alive = false;
-      if (ch) void sb.removeChannel(ch);
-    };
-  }, [customerUserId, load]);
-
-  const handleReschedule = useCallback(
-    async (b: ScheduledBooking) => {
-      if (busyId) return;
-      setBusyId(b.id);
-      try {
-        const { error } = await sbRef.current.rpc("reschedule_booking", {
-          _id: b.id,
-        });
-        if (error) {
-          window.alert(`Couldn't reschedule: ${error.message}`);
-          return;
-        }
-        setBookings((prev) => prev.filter((x) => x.id !== b.id));
-        onReschedule({
-          engineerUserId: b.engineerUserId,
-          engineerName: b.engineerName,
-          projectId: b.projectId,
-        });
-      } finally {
-        setBusyId(null);
-      }
-    },
-    [busyId, onReschedule]
-  );
-
-  const handleCancel = useCallback(
-    async (b: ScheduledBooking) => {
-      if (busyId) return;
-      if (
-        typeof window !== "undefined" &&
-        !window.confirm(
-          "Cancel this scheduled session? Your engineer will be notified."
-        )
-      )
-        return;
-      setBusyId(b.id);
-      try {
-        const { error } = await sbRef.current.rpc(
-          "cancel_booking_with_reason",
-          {
-            _id: b.id,
-            _reason: "Cancelled by customer",
-          }
-        );
-        if (error) {
-          window.alert(`Couldn't cancel: ${error.message}`);
-          return;
-        }
-        setBookings((prev) => prev.filter((x) => x.id !== b.id));
-      } finally {
-        setBusyId(null);
-      }
-    },
-    [busyId]
-  );
-
-  const fmt = (iso: string) =>
-    new Date(iso).toLocaleString([], {
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    });
-
-  return (
-    <div className="px-2 py-1">
-      <div
-        className="overflow-hidden rounded-xl border"
-        style={{ borderColor: "var(--border)", background: "var(--surface)" }}
-      >
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-expanded={open}
-          className="flex w-full items-center gap-1.5 px-3 py-2 text-left transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.03]"
-        >
-          <CalendarClock size={12} style={{ color: "var(--primary)" }} />
-          <span
-            className="flex-1 text-[12px] font-semibold"
-            style={{ color: "var(--text)" }}
-          >
-            Scheduled Calls
-          </span>
-          <span
-            className="text-[10px] font-medium tabular-nums"
-            style={{ color: "var(--text-muted)" }}
-          >
-            {bookings.length}
-          </span>
-          <ChevronDown
-            size={14}
-            className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
-            style={{ color: "var(--text-muted)" }}
-          />
-        </button>
-        {open && bookings.length === 0 && (
-          <p
-            className="border-t px-3 py-3 text-[11px]"
-            style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
-          >
-            No scheduled calls yet.
-          </p>
-        )}
-        {open && bookings.length > 0 && (
-          <ul
-            className="flex [scrollbar-width:thin] flex-col overflow-y-auto border-t"
-            style={{ borderColor: "var(--border)", maxHeight: "7rem" }}
-          >
-            {bookings.map((b) => {
-              const busy = busyId === b.id;
-              const open = openId === b.id;
-              return (
-                <li
-                  key={b.id}
-                  className="border-t px-3 py-2.5 first:border-t-0"
-                  style={{ borderColor: "var(--border)" }}
-                >
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="inline-flex size-6 shrink-0 items-center justify-center rounded-md"
-                      style={{
-                        background: "var(--primary-soft)",
-                        color: "var(--primary)",
-                      }}
-                    >
-                      <CalendarClock size={12} />
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setOpenId(open ? null : b.id)}
-                      aria-expanded={open}
-                      title="Show options"
-                      className="min-w-0 flex-1 text-left"
-                    >
-                      <div
-                        className="flex items-center gap-1 truncate text-[12px] leading-tight font-medium"
-                        style={{ color: "var(--text)" }}
-                      >
-                        <span className="truncate">{b.projectName}</span>
-                        <ChevronDown
-                          size={12}
-                          className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
-                          style={{ color: "var(--text-muted)" }}
-                        />
-                      </div>
-                      <div
-                        className="truncate text-[10.5px] leading-tight"
-                        style={{ color: "var(--text-muted)" }}
-                      >
-                        {fmt(b.slotStart)} · {b.engineerName}
-                      </div>
-                    </button>
-                  </div>
-
-                  {open && (
-                    <div className="mt-2 flex gap-1.5">
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => void handleReschedule(b)}
-                        className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-[11px] font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
-                        style={{
-                          borderColor: "var(--border)",
-                          color: "var(--text)",
-                        }}
-                        title="Free this slot and pick a new time"
-                      >
-                        {busy ? (
-                          <Loader2 size={11} className="animate-spin" />
-                        ) : (
-                          <RefreshCw size={11} />
-                        )}
-                        Reschedule
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => void handleCancel(b)}
-                        className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-[11px] font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
-                        style={{
-                          borderColor: "var(--border)",
-                          color: "var(--text-muted)",
-                        }}
-                        title="Cancel this scheduled session"
-                      >
-                        <X size={11} />
-                        Cancel
-                      </button>
-                    </div>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
-    </div>
-  );
-});
 
 // Drag-to-resize a sidebar by its edge. Persists the chosen width per key in
 // localStorage so a reload keeps it. `edge="right"` for a left sidebar (handle
@@ -6386,6 +6144,7 @@ const Sidebar = memo(function Sidebar({
   onDeleteProject,
   onMarkProjectComplete,
   onPickerToast,
+  onOpenCenter,
 }: {
   email: string;
   customerUserId: string | null;
@@ -6490,6 +6249,9 @@ const Sidebar = memo(function Sidebar({
    *  engineer picker. RoomClient owns the toast state; Sidebar can't
    *  reach it directly, so it gets fired through this callback prop. */
   onPickerToast: (message: string) => void;
+  /** Open a full center-pane view (Projects / Scheduled / Contracts) in the
+   *  room's main area. Used by the "All projects" footer + the bottom pills. */
+  onOpenCenter: (view: "projects" | "scheduled" | "contracts") => void;
 }) {
   // Sidebar starts EXPANDED by default (Order 1 of the Commander brief —
   // Projects expanded, every action labelled, no mystery icons). User can
@@ -7496,14 +7258,11 @@ const Sidebar = memo(function Sidebar({
           Connect button, both of which use the per-project metadata
           to drive engineer skill matching. */}
       <div className="flex min-h-0 flex-1 flex-col px-2 pt-3 pb-2">
-        {/* Projects — header + list in ONE joint box (styled like the
-            Scheduled / Contract management cards, no collapse). The card hugs
-            its content (header + a 5-row scroll viewport); the surrounding
-            flex-1 region keeps the Scheduled/Contract sections pinned below. */}
-        <div
-          className="flex flex-col overflow-hidden rounded-xl border"
-          style={{ borderColor: "var(--border)", background: "var(--surface)" }}
-        >
+        {/* Projects — borderless, flat section (Claude-style): no card border
+            or fill; the header + rows carry their own hover highlight. The
+            list scrolls internally (up to ~10 rows) with a stationary header;
+            the surrounding flex-1 region keeps the bottom pills pinned. */}
+        <div className="flex flex-col overflow-hidden rounded-xl">
           {/* Stationary header — shrink-0 keeps it out of the scroll area. */}
           <div className="flex shrink-0 items-center gap-1.5 px-3 py-2">
             <Folder size={12} style={{ color: "var(--primary)" }} />
@@ -7530,13 +7289,13 @@ const Sidebar = memo(function Sidebar({
               New Project
             </button>
           </div>
-          {/* The scrollable list below the header — capped to exactly 5 project
-              rows (~34.75px each) so the 6th never peeks; the rest scroll
-              inside (scrollbar hidden). The static header above never moves,
-              since it sits OUTSIDE this scroll viewport. */}
+          {/* The scrollable list below the header — capped to ~10 project rows
+              (~34.75px each); the rest scroll inside (scrollbar hidden). The
+              static header above never moves (it's OUTSIDE this viewport).
+              The full list lives on the "All projects" route (Phase 2). */}
           <div
             className="hide-scrollbar overflow-y-auto"
-            style={{ maxHeight: "10.75rem" }}
+            style={{ maxHeight: "21.5rem" }}
           >
             {/* Pinned section — sessions the customer is actively working on.
             Renders BELOW the sticky header so it scrolls with the list
@@ -7725,27 +7484,41 @@ const Sidebar = memo(function Sidebar({
               );
             })()}
           </div>
+          {/* All-projects footer — opens the full Projects view in the center
+              pane (search + sort over every project). */}
+          {projectGroups.length > 0 && (
+            <button
+              type="button"
+              onClick={() => onOpenCenter("projects")}
+              className="mt-0.5 flex w-full items-center gap-1.5 rounded-md px-3 py-1.5 text-[11.5px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+              style={{ color: "var(--primary-hover)" }}
+            >
+              <Folder size={12} />
+              All projects
+              <ChevronRight size={13} className="ml-auto" />
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Upcoming scheduled sessions — collapsible bar, sitting just above
-          Contract management. Self-hides when there are no bookings. */}
-      <ScheduledSessionsBox
+      {/* Pill 1 — Scheduled Calls (→ opens the center pane). Borderless;
+          self-hides when there's nothing scheduled. */}
+      <ScheduledCallsPill
         customerUserId={customerUserId}
         onReschedule={(t) => setScheduleTarget(t)}
         open={openSection === "scheduled"}
         onToggle={() => toggleSection("scheduled")}
+        onNavigate={() => onOpenCenter("scheduled")}
       />
 
-      {/* Contract management — bids the team sent back (go-live / maintenance).
-          Sits above the quote shortcuts; renders nothing until a quote exists. */}
+      {/* Pill 2 — Contract Management (→ opens the center pane). Borderless;
+          self-hides until a quote exists. */}
       {!employment?.isEmployee && (
-        <div className="px-2 py-1 empty:hidden">
-          <ContractAndAppointments
-            contractsOpen={openSection === "contracts"}
-            onContractsToggle={() => toggleSection("contracts")}
-            appointmentsOpen={openSection === "appointments"}
-            onAppointmentsToggle={() => toggleSection("appointments")}
+        <div className="px-2 py-0.5 empty:hidden">
+          <ContractManagement
+            isOpen={openSection === "contracts"}
+            onToggle={() => toggleSection("contracts")}
+            onNavigate={() => onOpenCenter("contracts")}
           />
         </div>
       )}
@@ -9971,23 +9744,6 @@ const ProjectAccordion = memo(function ProjectAccordion({
         </button>
         {!isGeneral && !renaming && (
           <>
-            {/* + button — opens the central "Prepare a session" pane
-                for this project. Customer drafts the problem (text,
-                files, voice) BEFORE calling. When ready, they hit the
-                phone button next door to ring the engineer who walks
-                in with the prepared context. */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onPrepareSession(group.key);
-              }}
-              title={`Prepare a new session in ${group.name}`}
-              aria-label={`Prepare a new session in ${group.name}`}
-              className="inline-flex size-6 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-[var(--surface-raised)]"
-              style={{ color: "var(--text-muted)" }}
-            >
-              <Plus size={14} />
-            </button>
             {/* Per-project call button. Color reflects engineer history:
                 BLACK when the project has never had an engineer session
                 (cold start — clicking triggers skill-match to find one);
@@ -10955,23 +10711,32 @@ function SummaryView({
         </p>
       ) : (
         <div className="space-y-5">
-          {/* Title + overview + next-steps — all three inline-editable for
-              the customer/engineer who own this session. Read-only for
-              everyone else (supervisor view, etc). */}
-          <EditableSummary
-            title={title}
-            overview={overview}
-            nextSteps={nextSteps}
-            canEdit={canEdit}
-            onSave={handleSummarySave}
-          />
+          {/* Collective session summary — the whole engagement (chat + call),
+              inline-editable for the customer/engineer who own this session,
+              read-only for everyone else. Labelled so it's clearly distinct
+              from the per-call "Call summary" capsules below it. */}
+          <div>
+            <h3
+              className="mb-3 text-[10px] font-semibold tracking-wider uppercase"
+              style={{ color: "var(--text-muted)" }}
+            >
+              Session summary
+            </h3>
+            <EditableSummary
+              title={title}
+              overview={overview}
+              nextSteps={nextSteps}
+              canEdit={canEdit}
+              onSave={handleSummarySave}
+            />
+          </div>
           {zoomCompanionMessages.length > 0 && (
             <div className="pt-2">
               <h3
                 className="mb-3 text-[10px] font-semibold tracking-wider uppercase"
                 style={{ color: "var(--text-muted)" }}
               >
-                Zoom call summaries
+                Call summary
               </h3>
               <div className="space-y-3">
                 {zoomCompanionMessages.map((m) => (

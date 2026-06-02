@@ -436,6 +436,9 @@ export function ScheduleEngineerModal({
         throw new Error(msg);
       }
       setBookedSlot(slot);
+      // Tell the sidebar pill + center view to refresh immediately (works
+      // even before the realtime publication change lands).
+      window.dispatchEvent(new Event("relay:scheduled-changed"));
       onBooked({
         slotStart: slot.start.toISOString(),
         slotEnd: slot.end.toISOString(),

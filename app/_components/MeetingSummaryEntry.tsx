@@ -20,14 +20,29 @@
  */
 
 import { useState } from "react";
-import { Sparkles, Video, KeyRound, Copy, Check, Pencil, Trash2, Loader2, X } from "lucide-react";
+import { Sparkles, Video, KeyRound, Copy, Check, Pencil, Trash2, Loader2, X, ChevronDown } from "lucide-react";
 
 const BRAND_GREEN = "var(--primary)";
 const BRAND_GREEN_SOFT = "var(--primary-soft)";
 const BRAND_GREEN_BORDER = "color-mix(in srgb, var(--primary) 32%, transparent)";
-/** Detect whether a system message body is an AI Companion summary. */
+/** Detect whether a system message body is an AI summary capsule. */
 export function isAiSummaryMessageBody(body: string): boolean {
   return body.includes("AI Companion summary");
+}
+
+/** The hidden marker line that tags a system message as a summary capsule.
+ *  It stays in the stored body for detection, but is stripped from the edit
+ *  textarea so the user never sees raw "🤖 AI Companion summary" text. */
+const SUMMARY_MARKER = "🤖 AI Companion summary";
+function stripSummaryMarker(body: string): string {
+  return body
+    .split("\n")
+    .filter((l) => !/AI Companion summary/i.test(l))
+    .join("\n")
+    .replace(/^\s+/, "");
+}
+function ensureSummaryMarker(body: string): string {
+  return /AI Companion summary/i.test(body) ? body : `${SUMMARY_MARKER}\n${body}`;
 }
 
 type Parsed = {
@@ -114,10 +129,13 @@ export function MeetingSummaryEntry({
   // parent component performs the RPC. The realtime sub on guest_messages
   // then delivers the new body back and the read view re-parses.
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(body);
+  const [draft, setDraft] = useState(() => stripSummaryMarker(body));
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [errMsg, setErrMsg] = useState<string | null>(null);
+  // Collapsed by default — the card reads as a one-line summary you click to
+  // open, so a stack of call summaries stays scannable.
+  const [expanded, setExpanded] = useState(false);
 
   const handleSave = async () => {
     if (!onEdit || saving) return;
@@ -129,7 +147,7 @@ export function MeetingSummaryEntry({
     setSaving(true);
     setErrMsg(null);
     try {
-      await onEdit(trimmed);
+      await onEdit(ensureSummaryMarker(trimmed));
       setEditing(false);
     } catch (e) {
       setErrMsg(e instanceof Error ? e.message : "Couldn't save the changes.");
@@ -140,7 +158,7 @@ export function MeetingSummaryEntry({
 
   const handleDelete = async () => {
     if (!onDelete || deleting) return;
-    if (typeof window !== "undefined" && !window.confirm("Delete this AI Companion summary card?")) {
+    if (typeof window !== "undefined" && !window.confirm("Delete this call summary card?")) {
       return;
     }
     setDeleting(true);
@@ -222,7 +240,7 @@ export function MeetingSummaryEntry({
             </div>
             <button
               type="button"
-              onClick={() => { setEditing(false); setDraft(body); setErrMsg(null); }}
+              onClick={() => { setEditing(false); setDraft(stripSummaryMarker(body)); setErrMsg(null); }}
               aria-label="Cancel"
               className="rounded-md p-1 transition-opacity hover:bg-black/5 dark:hover:bg-white/5"
               style={{ color: "var(--text-muted)" }}
@@ -250,7 +268,7 @@ export function MeetingSummaryEntry({
               type="button"
               onClick={() => void handleSave()}
               disabled={saving}
-              className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[11px] font-medium disabled:opacity-50"
+              className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2.5 py-1.5 text-[11px] font-medium disabled:opacity-50"
               style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
             >
               {saving ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />}
@@ -258,15 +276,15 @@ export function MeetingSummaryEntry({
             </button>
             <button
               type="button"
-              onClick={() => { setEditing(false); setDraft(body); setErrMsg(null); }}
+              onClick={() => { setEditing(false); setDraft(stripSummaryMarker(body)); setErrMsg(null); }}
               disabled={saving}
-              className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[11px] hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+              className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2.5 py-1.5 text-[11px] hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
               style={{ color: "var(--text-muted)" }}
             >
               Cancel
             </button>
-            <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
-              Free-form text — bullet list under <code>Next steps:</code> auto-renders.
+            <span className="min-w-0 flex-1 truncate text-[10px]" style={{ color: "var(--text-muted)" }}>
+              Free-form text — <code>Next steps:</code> bullets auto-render.
             </span>
           </div>
         </div>
@@ -274,166 +292,193 @@ export function MeetingSummaryEntry({
     );
   }
 
+  // Collapsed, the card is a single clickable row (sparkle + "Call summary" +
+  // title). Expanding reveals the overview, next steps, recording, and the
+  // edit/delete actions. Defaulting collapsed keeps a stack of call summaries
+  // scannable and matches "click on it to see the call summary".
+  const hasDetail =
+    !!overview || isStubOnly || nextSteps.length > 0 ||
+    !!(recording && (recording.url || recording.passcode));
+
   return (
     <div className="flex justify-center">
       <div
-        className="group relative w-full max-w-md rounded-2xl border p-4 shadow-sm"
+        className="w-full max-w-md overflow-hidden rounded-2xl border shadow-sm"
         style={{
           borderColor: BRAND_GREEN_BORDER,
           backgroundColor: BRAND_GREEN_SOFT,
         }}
       >
-        {/* Edit / delete kebab — hover-revealed in the top-right corner so
-            it doesn't compete with the AI Companion label. canEdit gates
-            visibility; supervisors / observers never see it. */}
-        {canEdit && (onEdit || onDelete) && (
-          <div className="absolute right-2 top-2 flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-            {onEdit && (
-              <button
-                type="button"
-                onClick={() => { setDraft(body); setEditing(true); setErrMsg(null); }}
-                aria-label="Edit summary"
-                className="rounded-md p-1 transition-colors hover:bg-black/10 dark:hover:bg-white/10"
-                style={{ color: "var(--text-muted)" }}
-              >
-                <Pencil size={11} />
-              </button>
-            )}
-            {onDelete && (
-              <button
-                type="button"
-                onClick={() => void handleDelete()}
-                disabled={deleting}
-                aria-label="Delete summary"
-                className="rounded-md p-1 transition-colors hover:bg-black/10 disabled:opacity-50 dark:hover:bg-white/10"
-                style={{ color: "var(--text-muted)" }}
-              >
-                {deleting ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
-              </button>
-            )}
-          </div>
-        )}
-        {errMsg && !editing && (
-          <p className="mb-2 text-[11px]" style={{ color: "var(--accent-red)" }}>{errMsg}</p>
-        )}
-        <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setExpanded((e) => !e)}
+          aria-expanded={expanded}
+          className="flex w-full items-center gap-2 p-4 text-left"
+        >
           <div
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl"
             style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
           >
             <Sparkles size={13} />
           </div>
-          <span
-            className="text-[10px] font-semibold uppercase tracking-wider"
-            style={{ color: BRAND_GREEN }}
-          >
-            AI Companion summary
-          </span>
-        </div>
-
-        {title && !isStubOnly ? (
-          <h3
-            className="mt-3 text-sm font-semibold leading-tight"
-            style={{ color: "var(--text)", fontFamily: "var(--font-source-serif)" }}
-          >
-            {title}
-          </h3>
-        ) : null}
-
-        {overview ? (
-          <p
-            className="mt-2 whitespace-pre-wrap text-[13px] leading-relaxed"
-            style={{ color: "var(--text)" }}
-          >
-            {overview}
-          </p>
-        ) : null}
-
-        {isStubOnly ? (
-          <p
-            className="mt-2 text-[12px] leading-relaxed"
-            style={{ color: "var(--text-muted)" }}
-          >
-            Zoom’s AI Companion didn’t generate a detailed summary for this call
-            — typically because it was too short to transcribe meaningfully.
-            The session summary above captures the key points.
-          </p>
-        ) : null}
-
-        {nextSteps.length > 0 ? (
-          <div className="mt-3">
-            <div
-              className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider"
-              style={{ color: "var(--text-muted)" }}
+          <div className="min-w-0 flex-1">
+            <span
+              className="text-[10px] font-semibold uppercase tracking-wider"
+              style={{ color: BRAND_GREEN }}
             >
-              Next steps
-            </div>
-            <ul className="space-y-1">
-              {nextSteps.map((step, i) => (
-                <li
-                  key={i}
-                  className="flex gap-2 text-[12px] leading-relaxed"
-                  style={{ color: "var(--text)" }}
-                >
-                  <span style={{ color: BRAND_GREEN }}>→</span>
-                  <span>{step}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-
-        {recording && (recording.url || recording.passcode) ? (
-          <div
-            className="mt-4 border-t pt-3"
-            style={{ borderColor: BRAND_GREEN_BORDER }}
-          >
-            <div
-              className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider"
-              style={{ color: "var(--text-muted)" }}
-            >
-              Recording
-            </div>
-            {recording.url ? (
-              <div className="flex items-center gap-2 text-[12px] leading-relaxed">
-                <Video size={12} style={{ color: BRAND_GREEN }} />
-                <a
-                  href={recording.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="min-w-0 flex-1 truncate underline underline-offset-2"
-                  style={{ color: BRAND_GREEN }}
-                >
-                  {recording.url}
-                </a>
-                <CopyButton
-                  onClick={() => void copyText(recording.url!, "url")}
-                  done={copied === "url"}
-                  label="Copy link"
-                />
-              </div>
+              Call summary
+            </span>
+            {title && !isStubOnly ? (
+              <h3
+                className="truncate text-sm font-semibold leading-tight"
+                style={{ color: "var(--text)", fontFamily: "var(--font-source-serif)" }}
+              >
+                {title}
+              </h3>
             ) : null}
-            {recording.passcode ? (
-              <div
-                className="mt-1.5 flex items-center gap-2 text-[12px]"
+          </div>
+          {hasDetail ? (
+            <ChevronDown
+              size={16}
+              className="shrink-0 transition-transform"
+              style={{
+                color: "var(--text-muted)",
+                transform: expanded ? "rotate(180deg)" : "none",
+              }}
+            />
+          ) : null}
+        </button>
+
+        {expanded && hasDetail ? (
+          <div className="px-4 pb-4">
+            {overview ? (
+              <p
+                className="whitespace-pre-wrap text-[13px] leading-relaxed"
                 style={{ color: "var(--text)" }}
               >
-                <KeyRound size={12} style={{ color: "var(--text-muted)" }} />
-                <span style={{ color: "var(--text-muted)" }}>Passcode:</span>
-                <code
-                  className="rounded px-1.5 py-0.5 text-[11px]"
-                  style={{
-                    backgroundColor: "color-mix(in srgb, var(--text) 8%, transparent)",
-                    color: "var(--text)",
-                  }}
+                {overview}
+              </p>
+            ) : null}
+
+            {isStubOnly ? (
+              <p
+                className="text-[12px] leading-relaxed"
+                style={{ color: "var(--text-muted)" }}
+              >
+                The summary for this call was too short to generate detail. The
+                session summary above captures the key points.
+              </p>
+            ) : null}
+
+            {nextSteps.length > 0 ? (
+              <div className="mt-3">
+                <div
+                  className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider"
+                  style={{ color: "var(--text-muted)" }}
                 >
-                  {recording.passcode}
-                </code>
-                <CopyButton
-                  onClick={() => void copyText(recording.passcode!, "passcode")}
-                  done={copied === "passcode"}
-                  label="Copy passcode"
-                />
+                  Next steps
+                </div>
+                <ul className="space-y-1">
+                  {nextSteps.map((step, i) => (
+                    <li
+                      key={i}
+                      className="flex gap-2 text-[12px] leading-relaxed"
+                      style={{ color: "var(--text)" }}
+                    >
+                      <span style={{ color: BRAND_GREEN }}>→</span>
+                      <span>{step}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {recording && (recording.url || recording.passcode) ? (
+              <div
+                className="mt-4 border-t pt-3"
+                style={{ borderColor: BRAND_GREEN_BORDER }}
+              >
+                <div
+                  className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  Recording
+                </div>
+                {recording.url ? (
+                  <div className="flex items-center gap-2 text-[12px] leading-relaxed">
+                    <Video size={12} style={{ color: BRAND_GREEN }} />
+                    <a
+                      href={recording.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="min-w-0 flex-1 truncate underline underline-offset-2"
+                      style={{ color: BRAND_GREEN }}
+                    >
+                      {recording.url}
+                    </a>
+                    <CopyButton
+                      onClick={() => void copyText(recording.url!, "url")}
+                      done={copied === "url"}
+                      label="Copy link"
+                    />
+                  </div>
+                ) : null}
+                {recording.passcode ? (
+                  <div
+                    className="mt-1.5 flex items-center gap-2 text-[12px]"
+                    style={{ color: "var(--text)" }}
+                  >
+                    <KeyRound size={12} style={{ color: "var(--text-muted)" }} />
+                    <span style={{ color: "var(--text-muted)" }}>Passcode:</span>
+                    <code
+                      className="rounded px-1.5 py-0.5 text-[11px]"
+                      style={{
+                        backgroundColor: "color-mix(in srgb, var(--text) 8%, transparent)",
+                        color: "var(--text)",
+                      }}
+                    >
+                      {recording.passcode}
+                    </code>
+                    <CopyButton
+                      onClick={() => void copyText(recording.passcode!, "passcode")}
+                      done={copied === "passcode"}
+                      label="Copy passcode"
+                    />
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {errMsg ? (
+              <p className="mt-2 text-[11px]" style={{ color: "var(--accent-red)" }}>{errMsg}</p>
+            ) : null}
+
+            {canEdit && (onEdit || onDelete) ? (
+              <div
+                className="mt-4 flex items-center gap-2 border-t pt-3"
+                style={{ borderColor: BRAND_GREEN_BORDER }}
+              >
+                {onEdit ? (
+                  <button
+                    type="button"
+                    onClick={() => { setDraft(stripSummaryMarker(body)); setEditing(true); setErrMsg(null); }}
+                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] hover:bg-black/5 dark:hover:bg-white/5"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    <Pencil size={11} /> Edit
+                  </button>
+                ) : null}
+                {onDelete ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleDelete()}
+                    disabled={deleting}
+                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {deleting ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />} Delete
+                  </button>
+                ) : null}
               </div>
             ) : null}
           </div>
