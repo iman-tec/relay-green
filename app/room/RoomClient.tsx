@@ -7497,11 +7497,11 @@ const Sidebar = memo(function Sidebar({
           to drive engineer skill matching. */}
       <div className="flex min-h-0 flex-1 flex-col px-2 pt-3 pb-2">
         {/* Projects — header + list in ONE joint box (styled like the
-            Scheduled / Contract management cards, no collapse). The card
-            fills the flex region and the LIST scrolls internally, so the
-            header below stays put (no nested/outer scroll dragging it). */}
+            Scheduled / Contract management cards, no collapse). The card hugs
+            its content (header + a 5-row scroll viewport); the surrounding
+            flex-1 region keeps the Scheduled/Contract sections pinned below. */}
         <div
-          className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border"
+          className="flex flex-col overflow-hidden rounded-xl border"
           style={{ borderColor: "var(--border)", background: "var(--surface)" }}
         >
           {/* Stationary header — shrink-0 keeps it out of the scroll area. */}
@@ -7530,9 +7530,14 @@ const Sidebar = memo(function Sidebar({
               New Project
             </button>
           </div>
-          {/* The scrollable list below the header — the single scroll region
-              (scrollbar hidden). The static header above never moves. */}
-          <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto">
+          {/* The scrollable list below the header — capped to exactly 5 project
+              rows (~34.75px each) so the 6th never peeks; the rest scroll
+              inside (scrollbar hidden). The static header above never moves,
+              since it sits OUTSIDE this scroll viewport. */}
+          <div
+            className="hide-scrollbar overflow-y-auto"
+            style={{ maxHeight: "10.75rem" }}
+          >
             {/* Pinned section — sessions the customer is actively working on.
             Renders BELOW the sticky header so it scrolls with the list
             (a long pin list shouldn't pin itself). Hidden when nothing is

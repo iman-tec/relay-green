@@ -343,6 +343,14 @@ function statusLabel(s: string): string {
 // Mirrors the appointment-cancel pattern so the two flows feel the same.
 const DELETE_REASONS = ["No longer needed", "Created by mistake"];
 
+// Quick-pick reasons for declining a bid. The reason is mandatory and is
+// surfaced to the supervisor (act-now rail) so they know why it was rejected.
+const DECLINE_REASONS = [
+  "Too expensive",
+  "Timeline too long",
+  "Scope isn't right",
+];
+
 function BidViewer({
   quote,
   projectName,
@@ -366,9 +374,10 @@ function BidViewer({
   const [acceptErr, setAcceptErr] = useState<string | null>(null);
   const [committed, setCommitted] = useState(quote.status === "committed");
   const [declined, setDeclined] = useState(quote.status === "declined");
-  // Reject (decline) — a low-friction confirm that swaps the action row into
-  // Keep / Decline, styled like the Accept + Appointment buttons.
+  // Reject (decline) — expands a reason panel (pills + REQUIRED note). The
+  // reason is recorded on the bid so the supervisor sees why it was rejected.
   const [confirmDecline, setConfirmDecline] = useState(false);
+  const [declineReason, setDeclineReason] = useState("");
   const [declining, setDeclining] = useState(false);
   // Delete — a focused confirm panel (reason pills + required note). When open
   // it replaces the estimate body so there's one unambiguous action. Opened
@@ -447,17 +456,19 @@ function BidViewer({
     }
   };
 
-  // Reject the bid — records 'declined' + the optional reason. The team can
-  // re-bid later; the customer can also delete it outright (handleDelete).
+  // Reject the bid — records 'declined' + the REQUIRED reason (shown to the
+  // supervisor). The team can re-bid later; the customer can also delete it
+  // outright (handleDelete).
   const handleDecline = async () => {
-    if (declining) return;
+    const reason = declineReason.trim();
+    if (declining || !reason) return;
     setDeclining(true);
     setAcceptErr(null);
     try {
       const res = await fetch("/api/contract/decline", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ quoteId: quote.id }),
+        body: JSON.stringify({ quoteId: quote.id, note: reason }),
       });
       if (!res.ok) {
         const j = (await res.json().catch(() => ({}))) as { error?: string };
@@ -523,11 +534,13 @@ function BidViewer({
             </p>
           </div>
           {/* Delete request — removes the bid from your list. Hidden once a
-              contract is active (a live obligation can't be deleted). */}
-          {!committed && (
+              contract is active (a live obligation can't be deleted) AND while
+              the delete panel is already open (the panel is the delete flow —
+              a second trash here just creates confusion). */}
+          {!committed && !showDelete && (
             <button
               type="button"
-              onClick={() => setShowDelete((v) => !v)}
+              onClick={() => setShowDelete(true)}
               aria-label="Delete request"
               title="Delete request"
               className="rounded-md p-1 transition-colors hover:bg-black/5 hover:text-[var(--risk)] dark:hover:bg-white/10"
@@ -791,37 +804,97 @@ function BidViewer({
                   </button>
                 </div>
 
-                {/* Reject — a full-width pill consistent with the Accept +
-                Appointment buttons. Tapping it swaps in a Keep / Decline
-                confirm (same pill styling) so a misclick can't decline. */}
+                {/* Reject — tapping "Decline estimate" expands a panel that
+                    requires a reason (pills + note). The reason is mandatory
+                    because the supervisor sees it; Decline stays disabled
+                    until one is given. */}
                 {confirmDecline ? (
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setConfirmDecline(false)}
-                      disabled={declining}
-                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full border px-4 py-2 text-[13px] font-medium disabled:opacity-50"
+                  <div
+                    className="flex flex-col gap-2 rounded-xl border p-3"
+                    style={{
+                      borderColor: "var(--risk)",
+                      background:
+                        "color-mix(in srgb, var(--risk) 6%, transparent)",
+                    }}
+                  >
+                    <span
+                      className="text-[12.5px]"
+                      style={{ color: "var(--text)" }}
+                    >
+                      Why are you declining this estimate?
+                    </span>
+                    <span
+                      className="text-[10px] font-semibold tracking-wider uppercase"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      Reason <span style={{ color: "var(--risk)" }}>*</span>
+                    </span>
+                    <div className="flex flex-wrap gap-1">
+                      {DECLINE_REASONS.map((r) => (
+                        <button
+                          key={r}
+                          type="button"
+                          onClick={() => setDeclineReason(r)}
+                          className="rounded-full border px-2 py-0.5 text-[11px] transition-colors"
+                          style={{
+                            borderColor:
+                              declineReason === r
+                                ? "var(--risk)"
+                                : "var(--border)",
+                            color:
+                              declineReason === r
+                                ? "var(--risk)"
+                                : "var(--text-muted)",
+                            background:
+                              declineReason === r
+                                ? "color-mix(in srgb, var(--risk) 12%, transparent)"
+                                : "transparent",
+                          }}
+                        >
+                          {r}
+                        </button>
+                      ))}
+                    </div>
+                    <textarea
+                      value={declineReason}
+                      onChange={(e) => setDeclineReason(e.target.value)}
+                      rows={2}
+                      placeholder="Tell the team why (required) — helps them re-bid…"
+                      className="w-full resize-none rounded-lg border px-2.5 py-1.5 text-[12px] outline-none"
                       style={{
                         borderColor: "var(--border)",
+                        background: "var(--background)",
                         color: "var(--text)",
                       }}
-                    >
-                      Keep
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleDecline()}
-                      disabled={declining}
-                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50"
-                      style={{ background: "var(--risk)" }}
-                    >
-                      {declining ? (
-                        <Loader2 size={14} className="animate-spin" />
-                      ) : (
-                        <ThumbsDown size={14} />
-                      )}{" "}
-                      Decline estimate
-                    </button>
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDecline(false)}
+                        disabled={declining}
+                        className="inline-flex flex-1 items-center justify-center rounded-full border px-4 py-2 text-[13px] font-medium disabled:opacity-50"
+                        style={{
+                          borderColor: "var(--border)",
+                          color: "var(--text)",
+                        }}
+                      >
+                        Keep
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDecline()}
+                        disabled={declining || !declineReason.trim()}
+                        className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+                        style={{ background: "var(--risk)" }}
+                      >
+                        {declining ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <ThumbsDown size={14} />
+                        )}{" "}
+                        Decline estimate
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <button

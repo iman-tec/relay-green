@@ -35,6 +35,14 @@ export async function POST(request: Request) {
   };
   if (!quoteId)
     return NextResponse.json({ error: "Missing quoteId." }, { status: 400 });
+  // A decline reason is mandatory — the supervisor needs to know why a bid was
+  // rejected. The UI enforces this too; this is the server-side guarantee.
+  const reason = typeof note === "string" ? note.trim() : "";
+  if (!reason)
+    return NextResponse.json(
+      { error: "A reason is required to decline." },
+      { status: 400 }
+    );
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -65,10 +73,9 @@ export async function POST(request: Request) {
       { status: 409 }
     );
 
-  const trimmed = typeof note === "string" ? note.trim() : "";
   const { error } = await admin
     .from("project_quote_requests")
-    .update({ status: "declined", customer_response_note: trimmed || null })
+    .update({ status: "declined", customer_response_note: reason })
     .eq("id", quoteId);
   if (error)
     return NextResponse.json({ error: error.message }, { status: 500 });
