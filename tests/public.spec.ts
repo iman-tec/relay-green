@@ -32,3 +32,4 @@ test.describe("public pages render", () => {
     await expect(page).toHaveURL(/\/login/);
   });
 });
+
