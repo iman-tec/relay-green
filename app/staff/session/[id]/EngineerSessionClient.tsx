@@ -1537,6 +1537,27 @@ function FloatingStatus({
   const hasMeeting = !!session.zoom_meeting_id;
   const inCall = started || isLive;
 
+  // Start/restart Zoom control (lives beside "End session" in this HUD).
+  const isSupervisor = useIsSupervisor();
+  const launchCall = useLaunchCall();
+  // Appointment moderator hosts the in-window Video SDK call directly.
+  const isApptSupervisor = isSupervisor && !!session.is_appointment;
+  // Show the control when there's no active meeting yet, or the most recent
+  // one ended (restart). Mirrors the previous composer-level affordance.
+  const lastZoomEvent = [...state.messages]
+    .reverse()
+    .find(
+      (m) =>
+        m.sender_kind === "system" &&
+        ((m.body ?? "").includes("Zoom meeting ended") ||
+          (m.body ?? "").includes("Zoom meeting started"))
+    );
+  const zoomEnded =
+    !!lastZoomEvent &&
+    (lastZoomEvent.body ?? "").includes("Zoom meeting ended");
+  const showStartMeetingButton =
+    state.isAssignedEngineer && (!hasMeeting || zoomEnded);
+
   // Buffer countdown when customer is paying
   const [, force] = useState(0);
   useEffect(() => {
@@ -1570,22 +1591,23 @@ function FloatingStatus({
     setMintError(null);
     try {
       const sb = createClient();
-      if (!hasMeeting) {
-        const { data, error } = await sb.functions.invoke(
-          "mint-zoom-for-session",
-          {
-            body: { session_id: session.id },
-          }
-        );
-        if (error || !data?.zoom_meeting_id) {
-          const msg =
-            error?.message ??
-            (data?.error as string | undefined) ??
-            "Couldn't mint Zoom meeting";
-          setMintError(msg);
-          setTimeout(() => setMintError(null), 6000);
-          return;
+      // mint-zoom-for-session is idempotent: a no-op while a meeting is
+      // active, and force-mints a fresh one when the last lifecycle event
+      // was "ended" (restart). Safe to invoke unconditionally.
+      const { data, error } = await sb.functions.invoke(
+        "mint-zoom-for-session",
+        {
+          body: { session_id: session.id },
         }
+      );
+      if (error || !data?.zoom_meeting_id) {
+        const msg =
+          error?.message ??
+          (data?.error as string | undefined) ??
+          "Couldn't mint Zoom meeting";
+        setMintError(msg);
+        setTimeout(() => setMintError(null), 6000);
+        return;
       }
       onStart();
     } finally {
@@ -1691,16 +1713,48 @@ function FloatingStatus({
             Monitoring (silent)
           </span>
         )}
-        {/* Join / Start-video button moved into the inline ZoomCallCard in
-            the chat — keep the FloatingStatus focused on session-level
-            controls only (status pill, timer, End, Release). */}
+        {/* Start / restart Zoom — sits beside "End session" in the top-right
+            HUD. The assigned engineer mints via startVideo; an appointment
+            moderator (supervisor host) opens the in-window Video SDK call. */}
+        {(showStartMeetingButton || (isApptSupervisor && launchCall)) && (
+          <button
+            type="button"
+            onClick={() => {
+              if (isApptSupervisor && launchCall) launchCall();
+              else void startVideo();
+            }}
+            disabled={busyStart}
+            title={
+              isApptSupervisor
+                ? "Start the call"
+                : session.zoom_meeting_id
+                  ? "Start a new Zoom meeting"
+                  : "Start a Zoom meeting"
+            }
+            aria-label={
+              isApptSupervisor
+                ? "Start the call"
+                : session.zoom_meeting_id
+                  ? "Start a new Zoom meeting"
+                  : "Start a Zoom meeting"
+            }
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-50"
+            style={{ backgroundColor: BRAND_GREEN }}
+          >
+            {busyStart ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <Video size={16} />
+            )}
+          </button>
+        )}
         {state.isAssignedEngineer && (isLive || isPreLive) && (
           <button
             onClick={() => setConfirmEnd(true)}
-            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
             style={{ backgroundColor: "var(--accent-red)" }}
           >
-            <PhoneOff size={11} />
+            <PhoneOff size={13} />
             End session
           </button>
         )}
@@ -1907,14 +1961,11 @@ function ChatPane({
   const session = state.session!;
   const isReadOnly = readOnly || session.status === "ended";
   const isSupervisor = useIsSupervisor();
-  const launchCall = useLaunchCall();
-  // Appointment moderator: hosts the in-window Video SDK call directly (the
-  // token grants them host for is_appointment sessions). Engineers/customers
-  // keep their existing start path untouched.
-  const isApptSupervisor = isSupervisor && !!session.is_appointment;
   const maxW = fullWidth ? "max-w-3xl" : "max-w-none";
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [minting, setMinting] = useState(false);
+  // Start/restart Zoom now lives in the top-right HUD (FloatingStatus), beside
+  // "End session". mintError here still surfaces failures from
+  // handleCancelMeeting (the inline "End meeting" affordance on call cards).
   const [mintError, setMintError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -1957,34 +2008,6 @@ function ChatPane({
     // booleans that flip rarely. Re-running on those edges is fine.
   }, [session.id, session.status, readOnly, isSupervisor]);
 
-  // Engineer-only handler that mints a Zoom meeting via the edge function.
-  // Used for the first-time mint and for restart after a previous meeting
-  // ended. The mint function is idempotent for an active meeting (no-op)
-  // and force-mints when the latest lifecycle event is "ended". On success
-  // a "Zoom meeting started" system message arrives via realtime and the
-  // card refreshes.
-  const handleStartMeeting = async () => {
-    setMinting(true);
-    setMintError(null);
-    try {
-      const sb = createClient();
-      const { error } = await sb.functions.invoke("mint-zoom-for-session", {
-        body: { session_id: session.id },
-      });
-      if (error) {
-        const msg = error.message ?? "Couldn't start a Zoom meeting";
-        setMintError(msg);
-        setTimeout(() => setMintError(null), 6000);
-        return;
-      }
-      // Defensive refresh — realtime will deliver the updates, but pulling
-      // the row eagerly keeps the UI in sync if the subscription drops.
-      await state.refresh();
-    } finally {
-      setMinting(false);
-    }
-  };
-
   // Engineer-only handler that hangs up the current Zoom meeting via the
   // end-zoom-meeting edge function — saves the engineer from having to
   // open Zoom and click "End meeting for all" themselves when the customer
@@ -2003,27 +2026,6 @@ function ChatPane({
     }
     await state.refresh();
   };
-
-  // Latest "started" vs "ended" event drives whether the composer's
-  // Start-meeting button is visible. The per-meeting cards in the chat
-  // body live alongside their corresponding "started" message — each
-  // meeting is its own inline entry there.
-  const lastZoomEvent = [...state.messages]
-    .reverse()
-    .find(
-      (m) =>
-        m.sender_kind === "system" &&
-        ((m.body ?? "").includes("Zoom meeting ended") ||
-          (m.body ?? "").includes("Zoom meeting started"))
-    );
-  const zoomEnded =
-    !!lastZoomEvent &&
-    (lastZoomEvent.body ?? "").includes("Zoom meeting ended");
-
-  // Composer-level start/restart affordance. Hidden when there's already an
-  // active Zoom meeting (mint would be a no-op then) and in monitor mode.
-  const showStartMeetingButton =
-    !readOnly && (!session.zoom_meeting_id || zoomEnded);
 
   // Join URL the engineer/monitor should open. The latest active meeting
   // always points at the current session row's URLs. Supervisors (read-only
@@ -2227,55 +2229,21 @@ function ChatPane({
               Read-only · monitoring this session
             </div>
           ) : (
-            <div className="flex flex-col gap-2">
-              {(showStartMeetingButton || (isApptSupervisor && launchCall)) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    // Appointment moderator → open the in-window Video SDK call
-                    // (they're the host). Everyone else keeps the existing mint.
-                    if (isApptSupervisor && launchCall) launchCall();
-                    else void handleStartMeeting();
-                  }}
-                  disabled={isReadOnly || minting}
-                  title={
-                    isApptSupervisor
-                      ? "Start the call"
-                      : session.zoom_meeting_id
-                        ? "Start a new Zoom meeting"
-                        : "Start a Zoom meeting"
-                  }
-                  aria-label={
-                    isApptSupervisor
-                      ? "Start the call"
-                      : session.zoom_meeting_id
-                        ? "Start a new Zoom meeting"
-                        : "Start a Zoom meeting"
-                  }
-                  className="flex h-8 w-8 shrink-0 items-center justify-center self-start rounded-full text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-                  style={{ backgroundColor: BRAND_GREEN }}
-                >
-                  {minting ? (
-                    <Loader2 size={14} className="animate-spin" />
-                  ) : (
-                    <Video size={14} />
-                  )}
-                </button>
-              )}
-              <ChatComposer
-                disabled={isReadOnly}
-                placeholder={`Message ${session.guest_name}…`}
-                onSend={async ({ text, files }) => {
-                  // A supervisor participating in an appointment posts as
-                  // "Moderator" (hardcoded identity), never as the engineer.
-                  await state.sendBundle({
-                    text,
-                    files,
-                    senderName: isSupervisor ? "Moderator" : undefined,
-                  });
-                }}
-              />
-            </div>
+            // Start/restart Zoom control moved to the top-right bar of the
+            // chat window (see ChatPane header); the composer stands alone here.
+            <ChatComposer
+              disabled={isReadOnly}
+              placeholder={`Message ${session.guest_name}…`}
+              onSend={async ({ text, files }) => {
+                // A supervisor participating in an appointment posts as
+                // "Moderator" (hardcoded identity), never as the engineer.
+                await state.sendBundle({
+                  text,
+                  files,
+                  senderName: isSupervisor ? "Moderator" : undefined,
+                });
+              }}
+            />
           )}
 
           {/* Project AI assistant — slim bar that lets the engineer
