@@ -16,6 +16,7 @@ const nextConfig: NextConfig = {
   // even though every page redirects to https).
   allowedDevOrigins: [
     "10.0.2.129",
+    "10.0.3.51",
     "10.0.2.129:3000",
     "10.0.2.129:3001",
     "https://10.0.2.129",
