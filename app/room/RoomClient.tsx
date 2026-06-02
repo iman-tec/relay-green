@@ -7270,7 +7270,7 @@ const Sidebar = memo(function Sidebar({
           engineer-agnostic — clicking it always opens the New-vs-Existing
           chooser. */}
       <div className="flex flex-col gap-2 px-2 pb-1">
-        <div className="relative flex flex-col items-center gap-2 pb-2">
+        <div className="relative flex flex-col items-center gap-2 pb-0">
           {/* Pulsing aura — sits behind the ball, scaled larger via inset
             negative + opacity-pulses with the heartbeat rhythm. Color
             derived from var(--primary) via color-mix so the aura
@@ -7324,7 +7324,7 @@ const Sidebar = memo(function Sidebar({
               style={{ color: "#fff", opacity: 0.9, marginBottom: 5 }}
             />
             <span
-              className="px-3 text-[13px] leading-tight font-semibold"
+              className="px-3 text-[11px] leading-tight font-semibold"
               style={{
                 color: "#fff",
                 textShadow: "0 1px 2px rgba(0,0,0,0.25)",
@@ -7414,7 +7414,7 @@ const Sidebar = memo(function Sidebar({
 
         {/* Search across all past sessions (title / engineer / project). */}
         <div
-          className="mt-0.5 flex items-center gap-2 rounded-lg border px-2.5 py-1.5"
+          className="flex items-center gap-2 rounded-lg border px-2.5 py-1.5"
           style={{
             borderColor: "var(--border)",
             backgroundColor: "var(--background)",
