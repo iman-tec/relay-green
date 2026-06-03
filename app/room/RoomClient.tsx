@@ -4218,17 +4218,14 @@ function ChatPanelStub({
     }
   }, []);
 
-  // ── Attachment picker (paperclip) ─────────────────────────────────
-  // Opens the OS file picker. Files are validated client-side (mime
-  // whitelist + 50 MB cap), then persisted to IndexedDB via
-  // stubDraftAttachments. The auto-flush in the parent RoomClient
-  // moves them into the real session when one goes live.
-  const handlePickFiles = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = Array.from(e.target.files ?? []);
+  // ── Attachment staging (shared by picker, paste and drag-drop) ─────
+  // Files are validated client-side (mime whitelist + 50 MB cap), then
+  // persisted to IndexedDB via stubDraftAttachments. The auto-flush in
+  // the parent RoomClient moves them into the real session when one
+  // goes live.
+  const stageStubFiles = useCallback(
+    async (files: File[]) => {
       if (files.length === 0) return;
-      // Clear the input so picking the same file twice in a row still fires onChange.
-      e.target.value = "";
       setVoiceMsg(null);
       const v = validateStagedFiles(files, []);
       if (!v.ok) {
@@ -4248,7 +4245,48 @@ function ChatPanelStub({
         );
       }
     },
-    []
+    [scopeKey]
+  );
+
+  // Paperclip → OS file picker.
+  const handlePickFiles = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(e.target.files ?? []);
+      // Clear the input so picking the same file twice in a row still fires onChange.
+      e.target.value = "";
+      await stageStubFiles(files);
+    },
+    [stageStubFiles]
+  );
+
+  // Clipboard paste — ANY file on the clipboard (screenshots, copied
+  // documents, audio files…) gets staged into the pre-session tray;
+  // plain-text pastes fall through to the textarea untouched.
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent) => {
+      const items = Array.from(e.clipboardData?.items ?? []);
+      const files = items
+        .filter((it) => it.kind === "file")
+        .map((it) => it.getAsFile())
+        .filter((f): f is File => f !== null);
+      if (files.length === 0) return;
+      e.preventDefault();
+      void stageStubFiles(files);
+    },
+    [stageStubFiles]
+  );
+
+  // Drag-and-drop anywhere on the panel. dragDepth (not a boolean)
+  // because dragenter/dragleave fire per child element as the pointer
+  // crosses them — a counter keeps the overlay stable.
+  const [dragDepth, setDragDepth] = useState(0);
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setDragDepth(0);
+      void stageStubFiles(Array.from(e.dataTransfer.files ?? []));
+    },
+    [stageStubFiles]
   );
 
   const handleRemoveAttachment = useCallback(async (id: string) => {
@@ -4477,6 +4515,9 @@ function ChatPanelStub({
     ? "" // dragging — no transition or the panel will lag the pointer
     : "transition-[width] duration-200";
 
+  // Drop targets only make sense on an expanded, still-writable panel.
+  const dropEnabled = !sidebarCollapsed && !isEndedish;
+
   return (
     <aside
       className={`relative hidden h-full shrink-0 flex-col border-l md:flex ${transitionClass}`}
@@ -4486,7 +4527,49 @@ function ChatPanelStub({
         borderColor: "var(--border)",
         backgroundColor: "var(--surface)",
       }}
+      onDragEnter={(e) => {
+        if (!dropEnabled) return;
+        e.preventDefault();
+        setDragDepth((d) => d + 1);
+      }}
+      onDragOver={(e) => {
+        if (!dropEnabled) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+      }}
+      onDragLeave={(e) => {
+        if (!dropEnabled) return;
+        e.preventDefault();
+        setDragDepth((d) => Math.max(0, d - 1));
+      }}
+      onDrop={dropEnabled ? handleDrop : undefined}
     >
+      {/* Full-panel drop overlay — appears while a file is dragged over
+          the pane so the customer knows the whole panel is a target.
+          Files land in the pre-session tray (IndexedDB) and flush to
+          the engineer when the session connects. */}
+      {dropEnabled && dragDepth > 0 && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-sm border-2 border-dashed"
+          style={{
+            borderColor: BRAND_GREEN,
+            backgroundColor:
+              "color-mix(in srgb, var(--primary) 8%, var(--surface))",
+          }}
+        >
+          <div
+            className="rounded-full border px-4 py-2 text-[12px] font-medium"
+            style={{
+              borderColor: BRAND_GREEN,
+              backgroundColor: "var(--surface)",
+              color: BRAND_GREEN,
+            }}
+          >
+            Drop files — delivered when your engineer joins
+          </div>
+        </div>
+      )}
       {/* Drag-to-resize handle on the LEFT edge. Only renders when
           enableResize=true + the panel is expanded. A 6px-wide
           invisible hit zone with a subtle accent stripe on hover so
@@ -4790,6 +4873,7 @@ function ChatPanelStub({
                   rows={4}
                   value={draftText}
                   onChange={(e) => setDraftText(e.target.value)}
+                  onPaste={handlePaste}
                   onKeyDown={(e) => {
                     // Plain Enter sends — matches the live ChatComposer
                     // (app/_components/ChatComposer.tsx) so users build
@@ -4807,7 +4891,7 @@ function ChatPanelStub({
                       handleSendDraft();
                     }
                   }}
-                  placeholder="Message your engineer…"
+                  placeholder="Message your engineer… (paste or drop files here too)"
                   className="block w-full resize-none bg-transparent text-[13px] leading-relaxed outline-none placeholder:opacity-60"
                   style={{ color: "var(--text)" }}
                 />
@@ -10702,7 +10786,7 @@ function SummaryView({
             Couldn&apos;t generate the summary
           </p>
         </div>
-      ) : !overview ? (
+      ) : !overview && zoomCompanionMessages.length === 0 ? (
         <p
           className="py-8 text-center text-sm"
           style={{ color: "var(--text-muted)" }}
@@ -10711,33 +10795,30 @@ function SummaryView({
         </p>
       ) : (
         <div className="space-y-5">
-          {/* Collective session summary — the whole engagement (chat + call),
-              inline-editable for the customer/engineer who own this session,
-              read-only for everyone else. Labelled so it's clearly distinct
-              from the per-call "Call summary" capsules below it. */}
+          {/* CONSOLIDATED summary — the customer sees exactly ONE summary:
+              the collective session-level rollup, which summarize-guest-call
+              already builds from {chat + voice transcript + per-call Zoom AI
+              Companion summaries}. The separate per-call "Call summary"
+              capsules are a staff-side detail (EngineerSessionClient keeps
+              them); here they only render as a FALLBACK body when the
+              session-level rollup hasn't been generated yet, so the customer
+              still gets one collective view instead of an empty panel. */}
           <div>
             <h3
               className="mb-3 text-[10px] font-semibold tracking-wider uppercase"
               style={{ color: "var(--text-muted)" }}
             >
-              Session summary
+              Summary
             </h3>
-            <EditableSummary
-              title={title}
-              overview={overview}
-              nextSteps={nextSteps}
-              canEdit={canEdit}
-              onSave={handleSummarySave}
-            />
-          </div>
-          {zoomCompanionMessages.length > 0 && (
-            <div className="pt-2">
-              <h3
-                className="mb-3 text-[10px] font-semibold tracking-wider uppercase"
-                style={{ color: "var(--text-muted)" }}
-              >
-                Call summary
-              </h3>
+            {overview ? (
+              <EditableSummary
+                title={title}
+                overview={overview}
+                nextSteps={nextSteps}
+                canEdit={canEdit}
+                onSave={handleSummarySave}
+              />
+            ) : (
               <div className="space-y-3">
                 {zoomCompanionMessages.map((m) => (
                   <MeetingSummaryEntry
@@ -10765,8 +10846,8 @@ function SummaryView({
                   />
                 ))}
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Session artifacts — files exchanged, AI summary, and chat
               transcript. The 90-day retention window starts when the

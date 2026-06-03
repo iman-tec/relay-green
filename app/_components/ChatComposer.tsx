@@ -503,19 +503,21 @@ export function ChatComposer({
     stage(files);
   };
 
-  // Clipboard paste — screenshots (Cmd/Ctrl+V) arrive as image files on the
-  // clipboard. Pull them out and stage them; let plain-text pastes fall
-  // through to the textarea untouched.
+  // Clipboard paste — ANY file on the clipboard (screenshots, copied
+  // documents/PDFs from the OS file manager, audio files…) gets pulled
+  // out and staged; validateStagedFiles inside stage() enforces the
+  // mime whitelist + caps. Plain-text pastes fall through to the
+  // textarea untouched.
   const onPaste = (e: React.ClipboardEvent) => {
     if (disabled) return;
     const items = Array.from(e.clipboardData?.items ?? []);
-    const imgs = items
-      .filter((it) => it.kind === "file" && it.type.startsWith("image/"))
+    const files = items
+      .filter((it) => it.kind === "file")
       .map((it) => it.getAsFile())
       .filter((f): f is File => f !== null);
-    if (imgs.length === 0) return;
+    if (files.length === 0) return;
     e.preventDefault();
-    stage(imgs);
+    stage(files);
   };
 
   const accentBorder = hover ? BRAND_GREEN : "var(--border)";
