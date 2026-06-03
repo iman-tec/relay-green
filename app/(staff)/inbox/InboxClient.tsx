@@ -84,16 +84,19 @@ function EngineerInbox() {
     created_at: string;
   }): Promise<ConnectRequest> => {
     const sb = sbRef.current;
+    // NB: customer_profiles has NO email column — selecting one made the
+    // whole query 42703-fail and the request card rendered with a null
+    // name forever. display_name is the profile's real field.
     const [custRes, projRes] = await Promise.all([
       sb.from("customer_profiles")
-        .select("display_name, email")
+        .select("display_name")
         .eq("user_id", row.customer_user_id)
         .maybeSingle(),
       row.project_id
         ? sb.from("projects").select("name").eq("id", row.project_id).maybeSingle()
         : Promise.resolve({ data: null }),
     ]);
-    const cust = (custRes.data ?? null) as { display_name: string | null; email: string | null } | null;
+    const cust = (custRes.data ?? null) as { display_name: string | null } | null;
     const proj = (projRes.data ?? null) as { name: string | null } | null;
     return {
       id: row.id,
@@ -102,7 +105,7 @@ function EngineerInbox() {
       message: row.message,
       createdAt: row.created_at,
       customerName: cust?.display_name ?? null,
-      customerEmail: cust?.email ?? null,
+      customerEmail: null,
       projectName: proj?.name ?? null,
     };
   }, []);
@@ -267,6 +270,41 @@ function InboxView({
   const [peopleSearch, setPeopleSearch] = useState("");
   const [selectedKey, setSelectedKey]   = useState<string | null>(null);
 
+  // Real display names from the DB profile. guest_calls.guest_name is just
+  // whatever the wizard captured AT SESSION TIME — unnamed flows store the
+  // literal "Customer"/"Guest", and the person list would otherwise show
+  // that static placeholder forever even after the customer sets their
+  // profile name. Fetch customer_profiles for every customer_user_id on
+  // screen and prefer it at render time.
+  const [profileNames, setProfileNames] = useState<Map<string, string>>(
+    () => new Map(),
+  );
+  useEffect(() => {
+    const ids = new Set<string>();
+    for (const c of [...queue, ...myActive, ...recent]) {
+      if (c.customer_user_id) ids.add(c.customer_user_id);
+    }
+    if (ids.size === 0) return;
+    let alive = true;
+    void (async () => {
+      const sb = createClient();
+      const { data: rows } = await sb
+        .from("customer_profiles")
+        .select("user_id, display_name")
+        .in("user_id", Array.from(ids));
+      if (!alive || !rows) return;
+      const next = new Map<string, string>();
+      for (const r of rows as { user_id: string; display_name: string | null }[]) {
+        const name = (r.display_name ?? "").trim();
+        if (name) next.set(r.user_id, name);
+      }
+      setProfileNames(next);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [queue, myActive, recent]);
+
   const peopleMap = useMemo(() => {
     // queue/myActive/recent can overlap on the same session id (a live one
     // appears in both myActive and recent during the assigned→ended window).
@@ -279,6 +317,15 @@ function InboxView({
       seen.add(c.id);
       all.push(c);
     }
+    // Best name for a session's customer: DB profile first, then the
+    // session's own guest_name (normalised). "Customer" is the generic
+    // placeholder, so any real name beats it.
+    const bestName = (c: GuestCall): string => {
+      const fromProfile = c.customer_user_id
+        ? profileNames.get(c.customer_user_id)
+        : undefined;
+      return displayCustomerName(fromProfile ?? c.guest_name);
+    };
     const map = new Map<string, Person>();
     for (const c of all) {
       const k = c.guest_email || c.guest_name || c.id;
@@ -286,17 +333,24 @@ function InboxView({
       const existing = map.get(k);
       if (existing) {
         existing.sessions.push(c);
+        // Upgrade a generic placeholder name the moment any of this
+        // person's sessions yields a real one (profile name or a session
+        // where they actually introduced themselves).
+        if (existing.name === "Customer") {
+          const candidate = bestName(c);
+          if (candidate !== "Customer") existing.name = candidate;
+        }
       } else {
         map.set(k, {
           key:      k,
           email:    c.guest_email ?? "",
-          name:     displayCustomerName(c.guest_name),
+          name:     bestName(c),
           sessions: [c],
         });
       }
     }
     return map;
-  }, [queue, recent, myActive]);
+  }, [queue, recent, myActive, profileNames]);
 
   const people = useMemo(() => {
     const q = peopleSearch.trim().toLowerCase();
@@ -763,7 +817,7 @@ function InboxView({
                     style={{ borderColor: "var(--border)" }}
                   >
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-medium" style={{ color: "var(--text)" }}>{displayCustomerName(c.guest_name)}</div>
+                      <div className="truncate text-sm font-medium" style={{ color: "var(--text)" }}>{displayCustomerName((c.customer_user_id && profileNames.get(c.customer_user_id)) || c.guest_name)}</div>
                       <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
                         {new Date(c.created_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                       </div>
