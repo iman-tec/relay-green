@@ -24,6 +24,8 @@ import { useRouter } from "next/navigation";
 import { Check, ChevronLeft, ChevronRight, Folder, Loader2, PhoneIncoming, Search, Sparkles, X } from "lucide-react";
 import { useEngineerWorkspace } from "@/lib/relay/useEngineerWorkspace";
 import { useRequireEngineerProfile } from "@/lib/relay/useRequireEngineerProfile";
+import { useStaffGuard } from "@/lib/relay/useStaffGuard";
+import { ROLE } from "@/lib/relay/roles";
 import { createClient } from "@/lib/supabase/browser";
 import type { GuestCall } from "@/lib/supabase/types";
 
@@ -62,8 +64,7 @@ type Person = {
   sessions: GuestCall[];
 };
 
-export function InboxClient() {
-  const router = useRouter();
+function EngineerInbox() {
   useRequireEngineerProfile();
   const { queue, recent, myActive, loading, error } = useEngineerWorkspace();
 
@@ -221,6 +222,46 @@ export function InboxClient() {
       setReqBusyId(null);
     }
   }, [reqBusyId]);
+
+  return (
+    <InboxView
+      data={{ queue, myActive, recent, loading, error }}
+      requests={requests}
+      reqBusyId={reqBusyId}
+      onAccept={onAccept}
+      onDecline={onDecline}
+    />
+  );
+}
+
+type InboxData = {
+  queue: GuestCall[];
+  myActive: GuestCall[];
+  recent: GuestCall[];
+  loading: boolean;
+  error: string | null;
+};
+
+// Presentational inbox — the three-column People / per-customer history /
+// call-log view. Driven entirely by the `data` it's handed, so both the
+// engineer inbox (own sessions + connect requests) and the supervisor inbox
+// (all-platform sessions, no requests) render through it. `requests` is empty
+// for the supervisor variant, which hides the Pending-requests section.
+function InboxView({
+  data,
+  requests,
+  reqBusyId,
+  onAccept,
+  onDecline,
+}: {
+  data: InboxData;
+  requests: ConnectRequest[];
+  reqBusyId: string | null;
+  onAccept: (req: ConnectRequest) => void;
+  onDecline: (req: ConnectRequest) => void;
+}) {
+  const router = useRouter();
+  const { queue, myActive, recent, loading, error } = data;
 
   // ── People list (left rail) ───────────────────────────────────────────
   const [peopleSearch, setPeopleSearch] = useState("");
@@ -450,10 +491,11 @@ export function InboxClient() {
                       />
                       {/* Right-edge "tab" — visually bridges into the
                           center pane so the eye reads "this row → that
-                          panel." Sticks out a hair past the column border. */}
+                          panel." Sits flush at the column's inner edge (no
+                          translate) so it never overlaps the tramline divider. */}
                       <span
                         aria-hidden
-                        className="absolute right-0 top-1/2 h-3 w-1.5 -translate-y-1/2 translate-x-[3px] rounded-l-sm"
+                        className="absolute right-0 top-1/2 h-3 w-1.5 -translate-y-1/2 rounded-l-sm"
                         style={{ backgroundColor: BRAND_GREEN }}
                       />
                     </>
@@ -736,6 +778,89 @@ export function InboxClient() {
       </aside>
     </div>
   );
+}
+
+// ── Supervisor inbox feed ────────────────────────────────────────────────
+// All-platform sessions via /api/supervisor/inbox (service-role, gated to
+// supervisor / super_admin). Debounced realtime refetch keeps it live.
+function useSupervisorInbox() {
+  const [sessions, setSessions] = useState<GuestCall[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const sbRef = useRef(createClient());
+  const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch("/api/supervisor/inbox", { cache: "no-store" });
+      if (!res.ok) {
+        setError(`Couldn't load inbox (${res.status}).`);
+        return;
+      }
+      const json = (await res.json()) as { sessions?: GuestCall[] };
+      setSessions(json.sessions ?? []);
+      setError(null);
+    } catch {
+      setError("Network error loading inbox.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  // Coalesce a burst of guest_calls changes into one refetch.
+  useEffect(() => {
+    const sb = sbRef.current;
+    const schedule = () => {
+      if (reloadTimer.current) clearTimeout(reloadTimer.current);
+      reloadTimer.current = setTimeout(() => { void load(); }, 1500);
+    };
+    const suffix =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const ch = sb
+      .channel(`supervisor-inbox-${suffix}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "guest_calls" },
+        () => schedule(),
+      )
+      .subscribe();
+    return () => { sb.removeChannel(ch); };
+  }, [load]);
+
+  return { sessions, loading, error };
+}
+
+// Supervisor variant — same view, all-platform data, no connect requests.
+function SupervisorInbox() {
+  const { sessions, loading, error } = useSupervisorInbox();
+  return (
+    <InboxView
+      data={{ queue: [], myActive: [], recent: sessions, loading, error }}
+      requests={[]}
+      reqBusyId={null}
+      onAccept={() => {}}
+      onDecline={() => {}}
+    />
+  );
+}
+
+// Role-aware entry. Engineers (incl. multi-role engineers) get their own
+// session-scoped inbox; supervisors / super_admins get the all-platform view.
+export function InboxClient() {
+  const guard = useStaffGuard();
+  if (guard.kind === "loading") {
+    return (
+      <div className="flex h-screen items-center justify-center" style={{ backgroundColor: "var(--surface)" }}>
+        <Loader2 size={20} className="animate-spin" style={{ color: BRAND_GREEN }} />
+      </div>
+    );
+  }
+  const roles = guard.kind === "staff" ? guard.roles : [];
+  return roles.includes(ROLE.engineer) ? <EngineerInbox /> : <SupervisorInbox />;
 }
 
 /* ──────── Center pane: project-grouped session history for one person ───

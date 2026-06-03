@@ -98,8 +98,9 @@ const NAV: Nav[] = [
     icon: LayoutDashboard,
     roles: [ROLE.engineer],
   },
-  // Engineer-only. People + per-customer session history + call log.
-  { href: "/inbox", label: "Inbox", icon: InboxIcon, roles: [ROLE.engineer] },
+  // People + per-customer session history + call log. Engineers see their own
+  // sessions; supervisors get an all-platform view of the same surface.
+  { href: "/inbox", label: "Inbox", icon: InboxIcon, roles: [ROLE.engineer, ROLE.supervisor] },
   // Engineer-only. Global quote-request / bid queue across all customers.
   { href: "/quotations", label: "Quotation", icon: FileText, roles: [ROLE.engineer] },
   // /supervise renders the platform-wide grid for super_admin + supervisor,
@@ -183,10 +184,11 @@ const NAV: Nav[] = [
   },
 ];
 
-// /calendar is intentionally NOT here — it's shared by engineers AND
-// supervisors (each manages their own availability), so non-engineers must not
-// be bounced off it.
-const ENGINEER_ONLY_PATHS = ["/dashboard", "/inbox", "/quotations", "/staff/session"];
+// /calendar and /inbox are intentionally NOT here — both are shared with
+// supervisors (calendar: each manages their own availability; inbox: engineers
+// see their own sessions, supervisors get an all-platform view), so
+// non-engineers must not be bounced off them.
+const ENGINEER_ONLY_PATHS = ["/dashboard", "/quotations", "/staff/session"];
 
 function isEngineer(roles: readonly Role[]): boolean {
   return roles.includes(ROLE.engineer);
