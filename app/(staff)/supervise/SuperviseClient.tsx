@@ -559,51 +559,57 @@ export function SuperviseClient() {
               )}
             </div>
 
-            {/* Tabs: All · Waiting · Live · Past · (Matching for pod-supervisors) */}
-            <Tabs
-              tab={tab}
-              setTab={setTab}
-              counts={{
-                all:
-                  liveSessions.length +
-                  waitingSessions.length +
-                  pastSessions.length,
-                waiting: waitingSessions.length,
-                live: liveSessions.length,
-                past: pastSessions.length,
-                escalations: escalations.length,
-                team: 0,
-                appointments: 0,
-                matching: 0,
-              }}
-              showEscalations={scope.kind === "pod"}
-              showMatching={
-                scope.kind === "unscoped" ||
-                (scope.kind === "pod" && !!scope.podId)
-              }
-              showTeam={scope.kind === "pod" && !!scope.podId}
-            />
-
-            {loading ? (
-              <div className="flex justify-center py-16">
-                <Loader2
-                  size={20}
-                  className="animate-spin text-[var(--text-muted)]"
-                />
-              </div>
-            ) : (
-              <TabPanel
+            {/* Tabs + session grid. Marked with an id so the act-now rail's
+                "Review project history (AI)" popover can anchor itself to JUST
+                this region — leaving the header (and its notification bell)
+                visible so session alerts stay readable while it's open. */}
+            <div id="supervise-live-region" className="space-y-6">
+              {/* Tabs: All · Waiting · Live · Past · (Matching for pod-supervisors) */}
+              <Tabs
                 tab={tab}
-                liveSessions={liveSessions}
-                waitingSessions={waitingSessions}
-                pastSessions={pastSessions}
-                escalations={escalations}
-                onEscalationChanged={refreshEscalations}
-                perPage={perPage}
-                setPerPage={setPerPage}
-                matchingGlobal={scope.kind === "unscoped"}
+                setTab={setTab}
+                counts={{
+                  all:
+                    liveSessions.length +
+                    waitingSessions.length +
+                    pastSessions.length,
+                  waiting: waitingSessions.length,
+                  live: liveSessions.length,
+                  past: pastSessions.length,
+                  escalations: escalations.length,
+                  team: 0,
+                  appointments: 0,
+                  matching: 0,
+                }}
+                showEscalations={scope.kind === "pod"}
+                showMatching={
+                  scope.kind === "unscoped" ||
+                  (scope.kind === "pod" && !!scope.podId)
+                }
+                showTeam={scope.kind === "pod" && !!scope.podId}
               />
-            )}
+
+              {loading ? (
+                <div className="flex justify-center py-16">
+                  <Loader2
+                    size={20}
+                    className="animate-spin text-[var(--text-muted)]"
+                  />
+                </div>
+              ) : (
+                <TabPanel
+                  tab={tab}
+                  liveSessions={liveSessions}
+                  waitingSessions={waitingSessions}
+                  pastSessions={pastSessions}
+                  escalations={escalations}
+                  onEscalationChanged={refreshEscalations}
+                  perPage={perPage}
+                  setPerPage={setPerPage}
+                  matchingGlobal={scope.kind === "unscoped"}
+                />
+              )}
+            </div>
           </div>
         </div>
 

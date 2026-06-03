@@ -10,6 +10,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import {
@@ -22,9 +23,9 @@ import {
   FileText,
   CalendarClock,
   ChevronDown,
+  X,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
-import { cn } from "@/app/_components/ui";
 import { ProjectAIAssistant } from "@/app/_components/ProjectAIAssistant";
 
 type Sentiment = { score: number; summary: string; messageCount: number };
@@ -445,37 +446,31 @@ function DiveInForm({
         </div>
       )}
 
-      {/* Review the project's AI history before scoping — collapsed by default
-            so the bid form stays the primary content (the assistant is a tall
-            full-height panel). Height-bounded + scrolls internally when open. */}
+      {/* Review the project's AI history before scoping. The assistant is a
+            tall, full-height chat — cramming it inline forced the supervisor to
+            scroll a tiny box, so it now opens as a popover covering the
+            live-operations panel (see ProjectHistoryPopover below). */}
       <div
         className="rounded-lg border"
         style={{ borderColor: "var(--border)" }}
       >
         <button
           type="button"
-          onClick={() => setShowAi((v) => !v)}
+          onClick={() => setShowAi(true)}
           className="flex w-full items-center gap-1.5 px-3 py-2 text-[11px] font-semibold tracking-wide uppercase"
           style={{ color: "var(--text-muted)" }}
         >
           <FileText size={12} /> Review project history (AI)
-          <ChevronDown
-            size={13}
-            className={cn(
-              "ml-auto transition-transform",
-              showAi && "rotate-180"
-            )}
-          />
+          <ChevronDown size={13} className="ml-auto -rotate-90" />
         </button>
-        {showAi && (
-          <div
-            className="h-72 overflow-hidden border-t"
-            style={{ borderColor: "var(--border)" }}
-          >
-            <ProjectAIAssistant projectId={q.projectId} />
-          </div>
-        )}
       </div>
+      {showAi && (
+        <ProjectHistoryPopover
+          projectId={q.projectId}
+          projectName={q.project}
+          onClose={() => setShowAi(false)}
+        />
+      )}
 
       {/* Bid — same one-page bid the engineer prepares. */}
       <div
@@ -675,6 +670,107 @@ function DiveInForm({
         </div>
       </div>
     </div>
+  );
+}
+
+// ── Project-history AI popover ──────────────────────────────────────────────
+// Portaled to <body> so it floats above the live-operations grid rather than
+// being clipped inside the (overflow-hidden, position-transformed) bid card.
+// It anchors itself to the #supervise-live-region element — the tabs + session
+// grid — so it covers ONLY that area: the header (with its notification bell)
+// and the act-now rail stay visible and interactive, letting the supervisor
+// still see session alerts while the assistant is open. ESC + cross close it.
+function ProjectHistoryPopover({
+  projectId,
+  projectName,
+  onClose,
+}: {
+  projectId: string;
+  projectName: string | null;
+  onClose: () => void;
+}) {
+  // Live coordinates of the region the popover covers. null until measured
+  // (and as a fallback we just pin to the right half of the viewport).
+  const [box, setBox] = useState<{ left: number; top: number } | null>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  // Anchor to the live-region's position. Measured once on open and on resize
+  // only — deliberately NOT on scroll, so the panel stays static in the
+  // viewport while the background scrolls underneath it.
+  useEffect(() => {
+    const measure = () => {
+      const el = document.getElementById("supervise-live-region");
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setBox({ left: Math.round(r.left), top: Math.max(0, Math.round(r.top)) });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
+
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <>
+      {/* Panel — covers only the live-operations region (left/top come from the
+          measured #supervise-live-region) with a gap on the right (clears the
+          page scrollbar) and bottom. No full-screen scrim: the header bell +
+          act-now rail stay clickable. */}
+      <div
+        className="fixed z-[var(--z-modal)] flex flex-col overflow-hidden rounded-xl border shadow-2xl"
+        style={{
+          background: "var(--surface)",
+          borderColor: "var(--border)",
+          left: box ? box.left : "50%",
+          top: box ? box.top : 96,
+          right: 24,
+          bottom: 24,
+        }}
+        role="dialog"
+        aria-label="Project history (AI)"
+      >
+        <div
+          className="flex shrink-0 items-center justify-between gap-2 border-b px-4 py-3"
+          style={{ borderColor: "var(--border)" }}
+        >
+          <div
+            className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <FileText size={12} /> Review project history (AI)
+            {projectName && (
+              <span
+                className="ml-1 normal-case"
+                style={{ color: "var(--text)" }}
+              >
+                · {projectName}
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close project history"
+            className="inline-flex size-7 items-center justify-center rounded-md border transition-colors hover:bg-[var(--surface-raised)]"
+            style={{ borderColor: "var(--border)", color: "var(--text)" }}
+          >
+            <X size={14} />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1">
+          <ProjectAIAssistant projectId={projectId} projectName={projectName ?? undefined} />
+        </div>
+      </div>
+    </>,
+    document.body
   );
 }
 
