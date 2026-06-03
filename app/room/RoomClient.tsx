@@ -615,21 +615,32 @@ export function RoomClient() {
   // Desktop layout is untouched (md:flex on the in-flow panel).
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
 
-  // Track the visual viewport so the mobile chat sheet can resize to the
-  // space ABOVE the on-screen keyboard. On iOS, a fixed bottom:0 sheet
-  // otherwise sits behind the keyboard, hiding the composer + Send button.
-  // We pin the sheet to the visual viewport (top + height) instead, so the
-  // composer stays reachable while typing. Falls back to a static height
-  // when the API is unavailable.
+  // Track the visual viewport so the mobile chat sheet can sit in the space
+  // ABOVE the on-screen keyboard. On iOS a fixed bottom:0 sheet otherwise
+  // hides behind the keyboard, burying the composer + Send button. We
+  // bottom-anchor the sheet to the VISIBLE viewport: normally it's ~85% tall
+  // (leaving a gap at the top), but when the keyboard shrinks the viewport it
+  // fills the available space so the composer stays reachable. Falls back to
+  // a static bottom sheet when the API is unavailable.
   const [chatSheetVV, setChatSheetVV] = useState<{ top: number; height: number } | null>(null);
+  const [sheetDragY, setSheetDragY] = useState(0);
+  const sheetDragStart = useRef<number | null>(null);
   useEffect(() => {
     if (!mobileChatOpen) {
       setChatSheetVV(null);
+      setSheetDragY(0);
       return;
     }
     const vv = typeof window !== "undefined" ? window.visualViewport : null;
     if (!vv) return;
-    const apply = () => setChatSheetVV({ top: vv.offsetTop, height: vv.height });
+    const apply = () => {
+      // Desired height leaves a ~15% gap at the top when there's room; the
+      // keyboard-shrunk viewport caps it so nothing spills under the keyboard.
+      const desired = Math.round(window.innerHeight * 0.85);
+      const height = Math.min(desired, vv.height);
+      const top = Math.round(vv.offsetTop + vv.height - height);
+      setChatSheetVV({ top, height });
+    };
     apply();
     vv.addEventListener("resize", apply);
     vv.addEventListener("scroll", apply);
@@ -2275,48 +2286,59 @@ export function RoomClient() {
             onClick={() => setMobileChatOpen(false)}
           />
           <div
-            className="fixed inset-x-0 z-[var(--z-drawer)] flex flex-col rounded-t-2xl shadow-2xl md:hidden"
+            className={cn(
+              "fixed inset-x-0 z-[var(--z-drawer)] flex flex-col rounded-t-2xl shadow-2xl md:hidden",
+              sheetDragY === 0 && "transition-transform duration-150"
+            )}
             style={{
               backgroundColor: "var(--surface)",
-              // Pin to the visual viewport so the keyboard never hides the
-              // composer; fall back to a bottom-anchored 85vh sheet when the
-              // visualViewport API isn't available.
+              transform: sheetDragY ? `translateY(${sheetDragY}px)` : undefined,
+              // Bottom-anchored to the visible viewport (keyboard-aware);
+              // fall back to a static 85vh bottom sheet without the API.
               ...(chatSheetVV
                 ? { top: chatSheetVV.top, height: chatSheetVV.height, bottom: "auto" }
                 : { bottom: 0, height: "85vh" }),
             }}
           >
-            {/* Drag handle + close. Tapping the handle minimises (closes)
-                the sheet; the explicit X does the same. */}
-            <div
-              className="relative flex shrink-0 items-center justify-between border-b px-3 py-2"
+            {/* Grab bar — tap OR drag-down to minimise the sheet. Generous
+                hit area so it's easy to catch on touch. No separate X: the
+                grab bar (and the panel toggle inside the chat) close it. */}
+            <button
+              type="button"
+              aria-label="Minimise chat"
+              title="Minimise"
+              className="flex w-full shrink-0 touch-none items-center justify-center border-b py-3"
               style={{ borderColor: "var(--border)" }}
+              onPointerDown={(e) => {
+                sheetDragStart.current = e.clientY;
+                e.currentTarget.setPointerCapture?.(e.pointerId);
+              }}
+              onPointerMove={(e) => {
+                if (sheetDragStart.current == null) return;
+                setSheetDragY(Math.max(0, e.clientY - sheetDragStart.current));
+              }}
+              onPointerUp={() => {
+                if (sheetDragStart.current == null) return;
+                const dy = sheetDragY;
+                sheetDragStart.current = null;
+                // A tap (no real movement) or a drag past the threshold both
+                // dismiss; a short drag snaps back.
+                if (dy < 6 || dy > 90) setMobileChatOpen(false);
+                else setSheetDragY(0);
+              }}
+              onPointerCancel={() => {
+                sheetDragStart.current = null;
+                setSheetDragY(0);
+              }}
             >
-              <button
-                type="button"
-                onClick={() => setMobileChatOpen(false)}
-                aria-label="Minimise chat"
-                title="Minimise"
-                className="mx-auto flex h-5 items-center justify-center px-6"
-              >
-                <span
-                  aria-hidden
-                  className="h-1 w-10 rounded-full"
-                  style={{
-                    backgroundColor: "var(--border-strong, var(--border))",
-                  }}
-                />
-              </button>
-              <button
-                type="button"
-                onClick={() => setMobileChatOpen(false)}
-                aria-label="Close chat"
-                className="absolute top-2 right-3 flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                style={{ color: "var(--text-muted)" }}
-              >
-                <X size={14} />
-              </button>
-            </div>
+              <span
+                aria-hidden
+                className="h-1 w-10 rounded-full"
+                style={{
+                  backgroundColor: "var(--border-strong, var(--border))",
+                }}
+              />
+            </button>
             {/* The stub is normally hidden on mobile (via the md:flex
                 class on its own outer aside). We need to FORCE it
                 visible inside the sheet — wrapping with a div that
