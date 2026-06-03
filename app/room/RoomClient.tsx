@@ -68,7 +68,6 @@ import {
   Trash2,
   Rocket,
   Wrench,
-  Menu,
   MessageCircle,
   ArrowLeft,
 } from "lucide-react";
@@ -612,12 +611,33 @@ export function RoomClient() {
   const handleBusyClose = useCallback(() => {
     setQueueTimedOut(false);
   }, []);
-  // Mobile-only state. The sidebar + chat panel are hidden by default
-  // at viewports < md (768px). A hamburger button opens the sidebar as
-  // a fixed-position drawer; a FAB opens the chat panel as a bottom
-  // sheet. Desktop layout is untouched (md:flex on each).
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  // Mobile-only state. A FAB opens the chat panel as a bottom sheet.
+  // Desktop layout is untouched (md:flex on the in-flow panel).
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
+
+  // Track the visual viewport so the mobile chat sheet can resize to the
+  // space ABOVE the on-screen keyboard. On iOS, a fixed bottom:0 sheet
+  // otherwise sits behind the keyboard, hiding the composer + Send button.
+  // We pin the sheet to the visual viewport (top + height) instead, so the
+  // composer stays reachable while typing. Falls back to a static height
+  // when the API is unavailable.
+  const [chatSheetVV, setChatSheetVV] = useState<{ top: number; height: number } | null>(null);
+  useEffect(() => {
+    if (!mobileChatOpen) {
+      setChatSheetVV(null);
+      return;
+    }
+    const vv = typeof window !== "undefined" ? window.visualViewport : null;
+    if (!vv) return;
+    const apply = () => setChatSheetVV({ top: vv.offsetTop, height: vv.height });
+    apply();
+    vv.addEventListener("resize", apply);
+    vv.addEventListener("scroll", apply);
+    return () => {
+      vv.removeEventListener("resize", apply);
+      vv.removeEventListener("scroll", apply);
+    };
+  }, [mobileChatOpen]);
   useEffect(() => {
     if (newChatParam === "1") {
       setAsyncChatMode(true);
@@ -1866,92 +1886,11 @@ export function RoomClient() {
       className="flex h-screen w-screen overflow-hidden"
       style={{ backgroundColor: "var(--background)", color: "var(--text)" }}
     >
-      {/* Mobile hamburger — fixed top-left, only visible below md.
-          Opens the sidebar as a slide-in drawer. Sits above the main
-          pane so it's reachable even when the central pane scrolls. */}
-      <button
-        type="button"
-        onClick={() => setMobileSidebarOpen(true)}
-        aria-label="Open sidebar"
-        className="fixed top-3 left-3 z-30 flex h-11 w-11 items-center justify-center rounded-full border shadow-sm transition-transform hover:scale-105 md:hidden"
-        style={{
-          backgroundColor: "var(--surface)",
-          borderColor: "var(--border)",
-          color: "var(--text)",
-        }}
-      >
-        <Menu size={18} />
-      </button>
-
-      {/* Mobile sidebar drawer — scrim + slide-in panel from the left.
-          Renders the same Sidebar component as desktop so feature
-          parity is automatic. Tapping the scrim or any nav action
-          closes it (the scrim onClick handles the easy path; for the
-          nav actions, each handler in Sidebar already closes the
-          flow it opens — the drawer state just needs to follow). */}
-      {mobileSidebarOpen && (
-        <>
-          <div
-            className="fixed inset-0 z-[var(--z-drawer)] md:hidden"
-            style={{ backgroundColor: "var(--scrim)" }}
-            onClick={() => setMobileSidebarOpen(false)}
-          />
-          <div
-            className="fixed inset-y-0 left-0 z-[var(--z-drawer)] flex w-[min(85vw,320px)] flex-col shadow-2xl md:hidden"
-            style={{ backgroundColor: "var(--surface)" }}
-            onClickCapture={(e) => {
-              // Close the drawer when the user taps any actionable
-              // element inside it (so navigating somewhere doesn't
-              // leave the scrim covering the destination). We use
-              // capture-phase so we observe clicks BEFORE the
-              // sidebar's own handlers — that way close-state
-              // updates before navigation, avoiding a flash where
-              // the drawer briefly re-renders over the new view.
-              const t = e.target as HTMLElement;
-              if (t.closest("button, a")) setMobileSidebarOpen(false);
-            }}
-          >
-            <Sidebar
-              email={sidebarEmail}
-              customerUserId={sidebarCustomerUserId}
-              isGuest={sidebarIsGuest}
-              displayName={state.customerName}
-              session={state.session}
-              entitlement={state.entitlement}
-              employment={employment}
-              viewingPastId={viewingPastId}
-              projects={projects}
-              selectedProjectId={selectedProjectId}
-              onViewPast={handleViewPast}
-              onNewSession={handleNewSession}
-              onNewChat={() => setNewChatModalOpen(true)}
-              onStartInProject={handleStartInProject}
-              onRenameProject={handleRenameProject}
-              onStartNewProject={handleStartNewProject}
-              onCreateProjectWithMetadata={handleCreateProjectWithMetadata}
-              onSelectProject={handleSelectProject}
-              onWalletClick={handleWalletClick}
-              onOpenProfile={handleOpenProfile}
-              onOpenBilling={handleOpenBilling}
-              onOpenLegal={handleOpenLegal}
-              onGoHome={handleGoHome}
-              onPrepareSession={handlePrepareSession}
-              draftsTick={draftsTick}
-              pastRefreshTick={pastRefreshTick}
-              onDeleteProject={handleOpenDeleteProject}
-              onPickerToast={(msg) => {
-                setPaidToast(msg);
-                window.setTimeout(() => setPaidToast(null), 5000);
-              }}
-              onMarkProjectComplete={handleMarkProjectComplete}
-              onOpenCenter={setCenterView}
-            />
-          </div>
-        </>
-      )}
-
-      {/* Desktop sidebar — hidden below md, always-in-flow above. */}
-      <div className="hidden md:flex">
+      {/* Sidebar — visible at every breakpoint. Its own collapse toggle
+          (the PanelLeft icon in the brand row) shrinks it to a 48px icon
+          rail on narrow screens, which replaces the old below-md hamburger
+          + slide-in drawer (that drawer was the source of the click error). */}
+      <div className="flex">
         <Sidebar
           email={sidebarEmail}
           customerUserId={sidebarCustomerUserId}
@@ -2336,23 +2275,38 @@ export function RoomClient() {
             onClick={() => setMobileChatOpen(false)}
           />
           <div
-            className="fixed inset-x-0 bottom-0 z-[var(--z-drawer)] flex h-[85vh] flex-col rounded-t-2xl shadow-2xl md:hidden"
-            style={{ backgroundColor: "var(--surface)" }}
+            className="fixed inset-x-0 z-[var(--z-drawer)] flex flex-col rounded-t-2xl shadow-2xl md:hidden"
+            style={{
+              backgroundColor: "var(--surface)",
+              // Pin to the visual viewport so the keyboard never hides the
+              // composer; fall back to a bottom-anchored 85vh sheet when the
+              // visualViewport API isn't available.
+              ...(chatSheetVV
+                ? { top: chatSheetVV.top, height: chatSheetVV.height, bottom: "auto" }
+                : { bottom: 0, height: "85vh" }),
+            }}
           >
-            {/* Drag handle + close. The handle is decorative (it's
-                pleasing to look at + signals "this can slide") and
-                the explicit close button is what actually dismisses. */}
+            {/* Drag handle + close. Tapping the handle minimises (closes)
+                the sheet; the explicit X does the same. */}
             <div
-              className="flex shrink-0 items-center justify-between border-b px-3 py-2"
+              className="relative flex shrink-0 items-center justify-between border-b px-3 py-2"
               style={{ borderColor: "var(--border)" }}
             >
-              <span
-                aria-hidden
-                className="mx-auto h-1 w-10 rounded-full"
-                style={{
-                  backgroundColor: "var(--border-strong, var(--border))",
-                }}
-              />
+              <button
+                type="button"
+                onClick={() => setMobileChatOpen(false)}
+                aria-label="Minimise chat"
+                title="Minimise"
+                className="mx-auto flex h-5 items-center justify-center px-6"
+              >
+                <span
+                  aria-hidden
+                  className="h-1 w-10 rounded-full"
+                  style={{
+                    backgroundColor: "var(--border-strong, var(--border))",
+                  }}
+                />
+              </button>
               <button
                 type="button"
                 onClick={() => setMobileChatOpen(false)}
@@ -2375,9 +2329,7 @@ export function RoomClient() {
             <div className="relative flex min-h-0 flex-1 [&>aside]:!flex">
               <ChatPanelStub
                 sidebarCollapsed={false}
-                onToggleCollapsed={() => {
-                  /* no-op on mobile */
-                }}
+                onToggleCollapsed={() => setMobileChatOpen(false)}
                 session={state.session}
                 scopeKey={
                   state.session?.project_id || selectedProjectId || "general"
@@ -4687,7 +4639,9 @@ function ChatPanelStub({
           title={sidebarCollapsed ? "Expand" : "Collapse"}
         >
           {sidebarCollapsed ? (
-            <PanelRightOpen size={14} />
+            // Collapsed: show a chat icon so the standalone button reads as
+            // "open the chat" rather than a generic panel-expand glyph.
+            <MessageSquare size={14} />
           ) : (
             <PanelRightClose size={14} />
           )}
@@ -4940,7 +4894,11 @@ function ChatPanelStub({
                     }
                   }}
                   placeholder="Message your engineer… (paste or drop files here too)"
-                  className="block w-full resize-none bg-transparent text-[13px] leading-relaxed outline-none placeholder:opacity-60"
+                  // text-base (16px) on mobile prevents iOS Safari's
+                  // auto-zoom-on-focus (any input < 16px triggers it, which is
+                  // what was magnifying the whole sheet); md:text-[13px] keeps
+                  // the desktop panel compact.
+                  className="block w-full resize-none bg-transparent text-base leading-relaxed outline-none md:text-[13px] placeholder:opacity-60"
                   style={{ color: "var(--text)" }}
                 />
 
