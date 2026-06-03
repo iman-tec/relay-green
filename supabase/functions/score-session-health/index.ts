@@ -1,9 +1,12 @@
 // Periodic session-health scorer (Groq-backed).
 //
 // Triggered by pg_cron once per minute (see scripts/schedule-health-cron.sql).
-// For every session currently in {live, grace}, pull the last 60s of chat
-// messages, ask Groq's Llama 3.1 8B Instant for a JSON {score, summary},
-// and insert one row into session_health.
+// For every session currently in {live, grace}, pull the last 60s of BOTH
+// signal channels — typed chat (guest_messages) AND the spoken call
+// transcript (session_captions, Zoom live transcription) — merge them into
+// one chronological transcript, ask Groq's Llama 3.1 8B Instant for a
+// COLLECTIVE JSON {score, summary} across both channels, and insert one row
+// into session_health (consumed by the supervisor's sentiment bar).
 //
 // Idempotency: not strictly needed — multiple invocations within the same
 // minute just produce more rows, and the supervisor card reads the
@@ -33,7 +36,11 @@ const WINDOW_SECONDS     = 60;
 
 const SYSTEM_PROMPT = `You are an observability assistant for a real-time engineering support platform.
 
-You receive a transcript window of chat messages between a customer and a Relay engineer during a live support session. Score the OVERALL HEALTH of the session on a continuous scale:
+You receive a UNIFIED transcript window from a live support session between a customer and a Relay engineer. It interleaves TWO channels in chronological order, each line tagged with its source:
+  • "(chat)"  — typed chat messages
+  • "(voice)" — the spoken call transcript (Zoom live transcription)
+
+Score the OVERALL HEALTH of the session COLLECTIVELY across both channels — the call sentiment and the chat sentiment together, weighed as one conversation. A frustrated voice call with polite chat is still unhealthy; a quiet call with productive chat is still healthy. Use a continuous scale:
 
   -1.0  →  very poor (customer frustrated, hostile tone, engineer stuck, no progress, conflict)
    0.0  →  neutral/steady (no clear signal, normal back-and-forth, early-stage)
