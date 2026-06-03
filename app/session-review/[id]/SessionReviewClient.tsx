@@ -1844,14 +1844,28 @@ function TranscriptBlock({
 
 function TranscriptMessage({ message }: { message: GuestMessage }) {
   if (message.sender_kind === "system") {
+    // System messages can carry attachments (pre-session "customer
+    // prepared these files" flush) — render them below the pill.
+    const sysAttachments = message.attachments ?? [];
     return (
-      <div className="flex justify-center">
+      <div className="flex flex-col items-center gap-2">
         <span
           className="inline-block rounded-full px-2.5 py-1 text-[11px]"
           style={{ backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)", color: "var(--text-muted)" }}
         >
           {message.body}
         </span>
+        {sysAttachments.length > 0 && (
+          <div
+            className="flex max-w-[85%] flex-col gap-2 rounded-2xl px-3.5 py-2.5"
+            style={{
+              backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)",
+              color: "var(--text)",
+            }}
+          >
+            <MessageAttachments attachments={sysAttachments} />
+          </div>
+        )}
       </div>
     );
   }

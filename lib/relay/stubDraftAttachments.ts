@@ -201,22 +201,26 @@ async function readScopeWithBlobs(scope: string): Promise<StubAttachment[]> {
  * Flush every pending attachment in a given scope into a live session.
  *
  * Uploads all blobs to the chat-attachments bucket under the new
- * sessionId, inserts ONE system message ("📎 Customer prepared these
- * files before the call:"), and attaches every uploaded row to it.
- * Clears the scope's queue only on full success — partial failure
- * leaves the queue intact for retry.
+ * sessionId, then posts them as REGULAR customer chat bubbles
+ * (attachment-only guest messages, chunked at the per-message file cap)
+ * so they're clearly visible in the timeline — not tucked under a
+ * system pill. Clears the scope's queue only on full success — partial
+ * failure leaves the queue intact for retry.
  *
  * Caller is responsible for picking the right scope (typically the
- * session's project_id, or "general" when projectless). Returns the
- * count uploaded.
+ * session's project_id, or "general" when projectless) and passing the
+ * customer's resolved display name. Returns the count uploaded.
  */
 export async function flushAttachmentsToSession(args: {
   sb: SupabaseClient;
   sessionId: string;
   scope: string;
-  systemBody?: string;
+  /** Customer display name for the chat bubble header (falls back to "Customer"). */
+  senderName?: string | null;
+  /** Customer auth user id, when known. */
+  senderId?: string | null;
 }): Promise<number> {
-  const { sb, sessionId, scope, systemBody } = args;
+  const { sb, sessionId, scope, senderName, senderId } = args;
   const items = await readScopeWithBlobs(scope);
   if (items.length === 0) return 0;
 
@@ -232,20 +236,21 @@ export async function flushAttachmentsToSession(args: {
   // same per-message cap the composers enforce (and stays under the DB
   // image-cap trigger). The queue can legitimately hold more than one
   // message's worth — staged across multiple visits before the call.
-  const body = systemBody ?? "📎 Customer prepared these files before the call:";
   for (let i = 0; i < uploaded.length; i += MAX_FILES_PER_MESSAGE) {
     const chunk = uploaded.slice(i, i + MAX_FILES_PER_MESSAGE);
     const { data: msg, error: msgErr } = await sb
       .from("guest_messages")
       .insert({
         guest_call_id: sessionId,
-        sender_kind: "system",
-        sender_name: "Relay",
-        body: i === 0 ? body : "📎 (more prepared files)",
+        sender_kind: "guest",
+        sender_name: (senderName ?? "").trim() || "Customer",
+        sender_id: senderId ?? null,
+        // Attachment-only bubble — the files ARE the message.
+        body: null,
       })
       .select("id")
       .single();
-    if (msgErr || !msg) throw new Error(msgErr?.message ?? "Couldn't post the prep message.");
+    if (msgErr || !msg) throw new Error(msgErr?.message ?? "Couldn't post the prepared files.");
 
     const rows = chunk.map(({ uploaded: u, kind }) => ({
       message_id: msg.id,

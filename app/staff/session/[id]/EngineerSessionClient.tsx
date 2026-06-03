@@ -2271,8 +2271,13 @@ function ChatPane({
 
 function Message({ message }: { message: GuestMessage }) {
   if (message.sender_kind === "system") {
+    // System messages can carry attachments — the customer's pre-session
+    // flush posts "📎 Customer prepared these files before the call:" with
+    // the staged files attached. Render them or the engineer never sees
+    // the files the customer prepared.
+    const sysAttachments = message.attachments ?? [];
     return (
-      <div className="flex justify-center">
+      <div className="flex flex-col items-center gap-2">
         <span
           className="inline-block rounded-full px-2.5 py-1 text-[11px]"
           style={{
@@ -2282,6 +2287,18 @@ function Message({ message }: { message: GuestMessage }) {
         >
           {message.body}
         </span>
+        {sysAttachments.length > 0 && (
+          <div
+            className="flex max-w-[85%] flex-col gap-2 rounded-2xl px-3.5 py-2.5"
+            style={{
+              backgroundColor:
+                "color-mix(in srgb, var(--text) 6%, transparent)",
+              color: "var(--text)",
+            }}
+          >
+            <MessageAttachments attachments={sysAttachments} />
+          </div>
+        )}
       </div>
     );
   }

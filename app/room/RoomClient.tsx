@@ -403,9 +403,10 @@ export function RoomClient() {
   //      cleared so the draft doesn't re-flush on re-renders.
   //
   //   2. Every staged attachment in the IndexedDB queue for the
-  //      same scope flushes via flushStubAttachments — one system
-  //      message ("📎 Customer prepared these files before the
-  //      call:") with each blob attached. Same do-once gate.
+  //      same scope flushes via flushStubAttachments — posted as
+  //      regular attachment-only guest bubbles under the customer's
+  //      name (chunked at the per-message file cap) so the files are
+  //      clearly visible in the timeline. Same do-once gate.
   //
   // Scope = session.project_id when present, else "general" so the
   // projectless landing's scratch still flushes into the session it
@@ -493,10 +494,18 @@ export function RoomClient() {
           }
         }
 
-        // Step 2: flush attachments queued under either scope.
+        // Step 2: flush attachments queued under either scope. Posted as
+        // regular customer bubbles (attachment-only) so the files are
+        // clearly visible in the timeline, not hidden under a system pill.
         let n = 0;
         for (const scope of scopes) {
-          n += await flushStubAttachments({ sb, sessionId: s.id, scope });
+          n += await flushStubAttachments({
+            sb,
+            sessionId: s.id,
+            scope,
+            senderName: state.customerName || s.guest_name || "Customer",
+            senderId: s.customer_user_id ?? null,
+          });
         }
 
         if (postedCount > 0 || n > 0) {
@@ -10541,8 +10550,13 @@ const Message = memo(function Message({
   selfName?: string;
 }) {
   if (message.sender_kind === "system") {
+    // System messages can carry attachments — the pre-session flush posts
+    // "📎 Customer prepared these files before the call:" with the staged
+    // files attached. Rendering only the body made those files invisible
+    // in the room even though they were delivered.
+    const sysAttachments = message.attachments ?? [];
     return (
-      <div className="flex justify-center">
+      <div className="flex flex-col items-center gap-2">
         <span
           className="inline-block rounded-full px-2.5 py-1 text-[11px]"
           style={{
@@ -10552,6 +10566,18 @@ const Message = memo(function Message({
         >
           {message.body}
         </span>
+        {sysAttachments.length > 0 && (
+          <div
+            className="flex max-w-[85%] flex-col gap-2 rounded-2xl px-3.5 py-2.5"
+            style={{
+              backgroundColor:
+                "color-mix(in srgb, var(--text) 6%, transparent)",
+              color: "var(--text)",
+            }}
+          >
+            <MessageAttachments attachments={sysAttachments} />
+          </div>
+        )}
       </div>
     );
   }
