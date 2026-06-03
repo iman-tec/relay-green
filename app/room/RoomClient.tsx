@@ -21,6 +21,7 @@
  */
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { PanelGroup, Panel, PanelResizeHandle } from "react-resizable-panels";
 import {
@@ -8169,10 +8170,15 @@ function ConnectFlowModal({
 
   return (
     <div
-      className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center px-4 py-6"
+      className="fixed inset-0 z-[var(--z-modal)] overflow-y-auto"
       style={{ backgroundColor: "var(--scrim)", backdropFilter: "blur(4px)" }}
       onClick={onClose}
     >
+      {/* min-h-full + flex centres the panel when it fits, but lets the
+          overlay SCROLL (without clipping the top — the classic
+          justify-center overflow bug) when the form is taller than the
+          viewport on short screens. */}
+      <div className="flex min-h-full items-center justify-center px-4 py-6">
       <div
         className={cn(
           "relative w-full rounded-2xl border p-6 shadow-2xl",
@@ -8516,6 +8522,7 @@ function ConnectFlowModal({
             )}
           </>
         )}
+        </div>
       </div>
     </div>
   );
@@ -9712,8 +9719,30 @@ const ProjectAccordion = memo(function ProjectAccordion({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [group.key, draftsTick, isGeneral]);
 
-  // Overflow menu state (… button) — Rename + Delete actions.
+  // Overflow menu state (… button) — Rename + Delete actions. The menu is
+  // portaled to <body> with fixed positioning anchored to the RIGHT of the
+  // trigger, so it escapes the sidebar's overflow: it no longer drops down
+  // over the "All projects" button below, and never adds a sidebar scrollbar.
   const [overflowOpen, setOverflowOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const overflowBtnRef = useRef<HTMLButtonElement>(null);
+
+  const openOverflowMenu = useCallback(() => {
+    const el = overflowBtnRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const MENU_W = 168;
+    const MENU_H = 92; // 2 items
+    // Prefer to the right of the button; flip to the left if it would spill
+    // off the viewport's right edge.
+    let left = r.right + 6;
+    if (left + MENU_W > window.innerWidth - 8) left = r.left - 6 - MENU_W;
+    // Align to the button's top, clamped so it stays fully on-screen.
+    const top = Math.min(r.top, window.innerHeight - MENU_H - 8);
+    setMenuPos({ top: Math.max(8, top), left: Math.max(8, left) });
+    setOverflowOpen(true);
+  }, []);
+
   // Close on outside-click.
   useEffect(() => {
     if (!overflowOpen) return;
@@ -9881,9 +9910,11 @@ const ProjectAccordion = memo(function ProjectAccordion({
                 phrase) before any destructive action runs. */}
             <div className="relative" onClick={(e) => e.stopPropagation()}>
               <button
+                ref={overflowBtnRef}
                 onClick={(e) => {
                   e.stopPropagation();
-                  setOverflowOpen((v) => !v);
+                  if (overflowOpen) setOverflowOpen(false);
+                  else openOverflowMenu();
                 }}
                 title={`More actions for ${group.name}`}
                 aria-label={`More actions for ${group.name}`}
@@ -9892,65 +9923,52 @@ const ProjectAccordion = memo(function ProjectAccordion({
               >
                 <MoreHorizontal size={14} />
               </button>
-              {overflowOpen && (
-                <div
-                  className="absolute top-full right-0 z-30 mt-1 min-w-[160px] overflow-hidden rounded-lg border shadow-xl"
-                  style={{
-                    borderColor: "var(--border)",
-                    backgroundColor: "var(--surface)",
-                    boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setOverflowOpen(false);
-                      setDraftName(group.name);
-                      setRenaming(true);
+              {overflowOpen && menuPos && typeof document !== "undefined" &&
+                createPortal(
+                  <div
+                    className="fixed z-[var(--z-modal)] min-w-[168px] overflow-hidden rounded-lg border shadow-xl"
+                    style={{
+                      top: menuPos.top,
+                      left: menuPos.left,
+                      borderColor: "var(--border)",
+                      backgroundColor: "var(--surface)",
+                      boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
                     }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                    style={{ color: "var(--text)" }}
+                    onClick={(e) => e.stopPropagation()}
                   >
-                    <Pencil size={12} />
-                    Rename project
-                  </button>
-                  {group.completionStatus === "active" && (
                     <button
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         setOverflowOpen(false);
-                        onMarkProjectComplete(group.key, group.name);
+                        setDraftName(group.name);
+                        setRenaming(true);
+                      }}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                      style={{ color: "var(--text)" }}
+                    >
+                      <Pencil size={12} />
+                      Rename project
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOverflowOpen(false);
+                        onDeleteProject(group.key, group.name);
                       }}
                       className="flex w-full items-center gap-2 border-t px-3 py-2 text-left text-[12px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
                       style={{
-                        color: "var(--text)",
+                        color: "var(--accent-red)",
                         borderColor: "var(--border)",
                       }}
                     >
-                      <Check size={12} />
-                      Mark complete
+                      <X size={12} />
+                      Delete project
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setOverflowOpen(false);
-                      onDeleteProject(group.key, group.name);
-                    }}
-                    className="flex w-full items-center gap-2 border-t px-3 py-2 text-left text-[12px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                    style={{
-                      color: "var(--accent-red)",
-                      borderColor: "var(--border)",
-                    }}
-                  >
-                    <X size={12} />
-                    Delete project
-                  </button>
-                </div>
-              )}
+                  </div>,
+                  document.body
+                )}
             </div>
           </>
         )}
