@@ -610,7 +610,7 @@ export function ScheduleEngineerModal({
             </p>
           </div>
         ) : (
-          <div className="flex min-h-0 flex-col sm:flex-row">
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto sm:flex-row sm:overflow-hidden">
             {/* LEFT — month calendar */}
             <div
               className="border-b p-5 sm:w-[320px] sm:shrink-0 sm:border-r sm:border-b-0"
@@ -846,8 +846,9 @@ export function ScheduleEngineerModal({
                 )}
               </div>
 
-              {/* Times */}
-              <div className="max-h-[300px] min-h-[160px] flex-1 overflow-y-auto">
+              {/* Times. On mobile the whole modal body scrolls (so the slots
+                  are never clipped); on sm+ this column scrolls on its own. */}
+              <div className="min-h-[160px] flex-1 sm:max-h-[300px] sm:overflow-y-auto">
                 {!effectiveDay ? (
                   <p
                     className="py-8 text-center text-[13px]"

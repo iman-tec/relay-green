@@ -161,12 +161,14 @@ export function ProjectsCenterView({
     <div className="mx-auto flex h-full w-full max-w-2xl flex-col">
       {topBar}
 
-      {/* Title + sort + new project */}
-      <div className="flex items-center justify-between gap-3 px-6 pt-3">
+      {/* Title + sort + new project. On mobile the controls drop UNDER the
+          title (full width) so the button labels don't get squeezed; from sm+
+          they sit inline to the right of the title. */}
+      <div className="flex flex-col gap-3 px-6 pt-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="font-serif text-3xl" style={{ color: "var(--text)" }}>
           Projects
         </h1>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           <span className="text-[13px]" style={{ color: "var(--text-muted)" }}>
             Sort by
           </span>
@@ -174,7 +176,7 @@ export function ProjectsCenterView({
             <button
               type="button"
               onClick={() => setSortOpen((o) => !o)}
-              className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+              className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-1.5 text-[13px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5"
               style={{ borderColor: "var(--border)", color: "var(--text)" }}
             >
               {SORTS.find((s) => s.key === sort)?.label}
@@ -220,7 +222,7 @@ export function ProjectsCenterView({
           <button
             type="button"
             onClick={onNewProject}
-            className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+            className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3.5 py-1.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
             style={{ background: "var(--primary)" }}
           >
             <Plus size={14} /> New project

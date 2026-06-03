@@ -203,16 +203,28 @@ export function ContractsCenterView({
                         · {golive ? "Go-live" : "Maintain"}
                       </span>
                     </div>
-                    <div
-                      className="text-[12px]"
-                      style={{ color: "var(--text-muted)" }}
-                    >
-                      {statusLabel(q.status)}
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      <span
+                        className="text-[12px]"
+                        style={{ color: "var(--text-muted)" }}
+                      >
+                        {statusLabel(q.status)}
+                      </span>
+                      {/* Price sits here on mobile so the project name keeps
+                          its full width; on sm+ it moves to the right column. */}
+                      {q.quote_amount_cents != null && (
+                        <span
+                          className="text-[12px] font-semibold tabular-nums sm:hidden"
+                          style={{ color: "var(--text)" }}
+                        >
+                          {eur(q.quote_amount_cents)}
+                        </span>
+                      )}
                     </div>
                   </div>
                   {q.quote_amount_cents != null && (
                     <span
-                      className="shrink-0 text-[13px] font-semibold tabular-nums"
+                      className="hidden shrink-0 text-[13px] font-semibold tabular-nums sm:block"
                       style={{ color: "var(--text)" }}
                     >
                       {eur(q.quote_amount_cents)}

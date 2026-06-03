@@ -80,7 +80,6 @@ import {
 } from "@/app/_components/MeetingSummaryEntry";
 import { PaywallModal } from "@/app/_components/PaywallModal";
 import { AppointmentPopup } from "@/app/_components/AppointmentPopup";
-import { UpcomingSessionBanner } from "@/app/_components/UpcomingSessionBanner";
 import {
   ChatComposer,
   speechRecognitionErrorMessage,
@@ -2205,8 +2204,8 @@ export function RoomClient() {
       )}
       {callBlockMsg && <ErrorToast message={callBlockMsg} />}
 
-      {/* Upcoming scheduled-session indicator + at-slot-time prompt. */}
-      <UpcomingSessionBanner />
+      {/* At-slot-time prompt. (The persistent "Scheduled session" banner was
+          removed — customers see upcoming sessions in the notification tab.) */}
       <AppointmentPopup />
       {paidToast && <SuccessToast message={paidToast} />}
 
@@ -6382,6 +6381,19 @@ const Sidebar = memo(function Sidebar({
   // returning users see the full hierarchy on each fresh /room landing.
   const [collapsed, setCollapsed] = useState<boolean>(false);
   const toggleCollapsed = (next: boolean) => setCollapsed(next);
+
+  // Open a center-pane view, and on mobile auto-collapse the sidebar to the
+  // icon rail so the opened view (Projects / Scheduled / Contracts) isn't
+  // hidden behind the full-width sidebar. Desktop keeps the sidebar expanded.
+  const openCenter = (view: "projects" | "scheduled" | "contracts") => {
+    onOpenCenter(view);
+    if (
+      typeof window !== "undefined" &&
+      window.matchMedia("(max-width: 767px)").matches
+    ) {
+      toggleCollapsed(true);
+    }
+  };
   // Drag-to-resize the expanded sidebar (handle on its right edge).
   const leftResize = useResizableWidth({
     storageKey: "relay:room-left-sidebar-width",
@@ -6964,19 +6976,6 @@ const Sidebar = memo(function Sidebar({
           style={{ color: "var(--text-muted)" }}
         >
           <Search size={16} />
-        </button>
-
-        {/* Sessions — expands the rail so the project/session list is
-            visible. Previously a no-op (no onClick); wired to match the
-            Search/Home affordances. */}
-        <button
-          onClick={() => toggleCollapsed(false)}
-          title="Sessions"
-          aria-label="Show sessions"
-          className="flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-150 ease-out hover:scale-110 hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5"
-          style={{ color: "var(--text-muted)" }}
-        >
-          <MessageSquare size={16} />
         </button>
 
         {/* New chat — async support path. Restored to the collapsed rail
@@ -7612,7 +7611,7 @@ const Sidebar = memo(function Sidebar({
           {projectGroups.length > 0 && (
             <button
               type="button"
-              onClick={() => onOpenCenter("projects")}
+              onClick={() => openCenter("projects")}
               className="mt-0.5 flex w-full items-center gap-1.5 rounded-md px-3 py-1.5 text-[11.5px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5"
               style={{ color: "var(--primary-hover)" }}
             >
@@ -7631,7 +7630,7 @@ const Sidebar = memo(function Sidebar({
         onReschedule={(t) => setScheduleTarget(t)}
         open={openSection === "scheduled"}
         onToggle={() => toggleSection("scheduled")}
-        onNavigate={() => onOpenCenter("scheduled")}
+        onNavigate={() => openCenter("scheduled")}
       />
 
       {/* Pill 2 — Contract Management (→ opens the center pane). Borderless;
@@ -7641,7 +7640,7 @@ const Sidebar = memo(function Sidebar({
           <ContractManagement
             isOpen={openSection === "contracts"}
             onToggle={() => toggleSection("contracts")}
-            onNavigate={() => onOpenCenter("contracts")}
+            onNavigate={() => openCenter("contracts")}
           />
         </div>
       )}
@@ -8783,56 +8782,63 @@ function EngineerPickerRow({
 
   return (
     <div
-      className="flex items-center gap-3 rounded-lg border px-3 py-2.5"
+      className="flex flex-col gap-2 rounded-lg border px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3"
       style={{ borderColor: "var(--border)" }}
     >
-      {/* Avatar */}
-      <div
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[14px] font-semibold uppercase"
-        style={{
-          backgroundColor:
-            availability === "available"
-              ? BRAND_GREEN_SOFT
-              : "var(--surface-raised)",
-          color:
-            availability === "available" ? BRAND_GREEN : "var(--text-muted)",
-        }}
-      >
-        {engineerName[0]}
-      </div>
-
-      {/* Name + status */}
-      <div className="min-w-0 flex-1">
+      {/* Avatar + name/status. Grouped so on mobile they form the top row and
+          the action buttons drop to a full-width row beneath (otherwise the
+          fixed-width buttons squeeze the name down to one char per line). */}
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        {/* Avatar */}
         <div
-          className="truncate text-[13px] font-medium"
-          style={{ color: "var(--text)" }}
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[14px] font-semibold uppercase"
+          style={{
+            backgroundColor:
+              availability === "available"
+                ? BRAND_GREEN_SOFT
+                : "var(--surface-raised)",
+            color:
+              availability === "available" ? BRAND_GREEN : "var(--text-muted)",
+          }}
         >
-          {engineerName}
+          {engineerName[0]}
         </div>
-        <div
-          className="flex items-center gap-1.5 text-[11px]"
-          style={{ color: "var(--text-muted)" }}
-        >
-          <span className="relative inline-flex h-1.5 w-1.5">
-            {stateMeta.ring && (
+
+        {/* Name + status */}
+        <div className="min-w-0 flex-1">
+          <div
+            className="truncate text-[13px] font-medium"
+            style={{ color: "var(--text)" }}
+          >
+            {engineerName}
+          </div>
+          <div
+            className="flex items-center gap-1.5 text-[11px]"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <span className="relative inline-flex h-1.5 w-1.5 shrink-0">
+              {stateMeta.ring && (
+                <span
+                  className="absolute inset-0 inline-flex animate-ping rounded-full opacity-60"
+                  style={{ backgroundColor: stateMeta.dot as string }}
+                />
+              )}
               <span
-                className="absolute inset-0 inline-flex animate-ping rounded-full opacity-60"
+                className="relative inline-flex h-1.5 w-1.5 rounded-full"
                 style={{ backgroundColor: stateMeta.dot as string }}
               />
-            )}
-            <span
-              className="relative inline-flex h-1.5 w-1.5 rounded-full"
-              style={{ backgroundColor: stateMeta.dot as string }}
-            />
-          </span>
-          {stateMeta.label}
-          <span style={{ opacity: 0.6 }}> · last {lastDate}</span>
+            </span>
+            <span className="truncate">
+              {stateMeta.label}
+              <span style={{ opacity: 0.6 }}> · last {lastDate}</span>
+            </span>
+          </div>
         </div>
       </div>
 
       {/* Actions: the state-appropriate "now" action, plus Schedule-for-later
           which is available for EVERY engineer regardless of presence. */}
-      <div className="flex shrink-0 items-center gap-1.5">
+      <div className="flex shrink-0 flex-wrap items-center gap-1.5 sm:justify-end">
         {availability === "available" && (
           <button
             type="button"
