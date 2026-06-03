@@ -94,11 +94,14 @@ Deno.serve(async (req) => {
 
   for (const project of ready) {
     // 2. Find every attachment row for this project's sessions.
-    // We walk: chat_attachments → guest_messages.guest_call_id →
+    // We walk: guest_message_attachments → guest_messages.guest_call_id →
     // guest_calls.project_id. Filter to unpurged only (we keep the row
     // after the delete; second pass shouldn't re-fetch them).
+    // NB: the table is guest_message_attachments — the original code (and
+    // the 20260526110000 migration) said `chat_attachments`, a table that
+    // never existed; fixed alongside 20260603120000.
     const { data: attaches, error: aErr } = await admin
-      .from("chat_attachments")
+      .from("guest_message_attachments")
       .select("id, path, guest_messages!inner(guest_call_id, guest_calls!inner(project_id))")
       .eq("purged", false)
       .eq("guest_messages.guest_calls.project_id", project.id);

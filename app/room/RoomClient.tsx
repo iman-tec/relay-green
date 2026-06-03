@@ -4010,9 +4010,31 @@ function ChatPanelStub({
     }
   }, [messages.length]);
 
+  // Attachment-only "send" confirmation — staged files are ALREADY queued
+  // for delivery (IndexedDB → auto-flush), so when the customer hits Send
+  // with a lone photo and no text we acknowledge instead of dead-clicking.
+  const [queuedNotice, setQueuedNotice] = useState(false);
+  const queuedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (queuedTimerRef.current) clearTimeout(queuedTimerRef.current);
+    },
+    []
+  );
+
   const handleSendDraft = useCallback(() => {
     const trimmed = draftText.trim();
-    if (!trimmed) return;
+    if (!trimmed) {
+      if (stubAttachments.length > 0) {
+        if (queuedTimerRef.current) clearTimeout(queuedTimerRef.current);
+        setQueuedNotice(true);
+        queuedTimerRef.current = setTimeout(() => {
+          setQueuedNotice(false);
+          queuedTimerRef.current = null;
+        }, 3500);
+      }
+      return;
+    }
     const newId = crypto.randomUUID();
     setMessages((prev) => [
       ...prev,
@@ -4029,7 +4051,7 @@ function ChatPanelStub({
       setUndoableId((prev) => (prev === newId ? null : prev));
       undoTimerRef.current = null;
     }, 5000);
-  }, [draftText]);
+  }, [draftText, stubAttachments.length]);
 
   // Per-message delete via the kebab menu. Always allowed — these are
   // local drafts on the customer's device with no recipient yet, so the
@@ -4220,7 +4242,7 @@ function ChatPanelStub({
   }, []);
 
   // ── Attachment staging (shared by picker, paste and drag-drop) ─────
-  // Files are validated client-side (mime whitelist + 50 MB cap), then
+  // Files are validated client-side (mime whitelist + 10 MB cap), then
   // persisted to IndexedDB via stubDraftAttachments. The auto-flush in
   // the parent RoomClient moves them into the real session when one
   // goes live.
@@ -4772,6 +4794,31 @@ function ChatPanelStub({
               content) by living outside the scroll div. Auto-dismisses
               after the timer; after that the bubble can still be
               deleted via its kebab menu — undo just becomes implicit. */}
+            {/* Attachment-only send confirmation — the file tray is already
+                queued for delivery, so Send just acknowledges. */}
+            {queuedNotice && !undoableId && (
+              <div
+                className="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center px-4"
+                style={{ animation: "relay-toast-in 200ms ease-out" }}
+              >
+                <div
+                  className="pointer-events-auto flex items-center gap-2 rounded-full border px-4 py-2"
+                  style={{
+                    borderColor: "var(--border)",
+                    backgroundColor: "var(--surface)",
+                    boxShadow: "0 10px 28px rgba(0,0,0,0.35)",
+                  }}
+                >
+                  <Check size={12} style={{ color: BRAND_GREEN }} />
+                  <span
+                    className="text-[12px]"
+                    style={{ color: "var(--text)" }}
+                  >
+                    Files queued — delivered when your engineer joins
+                  </span>
+                </div>
+              </div>
+            )}
             {undoableId && (
               <div
                 className="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center px-4"
@@ -5088,7 +5135,9 @@ function ChatPanelStub({
                   <button
                     type="button"
                     onClick={handleSendDraft}
-                    disabled={!draftText.trim()}
+                    disabled={
+                      !draftText.trim() && stubAttachments.length === 0
+                    }
                     aria-label="Send"
                     className="flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                     style={{
@@ -8178,10 +8227,10 @@ function ConnectFlowModal({
           overlay SCROLL (without clipping the top — the classic
           justify-center overflow bug) when the form is taller than the
           viewport on short screens. */}
-      <div className="flex min-h-full items-center justify-center px-4 py-6">
+      <div className="flex min-h-full items-center justify-center px-4 py-5">
       <div
         className={cn(
-          "relative w-full rounded-2xl border p-6 shadow-2xl",
+          "relative w-full rounded-2xl border p-5 shadow-2xl",
           // Wider modal for the details step (form is content-heavy);
           // narrower for the lighter steps so they don't feel sparse.
           step === "details" ? "max-w-xl" : "max-w-md"
@@ -8912,7 +8961,7 @@ function DetailsStep({
         the ground running.
       </p>
 
-      <div className="mt-5 flex flex-col gap-3">
+      <div className="mt-4 flex flex-col gap-2.5">
         {/* Project type */}
         <FormPanel label="Project type" count={newProjectType ? 1 : 0} required>
           <div className="flex flex-wrap gap-2">
@@ -9003,7 +9052,7 @@ function DetailsStep({
         type="button"
         onClick={onDetailsNext}
         disabled={!detailsValid}
-        className="mt-6 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-[13px] font-semibold transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+        className="mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-[13px] font-semibold transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
         style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
       >
         Next: Name your project
@@ -9033,13 +9082,13 @@ function FormPanel({
   const showRequiredAlert = required && !satisfied;
   return (
     <div
-      className="rounded-lg border px-4 py-3"
+      className="rounded-lg border px-3.5 py-2.5"
       style={{
         borderColor: "var(--border)",
         backgroundColor: "var(--surface-raised)",
       }}
     >
-      <div className="mb-3 flex items-center gap-2">
+      <div className="mb-2 flex items-center gap-2">
         <span
           className="text-[12px] font-semibold tracking-[0.1em] uppercase"
           style={{ color: "var(--text)" }}
@@ -10271,6 +10320,24 @@ const ChatPane = memo(function ChatPane({
         if (text.trim()) sessionStorage.setItem("relay:intake:draft", text);
       } catch {
         /* ignore quota / privacy mode */
+      }
+      // Files attached before the session exists must NOT be dropped —
+      // previously only the text survived the trip through /intake and
+      // any staged files silently vanished. Persist them into the
+      // pre-session draft store ("general" scope, IndexedDB); the
+      // auto-flush effect delivers them into the engineer's chat the
+      // moment the session goes live.
+      if (files.length > 0) {
+        const v = validateStagedFiles(files);
+        if (v.ok) {
+          try {
+            for (const c of v.classified) {
+              await stubAddAttachment(c.file, "general");
+            }
+          } catch {
+            /* staging is best-effort — text flow continues regardless */
+          }
+        }
       }
       router.push("/intake");
       return;

@@ -1,18 +1,24 @@
 /*
  * Chat-attachment helpers shared by the customer + engineer composers and
  * session hooks. Single source of truth for accepted file types, the
- * 50 MB / 3-image caps, the storage path layout, and the upload + signed
- * URL plumbing.
+ * 10 MB / 3-files-per-message caps, the storage path layout, and the
+ * upload + signed URL plumbing.
  *
  * All checks happen client-side for fast feedback. The database CHECK
- * constraint + image-cap trigger + bucket file_size_limit are the
- * server-side defence in depth.
+ * constraint + image-cap trigger + bucket file_size_limit (still 50 MB —
+ * intentionally looser, defence in depth) are the server-side backstop.
+ *
+ * Why 10 MB / 3 files: chat attachments are indexed into the Qdrant RAG
+ * pipeline (lib/relay/rag/) — large document dumps balloon the embedding
+ * corpus and degrade retrieval quality (more noise → more hallucination
+ * surface for the project assistant). Tight caps keep the index lean.
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export const MAX_BYTES = 52_428_800;          // 50 MB
-export const MAX_IMAGES_PER_MESSAGE = 3;
+export const MAX_BYTES = 10_485_760;          // 10 MB
+export const MAX_FILES_PER_MESSAGE = 3;       // total files, any kind
+export const MAX_IMAGES_PER_MESSAGE = 3;      // kept ≤ the DB image-cap trigger
 
 export const ACCEPTED_DOC_MIME = new Set<string>([
   "application/pdf",
@@ -63,7 +69,7 @@ export type ValidationResult =
   | { ok: false; error: string };
 
 /**
- * Run mime + size + per-image-count checks on a candidate batch. Pass
+ * Run mime + size + per-message-count checks on a candidate batch. Pass
  * `existing` to validate an incremental add (e.g. dragging more onto an
  * already-staged batch) — counts both sets together.
  */
@@ -78,15 +84,12 @@ export function validateStagedFiles(
       return { ok: false, error: "PDF, DOCX, XLSX, TXT, images, or audio only." };
     }
     if (f.size > MAX_BYTES) {
-      return { ok: false, error: `${f.name} is over 50 MB.` };
+      return { ok: false, error: `${f.name} is over 10 MB.` };
     }
     classified.push({ file: f, kind });
   }
-  const totalImages =
-    existing.filter((c) => c.kind === "image").length +
-    classified.filter((c) => c.kind === "image").length;
-  if (totalImages > MAX_IMAGES_PER_MESSAGE) {
-    return { ok: false, error: `Up to ${MAX_IMAGES_PER_MESSAGE} images per message.` };
+  if (existing.length + classified.length > MAX_FILES_PER_MESSAGE) {
+    return { ok: false, error: `Up to ${MAX_FILES_PER_MESSAGE} files per message.` };
   }
   return { ok: true, classified };
 }

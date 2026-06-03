@@ -22,7 +22,12 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { classify, uploadOne, type AttachmentKind } from "./chatAttachments";
+import {
+  classify,
+  uploadOne,
+  MAX_FILES_PER_MESSAGE,
+  type AttachmentKind,
+} from "./chatAttachments";
 
 const DB_NAME = "relay-stub-drafts";
 // v2 adds the `scope` field + `by_scope` index. v1 rows (if any
@@ -223,29 +228,36 @@ export async function flushAttachmentsToSession(args: {
     uploaded.push({ uploaded: u, kind: it.kind });
   }
 
+  // Chunk into messages of MAX_FILES_PER_MESSAGE so the flush honours the
+  // same per-message cap the composers enforce (and stays under the DB
+  // image-cap trigger). The queue can legitimately hold more than one
+  // message's worth — staged across multiple visits before the call.
   const body = systemBody ?? "📎 Customer prepared these files before the call:";
-  const { data: msg, error: msgErr } = await sb
-    .from("guest_messages")
-    .insert({
-      guest_call_id: sessionId,
-      sender_kind: "system",
-      sender_name: "Relay",
-      body,
-    })
-    .select("id")
-    .single();
-  if (msgErr || !msg) throw new Error(msgErr?.message ?? "Couldn't post the prep message.");
+  for (let i = 0; i < uploaded.length; i += MAX_FILES_PER_MESSAGE) {
+    const chunk = uploaded.slice(i, i + MAX_FILES_PER_MESSAGE);
+    const { data: msg, error: msgErr } = await sb
+      .from("guest_messages")
+      .insert({
+        guest_call_id: sessionId,
+        sender_kind: "system",
+        sender_name: "Relay",
+        body: i === 0 ? body : "📎 (more prepared files)",
+      })
+      .select("id")
+      .single();
+    if (msgErr || !msg) throw new Error(msgErr?.message ?? "Couldn't post the prep message.");
 
-  const rows = uploaded.map(({ uploaded: u, kind }) => ({
-    message_id: msg.id,
-    path: u.path,
-    name: u.name,
-    mime: u.mime,
-    size_bytes: u.size,
-    kind,
-  }));
-  const { error: attErr } = await sb.from("guest_message_attachments").insert(rows);
-  if (attErr) throw new Error(attErr.message);
+    const rows = chunk.map(({ uploaded: u, kind }) => ({
+      message_id: msg.id,
+      path: u.path,
+      name: u.name,
+      mime: u.mime,
+      size_bytes: u.size,
+      kind,
+    }));
+    const { error: attErr } = await sb.from("guest_message_attachments").insert(rows);
+    if (attErr) throw new Error(attErr.message);
+  }
 
   await clearAttachments(scope);
   return uploaded.length;

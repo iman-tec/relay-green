@@ -11,7 +11,7 @@
  *   ├──────────────────────────────────────────────────────┤
  *   │ [+] | Type a message…                          [Send]│
  *   └──────────────────────────────────────────────────────┘
- *     Up to 50 MB per file · 3 images max · PDF / DOCX / …
+ *     Up to 10 MB per file · 3 files max · PDF / DOCX / …
  *
  * "+" opens a small popover with two actions:
  *   • Add files  → .pdf, .txt, .xlsx, .docx
@@ -31,7 +31,7 @@ import {
 } from "lucide-react";
 import {
   type ClassifiedFile, type AttachmentKind,
-  FILE_INPUT_ACCEPT, MAX_BYTES, MAX_IMAGES_PER_MESSAGE,
+  FILE_INPUT_ACCEPT, MAX_BYTES, MAX_FILES_PER_MESSAGE,
   formatBytes, validateStagedFiles,
 } from "@/lib/relay/chatAttachments";
 
@@ -652,7 +652,7 @@ export function ChatComposer({
                 <MenuItem
                   icon={ImageIcon}
                   label="Photo"
-                  sub={`Up to ${MAX_IMAGES_PER_MESSAGE} images`}
+                  sub={`Up to ${MAX_FILES_PER_MESSAGE} files per message`}
                   onClick={() => {
                     setMenu(false);
                     filePicsRef.current?.click();
@@ -763,7 +763,7 @@ export function ChatComposer({
       </div>
 
       <p className="mt-1.5 text-[10px]" style={{ color: "var(--text-muted)" }}>
-        Up to {formatBytes(MAX_BYTES)} per file · {MAX_IMAGES_PER_MESSAGE} images max · PDF, DOCX, XLSX, TXT, or images.
+        Up to {formatBytes(MAX_BYTES)} per file · {MAX_FILES_PER_MESSAGE} files max · PDF, DOCX, XLSX, TXT, or images.
       </p>
 
       {/* Drop overlay */}

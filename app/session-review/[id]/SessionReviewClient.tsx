@@ -33,7 +33,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import {
-  classify, MAX_BYTES, MAX_IMAGES_PER_MESSAGE,
+  classify, MAX_BYTES, MAX_FILES_PER_MESSAGE,
   signedDownloadUrl, uploadOne,
 } from "@/lib/relay/chatAttachments";
 import { isAiSummaryMessageBody } from "@/app/_components/MeetingSummaryEntry";
@@ -763,8 +763,9 @@ function ChatPane({
       const name = `voice-${new Date().toISOString().replace(/[:.]/g, "-")}.${ext}`;
       const file = new File([blob], name, { type: blob.type });
       // Stage the recording into pendingFiles so it ships on the next Send.
-      // No size check needed here — MediaRecorder blobs are always under
-      // the 50 MB cap for any realistic call duration.
+      // No size check needed here — opus/aac MediaRecorder blobs run
+      // ~1 MB per 10 minutes, comfortably under the 10 MB cap for any
+      // realistic voice-note duration.
       setPendingFiles((prev) => [...prev, file]);
     };
     rec.onerror = () => {
@@ -874,20 +875,19 @@ function ChatPane({
   const addFiles = useCallback((files: FileList | null) => {
     if (!files || files.length === 0) return;
     const all = Array.from(files);
-    // Pre-flight: enforce the same caps the live composer does.
-    let imgCount = pendingFiles.filter((f) => classify(f) === "image").length;
+    // Pre-flight: enforce the same caps the live composer does
+    // (10 MB per file, 3 files total per message — any kind).
+    let total = pendingFiles.length;
     const accepted: File[] = [];
     for (const f of all) {
       const kind = classify(f);
       if (!kind) { setSendError(`Unsupported file: ${f.name}`); continue; }
-      if (f.size > MAX_BYTES) { setSendError(`${f.name} is larger than 50 MB.`); continue; }
-      if (kind === "image") {
-        if (imgCount >= MAX_IMAGES_PER_MESSAGE) {
-          setSendError(`At most ${MAX_IMAGES_PER_MESSAGE} images per message.`);
-          continue;
-        }
-        imgCount += 1;
+      if (f.size > MAX_BYTES) { setSendError(`${f.name} is larger than 10 MB.`); continue; }
+      if (total >= MAX_FILES_PER_MESSAGE) {
+        setSendError(`At most ${MAX_FILES_PER_MESSAGE} files per message.`);
+        continue;
       }
+      total += 1;
       accepted.push(f);
     }
     if (accepted.length > 0) {

@@ -47,6 +47,12 @@ export function useEngineerHeartbeat(enabled: boolean): void {
       // the reaper never sees the silence.
       if (document.hidden) return;
       try {
+        // Skip when signed out — after a logout in this or another tab the
+        // interval otherwise keeps firing unauthenticated RPCs (400 every
+        // 10 s in the server log) until the component unmounts. getSession
+        // reads local storage only, no network round-trip.
+        const { data } = await sb.auth.getSession();
+        if (!data.session) return;
         await sb.rpc("engineer_heartbeat", { _focused: document.hasFocus() });
       } catch {
         /* best-effort; suppress NOT_AN_ENGINEER and transient network errors */
