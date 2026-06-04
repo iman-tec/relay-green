@@ -96,6 +96,10 @@ type HealthSnapshot = {
   summary: string;
   computed_at: string;
   message_count?: number;
+  /** 0..1 engagement signal (sup_sentiment only). */
+  activeness?: number | null;
+  /** DB-derived state from sup_sentiment: green | orange | red. */
+  state?: string | null;
 };
 // engineerRealName: the engineer's actual full_name (claimed_by → profiles),
 // shown ONLY on these staff surfaces next to the customer-facing alias so
@@ -297,31 +301,59 @@ export function SuperviseClient() {
     // — the live card falls back to deterministic colour via deriveHealth;
     // past cards stay neutral grey when there's no post-session score.
     const allIds = [...rows.map((s) => s.id), ...pastRows.map((s) => s.id)];
-    let healthMap = new Map<string, HealthSnapshot>();
+    const healthMap = new Map<string, HealthSnapshot>();
     if (allIds.length > 0) {
-      const { data: healths } = await sb
-        .from("latest_session_health")
-        .select("session_id, score, summary, computed_at, message_count")
-        .in("session_id", allIds);
-      healthMap = new Map(
-        (healths ?? []).map(
-          (h: {
-            session_id: string;
-            score: number;
-            summary: string;
-            computed_at: string;
-            message_count?: number;
-          }) => [
-            h.session_id,
-            {
-              score: Number(h.score),
-              summary: h.summary,
-              computed_at: h.computed_at,
-              message_count: h.message_count,
-            },
-          ]
-        )
-      );
+      // Preferred source: sup_sentiment (cumulative chat+voice scoring with
+      // activeness + DB-derived orange/red state — 20260604100000). Legacy
+      // latest_session_health fills any session the new table hasn't scored
+      // yet (pre-migration rows, or while the edge fn redeploy rolls out).
+      const [supRes, legacyRes] = await Promise.all([
+        sb
+          .from("latest_sup_sentiment")
+          .select("session_id, score, state, summary, activeness, phase, chat_count, caption_count, computed_at")
+          .in("session_id", allIds),
+        sb
+          .from("latest_session_health")
+          .select("session_id, score, summary, computed_at, message_count")
+          .in("session_id", allIds),
+      ]);
+      for (const h of (legacyRes.data ?? []) as {
+        session_id: string;
+        score: number;
+        summary: string;
+        computed_at: string;
+        message_count?: number;
+      }[]) {
+        healthMap.set(h.session_id, {
+          score: Number(h.score),
+          summary: h.summary,
+          computed_at: h.computed_at,
+          message_count: h.message_count,
+        });
+      }
+      // New table wins where present.
+      for (const h of (supRes.data ?? []) as {
+        session_id: string;
+        score: number;
+        state: string | null;
+        summary: string;
+        activeness: number | null;
+        phase: string;
+        chat_count: number;
+        caption_count: number;
+        computed_at: string;
+      }[]) {
+        healthMap.set(h.session_id, {
+          score: Number(h.score),
+          summary: h.summary,
+          computed_at: h.computed_at,
+          // Cumulative signal counts feed the same trust gate the legacy
+          // message_count did.
+          message_count: (h.chat_count ?? 0) + (h.caption_count ?? 0),
+          activeness: h.activeness,
+          state: h.state,
+        });
+      }
     }
 
     // Resolve engineer real names (claimed_by → profiles.full_name) for the
@@ -430,6 +462,11 @@ export function SuperviseClient() {
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "session_health" },
+        queueRefresh
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "sup_sentiment" },
         queueRefresh
       )
       .subscribe();
@@ -716,16 +753,24 @@ type Health = "green" | "amber" | "red";
 function deriveHealth(s: SessionWithHealth): Health {
   const score = s.health?.score;
   const msgs = s.health?.message_count ?? 0;
-  // Trust the AI verdict only when there's enough chat to read. Below the
-  // threshold, the LLM is guessing from "(no messages)" and returning
-  // score=0, which would flag every voice-only call as AMBER. Fall back
-  // to the deterministic verdict instead — it's based on urgency,
-  // recalls, and wait time, which are real signals.
+  // Trust the AI verdict only when there's enough signal (chat + voice) to
+  // read. Below the threshold, the LLM is guessing from "(no messages)"
+  // and returning score=0, which would flag every quiet call as AMBER.
+  // Fall back to the deterministic verdict instead — it's based on
+  // urgency, recalls, and wait time, which are real signals.
   if (
     typeof score === "number" &&
     Number.isFinite(score) &&
     msgs >= MIN_MESSAGES_FOR_AI
   ) {
+    // sup_sentiment ships a DB-derived state (the generated column owns the
+    // thresholds: < -0.3 red · < 0.3 orange · else green) — trust it
+    // verbatim so the UI can never drift from the table.
+    const dbState = s.health?.state;
+    if (dbState === "red") return "red";
+    if (dbState === "orange") return "amber";
+    if (dbState === "green") return "green";
+    // Legacy session_health rows carry no state — same thresholds inline.
     if (score < -0.3) return "red";
     if (score < 0.3) return "amber";
     return "green";
@@ -896,7 +941,11 @@ function SessionTile({ session }: { session: SessionWithHealth }) {
           }}
           title={
             typeof aiScore === "number"
-              ? `Sentiment score: ${aiScore.toFixed(2)}`
+              ? `Sentiment score: ${aiScore.toFixed(2)}${
+                  typeof session.health?.activeness === "number"
+                    ? ` · activeness ${session.health.activeness.toFixed(2)}`
+                    : ""
+                }`
               : undefined
           }
         >
@@ -904,6 +953,18 @@ function SessionTile({ session }: { session: SessionWithHealth }) {
             AI ·{" "}
           </span>
           {aiSummary}
+          {/* Activeness chip — engagement across chat + voice (sup_sentiment).
+              Quiet calls surface as "idle" even when sentiment is neutral. */}
+          {typeof session.health?.activeness === "number" && (
+            <span className="ml-1.5 font-semibold tracking-wide uppercase opacity-80">
+              ·{" "}
+              {session.health.activeness >= 0.66
+                ? "active"
+                : session.health.activeness >= 0.33
+                  ? "steady"
+                  : "idle"}
+            </span>
+          )}
         </p>
       )}
 

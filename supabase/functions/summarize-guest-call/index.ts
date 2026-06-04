@@ -520,6 +520,23 @@ Deno.serve(async (req) => {
           final_sentiment_score:   score,
           final_sentiment_summary: scoreBlurb,
         }).eq("id", guest_call_id);
+        // New supervisor table (20260604100000_sup_sentiment): one
+        // phase='final' row holding the post-end sentiment derived from the
+        // CUMULATIVE session summary. Written last so it becomes the
+        // latest_sup_sentiment row for the session; its `state` column
+        // derives the orange/red thresholds in the DB. Best-effort — the
+        // legacy paths above already persist the same reading.
+        try {
+          await supabase.from("sup_sentiment").insert({
+            session_id: guest_call_id,
+            score,
+            summary:    scoreBlurb,
+            activeness: null,
+            phase:      "final",
+          });
+        } catch (e) {
+          console.warn("[summarize-guest-call] sup_sentiment final insert failed:", e);
+        }
       }
     } catch (e) {
       console.error("[summarize-guest-call] sentiment scoring failed:", e);
