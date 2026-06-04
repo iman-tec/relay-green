@@ -29,6 +29,7 @@ import {
   AlertTriangle,
   LifeBuoy,
   Check,
+  Phone,
   X,
   ChevronLeft,
   ChevronRight,
@@ -56,7 +57,6 @@ import {
   AppointmentsPanel,
   LiveAppointmentsSection,
 } from "./AppointmentsPanel";
-import { ActNowRail } from "./ActNowRail";
 import { SupervisorAvailabilityToggle } from "@/app/_components/SupervisorAvailabilityToggle";
 import { SupervisorNotificationBell } from "@/app/_components/SupervisorNotificationBell";
 import { MatchingActions } from "@/app/_components/MatchingActions";
@@ -106,6 +106,12 @@ type SessionWithHealth = GuestCall & {
   // intake id, resolved only for sessions awaiting reassignment so the card
   // can render the Reassign (Assign ▾) control, which is intake-keyed.
   intakeId?: string | null;
+  // True when this session has an OPEN engineer escalation. Overrides the
+  // health verdict (forces "Escalated" / red) and moves the session out of the
+  // Live tab into its own Escalated group. `escalationInfo` carries the row so
+  // the card can offer Watch / Resolve inline.
+  escalated?: boolean;
+  escalationInfo?: Escalation;
 };
 
 // Staff-only label mapping the customer-facing alias to the engineer's real
@@ -503,13 +509,45 @@ export function SuperviseClient() {
     };
   }, [scope, refreshEscalations]);
 
+  // Sessions with an OPEN escalation (engineer raised a hand). These get
+  // pulled OUT of Live and shown as their own red "Escalated" group, carrying
+  // the escalation row so the card can offer Watch / Resolve inline.
+  const escBySession = useMemo(() => {
+    const m = new Map<string, Escalation>();
+    for (const e of escalations) m.set(e.sessionId, e);
+    return m;
+  }, [escalations]);
+  const escalatedIds = useMemo(
+    () => new Set(escalations.map((e) => e.sessionId)),
+    [escalations]
+  );
+  // Only ACTIVE sessions can be escalated — an escalation auto-resolves when
+  // its session ends (DB trigger), so an ended session never lingers here with
+  // a stale "Join call" / running timer.
+  const escalatedSessions = useMemo(
+    () =>
+      sessions
+        .filter((s) => ACTIVE_STATES.includes(s.status) && escalatedIds.has(s.id))
+        .map((s) => ({
+          ...s,
+          escalated: true,
+          escalationInfo: escBySession.get(s.id),
+        })),
+    [sessions, escalatedIds, escBySession]
+  );
   const liveSessions = useMemo(
-    () => sessions.filter((s) => LIVE_STATES.has(s.status)),
-    [sessions]
+    () => sessions.filter((s) => LIVE_STATES.has(s.status) && !escalatedIds.has(s.id)),
+    [sessions, escalatedIds]
   );
   const waitingSessions = useMemo(
-    () => sessions.filter((s) => WAITING_STATES.has(s.status)),
-    [sessions]
+    () => sessions.filter((s) => WAITING_STATES.has(s.status) && !escalatedIds.has(s.id)),
+    [sessions, escalatedIds]
+  );
+  // Past list with escalated sessions removed — they live in the Escalated
+  // group instead, so they don't double-count in Past / All.
+  const pastVisible = useMemo(
+    () => pastSessions.filter((s) => !escalatedIds.has(s.id)),
+    [pastSessions, escalatedIds]
   );
 
   // Portal target for each panel's PagerStrip — lives on the right side of
@@ -524,16 +562,15 @@ export function SuperviseClient() {
     // empty/loading state, and `sticky bottom-0` keeps it pinned while
     // scrolling through long lists.
     <PagerSlotContext.Provider value={pagerSlot}>
-      <div className="flex min-h-screen flex-col">
+      {/* Fills <main> exactly (h-full): the header (title + controls + tabs)
+          is a fixed flex row, and ONLY the session list below scrolls. */}
+      <div className="flex h-full flex-col">
         <style>{WAITING_GLOW_CSS}</style>
-        <div className="flex w-full max-w-screen-2xl flex-1 gap-6 px-6 pt-8 pb-6">
-          {/* Left rail — act-now queue (pod supervisors). Sticky + self-scrolling. */}
-          {scope.kind === "pod" && (
-            <aside className="hidden w-96 shrink-0 lg:sticky lg:top-8 lg:block lg:max-h-[calc(100vh-7rem)]">
-              <ActNowRail />
-            </aside>
-          )}
-          <div className="min-w-0 flex-1 space-y-6">
+        <div className="mx-auto flex w-full min-h-0 max-w-screen-2xl flex-1 flex-col px-6 pt-8">
+          {/* ── Fixed header — stays put while the list scrolls. Centered
+              (mx-auto on the wrapper) so collapsing the sidebar splits the
+              extra width evenly left/right. ── */}
+          <div className="shrink-0">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h1 className="font-serif text-3xl font-medium tracking-tight text-[var(--text)]">
@@ -559,73 +596,75 @@ export function SuperviseClient() {
               )}
             </div>
 
-            {/* Tabs + session grid. Marked with an id so the act-now rail's
-                "Review project history (AI)" popover can anchor itself to JUST
-                this region — leaving the header (and its notification bell)
-                visible so session alerts stay readable while it's open. */}
-            <div id="supervise-live-region" className="space-y-6">
-              {/* Tabs: All · Waiting · Live · Past · (Matching for pod-supervisors) */}
+            {/* Tabs: All · Waiting · Live · Past · (Matching for pod-supervisors) */}
+            <div className="mt-6">
               <Tabs
                 tab={tab}
                 setTab={setTab}
                 counts={{
                   all:
+                    escalatedSessions.length +
                     liveSessions.length +
                     waitingSessions.length +
-                    pastSessions.length,
+                    pastVisible.length,
                   waiting: waitingSessions.length,
                   live: liveSessions.length,
-                  past: pastSessions.length,
+                  past: pastVisible.length,
                   escalations: escalations.length,
                   team: 0,
                   appointments: 0,
                   matching: 0,
                 }}
-                showEscalations={scope.kind === "pod"}
+                /* Escalations tab removed — it's usually empty (escalations
+                   auto-resolve on session end). Active escalations still
+                   surface in the All tab's red "Escalated" section. */
+                showEscalations={false}
                 showMatching={
                   scope.kind === "unscoped" ||
                   (scope.kind === "pod" && !!scope.podId)
                 }
                 showTeam={scope.kind === "pod" && !!scope.podId}
               />
-
-              {loading ? (
-                <div className="flex justify-center py-16">
-                  <Loader2
-                    size={20}
-                    className="animate-spin text-[var(--text-muted)]"
-                  />
-                </div>
-              ) : (
-                <TabPanel
-                  tab={tab}
-                  liveSessions={liveSessions}
-                  waitingSessions={waitingSessions}
-                  pastSessions={pastSessions}
-                  escalations={escalations}
-                  onEscalationChanged={refreshEscalations}
-                  perPage={perPage}
-                  setPerPage={setPerPage}
-                  matchingGlobal={scope.kind === "unscoped"}
-                />
-              )}
             </div>
+          </div>
+
+          {/* ── Scrollable session list ── */}
+          <div className="min-h-0 flex-1 overflow-y-auto pt-4 pb-6">
+            {loading ? (
+              <div className="flex justify-center py-16">
+                <Loader2
+                  size={20}
+                  className="animate-spin text-[var(--text-muted)]"
+                />
+              </div>
+            ) : (
+              <TabPanel
+                tab={tab}
+                escalatedSessions={escalatedSessions}
+                liveSessions={liveSessions}
+                waitingSessions={waitingSessions}
+                pastSessions={pastVisible}
+                escalations={escalations}
+                onEscalationChanged={refreshEscalations}
+                perPage={perPage}
+                setPerPage={setPerPage}
+                matchingGlobal={scope.kind === "unscoped"}
+              />
+            )}
           </div>
         </div>
 
-        {/* Sticky footer — session-health legend (left) + pager slot (right).
-          Stays at viewport-bottom on short pages (via parent flex-col +
-          flex-1 above) and pinned during scroll on long pages. Scoped to
-          <main>, so it doesn't overlap the staff sidebar. */}
+        {/* Footer — session-health legend (left) + pager slot (right). Sits at
+          the bottom of the flex column (the list above scrolls independently). */}
         <div
-          className="sticky bottom-0 z-30 border-t backdrop-blur"
+          className="z-30 border-t backdrop-blur"
           style={{
             borderColor: "var(--border)",
             backgroundColor:
               "color-mix(in srgb, var(--background) 92%, transparent)",
           }}
         >
-          <div className="flex w-full max-w-screen-2xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-6 py-3">
+          <div className="mx-auto flex w-full max-w-screen-2xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-6 py-3">
             <HealthLegend />
             {/* Right-side portal target — each panel's PagerStrip renders here */}
             <div ref={setPagerSlot} className="flex items-center" />
@@ -760,10 +799,22 @@ function scoreToHealthPct(score: number): number {
   return Math.round((clamped + 1) * 50);
 }
 
-function SessionTile({ session }: { session: SessionWithHealth }) {
+function SessionTile({
+  session,
+  onResolveEscalation,
+}: {
+  session: SessionWithHealth;
+  // When set on an escalated card, renders Watch + Resolve (the latter opens
+  // the resolve modal) so a supervisor can act without leaving the All grid.
+  onResolveEscalation?: (e: Escalation) => void;
+}) {
   const router = useRouter();
-  const health = deriveHealth(session);
+  // An open engineer escalation overrides the AI/deterministic verdict: the
+  // card reads "Escalated" in red, regardless of the underlying sentiment.
+  const escalated = !!session.escalated;
+  const health: Health = escalated ? "red" : deriveHealth(session);
   const tone = HEALTH_TONE[health];
+  const healthLabel = escalated ? "Escalated" : HEALTH_LABEL[health];
   const aiMessageCount = session.health?.message_count ?? 0;
   // Only surface the AI summary line when the score was derived from real
   // chat. Otherwise it just shows "Quiet — no signal yet." which is noise.
@@ -785,12 +836,21 @@ function SessionTile({ session }: { session: SessionWithHealth }) {
     (Date.now() - new Date(elapsedAnchor).getTime()) / 1000
   );
 
-  const join = () => router.push(`/staff/session/${session.id}`);
+  // Healthy sessions → "Watch" (read-only observer). Anything that needs
+  // attention (shaky / at-risk / escalated) → "Join call", which lands the
+  // supervisor in the room WITH the chat unlocked (?join=1) so they can step
+  // in, just like the appointment flow.
+  const isHealthy = health === "green";
+  const openSession = (canChat: boolean) =>
+    router.push(`/staff/session/${session.id}${canChat ? "?join=1" : ""}`);
+  const join = () => openSession(!isHealthy);
 
   // Waiting sessions (queued / assigned) breathe a coloured halo so they
-  // catch the supervisor's eye until they're picked up.
+  // catch the supervisor's eye until they're picked up — and escalated
+  // sessions pulse RED so a raised hand is impossible to miss.
   const isWaiting = WAITING_STATES.has(session.status);
-  const glowVar = isWaiting
+  const glows = isWaiting || escalated;
+  const glowVar = glows
     ? ({ "--glow": HEALTH_VAR[health] } as React.CSSProperties)
     : {};
 
@@ -810,7 +870,7 @@ function SessionTile({ session }: { session: SessionWithHealth }) {
           join();
         }
       }}
-      className={cn("group relative p-4", isWaiting && "relay-card-glow")}
+      className={cn("group relative p-4", glows && "relay-card-glow")}
       style={glowVar as React.CSSProperties}
     >
       {/* Left accent bar — at-a-glance health indicator */}
@@ -822,7 +882,7 @@ function SessionTile({ session }: { session: SessionWithHealth }) {
 
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <StatusBadge tone={tone} compact>
-          {humanState(session.status)}
+          {escalated ? "Escalated" : humanState(session.status)}
         </StatusBadge>
         {session.is_appointment && (
           <span
@@ -832,9 +892,13 @@ function SessionTile({ session }: { session: SessionWithHealth }) {
             <CalendarClock size={10} /> Appointment
           </span>
         )}
-        <StatusBadge tone={tone} compact>
-          {HEALTH_LABEL[health]}
-        </StatusBadge>
+        {/* Skip the second health chip when escalated — the red "Escalated"
+            state badge already says it; a "Healthy/At risk" chip would clash. */}
+        {!escalated && (
+          <StatusBadge tone={tone} compact>
+            {healthLabel}
+          </StatusBadge>
+        )}
       </div>
 
       <div className="mb-3">
@@ -907,18 +971,54 @@ function SessionTile({ session }: { session: SessionWithHealth }) {
         </p>
       )}
 
-      <Button
-        full
-        size="sm"
-        onClick={(e) => {
-          e.stopPropagation();
-          join();
-        }}
-        iconLeft={<Eye size={14} />}
-        iconRight={<ArrowUpRight size={12} className="opacity-80" />}
-      >
-        Join session
-      </Button>
+      {escalated && session.escalationInfo && onResolveEscalation ? (
+        // Escalated card → Join call (chat unlocked) + Resolve (close the loop),
+        // mirroring the Escalations tab so the supervisor can act from All.
+        <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            onClick={async () => {
+              // Stamp the escalation joined at CLICK time so it counts as
+              // attended even if the call ends a moment later. Must AWAIT — a
+              // Supabase builder only fires its request when then'd/awaited
+              // (`void rpc()` silently never executes). Idempotent server-side.
+              try {
+                await createClient().rpc("supervisor_join_escalation", {
+                  _session_id: session.id,
+                });
+              } catch {
+                /* best-effort; the session-page effect retries */
+              }
+              join();
+            }}
+            className="inline-flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-2 text-xs font-semibold text-white"
+            style={{ backgroundColor: "var(--risk)" }}
+          >
+            <Phone size={13} /> Join call
+          </button>
+          <button
+            type="button"
+            onClick={() => onResolveEscalation(session.escalationInfo!)}
+            className="inline-flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-2 text-xs font-semibold text-white"
+            style={{ backgroundColor: "var(--primary)" }}
+          >
+            <Check size={13} /> Resolve
+          </button>
+        </div>
+      ) : (
+        <Button
+          full
+          size="sm"
+          onClick={(e) => {
+            e.stopPropagation();
+            join();
+          }}
+          iconLeft={isHealthy ? <Eye size={14} /> : <Phone size={14} />}
+          iconRight={<ArrowUpRight size={12} className="opacity-80" />}
+        >
+          {isHealthy ? "Watch" : "Join call"}
+        </Button>
+      )}
     </Card>
   );
 }
@@ -1017,6 +1117,7 @@ function Tabs({
 // ── Tab panel — chooses the right grid for the active tab ─────────────────
 function TabPanel({
   tab,
+  escalatedSessions,
   liveSessions,
   waitingSessions,
   pastSessions,
@@ -1027,6 +1128,7 @@ function TabPanel({
   matchingGlobal,
 }: {
   tab: Tab;
+  escalatedSessions: SessionWithHealth[];
   liveSessions: SessionWithHealth[];
   waitingSessions: SessionWithHealth[];
   pastSessions: SessionWithHealth[];
@@ -1060,11 +1162,13 @@ function TabPanel({
   if (tab === "all") {
     return (
       <AllPanel
+        escalatedSessions={escalatedSessions}
         liveSessions={liveSessions}
         waitingSessions={waitingSessions}
         pastSessions={pastSessions}
         perPage={perPage}
         setPerPage={setPerPage}
+        onEscalationChanged={onEscalationChanged}
       />
     );
   }
@@ -1096,20 +1200,26 @@ function TabPanel({
 // regrouped into Live/Waiting/Past section headers so structure is
 // preserved across page boundaries.
 function AllPanel({
+  escalatedSessions,
   liveSessions,
   waitingSessions,
   pastSessions,
   perPage,
   setPerPage,
+  onEscalationChanged,
 }: {
+  escalatedSessions: SessionWithHealth[];
   liveSessions: SessionWithHealth[];
   waitingSessions: SessionWithHealth[];
   pastSessions: SessionWithHealth[];
   perPage: PageSize;
   setPerPage: (n: PageSize) => void;
+  onEscalationChanged: () => void;
 }) {
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
+  // Resolve-escalation modal target, opened from an escalated card's Resolve.
+  const [resolveTarget, setResolveTarget] = useState<Escalation | null>(null);
 
   const matchesQ = (s: SessionWithHealth, needle: string) =>
     !needle ||
@@ -1130,11 +1240,12 @@ function AllPanel({
       return bt - at;
     };
     return [
+      ...escalatedSessions.filter((s) => matchesQ(s, needle)).sort(byCreatedDesc),
       ...liveSessions.filter((s) => matchesQ(s, needle)).sort(byCreatedDesc),
       ...waitingSessions.filter((s) => matchesQ(s, needle)).sort(byCreatedDesc),
       ...pastSessions.filter((s) => matchesQ(s, needle)).sort(byEndedDesc),
     ];
-  }, [liveSessions, waitingSessions, pastSessions, q]);
+  }, [escalatedSessions, liveSessions, waitingSessions, pastSessions, q]);
 
   const total = ordered.length;
   const pageCount = Math.max(1, Math.ceil(total / perPage));
@@ -1144,15 +1255,25 @@ function AllPanel({
   const start = (page - 1) * perPage;
   const slice = ordered.slice(start, start + perPage);
 
-  // Re-group the visible slice for sectioned rendering.
-  const sliceLive = slice.filter((s) => LIVE_STATES.has(s.status));
-  const sliceWaiting = slice.filter((s) => WAITING_STATES.has(s.status));
-  const sliceLW = new Set([...sliceLive, ...sliceWaiting].map((s) => s.id));
-  const slicePast = slice.filter((s) => !sliceLW.has(s.id));
+  // Re-group the visible slice for sectioned rendering. Escalated sessions
+  // come first (and are excluded from Live/Waiting so they don't double-count).
+  const sliceEscalated = slice.filter((s) => s.escalated);
+  const sliceLive = slice.filter(
+    (s) => !s.escalated && LIVE_STATES.has(s.status)
+  );
+  const sliceWaiting = slice.filter(
+    (s) => !s.escalated && WAITING_STATES.has(s.status)
+  );
+  const sliceHandled = new Set(
+    [...sliceEscalated, ...sliceLive, ...sliceWaiting].map((s) => s.id)
+  );
+  const slicePast = slice.filter((s) => !sliceHandled.has(s.id));
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-3">
+      {/* Search pinned to the top of the scrolling list so it stays reachable
+          while the cards scroll under it. */}
+      <div className="sticky top-0 z-10 -mt-4 flex flex-wrap items-center gap-3 bg-[var(--background)] pt-4 pb-2">
         <div className="relative">
           <Search
             size={12}
@@ -1189,6 +1310,17 @@ function AllPanel({
       ) : (
         <>
           <div className="flex flex-col gap-6">
+            {sliceEscalated.length > 0 && (
+              <Section title="Escalated" count={sliceEscalated.length}>
+                {sliceEscalated.map((s) => (
+                  <SessionTile
+                    key={s.id}
+                    session={s}
+                    onResolveEscalation={setResolveTarget}
+                  />
+                ))}
+              </Section>
+            )}
             {sliceLive.length > 0 && (
               <Section title="Live" count={sliceLive.length}>
                 {sliceLive.map((s) => (
@@ -1223,6 +1355,17 @@ function AllPanel({
           />
         </>
       )}
+
+      {resolveTarget && (
+        <ResolveEscalationModal
+          esc={resolveTarget}
+          onClose={() => setResolveTarget(null)}
+          onDone={() => {
+            setResolveTarget(null);
+            onEscalationChanged();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1252,7 +1395,7 @@ function Section({
           ({count})
         </span>
       </div>
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
         {children}
       </div>
     </div>
@@ -1363,7 +1506,7 @@ function ActivePanel({
         )
       ) : (
         <>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
             {slice.map((s) => (
               <SessionTile key={s.id} session={s} />
             ))}
@@ -1488,7 +1631,7 @@ function PastPanel({
         />
       ) : (
         <>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
             {slice.map((s) => (
               <PastSessionTile key={s.id} session={s} />
             ))}
@@ -1815,29 +1958,47 @@ function PastSessionTile({ session }: { session: SessionWithHealth }) {
         <Stat label="Project" value={session.project_name || "—"} />
       </div>
 
-      <p
-        className="max-w-prose rounded-md border px-2.5 py-2 text-[11px] leading-snug"
-        style={{
-          borderColor:
-            sentiment === "neutral"
-              ? "var(--border)"
-              : `color-mix(in srgb, ${HEALTH_VAR[sentiment as Health]} 30%, transparent)`,
-          backgroundColor:
-            sentiment === "neutral"
-              ? "color-mix(in srgb, var(--text-muted) 6%, transparent)"
-              : `color-mix(in srgb, ${HEALTH_VAR[sentiment as Health]} 12%, transparent)`,
-          color:
-            sentiment === "neutral"
-              ? "var(--text-muted)"
-              : HEALTH_VAR[sentiment as Health],
-        }}
-      >
-        <span className="font-semibold tracking-wide uppercase opacity-80">
-          Post-completion · {sentimentLabel}
-          {summaryText ? " — " : ""}
-        </span>
-        {summaryText ?? (hasScore ? "" : "no summary available")}
-      </p>
+      {session.escalated_unattended ? (
+        // Escalated, but the call ended before any supervisor joined — call it
+        // out in red instead of the AI post-completion summary.
+        <p
+          className="max-w-prose rounded-md border px-2.5 py-2 text-[11px] leading-snug"
+          style={{
+            borderColor: "color-mix(in srgb, var(--risk) 35%, transparent)",
+            backgroundColor: "color-mix(in srgb, var(--risk) 12%, transparent)",
+            color: "var(--risk)",
+          }}
+        >
+          <span className="font-semibold tracking-wide uppercase">
+            Escalated ·{" "}
+          </span>
+          No supervisor joined the call.
+        </p>
+      ) : (
+        <p
+          className="max-w-prose rounded-md border px-2.5 py-2 text-[11px] leading-snug"
+          style={{
+            borderColor:
+              sentiment === "neutral"
+                ? "var(--border)"
+                : `color-mix(in srgb, ${HEALTH_VAR[sentiment as Health]} 30%, transparent)`,
+            backgroundColor:
+              sentiment === "neutral"
+                ? "color-mix(in srgb, var(--text-muted) 6%, transparent)"
+                : `color-mix(in srgb, ${HEALTH_VAR[sentiment as Health]} 12%, transparent)`,
+            color:
+              sentiment === "neutral"
+                ? "var(--text-muted)"
+                : HEALTH_VAR[sentiment as Health],
+          }}
+        >
+          <span className="font-semibold tracking-wide uppercase opacity-80">
+            Post-completion · {sentimentLabel}
+            {summaryText ? " — " : ""}
+          </span>
+          {summaryText ?? (hasScore ? "" : "no summary available")}
+        </p>
+      )}
     </Card>
   );
 }
@@ -1871,7 +2032,7 @@ function EscalationsPanel({
           body="No engineers have raised a hand right now."
         />
       ) : (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
           {escalations.map((e) => (
             <EscalationCard key={e.id} e={e} onResolve={setResolveTarget} />
           ))}
@@ -1939,11 +2100,23 @@ function EscalationCard({
       <div className="mt-3 flex gap-2">
         <button
           type="button"
-          onClick={() => router.push(`/staff/session/${e.sessionId}`)}
-          className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border px-2 py-1.5 text-xs font-medium"
-          style={{ borderColor: "var(--border)", color: "var(--text)" }}
+          onClick={async () => {
+            // Stamp joined at click time so it counts as attended regardless of
+            // how fast the call ends. Must AWAIT (a Supabase builder only fires
+            // when awaited/then'd). Idempotent server-side.
+            try {
+              await createClient().rpc("supervisor_join_escalation", {
+                _session_id: e.sessionId,
+              });
+            } catch {
+              /* best-effort */
+            }
+            router.push(`/staff/session/${e.sessionId}?join=1`);
+          }}
+          className="inline-flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1.5 text-xs font-semibold text-white"
+          style={{ backgroundColor: "var(--risk)" }}
         >
-          <Eye size={13} /> Watch
+          <Phone size={13} /> Join call
         </button>
         <button
           type="button"

@@ -10,7 +10,6 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import {
@@ -22,11 +21,8 @@ import {
   Check,
   FileText,
   CalendarClock,
-  ChevronDown,
-  X,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
-import { ProjectAIAssistant } from "@/app/_components/ProjectAIAssistant";
 
 type Sentiment = { score: number; summary: string; messageCount: number };
 type Estimation = {
@@ -116,16 +112,25 @@ const CATEGORY_META: Record<
   rejected: { label: "Rejected", fill: "var(--risk)", fgVar: "var(--risk)" },
 };
 
+// "needs_bid" is intentionally omitted — those pending-bid requests are the
+// engineer's to action first, so the supervisor's queue never surfaces them.
 const FILTER_ORDER: Category[] = [
   "appointment",
-  "needs_bid",
   "review",
   "bid_sent",
   "accepted",
   "rejected",
 ];
 
-export function ActNowRail() {
+export function ActNowRail({
+  onOpenHistory,
+  onCloseHistory,
+}: {
+  /** Open a project's AI history in the page's right-hand panel. */
+  onOpenHistory?: (projectId: string, projectName: string | null) => void;
+  /** Clear the right-hand panel (e.g. when the bid that opened it is hidden). */
+  onCloseHistory?: () => void;
+}) {
   const [feed, setFeed] = useState<Feed>({
     estimationRequests: [],
     escalations: [],
@@ -185,8 +190,37 @@ export function ActNowRail() {
   }, [refresh]);
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  // null = show all; otherwise filter the estimation queue to one bucket.
-  const [estFilter, setEstFilter] = useState<Category | null>(null);
+
+  // The history panel is tied to the open bid. When a bid expands we auto-open
+  // its project history in the right panel; when it changes/closes ("Hide bid")
+  // we clear it back to the empty placeholder. Guarded on the expanded id so a
+  // routine feed refresh doesn't re-fire it.
+  const prevExpandedRef = useRef<string | null>(expandedId);
+  useEffect(() => {
+    if (prevExpandedRef.current === expandedId) return;
+    prevExpandedRef.current = expandedId;
+    if (!expandedId) {
+      onCloseHistory?.();
+      return;
+    }
+    const q = feed.estimationRequests.find((e) => e.id === expandedId);
+    if (q) onOpenHistory?.(q.projectId, q.project);
+    else onCloseHistory?.();
+  }, [expandedId, feed.estimationRequests, onOpenHistory, onCloseHistory]);
+
+  // Default to the Appointment bucket on landing (customers who asked to talk
+  // are the supervisor's first priority); null = show all.
+  const [estFilter, setEstFilter] = useState<Category | null>("appointment");
+
+  // Supervisors don't action "needs bid" (status 'pending') requests — those
+  // are the engineer's to bid on first — so drop them from the queue entirely.
+  const baseEstimations = useMemo(
+    () =>
+      feed.estimationRequests.filter(
+        (q) => categorizeEst(q) !== "needs_bid"
+      ),
+    [feed.estimationRequests]
+  );
 
   const estCounts = useMemo(() => {
     const c: Record<Category, number> = {
@@ -197,44 +231,55 @@ export function ActNowRail() {
       accepted: 0,
       rejected: 0,
     };
-    for (const q of feed.estimationRequests) c[categorizeEst(q)]++;
+    for (const q of baseEstimations) c[categorizeEst(q)]++;
     return c;
-  }, [feed.estimationRequests]);
+  }, [baseEstimations]);
   const visibleEstimations = useMemo(
     () =>
       estFilter
-        ? feed.estimationRequests.filter((q) => categorizeEst(q) === estFilter)
-        : feed.estimationRequests,
-    [feed.estimationRequests, estFilter]
+        ? baseEstimations.filter((q) => categorizeEst(q) === estFilter)
+        : baseEstimations,
+    [baseEstimations, estFilter]
   );
 
   return (
-    <div className="flex h-full flex-col gap-5 overflow-y-auto pr-1">
-      <h2
-        className="text-xs font-semibold tracking-wide uppercase"
-        style={{ color: "var(--text-muted)" }}
-      >
-        Act now
-      </h2>
-
+    <div className="flex h-full flex-col gap-3">
       {loading ? (
-        <div className="flex justify-center py-8">
-          <Loader2
-            size={16}
-            className="animate-spin"
-            style={{ color: "var(--text-muted)" }}
-          />
-        </div>
-      ) : (
         <>
-          {/* Estimation requests — pinned top, loud. Filter chips mirror the
-              engineer's Quote-requests inbox for cross-surface consistency. */}
-          <Section
-            title="Estimation requests"
-            count={feed.estimationRequests.length}
-            accent="var(--primary)"
-          >
-            {feed.estimationRequests.length > 0 && (
+          <ActNowHeading />
+          <div className="flex justify-center py-8">
+            <Loader2
+              size={16}
+              className="animate-spin"
+              style={{ color: "var(--text-muted)" }}
+            />
+          </div>
+        </>
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col gap-3">
+          {/* ── Fixed header — "Act now" + Estimation-requests label + count +
+              filter chips. Stays put; only the bid list below scrolls. ── */}
+          <div className="flex shrink-0 flex-col gap-2">
+            <ActNowHeading />
+            <div className="flex items-center gap-2">
+              <span
+                className="inline-flex size-1.5 rounded-full"
+                style={{ backgroundColor: "var(--primary)" }}
+              />
+              <h3
+                className="text-[13px] font-semibold"
+                style={{ color: "var(--text)" }}
+              >
+                Estimation requests
+              </h3>
+              <span
+                className="text-[11px] tabular-nums"
+                style={{ color: "var(--text-muted)" }}
+              >
+                {baseEstimations.length}
+              </span>
+            </div>
+            {baseEstimations.length > 0 && (
               <div className="flex flex-wrap items-center gap-1.5">
                 {FILTER_ORDER.map((cat) => (
                   <FilterChip
@@ -242,14 +287,22 @@ export function ActNowRail() {
                     cat={cat}
                     count={estCounts[cat]}
                     active={estFilter === cat}
-                    onClick={() =>
-                      setEstFilter((prev) => (prev === cat ? null : cat))
-                    }
+                    onClick={() => {
+                      setEstFilter((prev) => (prev === cat ? null : cat));
+                      // Collapse any open bid when switching buckets → the
+                      // expandedId effect clears the right-hand AI panel so it
+                      // doesn't stay stuck on the previous bid's project.
+                      setExpandedId(null);
+                    }}
                   />
                 ))}
               </div>
             )}
-            {feed.estimationRequests.length === 0 ? (
+          </div>
+
+          {/* ── Scrollable bid list ── */}
+          <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
+            {baseEstimations.length === 0 ? (
               <Empty body="No go-live or maintenance estimates waiting." />
             ) : visibleEstimations.length === 0 ? (
               <Empty
@@ -271,10 +324,21 @@ export function ActNowRail() {
                 />
               ))
             )}
-          </Section>
-        </>
+          </div>
+        </div>
       )}
     </div>
+  );
+}
+
+function ActNowHeading() {
+  return (
+    <h2
+      className="shrink-0 text-xs font-semibold tracking-wide uppercase"
+      style={{ color: "var(--text-muted)" }}
+    >
+      Act now
+    </h2>
   );
 }
 
@@ -299,7 +363,6 @@ function DiveInForm({
   const [timeline, setTimeline] = useState(q.bidTimeline ?? "");
   const [validity, setValidity] = useState("30");
   const [termsUrl, setTermsUrl] = useState("/legal/contracting-terms");
-  const [showAi, setShowAi] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -431,8 +494,9 @@ function DiveInForm({
         </div>
       )}
 
-      {/* Customer asked to talk and we haven't answered with a newer bid yet. */}
-      {hasOpenAppointment(q) && (
+      {/* Customer asked to talk and we haven't answered with a newer bid yet.
+          Hidden once the bid is accepted — the request is moot then. */}
+      {hasOpenAppointment(q) && !isAccepted && (
         <div
           className="rounded-lg border px-3 py-2 text-xs"
           style={{
@@ -446,31 +510,8 @@ function DiveInForm({
         </div>
       )}
 
-      {/* Review the project's AI history before scoping. The assistant is a
-            tall, full-height chat — cramming it inline forced the supervisor to
-            scroll a tiny box, so it now opens as a popover covering the
-            live-operations panel (see ProjectHistoryPopover below). */}
-      <div
-        className="rounded-lg border"
-        style={{ borderColor: "var(--border)" }}
-      >
-        <button
-          type="button"
-          onClick={() => setShowAi(true)}
-          className="flex w-full items-center gap-1.5 px-3 py-2 text-[11px] font-semibold tracking-wide uppercase"
-          style={{ color: "var(--text-muted)" }}
-        >
-          <FileText size={12} /> Review project history (AI)
-          <ChevronDown size={13} className="ml-auto -rotate-90" />
-        </button>
-      </div>
-      {showAi && (
-        <ProjectHistoryPopover
-          projectId={q.projectId}
-          projectName={q.project}
-          onClose={() => setShowAi(false)}
-        />
-      )}
+      {/* (Project-history review lives in the page's right-hand panel, which
+          auto-opens when the bid is expanded — no in-card button needed.) */}
 
       {/* Bid — same one-page bid the engineer prepares. */}
       <div
@@ -673,156 +714,6 @@ function DiveInForm({
   );
 }
 
-// ── Project-history AI popover ──────────────────────────────────────────────
-// Portaled to <body> so it floats above the live-operations grid rather than
-// being clipped inside the (overflow-hidden, position-transformed) bid card.
-// It anchors itself to the #supervise-live-region element — the tabs + session
-// grid — so it covers ONLY that area: the header (with its notification bell)
-// and the act-now rail stay visible and interactive, letting the supervisor
-// still see session alerts while the assistant is open. ESC + cross close it.
-function ProjectHistoryPopover({
-  projectId,
-  projectName,
-  onClose,
-}: {
-  projectId: string;
-  projectName: string | null;
-  onClose: () => void;
-}) {
-  // Live coordinates of the region the popover covers. null until measured
-  // (and as a fallback we just pin to the right half of the viewport).
-  const [box, setBox] = useState<{ left: number; top: number } | null>(null);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  // Anchor to the live-region's position. Measured once on open and on resize
-  // only — deliberately NOT on scroll, so the panel stays static in the
-  // viewport while the background scrolls underneath it.
-  useEffect(() => {
-    const measure = () => {
-      const el = document.getElementById("supervise-live-region");
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      setBox({ left: Math.round(r.left), top: Math.max(0, Math.round(r.top)) });
-    };
-    measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, []);
-
-  if (typeof document === "undefined") return null;
-
-  return createPortal(
-    <>
-      {/* Panel — covers only the live-operations region (left/top come from the
-          measured #supervise-live-region) with a gap on the right (clears the
-          page scrollbar) and bottom. No full-screen scrim: the header bell +
-          act-now rail stay clickable. */}
-      <div
-        className="fixed z-[var(--z-modal)] flex flex-col overflow-hidden rounded-xl border shadow-2xl"
-        style={{
-          background: "var(--surface)",
-          borderColor: "var(--border)",
-          left: box ? box.left : "50%",
-          top: box ? box.top : 96,
-          right: 24,
-          bottom: 24,
-        }}
-        role="dialog"
-        aria-label="Project history (AI)"
-      >
-        <div
-          className="flex shrink-0 items-center justify-between gap-2 border-b px-4 py-3"
-          style={{ borderColor: "var(--border)" }}
-        >
-          <div
-            className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase"
-            style={{ color: "var(--text-muted)" }}
-          >
-            <FileText size={12} /> Review project history (AI)
-            {projectName && (
-              <span
-                className="ml-1 normal-case"
-                style={{ color: "var(--text)" }}
-              >
-                · {projectName}
-              </span>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close project history"
-            className="inline-flex size-7 items-center justify-center rounded-md border transition-colors hover:bg-[var(--surface-raised)]"
-            style={{ borderColor: "var(--border)", color: "var(--text)" }}
-          >
-            <X size={14} />
-          </button>
-        </div>
-        <div className="min-h-0 flex-1">
-          <ProjectAIAssistant projectId={projectId} projectName={projectName ?? undefined} />
-        </div>
-      </div>
-    </>,
-    document.body
-  );
-}
-
-function Section({
-  title,
-  count,
-  accent,
-  badge,
-  children,
-}: {
-  title: string;
-  count: number;
-  accent: string;
-  badge?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="flex flex-col gap-2">
-      <div className="flex items-center gap-2">
-        <span
-          className="inline-flex size-1.5 rounded-full"
-          style={{ backgroundColor: accent }}
-        />
-        <h3
-          className="text-[13px] font-semibold"
-          style={{ color: "var(--text)" }}
-        >
-          {title}
-        </h3>
-        <span
-          className="text-[11px] tabular-nums"
-          style={{ color: "var(--text-muted)" }}
-        >
-          {count}
-        </span>
-        {badge && (
-          <span
-            className="ml-auto rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase"
-            style={{
-              background: "color-mix(in srgb, var(--risk) 14%, transparent)",
-              color: "var(--risk)",
-            }}
-          >
-            {badge}
-          </span>
-        )}
-      </div>
-      <div className="flex flex-col gap-2">{children}</div>
-    </section>
-  );
-}
-
 function EstimationRow({
   q,
   expanded,
@@ -841,7 +732,14 @@ function EstimationRow({
   const meta = CATEGORY_META[categorizeEst(q)];
   return (
     <div
-      className="rounded-xl border p-3"
+      // Whole card opens the bid when collapsed. Clicks while expanded are
+      // ignored here so reading/interacting doesn't accidentally collapse it —
+      // the "Hide bid" button closes it. The inner button + form stop
+      // propagation so they don't double-toggle.
+      onClick={() => {
+        if (!expanded) onToggle();
+      }}
+      className={`rounded-xl border p-3 ${expanded ? "" : "cursor-pointer"}`}
       style={{
         borderColor: "var(--primary)",
         background: "color-mix(in srgb, var(--primary) 7%, transparent)",
@@ -878,7 +776,7 @@ function EstimationRow({
       <div className="truncate text-xs" style={{ color: "var(--text-muted)" }}>
         {q.customer}
       </div>
-      {hasOpenAppointment(q) && (
+      {hasOpenAppointment(q) && q.status !== "committed" && (
         <div
           className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold"
           style={{ color: "var(--primary-hover)" }}
@@ -905,7 +803,7 @@ function EstimationRow({
             <span style={{ color: "var(--text-muted)" }}>no reason given.</span>
           )}
         </p>
-      ) : q.changeRequestNote ? (
+      ) : q.changeRequestNote && q.status !== "committed" ? (
         <p
           className="mt-1.5 rounded-md px-2 py-1 text-[11px]"
           style={{
@@ -929,7 +827,10 @@ function EstimationRow({
       )}
       <button
         type="button"
-        onClick={onToggle}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggle();
+        }}
         aria-expanded={expanded}
         className="mt-2 inline-flex w-full items-center justify-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-semibold text-white"
         style={{ background: "var(--primary)" }}
@@ -946,7 +847,15 @@ function EstimationRow({
                   ? "View declined bid"
                   : "Review bid"}
       </button>
-      {expanded && <DiveInForm q={q} onClose={onToggle} onDone={onDone} />}
+      {expanded && (
+        <div onClick={(e) => e.stopPropagation()}>
+          <DiveInForm
+            q={q}
+            onClose={onToggle}
+            onDone={onDone}
+          />
+        </div>
+      )}
     </div>
   );
 }

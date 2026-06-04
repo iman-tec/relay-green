@@ -41,6 +41,7 @@ import {
   Settings,
   ShieldCheck,
   FileText,
+  Gavel,
   Home,
 } from "lucide-react";
 import { Wordmark } from "./Wordmark";
@@ -69,9 +70,7 @@ import type { GuestCall } from "@/lib/supabase/types";
 const BRAND_GREEN = "#3f5c2e";
 const BRAND_GREEN_SOFT = "rgba(63, 92, 46, 0.12)";
 const URGENT_AMBER = "#d4a017";
-const URGENT_AMBER_SOFT = "rgba(212, 160, 23, 0.14)";
 const CRIT_RED = "#8b1a1a";
-const CRIT_RED_SOFT = "rgba(139, 26, 26, 0.18)";
 
 // 272px: 240 was too tight once the header gained the Home shortcut +
 // 3-icon ThemeTriplet + collapse button — the rightmost icon clipped on
@@ -161,6 +160,14 @@ const NAV: Nav[] = [
     href: "/operations",
     label: "Operations",
     icon: TableIcon,
+    roles: [ROLE.supervisor],
+  },
+  // /bids is the pod supervisor's estimation-request / bid queue (the former
+  // "Act now" rail beside /supervise, promoted to its own surface).
+  {
+    href: "/bids",
+    label: "Bids",
+    icon: Gavel,
     roles: [ROLE.supervisor],
   },
   // Supervisor-only. Upcoming appointments customers booked off a bid
@@ -473,7 +480,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   // Routes that super_admin should never see even when they hold the
   // underlying role for testing (e.g. dev.soni also has supervisor so she
   // can join real sessions, but /operations is a supervisor surface).
-  const SUPER_ADMIN_HIDDEN = new Set(["/operations"]);
+  const SUPER_ADMIN_HIDDEN = new Set(["/operations", "/bids"]);
   const isSuperAdmin = roles.includes(ROLE.super_admin);
   const navItems = NAV.filter((n) => n.roles.some((r) => roles.includes(r)))
     .filter((n) => !isEnterpriseAdmin || ENT_ADMIN_ALLOW.has(n.href))
@@ -563,17 +570,21 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
           )}
         </div>
 
-        {/* Collapsed-mode toggle (separate row so it's reachable) */}
+        {/* Collapsed-mode toggle (separate row so it's reachable). Mirrors the
+            nav-item box (px-2 container + full-width, centered icon, py-2) so
+            its icon lines up vertically with the nav icons below it. */}
         {collapsed && (
-          <button
-            type="button"
-            onClick={toggle}
-            className="mx-2 mt-2 rounded-md p-2 transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
-            aria-label="Expand sidebar"
-            style={{ color: "var(--text-muted)" }}
-          >
-            <PanelLeftOpen size={16} />
-          </button>
+          <div className="px-2 pt-2">
+            <button
+              type="button"
+              onClick={toggle}
+              className="flex w-full items-center justify-center rounded-md py-2 transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
+              aria-label="Expand sidebar"
+              style={{ color: "var(--text-muted)" }}
+            >
+              <PanelLeftOpen size={16} />
+            </button>
+          </div>
         )}
 
         {/* Nav */}
@@ -633,21 +644,16 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
             customer. Empty render — pure side-effect. */}
         {engineer && guard.kind === "staff" && <FifoAutoRing />}
 
-        {/* Bottom: profile. Theme triplet moved to the top (next to
-            wordmark + home button). When collapsed, we keep a single
-            ThemeTriplet here as a fallback so the user isn't locked out
-            of switching themes.
+        {/* Bottom: profile. The theme triplet lives only in the top header
+            (next to wordmark + home), which is shown when the sidebar is open —
+            so when collapsed there's no theme control here (it looked cramped
+            crammed into the icon rail).
             mb-4 lifts the chip clear of the bottom edge so it doesn't
             kiss the viewport on short screens. */}
         <div
           className="mb-4 border-t px-2 py-2"
           style={{ borderColor: "var(--border)" }}
         >
-          {collapsed && (
-            <div className="mb-1 flex justify-center">
-              <ThemeTriplet />
-            </div>
-          )}
           <ProfileButton
             email={meEmail}
             onEmailResolved={setMeEmail}
@@ -1080,6 +1086,9 @@ const SUPERVISOR_MUTE_KEY = "relay.engineer.ring.muted.v1";
 
 function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
   const isSupervisor = !isEngineer(roles);
+  const pathname = usePathname();
+  const onSupervise =
+    !!pathname && (pathname === "/supervise" || pathname.startsWith("/supervise/"));
   const [alerts, setAlerts] = useState<AlertToast[]>([]);
   const seenRef = useRef<Set<string>>(new Set());
   // Separate dedupe set for "reassignment needed" toasts so a session can be
@@ -1094,23 +1103,25 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
   const dismiss = (id: string) =>
     setAlerts((prev) => prev.filter((a) => a.id !== id));
 
-  // Auto-dismiss non-actionable toasts (reassign / urgent-session) after 10s so
-  // they don't linger on the supervisor's screen. Escalation toasts are
-  // actionable (Acknowledge & join / Snooze) and stay until the supervisor
-  // acts. Each toast is scheduled exactly once (tracked in a ref) so a
-  // re-render never resets or duplicates its timer.
+  // Auto-dismiss toasts so they don't linger on the supervisor's screen.
+  //  • Escalation toasts PERSIST while the supervisor is off the Supervise
+  //    screen (so they can't miss a raised hand), then clear 5s after they
+  //    land on /supervise (or 5s from appearing if already there).
+  //  • Other toasts (reassign / urgent-session) clear after 10s regardless.
+  // Each toast is scheduled exactly once (tracked in a ref) — re-running on
+  // pathname change is what arms the escalation timer once they reach Supervise.
   const autoExpiredRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     for (const a of alerts) {
-      if (a.urgency === "escalation") continue;
       if (autoExpiredRef.current.has(a.id)) continue;
+      if (a.urgency === "escalation" && !onSupervise) continue; // keep persistent
       autoExpiredRef.current.add(a.id);
       setTimeout(
         () => setAlerts((prev) => prev.filter((x) => x.id !== a.id)),
-        10_000
+        a.urgency === "escalation" ? 5_000 : 10_000
       );
     }
-  }, [alerts]);
+  }, [alerts, onSupervise]);
 
   useEffect(() => {
     if (!isSupervisor) return;
@@ -1211,7 +1222,9 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
             status?: string;
           } | null;
           if (!row?.id || !row.session_id) return;
-          if (row.status !== "pending") return;
+          // session_escalations rows are 'open' when raised (not 'pending') —
+          // the old check silently dropped every escalation toast.
+          if (row.status && row.status !== "open") return;
           if (seenEscalationRef.current.has(row.id)) return;
           seenEscalationRef.current.add(row.id);
 
@@ -1263,7 +1276,9 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
         return;
       }
       setAlerts((prev) => prev.filter((a) => a.id !== toast.id));
-      router.push(`/staff/session/${toast.sessionId}`);
+      // ?join=1 unlocks the chat composer for the supervisor (and stamps the
+      // escalation joined) — same as the /supervise "Join call" button.
+      router.push(`/staff/session/${toast.sessionId}?join=1`);
     },
     [router]
   );
@@ -1271,15 +1286,14 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
   if (!isSupervisor || !alerts.length) return null;
 
   return (
-    <div className="fixed right-6 bottom-6 z-50 flex flex-col gap-2">
+    <div className="fixed left-1/2 top-4 z-50 flex -translate-x-1/2 flex-col items-center gap-2">
       {alerts.map((a) => {
         const isEscalation = a.urgency === "escalation";
-        const tintBg =
-          a.urgency === "critical" || isEscalation
-            ? CRIT_RED_SOFT
-            : URGENT_AMBER_SOFT;
         const tintFg =
           a.urgency === "critical" || isEscalation ? CRIT_RED : URGENT_AMBER;
+        // OPAQUE tinted surface (mixed over --surface, not the translucent
+        // *_SOFT rgba) so the page text behind the toast doesn't bleed through.
+        const tintBg = `color-mix(in srgb, ${tintFg} 16%, var(--surface))`;
         return (
           <div
             key={a.id}
@@ -1314,7 +1328,7 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
                     : `${a.urgency} session`}
               </div>
               {isEscalation && (
-                <div className="mt-2 flex gap-1.5">
+                <div className="mt-2 flex justify-center gap-1.5">
                   <button
                     type="button"
                     onClick={() => void acknowledgeAndJoin(a)}
@@ -1322,17 +1336,6 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
                     style={{ backgroundColor: tintFg }}
                   >
                     Acknowledge &amp; join
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => dismiss(a.id)}
-                    className="rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                    style={{
-                      borderColor: "var(--border)",
-                      color: "var(--text-muted)",
-                    }}
-                  >
-                    Snooze
                   </button>
                 </div>
               )}

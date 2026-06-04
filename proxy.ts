@@ -46,6 +46,7 @@ const STAFF_PREFIXES = [
   "/calendar",
   "/finance",
   "/operations",
+  "/bids",
   "/schedule",
   "/settings",
   "/session-review",
