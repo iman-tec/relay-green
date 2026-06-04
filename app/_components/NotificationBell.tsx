@@ -3,10 +3,13 @@
 /*
  * Customer notification bell (room top-right). Derives a live notification feed
  * from the customer's own data + realtime subscriptions:
- *   1) Scheduled calls   (engineer_bookings, upcoming)
- *   2) Appointments      (supervisor_bookings, upcoming)
- *   3) Bid changes       (project_quote_requests — bid ready / accepted / declined)
- *   4) Cancelled sessions(guest_calls — cancelled / abandoned)
+ *   1) Scheduled calls    (engineer_bookings, upcoming booked)
+ *   2) Cancelled calls    (engineer_bookings, status=cancelled — timestamped
+ *                          by cancelled_at, migration 20260604150000)
+ *   3) Appointments       (supervisor_bookings, upcoming booked)
+ *   4) Cancelled appts    (supervisor_bookings, status=cancelled)
+ *   5) Bid changes        (project_quote_requests — bid ready / accepted / declined)
+ *   6) Cancelled sessions (guest_calls — cancelled / abandoned)
  *
  * Unread = items newer than a per-user "last seen" timestamp in localStorage;
  * opening the panel marks everything seen. No backend table needed.
@@ -102,7 +105,8 @@ export function NotificationBell({
     const sb = createClient();
     const nowIso = new Date().toISOString();
     const sinceIso = new Date(Date.now() - 14 * 24 * 60 * 60_000).toISOString();
-    const [callRes, apptRes, bidRes, sessRes] = await Promise.all([
+    const [callRes, callCancelRes, apptRes, apptCancelRes, bidRes, sessRes] =
+      await Promise.all([
       sb
         .from("engineer_bookings")
         .select("id, project_id, slot_start, created_at")
@@ -111,12 +115,32 @@ export function NotificationBell({
         .gte("slot_end", nowIso)
         .order("created_at", { ascending: false })
         .limit(20),
+      // Cancelled scheduled calls — timestamped by cancelled_at (stamped by
+      // the eb_stamp_cancelled trigger) so they surface as FRESH unread
+      // items at cancel time, not back-dated to when they were booked.
+      sb
+        .from("engineer_bookings")
+        .select("id, project_id, slot_start, created_at, cancelled_at")
+        .eq("customer_user_id", customerUserId)
+        .eq("status", "cancelled")
+        .gte("created_at", sinceIso)
+        .order("created_at", { ascending: false })
+        .limit(20),
       sb
         .from("supervisor_bookings")
         .select("id, project_name, slot_start, created_at")
         .eq("customer_user_id", customerUserId)
         .eq("status", "booked")
         .gte("slot_end", nowIso)
+        .order("created_at", { ascending: false })
+        .limit(20),
+      // Cancelled appointments — same cancelled_at treatment.
+      sb
+        .from("supervisor_bookings")
+        .select("id, project_name, slot_start, created_at, cancelled_at")
+        .eq("customer_user_id", customerUserId)
+        .eq("status", "cancelled")
+        .gte("created_at", sinceIso)
         .order("created_at", { ascending: false })
         .limit(20),
       sb
@@ -139,6 +163,10 @@ export function NotificationBell({
     // Resolve project names.
     const pids = new Set<string>();
     for (const r of (callRes.data ?? []) as { project_id: string | null }[])
+      if (r.project_id) pids.add(r.project_id);
+    for (const r of (callCancelRes.data ?? []) as {
+      project_id: string | null;
+    }[])
       if (r.project_id) pids.add(r.project_id);
     for (const r of (bidRes.data ?? []) as { project_id: string | null }[])
       if (r.project_id) pids.add(r.project_id);
@@ -170,6 +198,20 @@ export function NotificationBell({
         title: "Scheduled call booked",
         detail: `${proj(r.project_id)} · ${fmtWhen(r.slot_start)}`,
       });
+    for (const r of (callCancelRes.data ?? []) as Array<{
+      id: string;
+      project_id: string | null;
+      slot_start: string;
+      created_at: string;
+      cancelled_at: string | null;
+    }>)
+      out.push({
+        id: `call-cancel-${r.id}`,
+        kind: "cancel",
+        ts: new Date(r.cancelled_at ?? r.created_at).getTime(),
+        title: "Scheduled call cancelled",
+        detail: `${proj(r.project_id)} · was ${fmtWhen(r.slot_start)}`,
+      });
     for (const r of (apptRes.data ?? []) as Array<{
       id: string;
       project_name: string | null;
@@ -182,6 +224,20 @@ export function NotificationBell({
         ts: new Date(r.created_at).getTime(),
         title: "Appointment booked",
         detail: `${r.project_name ?? "a project"} · ${fmtWhen(r.slot_start)}`,
+      });
+    for (const r of (apptCancelRes.data ?? []) as Array<{
+      id: string;
+      project_name: string | null;
+      slot_start: string;
+      created_at: string;
+      cancelled_at: string | null;
+    }>)
+      out.push({
+        id: `appt-cancel-${r.id}`,
+        kind: "cancel",
+        ts: new Date(r.cancelled_at ?? r.created_at).getTime(),
+        title: "Appointment cancelled",
+        detail: `${r.project_name ?? "a project"} · was ${fmtWhen(r.slot_start)}`,
       });
     for (const r of (bidRes.data ?? []) as Array<{
       id: string;

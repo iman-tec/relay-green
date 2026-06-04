@@ -59,6 +59,8 @@ import {
   Pin,
   Paperclip,
   Mic,
+  Play,
+  Pause,
   Download,
   Music,
   AudioLines,
@@ -149,11 +151,13 @@ import type {
 import {
   signedDownloadUrl,
   validateStagedFiles,
+  MAX_FILES_PER_MESSAGE,
 } from "@/lib/relay/chatAttachments";
 import {
   addAttachment as stubAddAttachment,
   listAttachments as stubListAttachments,
   removeAttachment as stubRemoveAttachment,
+  getAttachmentBlob as stubGetAttachmentBlob,
   flushAttachmentsToSession as flushStubAttachments,
   type StubAttachmentMeta,
 } from "@/lib/relay/stubDraftAttachments";
@@ -1383,6 +1387,22 @@ export function RoomClient() {
     router.push("/intake");
   }, [freeConsumed, paidRemaining, router, isEmployee, blockNewCall]);
 
+  // Green-dot "connect to a Relay engineer" — the chat rail's pulsing dot.
+  // The actual routing (engineer picker vs direct ring vs pick-project)
+  // lives in the Sidebar, which owns the ConnectFlowModal; this just
+  // relays the request with a nonce so repeat clicks re-fire.
+  const [connectRequest, setConnectRequest] = useState<{
+    projectId: string | null;
+    nonce: number;
+  } | null>(null);
+  const handleConnectEngineer = useCallback(
+    (projectId: string | null) => {
+      if (blockNewCall()) return;
+      setConnectRequest({ projectId, nonce: Date.now() });
+    },
+    [blockNewCall]
+  );
+
   // "New chat" — ASYNC support path. No ringing overlay on customer side,
   // but the session MUST be visible to engineers (so they can claim it
   // off-line). Same mint pipeline as a normal session — just skip the
@@ -1949,6 +1969,7 @@ export function RoomClient() {
           }}
           onMarkProjectComplete={handleMarkProjectComplete}
           onOpenCenter={setCenterView}
+          connectRequest={connectRequest}
         />
       </div>
 
@@ -2101,6 +2122,14 @@ export function RoomClient() {
                       }
                       session={state.session ?? undefined}
                       scopeKey={selectedProjectId || "general"}
+                      projects={projects.map((p) => ({
+                        id: p.id,
+                        name: p.name,
+                      }))}
+                      onSelectProject={handleSelectProject}
+                      onStartCall={() =>
+                        handleConnectEngineer(selectedProjectId)
+                      }
                     />
                   </div>
                 ) : asyncChatMode ? (
@@ -2128,6 +2157,7 @@ export function RoomClient() {
                     selectedProjectId={selectedProjectId}
                     onSelectProject={handleSelectProject}
                     onStartInProject={handleStartInProject}
+                    onConnectEngineer={handleConnectEngineer}
                     accountTab={accountTab}
                     onCloseAccount={handleCloseAccount}
                     legalView={legalView}
@@ -2366,6 +2396,12 @@ export function RoomClient() {
                   state.session?.project_id || selectedProjectId || "general"
                 }
                 enableResize={false}
+                projects={projects.map((p) => ({ id: p.id, name: p.name }))}
+                onSelectProject={handleSelectProject}
+                onStartCall={() => {
+                  setMobileChatOpen(false);
+                  handleConnectEngineer(selectedProjectId);
+                }}
               />
             </div>
           </div>
@@ -2426,6 +2462,7 @@ const MainPane = memo(function MainPane({
   selectedProjectId,
   onSelectProject,
   onStartInProject,
+  onConnectEngineer,
   accountTab,
   onCloseAccount,
   legalView,
@@ -2463,6 +2500,9 @@ const MainPane = memo(function MainPane({
     projectId: string | null,
     preferredEngineerId?: string
   ) => void;
+  /** Green dot = connect to a Relay engineer (engineer picker for warm
+   *  projects, direct ring for cold ones, pick-project flow when null). */
+  onConnectEngineer: (projectId: string | null) => void;
   /** In-pane Account tab to render (Profile / Wallet / Billing /
    *  Security / Notifications), or null to render the normal session-
    *  driven view. */
@@ -2651,6 +2691,9 @@ const MainPane = memo(function MainPane({
         onClearSelectedProject={() => onSelectProject(null)}
         userName={userName}
         customerUserId={customerUserId}
+        projects={projects}
+        onSelectProject={onSelectProject}
+        onConnectEngineer={() => onConnectEngineer(selectedProjectId)}
       />
     );
   }
@@ -2979,6 +3022,9 @@ function BrandedLanding({
   onClearSelectedProject,
   userName,
   customerUserId,
+  projects,
+  onSelectProject,
+  onConnectEngineer,
 }: {
   onStartNewSession: () => void;
   selectedProject: Project | null;
@@ -2986,6 +3032,13 @@ function BrandedLanding({
   onClearSelectedProject: () => void;
   userName: string;
   customerUserId: string | null;
+  /** Full project list + setter — forwarded to the right-rail chat
+   *  stub's header project switcher. */
+  projects: Project[];
+  onSelectProject: (id: string | null) => void;
+  /** Green dot = connect to a Relay engineer. Pre-bound to the currently
+   *  selected project (null → pick-project flow first). */
+  onConnectEngineer: () => void;
 }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const hasProject = !!selectedProject;
@@ -3129,33 +3182,9 @@ function BrandedLanding({
             for AI-built software.
           </p>
 
-          {hasProject && (
-            <div className="mt-6 inline-flex items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] px-4 py-3 shadow-sm">
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
-                <Folder size={16} />
-              </div>
-              <div className="flex min-w-0 flex-col items-start text-left">
-                <span className="text-[10px] font-semibold tracking-wider text-[var(--text-muted)] uppercase">
-                  Working in
-                </span>
-                <span
-                  className="max-w-[220px] truncate text-base leading-tight font-semibold text-[var(--text)]"
-                  title={selectedProject!.name}
-                >
-                  {selectedProject!.name}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={onClearSelectedProject}
-                className="ml-1 inline-flex size-7 shrink-0 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[color-mix(in_srgb,var(--text)_6%,transparent)] hover:text-[var(--text)]"
-                aria-label="Clear selected project"
-                title="Clear project"
-              >
-                <X size={13} />
-              </button>
-            </div>
-          )}
+          {/* ("Working in {project}" chip removed — the selected project
+              already shows in the chat rail's header project switcher, so
+              the landing stays a clean wordmark + tagline.) */}
 
           {/* "HOW RELAY WORKS" toggle. Collapsed-by-default for
               returning customers; auto-expanded on first visit (see
@@ -3499,6 +3528,9 @@ function BrandedLanding({
         sidebarCollapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((v) => !v)}
         scopeKey={selectedProject?.id || "general"}
+        projects={projects.map((p) => ({ id: p.id, name: p.name }))}
+        onSelectProject={onSelectProject}
+        onStartCall={onConnectEngineer}
       />
     </div>
   );
@@ -3520,6 +3552,17 @@ function BrandedLanding({
 // Why local-only for now: there's no engineer yet, so there's no recipient
 // and no guest_call_id to attach to. The user wants the visual experience
 // of a chat surface today; the sync happens when we have a target.
+/** Attachment meta bundled with a draft bubble. The blob itself stays in
+ *  the IndexedDB delivery queue (stubDraftAttachments) — this is purely
+ *  what the bubble needs to render (and preview, via getAttachmentBlob). */
+type LocalDraftAttachment = {
+  id: string;
+  name: string;
+  mime: string;
+  size: number;
+  kind: string;
+};
+
 type LocalDraftMessage = {
   id: string;
   text: string;
@@ -3527,7 +3570,169 @@ type LocalDraftMessage = {
   /** Epoch ms of the most recent edit. null/undefined for never-edited.
    *  Drives the "(edited)" badge next to the timestamp. */
   editedAt?: number | null;
+  /** Files sent with this bubble — the customer sees them IN the chat
+   *  (WhatsApp-style) while delivery still rides the IDB flush queue. */
+  attachments?: LocalDraftAttachment[];
 };
+
+// ── Draft attachment renderers (inside DraftBubble) ──────────────────
+// Images get an inline thumbnail, voice notes a WhatsApp-style player,
+// everything else a file chip. Blobs are read lazily from IDB.
+function DraftAttachmentView({ att }: { att: LocalDraftAttachment }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (att.kind !== "image" && att.kind !== "audio") return;
+    let alive = true;
+    let obj: string | null = null;
+    void stubGetAttachmentBlob(att.id).then((b) => {
+      if (!alive || !b) return;
+      obj = URL.createObjectURL(b);
+      setUrl(obj);
+    });
+    return () => {
+      alive = false;
+      if (obj) URL.revokeObjectURL(obj);
+    };
+  }, [att.id, att.kind]);
+
+  if (att.kind === "image" && url) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={url}
+        alt={att.name}
+        title={att.name}
+        className="max-h-44 w-full rounded-lg object-cover"
+      />
+    );
+  }
+  if (att.kind === "audio") {
+    return <StubVoiceNote url={url} name={att.name} />;
+  }
+  return (
+    <div
+      className="flex items-center gap-2 rounded-lg px-2 py-1.5"
+      style={{
+        backgroundColor: "color-mix(in srgb, var(--surface) 55%, transparent)",
+      }}
+    >
+      <span
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md"
+        style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
+      >
+        <FileText size={12} />
+      </span>
+      <span
+        className="min-w-0 flex-1 truncate text-[12px]"
+        style={{ color: "var(--text)" }}
+      >
+        {att.name}
+      </span>
+      <span className="shrink-0 text-[9.5px]" style={{ color: "var(--text-muted)" }}>
+        {att.size < 1024 * 1024
+          ? `${Math.round(att.size / 1024)} KB`
+          : `${(att.size / (1024 * 1024)).toFixed(1)} MB`}
+      </span>
+    </div>
+  );
+}
+
+// WhatsApp-style voice-note bubble: play/pause circle + progress bar +
+// elapsed/total time. Chrome's MediaRecorder webm blobs sometimes report
+// Infinity duration (known bug) — we show "…" until a real number lands.
+function StubVoiceNote({ url, name }: { url: string | null; name: string }) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [dur, setDur] = useState(0);
+  const [pos, setPos] = useState(0);
+  useEffect(
+    () => () => {
+      audioRef.current?.pause();
+      audioRef.current = null;
+    },
+    []
+  );
+  const toggle = () => {
+    if (!url) return;
+    let a = audioRef.current;
+    if (!a) {
+      a = new Audio(url);
+      audioRef.current = a;
+      a.onloadedmetadata = () => {
+        if (Number.isFinite(a!.duration)) setDur(a!.duration);
+      };
+      a.ondurationchange = () => {
+        if (Number.isFinite(a!.duration)) setDur(a!.duration);
+      };
+      a.ontimeupdate = () => setPos(a!.currentTime);
+      a.onended = () => {
+        setPlaying(false);
+        setPos(0);
+      };
+    }
+    if (playing) {
+      a.pause();
+      setPlaying(false);
+    } else {
+      void a.play();
+      setPlaying(true);
+    }
+  };
+  const fmtClock = (s: number) =>
+    `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  const pct = dur > 0 ? Math.min(100, (pos / dur) * 100) : 0;
+  return (
+    <div className="flex w-full min-w-0 items-center gap-2" title={name}>
+      <button
+        type="button"
+        onClick={toggle}
+        disabled={!url}
+        aria-label={playing ? "Pause voice note" : "Play voice note"}
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-opacity hover:opacity-90 disabled:opacity-50"
+        style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+      >
+        {playing ? <Pause size={13} /> : <Play size={13} className="ml-0.5" />}
+      </button>
+      <div className="min-w-0 flex-1">
+        <div
+          className="h-1 w-full overflow-hidden rounded-full"
+          style={{
+            backgroundColor: "color-mix(in srgb, var(--text) 14%, transparent)",
+          }}
+        >
+          <div
+            className="h-full rounded-full transition-[width] duration-200"
+            style={{ width: `${pct}%`, backgroundColor: BRAND_GREEN }}
+          />
+        </div>
+        <div
+          className="mt-1 flex items-center justify-between text-[9px]"
+          style={{ color: "var(--text-muted)" }}
+        >
+          <span className="inline-flex items-center gap-1">
+            <Mic size={9} /> Voice note
+          </span>
+          <span className="tabular-nums">
+            {playing || pos > 0
+              ? fmtClock(pos)
+              : dur > 0
+                ? fmtClock(dur)
+                : "…"}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Spoken connect-commands recognised while dictating in the chat stub.
+// Tail-anchored ($) so the command only fires when it's how the utterance
+// ENDS — "I'll start the call once X is fixed" mid-sentence won't trigger,
+// but "…okay, start the call" / "connect me to an engineer" / the brand
+// phrase "let's relay" will. The matched phrase is stripped from the draft
+// before the connect flow fires.
+const VOICE_CONNECT_COMMAND_RE =
+  /(start (the |a )?call|connect (me )?(to |with )?(an? )?(relay )?engineer|call (an? |the )?engineer|let'?s relay)[.!?]?\s*$/i;
 
 // Storage-key prefix for the ChatPanelStub local draft buffer. Each
 // project gets its own bucket so switching projects in the sidebar
@@ -3671,7 +3876,7 @@ function DraftBubble({
           when its menu is open) so users can find it without guessing
           there's a hover-only secret. h-7 makes it tappable on touch. */}
       {!editing && (
-        <div className="relative mt-1 shrink-0">
+        <div className="mt-1 shrink-0">
           <button
             type="button"
             onClick={(e) => {
@@ -3694,41 +3899,55 @@ function DraftBubble({
           >
             <MoreHorizontal size={14} />
           </button>
-          {menuOpen && (
-            <div
-              onClick={(e) => e.stopPropagation()}
-              className="absolute top-full right-0 z-20 mt-1 min-w-[150px] overflow-hidden rounded-lg border shadow-xl"
-              style={{
-                borderColor: "var(--border)",
-                backgroundColor: "var(--surface)",
-                boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
-              }}
-            >
-              <button
-                type="button"
-                onClick={onStartEdit}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                style={{ color: "var(--text)" }}
-              >
-                <Pencil size={12} />
-                Edit message
-              </button>
-              <button
-                type="button"
-                onClick={onDelete}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                style={{ color: "var(--accent-red)" }}
-              >
-                <X size={12} />
-                Delete message
-              </button>
-            </div>
-          )}
+        </div>
+      )}
+      {/* Dropdown anchors to the full-width ROW (not the kebab), pinned a
+          fixed inset from the row's right edge — so it can never escape
+          the panel no matter where the kebab lands (wide attachment
+          bubbles push the kebab almost to the panel's left edge, which
+          used to shove a kebab-anchored menu out of view). */}
+      {!editing && menuOpen && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="absolute top-9 right-1 z-20 min-w-[150px] overflow-hidden rounded-lg border shadow-xl"
+          style={{
+            borderColor: "var(--border)",
+            backgroundColor: "var(--surface)",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+          }}
+        >
+          <button
+            type="button"
+            onClick={onStartEdit}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            style={{ color: "var(--text)" }}
+          >
+            <Pencil size={12} />
+            Edit message
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            style={{ color: "var(--accent-red)" }}
+          >
+            <X size={12} />
+            Delete message
+          </button>
         </div>
       )}
 
       <div
-        className="relative max-w-[78%] rounded-2xl px-3 py-2 text-[13px] leading-snug"
+        className={cn(
+          "relative min-w-0 overflow-hidden rounded-2xl px-3 py-2 text-[13px] leading-snug",
+          // Attachment bubbles take a FIXED width so inner w-full media
+          // (thumbnails, voice player) has a real box to fill and can
+          // never push past the panel edge; text-only bubbles stay
+          // content-sized.
+          (message.attachments?.length ?? 0) > 0
+            ? "w-[78%] max-w-[78%]"
+            : "max-w-[78%]"
+        )}
         style={{
           backgroundColor: "var(--primary-tint)",
           color: "var(--text)",
@@ -3789,9 +4008,21 @@ function DraftBubble({
           </>
         ) : (
           <>
-            <div className="pr-1 break-words whitespace-pre-wrap">
-              {message.text}
-            </div>
+            {/* Attachments render INSIDE the bubble (WhatsApp-style) so the
+                customer sees their files in the conversation — delivery
+                still rides the IDB flush queue untouched. */}
+            {(message.attachments?.length ?? 0) > 0 && (
+              <div className="mb-1 flex flex-col gap-1.5">
+                {message.attachments!.map((a) => (
+                  <DraftAttachmentView key={a.id} att={a} />
+                ))}
+              </div>
+            )}
+            {message.text && (
+              <div className="pr-1 break-words whitespace-pre-wrap">
+                {message.text}
+              </div>
+            )}
             <div
               className="mt-0.5 flex items-center justify-end gap-1 text-[9px]"
               style={{ color: "var(--text-muted)" }}
@@ -3825,6 +4056,9 @@ function ChatPanelStub({
   session,
   scopeKey = "general",
   enableResize = true,
+  projects,
+  onSelectProject,
+  onStartCall,
 }: {
   sidebarCollapsed: boolean;
   /**
@@ -3836,6 +4070,20 @@ function ChatPanelStub({
    * scope's messages + pending attachments.
    */
   scopeKey?: string;
+  /**
+   * When provided (and the stub isn't bound to a live/ended session),
+   * the header's second line becomes a PROJECT SWITCHER — the current
+   * scope's project name + a chevron dropdown listing every project
+   * (plus "General"). Selecting one calls onSelectProject, which the
+   * parent translates into a new scopeKey. Session-bound instances
+   * (ended/past review) omit this and keep their static status line.
+   */
+  projects?: { id: string; name: string }[];
+  onSelectProject?: (id: string | null) => void;
+  /** Makes the header's green dot a CALL button — clicking starts a
+   *  session (rings the selected project, or opens the new-session flow).
+   *  Omitted on session-bound instances where the dot is decorative. */
+  onStartCall?: () => void;
   /**
    * When true (default), the aside is fixed-width + drag-resizable
    * from its left edge, with the chosen width persisted to
@@ -3874,12 +4122,33 @@ function ChatPanelStub({
       ? `Chatting with ${engineerName}`
       : isEndedish && engineerName
         ? `You chatted with ${engineerName}`
-        : "Engineer chat";
+        : "Chat";
   const headerSubtitle = isLiveish
     ? "Live now"
     : isEndedish
       ? "Session ended"
       : "No active session";
+  // Project switcher in the header's second line — only for instances
+  // that aren't bound to a session AND were handed the projects list.
+  // Session-bound stubs (ended/past review) keep the static status line.
+  const showProjectPicker =
+    !isLiveish && !isEndedish && !!projects && !!onSelectProject;
+  const currentProjectName =
+    scopeKey === "general"
+      ? "General"
+      : (projects?.find((p) => p.id === scopeKey)?.name ?? "General");
+  const [projMenuOpen, setProjMenuOpen] = useState(false);
+  // Outside-click closes the project menu (same microtask-delay pattern
+  // as the message kebab menu below).
+  useEffect(() => {
+    if (!projMenuOpen) return;
+    const handler = () => setProjMenuOpen(false);
+    const t = setTimeout(() => document.addEventListener("click", handler), 0);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener("click", handler);
+    };
+  }, [projMenuOpen]);
   // Start empty; the scope-load effect below populates from storage on
   // mount and on every scopeKey change. Initial state can't read from
   // storage directly because we don't know the right key until we have
@@ -3925,12 +4194,88 @@ function ChatPanelStub({
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recorderChunksRef = useRef<Blob[]>([]);
   const recorderStreamRef = useRef<MediaStream | null>(null);
+  // WhatsApp-style recording bar state: elapsed seconds + a discard flag
+  // so Cancel can stop the recorder WITHOUT staging the blob.
+  const [recSecs, setRecSecs] = useState(0);
+  const recDiscardRef = useRef(false);
+  useEffect(() => {
+    if (recState !== "recording") {
+      setRecSecs(0);
+      return;
+    }
+    const id = setInterval(() => setRecSecs((s) => s + 1), 1000);
+    return () => clearInterval(id);
+  }, [recState]);
+
+  // LIVE voicegram — real mic levels via a Web Audio AnalyserNode, not a
+  // canned CSS pulse. A rAF loop (throttled ~20fps) samples the stream's
+  // RMS and scrolls it through a fixed-length bar buffer, so the bars
+  // dance with the actual voice and scroll right-to-left like WhatsApp.
+  const WAVE_BARS = 24;
+  const [waveLevels, setWaveLevels] = useState<number[]>(() =>
+    Array(WAVE_BARS).fill(0)
+  );
+  const waveCtxRef = useRef<AudioContext | null>(null);
+  const waveRafRef = useRef<number | null>(null);
+  const startWaveAnalysis = useCallback((stream: MediaStream) => {
+    try {
+      const Ctx =
+        window.AudioContext ||
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (window as any).webkitAudioContext;
+      if (!Ctx) return;
+      const ctx: AudioContext = new Ctx();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      ctx.createMediaStreamSource(stream).connect(analyser);
+      waveCtxRef.current = ctx;
+      const data = new Uint8Array(analyser.fftSize);
+      let last = 0;
+      const loop = (t: number) => {
+        waveRafRef.current = requestAnimationFrame(loop);
+        if (t - last < 50) return; // ~20fps — smooth without render spam
+        last = t;
+        analyser.getByteTimeDomainData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) {
+          const v = (data[i] - 128) / 128;
+          sum += v * v;
+        }
+        const rms = Math.sqrt(sum / data.length);
+        // Perceptual boost: speech RMS is tiny (~0.02-0.2). The sqrt curve
+        // makes quiet speech visible while loud peaks clip at 1.
+        const level = Math.min(1, Math.sqrt(rms) * 1.8);
+        setWaveLevels((prev) => [...prev.slice(1), level]);
+      };
+      waveRafRef.current = requestAnimationFrame(loop);
+    } catch {
+      /* analyser is progressive enhancement — bar stays flat without it */
+    }
+  }, []);
+  const stopWaveAnalysis = useCallback(() => {
+    if (waveRafRef.current != null) cancelAnimationFrame(waveRafRef.current);
+    waveRafRef.current = null;
+    void waveCtxRef.current?.close().catch(() => {});
+    waveCtxRef.current = null;
+    setWaveLevels(Array(WAVE_BARS).fill(0));
+  }, []);
 
   const recognitionRef = useRef<{
     abort: () => void;
     stop: () => void;
   } | null>(null);
   const transcribeBaseRef = useRef<string>("");
+  // True while the customer WANTS dictation running — drives the onend
+  // keep-alive restart loop (Chrome self-terminates recognition after a
+  // short silence window; see startTranscribe).
+  const transcribeKeepAliveRef = useRef(false);
+  // Fresh handle on onStartCall for the voice-command path — recognition
+  // callbacks are long-lived closures, a ref keeps them pointed at the
+  // current prop.
+  const onStartCallRef = useRef(onStartCall);
+  useEffect(() => {
+    onStartCallRef.current = onStartCall;
+  }, [onStartCall]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Load messages from the scoped sessionStorage bucket on mount and
@@ -3993,35 +4338,52 @@ function ChatPanelStub({
     }
   }, [messages.length]);
 
-  // Attachment-only "send" confirmation — staged files are ALREADY queued
-  // for delivery (IndexedDB → auto-flush), so when the customer hits Send
-  // with a lone photo and no text we acknowledge instead of dead-clicking.
-  const [queuedNotice, setQueuedNotice] = useState(false);
-  const queuedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(
-    () => () => {
-      if (queuedTimerRef.current) clearTimeout(queuedTimerRef.current);
-    },
-    []
-  );
+  // Composer tray = staged files NOT yet "sent" into a bubble. Everything
+  // in stubAttachments lives in the IDB delivery queue; once the customer
+  // hits Send the batch gets bundled into a draft bubble (so they SEE it
+  // in the chat, WhatsApp-style) while the IDB rows stay put for the
+  // engineer-join flush. Pending = staged minus already-bubbled.
+  const pendingAttachments = useMemo(() => {
+    const referenced = new Set<string>();
+    for (const m of messages) {
+      for (const a of m.attachments ?? []) referenced.add(a.id);
+    }
+    return stubAttachments.filter((a) => !referenced.has(a.id));
+  }, [messages, stubAttachments]);
 
   const handleSendDraft = useCallback(() => {
-    const trimmed = draftText.trim();
-    if (!trimmed) {
-      if (stubAttachments.length > 0) {
-        if (queuedTimerRef.current) clearTimeout(queuedTimerRef.current);
-        setQueuedNotice(true);
-        queuedTimerRef.current = setTimeout(() => {
-          setQueuedNotice(false);
-          queuedTimerRef.current = null;
-        }, 3500);
+    // Sending turns the mic OFF — dictation shouldn't keep capturing in
+    // the background after the thought is sent. (The live interim words
+    // are already in draftText, so nothing said is lost.)
+    if (transcribeKeepAliveRef.current || recognitionRef.current) {
+      transcribeKeepAliveRef.current = false;
+      try {
+        recognitionRef.current?.stop();
+      } catch {
+        /* noop */
       }
-      return;
     }
+    const trimmed = draftText.trim();
+    const toAttach = pendingAttachments;
+    if (!trimmed && toAttach.length === 0) return;
     const newId = crypto.randomUUID();
     setMessages((prev) => [
       ...prev,
-      { id: newId, text: trimmed, createdAt: Date.now() },
+      {
+        id: newId,
+        text: trimmed,
+        createdAt: Date.now(),
+        attachments:
+          toAttach.length > 0
+            ? toAttach.map((a) => ({
+                id: a.id,
+                name: a.name,
+                mime: a.mime,
+                size: a.size,
+                kind: a.kind,
+              }))
+            : undefined,
+      },
     ]);
     setDraftText("");
 
@@ -4034,20 +4396,37 @@ function ChatPanelStub({
       setUndoableId((prev) => (prev === newId ? null : prev));
       undoTimerRef.current = null;
     }, 5000);
-  }, [draftText, stubAttachments.length]);
+  }, [draftText, pendingAttachments]);
 
   // Per-message delete via the kebab menu. Always allowed — these are
   // local drafts on the customer's device with no recipient yet, so the
   // WhatsApp-style "can't unsend after the other side has seen it"
   // limit doesn't apply. The snackbar undo (5s) remains as a faster
   // path for the most recent send; the kebab covers everything else.
-  const handleDeleteMessage = useCallback((id: string) => {
-    setMessages((prev) => prev.filter((m) => m.id !== id));
-    setOpenMenuId(null);
-    setUndoableId((prev) => (prev === id ? null : prev));
-    // If the user was editing this same bubble, cancel that too.
-    setEditingId((prev) => (prev === id ? null : prev));
-  }, []);
+  const handleDeleteMessage = useCallback(
+    (id: string) => {
+      // Deleting a bubble also discards its files from the IDB delivery
+      // queue — delete means "the engineer should never get this".
+      // (The 5s snackbar Undo is different: it only removes the bubble,
+      // so the files fall back into the composer tray.)
+      const target = messages.find((m) => m.id === id);
+      const attIds = (target?.attachments ?? []).map((a) => a.id);
+      if (attIds.length > 0) {
+        setStubAttachments((prev) =>
+          prev.filter((a) => !attIds.includes(a.id))
+        );
+        for (const aid of attIds) {
+          void stubRemoveAttachment(aid).catch(() => {});
+        }
+      }
+      setMessages((prev) => prev.filter((m) => m.id !== id));
+      setOpenMenuId(null);
+      setUndoableId((prev) => (prev === id ? null : prev));
+      // If the user was editing this same bubble, cancel that too.
+      setEditingId((prev) => (prev === id ? null : prev));
+    },
+    [messages]
+  );
 
   // Edit flow: open the bubble's text into an inline textarea, save on
   // enter or Save button, cancel via Esc / Cancel button. Always
@@ -4064,8 +4443,21 @@ function ChatPanelStub({
     const trimmed = editText.trim();
     if (!trimmed) {
       // Empty edit = same as delete (matches WhatsApp behaviour: editing
-      // to empty + save deletes the message).
-      setMessages((prev) => prev.filter((m) => m.id !== editingId));
+      // to empty + save deletes the message) — EXCEPT when the bubble
+      // carries attachments: then it just clears the caption, the files
+      // stay queued.
+      const target = messages.find((m) => m.id === editingId);
+      if (target?.attachments?.length) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === editingId
+              ? { ...m, text: "", editedAt: Date.now() }
+              : m
+          )
+        );
+      } else {
+        setMessages((prev) => prev.filter((m) => m.id !== editingId));
+      }
       setEditingId(null);
       setEditText("");
       return;
@@ -4077,7 +4469,7 @@ function ChatPanelStub({
     );
     setEditingId(null);
     setEditText("");
-  }, [editingId, editText]);
+  }, [editingId, editText, messages]);
 
   const handleCancelEdit = useCallback(() => {
     setEditingId(null);
@@ -4170,53 +4562,133 @@ function ChatPanelStub({
         return;
       }
     }
-    const r = new Ctor();
     transcribeBaseRef.current = draftText;
-    r.lang = navigator.language || "en-US";
-    r.continuous = true;
-    r.interimResults = true;
-    r.onresult = (event: {
-      results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }>;
-    }) => {
-      let finalText = "";
-      let interim = "";
-      for (let i = 0; i < event.results.length; i++) {
-        const res = event.results[i];
-        if (res.isFinal) finalText += res[0].transcript;
-        else interim += res[0].transcript;
-      }
-      const composed = [transcribeBaseRef.current, finalText, interim]
-        .filter(Boolean)
-        .join(" ")
-        .replace(/\s+/g, " ")
-        .trim();
-      setDraftText(composed);
-    };
-    r.onerror = (e: { error: string }) => {
-      // Same actionable-error translation as the live ChatComposer —
-      // shared helper keeps both surfaces in sync (e.g. "Microphone
-      // access blocked. Click the lock icon…" instead of the raw
-      // "not-allowed" identifier).
-      if (e.error !== "no-speech" && e.error !== "aborted") {
+    // KEEP-ALIVE LOOP. Chrome's SpeechRecognition self-terminates after a
+    // short silence window (~5-8s) — without a restart loop, dictation
+    // silently died mid-thought and the mic looked broken. While this flag
+    // is set, every onend immediately spins up a fresh recognition session;
+    // the finals from the finished session get folded into the base text so
+    // the next session APPENDS instead of overwriting.
+    transcribeKeepAliveRef.current = true;
+
+    const startSession = () => {
+      const r = new Ctor();
+      r.lang = navigator.language || "en-US";
+      r.continuous = true;
+      r.interimResults = true;
+      r.maxAlternatives = 1; // single hypothesis — fastest interim updates
+      // Finals accumulated by THIS session only (each restart starts at "").
+      let sessionFinal = "";
+      r.onresult = (event: {
+        results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }>;
+      }) => {
+        let finalText = "";
+        let interim = "";
+        for (let i = 0; i < event.results.length; i++) {
+          const res = event.results[i];
+          if (res.isFinal) finalText += res[0].transcript;
+          else interim += res[0].transcript;
+        }
+        sessionFinal = finalText;
+        const composed = [transcribeBaseRef.current, finalText, interim]
+          .filter(Boolean)
+          .join(" ")
+          .replace(/\s+/g, " ")
+          .trim();
+        // VOICE COMMAND — a finalized utterance ending in a connect phrase
+        // ("start the call" / "connect me to an engineer" / "let's relay")
+        // stops dictation, strips the command from the draft, and rings a
+        // Relay engineer — exactly the green dot, hands-free.
+        if (
+          finalText &&
+          onStartCallRef.current &&
+          VOICE_CONNECT_COMMAND_RE.test(finalText)
+        ) {
+          transcribeKeepAliveRef.current = false;
+          try {
+            r.stop();
+          } catch {
+            /* already stopping */
+          }
+          const cleaned = composed
+            .replace(VOICE_CONNECT_COMMAND_RE, "")
+            .replace(/\s+/g, " ")
+            .trim();
+          setDraftText(cleaned);
+          setVoiceMsg("🎙 Voice command — connecting you to a Relay engineer…");
+          onStartCallRef.current();
+          return;
+        }
+        setDraftText(composed);
+      };
+      r.onerror = (e: { error: string }) => {
+        // no-speech / aborted are normal session-lifecycle noise — the
+        // onend keep-alive restarts right through them. Real errors
+        // (not-allowed, network, audio-capture) stop the loop and tell
+        // the user something actionable.
+        if (e.error === "no-speech" || e.error === "aborted") return;
         setVoiceMsg(speechRecognitionErrorMessage(e.error));
-      }
-      setVoiceMode("idle");
+        transcribeKeepAliveRef.current = false;
+      };
+      r.onend = () => {
+        // Bank this session's finals before the restart so nothing is
+        // lost and nothing duplicates.
+        if (sessionFinal.trim()) {
+          transcribeBaseRef.current = [
+            transcribeBaseRef.current,
+            sessionFinal,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .replace(/\s+/g, " ")
+            .trim();
+        }
+        if (transcribeKeepAliveRef.current) {
+          // Restart FAST — every idle ms between sessions is dead air where
+          // spoken words get dropped. 50ms dodges Chrome's InvalidStateError
+          // on back-to-back start(); if it still throws, one retry at 250ms
+          // before giving up.
+          const restart = (delay: number, retriesLeft: number) => {
+            window.setTimeout(() => {
+              if (!transcribeKeepAliveRef.current) {
+                setVoiceMode("idle");
+                recognitionRef.current = null;
+                return;
+              }
+              try {
+                startSession();
+              } catch {
+                if (retriesLeft > 0) {
+                  restart(250, retriesLeft - 1);
+                } else {
+                  setVoiceMode("idle");
+                  recognitionRef.current = null;
+                }
+              }
+            }, delay);
+          };
+          restart(50, 1);
+          return;
+        }
+        setVoiceMode("idle");
+        recognitionRef.current = null;
+      };
+      recognitionRef.current = r;
+      r.start();
     };
-    r.onend = () => {
-      setVoiceMode("idle");
-      recognitionRef.current = null;
-    };
-    recognitionRef.current = r;
+
     setVoiceMode("transcribing");
     try {
-      r.start();
+      startSession();
     } catch {
       setVoiceMsg("Voice recognition couldn't start — try again in a moment.");
       setVoiceMode("idle");
+      transcribeKeepAliveRef.current = false;
     }
   }, [voiceMode, draftText]);
 
   const stopTranscribe = useCallback(() => {
+    transcribeKeepAliveRef.current = false;
     try {
       recognitionRef.current?.stop();
     } catch {
@@ -4233,6 +4705,14 @@ function ChatPanelStub({
     async (files: File[]) => {
       if (files.length === 0) return;
       setVoiceMsg(null);
+      // Per-message cap counts what's already waiting in the composer —
+      // bubbled attachments don't count, they're a "sent" message already.
+      if (pendingAttachments.length + files.length > MAX_FILES_PER_MESSAGE) {
+        setVoiceMsg(
+          `Up to ${MAX_FILES_PER_MESSAGE} files per message — hit Send first, then attach more.`
+        );
+        return;
+      }
       const v = validateStagedFiles(files, []);
       if (!v.ok) {
         setVoiceMsg(v.error);
@@ -4251,7 +4731,7 @@ function ChatPanelStub({
         );
       }
     },
-    [scopeKey]
+    [scopeKey, pendingAttachments.length]
   );
 
   // Paperclip → OS file picker.
@@ -4334,6 +4814,8 @@ function ChatPanelStub({
       return;
     }
     recorderStreamRef.current = stream;
+    // Feed the live voicegram from the same stream the recorder uses.
+    startWaveAnalysis(stream);
 
     // MediaRecorder MIME pick — Chrome/Firefox produce webm/opus,
     // Safari produces audio/mp4. Probe in priority order; let the
@@ -4368,7 +4850,13 @@ function ChatPanelStub({
       recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
       recorderStreamRef.current = null;
       recorderRef.current = null;
+      stopWaveAnalysis();
       setRecState("idle");
+      // Cancelled from the recording bar — drop the audio entirely.
+      if (recDiscardRef.current) {
+        recDiscardRef.current = false;
+        return;
+      }
       // Save to IDB as a normal file. mimeToExt-style suffix derived
       // from the recorder's actual MIME so download names stay sensible.
       const t = rec.mimeType || "audio/webm";
@@ -4396,11 +4884,12 @@ function ChatPanelStub({
       recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
       recorderStreamRef.current = null;
       recorderRef.current = null;
+      stopWaveAnalysis();
     };
     recorderRef.current = rec;
     setRecState("recording");
     rec.start();
-  }, [recState]);
+  }, [recState, startWaveAnalysis, stopWaveAnalysis]);
 
   const stopStubRecording = useCallback(() => {
     const r = recorderRef.current;
@@ -4415,9 +4904,18 @@ function ChatPanelStub({
     }
   }, []);
 
+  // Trash button on the recording bar — discard instead of staging.
+  const cancelStubRecording = useCallback(() => {
+    recDiscardRef.current = true;
+    stopStubRecording();
+  }, [stopStubRecording]);
+
   // Tear-down on unmount so an abandoned mic stream doesn't keep listening.
   useEffect(
     () => () => {
+      // Kill the dictation keep-alive FIRST or the abort's onend would
+      // immediately restart recognition on a dead component.
+      transcribeKeepAliveRef.current = false;
       try {
         recognitionRef.current?.abort();
       } catch {
@@ -4429,6 +4927,8 @@ function ChatPanelStub({
         /* noop */
       }
       recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
+      if (waveRafRef.current != null) cancelAnimationFrame(waveRafRef.current);
+      void waveCtxRef.current?.close().catch(() => {});
     },
     []
   );
@@ -4597,70 +5097,21 @@ function ChatPanelStub({
           />
         </div>
       )}
-      {/* Header — engineer-chat style. Collapsed rail shows just the
-          expand toggle so the customer can recover the panel. */}
+      {/* Header — revamped layout:
+            [collapse] Chat ……………………………………… [green status dot]
+                       {project ⌄ switcher — smaller than the title}
+          The chat icon only exists on the COLLAPSED rail (it doubles as
+          the expand button there); expanded mode drops the avatar circle
+          entirely so the row reads clean. */}
       <div
-        className="flex shrink-0 items-center gap-2 border-b px-3 py-2.5"
+        className="flex shrink-0 items-center gap-2 border-b px-2.5 py-2.5"
         style={{ borderColor: "var(--border)" }}
       >
-        {!sidebarCollapsed && (
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            <div
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold"
-              style={{
-                // Live sessions get a green-tinted avatar; otherwise the
-                // muted surface-raised. Matches the "live now" subtitle
-                // color so the header reads as one element.
-                backgroundColor: isLiveish
-                  ? BRAND_GREEN_SOFT
-                  : "var(--surface-raised)",
-                color: isLiveish ? BRAND_GREEN : "var(--text-muted)",
-              }}
-            >
-              {/* Show the engineer's initial when we have a name + are
-                  live-ish; otherwise the generic chat icon. */}
-              {engineerName && (isLiveish || isEndedish) ? (
-                engineerName[0].toUpperCase()
-              ) : (
-                <MessageSquare size={14} />
-              )}
-            </div>
-            <div className="flex min-w-0 flex-col">
-              <span
-                className="truncate text-[13px] font-medium"
-                style={{ color: "var(--text)" }}
-              >
-                {headerTitle}
-              </span>
-              <span
-                className="inline-flex items-center gap-1 truncate text-[10px]"
-                style={{ color: isLiveish ? BRAND_GREEN : "var(--text-muted)" }}
-              >
-                {isLiveish && (
-                  <span
-                    aria-hidden
-                    className="relative inline-flex h-1.5 w-1.5"
-                  >
-                    <span
-                      className="absolute inset-0 inline-flex animate-ping rounded-full opacity-60"
-                      style={{ backgroundColor: BRAND_GREEN }}
-                    />
-                    <span
-                      className="relative h-1.5 w-1.5 rounded-full"
-                      style={{ backgroundColor: BRAND_GREEN }}
-                    />
-                  </span>
-                )}
-                {headerSubtitle}
-              </span>
-            </div>
-          </div>
-        )}
         <button
           type="button"
           onClick={onToggleCollapsed}
           className={cn(
-            "flex h-7 w-7 items-center justify-center rounded-md opacity-70 transition-opacity hover:opacity-100",
+            "flex h-7 w-7 shrink-0 items-center justify-center rounded-md opacity-70 transition-opacity hover:opacity-100",
             sidebarCollapsed && "mx-auto"
           )}
           style={{ color: "var(--text-muted)" }}
@@ -4670,13 +5121,155 @@ function ChatPanelStub({
           title={sidebarCollapsed ? "Expand" : "Collapse"}
         >
           {sidebarCollapsed ? (
-            // Collapsed: show a chat icon so the standalone button reads as
+            // Collapsed: the chat icon IS the affordance — reads as
             // "open the chat" rather than a generic panel-expand glyph.
             <MessageSquare size={14} />
           ) : (
             <PanelRightClose size={14} />
           )}
         </button>
+        {!sidebarCollapsed && (
+          <>
+            <div className="flex min-w-0 flex-1 flex-col">
+              <span
+                className="truncate text-[13px] font-semibold"
+                style={{ color: "var(--text)" }}
+              >
+                {headerTitle}
+              </span>
+              {showProjectPicker ? (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setProjMenuOpen((o) => !o);
+                    }}
+                    aria-expanded={projMenuOpen}
+                    aria-label="Switch project"
+                    className="flex max-w-full items-center gap-1 text-[10.5px] transition-opacity hover:opacity-80"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    <span className="truncate">{currentProjectName}</span>
+                    <ChevronDown
+                      size={10}
+                      className="shrink-0"
+                      style={{
+                        transform: projMenuOpen ? "rotate(180deg)" : "none",
+                        transition: "transform 0.15s ease",
+                      }}
+                    />
+                  </button>
+                  {projMenuOpen && (
+                    <div
+                      className="absolute top-full left-0 z-30 mt-1.5 max-h-64 w-52 overflow-y-auto rounded-lg border py-1 shadow-lg"
+                      style={{
+                        borderColor: "var(--border)",
+                        backgroundColor: "var(--surface)",
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProjMenuOpen(false);
+                          onSelectProject?.(null);
+                        }}
+                        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.05]"
+                        style={{
+                          color:
+                            scopeKey === "general"
+                              ? BRAND_GREEN
+                              : "var(--text)",
+                        }}
+                      >
+                        <span className="min-w-0 flex-1 truncate">
+                          General
+                        </span>
+                        {scopeKey === "general" && (
+                          <Check size={12} className="shrink-0" />
+                        )}
+                      </button>
+                      {(projects ?? []).map((p) => {
+                        const active = p.id === scopeKey;
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => {
+                              setProjMenuOpen(false);
+                              if (!active) onSelectProject?.(p.id);
+                            }}
+                            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.05]"
+                            style={{
+                              color: active ? BRAND_GREEN : "var(--text)",
+                            }}
+                          >
+                            <span className="min-w-0 flex-1 truncate">
+                              {p.name}
+                            </span>
+                            {active && <Check size={12} className="shrink-0" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <span
+                  className="inline-flex items-center gap-1 truncate text-[10px]"
+                  style={{
+                    color: isLiveish ? BRAND_GREEN : "var(--text-muted)",
+                  }}
+                >
+                  {headerSubtitle}
+                </span>
+              )}
+            </div>
+            {/* Status dot — pulses while a call is live. Pre-session, when
+                the parent wired onStartCall, it's the CALL button: tap to
+                ring an engineer in the current scope. */}
+            {onStartCall && !isLiveish && !isEndedish ? (
+              <button
+                type="button"
+                onClick={onStartCall}
+                aria-label="Start a call"
+                title="Start a call with an engineer"
+                className="group/call relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full border transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                style={{ borderColor: "var(--border)" }}
+              >
+                <span
+                  className="relative h-2.5 w-2.5 rounded-full transition-transform group-hover/call:scale-125"
+                  style={{
+                    backgroundColor: BRAND_GREEN,
+                    animation: "relay-pulse-ok 1.8s ease-in-out infinite",
+                  }}
+                />
+              </button>
+            ) : (
+              <span
+                aria-hidden
+                title={isLiveish ? "Live now" : "Relay ready"}
+                className="relative flex h-7 w-7 shrink-0 items-center justify-center"
+              >
+                {isLiveish && (
+                  <span
+                    className="absolute h-2.5 w-2.5 animate-ping rounded-full opacity-50"
+                    style={{ backgroundColor: BRAND_GREEN }}
+                  />
+                )}
+                <span
+                  className="relative h-2.5 w-2.5 rounded-full"
+                  style={{
+                    backgroundColor: BRAND_GREEN,
+                    animation: isLiveish
+                      ? undefined
+                      : "relay-pulse-ok 1.8s ease-in-out infinite",
+                  }}
+                />
+              </span>
+            )}
+          </>
+        )}
       </div>
 
       {!sidebarCollapsed && (
@@ -4779,31 +5372,6 @@ function ChatPanelStub({
               content) by living outside the scroll div. Auto-dismisses
               after the timer; after that the bubble can still be
               deleted via its kebab menu — undo just becomes implicit. */}
-            {/* Attachment-only send confirmation — the file tray is already
-                queued for delivery, so Send just acknowledges. */}
-            {queuedNotice && !undoableId && (
-              <div
-                className="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center px-4"
-                style={{ animation: "relay-toast-in 200ms ease-out" }}
-              >
-                <div
-                  className="pointer-events-auto flex items-center gap-2 rounded-full border px-4 py-2"
-                  style={{
-                    borderColor: "var(--border)",
-                    backgroundColor: "var(--surface)",
-                    boxShadow: "0 10px 28px rgba(0,0,0,0.35)",
-                  }}
-                >
-                  <Check size={12} style={{ color: BRAND_GREEN }} />
-                  <span
-                    className="text-[12px]"
-                    style={{ color: "var(--text)" }}
-                  >
-                    Files queued — delivered when your engineer joins
-                  </span>
-                </div>
-              </div>
-            )}
             {undoableId && (
               <div
                 className="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center px-4"
@@ -4933,23 +5501,22 @@ function ChatPanelStub({
                   style={{ color: "var(--text)" }}
                 />
 
-                {/* Pending-attachments tray — files + voice recordings staged
-                  via the paperclip / record buttons. Sits between the
-                  textarea and the button row so it's clearly part of
-                  the same draft. Each chip has a remove-X. The whole
-                  block disappears when the queue empties. Per-row icon
-                  is keyed off the chatAttachments kind classification
-                  (image/document/audio). */}
-                {stubAttachments.length > 0 && (
+                {/* Pending-attachments tray — files + voice recordings
+                  picked but not yet SENT. Hitting Send moves them into a
+                  draft bubble in the timeline (so the customer sees them
+                  in the chat); the IDB delivery queue is untouched either
+                  way. Caps at MAX_FILES_PER_MESSAGE per send. */}
+                {pendingAttachments.length > 0 && (
                   <div className="mt-2 flex flex-col gap-1.5">
                     <div
                       className="text-[10px] font-semibold tracking-wider uppercase"
                       style={{ color: "var(--text-muted)" }}
                     >
-                      Will be delivered when your engineer joins
+                      Ready to send · {pendingAttachments.length}/
+                      {MAX_FILES_PER_MESSAGE}
                     </div>
                     <ul className="flex flex-col gap-1">
-                      {stubAttachments.map((a) => {
+                      {pendingAttachments.map((a) => {
                         const Icon =
                           a.kind === "audio"
                             ? Music
@@ -5004,29 +5571,73 @@ function ChatPanelStub({
                   </div>
                 )}
 
-                {/* voiceMsg renders ONCE in the pre-existing toast above
-                  the composer (see ~3191 — dismissable, sits above the
-                  textarea). We don't re-render it here. The record-state
-                  pulse below is a transient "currently recording" tell
-                  that's separate from error state. */}
-                {recState === "recording" && (
-                  <p
-                    className="mt-2 inline-flex items-center gap-1 text-[11px]"
-                    style={{ color: BRAND_GREEN }}
-                  >
-                    <span className="relative inline-flex h-1.5 w-1.5">
+                {/* While recording, the whole action row swaps for a
+                  WhatsApp-style recording bar: trash to discard, pulsing
+                  red dot + elapsed clock, an animated waveform, and a
+                  green check to finish (stages the voice note into the
+                  Ready-to-send tray). */}
+                {recState === "recording" ? (
+                  <div className="mt-2 flex items-center gap-2.5">
+                    <button
+                      type="button"
+                      onClick={cancelStubRecording}
+                      aria-label="Discard recording"
+                      title="Discard recording"
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                      style={{
+                        color: "var(--accent-red)",
+                        border: "1px solid var(--border)",
+                      }}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                    <span className="relative inline-flex h-2 w-2 shrink-0">
                       <span
                         className="absolute inset-0 inline-flex animate-ping rounded-full opacity-60"
-                        style={{ backgroundColor: BRAND_GREEN }}
+                        style={{ backgroundColor: "var(--accent-red)" }}
                       />
                       <span
-                        className="relative h-1.5 w-1.5 rounded-full"
-                        style={{ backgroundColor: BRAND_GREEN }}
+                        className="relative h-2 w-2 rounded-full"
+                        style={{ backgroundColor: "var(--accent-red)" }}
                       />
                     </span>
-                    Recording — tap mic again to finish.
-                  </p>
-                )}
+                    <span
+                      className="shrink-0 text-[12px] font-medium tabular-nums"
+                      style={{ color: "var(--text)" }}
+                    >
+                      {Math.floor(recSecs / 60)}:
+                      {String(recSecs % 60).padStart(2, "0")}
+                    </span>
+                    {/* LIVE voicegram — bar heights are the actual mic RMS
+                        levels sampled ~20×/s (startWaveAnalysis), scrolling
+                        right-to-left. Silence = flat dots, speech = dancing
+                        bars, exactly the WhatsApp tell that the mic hears
+                        you. */}
+                    <div className="flex h-7 min-w-0 flex-1 items-center justify-center gap-[3px] overflow-hidden">
+                      {waveLevels.map((lvl, i) => (
+                        <span
+                          key={i}
+                          className="w-[2.5px] shrink-0 rounded-full transition-[height] duration-75"
+                          style={{
+                            height: `${4 + lvl * 20}px`,
+                            backgroundColor: BRAND_GREEN,
+                            opacity: 0.45 + lvl * 0.55,
+                          }}
+                        />
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={stopStubRecording}
+                      aria-label="Finish recording"
+                      title="Finish — adds the voice note to your message"
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-opacity hover:opacity-90"
+                      style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+                    >
+                      <Check size={15} />
+                    </button>
+                  </div>
+                ) : (
                 <div className="mt-2 flex items-center gap-1">
                   {/* Paperclip — picks files into the IDB-backed staging
                     queue. They sit there until a session goes live; the
@@ -5054,9 +5665,10 @@ function ChatPanelStub({
                   >
                     <Paperclip size={14} />
                   </button>
-                  {/* Voice-to-text dictation — works locally without a
-                    session (Web Speech API in-browser), so this DOES
-                    function in the stub. Click to start/stop. */}
+                  {/* Voice-to-text dictation — an explicit TOGGLE, off by
+                    default. While ON the button goes solid green with a
+                    pulsing halo and a "Listening" pill appears, so it's
+                    never ambiguous whether the mic is capturing. */}
                   <button
                     type="button"
                     onClick={
@@ -5065,67 +5677,82 @@ function ChatPanelStub({
                         : () => void startTranscribe()
                     }
                     aria-label="Dictate"
+                    aria-pressed={voiceMode === "transcribing"}
                     title={
                       voiceMode === "transcribing"
-                        ? "Stop dictating"
+                        ? "Mic is ON — tap to stop"
                         : "Dictate — voice to text"
                     }
                     className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors"
                     style={{
                       color:
                         voiceMode === "transcribing"
-                          ? BRAND_GREEN
+                          ? "#fff"
                           : "var(--text-muted)",
                       backgroundColor:
                         voiceMode === "transcribing"
-                          ? "color-mix(in srgb, var(--primary) 14%, transparent)"
+                          ? BRAND_GREEN
                           : "transparent",
                       border: "1px solid var(--border)",
+                      animation:
+                        voiceMode === "transcribing"
+                          ? "relay-pulse-ok 1.6s ease-in-out infinite"
+                          : undefined,
                     }}
                   >
-                    <Mic size={14} />
+                    <Mic
+                      size={14}
+                      className={
+                        voiceMode === "transcribing"
+                          ? "animate-pulse"
+                          : undefined
+                      }
+                    />
                   </button>
+                  {voiceMode === "transcribing" && (
+                    <span
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium"
+                      style={{
+                        backgroundColor: BRAND_GREEN_SOFT,
+                        color: BRAND_GREEN,
+                      }}
+                    >
+                      <span className="relative inline-flex h-1.5 w-1.5">
+                        <span
+                          className="absolute inset-0 animate-ping rounded-full opacity-60"
+                          style={{ backgroundColor: BRAND_GREEN }}
+                        />
+                        <span
+                          className="relative h-1.5 w-1.5 rounded-full"
+                          style={{ backgroundColor: BRAND_GREEN }}
+                        />
+                      </span>
+                      Listening…
+                    </span>
+                  )}
                   {/* Voice-recording — MediaRecorder writes the blob to
-                    IDB. Same flush path as paperclip-staged files. */}
+                    IDB. Same flush path as paperclip-staged files. While
+                    recording, this whole row is replaced by the recording
+                    bar above, so this button only ever starts. */}
                   <button
                     type="button"
-                    onClick={
-                      recState === "recording"
-                        ? stopStubRecording
-                        : () => void startStubRecording()
-                    }
-                    aria-label={
-                      recState === "recording"
-                        ? "Stop recording"
-                        : "Record voice message"
-                    }
-                    title={
-                      recState === "recording"
-                        ? "Tap to finish recording"
-                        : "Record a voice message — it'll be delivered when your engineer joins."
-                    }
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors"
+                    onClick={() => void startStubRecording()}
+                    aria-label="Record voice message"
+                    title="Record a voice message — it'll be delivered when your engineer joins."
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/5"
                     style={{
-                      color:
-                        recState === "recording" ? "#fff" : "var(--text-muted)",
-                      backgroundColor:
-                        recState === "recording" ? BRAND_GREEN : "transparent",
+                      color: "var(--text-muted)",
                       border: "1px solid var(--border)",
                     }}
                   >
-                    <AudioLines
-                      size={14}
-                      className={
-                        recState === "recording" ? "animate-pulse" : undefined
-                      }
-                    />
+                    <AudioLines size={14} />
                   </button>
                   <div className="flex-1" />
                   <button
                     type="button"
                     onClick={handleSendDraft}
                     disabled={
-                      !draftText.trim() && stubAttachments.length === 0
+                      !draftText.trim() && pendingAttachments.length === 0
                     }
                     aria-label="Send"
                     className="flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
@@ -5138,6 +5765,7 @@ function ChatPanelStub({
                     Send
                   </button>
                 </div>
+                )}
               </div>
             </div>
           )}
@@ -6268,6 +6896,7 @@ const Sidebar = memo(function Sidebar({
   onMarkProjectComplete,
   onPickerToast,
   onOpenCenter,
+  connectRequest,
 }: {
   email: string;
   customerUserId: string | null;
@@ -6375,6 +7004,12 @@ const Sidebar = memo(function Sidebar({
   /** Open a full center-pane view (Projects / Scheduled / Contracts) in the
    *  room's main area. Used by the "All projects" footer + the bottom pills. */
   onOpenCenter: (view: "projects" | "scheduled" | "contracts") => void;
+  /** "Connect to a Relay engineer" requests fired from OUTSIDE the sidebar
+   *  (the chat rail's green dot, mobile sheet). projectId set → route into
+   *  the same warm/cold flow as the per-project phone button (engineer
+   *  picker when the project has history, direct ring otherwise);
+   *  projectId null → open the pick-project step first. nonce dedupes. */
+  connectRequest: { projectId: string | null; nonce: number } | null;
 }) {
   // Sidebar starts EXPANDED by default (Order 1 of the Commander brief —
   // Projects expanded, every action labelled, no mystery icons). User can
@@ -6519,6 +7154,35 @@ const Sidebar = memo(function Sidebar({
   const [pickerPresence, setPickerPresence] = useState<
     Record<string, "available" | "busy" | "offline">
   >({});
+
+  // Green-dot "connect to a Relay engineer" requests from outside the
+  // sidebar. Mirrors the per-project phone-button routing exactly:
+  //   project picked + has engineer history → engineerPicker step
+  //   project picked, no history            → direct skill-match ring
+  //   no project                            → pick-project flow first
+  const lastConnectNonceRef = useRef<number>(0);
+  useEffect(() => {
+    if (!connectRequest || connectRequest.nonce === lastConnectNonceRef.current)
+      return;
+    lastConnectNonceRef.current = connectRequest.nonce;
+    const projectId = connectRequest.projectId;
+    if (!projectId) {
+      setConnectFlowMode("connect");
+      setConnectFlow("choose");
+      return;
+    }
+    const distinctEngineers = new Set<string>();
+    for (const s of past) {
+      if (s.projectId === projectId && s.agent) distinctEngineers.add(s.agent);
+    }
+    if (distinctEngineers.size >= 1) {
+      setPickerProjectId(projectId);
+      setConnectFlow("engineerPicker");
+    } else {
+      onStartInProject(projectId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectRequest]);
 
   // Distinct engineers for the picker (most-recent first), carrying each
   // engineer's user_id so Connect can ring exactly that engineer. engineerId
@@ -8801,7 +9465,11 @@ function EngineerPickerRow({
         {engineerName[0]}
       </div>
 
-      {/* Name + status */}
+      {/* Name + status — ONE non-wrapping meta line. The old layout let
+          "Available now · last Jun 4" wrap mid-word in narrow modals
+          ("Available / now · last Jun / 4"), which read as clutter.
+          whitespace-nowrap + truncate keeps it a clean single line that
+          ellipsizes when space runs out; title carries the full text. */}
       <div className="min-w-0 flex-1">
         <div
           className="truncate text-[13px] font-medium"
@@ -8810,10 +9478,11 @@ function EngineerPickerRow({
           {engineerName}
         </div>
         <div
-          className="flex items-center gap-1.5 text-[11px]"
+          className="flex min-w-0 items-center gap-1.5 text-[11px] whitespace-nowrap"
           style={{ color: "var(--text-muted)" }}
+          title={`${stateMeta.label} · Last session ${lastDate}`}
         >
-          <span className="relative inline-flex h-1.5 w-1.5">
+          <span className="relative inline-flex h-1.5 w-1.5 shrink-0">
             {stateMeta.ring && (
               <span
                 className="absolute inset-0 inline-flex animate-ping rounded-full opacity-60"
@@ -8825,8 +9494,10 @@ function EngineerPickerRow({
               style={{ backgroundColor: stateMeta.dot as string }}
             />
           </span>
-          {stateMeta.label}
-          <span style={{ opacity: 0.6 }}> · last {lastDate}</span>
+          <span className="truncate">
+            {stateMeta.label}
+            <span style={{ opacity: 0.6 }}> · {lastDate}</span>
+          </span>
         </div>
       </div>
 

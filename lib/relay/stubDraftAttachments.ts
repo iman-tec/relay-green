@@ -153,6 +153,29 @@ export async function listAttachments(scope: string): Promise<StubAttachmentMeta
     .map(({ blob: _b, ...meta }) => { void _b; return meta; });
 }
 
+/**
+ * Read one attachment's Blob by id — used by the stub chat's draft
+ * bubbles to preview images and play voice notes before delivery.
+ * Returns null when the row is gone (already flushed / removed).
+ */
+export async function getAttachmentBlob(id: string): Promise<Blob | null> {
+  let db: IDBDatabase;
+  try {
+    db = await openDb();
+  } catch {
+    return null;
+  }
+  const item = await new Promise<StubAttachment | undefined>(
+    (resolve, reject) => {
+      const req = tx(db, "readonly").get(id);
+      req.onsuccess = () => resolve(req.result as StubAttachment | undefined);
+      req.onerror = () => reject(req.error ?? new Error("IDB get failed"));
+    },
+  ).catch(() => undefined);
+  db.close();
+  return item?.blob ?? null;
+}
+
 export async function removeAttachment(id: string): Promise<void> {
   const db = await openDb();
   await new Promise<void>((resolve, reject) => {

@@ -43,6 +43,7 @@ type SpeechRecognitionInstance = {
   lang: string;
   continuous: boolean;
   interimResults: boolean;
+  maxAlternatives: number;
   start: () => void;
   stop: () => void;
   abort: () => void;
@@ -176,6 +177,10 @@ export function ChatComposer({
   // Snapshot of the text value BEFORE we start transcribing so the live
   // transcript appends after the existing draft instead of replacing it.
   const transcribeBaseRef = useRef<string>("");
+  // True while the user WANTS dictation running — drives the onend
+  // keep-alive restart (Chrome self-terminates recognition after short
+  // silences; see startTranscribing).
+  const transcribeKeepAliveRef = useRef(false);
 
   const fileDocsRef = useRef<HTMLInputElement>(null);
   const filePicsRef = useRef<HTMLInputElement>(null);
@@ -275,68 +280,106 @@ export function ChatComposer({
       }
     }
 
-    let r: SpeechRecognitionInstance;
-    try {
-      r = new Ctor();
-    } catch {
-      setVoiceMsg("Couldn't start voice recognition.");
-      return;
-    }
-
     transcribeBaseRef.current = text; // append, don't overwrite
-    r.lang = navigator.language || "en-US";
-    r.continuous = true;
-    r.interimResults = true;
+    // KEEP-ALIVE LOOP. Chrome's SpeechRecognition self-terminates after a
+    // short silence window (~5-8s); without restarting it, dictation died
+    // mid-thought and the mic looked broken. While this flag is set every
+    // onend spins up a fresh session; the finished session's finals get
+    // folded into the base text so the next session APPENDS.
+    transcribeKeepAliveRef.current = true;
 
-    r.onresult = (event) => {
-      let finalText = "";
-      let interim = "";
-      for (let i = 0; i < event.results.length; i++) {
-        const res = event.results[i];
-        if (res.isFinal) finalText += res[0].transcript;
-        else interim += res[0].transcript;
-      }
-      // Combine: base draft + final phrases + the still-changing interim.
-      const composed = [transcribeBaseRef.current, finalText, interim]
-        .filter(Boolean)
-        .join(" ")
-        .replace(/\s+/g, " ")
-        .trim();
-      setText(composed);
-    };
-    r.onerror = (event) => {
-      // Quiet cases: "no-speech" fires when the user didn't say anything
-      // in a window, "aborted" is normal teardown. Neither is a real
-      // error to surface.
-      if (event.error === "no-speech" || event.error === "aborted") {
+    const startSession = () => {
+      const r: SpeechRecognitionInstance = new Ctor();
+      r.lang = navigator.language || "en-US";
+      r.continuous = true;
+      r.interimResults = true;
+      r.maxAlternatives = 1; // single hypothesis — fastest interim updates
+      let sessionFinal = "";
+
+      r.onresult = (event) => {
+        let finalText = "";
+        let interim = "";
+        for (let i = 0; i < event.results.length; i++) {
+          const res = event.results[i];
+          if (res.isFinal) finalText += res[0].transcript;
+          else interim += res[0].transcript;
+        }
+        sessionFinal = finalText;
+        // Combine: base draft + final phrases + the still-changing interim.
+        const composed = [transcribeBaseRef.current, finalText, interim]
+          .filter(Boolean)
+          .join(" ")
+          .replace(/\s+/g, " ")
+          .trim();
+        setText(composed);
+      };
+      r.onerror = (event) => {
+        // Quiet cases: "no-speech" fires when the user didn't say anything
+        // in a window, "aborted" is normal teardown. The keep-alive in
+        // onend rides through both. Real errors stop the loop with an
+        // actionable message ("not-allowed" → how to fix it).
+        if (event.error === "no-speech" || event.error === "aborted") return;
+        setVoiceMsg(speechRecognitionErrorMessage(event.error));
+        transcribeKeepAliveRef.current = false;
+      };
+      r.onend = () => {
+        // Bank this session's finals before any restart — nothing lost,
+        // nothing duplicated.
+        if (sessionFinal.trim()) {
+          transcribeBaseRef.current = [transcribeBaseRef.current, sessionFinal]
+            .filter(Boolean)
+            .join(" ")
+            .replace(/\s+/g, " ")
+            .trim();
+        }
+        if (transcribeKeepAliveRef.current) {
+          // Restart FAST — idle ms between sessions is dead air where
+          // spoken words get dropped. 50ms dodges InvalidStateError on
+          // back-to-back start(); one retry at 250ms before giving up.
+          const restart = (delay: number, retriesLeft: number) => {
+            window.setTimeout(() => {
+              if (!transcribeKeepAliveRef.current) {
+                setVoiceMode("idle");
+                recognitionRef.current = null;
+                return;
+              }
+              try {
+                startSession();
+              } catch {
+                if (retriesLeft > 0) {
+                  restart(250, retriesLeft - 1);
+                } else {
+                  setVoiceMode("idle");
+                  recognitionRef.current = null;
+                }
+              }
+            }, delay);
+          };
+          restart(50, 1);
+          return;
+        }
         setVoiceMode("idle");
-        return;
-      }
-      // Translate the raw SpeechRecognitionErrorEvent.error codes into
-      // actionable messages. The default browser strings ("not-allowed")
-      // mean nothing to a customer — they need to know HOW to fix it.
-      setVoiceMsg(speechRecognitionErrorMessage(event.error));
-      setVoiceMode("idle");
-    };
-    r.onend = () => {
-      // The API auto-stops after silence; we honour that by leaving
-      // voiceMode === "idle" so the next tap can restart cleanly.
-      setVoiceMode("idle");
-      recognitionRef.current = null;
+        recognitionRef.current = null;
+      };
+      recognitionRef.current = r;
+      r.start();
     };
 
-    recognitionRef.current = r;
     setVoiceMode("transcribing");
-    try { r.start(); } catch (e) {
+    try {
+      startSession();
+    } catch {
       // start() throws if called too quickly back-to-back. Recover by
       // resetting and letting the user tap again.
       setVoiceMsg("Voice recognition couldn't start — try again in a moment.");
       setVoiceMode("idle");
       recognitionRef.current = null;
+      transcribeKeepAliveRef.current = false;
     }
   }, [disabled, voiceMode, text]);
 
   const stopTranscribing = useCallback(() => {
+    transcribeKeepAliveRef.current = false;
     const r = recognitionRef.current;
     if (!r) {
       setVoiceMode("idle");
@@ -459,6 +502,9 @@ export function ChatComposer({
   // Clean up on unmount so a navigation doesn't leave a hot mic stream.
   useEffect(() => {
     return () => {
+      // Kill the dictation keep-alive FIRST or abort's onend would restart
+      // recognition on a dead component.
+      transcribeKeepAliveRef.current = false;
       try { recognitionRef.current?.abort(); } catch { /* noop */ }
       try { recorderRef.current?.stop(); } catch { /* noop */ }
       recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -482,6 +528,13 @@ export function ChatComposer({
 
   const handleSend = async () => {
     if (busy || disabled) return;
+    // Sending turns the mic OFF — dictation shouldn't keep capturing in
+    // the background after the thought is sent. Interim words are already
+    // in `text`, so nothing said is lost.
+    if (transcribeKeepAliveRef.current || recognitionRef.current) {
+      transcribeKeepAliveRef.current = false;
+      try { recognitionRef.current?.stop(); } catch { /* noop */ }
+    }
     const trimmed = text.trim();
     if (!trimmed && staged.length === 0) return;
     setBusy(true);
