@@ -9,6 +9,7 @@
 
 import { useEffect, useState } from "react";
 import { Drawer } from "@/app/_components/admin-v2/Drawer";
+import { BRAND_GREEN } from "../_kit";
 
 export function RefillDepartmentDrawer({
   open,
@@ -109,9 +110,9 @@ export function RefillDepartmentDrawer({
         <p
           className="mt-3 rounded-md border px-3 py-2 text-xs"
           style={{
-            borderColor: "color-mix(in srgb, var(--primary) 30%, transparent)",
-            background:  "color-mix(in srgb, var(--primary) 8%, transparent)",
-            color:       "var(--primary)",
+            borderColor: "color-mix(in srgb, var(--risk) 30%, transparent)",
+            background:  "color-mix(in srgb, var(--risk) 8%, transparent)",
+            color:       "var(--risk)",
           }}
         >
           {error}
@@ -127,8 +128,8 @@ function PrimaryBtn({ onClick, disabled, children }: {
   return (
     <button
       type="button" onClick={onClick} disabled={disabled}
-      className="rounded-md px-3 py-2 text-sm font-medium transition-opacity disabled:opacity-50"
-      style={{ background: "var(--primary)", color: "#fff" }}
+      className="rounded-md px-3 py-2 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-50"
+      style={{ background: BRAND_GREEN, color: "#fff" }}
     >
       {children}
     </button>

@@ -8,7 +8,7 @@
 
 import { WalletTab } from "./WalletTab";
 import { BillingTab } from "./BillingTab";
-import { TabBody } from "./_shared";
+import { TabBody } from "./_kit";
 
 export function BillingWalletTab() {
   return (

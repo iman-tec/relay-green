@@ -45,6 +45,22 @@ export async function DELETE(_request: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: "User belongs to a different organization." }, { status: 409 });
   }
 
+  // Return the user's unused minutes to the dept pool BEFORE detaching —
+  // once department_id is cleared the pool can't be resolved and the
+  // remainder would be stranded on a plain-client profile (see
+  // 20260604120000_current_grant_ledger.sql).
+  //
+  // PGRST202 = the RPC isn't deployed yet (migration not applied). Fall
+  // back to the legacy detach-without-refund rather than blocking the
+  // action; the migration's backfill repairs the stranded remainder later.
+  const { error: relErr } = await admin.rpc("release_employee_minutes", { _profile_id: empId });
+  if (relErr) {
+    const missing = (relErr as { code?: string }).code === "PGRST202"
+      || relErr.message.includes("Could not find the function");
+    if (!missing) return NextResponse.json({ error: relErr.message }, { status: 400 });
+    console.warn("[enterprise/detach] release_employee_minutes missing — apply 20260604120000_current_grant_ledger.sql");
+  }
+
   const { error: profErr } = await admin
     .from("profiles").update({ department_id: null, client_type: "client" }).eq("id", empId);
   if (profErr) return NextResponse.json({ error: profErr.message }, { status: 400 });

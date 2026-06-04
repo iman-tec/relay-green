@@ -19,7 +19,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, Power, PowerOff, Coins, Pencil, Upload } from "lucide-react";
 import { DetailCard } from "@/app/_components/admin-v2/DetailCard";
 import { EditNameDrawer } from "@/app/_components/admin-v2/EditNameDrawer";
-import { Button } from "@/app/_components/ui";
+import { TabBody, PrimaryButton, OutlineButton } from "@/app/(staff)/enterprise/v2/_kit";
 import { InviteFlow } from "@/app/_components/invite/InviteFlow";
 import { InviteStatusTable } from "@/app/_components/invite/InviteStatusTable";
 import { AddEmployeeDrawer } from "./_drawers/AddEmployeeDrawer";
@@ -88,12 +88,13 @@ export function EmployeesTab() {
   useEffect(() => { refresh(); }, [refresh]);
 
   const empTotals = useMemo(() => {
-    let used = 0, allocated = 0;
+    let used = 0, allocated = 0, remaining = 0;
     for (const e of employees) {
       used      += e.usedMinutes;
       allocated += e.allocatedMinutes;
+      remaining += e.remainingMinutes;
     }
-    return { used, allocated };
+    return { used, allocated, remaining };
   }, [employees]);
 
   const toggleStatus = async (empId: string, currentlyActive: boolean) => {
@@ -118,7 +119,7 @@ export function EmployeesTab() {
   }
   if (error) {
     return (
-      <p className="px-6 py-12 text-center text-xs" style={{ color: "var(--primary)" }}>
+      <p className="px-6 py-12 text-center text-xs" style={{ color: "var(--risk)" }}>
         {error}
       </p>
     );
@@ -126,8 +127,8 @@ export function EmployeesTab() {
   if (!dept) return null;
 
   return (
-    <div className="h-full overflow-y-auto p-6">
-      <div className="mx-auto flex max-w-5xl flex-col gap-6">
+    <TabBody>
+      <div className="flex flex-col gap-4">
         <DetailCard
           title={dept.name}
           code={dept.departmentCode}
@@ -138,15 +139,20 @@ export function EmployeesTab() {
           }]}
           minutes={{ used: dept.usedMinutes, allocated: dept.allocatedMinutes }}
           rollupCaption={(() => {
+            // Every figure comes from the same DB ledger the refill RPC
+            // validates against. "held" = Σ employee remaining_minutes
+            // (what employees currently hold) — NOT Σ allocated_minutes,
+            // which is a lifetime-granted counter that never decrements:
+            // deactivating an employee refunds their unused minutes to the
+            // dept pool but leaves their allocated_minutes untouched, so a
+            // Σ-allocated "distributed/remaining" drifts from the real pool.
             if (employees.length === 0) {
-              return `${dept.allocatedMinutes.toLocaleString()} min in pool · 0 employees yet · ${dept.usedMinutes.toLocaleString()} used`;
+              return `${dept.remainingMinutes.toLocaleString()} min in pool · 0 employees yet · ${dept.usedMinutes.toLocaleString()} used`;
             }
-            const dist = empTotals.allocated;
-            const remaining = Math.max(0, dept.allocatedMinutes - dist);
             return (
               `${dept.allocatedMinutes.toLocaleString()} allocated · ` +
-              `${dist.toLocaleString()} distributed to ${employees.length} employee${employees.length === 1 ? "" : "s"} · ` +
-              `${remaining.toLocaleString()} remaining · ` +
+              `${empTotals.remaining.toLocaleString()} held by ${employees.length} employee${employees.length === 1 ? "" : "s"} · ` +
+              `${dept.remainingMinutes.toLocaleString()} in pool · ` +
               `${dept.usedMinutes.toLocaleString()} used`
             );
           })()}
@@ -164,8 +170,10 @@ export function EmployeesTab() {
 
         <section className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="font-serif text-lg font-medium" style={{ color: "var(--text)" }}>Invitations</h2>
-            <Button variant="secondary" iconLeft={<Upload size={15} />} onClick={() => setBulkOpen(true)}>Bulk add (CSV)</Button>
+            <h2 className="text-[12px] font-semibold tracking-[0.08em] uppercase" style={{ color: "var(--text)" }}>
+              Invitations
+            </h2>
+            <OutlineButton size="sm" icon={<Upload size={12} />} onClick={() => setBulkOpen(true)}>Bulk add (CSV)</OutlineButton>
           </div>
           <InviteStatusTable reloadKey={inviteKey} />
         </section>
@@ -210,7 +218,7 @@ export function EmployeesTab() {
           onSaved={() => { setEditTarget(null); refresh(); }}
         />
       )}
-    </div>
+    </TabBody>
   );
 }
 
@@ -228,21 +236,16 @@ function EmployeeTable({
 }) {
   return (
     <section
-      className="overflow-hidden rounded-lg border"
+      className="overflow-hidden rounded-xl border"
       style={{ borderColor: "var(--border)", background: "var(--surface)" }}
     >
       <header className="flex items-center justify-between border-b px-4 py-2.5" style={{ borderColor: "var(--border)" }}>
-        <span className="text-xs font-semibold tracking-wide uppercase" style={{ color: "var(--text-muted)" }}>
+        <span className="text-[12px] font-semibold tracking-[0.08em] uppercase" style={{ color: "var(--text)" }}>
           Employees ({employees.length})
         </span>
-        <button
-          type="button"
-          onClick={onAdd}
-          className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium"
-          style={{ background: "var(--primary)", color: "#fff" }}
-        >
-          <Plus className="size-3.5" /> Add Employee
-        </button>
+        <PrimaryButton size="sm" icon={<Plus className="size-3.5" />} onClick={onAdd}>
+          Add Employee
+        </PrimaryButton>
       </header>
       {employees.length === 0 ? (
         <p className="px-4 py-6 text-center text-xs" style={{ color: "var(--text-muted)" }}>
@@ -327,7 +330,7 @@ function RowIcon({
       onClick={onClick}
       title={title}
       aria-label={title}
-      className="inline-flex items-center justify-center rounded-md p-1.5 transition-colors hover:bg-white/5"
+      className="inline-flex items-center justify-center rounded-md p-1.5 transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
       style={{ color: "var(--text-muted)" }}
     >
       {children}

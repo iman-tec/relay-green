@@ -18,8 +18,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { Building2, Users, Bell, ShieldCheck, KeyRound, Download, Clock, Trash2, UserPlus, Mail } from "lucide-react";
 import { Button, Input, Modal, Avatar, StatusBadge, EmptyState } from "@/app/_components/ui";
-import { useApiData, num, TabBody, LoadingState, ErrorState } from "./_shared";
-import { SettingsSection, EditableField, CopyRow, SettingsToggle, IdentityBlock } from "./settingsKit";
+import { useApiData, LoadingState, ErrorState } from "./_shared";
+import {
+  TabBody, TabTitle, PrimaryButton, OutlineButton,
+  SettingsSection, EditableField, CopyRow, SettingsToggle, IdentityBlock,
+} from "./_kit";
 
 type Me = {
   org: {
@@ -186,8 +189,8 @@ export function SettingsTab() {
 
   return (
     <TabBody>
-      <h1 className="mb-6 font-serif text-2xl font-medium" style={{ color: "var(--text)" }}>Settings</h1>
-      <div className="flex flex-col gap-5">
+      <TabTitle title="Settings" />
+      <div className="flex flex-col gap-4">
 
         <SettingsSection icon={<Building2 size={16} />} title="Organization">
           <IdentityBlock name={org?.name ?? ""} sub={org?.primaryDomain ?? org?.status} />
@@ -230,7 +233,7 @@ export function SettingsTab() {
 
         <SettingsSection icon={<Users size={16} />} title="Internal team" desc="Admins who manage this organization.">
           <div className="-mt-1 mb-3 flex justify-end">
-            <Button size="sm" iconLeft={<UserPlus size={14} />} onClick={() => setInviteOpen(true)}>Invite admin</Button>
+            <PrimaryButton size="sm" icon={<UserPlus size={12} />} onClick={() => setInviteOpen(true)}>Invite admin</PrimaryButton>
           </div>
           {staff.loading ? <LoadingState /> : admins.length === 0 ? (
             <EmptyState compact title="No other admins" body="Invite teammates to co-manage the org." />
@@ -255,9 +258,9 @@ export function SettingsTab() {
           <SettingsToggle label="Low-minutes warning" desc="When an org or department pool runs low." on={notif.lowMinutes} onChange={(v) => setNotif({ ...notif, lowMinutes: v })} />
           <SettingsToggle label="Weekly usage digest" desc="A Monday summary email." on={notif.weekly} onChange={(v) => setNotif({ ...notif, weekly: v })} />
           <div className="mt-3">
-            <Button size="sm" disabled={savingPrefs} onClick={savePrefs}>
+            <PrimaryButton size="sm" disabled={savingPrefs} onClick={savePrefs}>
               {savingPrefs ? "Saving…" : "Save preferences"}
-            </Button>
+            </PrimaryButton>
           </div>
         </SettingsSection>
 
@@ -279,9 +282,9 @@ export function SettingsTab() {
               >
                 {RETENTION.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
-              <Button size="sm" disabled={savingRetention} onClick={saveRetention}>
+              <PrimaryButton size="sm" disabled={savingRetention} onClick={saveRetention}>
                 {savingRetention ? "Saving…" : "Save"}
-              </Button>
+              </PrimaryButton>
             </div>
           </div>
           <div className="mt-3 flex flex-col gap-2 rounded-xl border bg-[var(--surface)] p-4 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: "var(--border)" }}>
@@ -292,9 +295,9 @@ export function SettingsTab() {
                 <div className="text-xs" style={{ color: "var(--text-muted)" }}>Portable .zip with CSVs for org, departments, members, sessions, usage and billing.</div>
               </div>
             </div>
-            <Button size="sm" variant="secondary" disabled={exporting} onClick={requestExport}>
+            <OutlineButton size="sm" disabled={exporting} onClick={requestExport}>
               {exporting ? "Preparing…" : "Download export"}
-            </Button>
+            </OutlineButton>
           </div>
           <div className="mt-3 flex flex-col gap-2 rounded-xl border bg-[var(--surface)] p-4 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: "var(--border)" }}>
             <div className="flex items-start gap-3">

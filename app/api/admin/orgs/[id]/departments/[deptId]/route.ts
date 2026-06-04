@@ -73,6 +73,20 @@ export async function DELETE(_request: Request, { params }: RouteCtx) {
   const dept = await loadDept(admin, orgId, deptId);
   if (!dept) return NextResponse.json({ error: "Department not found in this org." }, { status: 404 });
 
+  // Drain the department's minutes (member remainders → dept pool →
+  // enterprise pool) BEFORE the row is deleted, or the whole pool would
+  // vanish with it (see 20260604120000_current_grant_ledger.sql).
+  //
+  // PGRST202 = the RPC isn't deployed yet (migration not applied). Fall
+  // back to the legacy delete-without-refund rather than blocking.
+  const { error: relErr } = await admin.rpc("release_department_minutes", { _dept_id: deptId });
+  if (relErr) {
+    const missing = (relErr as { code?: string }).code === "PGRST202"
+      || relErr.message.includes("Could not find the function");
+    if (!missing) return NextResponse.json({ error: relErr.message }, { status: 400 });
+    console.warn("[admin/dept-delete] release_department_minutes missing — apply 20260604120000_current_grant_ledger.sql");
+  }
+
   const { data: memberRows } = await admin
     .from("profiles").select("id").eq("department_id", deptId);
   const memberIds = ((memberRows ?? []) as { id: string }[]).map((m) => m.id);

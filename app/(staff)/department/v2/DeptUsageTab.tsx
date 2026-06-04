@@ -7,9 +7,8 @@
 
 import { Download, EyeOff, BarChart3 } from "lucide-react";
 import { EmptyState } from "@/app/_components/ui";
-import {
-  useApiData, eur, num, TabBody, LoadingState, ErrorState,
-} from "@/app/(staff)/enterprise/v2/_shared";
+import { useApiData, eur, num, LoadingState, ErrorState } from "@/app/(staff)/enterprise/v2/_shared";
+import { TabBody, TabTitle, CardHeader, OutlineButton } from "@/app/(staff)/enterprise/v2/_kit";
 
 type Period = {
   period: string; memberCount: number; suppressed: boolean;
@@ -41,26 +40,18 @@ export function DeptUsageTab() {
 
   return (
     <TabBody>
-      <div className="mb-6 flex items-center justify-between gap-3">
-        <div>
-          <h1 className="font-serif text-2xl font-medium" style={{ color: "var(--text)" }}>Usage & reporting</h1>
-          <p className="text-sm" style={{ color: "var(--text-muted)" }}>Months with too few active members are suppressed for privacy.</p>
-        </div>
-        <button
-          type="button"
-          onClick={exportCsv}
-          className="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition-colors hover:bg-[var(--surface-raised)]"
-          style={{ borderColor: "var(--border)", color: "var(--text)" }}
-        >
-          <Download size={14} /> Export CSV
-        </button>
+      <div className="mb-1 flex items-start justify-between gap-3">
+        <TabTitle
+          title="Usage & reporting"
+          sub="Your department's monthly usage."
+        />
+        <OutlineButton icon={<Download size={14} />} onClick={exportCsv}>
+          Export CSV
+        </OutlineButton>
       </div>
 
-      <section className="rounded-2xl border" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
-        <header className="flex items-center gap-2 border-b px-4 py-3" style={{ borderColor: "var(--border)" }}>
-          <BarChart3 size={14} style={{ color: "var(--text-muted)" }} />
-          <h2 className="text-sm font-semibold" style={{ color: "var(--text)" }}>Usage by month</h2>
-        </header>
+      <section className="overflow-hidden rounded-xl border" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+        <CardHeader icon={<BarChart3 size={14} />} title="Usage by month" />
         {byPeriod.length === 0 ? (
           <div className="p-6"><EmptyState compact title="No usage yet" body="Monthly usage appears once sessions complete." /></div>
         ) : (

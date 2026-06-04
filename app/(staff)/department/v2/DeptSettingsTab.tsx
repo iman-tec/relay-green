@@ -9,9 +9,11 @@
 
 import { useEffect, useState } from "react";
 import { Building2, Bell, Users, Info } from "lucide-react";
-import { Button } from "@/app/_components/ui";
-import { useApiData, num, TabBody, LoadingState, ErrorState } from "@/app/(staff)/enterprise/v2/_shared";
-import { SettingsSection, EditableField, CopyRow, SettingsToggle, IdentityBlock } from "@/app/(staff)/enterprise/v2/settingsKit";
+import { useApiData, num, LoadingState, ErrorState } from "@/app/(staff)/enterprise/v2/_shared";
+import {
+  TabBody, TabTitle, PrimaryButton,
+  SettingsSection, EditableField, CopyRow, SettingsToggle, IdentityBlock,
+} from "@/app/(staff)/enterprise/v2/_kit";
 
 type Employees = {
   department: { id: string; name: string; departmentCode: string; status: string; allocatedMinutes: number; usedMinutes: number; remainingMinutes: number };
@@ -58,8 +60,8 @@ export function DeptSettingsTab() {
 
   return (
     <TabBody>
-      <h1 className="mb-6 font-serif text-2xl font-medium" style={{ color: "var(--text)" }}>Settings</h1>
-      <div className="flex flex-col gap-5">
+      <TabTitle title="Settings" />
+      <div className="flex flex-col gap-4">
 
         <SettingsSection icon={<Building2 size={16} />} title="Department">
           <IdentityBlock name={d?.name ?? ""} sub={`${data?.enterprise.name ?? ""} · ${num(memberCount)} members`} />
@@ -103,7 +105,7 @@ export function DeptSettingsTab() {
           <SettingsToggle label="New session alerts" desc="When a team member starts a session." on={notif.sessions} onChange={(v) => setNotif({ ...notif, sessions: v })} />
           <SettingsToggle label="Low-minutes warning" desc="When the department pool runs low." on={notif.lowMinutes} onChange={(v) => setNotif({ ...notif, lowMinutes: v })} />
           <SettingsToggle label="New member joined" desc="When someone is added to the department." on={notif.newMember} onChange={(v) => setNotif({ ...notif, newMember: v })} />
-          <div className="mt-3"><Button size="sm" disabled={savingNotif} onClick={savePrefs}>{savingNotif ? "Saving…" : "Save preferences"}</Button></div>
+          <div className="mt-3"><PrimaryButton size="sm" disabled={savingNotif} onClick={savePrefs}>{savingNotif ? "Saving…" : "Save preferences"}</PrimaryButton></div>
         </SettingsSection>
 
         {note && <p className="text-xs" style={{ color: "var(--text-muted)" }}>{note}</p>}

@@ -4,16 +4,20 @@
  * Top-level container for the Enterprise Admin Panel. Lean tab set:
  *   Overview (Dashboard / Departments / Members via segmented switch)
  *   Usage · Billing (wallet + invoices) · Settings
- * Renders in StaffShell "bare mode". Legacy ?tab= deep-links (dashboard,
- * departments, members, wallet) still resolve.
+ *
+ * Renders INSIDE the StaffShell sidebar — and the tabs themselves live in
+ * that sidebar as ?tab= links (see the enterprise console entries in
+ * StaffShell's NAV). This component just reads ?tab= and renders the
+ * matching tab body under an engineer-style greeting header; there is no
+ * in-page tab strip.
+ *
+ * Legacy ?tab= deep-links (dashboard, departments, members, wallet) still
+ * resolve, and ?tab= changes while mounted are followed (sidebar clicks,
+ * the shell profile menu's "Wallet" link).
  */
 
-import { useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { TabsHeader, type Tab } from "@/app/_components/admin-v2/TabsHeader";
-import { SignOutButton } from "@/app/_components/admin-v2/SignOutButton";
-import { UserChip } from "@/app/_components/admin-v2/UserChip";
-import { ThemeTriplet } from "@/app/_components/ThemeTriplet";
+import { PanelHeader, useFirstName } from "./_kit";
 import { OverviewTab, type OverviewView } from "./OverviewTab";
 import { UsageTab } from "./UsageTab";
 import { BillingWalletTab } from "./BillingWalletTab";
@@ -21,16 +25,8 @@ import { SettingsTab } from "./SettingsTab";
 
 type TabKey = "overview" | "usage" | "billing" | "settings";
 
-const TABS: readonly Tab<TabKey>[] = [
-  { key: "overview", label: "Overview" },
-  { key: "usage",    label: "Usage" },
-  { key: "billing",  label: "Billing" },
-  { key: "settings", label: "Settings" },
-];
-
-const VALID = new Set<TabKey>(TABS.map((t) => t.key));
-
-// Map legacy ?tab= values onto the new structure.
+// Map legacy ?tab= values onto the new structure. Keep in sync with
+// enterpriseTabOf in app/_components/StaffShell.tsx (sidebar active state).
 function resolveInitial(param: string | null | undefined): { tab: TabKey; view: OverviewView } {
   switch (param) {
     case "departments": return { tab: "overview", view: "departments" };
@@ -47,23 +43,20 @@ function resolveInitial(param: string | null | undefined): { tab: TabKey; view: 
 
 export function PanelClient({ me }: { me: { email: string; roleLabel: string } }) {
   const params = useSearchParams();
+
+  // The URL is the single source of truth for the active tab — deep links
+  // resolve on mount AND ?tab= changes while mounted are followed (the
+  // sidebar items are plain links to /enterprise/v2?tab=…).
   const initial = resolveInitial(params?.get("tab"));
-  const [active, setActive] = useState<TabKey>(VALID.has(initial.tab) ? initial.tab : "overview");
+  const active: TabKey = initial.tab;
+
+  const firstName = useFirstName(me.email);
 
   return (
-    <div className="flex h-screen min-h-0 flex-col">
-      <TabsHeader
-        tabs={TABS}
-        active={active}
-        onChange={setActive}
-        subtitle="Enterprise"
-        rightSlot={
-          <div className="flex items-center gap-2">
-            <ThemeTriplet />
-            <UserChip email={me.email} roleLabel={me.roleLabel} />
-            <SignOutButton />
-          </div>
-        }
+    <div className="flex h-full min-h-0 flex-col">
+      <PanelHeader
+        name={firstName}
+        subtitle={`Enterprise console · ${me.roleLabel}`}
       />
       <div className="min-h-0 flex-1 overflow-hidden">
         {active === "overview" && <OverviewTab initialView={initial.view} />}

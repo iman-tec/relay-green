@@ -10,11 +10,10 @@
  * not exposed to the client.
  */
 
-import { Download, Receipt, CreditCard } from "lucide-react";
+import { Download, CreditCard } from "lucide-react";
 import { StatusBadge, EmptyState } from "@/app/_components/ui";
-import {
-  useApiData, eur, StatCard, LoadingState, ErrorState,
-} from "./_shared";
+import { useApiData, eur, LoadingState, ErrorState } from "./_shared";
+import { TabTitle, StatCard, CardHeader, BRAND_GREEN, BRAND_GREEN_SOFT } from "./_kit";
 
 type Billing = {
   currency: string;
@@ -51,22 +50,22 @@ export function BillingTab() {
 
   return (
     <section>
-      <h1 className="mb-1 font-serif text-2xl font-medium" style={{ color: "var(--text)" }}>Billing & invoices</h1>
-      <p className="mb-6 text-sm" style={{ color: "var(--text-muted)" }}>
-        Pay-per-minute · €{(data.revenue.perMinuteCents / 100).toFixed(2)}/min, billed by the second. No subscription.
-      </p>
+      <TabTitle
+        title="Billing & invoices"
+        sub={`Pay-per-minute · €${(data.revenue.perMinuteCents / 100).toFixed(2)}/min, billed by the second. No subscription.`}
+      />
 
-      <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-3">
-        <StatCard icon={<Receipt size={16} />} value={eur(data.revenue.thisMonthCents)} label="Spend this month" />
-        <StatCard icon={<Receipt size={16} />} value={eur(data.revenue.last30DaysCents)} label="Last 30 days" />
-        <StatCard icon={<Receipt size={16} />} value={eur(data.revenue.lifetimeCents)} label="Lifetime" />
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+        <StatCard value={eur(data.revenue.thisMonthCents)} label="Spend this month" accent={BRAND_GREEN} />
+        <StatCard value={eur(data.revenue.last30DaysCents)} label="Last 30 days" accent="#0ea5e9" />
+        <StatCard value={eur(data.revenue.lifetimeCents)} label="Lifetime" accent="#7c3aed" />
       </div>
 
       {/* Plan */}
-      <section className="mt-6 rounded-2xl border p-5" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+      <section className="mt-4 rounded-xl border p-5" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
-            <span className="inline-flex size-10 items-center justify-center rounded-xl" style={{ background: "var(--primary-tint)", color: "var(--primary-hover)" }}>
+            <span className="inline-flex size-10 items-center justify-center rounded-full" style={{ background: BRAND_GREEN_SOFT, color: BRAND_GREEN }}>
               <CreditCard size={18} />
             </span>
             <div>
@@ -84,18 +83,20 @@ export function BillingTab() {
       </section>
 
       {/* Transactions */}
-      <section className="mt-6 rounded-2xl border" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
-        <header className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: "var(--border)" }}>
-          <h2 className="text-sm font-semibold" style={{ color: "var(--text)" }}>Recent transactions</h2>
-          <button
-            type="button"
-            onClick={exportStatement}
-            className="inline-flex items-center gap-1.5 text-xs transition-colors hover:underline"
-            style={{ color: "var(--text-muted)" }}
-          >
-            <Download size={13} /> Statement
-          </button>
-        </header>
+      <section className="mt-4 overflow-hidden rounded-xl border" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+        <CardHeader
+          title="Recent transactions"
+          right={
+            <button
+              type="button"
+              onClick={exportStatement}
+              className="inline-flex items-center gap-1.5 text-xs transition-colors hover:underline"
+              style={{ color: "var(--text-muted)" }}
+            >
+              <Download size={13} /> Statement
+            </button>
+          }
+        />
         {tx.length === 0 ? (
           <div className="p-6"><EmptyState compact title="No transactions" body="Charges appear here as sessions complete." /></div>
         ) : (

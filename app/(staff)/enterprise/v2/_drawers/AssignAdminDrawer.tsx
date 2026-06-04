@@ -12,6 +12,7 @@
 
 import { useEffect, useState } from "react";
 import { Drawer } from "@/app/_components/admin-v2/Drawer";
+import { BRAND_GREEN, BRAND_GREEN_SOFT } from "../_kit";
 
 type EmployeeOption = { id: string; displayName: string; email: string };
 
@@ -167,11 +168,12 @@ function ModeChip({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="rounded-full border px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+      className="rounded-md border px-3 py-1.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40"
       style={{
-        borderColor: active ? "var(--primary)" : "var(--border)",
-        background:  active ? "color-mix(in srgb, var(--primary) 12%, transparent)" : "transparent",
-        color:       active ? "var(--primary)" : "var(--text-muted)",
+        fontWeight:  active ? 600 : 500,
+        borderColor: active ? BRAND_GREEN : "var(--border)",
+        background:  active ? BRAND_GREEN_SOFT : "transparent",
+        color:       active ? BRAND_GREEN : "var(--text-muted)",
       }}
     >
       {children}
@@ -211,8 +213,8 @@ function PrimaryBtn({ onClick, disabled, children }: {
   return (
     <button
       type="button" onClick={onClick} disabled={disabled}
-      className="rounded-md px-3 py-2 text-sm font-medium transition-opacity disabled:opacity-50"
-      style={{ background: "var(--primary)", color: "#fff" }}
+      className="rounded-md px-3 py-2 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-50"
+      style={{ background: BRAND_GREEN, color: "#fff" }}
     >
       {children}
     </button>
@@ -238,9 +240,9 @@ function ErrorBanner({ message }: { message: string }) {
     <p
       className="rounded-md border px-3 py-2 text-xs"
       style={{
-        borderColor: "color-mix(in srgb, var(--primary) 30%, transparent)",
-        background:  "color-mix(in srgb, var(--primary) 8%, transparent)",
-        color:       "var(--primary)",
+        borderColor: "color-mix(in srgb, var(--risk) 30%, transparent)",
+        background:  "color-mix(in srgb, var(--risk) 8%, transparent)",
+        color:       "var(--risk)",
       }}
     >
       {message}

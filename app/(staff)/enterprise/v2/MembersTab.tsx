@@ -15,7 +15,8 @@ import { UserPlus, Trash2 } from "lucide-react";
 import { Button, StatusBadge, Avatar, EmptyState, Modal, Input } from "@/app/_components/ui";
 import { InviteFlow } from "@/app/_components/invite/InviteFlow";
 import { InviteStatusTable } from "@/app/_components/invite/InviteStatusTable";
-import { useApiData, num, TabBody, LoadingState, ErrorState } from "./_shared";
+import { useApiData, num, LoadingState, ErrorState } from "./_shared";
+import { TabBody, TabTitle, PrimaryButton } from "./_kit";
 import { createClient } from "@/lib/supabase/browser";
 
 type Member = {
@@ -98,14 +99,12 @@ export function MembersTab() {
 
   return (
     <TabBody>
-      <div className="mb-6 flex items-center justify-between gap-3">
-        <div>
-          <h1 className="font-serif text-2xl font-medium" style={{ color: "var(--text)" }}>Members</h1>
-          <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-            {num(members.length)} member{members.length === 1 ? "" : "s"} in your organization
-          </p>
-        </div>
-        <Button iconLeft={<UserPlus size={15} />} onClick={() => setInviteOpen(true)}>Invite</Button>
+      <div className="mb-1 flex items-start justify-between gap-3">
+        <TabTitle
+          title="Members"
+          sub={`${num(members.length)} member${members.length === 1 ? "" : "s"} in your organization`}
+        />
+        <PrimaryButton icon={<UserPlus size={14} />} onClick={() => setInviteOpen(true)}>Invite</PrimaryButton>
       </div>
 
       {loading ? (
@@ -115,10 +114,10 @@ export function MembersTab() {
       ) : members.length === 0 ? (
         <EmptyState icon={<UserPlus size={20} />} title="No members yet" body="Invite your first team member by email." action={<Button onClick={() => setInviteOpen(true)}>Invite a member</Button>} />
       ) : (
-        <div className="overflow-x-auto rounded-2xl border" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+        <div className="overflow-x-auto rounded-xl border" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
           <table className="w-full min-w-[640px] text-sm">
             <thead>
-              <tr style={{ color: "var(--text-muted)" }}>
+              <tr className="text-[11px] tracking-wider uppercase" style={{ color: "var(--text-muted)" }}>
                 <th className="px-4 py-2.5 text-left font-medium">Member</th>
                 <th className="px-4 py-2.5 text-left font-medium">Role</th>
                 <th className="px-4 py-2.5 text-left font-medium">Status</th>
@@ -189,7 +188,12 @@ export function MembersTab() {
       )}
 
       <section className="mt-8">
-        <h2 className="mb-3 font-serif text-lg font-medium" style={{ color: "var(--text)" }}>Invitations</h2>
+        <h2
+          className="mb-3 text-[12px] font-semibold tracking-[0.08em] uppercase"
+          style={{ color: "var(--text)" }}
+        >
+          Invitations
+        </h2>
         <InviteStatusTable reloadKey={inviteKey} />
       </section>
 

@@ -6,12 +6,14 @@
  */
 
 import { useState } from "react";
-import { Users, Timer, Gauge, Activity, Sparkles, ArrowRight } from "lucide-react";
-import { Button, StatusBadge, EmptyState } from "@/app/_components/ui";
+import { Activity, Sparkles, ArrowRight } from "lucide-react";
+import { StatusBadge, EmptyState } from "@/app/_components/ui";
 import { DeptSetupWizard } from "./DeptSetupWizard";
+import { useApiData, num, LoadingState, ErrorState } from "@/app/(staff)/enterprise/v2/_shared";
 import {
-  useApiData, num, TabBody, StatCard, LoadingState, ErrorState,
-} from "@/app/(staff)/enterprise/v2/_shared";
+  TabBody, TabTitle, StatCard, CardHeader, PrimaryButton,
+  BRAND_GREEN, BRAND_GREEN_SOFT,
+} from "@/app/(staff)/enterprise/v2/_kit";
 
 type Employees = {
   department: { id: string; name: string; status: string; allocatedMinutes: number; usedMinutes: number; remainingMinutes: number };
@@ -42,18 +44,16 @@ export function DeptDashboardTab() {
 
   return (
     <TabBody>
-      <h1 className="mb-1 font-serif text-2xl font-medium" style={{ color: "var(--text)" }}>
-        {d?.name ?? "Department"}
-      </h1>
-      <p className="mb-6 text-sm" style={{ color: "var(--text-muted)" }}>
-        {emp.data?.enterprise.name} · {num(members.length)} members
-      </p>
+      <TabTitle
+        title={d?.name ?? "Department"}
+        sub={`${emp.data?.enterprise.name} · ${num(members.length)} members`}
+      />
 
       {needsSetup && (
-        <div className="mb-6 flex flex-col items-start gap-3 rounded-2xl border p-5 sm:flex-row sm:items-center sm:justify-between"
-          style={{ borderColor: "var(--primary)", background: "var(--primary-tint)" }}>
+        <div className="mb-6 flex flex-col items-start gap-3 rounded-xl border p-5 sm:flex-row sm:items-center sm:justify-between"
+          style={{ borderColor: BRAND_GREEN, background: BRAND_GREEN_SOFT }}>
           <div className="flex items-start gap-3">
-            <span className="inline-flex size-10 items-center justify-center rounded-xl" style={{ background: "var(--surface)", color: "var(--primary-hover)" }}>
+            <span className="inline-flex size-10 items-center justify-center rounded-xl" style={{ background: "var(--surface)", color: BRAND_GREEN }}>
               <Sparkles size={18} />
             </span>
             <div>
@@ -61,7 +61,7 @@ export function DeptDashboardTab() {
               <div className="text-xs" style={{ color: "var(--text-muted)" }}>Invite your team and start allocating minutes.</div>
             </div>
           </div>
-          <Button iconLeft={<ArrowRight size={14} />} onClick={() => setWizardOpen(true)}>Invite your team</Button>
+          <PrimaryButton icon={<ArrowRight size={14} />} onClick={() => setWizardOpen(true)}>Invite your team</PrimaryButton>
         </div>
       )}
 
@@ -73,18 +73,15 @@ export function DeptDashboardTab() {
         onChanged={() => { emp.reload(); }}
       />
 
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        <StatCard icon={<Users size={16} />} value={num(members.length)} label="Members" />
-        <StatCard icon={<Timer size={16} />} value={`${num(d?.usedMinutes)}m`} label="Minutes used" />
-        <StatCard icon={<Gauge size={16} />} value={`${num(d?.remainingMinutes)}m`} label="Remaining" />
-        <StatCard icon={<Gauge size={16} />} value={`${num(d?.allocatedMinutes)}m`} label="Allocated" />
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <StatCard value={num(members.length)} label="Members" accent="#0ea5e9" />
+        <StatCard value={`${num(d?.usedMinutes)}m`} label="Minutes used" accent={BRAND_GREEN} />
+        <StatCard value={`${num(d?.remainingMinutes)}m`} label="Remaining" accent="#16a34a" />
+        <StatCard value={`${num(d?.allocatedMinutes)}m`} label="Allocated" accent="#7c3aed" />
       </div>
 
-      <section className="mt-6 rounded-2xl border" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
-        <header className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: "var(--border)" }}>
-          <h2 className="text-sm font-semibold" style={{ color: "var(--text)" }}>Recent sessions</h2>
-          <Activity size={14} style={{ color: "var(--text-muted)" }} />
-        </header>
+      <section className="mt-4 overflow-hidden rounded-xl border" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+        <CardHeader icon={<Activity size={14} />} title="Recent sessions" />
         {sess.loading ? (
           <LoadingState />
         ) : (sess.data?.sessions ?? []).length === 0 ? (
