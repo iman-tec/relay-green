@@ -20,14 +20,18 @@
 export type KAnonContext = "partnerEnterprise" | "department" | "periodSlice";
 
 /**
- * Per-context minimum distinct-member count. Default 5 everywhere; raise
- * `partnerEnterprise` later to tighten third-party (Channel Partner) exposure
- * without affecting internal admin/department dashboards.
+ * Per-context minimum distinct-member count.
+ *
+ * `department` + `periodSlice` are 0 (suppression OFF) per product decision
+ * 2026-06-04: the enterprise / department admins are the org's own data
+ * controllers, so their Usage panels show full aggregates even for tiny
+ * groups. `partnerEnterprise` keeps k=5 — Channel Partners are a third
+ * party and their exposure stays minimized.
  */
 export const K_ANON_THRESHOLD: Record<KAnonContext, number> = {
   partnerEnterprise: 5,
-  department: 5,
-  periodSlice: 5,
+  department: 0,
+  periodSlice: 0,
 };
 
 export const SUPPRESSED_LABEL = "Insufficient data to display";

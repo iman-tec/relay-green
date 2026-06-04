@@ -19,16 +19,18 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Mail, Power, PowerOff, Trash2, Pencil } from "lucide-react";
+import { Plus, Mail, Power, PowerOff, Trash2, Pencil, Coins } from "lucide-react";
 import { Sidebar } from "@/app/_components/admin-v2/Sidebar";
 import { MinutesBar } from "@/app/_components/admin-v2/MinutesBar";
 import { DetailCard } from "@/app/_components/admin-v2/DetailCard";
 import { Breadcrumb, type Crumb } from "@/app/_components/admin-v2/Breadcrumb";
 import { EditNameDrawer } from "@/app/_components/admin-v2/EditNameDrawer";
+import { PrimaryButton, OutlineButton, BRAND_GREEN } from "./_kit";
 import { AddDepartmentDrawer } from "./_drawers/AddDepartmentDrawer";
 import { AddEmployeeDrawer } from "./_drawers/AddEmployeeDrawer";
 import { AssignAdminDrawer } from "./_drawers/AssignAdminDrawer";
 import { RefillDepartmentDrawer } from "./_drawers/RefillDepartmentDrawer";
+import { RefillEmployeeDrawer } from "./_drawers/RefillEmployeeDrawer";
 
 type Enterprise = {
   id: string;
@@ -77,6 +79,7 @@ export function DepartmentsTab() {
   const [editDept, setEditDept]           = useState(false);
   const [assignAdmin, setAssignAdmin]     = useState(false);
   const [refillDept, setRefillDept]       = useState(false);
+  const [refillEmp, setRefillEmp]         = useState<Employee | null>(null);
 
   const [employees, setEmployees]         = useState<Employee[]>([]);
   const [deptAdmin, setDeptAdmin]         = useState<Employee | null>(null);
@@ -146,12 +149,13 @@ export function DepartmentsTab() {
   }, [selDeptId, empTick]);
 
   const empTotals = useMemo(() => {
-    let used = 0, allocated = 0;
+    let used = 0, allocated = 0, remaining = 0;
     for (const e of employees) {
       used      += e.usedMinutes;
       allocated += e.allocatedMinutes;
+      remaining += e.remainingMinutes;
     }
-    return { used, allocated };
+    return { used, allocated, remaining };
   }, [employees]);
 
   // ─ Mutations ───────────────────────────────────────────────────────
@@ -195,10 +199,14 @@ export function DepartmentsTab() {
   };
 
   // ─ Distribution math (for the enterprise summary caption) ──────────
-  const distributed = useMemo(() => {
-    let allocated = 0;
-    for (const d of depts) allocated += d.allocatedMinutes;
-    return allocated;
+  // Sums dept remaining_minutes (what departments currently hold), NOT
+  // allocated_minutes: allocated is a lifetime-granted counter that never
+  // decrements — deactivating a department refunds its unused minutes to
+  // the enterprise pool but leaves its allocated_minutes untouched.
+  const heldByDepts = useMemo(() => {
+    let remaining = 0;
+    for (const d of depts) remaining += d.remainingMinutes;
+    return remaining;
   }, [depts]);
 
   // ─ Render ──────────────────────────────────────────────────────────
@@ -221,8 +229,8 @@ export function DepartmentsTab() {
           <button
             type="button"
             onClick={() => setAddDept(true)}
-            className="flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium"
-            style={{ background: "var(--primary)", color: "#fff" }}
+            className="flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+            style={{ background: BRAND_GREEN }}
           >
             <Plus className="size-3.5" /> Add Department
           </button>
@@ -272,13 +280,12 @@ export function DepartmentsTab() {
             minutes={{ used: ent.usedMinutes, allocated: ent.allocatedMinutes }}
             rollupCaption={(() => {
               if (depts.length === 0) {
-                return `${ent.allocatedMinutes.toLocaleString()} min in pool · 0 departments yet · ${ent.usedMinutes.toLocaleString()} used`;
+                return `${ent.remainingMinutes.toLocaleString()} min in pool · 0 departments yet · ${ent.usedMinutes.toLocaleString()} used`;
               }
-              const remaining = Math.max(0, ent.allocatedMinutes - distributed);
               return (
                 `${ent.allocatedMinutes.toLocaleString()} allocated · ` +
-                `${distributed.toLocaleString()} distributed to ${depts.length} department${depts.length === 1 ? "" : "s"} · ` +
-                `${remaining.toLocaleString()} remaining · ` +
+                `${heldByDepts.toLocaleString()} held by ${depts.length} department${depts.length === 1 ? "" : "s"} · ` +
+                `${ent.remainingMinutes.toLocaleString()} in pool · ` +
                 `${ent.usedMinutes.toLocaleString()} used`
               );
             })()}
@@ -301,44 +308,31 @@ export function DepartmentsTab() {
               }}
               rollupCaption={(() => {
                 if (employees.length === 0) {
-                  return `${selDept.allocatedMinutes.toLocaleString()} min in pool · 0 employees yet · ${selDept.usedMinutes.toLocaleString()} used`;
+                  return `${selDept.remainingMinutes.toLocaleString()} min in pool · 0 employees yet · ${selDept.usedMinutes.toLocaleString()} used`;
                 }
-                const remaining = Math.max(0, selDept.allocatedMinutes - empTotals.allocated);
                 return (
                   `${selDept.allocatedMinutes.toLocaleString()} allocated · ` +
-                  `${empTotals.allocated.toLocaleString()} distributed to ${employees.length} employee${employees.length === 1 ? "" : "s"} · ` +
-                  `${remaining.toLocaleString()} remaining · ` +
+                  `${empTotals.remaining.toLocaleString()} held by ${employees.length} employee${employees.length === 1 ? "" : "s"} · ` +
+                  `${selDept.remainingMinutes.toLocaleString()} in pool · ` +
                   `${selDept.usedMinutes.toLocaleString()} used`
                 );
               })()}
               actions={
                 <>
                   {selDept.status === "active" && (
-                    <button
-                      type="button"
-                      onClick={() => setRefillDept(true)}
-                      className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium"
-                      style={{ background: "var(--primary)", color: "#fff" }}
-                    >
-                      <Plus className="size-3" /> Add minutes
-                    </button>
+                    <PrimaryButton size="sm" icon={<Plus className="size-3" />} onClick={() => setRefillDept(true)}>
+                      Add minutes
+                    </PrimaryButton>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => setEditDept(true)}
-                    className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium"
-                    style={{ borderColor: "var(--border)", color: "var(--text)" }}
-                  >
-                    <Pencil className="size-3" /> Edit
-                  </button>
-                  <button
-                    type="button"
+                  <OutlineButton size="sm" icon={<Pencil className="size-3" />} onClick={() => setEditDept(true)}>
+                    Edit
+                  </OutlineButton>
+                  <OutlineButton
+                    size="sm"
                     onClick={() => setDeptStatus(selDept.id, selDept.status === "active" ? "suspended" : "active")}
-                    className="rounded-md border px-2.5 py-1.5 text-xs font-medium"
-                    style={{ borderColor: "var(--border)", color: "var(--text)" }}
                   >
                     {selDept.status === "active" ? "Deactivate" : "Activate"}
-                  </button>
+                  </OutlineButton>
                 </>
               }
               footerHint="Deactivating a department returns its remaining minutes to the enterprise pool."
@@ -359,6 +353,7 @@ export function DepartmentsTab() {
               employees={employees}
               totals={empTotals}
               onAdd={() => setAddEmp(true)}
+              onRefill={(e) => setRefillEmp(e)}
               onResend={resendInvite}
               onToggleStatus={toggleStatus}
               onRemove={detachEmployee}
@@ -422,6 +417,24 @@ export function DepartmentsTab() {
           refresh();
         }}
       />
+      <RefillEmployeeDrawer
+        open={refillEmp !== null}
+        deptId={selDeptId}
+        empId={refillEmp?.id ?? null}
+        empName={refillEmp?.displayName || refillEmp?.email}
+        empCurrent={refillEmp ? {
+          allocated: refillEmp.allocatedMinutes,
+          used:      refillEmp.usedMinutes,
+          remaining: refillEmp.remainingMinutes,
+        } : undefined}
+        deptRemaining={selDept?.remainingMinutes}
+        onClose={() => setRefillEmp(null)}
+        onRefilled={() => {
+          setRefillEmp(null);
+          refreshEmployees();
+          refresh();
+        }}
+      />
     </div>
   );
 }
@@ -440,25 +453,24 @@ function DepartmentAdminCard({
 }) {
   return (
     <section
-      className="overflow-hidden rounded-lg border"
+      className="overflow-hidden rounded-xl border"
       style={{ borderColor: "var(--border)", background: "var(--surface)" }}
     >
       <header className="flex items-center justify-between border-b px-4 py-2.5"
         style={{ borderColor: "var(--border)" }}>
-        <span className="text-xs font-semibold tracking-wide uppercase" style={{ color: "var(--text-muted)" }}>
+        <span className="text-[12px] font-semibold tracking-[0.08em] uppercase" style={{ color: "var(--text)" }}>
           Department admin
         </span>
         {!admin && (
-          <button
-            type="button"
+          <PrimaryButton
+            size="sm"
+            icon={<Plus className="size-3.5" />}
             onClick={onAssign}
             disabled={!deptActive}
             title={deptActive ? "Assign a department admin" : "Reactivate the department first"}
-            className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
-            style={{ background: "var(--primary)", color: "#fff" }}
           >
-            <Plus className="size-3.5" /> Assign admin
-          </button>
+            Assign admin
+          </PrimaryButton>
         )}
       </header>
       {!admin ? (
@@ -515,40 +527,36 @@ function DepartmentAdminCard({
 
 function EmployeeTable({
   loading, error, employees, totals,
-  onAdd, onResend, onToggleStatus, onRemove,
+  onAdd, onRefill, onResend, onToggleStatus, onRemove,
 }: {
   loading: boolean;
   error: string | null;
   employees: Employee[];
   totals: { used: number; allocated: number };
   onAdd: () => void;
+  onRefill: (e: Employee) => void;
   onResend: (id: string) => void;
   onToggleStatus: (id: string, currentlyActive: boolean) => void;
   onRemove: (id: string) => void;
 }) {
   return (
     <section
-      className="overflow-hidden rounded-lg border"
+      className="overflow-hidden rounded-xl border"
       style={{ borderColor: "var(--border)", background: "var(--surface)" }}
     >
       <header className="flex items-center justify-between border-b px-4 py-2.5" style={{ borderColor: "var(--border)" }}>
-        <span className="text-xs font-semibold tracking-wide uppercase" style={{ color: "var(--text-muted)" }}>
+        <span className="text-[12px] font-semibold tracking-[0.08em] uppercase" style={{ color: "var(--text)" }}>
           Employees ({employees.length})
         </span>
-        <button
-          type="button"
-          onClick={onAdd}
-          className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium"
-          style={{ background: "var(--primary)", color: "#fff" }}
-        >
-          <Plus className="size-3.5" /> Add Employee
-        </button>
+        <PrimaryButton size="sm" icon={<Plus className="size-3.5" />} onClick={onAdd}>
+          Add Employee
+        </PrimaryButton>
       </header>
       {loading && (
         <p className="px-4 py-6 text-center text-xs" style={{ color: "var(--text-muted)" }}>Loading…</p>
       )}
       {!loading && error && (
-        <p className="px-4 py-6 text-center text-xs" style={{ color: "var(--primary)" }}>{error}</p>
+        <p className="px-4 py-6 text-center text-xs" style={{ color: "var(--risk)" }}>{error}</p>
       )}
       {!loading && !error && employees.length === 0 && (
         <p className="px-4 py-6 text-center text-xs" style={{ color: "var(--text-muted)" }}>
@@ -588,6 +596,9 @@ function EmployeeTable({
                   </td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center justify-end gap-1">
+                      <RowIcon title="Refill minutes" onClick={() => onRefill(e)}>
+                        <Coins className="size-3.5" />
+                      </RowIcon>
                       <RowIcon title="Resend invite email" onClick={() => onResend(e.id)}>
                         <Mail className="size-3.5" />
                       </RowIcon>
@@ -631,8 +642,8 @@ function RowIcon({
       onClick={onClick}
       title={title}
       aria-label={title}
-      className="inline-flex items-center justify-center rounded-md p-1.5 transition-colors hover:bg-white/5"
-      style={{ color: danger ? "var(--primary)" : "var(--text-muted)" }}
+      className="inline-flex items-center justify-center rounded-md p-1.5 transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
+      style={{ color: danger ? "var(--risk)" : "var(--text-muted)" }}
     >
       {children}
     </button>

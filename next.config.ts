@@ -8,6 +8,10 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: ".",
   },
+  // RAG document parsers (mammoth for DOCX, unpdf for PDF) are Node libs used
+  // only in the nodejs-runtime indexing routes — keep them external so Next
+  // doesn't try to bundle their native/dynamic deps for the client/edge.
+  serverExternalPackages: ["mammoth", "unpdf", "xlsx"],
   // Dev origins for BOTH developer machines (10.0.3.175 and 10.0.2.129) —
   // the dev server binds to one of them via package.json's -H flag, but
   // whitelisting both here means syncing the repo between machines never

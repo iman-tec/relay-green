@@ -7,12 +7,14 @@
  */
 
 import { useState } from "react";
-import { Clock, Activity, CheckCircle2, Timer, Radio, Sparkles, ArrowRight } from "lucide-react";
-import { Button, StatusBadge, EmptyState } from "@/app/_components/ui";
+import { Activity, Sparkles, ArrowRight } from "lucide-react";
+import { StatusBadge, EmptyState } from "@/app/_components/ui";
 import { SetupWizard } from "./SetupWizard";
+import { useApiData, eur, num, LoadingState, ErrorState } from "./_shared";
 import {
-  useApiData, eur, num, TabBody, StatCard, LoadingState, ErrorState,
-} from "./_shared";
+  TabBody, TabTitle, StatCard, CardHeader, PrimaryButton,
+  BRAND_GREEN, BRAND_GREEN_SOFT,
+} from "./_kit";
 
 type Me = {
   org: { id: string; name: string; status: string };
@@ -57,18 +59,16 @@ export function DashboardTab() {
 
   return (
     <TabBody>
-      <h1 className="mb-1 font-serif text-2xl font-medium" style={{ color: "var(--text)" }}>
-        {me.data?.org.name ?? "Organization"}
-      </h1>
-      <p className="mb-6 text-sm" style={{ color: "var(--text-muted)" }}>
-        Org-wide overview · {num(k?.userCount)} members · {num(k?.staffCount)} staff
-      </p>
+      <TabTitle
+        title={me.data?.org.name ?? "Organization"}
+        sub={`Org-wide overview · ${num(k?.userCount)} members · ${num(k?.staffCount)} staff`}
+      />
 
       {needsSetup && (
-        <div className="mb-6 flex flex-col items-start gap-3 rounded-2xl border p-5 sm:flex-row sm:items-center sm:justify-between"
-          style={{ borderColor: "var(--primary)", background: "var(--primary-tint)" }}>
+        <div className="mb-6 flex flex-col items-start gap-3 rounded-xl border p-5 sm:flex-row sm:items-center sm:justify-between"
+          style={{ borderColor: BRAND_GREEN, background: BRAND_GREEN_SOFT }}>
           <div className="flex items-start gap-3">
-            <span className="inline-flex size-10 items-center justify-center rounded-xl" style={{ background: "var(--surface)", color: "var(--primary-hover)" }}>
+            <span className="inline-flex size-10 items-center justify-center rounded-xl" style={{ background: "var(--surface)", color: BRAND_GREEN }}>
               <Sparkles size={18} />
             </span>
             <div>
@@ -76,32 +76,26 @@ export function DashboardTab() {
               <div className="text-xs" style={{ color: "var(--text-muted)" }}>Create departments and invite your team — three quick steps.</div>
             </div>
           </div>
-          <Button iconLeft={<ArrowRight size={14} />} onClick={() => setWizardOpen(true)}>Set up workspace</Button>
+          <PrimaryButton icon={<ArrowRight size={14} />} onClick={() => setWizardOpen(true)}>Set up workspace</PrimaryButton>
         </div>
       )}
 
       <SetupWizard open={wizardOpen} onClose={() => setWizardOpen(false)} orgName={me.data?.org.name ?? "your workspace"} onChanged={reloadAll} />
 
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        <StatCard icon={<Timer size={16} />} value={eur(k?.spendMonthCents)} label="Spend this month" />
-        <StatCard icon={<Radio size={16} />} value={num(k?.liveNow)} label="Live now" />
-        <StatCard icon={<CheckCircle2 size={16} />} value={num(k?.sessions30Days)} label="Sessions (30d)" />
-        <StatCard icon={<Clock size={16} />} value={`${num(k?.avgDurationMin)}m`} label="Avg duration" />
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <StatCard value={eur(k?.spendMonthCents)} label="Spend this month" accent={BRAND_GREEN} />
+        <StatCard value={num(k?.liveNow)} label="Live now" accent="#0ea5e9" />
+        <StatCard value={num(k?.sessions30Days)} label="Sessions" hint="last 30 days" accent="#7c3aed" />
+        <StatCard value={`${num(k?.avgDurationMin)}m`} label="Avg duration" accent="#16a34a" />
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* Recent sessions */}
         <section
-          className="rounded-2xl border lg:col-span-2"
+          className="overflow-hidden rounded-xl border lg:col-span-2"
           style={{ borderColor: "var(--border)", background: "var(--surface)" }}
         >
-          <header
-            className="flex items-center justify-between border-b px-4 py-3"
-            style={{ borderColor: "var(--border)" }}
-          >
-            <h2 className="text-sm font-semibold" style={{ color: "var(--text)" }}>Recent sessions</h2>
-            <Activity size={14} style={{ color: "var(--text-muted)" }} />
-          </header>
+          <CardHeader icon={<Activity size={14} />} title="Recent sessions" />
           {sessions.loading ? (
             <LoadingState />
           ) : (sessions.data?.sessions ?? []).length === 0 ? (
@@ -140,12 +134,10 @@ export function DashboardTab() {
 
         {/* Top departments */}
         <section
-          className="rounded-2xl border"
+          className="overflow-hidden rounded-xl border"
           style={{ borderColor: "var(--border)", background: "var(--surface)" }}
         >
-          <header className="border-b px-4 py-3" style={{ borderColor: "var(--border)" }}>
-            <h2 className="text-sm font-semibold" style={{ color: "var(--text)" }}>Top departments</h2>
-          </header>
+          <CardHeader title="Top departments" />
           {depts.loading ? (
             <LoadingState />
           ) : topDepts.length === 0 ? (

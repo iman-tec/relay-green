@@ -3,17 +3,17 @@
 /*
  * Department Admin Panel — scoped to the manager's single department. Lean
  * tabs: Overview (Dashboard / Team members via segmented switch) · Sessions ·
- * Usage · Settings. StaffShell bare mode. Legacy ?tab=members/dashboard
- * deep-links still resolve.
+ * Usage · Settings.
+ *
+ * Renders INSIDE the StaffShell sidebar (no more bare mode) so the console
+ * shares the engineer panel's chrome; this component only owns the
+ * engineer-style greeting header + in-page tab strip (see ../enterprise/v2/_kit).
+ * Legacy ?tab=members/dashboard deep-links still resolve.
  */
 
-import { useState } from "react";
-import { useSearchParams } from "next/navigation";
-import { TabsHeader, type Tab } from "@/app/_components/admin-v2/TabsHeader";
-import { SignOutButton } from "@/app/_components/admin-v2/SignOutButton";
-import { UserChip } from "@/app/_components/admin-v2/UserChip";
+import { usePathname, useSearchParams } from "next/navigation";
 import { NotificationBell } from "@/app/_components/admin-v2/NotificationBell";
-import { ThemeTriplet } from "@/app/_components/ThemeTriplet";
+import { PanelHeader, useFirstName, type PanelTab } from "@/app/(staff)/enterprise/v2/_kit";
 import { DeptOverviewTab, type DeptOverviewView } from "./DeptOverviewTab";
 import { SessionsTab } from "./SessionsTab";
 import { DeptUsageTab } from "./DeptUsageTab";
@@ -21,7 +21,7 @@ import { DeptSettingsTab } from "./DeptSettingsTab";
 
 type TabKey = "overview" | "sessions" | "usage" | "settings";
 
-const TABS: readonly Tab<TabKey>[] = [
+const TABS: readonly PanelTab<TabKey>[] = [
   { key: "overview", label: "Overview" },
   { key: "sessions", label: "Sessions" },
   { key: "usage",    label: "Usage" },
@@ -43,24 +43,35 @@ function resolveInitial(param: string | null | undefined): { tab: TabKey; view: 
 }
 
 export function PanelClient({ me }: { me: { email: string; roleLabel: string } }) {
-  const params = useSearchParams();
+  const pathname = usePathname();
+  const params   = useSearchParams();
+
+  // The URL is the single source of truth for the active tab — deep links
+  // resolve on mount AND ?tab= changes while mounted are followed.
   const initial = resolveInitial(params?.get("tab"));
-  const [active, setActive] = useState<TabKey>(VALID.has(initial.tab) ? initial.tab : "overview");
+  const active: TabKey = VALID.has(initial.tab) ? initial.tab : "overview";
+
+  // Native replaceState keeps a tab click a pure client-side URL swap (no
+  // RSC refetch); Next syncs useSearchParams from the history state, which
+  // re-renders this component with the new derived `active`.
+  const select = (next: TabKey) => {
+    const p = new URLSearchParams(params?.toString() ?? "");
+    p.set("tab", next);
+    window.history.replaceState(null, "", `${pathname}?${p}`);
+  };
+
+  const firstName = useFirstName(me.email);
 
   return (
-    <div className="flex h-screen min-h-0 flex-col">
-      <TabsHeader
+    <div className="flex h-full min-h-0 flex-col">
+      <PanelHeader
+        name={firstName}
+        subtitle={`Department console · ${me.roleLabel}`}
         tabs={TABS}
         active={active}
-        onChange={setActive}
-        subtitle="Department"
+        onChange={select}
         rightSlot={
-          <div className="flex items-center gap-2">
-            <NotificationBell endpoint="/api/department/notifications" channelKey="department" />
-            <ThemeTriplet />
-            <UserChip email={me.email} roleLabel={me.roleLabel} />
-            <SignOutButton />
-          </div>
+          <NotificationBell endpoint="/api/department/notifications" channelKey="department" />
         }
       />
       <div className="min-h-0 flex-1 overflow-hidden">
