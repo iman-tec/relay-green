@@ -2861,26 +2861,19 @@ function HeaderPill({
       onClick={onClick}
       title={label}
       aria-label={`${label}${count > 0 ? ` (${count})` : ""}`}
-      // Responsive pill: ≥xl (the "normal zone") shows the full labeled
-      // pill at its ORIGINAL size; laptops (lg–xl) compact to icon + count
-      // badge so the top-center toast never collides; <lg the hit area
-      // grows to ≥44px for touch.
-      className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 transition-colors hover:bg-black/5 max-lg:min-h-11 max-lg:min-w-11 max-lg:justify-center max-lg:px-2.5 xl:gap-1.5 xl:px-3 xl:py-1.5 dark:hover:bg-white/5"
+      // Icon-only pill at EVERY width (the name lives in title/aria-label
+      // — never rendered as text, per design). <lg the hit area grows to
+      // ≥44px for touch.
+      className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1.5 transition-colors hover:bg-black/5 max-lg:min-h-11 max-lg:min-w-11 max-lg:justify-center dark:hover:bg-white/5"
       style={{
         borderColor: "var(--border)",
         backgroundColor: "var(--surface)",
       }}
     >
       <span style={{ color: "var(--primary)" }}>{icon}</span>
-      <span
-        className="hidden text-[12px] leading-none font-semibold xl:inline"
-        style={{ color: "var(--text)" }}
-      >
-        {label}
-      </span>
       {count > 0 && (
         <span
-          className="inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 text-[9px] leading-none font-bold tabular-nums xl:h-4 xl:min-w-4 xl:text-[10px]"
+          className="inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-bold tabular-nums"
           style={{ backgroundColor: "var(--primary)", color: "#fff" }}
         >
           {count > 99 ? "99+" : count}
@@ -2985,7 +2978,7 @@ function CenterHeaderActions({
   return (
     <div className="flex flex-nowrap items-center gap-2 max-lg:gap-1.5">
       <HeaderPill
-        icon={<CalendarClock size={12} />}
+        icon={<CalendarClock size={14} />}
         label="Scheduled"
         count={scheduledCount}
         onClick={onOpenScheduled}
@@ -2994,7 +2987,7 @@ function CenterHeaderActions({
       {showContracts && (
         <>
           <HeaderPill
-            icon={<FileText size={12} />}
+            icon={<FileText size={14} />}
             label="Contracts"
             count={contractCount}
             onClick={onOpenContracts}
