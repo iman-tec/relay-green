@@ -2861,9 +2861,10 @@ function HeaderPill({
       onClick={onClick}
       title={label}
       aria-label={`${label}${count > 0 ? ` (${count})` : ""}`}
-      // Compact pill — small enough that the top-center toast stack never
-      // overlaps it. <lg the label collapses (icon + count badge only) and
-      // the hit area grows to ≥44px for touch.
+      // Compact pill. Labels only show on LARGE desktops (≥xl/1280) — on
+      // laptops and below the pill is icon + count badge only, so the
+      // top-center toast stack never collides with it. <lg the hit area
+      // also grows to ≥44px for touch.
       className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 transition-colors hover:bg-black/5 max-lg:min-h-11 max-lg:min-w-11 max-lg:justify-center max-lg:px-2.5 dark:hover:bg-white/5"
       style={{
         borderColor: "var(--border)",
@@ -2872,7 +2873,7 @@ function HeaderPill({
     >
       <span style={{ color: "var(--primary)" }}>{icon}</span>
       <span
-        className="hidden text-[11px] leading-none font-semibold lg:inline"
+        className="hidden text-[11px] leading-none font-semibold xl:inline"
         style={{ color: "var(--text)" }}
       >
         {label}
