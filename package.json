@@ -4,7 +4,7 @@
   "private": true,
   "description": "Relay.green — real-time human engineering support for AI-native builders. Click the green dot, get a qualified engineer in 90 seconds.",
   "scripts": {
-    "dev": "next dev --experimental-https -H 10.0.2.129 -p 3000",
+    "dev": "next dev --experimental-https -H 10.0.3.175 -p 3000",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",

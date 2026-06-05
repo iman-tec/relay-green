@@ -8,11 +8,18 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: ".",
   },
-  // Dev server runs on https://10.0.2.129:3000 only — both schemes whitelisted
-  // (was 10.0.1.207 originally; updated for this machine's LAN IP)
-  // (the http variants stay so a stray http:// link doesn't 403 the asset
-  // even though every page redirects to https).
+  // Dev origins for BOTH developer machines (10.0.3.175 and 10.0.2.129) —
+  // the dev server binds to one of them via package.json's -H flag, but
+  // whitelisting both here means syncing the repo between machines never
+  // breaks asset loading. The http variants stay so a stray http:// link
+  // doesn't 403 the asset even though every page redirects to https.
   allowedDevOrigins: [
+    "10.0.3.175",
+    "10.0.3.175:3000",
+    "10.0.3.175:3001",
+    "https://10.0.3.175",
+    "https://10.0.3.175:3000",
+    "https://10.0.3.175:3001",
     "10.0.2.129",
     "10.0.2.129:3000",
     "10.0.2.129:3001",
