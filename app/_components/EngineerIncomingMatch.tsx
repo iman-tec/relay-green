@@ -16,7 +16,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { Phone, X, Loader2 } from "lucide-react";
+import { Phone, PhoneMissed, X, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import { useRingingHud } from "@/lib/relay/ringingHud";
 import { RingingBall } from "@/app/_components/RingingBall";
@@ -48,6 +48,13 @@ export function EngineerIncomingMatch() {
   const [intake, setIntake] = useState<Intake | null>(null);
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  // Missed-call toast — shown briefly after an offer rings out (countdown
+  // reached zero without accept/decline). Normal-type: auto-dismisses.
+  const [missedToast, setMissedToast] = useState<string | null>(null);
+  const missedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Focus management: move focus to Accept on appear, restore on dismiss.
+  const acceptBtnRef = useRef<HTMLButtonElement>(null);
+  const prevFocusRef = useRef<HTMLElement | null>(null);
 
   // 1Hz tick for countdown.
   useEffect(() => {
@@ -132,15 +139,43 @@ export function EngineerIncomingMatch() {
   }, [fetchOffer]);
 
   // Re-fetch when the countdown hits zero — server-side `expire_stale_offers`
-  // may not have fired yet; this clears stale "pending" rows visually.
+  // may not have fired yet; this clears stale "pending" rows visually (no
+  // frozen 00:00 overlay) and surfaces a missed-call toast so the ring
+  // doesn't just vanish without a trace.
   useEffect(() => {
     if (!offer) return;
     if (new Date(offer.expires_at).getTime() <= now) {
+      const label = intake?.developing
+        ? `Missed call — ${intake.developing}`
+        : "Missed call — the offer rang out";
+      if (missedTimerRef.current) clearTimeout(missedTimerRef.current);
+      setMissedToast(label);
+      missedTimerRef.current = setTimeout(() => setMissedToast(null), 6000);
       void supabaseRef.current
         .rpc("expire_stale_offers")
         .then(() => fetchOffer());
     }
-  }, [offer, now, fetchOffer]);
+  }, [offer, now, fetchOffer, intake]);
+  useEffect(
+    () => () => {
+      if (missedTimerRef.current) clearTimeout(missedTimerRef.current);
+    },
+    []
+  );
+
+  // Modal-alert plumbing while ringing: focus the Accept button on appear,
+  // restore focus on dismiss, and map Escape → Decline (same backend
+  // notify as the button).
+  useEffect(() => {
+    if (!offer || onSessionRoute) return;
+    prevFocusRef.current = document.activeElement as HTMLElement | null;
+    acceptBtnRef.current?.focus();
+    return () => {
+      prevFocusRef.current?.focus?.();
+    };
+    // Re-run per offer id so a brand-new ring re-grabs focus.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offer?.id, onSessionRoute]);
 
   // Audio cue + favicon flash + title blink + browser Notification while a
   // pending offer is on screen. Mute toggle is read fresh each render from
@@ -192,7 +227,23 @@ export function EngineerIncomingMatch() {
     setOffer(null);
   }, [offer, busy]);
 
-  if (onSessionRoute || !offer) return null;
+  // Escape declines (only while actually ringing on a non-session route).
+  useEffect(() => {
+    if (!offer || onSessionRoute) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        void decline();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [offer, onSessionRoute, decline]);
+
+  if (onSessionRoute || !offer) {
+    // The missed-call toast outlives the overlay — render it standalone.
+    return missedToast ? <MissedCallToast label={missedToast} /> : null;
+  }
 
   const remaining = Math.max(
     0,
@@ -201,6 +252,7 @@ export function EngineerIncomingMatch() {
   const subtitle = intake?.developing
     ? `Building: ${intake.developing}`
     : "A customer is asking for you";
+  void missedToast; // ringing view supersedes any lingering missed toast
 
   // Mirror the customer's MatchingClient ringing screen: full-bleed dark
   // overlay, RingingBall front-and-centre, mm:ss elapsed clock, soft
@@ -208,13 +260,22 @@ export function EngineerIncomingMatch() {
   // customer-side ring and engineer-side ring feel like the same call.
   return (
     <div
-      className="fixed inset-0 z-[var(--z-ring)] flex flex-col items-center justify-center gap-8 px-4 py-12 text-center"
+      role="alertdialog"
+      aria-modal="true"
+      aria-label="Incoming call"
+      className="fixed inset-0 z-[var(--z-ring)] flex h-dvh flex-col items-center justify-center gap-6 overflow-y-auto px-4 py-8 text-center sm:gap-8 sm:py-12"
       style={{
         background: "rgba(15, 15, 15, 0.86)",
         backdropFilter: "blur(8px)",
+        paddingTop: "max(2rem, env(safe-area-inset-top))",
+        paddingBottom: "max(2rem, env(safe-area-inset-bottom))",
       }}
     >
-      <RingingBall />
+      {/* Reduced-motion users get a static orb (the pulsing glow is pure
+          decoration; the countdown + copy carry the urgency). */}
+      <div className="motion-reduce:[&_*]:!animate-none">
+        <RingingBall />
+      </div>
 
       <div
         className="font-mono text-4xl tracking-[0.05em] tabular-nums"
@@ -279,6 +340,7 @@ export function EngineerIncomingMatch() {
           Decline
         </button>
         <button
+          ref={acceptBtnRef}
           type="button"
           onClick={accept}
           disabled={busy}
@@ -297,6 +359,30 @@ export function EngineerIncomingMatch() {
           )}
           Accept
         </button>
+      </div>
+    </div>
+  );
+}
+
+// Transient "you missed a ring" notice — appears bottom-center after an
+// offer expires un-answered, auto-dismisses (timer lives in the parent).
+function MissedCallToast({ label }: { label: string }) {
+  return (
+    <div
+      className="fixed bottom-6 left-1/2 z-[var(--z-toast)] -translate-x-1/2"
+      role="status"
+      aria-live="polite"
+    >
+      <div
+        className="flex items-center gap-2 rounded-full border px-4 py-2 text-sm shadow-lg"
+        style={{
+          borderColor: "var(--border)",
+          backgroundColor: "var(--surface)",
+          color: "var(--text)",
+        }}
+      >
+        <PhoneMissed size={14} style={{ color: "var(--risk)" }} />
+        {label}
       </div>
     </div>
   );

@@ -338,62 +338,9 @@ export function NotificationBell({
   }, [items, clearedBefore, nowTick]);
 
   // ── Glassmorphism pop toaster (top-center of the home/center panel) ─────
-  // Two tiers:
-  //   • bid/contract — STICKY: any UNREAD bid notification (newer than
-  //     lastSeen, not individually crossed) shows from the moment the page
-  //     loads and stays until the customer crosses it or opens the bell.
-  //     Crossed ids persist in localStorage so a reload doesn't resurrect
-  //     them. Money decisions never vanish on a timer.
-  //   • everything else — pops on live arrival only, auto-dismisses to the
-  //     bell after 5s.
-  const [transientToasts, setTransientToasts] = useState<Notif[]>([]);
-  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
-  const dismissedKey = customerUserId
-    ? `relay:notif-toast-dismissed:${customerUserId}`
-    : null;
-  useEffect(() => {
-    if (!dismissedKey) return;
-    try {
-      const raw = window.localStorage.getItem(dismissedKey);
-      if (raw) setDismissedIds(new Set(JSON.parse(raw) as string[]));
-    } catch {
-      /* ignore */
-    }
-  }, [dismissedKey]);
-  const dismissSticky = useCallback(
-    (id: string) => {
-      setDismissedIds((prev) => {
-        const next = new Set(prev);
-        next.add(id);
-        if (dismissedKey) {
-          try {
-            // Cap the persisted set so it can't grow unbounded.
-            window.localStorage.setItem(
-              dismissedKey,
-              JSON.stringify([...next].slice(-50))
-            );
-          } catch {
-            /* ignore */
-          }
-        }
-        return next;
-      });
-    },
-    [dismissedKey]
-  );
-
-  // Sticky tier — derived, so it survives reloads: unread bid items that
-  // haven't been individually crossed. Opening the bell advances lastSeen,
-  // which clears them naturally ("to the bell").
-  const stickyToasts = useMemo(
-    () =>
-      visibleItems.filter(
-        (i) => i.kind === "bid" && i.ts > lastSeen && !dismissedIds.has(i.id)
-      ),
-    [visibleItems, lastSeen, dismissedIds]
-  );
-
-  // Transient tier — live arrivals of every OTHER kind, 5s lifetime.
+  // Every kind — bids and contracts included — pops on live arrival and
+  // auto-dismisses to the bell after 5s. The bell keeps the full history.
+  const [toasts, setToasts] = useState<Notif[]>([]);
   const toastBaselineRef = useRef<number | null>(null);
   const toastTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   useEffect(() => {
@@ -404,18 +351,16 @@ export function NotificationBell({
       return;
     }
     const baseline = toastBaselineRef.current;
-    const fresh = visibleItems.filter(
-      (i) => i.ts > baseline && i.kind !== "bid"
-    );
+    const fresh = visibleItems.filter((i) => i.ts > baseline);
     if (visibleItems[0].ts > baseline) toastBaselineRef.current = newest;
     if (fresh.length === 0) return;
     if (open) return; // panel already open — the list itself shows them
     const popped = fresh.slice(0, 3);
-    setTransientToasts((prev) => [...popped, ...prev].slice(0, 3));
+    setToasts((prev) => [...popped, ...prev].slice(0, 3));
     const ids = popped.map((f) => f.id);
     toastTimersRef.current.push(
       setTimeout(() => {
-        setTransientToasts((prev) => prev.filter((t) => !ids.includes(t.id)));
+        setToasts((prev) => prev.filter((t) => !ids.includes(t.id)));
       }, 5000)
     );
   }, [visibleItems, open]);
@@ -424,15 +369,6 @@ export function NotificationBell({
       for (const t of toastTimersRef.current) clearTimeout(t);
     },
     []
-  );
-
-  // Render order: sticky bids first, then transients; cap the stack.
-  const toasts = useMemo(
-    () =>
-      [...stickyToasts, ...transientToasts]
-        .filter((t, i, arr) => arr.findIndex((x) => x.id === t.id) === i)
-        .slice(0, 3),
-    [stickyToasts, transientToasts]
   );
 
   const unread = useMemo(
@@ -587,9 +523,15 @@ export function NotificationBell({
       {/* Glassmorphism toasts — frosted, translucent cards dropping in at
           the TOP-CENTER of the main panel (dynamic-island style) so they
           can't be missed; the bell keeps the full history for review.
-          Click anywhere on a card to open the panel; × dismisses it. */}
+          Click anywhere on a card to open the panel; × dismisses it.
+          <lg the stack starts BELOW the header strip (hamburger + pills +
+          bell live in the top ~56px band — at top-6 the toast covered
+          them on phones); ≥lg it floats at the original top-center. */}
       {toasts.length > 0 && (
-        <div className="pointer-events-none fixed inset-x-0 top-6 z-[var(--z-toast)] flex flex-col items-center gap-2 px-4">
+        <div
+          className="pointer-events-none fixed inset-x-0 top-6 z-[var(--z-toast)] flex flex-col items-center gap-2 px-4"
+          style={{ paddingTop: "env(safe-area-inset-top)" }}
+        >
           {toasts.map((n) => {
             const Icon = KIND_ICON[n.kind];
             return (
@@ -598,15 +540,13 @@ export function NotificationBell({
                 role="button"
                 tabIndex={0}
                 onClick={() => {
-                  // Open the bell — that marks everything seen, which clears
-                  // the sticky bids naturally; transients are dropped too.
-                  setTransientToasts([]);
+                  setToasts([]);
                   if (!open) openPanel();
                 }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
-                    setTransientToasts([]);
+                    setToasts([]);
                     if (!open) openPanel();
                   }
                 }}
@@ -655,21 +595,13 @@ export function NotificationBell({
                   aria-label="Dismiss notification"
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (n.kind === "bid") dismissSticky(n.id);
-                    else
-                      setTransientToasts((prev) =>
-                        prev.filter((t) => t.id !== n.id)
-                      );
+                    setToasts((prev) => prev.filter((t) => t.id !== n.id));
                   }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
                       e.stopPropagation();
-                      if (n.kind === "bid") dismissSticky(n.id);
-                      else
-                        setTransientToasts((prev) =>
-                          prev.filter((t) => t.id !== n.id)
-                        );
+                      setToasts((prev) => prev.filter((t) => t.id !== n.id));
                     }
                   }}
                   className="-mt-0.5 -mr-1 inline-flex size-6 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-black/10 dark:hover:bg-white/10"

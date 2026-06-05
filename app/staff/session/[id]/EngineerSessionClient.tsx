@@ -362,11 +362,12 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
     );
   }, []);
 
-  // After a session ends, send the engineer to that session's review page
-  // (summary + transcript + files) rather than dumping them back on /inbox —
-  // they get to look over what just happened. Supervisor monitors still land
-  // on /inbox. (3-second beat gives the summary edge fn a head start writing
-  // the AI summary before we navigate; the review page shows it once ready.)
+  // After a session ends, send the engineer to the PROJECT detail page
+  // (full project context: sessions, files, AI assistant) rather than the
+  // per-session review page — the project view is the richer post-call
+  // surface. Falls back to /inbox when the session carried no project.
+  // Supervisor monitors still land on /supervise. (3-second beat gives the
+  // summary edge fn a head start writing the AI summary before we navigate.)
   const prevStatusRef = useRef<SessionStatus | null>(null);
   useEffect(() => {
     if (
@@ -374,12 +375,22 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
       prevStatusRef.current &&
       prevStatusRef.current !== "ended"
     ) {
-      const dest = isSupervisor ? "/supervise" : `/session-review/${sessionId}`;
+      const projectId = state.session?.project_id ?? null;
+      const dest = isSupervisor
+        ? "/supervise"
+        : projectId
+          ? `/staff/project/${projectId}`
+          : "/inbox";
       const t = setTimeout(() => router.push(dest), 3000);
       return () => clearTimeout(t);
     }
     prevStatusRef.current = state.session?.status ?? null;
-  }, [state.session?.status, router, isSupervisor, sessionId]);
+  }, [
+    state.session?.status,
+    state.session?.project_id,
+    router,
+    isSupervisor,
+  ]);
 
   // Desktop-shell integration: hide the floating orb widget while a Relay
   // session is in flight on the engineer side. Bridge is no-op in the
@@ -1649,6 +1660,12 @@ function FloatingStatus({
   const startVideo = async () => {
     setBusyStart(true);
     setMintError(null);
+    // Whoever STARTS the call joins it immediately — open the tab
+    // synchronously (inside the click's user gesture, before any await)
+    // so popup blockers allow it, then point it at the start URL once the
+    // mint returns. The customer sees the inline ZoomCallCard via the
+    // "Zoom meeting started" system message as before.
+    const popup = window.open("about:blank", "_blank");
     try {
       const sb = createClient();
       // mint-zoom-for-session is idempotent: a no-op while a meeting is
@@ -1661,6 +1678,7 @@ function FloatingStatus({
         }
       );
       if (error || !data?.zoom_meeting_id) {
+        popup?.close();
         const msg =
           error?.message ??
           (data?.error as string | undefined) ??
@@ -1668,6 +1686,16 @@ function FloatingStatus({
         setMintError(msg);
         setTimeout(() => setMintError(null), 6000);
         return;
+      }
+      const startUrl =
+        (data.zoom_start_url as string | undefined) ??
+        (data.zoom_join_url as string | undefined);
+      if (startUrl) {
+        if (popup) popup.location.href = startUrl;
+        else window.open(startUrl, "_blank", "noopener,noreferrer");
+        void state.markJoined();
+      } else {
+        popup?.close();
       }
       onStart();
     } finally {
@@ -1797,14 +1825,17 @@ function FloatingStatus({
             Monitoring (silent)
           </span>
         )}
-        {/* Start / restart Zoom — sits beside "End session" in the top-right
-            HUD. The assigned engineer mints via startVideo; an appointment
-            moderator (supervisor host) opens the in-window Video SDK call. */}
+        {/* Start / restart the call — sits beside "End session" in the
+            top-right HUD. "Whoever starts, joins": with the Video SDK
+            enabled the button opens the IN-WINDOW CallSurface directly
+            (same as clicking Join on the inline card — no external Zoom
+            tab); the legacy Meeting flow mints + auto-opens the start URL.
+            CallSurface's onJoined stamps markJoined either way. */}
         {(showStartMeetingButton || (isApptSupervisor && launchCall)) && (
           <button
             type="button"
             onClick={() => {
-              if (isApptSupervisor && launchCall) launchCall();
+              if (launchCall) launchCall();
               else void startVideo();
             }}
             disabled={busyStart}

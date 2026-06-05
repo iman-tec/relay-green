@@ -260,13 +260,21 @@ Deno.serve(async (req) => {
     const { data: session, error: sErr } = await admin
       .from("guest_calls")
       .select(
-        "id, claimed_by, zoom_meeting_id, zoom_join_url, zoom_start_url, zoom_observer_url, guest_name, status"
+        "id, claimed_by, customer_user_id, zoom_meeting_id, zoom_join_url, zoom_start_url, zoom_observer_url, guest_name, status"
       )
       .eq("id", sessionId)
       .maybeSingle();
     if (sErr || !session) return json({ error: "Session not found" }, 404);
-    if (session.claimed_by !== u.user.id)
-      return json({ error: "Not assigned to you" }, 403);
+    // EITHER party can start the call — the assigned engineer or the
+    // session's customer ("whoever calls, joins"; the other side gets the
+    // in-chat ZoomCallCard). An engineer must already be claimed (the
+    // registrant naming + alias depend on it).
+    const isEngineerCaller = session.claimed_by === u.user.id;
+    const isCustomerCaller = session.customer_user_id === u.user.id;
+    if (!isEngineerCaller && !isCustomerCaller)
+      return json({ error: "Not your session" }, 403);
+    if (!session.claimed_by)
+      return json({ error: "No engineer assigned yet" }, 409);
 
     // Idempotency vs restart: reuse the existing meeting unless the latest
     // lifecycle message is an "ended" one (meeting is stale → mint fresh).
