@@ -51,7 +51,11 @@ import {
 } from "@/app/_components/MeetingSummaryEntry";
 import { ChatComposer } from "@/app/_components/ChatComposer";
 import { EngineerAiAsk } from "@/app/_components/EngineerAiAsk";
-import { ProjectAIAssistant } from "@/app/_components/ProjectAIAssistant";
+import { AssistantLauncher } from "@/app/_components/AssistantLauncher";
+import {
+  broadcastAssistantEnd,
+  consumePopupBlockedFlag,
+} from "@/lib/relay/assistantTab";
 import { MessageAttachments } from "@/app/_components/MessageAttachments";
 import { EditableSummary } from "@/app/_components/EditableSummary";
 import { createClient } from "@/lib/supabase/browser";
@@ -375,6 +379,9 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
       prevStatusRef.current &&
       prevStatusRef.current !== "ended"
     ) {
+      // Tell the assistant tab the session is over (it shows a "Session
+      // ended" banner instead of lingering as a live-looking orphan).
+      broadcastAssistantEnd(sessionId);
       const projectId = state.session?.project_id ?? null;
       const dest = isSupervisor
         ? "/supervise"
@@ -390,7 +397,19 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
     state.session?.project_id,
     router,
     isSupervisor,
+    sessionId,
   ]);
+
+  // One-shot "pop-up blocked" hint: Accept tried to auto-open the
+  // assistant tab and the browser blocked it — point at the launcher.
+  const [popupHint, setPopupHint] = useState(false);
+  useEffect(() => {
+    if (consumePopupBlockedFlag()) {
+      setPopupHint(true);
+      const t = setTimeout(() => setPopupHint(false), 7000);
+      return () => clearTimeout(t);
+    }
+  }, []);
 
   // Desktop-shell integration: hide the floating orb widget while a Relay
   // session is in flight on the engineer side. Bridge is no-op in the
@@ -477,6 +496,32 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
         className="flex h-screen w-screen overflow-hidden"
         style={{ backgroundColor: "var(--background)", color: "var(--text)" }}
       >
+        {/* Floating AI-assistant launcher — the only assistant UI on this
+            screen. Engineers only, while the session is live-ish; click
+            opens/refocuses the assistant tab, drag repositions. */}
+        {!isSupervisor &&
+          state.session &&
+          !["ended", "cancelled", "abandoned"].includes(
+            state.session.status
+          ) && (
+            <AssistantLauncher
+              sessionId={state.session.id}
+              projectId={state.session.project_id ?? null}
+            />
+          )}
+        {popupHint && (
+          <div
+            className="fixed bottom-24 left-1/2 z-[var(--z-toast)] -translate-x-1/2 rounded-full border px-4 py-2 text-sm shadow-lg"
+            style={{
+              borderColor: "var(--border)",
+              backgroundColor: "var(--surface)",
+              color: "var(--text)",
+            }}
+            role="status"
+          >
+            Pop-up blocked — tap the ✨ assistant button to open it.
+          </div>
+        )}
         <Sidebar
           engineerEmail={meEmail}
           session={state.session}
@@ -484,93 +529,65 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
           isSupervisor={isSupervisor}
         />
 
-        {/* Two layouts depending on whether the call is open:
+        {/* Two layouts depending on whether the call is open. The AI
+         *  Project Assistant no longer renders inline in EITHER — it lives
+         *  in its own tab (auto-opened on Accept; the floating launcher
+         *  re-opens it):
          *
-         *  callOpen=true  → ProjectAIAssistant gets the MAIN panel — the engineer's
-         *                   primary focus during a call is studying project context
-         *                   to ground their answers. Right rail stacks CallSurface
-         *                   (top, customer video/share) over ChatPane (bottom,
-         *                   customer conversation). All three coexist; engineer
-         *                   resizes both axes to taste.
-         *  callOpen=false → Existing two-pane MainPane (chat + ProjectAIAssistant)
-         *                   so the engineer can study project history before
-         *                   launching the call. */}
+         *  callOpen=true  → CallSurface fills the whole stage (video grid
+         *                   gets all the space); chat in the floating dock.
+         *  callOpen=false → full-width conversation (MainPane). */}
         {callOpen && state.session ? (
           <>
-            <PanelGroup
-              direction="horizontal"
-              autoSaveId="relay-eng-call-v3"
-              className="flex min-w-0 flex-1"
-            >
-              <Panel id="eng-call-ai" order={1} defaultSize={60} minSize={20}>
-                <div
-                  className="flex h-full min-h-0 flex-col overflow-hidden"
-                  style={{ background: "var(--surface)" }}
-                >
-                  {isSupervisor && (
-                    <div
-                      className="flex shrink-0 items-center justify-center gap-2 border-b px-3 py-1.5 text-[11px] font-medium tracking-wider uppercase"
-                      style={{
-                        backgroundColor:
-                          "color-mix(in srgb, var(--text) 4%, transparent)",
-                        borderColor: "var(--border)",
-                        color: "var(--text-muted)",
-                      }}
-                    >
-                      <Eye size={11} />
-                      {isAppointment
-                        ? "Supervisor · appointment"
-                        : supervisorCanChat
-                          ? "Supervisor · joined"
-                          : "Supervisor · read-only"}
-                    </div>
-                  )}
-                  <main className="min-h-0 flex-1 overflow-hidden">
-                    <ProjectAIAssistant
-                      projectId={state.session.project_id ?? null}
-                      projectName={state.session.project_name ?? null}
-                    />
-                  </main>
-                </div>
-              </Panel>
-              <Resizer />
-              <Panel id="eng-call-side" order={2} defaultSize={40} minSize={20}>
-                <div
-                  className="flex h-full min-h-0 flex-col overflow-hidden"
-                  style={{
-                    background: "var(--surface)",
-                    borderLeft: "1px solid var(--border)",
-                  }}
-                >
-                  {!isSupervisor && (
-                    <FloatingStatus
-                      state={state}
-                      timer={timer}
-                      started={started}
-                      onStart={() => setStarted(true)}
-                    />
-                  )}
-                  {/* Zoom fills the side panel; the conversation lives in a
-                  draggable, collapsible floating chat dock so a screen-share is
-                  never cramped by the chat below it. */}
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+              <div
+                className="flex h-full min-h-0 flex-col overflow-hidden"
+                style={{ background: "var(--surface)" }}
+              >
+                {isSupervisor && (
                   <div
-                    className="min-h-0 flex-1"
-                    style={{ background: "var(--background)" }}
+                    className="flex shrink-0 items-center justify-center gap-2 border-b px-3 py-1.5 text-[11px] font-medium tracking-wider uppercase"
+                    style={{
+                      backgroundColor:
+                        "color-mix(in srgb, var(--text) 4%, transparent)",
+                      borderColor: "var(--border)",
+                      color: "var(--text-muted)",
+                    }}
                   >
-                    <CallSurface
-                      sessionId={state.session.id}
-                      role="host"
-                      userName={
-                        isSupervisor ? "Moderator" : meEmail || "Engineer"
-                      }
-                      onClose={() => setCallOpen(false)}
-                      onJoined={() => void state.markJoined()}
-                      wideTiles
-                    />
+                    <Eye size={11} />
+                    {isAppointment
+                      ? "Supervisor · appointment"
+                      : supervisorCanChat
+                        ? "Supervisor · joined"
+                        : "Supervisor · read-only"}
                   </div>
+                )}
+                {!isSupervisor && (
+                  <FloatingStatus
+                    state={state}
+                    timer={timer}
+                    started={started}
+                    onStart={() => setStarted(true)}
+                  />
+                )}
+                {/* The video grid owns the full stage; the conversation
+                    lives in a draggable, collapsible floating chat dock so
+                    a screen-share is never cramped. */}
+                <div
+                  className="min-h-0 flex-1"
+                  style={{ background: "var(--background)" }}
+                >
+                  <CallSurface
+                    sessionId={state.session.id}
+                    role="host"
+                    userName={isSupervisor ? "Moderator" : meEmail || "Engineer"}
+                    onClose={() => setCallOpen(false)}
+                    onJoined={() => void state.markJoined()}
+                    wideTiles
+                  />
                 </div>
-              </Panel>
-            </PanelGroup>
+              </div>
+            </div>
             <FloatingDock
               storageKey="eng-call-chat"
               title="Chat"
@@ -700,37 +717,12 @@ function MainPane({
     );
   }
 
-  // Active session (assigned/joining/live/grace/expired_free).
-  //   • Call open  → the right rail (CallSurface + EngineerAiAsk) owns the
-  //                  AI surface, so MainPane collapses to a full-width chat
-  //                  to give that rail room. (hideAiAsk mirrors callOpen.)
-  //   • No call    → MainPane is two-pane: ChatPane + ProjectAIAssistant.
-  //                  The engineer can query project context without scrolling
-  //                  through every past session manually.
-  if (hideAiAsk) {
-    return <ChatPane state={state} fullWidth readOnly={!canChat} hideAiAsk />;
-  }
-  return (
-    <PanelGroup
-      direction="horizontal"
-      autoSaveId="relay-eng-active"
-      className="h-full"
-    >
-      <Panel defaultSize={62} minSize={20} order={1}>
-        {/* hideAiAsk: ProjectAIAssistant in the right panel handles the
-            project Q&A, so suppress the inline EngineerAiAsk pill below
-            the composer to avoid two parallel AI input boxes. */}
-        <ChatPane state={state} fullWidth readOnly={!canChat} hideAiAsk />
-      </Panel>
-      <Resizer />
-      <Panel defaultSize={38} minSize={20} order={2}>
-        <ProjectAIAssistant
-          projectId={session.project_id ?? null}
-          projectName={session.project_name ?? null}
-        />
-      </Panel>
-    </PanelGroup>
-  );
+  // Active session (assigned/joining/live/grace/expired_free) — full-width
+  // conversation. The AI Project Assistant no longer renders inline; it
+  // lives in its own tab (auto-opened on Accept, re-opened from the
+  // floating launcher). hideAiAsk stays on: the assistant tab owns project
+  // Q&A, so the inline EngineerAiAsk pill would be a duplicate input.
+  return <ChatPane state={state} fullWidth readOnly={!canChat} hideAiAsk />;
 }
 
 // ── Sidebar (customer card + past sessions + engineer profile) ─────────────

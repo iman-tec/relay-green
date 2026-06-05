@@ -19,6 +19,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { Phone, PhoneMissed, X, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import { useRingingHud } from "@/lib/relay/ringingHud";
+import { prepareAssistantTab } from "@/lib/relay/assistantTab";
 import { RingingBall } from "@/app/_components/RingingBall";
 import type { GuestCall } from "@/lib/supabase/types";
 
@@ -194,6 +195,13 @@ export function EngineerIncomingMatch() {
   const accept = useCallback(async () => {
     if (!offer || busy) return;
     setBusy(true);
+    // Auto-open the AI-assistant tab — MUST start inside this click
+    // gesture (a blank window opened synchronously) or the browser
+    // popup-blocks it; we adopt it with the real session/project ids once
+    // accept_match returns, or discard it if the claim failed. When the
+    // browser blocks even this, prepareAssistantTab sets the hint flag and
+    // the session page points at the floating launcher.
+    const tab = prepareAssistantTab();
     const sb = supabaseRef.current;
     const { data, error } = await sb.rpc("accept_match", {
       _offer_id: offer.id,
@@ -201,11 +209,17 @@ export function EngineerIncomingMatch() {
     setBusy(false);
     if (error) {
       // OFFER_NOT_ACTIONABLE → someone else accepted, or expired
+      tab.discard();
       setOffer(null);
       return;
     }
     const session = (Array.isArray(data) ? data[0] : data) as GuestCall;
-    if (session?.id) router.push(`/staff/session/${session.id}`);
+    if (session?.id) {
+      tab.adopt(session.id, session.project_id ?? null);
+      router.push(`/staff/session/${session.id}`);
+    } else {
+      tab.discard();
+    }
   }, [offer, busy, router]);
 
   const decline = useCallback(async () => {
