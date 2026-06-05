@@ -153,10 +153,18 @@ export function OperationsClient() {
   const capacity = podCapacity(allocRows);
 
   return (
-    <div className="mx-auto max-w-screen-xl space-y-6 px-8 py-8">
+    <div className="mx-auto max-w-screen-xl space-y-6 px-4 py-6 sm:px-8 sm:py-8">
       <SectionHeader
         title={pod ? `Pod ${pod.name}` : "Operations"}
-        subtitle="Engineers under your watch. The capacity meter shows the 10-engineer threshold — engineers 1–10 belong to the first supervisor, 11–15 to the second."
+        // Wrapped so the description is hidden on phones (the empty <p>
+        // collapses); shown on sm+.
+        subtitle={
+          <span className="hidden sm:inline">
+            Engineers under your watch. The capacity meter shows the 10-engineer
+            threshold — engineers 1–10 belong to the first supervisor, 11–15 to
+            the second.
+          </span>
+        }
         right={
           <div className="w-72 max-w-full">
             <Input
@@ -198,7 +206,9 @@ export function OperationsClient() {
           />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            {/* min-w keeps columns from squeezing on phones (headers wrapping
+                one letter per line); the wrapper scrolls horizontally instead. */}
+            <table className="w-full min-w-[680px] text-sm">
               <thead className="bg-[var(--surface-raised)]">
                 <tr className="border-b border-[var(--border)]">
                   <Th>Engineer</Th>
@@ -441,12 +451,12 @@ function CapacityMeter({
           />
         </div>
 
-        <p className="mt-3 text-[11px] leading-relaxed text-[var(--text-faint)]">
+        <p className="mt-3 hidden text-[11px] leading-relaxed text-[var(--text-faint)] sm:block">
           {/* SEAM hint surfaced inline so admins know why allocation looks
-              flat today (pass-through impl). */}
-          Allocation rule (preview): the first 10 engineers belong to the first
-          supervisor; engineers 11–15 belong to the second once they&apos;re
-          online. Cleanup in progress — see
+              flat today (pass-through impl). Hidden on phones. */}
+          Allocation rule (preview): the first 10 engineers belong to the
+          first supervisor; engineers 11–15 belong to the second once
+          they&apos;re online. Cleanup in progress — see
           <code className="mx-1 rounded bg-[color-mix(in_srgb,var(--text)_8%,transparent)] px-1 py-0.5 font-mono text-[10px]">
             lib/allocation/podAllocation.ts
           </code>
@@ -497,7 +507,7 @@ function SupervisorSlot({
 
 function Th({ children }: { children: React.ReactNode }) {
   return (
-    <th className="px-5 py-3 text-left text-[11px] font-semibold tracking-[0.08em] text-[var(--text-muted)] uppercase">
+    <th className="px-5 py-3 text-left text-[11px] font-semibold tracking-[0.08em] whitespace-nowrap text-[var(--text-muted)] uppercase">
       {children}
     </th>
   );

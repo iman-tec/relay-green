@@ -103,7 +103,11 @@ export async function GET() {
             .select(
               "id, session_id, engineer_user_id, reason, note, created_at, pod_id"
             )
-            .eq("status", "open")
+            // Not just 'open' — keep acked/joined ones too so a supervisor who
+            // joined (and e.g. hit Back) can still see + rejoin the escalation.
+            // It leaves the list only when Resolved/Cancelled (or the session
+            // ends, which auto-resolves it).
+            .in("status", ["open", "acked", "joined"])
             .or(
               [
                 podId ? `pod_id.eq.${podId}` : "",

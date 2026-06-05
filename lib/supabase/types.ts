@@ -75,6 +75,10 @@ export type GuestCall = {
   // appointment session. The customer's room drops the ring + enables the Zoom
   // call once this (or an engineer claim) lands (migration 20260602130000).
   supervisor_joined_at?: string | null;
+  // True when the session was escalated by the engineer but ended before any
+  // supervisor joined (set by the flag_escalated_unattended DB trigger). Drives
+  // the "Escalated · No supervisor joined" badge on the past-session card.
+  escalated_unattended?: boolean;
   // Phase 4: project grouping. Both nullable for legacy / "General" sessions.
   project_id: string | null;
   project_name: string | null;

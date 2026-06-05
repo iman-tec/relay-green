@@ -59,12 +59,17 @@ export function CalendarPageClient() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 px-6 py-8">
+    <div className="mx-auto max-w-3xl space-y-6 px-4 py-6 sm:px-6 sm:py-8">
       {/* Page header — uses the shared SectionHeader so /calendar reads in the
           same register as /operations and /schedule. */}
       <SectionHeader
         title="Your calendar"
-        subtitle="Your availability, holidays and booked appointments at a glance."
+        subtitle={
+          // Hidden on phones to cut visual noise; visible from sm up.
+          <span className="hidden sm:inline">
+            Your availability, holidays and booked appointments at a glance.
+          </span>
+        }
       />
 
       {banner && <Toast tone={banner.tone}>{banner.text}</Toast>}

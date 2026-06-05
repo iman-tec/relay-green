@@ -31,7 +31,6 @@ import {
   Copy,
   Check,
   ChevronRight,
-  ArrowLeft,
   MessageSquare,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -130,6 +129,22 @@ export function ProjectAIAssistant({
   const newChat = useCallback(() => {
     threadIdRef.current = crypto.randomUUID();
     setMessages([]);
+    setError(null);
+    setView("chat");
+  }, []);
+
+  // Resume a past conversation: load its turns into the live chat and adopt its
+  // thread id, so the next question continues the SAME thread (and is saved
+  // under it). Switches from history → chat.
+  const resumeThread = useCallback((thread: HistThread) => {
+    threadIdRef.current = thread.threadId;
+    setMessages(
+      thread.rows.map((r) =>
+        r.role === "user"
+          ? { role: "user" as const, content: r.content, id: r.id }
+          : { role: "assistant" as const, content: r.content, id: r.id },
+      ),
+    );
     setError(null);
     setView("chat");
   }, []);
@@ -289,7 +304,11 @@ export function ProjectAIAssistant({
         className="hide-scrollbar flex-1 overflow-y-auto px-4 py-4"
       >
         {view === "history" ? (
-          <HistoryPanel threads={historyThreads} loading={historyLoading} />
+          <HistoryPanel
+            threads={historyThreads}
+            loading={historyLoading}
+            onResume={resumeThread}
+          />
         ) : messages.length === 0 && !busy ? (
           <EmptyState />
         ) : (
@@ -401,12 +420,12 @@ function threadTitle(t: HistThread): string {
 function HistoryPanel({
   threads,
   loading,
+  onResume,
 }: {
   threads: HistThread[];
   loading: boolean;
+  onResume: (thread: HistThread) => void;
 }) {
-  const [openId, setOpenId] = useState<string | null>(null);
-
   if (loading) {
     return (
       <div
@@ -429,54 +448,9 @@ function HistoryPanel({
     );
   }
 
-  const open = openId
-    ? (threads.find((t) => t.threadId === openId) ?? null)
-    : null;
-
-  // ── A single past conversation ──────────────────────────────────────
-  if (open) {
-    return (
-      <div>
-        <button
-          type="button"
-          onClick={() => setOpenId(null)}
-          className="mb-3 inline-flex items-center gap-1.5 text-[12px] font-medium transition-opacity hover:opacity-80"
-          style={{ color: "var(--text-muted)" }}
-        >
-          <ArrowLeft size={13} /> All chats
-        </button>
-        <div className="mb-3">
-          <h3
-            className="text-[14px] leading-snug font-semibold"
-            style={{
-              color: "var(--text)",
-              fontFamily: "var(--font-source-serif)",
-            }}
-          >
-            {threadTitle(open)}
-          </h3>
-          <p
-            className="mt-0.5 text-[10px] tracking-wider uppercase"
-            style={{ color: "var(--text-faint)" }}
-          >
-            <span style={{ color: BRAND_GREEN }}>{open.asker}</span> ·{" "}
-            {relTime(open.startedAt)}
-          </p>
-        </div>
-        <div className="space-y-3">
-          {open.rows.map((r) =>
-            r.role === "user" ? (
-              <UserBubble key={r.id} text={r.content} />
-            ) : (
-              <AssistantBubble key={r.id} text={r.content} />
-            )
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // ── Title list ──────────────────────────────────────────────────────
+  // Tapping a past conversation resumes it straight into the chat (its turns +
+  // a live composer), so the supervisor can read it AND keep asking — the
+  // follow-ups continue the same saved thread.
   return (
     <ul className="space-y-1.5">
       {threads.map((t) => {
@@ -485,7 +459,8 @@ function HistoryPanel({
           <li key={t.threadId}>
             <button
               type="button"
-              onClick={() => setOpenId(t.threadId)}
+              onClick={() => onResume(t)}
+              title="Open & continue this chat"
               className="flex w-full items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
               style={{ borderColor: "var(--border)" }}
             >

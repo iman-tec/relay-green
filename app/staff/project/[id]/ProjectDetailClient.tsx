@@ -21,6 +21,9 @@ import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  X,
   Folder,
   FileText,
   Image as ImageIcon,
@@ -36,6 +39,14 @@ import { useRequireEngineerProfile } from "@/lib/relay/useRequireEngineerProfile
 import { ProjectAIAssistant } from "@/app/_components/ProjectAIAssistant";
 
 const BRAND_GREEN = "#3f5c2e";
+
+// Phone-width viewport — drives the project view's mobile collapse defaults.
+function isMobileViewport(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    window.matchMedia("(max-width: 767px)").matches
+  );
+}
 
 type SessionRow = {
   id: string;
@@ -102,6 +113,9 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
 
   // Resizable right (AI assistant) pane — drag its left edge to widen/narrow.
   const [rightWidth, setRightWidth] = useState(384);
+  // Mobile: the desktop AI panel is hidden, so a FAB opens it as a full-screen
+  // overlay instead.
+  const [mobileAiOpen, setMobileAiOpen] = useState(false);
   const draggingRight = useRef(false);
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -287,8 +301,8 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
       />
 
       {/* ── CENTER ───────────────────────────────────────────── */}
-      <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-3xl px-6 py-6">
+      <main className="min-w-0 flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-3xl px-3 py-4 sm:px-6 sm:py-6">
           {/* Tabs — Project summary always; the selected session as a second
               tab once one is picked from the left. */}
           <div
@@ -361,6 +375,51 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
           projectName={data.projectName}
         />
       </aside>
+
+      {/* ── Mobile: FAB to open the AI assistant (desktop panel is hidden) ── */}
+      {!mobileAiOpen && (
+        <button
+          type="button"
+          onClick={() => setMobileAiOpen(true)}
+          aria-label="Open AI project assistant"
+          className="fixed bottom-4 right-4 z-40 flex h-12 w-12 items-center justify-center rounded-full shadow-lg transition-transform hover:scale-105 lg:hidden"
+          style={{ background: BRAND_GREEN, color: "#fff" }}
+        >
+          <Sparkles size={20} />
+        </button>
+      )}
+
+      {/* ── Mobile: AI assistant as a full-screen sheet ── */}
+      {mobileAiOpen && (
+        <div
+          className="fixed inset-0 z-[var(--z-modal)] flex flex-col lg:hidden"
+          style={{ background: "var(--surface)" }}
+        >
+          <div
+            className="flex shrink-0 items-center justify-between border-b px-4 py-2"
+            style={{ borderColor: "var(--border)" }}
+          >
+            <span
+              className="text-[11px] font-semibold uppercase tracking-wide"
+              style={{ color: "var(--text-muted)" }}
+            >
+              AI project assistant
+            </span>
+            <button
+              type="button"
+              onClick={() => setMobileAiOpen(false)}
+              aria-label="Close AI assistant"
+              className="inline-flex size-7 items-center justify-center rounded-md border transition-colors hover:bg-[var(--surface-raised)]"
+              style={{ borderColor: "var(--border)", color: "var(--text)" }}
+            >
+              <X size={14} />
+            </button>
+          </div>
+          <div className="min-h-0 flex-1">
+            <ProjectAIAssistant projectId={projectId} projectName={data.projectName} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -419,6 +478,39 @@ function ProjectLeftSidebar({
   onSelectSession: (id: string) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  // Collapsible on mobile so the center summary is the main view.
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    if (isMobileViewport()) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setCollapsed(true);
+    }
+  }, []);
+
+  if (collapsed) {
+    return (
+      <aside
+        className="flex w-10 shrink-0 flex-col border-r"
+        style={{ borderColor: "var(--border)", background: "var(--surface)" }}
+      >
+        <button
+          type="button"
+          onClick={() => setCollapsed(false)}
+          title="Expand customer / sessions"
+          className="flex h-full w-full flex-col items-center justify-start gap-3 px-2 py-3 transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
+          style={{ color: "var(--text-muted)" }}
+        >
+          <ChevronRight size={14} />
+          <span
+            className="select-none text-[10px] font-semibold uppercase tracking-[0.18em]"
+            style={{ writingMode: "vertical-rl" }}
+          >
+            Customer
+          </span>
+        </button>
+      </aside>
+    );
+  }
 
   return (
     <aside
@@ -430,14 +522,26 @@ function ProjectLeftSidebar({
         className="border-b px-5 py-4"
         style={{ borderColor: "var(--border)" }}
       >
-        <button
-          type="button"
-          onClick={onBack}
-          className="mb-3 inline-flex items-center gap-1.5 text-[12px] font-medium transition-colors hover:opacity-80"
-          style={{ color: "var(--text-muted)" }}
-        >
-          <ArrowLeft size={14} /> Back to inbox
-        </button>
+        {/* Merge: escalations branch added the rail-collapse button. */}
+        <div className="mb-3 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex items-center gap-1.5 text-[12px] font-medium transition-colors hover:opacity-80"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <ArrowLeft size={14} /> Back to inbox
+          </button>
+          <button
+            type="button"
+            onClick={() => setCollapsed(true)}
+            title="Collapse"
+            className="rounded-md p-0.5"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <ChevronLeft size={14} />
+          </button>
+        </div>
         <p
           className="text-[10px] font-semibold tracking-[0.12em] uppercase"
           style={{ color: BRAND_GREEN }}
@@ -556,7 +660,11 @@ function ProjectLeftSidebar({
                 <li key={s.id}>
                   <button
                     type="button"
-                    onClick={() => onSelectSession(s.id)}
+                    onClick={() => {
+                      onSelectSession(s.id);
+                      // On mobile, collapse so the session summary takes over.
+                      if (isMobileViewport()) setCollapsed(true);
+                    }}
                     className="relative flex w-full flex-col gap-0.5 border-b px-5 py-2.5 text-left transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
                     style={{
                       borderColor: "var(--border)",
