@@ -5431,7 +5431,7 @@ function ChatPanelStub({
           the expand button there); expanded mode drops the avatar circle
           entirely so the row reads clean. */}
       <div
-        className="flex shrink-0 items-center gap-2 border-b px-2.5 py-2.5"
+        className="flex h-[52px] shrink-0 items-center gap-2 border-b px-2.5"
         style={{ borderColor: "var(--border)" }}
       >
         <button
@@ -6375,7 +6375,9 @@ function SummaryPanel({
       }}
     >
       <div
-        className="flex items-center gap-2 border-b px-4 py-3"
+        // h-[52px] matches the ChatPanelStub header exactly so the two
+        // panes' bottom borders form ONE continuous line across the split.
+        className="flex h-[52px] items-center gap-2 border-b px-4"
         style={{ borderColor: "var(--border)" }}
       >
         {onClose && (
@@ -7351,11 +7353,13 @@ const Sidebar = memo(function Sidebar({
   // Drag-to-resize the expanded sidebar (handle on its right edge).
   const leftResize = useResizableWidth({
     storageKey: "relay:room-left-sidebar-width",
-    // Floor raised so the brand row + project rows never cramp; this matches
-    // the comfortable width customers settle on. def ≥ min so a stored value
-    // below the floor cleanly falls back to a comfortable default.
+    // Floor lowered (280 → 220) so the rail can be dragged usefully
+    // narrower — project names truncate gracefully (every row label is
+    // min-w-0 + truncate) and the brand row tucks its centre/right
+    // clusters. def stays at the comfortable 300; only the customer's
+    // own drag goes below it.
     def: 300,
-    min: 280,
+    min: 220,
     max: 460,
     edge: "right",
   });
@@ -7386,9 +7390,11 @@ const Sidebar = memo(function Sidebar({
   // Accordion across the sidebar's collapsible bars (Scheduled, Contract
   // management, Appointments, Request a Quote): only one is open at a time —
   // opening one collapses the rest. "Request a Quote" is open on load.
+  // ALL sections start collapsed — including "Request a Quote", which
+  // previously opened by default on every reload/login.
   const [openSection, setOpenSection] = useState<
     "scheduled" | "contracts" | "appointments" | "quote" | null
-  >("quote");
+  >(null);
   const toggleSection = useCallback(
     (s: "scheduled" | "contracts" | "appointments" | "quote") =>
       setOpenSection((cur) => (cur === s ? null : s)),
@@ -8194,10 +8200,12 @@ const Sidebar = memo(function Sidebar({
         className={`absolute top-0 right-0 z-30 h-full w-1.5 translate-x-1/2 cursor-col-resize transition-colors hover:bg-[var(--primary)] ${leftResize.dragging ? "bg-[var(--primary)]" : ""}`}
       />
       {/* Brand row — three zones: wordmark LEFT (clickable, returns home),
-          theme triplet CENTERED, Home + collapse RIGHT. The standalone
-          "Online" pill that used to sit under this row was removed — the
-          wordmark's green dot already signals liveness. */}
-      <div className="flex h-12 min-w-0 items-center px-3">
+          theme triplet CENTERED, Home + collapse RIGHT. The toggle is
+          ABSOLUTELY centred on the rail's full width (left-1/2) — flex
+          centring only centred it within the leftover space between the
+          wordmark and the right icons, which sat visibly off-axis from
+          the green orb below (also centred on the full width). */}
+      <div className="relative flex h-12 min-w-0 items-center px-3">
         <button
           type="button"
           onClick={onGoHome}
@@ -8207,9 +8215,10 @@ const Sidebar = memo(function Sidebar({
         >
           <Wordmark size="md" />
         </button>
-        <div className="flex min-w-0 flex-1 justify-center">
+        <div className="absolute left-1/2 -translate-x-1/2">
           <ThemeTriplet className="shrink-0" />
         </div>
+        <div className="min-w-0 flex-1" />
         <button
           type="button"
           onClick={onGoHome}
@@ -9518,16 +9527,19 @@ function ConnectFlowModal({
 
   // Validation. The brand-site connect wizard collects ONLY the stack
   // (no project type — that question was dropped from Q2), so project
-  // type is required only in create-only mode. "Other" is a valid pick
-  // everywhere so the user always has a path forward.
+  // type is required only in create-only mode. ANY answered chip across
+  // the three stack groups is enough to continue — requiring one from
+  // EACH group blocked customers who genuinely don't know (e.g. "no
+  // backend yet") from ever advancing.
   const detailsValid =
     (mode !== "create-only" ||
       (newProjectType.trim().length > 0 &&
         (newProjectType !== "Other" ||
           newProjectTypeOther.trim().length > 0))) &&
-    newProjectAiTools.length > 0 &&
-    newProjectBackend.length > 0 &&
-    newProjectFrontend.length > 0;
+    newProjectAiTools.length +
+      newProjectBackend.length +
+      newProjectFrontend.length >
+      0;
   const nameValid = newProjectName.trim().length > 0;
 
   useEffect(() => {
@@ -9662,19 +9674,16 @@ function ConnectFlowModal({
                 {[
                   {
                     key: "building" as const,
-                    icon: "🟥",
                     title: "I'm building — need help getting unstuck",
                     sub: "You're in the middle of a build with AI. Hit a wall. Need a human to debug, architect, or just point you the right way.",
                   },
                   {
                     key: "launch" as const,
-                    icon: "🚀",
                     title: "I'm ready to launch — need someone to ship it",
                     sub: "Your MVP works. Now you need domains, SSL, security, performance, and a production deploy. Someone who's done it before.",
                   },
                   {
                     key: "support" as const,
-                    icon: "🔧",
                     title:
                       "I need ongoing support — maintenance, scale, reliability",
                     sub: "Your product is live. APIs change, dependencies break, traffic grows. You need someone who remembers your stack.",
@@ -9697,9 +9706,6 @@ function ConnectFlowModal({
                           : "transparent",
                       }}
                     >
-                      <span aria-hidden className="mt-0.5 shrink-0 text-[15px]">
-                        {opt.icon}
-                      </span>
                       <span className="min-w-0 flex-1">
                         <span
                           className="block text-[13.5px] font-semibold"
@@ -10014,19 +10020,16 @@ function ConnectFlowModal({
                   {[
                     {
                       key: "now" as const,
-                      icon: "🟢",
                       title: "Right now — I'm stuck",
                       sub: "An engineer joins in under 30 seconds. First 10 minutes free.",
                     },
                     {
                       key: "this_week" as const,
-                      icon: "📅",
                       title: "This week",
                       sub: "Schedule a session, matched with relevant context.",
                     },
                     {
                       key: "planning" as const,
-                      icon: "💡",
                       title: "I'm planning ahead",
                       sub: "Scope it, quote on complexity. No commitment.",
                     },
@@ -10048,12 +10051,6 @@ function ConnectFlowModal({
                             : "transparent",
                         }}
                       >
-                        <span
-                          aria-hidden
-                          className="mt-0.5 shrink-0 text-[15px]"
-                        >
-                          {opt.icon}
-                        </span>
                         <span className="min-w-0 flex-1">
                           <span
                             className="block text-[13.5px] font-semibold"
