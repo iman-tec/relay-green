@@ -1814,14 +1814,17 @@ function FloatingStatus({
             Monitoring (silent)
           </span>
         )}
-        {/* Start / restart Zoom — sits beside "End session" in the top-right
-            HUD. The assigned engineer mints via startVideo; an appointment
-            moderator (supervisor host) opens the in-window Video SDK call. */}
+        {/* Start / restart the call — sits beside "End session" in the
+            top-right HUD. "Whoever starts, joins": with the Video SDK
+            enabled the button opens the IN-WINDOW CallSurface directly
+            (same as clicking Join on the inline card — no external Zoom
+            tab); the legacy Meeting flow mints + auto-opens the start URL.
+            CallSurface's onJoined stamps markJoined either way. */}
         {(showStartMeetingButton || (isApptSupervisor && launchCall)) && (
           <button
             type="button"
             onClick={() => {
-              if (isApptSupervisor && launchCall) launchCall();
+              if (launchCall) launchCall();
               else void startVideo();
             }}
             disabled={busyStart}
