@@ -6961,6 +6961,7 @@ function CallHeaderActions({
   onJoin?: () => void | Promise<void>;
 }) {
   const launchCall = useLaunchCall();
+  const [starting, setStarting] = useState(false);
   // With Video SDK enabled we don't need zoom_meeting_id — the topic is
   // derived from session.id by zoom-video-sdk-token. Still gate on isLiveish
   // so the button is only visible/enabled once the matcher has assigned
@@ -6977,13 +6978,50 @@ function CallHeaderActions({
   const canJoinVideoSdk = !!launchCall && (isLiveish || apptReady);
   const canJoinLegacy = hasZoom && (isLiveish || apptReady);
   const canJoin = canJoinVideoSdk || canJoinLegacy;
+  // "Whoever calls, joins": with no meeting minted yet the customer can
+  // START one themselves (legacy Meeting flow, engineer already assigned,
+  // not an appointment — those wait for the moderator). The engineer gets
+  // the inline ZoomCallCard via the "Zoom meeting started" system message.
+  const canStart =
+    !launchCall &&
+    !hasZoom &&
+    isLiveish &&
+    session.is_appointment !== true &&
+    !!session.claimed_by;
   const tooltip = canJoin
     ? "Join the call"
-    : session.is_appointment
-      ? "Your call opens once the moderator joins"
-      : isLiveish
-        ? "Waiting for your engineer to start the call"
-        : "Call starts once an engineer joins";
+    : canStart
+      ? "Start the call — you'll join right away"
+      : session.is_appointment
+        ? "Your call opens once the moderator joins"
+        : isLiveish
+          ? "Waiting for your engineer to start the call"
+          : "Call starts once an engineer joins";
+
+  const startCall = async () => {
+    if (starting) return;
+    setStarting(true);
+    // Open synchronously (inside the click gesture) so popup blockers
+    // allow it; point it at the join URL once the mint returns.
+    const popup = window.open("about:blank", "_blank");
+    try {
+      const sb = createClient();
+      const { data, error } = await sb.functions.invoke(
+        "mint-zoom-for-session",
+        { body: { session_id: session.id } }
+      );
+      const joinUrl = (data?.zoom_join_url ?? null) as string | null;
+      if (error || !joinUrl) {
+        popup?.close();
+        return;
+      }
+      if (popup) popup.location.href = joinUrl;
+      else window.open(joinUrl, "_blank", "noopener,noreferrer");
+      void onJoin?.();
+    } finally {
+      setStarting(false);
+    }
+  };
 
   return (
     <div className="flex items-center gap-1.5">
@@ -6992,22 +7030,34 @@ function CallHeaderActions({
         title={tooltip}
         variant="primary"
         size="md"
-        disabled={!canJoin}
+        disabled={(!canJoin && !canStart) || starting}
         onClick={() => {
-          if (!canJoin) return;
-          void onJoin?.();
-          if (launchCall) {
-            // Video SDK path: parent mounts <CallSurface> in-window.
-            launchCall();
+          if (starting) return;
+          if (canJoin) {
+            void onJoin?.();
+            if (launchCall) {
+              // Video SDK path: parent mounts <CallSurface> in-window.
+              launchCall();
+              return;
+            }
+            // Legacy Meeting SDK: open Zoom in a new tab.
+            if (session.zoom_join_url) {
+              window.open(
+                session.zoom_join_url,
+                "_blank",
+                "noopener,noreferrer"
+              );
+            }
             return;
           }
-          // Legacy Meeting SDK: open Zoom in a new tab.
-          if (session.zoom_join_url) {
-            window.open(session.zoom_join_url, "_blank", "noopener,noreferrer");
-          }
+          if (canStart) void startCall();
         }}
       >
-        <Video size={16} />
+        {starting ? (
+          <Loader2 size={16} className="animate-spin" />
+        ) : (
+          <Video size={16} />
+        )}
       </IconButton>
       <IconButton
         aria-label="Add participant"

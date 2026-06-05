@@ -1649,6 +1649,12 @@ function FloatingStatus({
   const startVideo = async () => {
     setBusyStart(true);
     setMintError(null);
+    // Whoever STARTS the call joins it immediately — open the tab
+    // synchronously (inside the click's user gesture, before any await)
+    // so popup blockers allow it, then point it at the start URL once the
+    // mint returns. The customer sees the inline ZoomCallCard via the
+    // "Zoom meeting started" system message as before.
+    const popup = window.open("about:blank", "_blank");
     try {
       const sb = createClient();
       // mint-zoom-for-session is idempotent: a no-op while a meeting is
@@ -1661,6 +1667,7 @@ function FloatingStatus({
         }
       );
       if (error || !data?.zoom_meeting_id) {
+        popup?.close();
         const msg =
           error?.message ??
           (data?.error as string | undefined) ??
@@ -1668,6 +1675,16 @@ function FloatingStatus({
         setMintError(msg);
         setTimeout(() => setMintError(null), 6000);
         return;
+      }
+      const startUrl =
+        (data.zoom_start_url as string | undefined) ??
+        (data.zoom_join_url as string | undefined);
+      if (startUrl) {
+        if (popup) popup.location.href = startUrl;
+        else window.open(startUrl, "_blank", "noopener,noreferrer");
+        void state.markJoined();
+      } else {
+        popup?.close();
       }
       onStart();
     } finally {
