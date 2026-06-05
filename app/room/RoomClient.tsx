@@ -8345,15 +8345,57 @@ const Sidebar = memo(function Sidebar({
               transition:
                 transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
                 box-shadow 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+              /* Resting heartbeat — a slow, smooth breath (gentle scale +
+                 a whisper of brightness) so the orb reads alive without
+                 demanding attention. Hover/press interactions below
+                 cancel it and take over. */
+              animation: rk-orb-heartbeat 1.9s ease-in-out infinite;
             }
             .rk-connect-ball:hover {
+              animation: none;
               transform: translateY(-3px) scale(1.03);
             }
             .rk-connect-ball:active {
+              animation: none;
               transform: translateY(2px) scale(0.97);
             }
             .rk-connect-ball.is-pressing {
               animation: rk-press-squish 460ms cubic-bezier(0.2, 0.8, 0.2, 1);
+            }
+            /* Elegant lub-dub: a primary swell with a soft secondary echo,
+               then a long settle — reads as a real heartbeat, with a
+               breathing green glow synced to the beat. */
+            @keyframes rk-orb-heartbeat {
+              0% {
+                transform: scale(1);
+                filter: brightness(1);
+                box-shadow: 0 0 0
+                  color-mix(in srgb, var(--primary) 0%, transparent);
+              }
+              28% {
+                transform: scale(1.045);
+                filter: brightness(1.09);
+                box-shadow: 0 0 26px
+                  color-mix(in srgb, var(--primary) 38%, transparent);
+              }
+              44% {
+                transform: scale(1.012);
+                filter: brightness(1.02);
+                box-shadow: 0 0 10px
+                  color-mix(in srgb, var(--primary) 16%, transparent);
+              }
+              58% {
+                transform: scale(1.03);
+                filter: brightness(1.05);
+                box-shadow: 0 0 18px
+                  color-mix(in srgb, var(--primary) 26%, transparent);
+              }
+              100% {
+                transform: scale(1);
+                filter: brightness(1);
+                box-shadow: 0 0 0
+                  color-mix(in srgb, var(--primary) 0%, transparent);
+              }
             }
             @keyframes rk-press-squish {
               0% {
