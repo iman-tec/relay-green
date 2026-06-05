@@ -8260,30 +8260,9 @@ const Sidebar = memo(function Sidebar({
           <Search size={16} />
         </button>
 
-        {/* Sessions — expands the rail so the project/session list is
-            visible. Previously a no-op (no onClick); wired to match the
-            Search/Home affordances. */}
-        <button
-          onClick={() => toggleCollapsed(false)}
-          title="Sessions"
-          aria-label="Show sessions"
-          className="flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-150 ease-out hover:scale-110 hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5"
-          style={{ color: "var(--text-muted)" }}
-        >
-          <MessageSquare size={16} />
-        </button>
-
-        {/* New chat — async support path. Restored to the collapsed rail
-            so the entry point is reachable without expanding first. */}
-        <button
-          onClick={onNewChat}
-          title="New chat"
-          aria-label="New chat"
-          className="flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-150 ease-out hover:scale-110 hover:bg-black/5 hover:text-[var(--text)] dark:hover:bg-white/5"
-          style={{ color: "var(--text-muted)" }}
-        >
-          <MessageCircle size={16} />
-        </button>
+        {/* (The two chat-bubble buttons — "Sessions" + "New chat" — were
+            removed from the collapsed rail per design: Search/Home already
+            expand the rail, and New chat lives in the expanded sidebar.) */}
 
         {/* Active session indicator */}
         {hasActiveSession && (
