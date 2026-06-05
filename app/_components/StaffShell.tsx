@@ -44,6 +44,7 @@ import {
   FileText,
   Gavel,
   Home,
+  PhoneCall,
 } from "lucide-react";
 import { Wordmark } from "./Wordmark";
 import { ThemeTriplet } from "./ThemeTriplet";
@@ -63,6 +64,7 @@ import { ROLE, type Role } from "@/lib/relay/roles";
 // import + mount below to bring it back.
 // import { EngineerIncomingRequest } from "./EngineerIncomingRequest";
 import { EngineerIncomingMatch } from "./EngineerIncomingMatch";
+import { EngineerAlerts } from "./EngineerAlerts";
 import { useEngineerHeartbeat } from "@/lib/relay/useEngineerHeartbeat";
 import { createClient } from "@/lib/supabase/browser";
 import { useEngineerWorkspace } from "@/lib/relay/useEngineerWorkspace";
@@ -702,6 +704,13 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
             customer. Empty render — pure side-effect. */}
         {engineer && guard.kind === "staff" && <FifoAutoRing />}
 
+        {/* Rejoin-call CTA — visible only while the engineer has an active
+            session (e.g. they pressed Back during a live call). Sits just above
+            the profile chip; the component renders nothing when off a call. */}
+        {engineer && guard.kind === "staff" && (
+          <RejoinCallButton collapsed={collapsed} />
+        )}
+
         {/* Bottom: profile. The theme triplet lives only in the top header
             (next to wordmark + home), which is shown when the sidebar is open —
             so when collapsed there's no theme control here (it looked cramped
@@ -783,6 +792,12 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
        *  the push-ring (EngineerIncomingMatch) path is validated. */}
       {/* {isEngineer(roles) && <EngineerIncomingRequest />} */}
       {isEngineer(roles) && <EngineerIncomingMatch />}
+
+      {/* Engineer-only: pop-up toasts for new scheduled calls (transient) +
+          new bid requests (sticky until dismissed). Shown on every staff page
+          via this shared shell, but not inside a live call (the session route
+          is outside the (staff) layout). */}
+      {engineer && <EngineerAlerts />}
 
       {/* Supervisor-only: non-blocking urgent session alerts */}
       {!engineer && <SupervisorAlerts roles={roles} />}
@@ -1042,6 +1057,42 @@ function ProfileButton({
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Rejoin-call button ──────────────────────────────────────────────────
+// A shortcut back into the engineer's live session. If they press Back while
+// connected to a customer, the session stays live (claimed_by them); this
+// button — pinned just above the profile chip — drops them straight back in.
+// Hidden whenever they have no active session, so it never shows off a call.
+function RejoinCallButton({ collapsed }: { collapsed: boolean }) {
+  const router = useRouter();
+  const { myActive } = useEngineerWorkspace();
+  // The session they're actively in (claimed + non-terminal). Prefer a live
+  // call, then grace / joining / assigned. None → render nothing.
+  const active =
+    myActive.find((s) => s.status === "live") ??
+    myActive.find((s) => s.status === "grace") ??
+    myActive.find((s) => s.status === "joining") ??
+    myActive.find((s) => s.status === "assigned") ??
+    null;
+  if (!active) return null;
+  return (
+    <div className="px-2 pb-1">
+      <button
+        type="button"
+        onClick={() => router.push(`/staff/session/${active.id}`)}
+        title="Rejoin your active call"
+        aria-label="Rejoin your active call"
+        className={`flex w-full items-center rounded-lg px-2 py-2 text-[13px] font-semibold text-white shadow-sm transition-[filter] hover:brightness-110 ${
+          collapsed ? "justify-center" : "justify-center gap-2"
+        }`}
+        style={{ backgroundColor: "var(--primary)" }}
+      >
+        <PhoneCall size={collapsed ? 16 : 14} className="shrink-0" />
+        {!collapsed && <span>Rejoin call</span>}
+      </button>
     </div>
   );
 }
