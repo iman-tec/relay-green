@@ -7,7 +7,7 @@ function getSupabase() {
   if (!_supabase) {
     _supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
   }
   return _supabase;
@@ -54,8 +54,13 @@ async function handleCheckoutCompleted(session: any, _env: StripeEnv) {
       await supabase
         .from("credit_wallets")
         .update({
-          balance: Number((wallet as { balance?: number }).balance ?? 0) + minutes,
-          lifetime_purchased: Number((wallet as { lifetime_purchased?: number }).lifetime_purchased ?? 0) + minutes,
+          balance:
+            Number((wallet as { balance?: number }).balance ?? 0) + minutes,
+          lifetime_purchased:
+            Number(
+              (wallet as { lifetime_purchased?: number }).lifetime_purchased ??
+                0
+            ) + minutes,
           updated_at: new Date().toISOString(),
         })
         .eq("user_id", userId);
@@ -87,12 +92,17 @@ async function handleCheckoutCompleted(session: any, _env: StripeEnv) {
       .maybeSingle();
     if (ent) {
       const e = ent as Record<string, number | null>;
-      await supabase.from("customer_entitlements").update({
-        paid_minutes_remaining: Number(e.paid_minutes_remaining ?? 0) + minutes,
-        paid_minutes_lifetime: Number(e.paid_minutes_lifetime ?? 0) + minutes,
-        total_paid_cents: Number(e.total_paid_cents ?? 0) + Number(session.amount_total ?? 0),
-        updated_at: new Date().toISOString(),
-      }).eq("customer_user_id", userId);
+      await supabase
+        .from("customer_entitlements")
+        .update({
+          paid_minutes_remaining:
+            Number(e.paid_minutes_remaining ?? 0) + minutes,
+          paid_minutes_lifetime: Number(e.paid_minutes_lifetime ?? 0) + minutes,
+          total_paid_cents:
+            Number(e.total_paid_cents ?? 0) + Number(session.amount_total ?? 0),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("customer_user_id", userId);
     }
     console.log(`[relay] credited ${minutes} min to ${userId} (plan=${plan})`);
 
@@ -107,8 +117,15 @@ async function handleCheckoutCompleted(session: any, _env: StripeEnv) {
       .limit(1);
     if (expired && expired.length > 0) {
       const sessId = (expired[0] as { id: string }).id;
-      const { error: extErr } = await supabase.rpc("extend_session_paid_admin", { _session_id: sessId });
-      if (extErr) console.warn(`[relay] auto-extend failed for ${sessId}:`, extErr.message);
+      const { error: extErr } = await supabase.rpc(
+        "extend_session_paid_admin",
+        { _session_id: sessId }
+      );
+      if (extErr)
+        console.warn(
+          `[relay] auto-extend failed for ${sessId}:`,
+          extErr.message
+        );
       else console.log(`[relay] auto-resumed session ${sessId}`);
     }
     return;
@@ -119,7 +136,10 @@ async function handleCheckoutCompleted(session: any, _env: StripeEnv) {
     const callId = meta.guest_call_id;
     const addMinutes = Number(meta.minutes ?? 30);
     if (!callId) {
-      console.error("Missing guest_call_id in guest_extension session", session.id);
+      console.error(
+        "Missing guest_call_id in guest_extension session",
+        session.id
+      );
       return;
     }
     const supabase = getSupabase();
@@ -128,8 +148,10 @@ async function handleCheckoutCompleted(session: any, _env: StripeEnv) {
       .select("free_minutes, paid_extension_at")
       .eq("id", callId)
       .maybeSingle();
-    const current = (call as { free_minutes?: number } | null)?.free_minutes ?? 30;
-    const alreadyPaid = (call as { paid_extension_at?: string | null } | null)?.paid_extension_at;
+    const current =
+      (call as { free_minutes?: number } | null)?.free_minutes ?? 30;
+    const alreadyPaid = (call as { paid_extension_at?: string | null } | null)
+      ?.paid_extension_at;
     const { error } = await supabase
       .from("guest_calls")
       .update({
@@ -168,14 +190,18 @@ async function handleCheckoutCompleted(session: any, _env: StripeEnv) {
 }
 
 Deno.serve(async (req) => {
-  if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
+  if (req.method !== "POST")
+    return new Response("Method not allowed", { status: 405 });
 
   const rawEnv = new URL(req.url).searchParams.get("env");
   if (rawEnv !== "sandbox" && rawEnv !== "live") {
-    return new Response(JSON.stringify({ received: true, ignored: "invalid env" }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ received: true, ignored: "invalid env" }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   }
   const env: StripeEnv = rawEnv;
 

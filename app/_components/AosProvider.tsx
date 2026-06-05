@@ -22,12 +22,12 @@ export function AosProvider() {
 
   useEffect(() => {
     AOS.init({
-      duration:    520,        // ms
-      easing:      "ease-out-cubic",
-      once:        true,       // animate once per element
-      offset:      40,
-      delay:       0,
-      disable:     "phone",    // skip on small/old mobiles for perf
+      duration: 520, // ms
+      easing: "ease-out-cubic",
+      once: true, // animate once per element
+      offset: 40,
+      delay: 0,
+      disable: "phone", // skip on small/old mobiles for perf
     });
   }, []);
 

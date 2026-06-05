@@ -59,5 +59,5 @@ export const CallSurface = dynamic<CallSurfaceProps>(
         Connecting to video…
       </div>
     ),
-  },
+  }
 );

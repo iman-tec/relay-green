@@ -107,9 +107,14 @@ export function TryRelayFunnel({ onClose }: { onClose: () => void }) {
     let cancelled = false;
     setMatching(true);
     setError(null);
-    const technologies = [...stack.aiTools, ...stack.backend, ...stack.frontend];
+    const technologies = [
+      ...stack.aiTools,
+      ...stack.backend,
+      ...stack.frontend,
+    ];
     const url = new URL("/api/online-engineers", window.location.origin);
-    if (technologies.length) url.searchParams.set("technologies", technologies.join(","));
+    if (technologies.length)
+      url.searchParams.set("technologies", technologies.join(","));
     if (need) url.searchParams.set("need", need);
     fetch(url.toString(), { method: "GET" })
       .then(async (res) => {
@@ -165,7 +170,7 @@ export function TryRelayFunnel({ onClose }: { onClose: () => void }) {
           // clear message instead of silently failing. // TODO(auth): enable
           // "Allow anonymous sign-ins" in Supabase Auth settings.
           throw new Error(
-            "Guest mode is unavailable right now. Please sign in to start a session.",
+            "Guest mode is unavailable right now. Please sign in to start a session."
           );
         }
         user = (await sb.auth.getUser()).data.user;
@@ -200,7 +205,7 @@ export function TryRelayFunnel({ onClose }: { onClose: () => void }) {
       // 3. Mint the free session (new users get the 10-min free grant).
       const { data: callData, error: rpcErr } = await sb.rpc(
         "get_or_create_active_customer_session",
-        { _project_id: projectId },
+        { _project_id: projectId }
       );
       if (rpcErr) {
         // Free 10 minutes already used on this guest → no entitlement for a
@@ -271,11 +276,11 @@ export function TryRelayFunnel({ onClose }: { onClose: () => void }) {
       // etc.). MatchingClient handles the "engineer accepted → /room"
       // hand-off itself, so the guest still lands in the live session
       // without any extra wiring here.
-      router.push(`/intake/matching/${encodeURIComponent(intakeRow.id as string)}`);
-    } catch (e) {
-      setError(
-        e instanceof Error ? e.message : "Could not start your session",
+      router.push(
+        `/intake/matching/${encodeURIComponent(intakeRow.id as string)}`
       );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not start your session");
       setStarting(false);
     }
   }, [starting, need, stack, urgency, onClose, router]);
@@ -568,7 +573,10 @@ function RadioCardGroup<T extends string>({
   }>;
 }) {
   return (
-    <div role="radiogroup" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+    <div
+      role="radiogroup"
+      style={{ display: "flex", flexDirection: "column", gap: 10 }}
+    >
       {options.map((opt) => {
         const selected = value === opt.value;
         return (
@@ -595,10 +603,20 @@ function RadioCardGroup<T extends string>({
               transition: "border 150ms ease, background 150ms ease",
             }}
           >
-            <span aria-hidden style={{ fontSize: 22, lineHeight: 1, marginTop: 2 }}>
+            <span
+              aria-hidden
+              style={{ fontSize: 22, lineHeight: 1, marginTop: 2 }}
+            >
               {opt.emoji}
             </span>
-            <span style={{ display: "flex", flexDirection: "column", flex: 1, gap: 4 }}>
+            <span
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                flex: 1,
+                gap: 4,
+              }}
+            >
               <span
                 style={{
                   fontSize: 14,
@@ -631,7 +649,9 @@ function RadioCardGroup<T extends string>({
                 border: selected
                   ? "2px solid var(--primary, #3f5c2e)"
                   : "2px solid var(--border-strong, #d4d4cf)",
-                background: selected ? "var(--primary, #3f5c2e)" : "transparent",
+                background: selected
+                  ? "var(--primary, #3f5c2e)"
+                  : "transparent",
                 color: "#fff",
               }}
             >
@@ -682,7 +702,7 @@ function StackChipGroups({
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
             {group.options.map((opt) => {
               const selected = stack[group.category as StackCat].some(
-                (x) => x.toLowerCase() === opt.toLowerCase(),
+                (x) => x.toLowerCase() === opt.toLowerCase()
               );
               return (
                 <button
@@ -773,7 +793,9 @@ function MatchFound({
           }}
         >
           <Loader2 size={20} style={{ animation: "spin 1s linear infinite" }} />
-          <span style={{ fontSize: 14 }}>Finding an engineer who's shipped on your stack…</span>
+          <span style={{ fontSize: 14 }}>
+            Finding an engineer who's shipped on your stack…
+          </span>
         </div>
       ) : engineer ? (
         <>
@@ -789,7 +811,13 @@ function MatchFound({
           >
             {engineer.pseudoName.split(" ")[0]} is ready.
           </h2>
-          <p style={{ marginTop: 6, fontSize: 14, color: "var(--text-muted, #6b6b6b)" }}>
+          <p
+            style={{
+              marginTop: 6,
+              fontSize: 14,
+              color: "var(--text-muted, #6b6b6b)",
+            }}
+          >
             {engineer.experienceLabel} engineer · {engineer.experienceYears} yrs
             {engineer.matchedTechnologies.length
               ? ` · ${engineer.matchedTechnologies.slice(0, 3).join(", ")}`
@@ -826,7 +854,14 @@ function MatchFound({
             >
               {engineer.initials}
             </span>
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+            <div
+              style={{
+                flex: 1,
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+              }}
+            >
               <div
                 style={{
                   fontSize: 15,
@@ -836,10 +871,19 @@ function MatchFound({
               >
                 {engineer.pseudoName}
               </div>
-              <div style={{ fontSize: 12, color: "var(--text-muted, #6b6b6b)" }}>
+              <div
+                style={{ fontSize: 12, color: "var(--text-muted, #6b6b6b)" }}
+              >
                 Available now · ~{engineer.etaSeconds}s to join
               </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 4,
+                  marginTop: 4,
+                }}
+              >
                 {engineer.technologies.slice(0, 5).map((t) => (
                   <span
                     key={t}
@@ -884,7 +928,9 @@ function MatchFound({
               }}
             >
               10 minutes on us. No card required.{" "}
-              <strong style={{ color: "var(--primary-hover, #2d4422)" }}>Free</strong>
+              <strong style={{ color: "var(--primary-hover, #2d4422)" }}>
+                Free
+              </strong>
             </div>
             <div
               style={{
@@ -938,7 +984,10 @@ function MatchFound({
             >
               {starting ? (
                 <>
-                  <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
+                  <Loader2
+                    size={14}
+                    style={{ animation: "spin 1s linear infinite" }}
+                  />
                   Connecting you…
                 </>
               ) : (
@@ -983,12 +1032,24 @@ function MatchFound({
           <div style={{ fontSize: 14, color: "var(--text, #1a1a1a)" }}>
             No engineers online right now.
           </div>
-          <div style={{ fontSize: 13, color: "var(--text-muted, #6b6b6b)", marginTop: 6 }}>
+          <div
+            style={{
+              fontSize: 13,
+              color: "var(--text-muted, #6b6b6b)",
+              marginTop: 6,
+            }}
+          >
             {error
               ? `(${error})`
               : "Hop into the room — we'll page someone the moment they're back."}
           </div>
-          <div style={{ marginTop: 14, display: "flex", justifyContent: "space-between" }}>
+          <div
+            style={{
+              marginTop: 14,
+              display: "flex",
+              justifyContent: "space-between",
+            }}
+          >
             <button
               type="button"
               onClick={onBack}
@@ -1020,7 +1081,10 @@ function MatchFound({
             >
               {starting ? (
                 <>
-                  <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
+                  <Loader2
+                    size={14}
+                    style={{ animation: "spin 1s linear infinite" }}
+                  />
                   Connecting you…
                 </>
               ) : (

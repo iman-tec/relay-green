@@ -150,8 +150,8 @@ export default function BrandGuidelinesPage() {
               <h4>Software-as-a-Service has a Service in it again.</h4>
               <p>
                 Relay restores the human half of SaaS. Not a chatbot, not a
-                forum, not a marketplace. A software engineer who stays from build
-                to shipped to running.
+                forum, not a marketplace. A software engineer who stays from
+                build to shipped to running.
               </p>
             </div>
             <div className="bg-tile">
@@ -599,8 +599,8 @@ export default function BrandGuidelinesPage() {
                 Plain words, <em>fewer of them.</em>
               </h2>
               <p className="lede">
-                Imagine a software engineer explaining the product to a friend on
-                a Sunday walk. That’s the register. Direct, slightly
+                Imagine a software engineer explaining the product to a friend
+                on a Sunday walk. That’s the register. Direct, slightly
                 understated, occasionally dry. We never sell, we describe what
                 is true. The product does the convincing.
               </p>
@@ -1035,8 +1035,8 @@ export default function BrandGuidelinesPage() {
               <div className="bg-tile-num">What we say about ourselves</div>
               <h4>Independent</h4>
               <p>
-                “Relay TechnoForge, Inc., independent.” That’s the full corporate line.
-                Anything more belongs in legal, not on the page.
+                “Relay TechnoForge, Inc., independent.” That’s the full
+                corporate line. Anything more belongs in legal, not on the page.
               </p>
             </div>
             <div className="bg-tile">

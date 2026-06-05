@@ -20,16 +20,16 @@ export function EditNameDrawer({
   onClose,
   onSaved,
 }: {
-  open:        boolean;
-  title:       string;
-  label:       string;
+  open: boolean;
+  title: string;
+  label: string;
   currentName: string;
-  endpoint:    string;
-  onClose:     () => void;
-  onSaved:     (next: string) => void;
+  endpoint: string;
+  onClose: () => void;
+  onSaved: (next: string) => void;
 }) {
-  const [name, setName]       = useState(currentName);
-  const [error, setError]     = useState<string | null>(null);
+  const [name, setName] = useState(currentName);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   // Re-sync when a different row's drawer opens.
@@ -42,15 +42,21 @@ export function EditNameDrawer({
 
   const submit = async () => {
     const trimmed = name.trim();
-    if (!trimmed) { setError("Name is required."); return; }
-    if (trimmed === currentName) { onClose(); return; }
+    if (!trimmed) {
+      setError("Name is required.");
+      return;
+    }
+    if (trimmed === currentName) {
+      onClose();
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
       const res = await fetch(endpoint, {
-        method:  "PATCH",
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ name: trimmed }),
+        body: JSON.stringify({ name: trimmed }),
       });
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
@@ -72,7 +78,9 @@ export function EditNameDrawer({
       title={title}
       footer={
         <>
-          <SecondaryBtn onClick={onClose} disabled={loading}>Cancel</SecondaryBtn>
+          <SecondaryBtn onClick={onClose} disabled={loading}>
+            Cancel
+          </SecondaryBtn>
           <PrimaryBtn onClick={submit} disabled={loading}>
             {loading ? "Saving…" : "Save"}
           </PrimaryBtn>
@@ -81,7 +89,12 @@ export function EditNameDrawer({
     >
       <div className="flex flex-col gap-3">
         <label className="flex flex-col gap-1.5">
-          <span className="text-xs font-medium" style={{ color: "var(--text)" }}>{label}</span>
+          <span
+            className="text-xs font-medium"
+            style={{ color: "var(--text)" }}
+          >
+            {label}
+          </span>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -94,9 +107,10 @@ export function EditNameDrawer({
           <p
             className="rounded-md border px-3 py-2 text-xs"
             style={{
-              borderColor: "color-mix(in srgb, var(--primary) 30%, transparent)",
-              background:  "color-mix(in srgb, var(--primary) 8%, transparent)",
-              color:       "var(--primary)",
+              borderColor:
+                "color-mix(in srgb, var(--primary) 30%, transparent)",
+              background: "color-mix(in srgb, var(--primary) 8%, transparent)",
+              color: "var(--primary)",
             }}
           >
             {error}
@@ -107,12 +121,20 @@ export function EditNameDrawer({
   );
 }
 
-function PrimaryBtn({ onClick, disabled, children }: {
-  onClick: () => void; disabled?: boolean; children: React.ReactNode;
+function PrimaryBtn({
+  onClick,
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
 }) {
   return (
     <button
-      type="button" onClick={onClick} disabled={disabled}
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
       className="rounded-md px-3 py-2 text-sm font-medium transition-opacity disabled:opacity-50"
       style={{ background: "var(--primary)", color: "#fff" }}
     >
@@ -121,12 +143,20 @@ function PrimaryBtn({ onClick, disabled, children }: {
   );
 }
 
-function SecondaryBtn({ onClick, disabled, children }: {
-  onClick: () => void; disabled?: boolean; children: React.ReactNode;
+function SecondaryBtn({
+  onClick,
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
 }) {
   return (
     <button
-      type="button" onClick={onClick} disabled={disabled}
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
       className="rounded-md border px-3 py-2 text-sm font-medium transition-opacity disabled:opacity-50"
       style={{ borderColor: "var(--border)", color: "var(--text)" }}
     >

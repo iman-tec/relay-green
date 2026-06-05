@@ -39,7 +39,8 @@ function sanitizeUrgency(raw: unknown): "urgent" | "standard" | "later" {
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
 };
 
 type IntakeMessage = {
@@ -50,7 +51,8 @@ type IntakeMessage = {
 };
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method === "OPTIONS")
+    return new Response(null, { headers: corsHeaders });
 
   try {
     const { intake_id } = await req.json();
@@ -63,12 +65,14 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
     const { data: intake } = await supabase
       .from("client_intakes")
-      .select("id, familiarity, ai_tools_used, developing, technologies, intake_messages")
+      .select(
+        "id, familiarity, ai_tools_used, developing, technologies, intake_messages"
+      )
       .eq("id", intake_id)
       .maybeSingle();
 
@@ -87,11 +91,13 @@ Deno.serve(async (req) => {
       intake_messages: IntakeMessage[] | null;
     };
 
-    const messages = Array.isArray(row.intake_messages) ? row.intake_messages : [];
+    const messages = Array.isArray(row.intake_messages)
+      ? row.intake_messages
+      : [];
     const userTurns = messages.filter((m) => m.role === "user");
     const attachmentCount = messages.reduce(
       (n, m) => (m.attachment ? n + 1 : n),
-      0,
+      0
     );
 
     if (userTurns.length === 0) {
@@ -101,27 +107,36 @@ Deno.serve(async (req) => {
         `Familiarity: ${row.familiarity}`,
         `Building: ${row.developing}`,
         row.ai_tools_used ? `AI tools: ${row.ai_tools_used}` : null,
-        row.technologies?.length ? `Stack: ${row.technologies.join(", ")}` : null,
+        row.technologies?.length
+          ? `Stack: ${row.technologies.join(", ")}`
+          : null,
       ]
         .filter(Boolean)
         .join("\n");
       await supabase
         .from("client_intakes")
         .update({
-          intake_summary: stub || "Customer started ringing without typing anything yet.",
+          intake_summary:
+            stub || "Customer started ringing without typing anything yet.",
           intake_summary_updated_at: new Date().toISOString(),
         })
         .eq("id", intake_id);
       return new Response(
-        JSON.stringify({ ok: true, user_turns: 0, attachments: attachmentCount }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        JSON.stringify({
+          ok: true,
+          user_turns: 0,
+          attachments: attachmentCount,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     const transcript = messages
       .map((m) => {
         const who = m.role === "assistant" ? "Bot" : "Customer";
-        const att = m.attachment ? ` [attached ${m.attachment.mime}: ${m.attachment.name}]` : "";
+        const att = m.attachment
+          ? ` [attached ${m.attachment.mime}: ${m.attachment.name}]`
+          : "";
         return `${who}: ${m.body}${att}`;
       })
       .join("\n");
@@ -157,8 +172,8 @@ Deno.serve(async (req) => {
                 "You read a customer's intake conversation with a bot, plus their wizard answers, " +
                 "and write a tight brief for the engineer who is about to join the call. " +
                 "Respond with strict JSON only: " +
-                "{\"headline\": string, \"summary\": string, \"key_points\": string[], \"next_steps\": string[], " +
-                "\"issues\": string[], \"environments\": string[], \"urgency\": \"urgent\" | \"standard\" | \"later\"}. " +
+                '{"headline": string, "summary": string, "key_points": string[], "next_steps": string[], ' +
+                '"issues": string[], "environments": string[], "urgency": "urgent" | "standard" | "later"}. ' +
                 "`headline` = 6-10 words, the customer's core ask in plain language. No period. " +
                 "`summary` = 2-3 sentences. Lead with what they're building and what's broken. Use the customer's own phrasing. " +
                 "`key_points` = 3-6 short bullets the engineer needs in the first 30 seconds (error text verbatim if any, stack, AI tools, environment). " +
@@ -197,9 +212,9 @@ Deno.serve(async (req) => {
           summary = parts.join("\n").trim();
           if (!summary) summary = raw;
           // Matcher signals (best-effort; tolerant of missing or malformed fields).
-          issues       = sanitizeTags(parsed.issues);
+          issues = sanitizeTags(parsed.issues);
           environments = sanitizeTags(parsed.environments);
-          urgency      = sanitizeUrgency(parsed.urgency);
+          urgency = sanitizeUrgency(parsed.urgency);
         } catch {
           summary = raw;
           // Leave issues/environments/urgency at their defaults so the DB row
@@ -223,13 +238,10 @@ Deno.serve(async (req) => {
       intake_summary_updated_at: new Date().toISOString(),
       urgency,
     };
-    if (issues.length)       update.issues       = issues;
+    if (issues.length) update.issues = issues;
     if (environments.length) update.environments = environments;
 
-    await supabase
-      .from("client_intakes")
-      .update(update)
-      .eq("id", intake_id);
+    await supabase.from("client_intakes").update(update).eq("id", intake_id);
 
     return new Response(
       JSON.stringify({
@@ -240,7 +252,7 @@ Deno.serve(async (req) => {
         environments_extracted: environments.length,
         urgency,
       }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (e) {
     return new Response(JSON.stringify({ error: String(e) }), {

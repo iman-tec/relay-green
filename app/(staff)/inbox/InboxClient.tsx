@@ -21,7 +21,17 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ChevronLeft, ChevronRight, Folder, Loader2, PhoneIncoming, Search, Sparkles, X } from "lucide-react";
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Folder,
+  Loader2,
+  PhoneIncoming,
+  Search,
+  Sparkles,
+  X,
+} from "lucide-react";
 import { useEngineerWorkspace } from "@/lib/relay/useEngineerWorkspace";
 import { useRequireEngineerProfile } from "@/lib/relay/useRequireEngineerProfile";
 import { useStaffGuard } from "@/lib/relay/useStaffGuard";
@@ -40,10 +50,20 @@ type ConnectRequest = {
   projectName: string | null;
 };
 
-const BRAND_GREEN      = "#3f5c2e";
+const BRAND_GREEN = "#3f5c2e";
 const BRAND_GREEN_SOFT = "rgba(63, 92, 46, 0.12)";
 const URGENT_AMBER_SOFT = "rgba(212, 160, 23, 0.14)";
-const URGENT_AMBER      = "#d4a017";
+const URGENT_AMBER = "#d4a017";
+
+// True on a phone-width viewport — drives the inbox's mobile defaults
+// (People + Call-log rails start collapsed so the session/project pane is the
+// main view; picking a customer re-collapses People).
+function isMobileViewport(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    window.matchMedia("(max-width: 767px)").matches
+  );
+}
 
 // "Guest" is the legacy DB default for customer rows that haven't set a
 // display name. Engineers asked us to surface these as "Customer" instead
@@ -58,9 +78,9 @@ function displayCustomerName(raw: string | null | undefined): string {
 }
 
 type Person = {
-  key:      string;
-  email:    string;
-  name:     string;
+  key: string;
+  email: string;
+  name: string;
   sessions: GuestCall[];
 };
 
@@ -76,39 +96,49 @@ function EngineerInbox() {
   const [reqBusyId, setReqBusyId] = useState<string | null>(null);
   const sbRef = useRef(createClient());
 
-  const enrichRequest = useCallback(async (row: {
-    id: string;
-    customer_user_id: string;
-    project_id: string | null;
-    message: string | null;
-    created_at: string;
-  }): Promise<ConnectRequest> => {
-    const sb = sbRef.current;
-    // NB: customer_profiles has NO email column — selecting one made the
-    // whole query 42703-fail and the request card rendered with a null
-    // name forever. display_name is the profile's real field.
-    const [custRes, projRes] = await Promise.all([
-      sb.from("customer_profiles")
-        .select("display_name")
-        .eq("user_id", row.customer_user_id)
-        .maybeSingle(),
-      row.project_id
-        ? sb.from("projects").select("name").eq("id", row.project_id).maybeSingle()
-        : Promise.resolve({ data: null }),
-    ]);
-    const cust = (custRes.data ?? null) as { display_name: string | null } | null;
-    const proj = (projRes.data ?? null) as { name: string | null } | null;
-    return {
-      id: row.id,
-      customerUserId: row.customer_user_id,
-      projectId: row.project_id,
-      message: row.message,
-      createdAt: row.created_at,
-      customerName: cust?.display_name ?? null,
-      customerEmail: null,
-      projectName: proj?.name ?? null,
-    };
-  }, []);
+  const enrichRequest = useCallback(
+    async (row: {
+      id: string;
+      customer_user_id: string;
+      project_id: string | null;
+      message: string | null;
+      created_at: string;
+    }): Promise<ConnectRequest> => {
+      const sb = sbRef.current;
+      // NB: customer_profiles has NO email column — selecting one made the
+      // whole query 42703-fail and the request card rendered with a null
+      // name forever. display_name is the profile's real field.
+      const [custRes, projRes] = await Promise.all([
+        sb
+          .from("customer_profiles")
+          .select("display_name")
+          .eq("user_id", row.customer_user_id)
+          .maybeSingle(),
+        row.project_id
+          ? sb
+              .from("projects")
+              .select("name")
+              .eq("id", row.project_id)
+              .maybeSingle()
+          : Promise.resolve({ data: null }),
+      ]);
+      const cust = (custRes.data ?? null) as {
+        display_name: string | null;
+      } | null;
+      const proj = (projRes.data ?? null) as { name: string | null } | null;
+      return {
+        id: row.id,
+        customerUserId: row.customer_user_id,
+        projectId: row.project_id,
+        message: row.message,
+        createdAt: row.created_at,
+        customerName: cust?.display_name ?? null,
+        customerEmail: null,
+        projectName: proj?.name ?? null,
+      };
+    },
+    []
+  );
 
   useEffect(() => {
     const sb = sbRef.current;
@@ -145,9 +175,10 @@ function EngineerInbox() {
       // Per-mount UUID suffix on the channel name — defends against
       // Supabase's name-based dedupe when a leaked subscription from a
       // previous mount is still hanging around.
-      const suffix = typeof crypto !== "undefined" && crypto.randomUUID
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      const suffix =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
       // Realtime — fan-in inserts and status updates so the list mirrors
       // the database without polling.
@@ -162,7 +193,9 @@ function EngineerInbox() {
             filter: `engineer_user_id=eq.${me}`,
           },
           (payload) => {
-            const next = payload.new as typeof rows[number] & { status?: string } | null;
+            const next = payload.new as
+              | ((typeof rows)[number] & { status?: string })
+              | null;
             const old = payload.old as { id?: string; status?: string } | null;
             const oldId = old?.id;
             if (!next && oldId) {
@@ -179,11 +212,13 @@ function EngineerInbox() {
               setRequests((prev) => {
                 const without = prev.filter((r) => r.id !== enrichedRow.id);
                 return [enrichedRow, ...without].sort(
-                  (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+                  (a, b) =>
+                    new Date(b.createdAt).getTime() -
+                    new Date(a.createdAt).getTime()
                 );
               });
             });
-          },
+          }
         )
         .subscribe();
     })();
@@ -193,38 +228,48 @@ function EngineerInbox() {
     };
   }, [enrichRequest]);
 
-  const onAccept = useCallback(async (req: ConnectRequest) => {
-    if (reqBusyId) return;
-    setReqBusyId(req.id);
-    try {
-      const sb = sbRef.current;
-      const { error } = await sb.rpc("accept_connect_request", { _id: req.id });
-      if (error) {
-        window.alert(`Couldn't accept: ${error.message}`);
-        return;
+  const onAccept = useCallback(
+    async (req: ConnectRequest) => {
+      if (reqBusyId) return;
+      setReqBusyId(req.id);
+      try {
+        const sb = sbRef.current;
+        const { error } = await sb.rpc("accept_connect_request", {
+          _id: req.id,
+        });
+        if (error) {
+          window.alert(`Couldn't accept: ${error.message}`);
+          return;
+        }
+        // Realtime will remove the row from the list when status flips.
+        setRequests((prev) => prev.filter((r) => r.id !== req.id));
+      } finally {
+        setReqBusyId(null);
       }
-      // Realtime will remove the row from the list when status flips.
-      setRequests((prev) => prev.filter((r) => r.id !== req.id));
-    } finally {
-      setReqBusyId(null);
-    }
-  }, [reqBusyId]);
+    },
+    [reqBusyId]
+  );
 
-  const onDecline = useCallback(async (req: ConnectRequest) => {
-    if (reqBusyId) return;
-    setReqBusyId(req.id);
-    try {
-      const sb = sbRef.current;
-      const { error } = await sb.rpc("decline_connect_request", { _id: req.id });
-      if (error) {
-        window.alert(`Couldn't decline: ${error.message}`);
-        return;
+  const onDecline = useCallback(
+    async (req: ConnectRequest) => {
+      if (reqBusyId) return;
+      setReqBusyId(req.id);
+      try {
+        const sb = sbRef.current;
+        const { error } = await sb.rpc("decline_connect_request", {
+          _id: req.id,
+        });
+        if (error) {
+          window.alert(`Couldn't decline: ${error.message}`);
+          return;
+        }
+        setRequests((prev) => prev.filter((r) => r.id !== req.id));
+      } finally {
+        setReqBusyId(null);
       }
-      setRequests((prev) => prev.filter((r) => r.id !== req.id));
-    } finally {
-      setReqBusyId(null);
-    }
-  }, [reqBusyId]);
+    },
+    [reqBusyId]
+  );
 
   return (
     <InboxView
@@ -268,7 +313,7 @@ function InboxView({
 
   // ── People list (left rail) ───────────────────────────────────────────
   const [peopleSearch, setPeopleSearch] = useState("");
-  const [selectedKey, setSelectedKey]   = useState<string | null>(null);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
   // Real display names from the DB profile. guest_calls.guest_name is just
   // whatever the wizard captured AT SESSION TIME — unnamed flows store the
@@ -277,7 +322,7 @@ function InboxView({
   // profile name. Fetch customer_profiles for every customer_user_id on
   // screen and prefer it at render time.
   const [profileNames, setProfileNames] = useState<Map<string, string>>(
-    () => new Map(),
+    () => new Map()
   );
   useEffect(() => {
     const ids = new Set<string>();
@@ -294,7 +339,10 @@ function InboxView({
         .in("user_id", Array.from(ids));
       if (!alive || !rows) return;
       const next = new Map<string, string>();
-      for (const r of rows as { user_id: string; display_name: string | null }[]) {
+      for (const r of rows as {
+        user_id: string;
+        display_name: string | null;
+      }[]) {
         const name = (r.display_name ?? "").trim();
         if (name) next.set(r.user_id, name);
       }
@@ -342,9 +390,9 @@ function InboxView({
         }
       } else {
         map.set(k, {
-          key:      k,
-          email:    c.guest_email ?? "",
-          name:     bestName(c),
+          key: k,
+          email: c.guest_email ?? "",
+          name: bestName(c),
           sessions: [c],
         });
       }
@@ -357,13 +405,18 @@ function InboxView({
     const list = Array.from(peopleMap.values());
     const filtered = !q
       ? list
-      : list.filter((p) =>
-          p.name.toLowerCase().includes(q) ||
-          p.email.toLowerCase().includes(q),
+      : list.filter(
+          (p) =>
+            p.name.toLowerCase().includes(q) ||
+            p.email.toLowerCase().includes(q)
         );
     return filtered.sort((a, b) => {
-      const am = Math.max(...a.sessions.map((s) => new Date(s.created_at).getTime()));
-      const bm = Math.max(...b.sessions.map((s) => new Date(s.created_at).getTime()));
+      const am = Math.max(
+        ...a.sessions.map((s) => new Date(s.created_at).getTime())
+      );
+      const bm = Math.max(
+        ...b.sessions.map((s) => new Date(s.created_at).getTime())
+      );
       return bm - am;
     });
   }, [peopleMap, peopleSearch]);
@@ -373,7 +426,9 @@ function InboxView({
     if (!selectedKey && people.length > 0) setSelectedKey(people[0].key);
   }, [people, selectedKey]);
 
-  const selectedPerson = selectedKey ? peopleMap.get(selectedKey) ?? null : null;
+  const selectedPerson = selectedKey
+    ? (peopleMap.get(selectedKey) ?? null)
+    : null;
 
   // ── Call log (right rail) ─────────────────────────────────────────────
   // Searches over two axes — customer (name/email) OR project (name).
@@ -384,12 +439,40 @@ function InboxView({
   // separate sweeper edge function; from the UI we expose whatever the
   // server returns.
   const [logSearch, setLogSearch] = useState("");
-  const [logSearchMode, setLogSearchMode] = useState<"customer" | "project">("customer");
-  const [logSort, setLogSort] = useState<"newest" | "oldest" | "name" | "status">("newest");
+  const [logSearchMode, setLogSearchMode] = useState<"customer" | "project">(
+    "customer"
+  );
+  const [logSort, setLogSort] = useState<
+    "newest" | "oldest" | "name" | "status"
+  >("newest");
   const [logCollapsed, setLogCollapsed] = useState(false);
+  // People / "Customer name" left rail — collapsible like the call log.
+  const [peopleCollapsed, setPeopleCollapsed] = useState(false);
+  // On phones, start both side rails collapsed so the session/project pane is
+  // the main view. Done in an effect (not a lazy initializer) to avoid an SSR
+  // hydration mismatch; runs once on mount.
+  useEffect(() => {
+    if (isMobileViewport()) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPeopleCollapsed(true);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLogCollapsed(true);
+    }
+  }, []);
+  // Reactive mobile flag — on phones the Call log rail is removed entirely
+  // (not just collapsed), so the session/project pane gets the full width.
+  // Kept in sync on resize/rotation.
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const sync = () => setIsMobile(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
   const [logFromDate, setLogFromDate] = useState<string>("");
   const [logToDate, setLogToDate] = useState<string>("");
-  const [logShowAll, setLogShowAll] = useState(false);  // toggle: 30 default → all
+  const [logShowAll, setLogShowAll] = useState(false); // toggle: 30 default → all
 
   // Default cap when no filters are applied — 30 most-recent calls.
   const DEFAULT_LOG_CAP = 30;
@@ -412,13 +495,14 @@ function InboxView({
     // guest_email; project mode looks at project_name.
     if (q) {
       if (logSearchMode === "customer") {
-        arr = arr.filter((c) =>
-          (c.guest_name ?? "").toLowerCase().includes(q) ||
-          (c.guest_email ?? "").toLowerCase().includes(q),
+        arr = arr.filter(
+          (c) =>
+            (c.guest_name ?? "").toLowerCase().includes(q) ||
+            (c.guest_email ?? "").toLowerCase().includes(q)
         );
       } else {
         arr = arr.filter((c) =>
-          (c.project_name ?? "").toLowerCase().includes(q),
+          (c.project_name ?? "").toLowerCase().includes(q)
         );
       }
     }
@@ -427,29 +511,43 @@ function InboxView({
     arr = [...arr].sort((a, b) => {
       switch (logSort) {
         case "oldest":
-          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          return (
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          );
         case "name":
           return (a.guest_name ?? "").localeCompare(b.guest_name ?? "");
         case "status":
           return (a.status ?? "").localeCompare(b.status ?? "");
         case "newest":
         default:
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+          return (
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          );
       }
     });
 
     // Apply default cap only when no filters are active and the engineer
     // hasn't asked to see everything.
-    const hasFilters = q.length > 0 || logFromDate.length > 0 || logToDate.length > 0;
+    const hasFilters =
+      q.length > 0 || logFromDate.length > 0 || logToDate.length > 0;
     if (!hasFilters && !logShowAll && arr.length > DEFAULT_LOG_CAP) {
       arr = arr.slice(0, DEFAULT_LOG_CAP);
     }
 
     return arr;
-  }, [recent, logSearch, logSearchMode, logSort, logFromDate, logToDate, logShowAll]);
+  }, [
+    recent,
+    logSearch,
+    logSearchMode,
+    logSort,
+    logFromDate,
+    logToDate,
+    logShowAll,
+  ]);
 
   const totalRecentCount = recent.length;
-  const hasAnyFilter = logSearch.length > 0 || logFromDate.length > 0 || logToDate.length > 0;
+  const hasAnyFilter =
+    logSearch.length > 0 || logFromDate.length > 0 || logToDate.length > 0;
 
   // Column-gradient palette — left → right increases in light, then drops
   // back dark on the rightmost rail. Visual cue that the three lists are
@@ -462,8 +560,8 @@ function InboxView({
   //
   // The shades are tinted from the canvas with low-alpha text mixes so
   // they read correctly under all 3 themes (light / dark / espresso).
-  const COL_PEOPLE_BG  = "color-mix(in srgb, var(--text) 3%, var(--surface))";
-  const COL_CENTER_BG  = "color-mix(in srgb, var(--text) 6%, var(--surface))";
+  const COL_PEOPLE_BG = "color-mix(in srgb, var(--text) 3%, var(--surface))";
+  const COL_CENTER_BG = "color-mix(in srgb, var(--text) 6%, var(--surface))";
   const COL_CALLLOG_BG = "var(--surface)";
 
   // Tramline divider — vertical strip rendered as its own grid column
@@ -482,7 +580,9 @@ function InboxView({
     <div
       className="grid h-screen transition-[grid-template-columns] duration-200"
       style={{
-        gridTemplateColumns: `280px ${DIVIDER_W}px 1fr ${DIVIDER_W}px ${logCollapsed ? 40 : 320}px`,
+        gridTemplateColumns: isMobile
+          ? `${peopleCollapsed ? 40 : 280}px ${DIVIDER_W}px 1fr`
+          : `${peopleCollapsed ? 40 : 280}px ${DIVIDER_W}px 1fr ${DIVIDER_W}px ${logCollapsed ? 40 : 320}px`,
         backgroundColor: "var(--surface)",
       }}
     >
@@ -491,13 +591,51 @@ function InboxView({
         className="flex min-h-0 flex-col overflow-hidden"
         style={{ backgroundColor: COL_PEOPLE_BG }}
       >
+        {peopleCollapsed ? (
+          /* Collapsed rail — narrow vertical strip with a toggle. */
+          <button
+            type="button"
+            onClick={() => setPeopleCollapsed(false)}
+            title="Expand customers"
+            className="flex h-full w-full flex-col items-center justify-start gap-3 px-2 py-3 transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <ChevronRight size={14} />
+            <span
+              className="select-none text-[10px] font-semibold uppercase tracking-[0.18em]"
+              style={{ writingMode: "vertical-rl" }}
+            >
+              Customer name
+            </span>
+          </button>
+        ) : (
+          <>
         <div className="border-b p-3" style={{ borderColor: "var(--border)" }}>
-          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--text-muted)" }}>
-            Customer name
-          </h3>
+          {/* Merge: escalations branch added the people-rail collapse
+              button — kept; heading retains its style. */}
+          <div className="mb-2 flex items-center justify-between">
+            <h3
+              className="text-[10px] font-semibold tracking-[0.12em] uppercase"
+              style={{ color: "var(--text-muted)" }}
+            >
+              Customer name
+            </h3>
+            <button
+              type="button"
+              onClick={() => setPeopleCollapsed(true)}
+              title="Collapse customers"
+              className="rounded-md p-0.5"
+              style={{ color: "var(--text-muted)" }}
+            >
+              <ChevronLeft size={12} />
+            </button>
+          </div>
           <div
             className="flex items-center gap-2 rounded-md border px-3 py-2"
-            style={{ borderColor: "var(--border)", backgroundColor: "var(--background)" }}
+            style={{
+              borderColor: "var(--border)",
+              backgroundColor: "var(--background)",
+            }}
           >
             <Search size={12} style={{ color: "var(--text-muted)" }} />
             <input
@@ -515,7 +653,13 @@ function InboxView({
           {loading ? (
             <EmptyHint text="Loading…" />
           ) : people.length === 0 ? (
-            <EmptyHint text={peopleSearch ? `No people match "${peopleSearch}".` : "No people yet — sessions will populate this list."} />
+            <EmptyHint
+              text={
+                peopleSearch
+                  ? `No people match "${peopleSearch}".`
+                  : "No people yet — sessions will populate this list."
+              }
+            />
           ) : (
             people.map((p) => {
               const active = p.key === selectedKey;
@@ -523,7 +667,12 @@ function InboxView({
               return (
                 <button
                   key={p.key}
-                  onClick={() => setSelectedKey(p.key)}
+                  onClick={() => {
+                    setSelectedKey(p.key);
+                    // On mobile, picking a customer collapses the list so the
+                    // session/project pane takes over.
+                    if (isMobileViewport()) setPeopleCollapsed(true);
+                  }}
                   className="relative flex w-full items-start gap-3 border-b px-4 py-3 text-left transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
                   style={{
                     borderColor: "var(--border)",
@@ -549,7 +698,7 @@ function InboxView({
                           translate) so it never overlaps the tramline divider. */}
                       <span
                         aria-hidden
-                        className="absolute right-0 top-1/2 h-3 w-1.5 -translate-y-1/2 rounded-l-sm"
+                        className="absolute top-1/2 right-0 h-3 w-1.5 -translate-y-1/2 rounded-l-sm"
                         style={{ backgroundColor: BRAND_GREEN }}
                       />
                     </>
@@ -572,11 +721,18 @@ function InboxView({
                         {p.name}
                       </span>
                       {hasQueued && (
-                        <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: URGENT_AMBER }} />
+                        <span
+                          className="h-2 w-2 shrink-0 rounded-full"
+                          style={{ backgroundColor: URGENT_AMBER }}
+                        />
                       )}
                     </div>
-                    <div className="truncate text-xs" style={{ color: "var(--text-muted)" }}>
-                      {p.sessions.length} session{p.sessions.length !== 1 ? "s" : ""}
+                    <div
+                      className="truncate text-xs"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      {p.sessions.length} session
+                      {p.sessions.length !== 1 ? "s" : ""}
                       {p.email ? ` · ${p.email}` : ""}
                     </div>
                   </div>
@@ -585,6 +741,8 @@ function InboxView({
             })
           )}
         </div>
+          </>
+        )}
       </aside>
 
       {/* ── Tramline divider (People → Sessions) ──────────────────── */}
@@ -599,8 +757,10 @@ function InboxView({
           <div
             className="mx-6 mt-4 rounded-md border px-4 py-2 text-sm"
             style={{
-              borderColor: "color-mix(in srgb, var(--accent-red) 30%, transparent)",
-              backgroundColor: "color-mix(in srgb, var(--accent-red) 8%, transparent)",
+              borderColor:
+                "color-mix(in srgb, var(--accent-red) 30%, transparent)",
+              backgroundColor:
+                "color-mix(in srgb, var(--accent-red) 8%, transparent)",
               color: "var(--accent-red)",
             }}
           >
@@ -620,22 +780,33 @@ function InboxView({
         {selectedPerson ? (
           <PersonHistory
             person={selectedPerson}
-            onOpenProject={(projectId) => router.push(`/staff/project/${projectId}`)}
+            onOpenProject={(projectId) =>
+              router.push(`/staff/project/${projectId}`)
+            }
           />
         ) : requests.length === 0 ? (
           <div className="flex flex-1 items-center justify-center px-6 text-center">
             <div className="flex max-w-md flex-col items-center gap-5">
               <div
                 className="flex h-14 w-14 items-center justify-center rounded-2xl"
-                style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
+                style={{
+                  backgroundColor: BRAND_GREEN_SOFT,
+                  color: BRAND_GREEN,
+                }}
               >
                 <Sparkles size={26} />
               </div>
               <div>
-                <h2 className="text-2xl font-semibold" style={{ color: "var(--text)" }}>
+                <h2
+                  className="text-2xl font-semibold"
+                  style={{ color: "var(--text)" }}
+                >
                   Welcome back
                 </h2>
-                <p className="mt-2 text-sm" style={{ color: "var(--text-muted)" }}>
+                <p
+                  className="mt-2 text-sm"
+                  style={{ color: "var(--text-muted)" }}
+                >
                   Pick a customer on the left to see their session history.
                 </p>
               </div>
@@ -644,7 +815,12 @@ function InboxView({
         ) : null}
       </section>
 
-      {/* ── Tramline divider (Sessions → Call log) ────────────────── */}
+      {/* ── Tramline divider + Call log rail ──────────────────────────
+          Removed entirely on phones (not just collapsed) so the session /
+          project pane owns the full width; the grid above also drops these
+          two columns when isMobile. */}
+      {!isMobile && (
+      <>
       <div aria-hidden style={dividerStyle} />
 
       {/* ── Right rail: Call log (dark, matches StaffShell sidebar) ── */}
@@ -663,7 +839,7 @@ function InboxView({
           >
             <ChevronLeft size={14} />
             <span
-              className="select-none text-[10px] font-semibold uppercase tracking-[0.18em]"
+              className="text-[10px] font-semibold tracking-[0.18em] uppercase select-none"
               style={{ writingMode: "vertical-rl" }}
             >
               Call log
@@ -671,13 +847,22 @@ function InboxView({
           </button>
         ) : (
           <>
-            <div className="border-b p-3" style={{ borderColor: "var(--border)" }}>
+            <div
+              className="border-b p-3"
+              style={{ borderColor: "var(--border)" }}
+            >
               <div className="mb-2 flex items-center justify-between">
-                <h3 className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--text-muted)" }}>
+                <h3
+                  className="text-[10px] font-semibold tracking-[0.12em] uppercase"
+                  style={{ color: "var(--text-muted)" }}
+                >
                   Call log
                 </h3>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] tabular-nums" style={{ color: "var(--text-muted)" }}>
+                  <span
+                    className="text-[10px] tabular-nums"
+                    style={{ color: "var(--text-muted)" }}
+                  >
                     {logRows.length} of {recent.length}
                   </span>
                   <button
@@ -694,7 +879,10 @@ function InboxView({
               {/* Search axis toggle — Customer vs Project. */}
               <div
                 className="mb-2 inline-flex rounded-md border p-0.5"
-                style={{ borderColor: "var(--border)", backgroundColor: "var(--background)" }}
+                style={{
+                  borderColor: "var(--border)",
+                  backgroundColor: "var(--background)",
+                }}
               >
                 <button
                   type="button"
@@ -702,8 +890,14 @@ function InboxView({
                   aria-pressed={logSearchMode === "customer"}
                   className="rounded px-2 py-0.5 text-[10px] font-semibold transition-colors"
                   style={{
-                    backgroundColor: logSearchMode === "customer" ? BRAND_GREEN : "transparent",
-                    color: logSearchMode === "customer" ? "#fff" : "var(--text-muted)",
+                    backgroundColor:
+                      logSearchMode === "customer"
+                        ? BRAND_GREEN
+                        : "transparent",
+                    color:
+                      logSearchMode === "customer"
+                        ? "#fff"
+                        : "var(--text-muted)",
                   }}
                 >
                   Customer
@@ -714,8 +908,12 @@ function InboxView({
                   aria-pressed={logSearchMode === "project"}
                   className="rounded px-2 py-0.5 text-[10px] font-semibold transition-colors"
                   style={{
-                    backgroundColor: logSearchMode === "project" ? BRAND_GREEN : "transparent",
-                    color: logSearchMode === "project" ? "#fff" : "var(--text-muted)",
+                    backgroundColor:
+                      logSearchMode === "project" ? BRAND_GREEN : "transparent",
+                    color:
+                      logSearchMode === "project"
+                        ? "#fff"
+                        : "var(--text-muted)",
                   }}
                 >
                   Project
@@ -723,14 +921,21 @@ function InboxView({
               </div>
               <div
                 className="mb-2 flex items-center gap-2 rounded-md border px-3 py-2"
-                style={{ borderColor: "var(--border)", backgroundColor: "var(--background)" }}
+                style={{
+                  borderColor: "var(--border)",
+                  backgroundColor: "var(--background)",
+                }}
               >
                 <Search size={12} style={{ color: "var(--text-muted)" }} />
                 <input
                   type="text"
                   value={logSearch}
                   onChange={(e) => setLogSearch(e.target.value)}
-                  placeholder={logSearchMode === "customer" ? "Search by customer…" : "Search by project…"}
+                  placeholder={
+                    logSearchMode === "customer"
+                      ? "Search by customer…"
+                      : "Search by project…"
+                  }
                   className="w-full bg-transparent text-xs outline-none"
                   style={{ color: "var(--text)" }}
                 />
@@ -744,21 +949,37 @@ function InboxView({
                   onChange={(e) => setLogFromDate(e.target.value)}
                   title="Start date"
                   className="flex-1 rounded-md border px-2 py-1 text-[11px] outline-none"
-                  style={{ borderColor: "var(--border)", backgroundColor: "var(--background)", color: "var(--text)" }}
+                  style={{
+                    borderColor: "var(--border)",
+                    backgroundColor: "var(--background)",
+                    color: "var(--text)",
+                  }}
                 />
-                <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>→</span>
+                <span
+                  className="text-[10px]"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  →
+                </span>
                 <input
                   type="date"
                   value={logToDate}
                   onChange={(e) => setLogToDate(e.target.value)}
                   title="End date"
                   className="flex-1 rounded-md border px-2 py-1 text-[11px] outline-none"
-                  style={{ borderColor: "var(--border)", backgroundColor: "var(--background)", color: "var(--text)" }}
+                  style={{
+                    borderColor: "var(--border)",
+                    backgroundColor: "var(--background)",
+                    color: "var(--text)",
+                  }}
                 />
                 {(logFromDate || logToDate) && (
                   <button
                     type="button"
-                    onClick={() => { setLogFromDate(""); setLogToDate(""); }}
+                    onClick={() => {
+                      setLogFromDate("");
+                      setLogToDate("");
+                    }}
                     title="Clear date range"
                     className="rounded-md p-0.5"
                     style={{ color: "var(--text-muted)" }}
@@ -792,7 +1013,10 @@ function InboxView({
                   type="button"
                   onClick={() => setLogShowAll((v) => !v)}
                   className="mt-2 w-full rounded-md border px-2 py-1 text-[10px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                  style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+                  style={{
+                    borderColor: "var(--border)",
+                    color: "var(--text-muted)",
+                  }}
                 >
                   {logShowAll
                     ? `Show last 30 only (currently ${totalRecentCount})`
@@ -803,11 +1027,13 @@ function InboxView({
 
             <div className="hide-scrollbar flex-1 overflow-y-auto">
               {logRows.length === 0 ? (
-                <EmptyHint text={
-                  hasAnyFilter
-                    ? `No calls match the current filters.`
-                    : "No calls yet."
-                } />
+                <EmptyHint
+                  text={
+                    hasAnyFilter
+                      ? `No calls match the current filters.`
+                      : "No calls yet."
+                  }
+                />
               ) : (
                 logRows.map((c) => (
                   <button
@@ -817,9 +1043,26 @@ function InboxView({
                     style={{ borderColor: "var(--border)" }}
                   >
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-medium" style={{ color: "var(--text)" }}>{displayCustomerName((c.customer_user_id && profileNames.get(c.customer_user_id)) || c.guest_name)}</div>
-                      <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-                        {new Date(c.created_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      <div
+                        className="truncate text-sm font-medium"
+                        style={{ color: "var(--text)" }}
+                      >
+                        {displayCustomerName(
+                          (c.customer_user_id &&
+                            profileNames.get(c.customer_user_id)) ||
+                            c.guest_name
+                        )}
+                      </div>
+                      <div
+                        className="text-[11px]"
+                        style={{ color: "var(--text-muted)" }}
+                      >
+                        {new Date(c.created_at).toLocaleString([], {
+                          month: "short",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
                       </div>
                     </div>
                     <StatusBadge status={c.status} />
@@ -830,6 +1073,8 @@ function InboxView({
           </>
         )}
       </aside>
+      </>
+      )}
     </div>
   );
 }
@@ -861,14 +1106,18 @@ function useSupervisorInbox() {
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   // Coalesce a burst of guest_calls changes into one refetch.
   useEffect(() => {
     const sb = sbRef.current;
     const schedule = () => {
       if (reloadTimer.current) clearTimeout(reloadTimer.current);
-      reloadTimer.current = setTimeout(() => { void load(); }, 1500);
+      reloadTimer.current = setTimeout(() => {
+        void load();
+      }, 1500);
     };
     const suffix =
       typeof crypto !== "undefined" && crypto.randomUUID
@@ -879,10 +1128,12 @@ function useSupervisorInbox() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "guest_calls" },
-        () => schedule(),
+        () => schedule()
       )
       .subscribe();
-    return () => { sb.removeChannel(ch); };
+    return () => {
+      sb.removeChannel(ch);
+    };
   }, [load]);
 
   return { sessions, loading, error };
@@ -908,13 +1159,24 @@ export function InboxClient() {
   const guard = useStaffGuard();
   if (guard.kind === "loading") {
     return (
-      <div className="flex h-screen items-center justify-center" style={{ backgroundColor: "var(--surface)" }}>
-        <Loader2 size={20} className="animate-spin" style={{ color: BRAND_GREEN }} />
+      <div
+        className="flex h-screen items-center justify-center"
+        style={{ backgroundColor: "var(--surface)" }}
+      >
+        <Loader2
+          size={20}
+          className="animate-spin"
+          style={{ color: BRAND_GREEN }}
+        />
       </div>
     );
   }
   const roles = guard.kind === "staff" ? guard.roles : [];
-  return roles.includes(ROLE.engineer) ? <EngineerInbox /> : <SupervisorInbox />;
+  return roles.includes(ROLE.engineer) ? (
+    <EngineerInbox />
+  ) : (
+    <SupervisorInbox />
+  );
 }
 
 /* ──────── Center pane: project-grouped session history for one person ───
@@ -926,14 +1188,15 @@ export function InboxClient() {
  * ───────────────────────────────────────────────────────────────────── */
 
 type ProjectBucket = {
-  key: string;            // project_id or "__none__"
-  name: string;           // display name (project_name) or "No project"
+  key: string; // project_id or "__none__"
+  name: string; // display name (project_name) or "No project"
   sessions: GuestCall[];
-  latestAt: number;       // for sort
+  latestAt: number; // for sort
 };
 
 function PersonHistory({
-  person, onOpenProject,
+  person,
+  onOpenProject,
 }: {
   person: Person;
   onOpenProject: (projectId: string) => void;
@@ -956,7 +1219,8 @@ function PersonHistory({
     const arr = Array.from(map.values()).map((b) => ({
       ...b,
       sessions: [...b.sessions].sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+        (a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       ),
     }));
     arr.sort((a, b) => b.latestAt - a.latestAt);
@@ -994,22 +1258,33 @@ function PersonHistory({
         </div>
         <div className="min-w-0 flex-1">
           <p
-            className="text-[10px] font-semibold uppercase tracking-[0.12em]"
+            className="text-[10px] font-semibold tracking-[0.12em] uppercase"
             style={{ color: BRAND_GREEN }}
           >
             Viewing sessions for
           </p>
           <h2
             className="mt-0.5 truncate text-lg font-semibold"
-            style={{ color: "var(--text)", fontFamily: "var(--font-source-serif)" }}
+            style={{
+              color: "var(--text)",
+              fontFamily: "var(--font-source-serif)",
+            }}
           >
             {person.name}
           </h2>
-          <p className="mt-0.5 truncate text-[12px]" style={{ color: "var(--text-muted)" }}>
+          <p
+            className="mt-0.5 truncate text-[12px]"
+            style={{ color: "var(--text-muted)" }}
+          >
             {person.email || "—"}
-            <span className="mx-1.5" style={{ color: "var(--text-faint)" }}>·</span>
-            {person.sessions.length} session{person.sessions.length === 1 ? "" : "s"}
-            <span className="mx-1.5" style={{ color: "var(--text-faint)" }}>·</span>
+            <span className="mx-1.5" style={{ color: "var(--text-faint)" }}>
+              ·
+            </span>
+            {person.sessions.length} session
+            {person.sessions.length === 1 ? "" : "s"}
+            <span className="mx-1.5" style={{ color: "var(--text-faint)" }}>
+              ·
+            </span>
             {buckets.length} project{buckets.length === 1 ? "" : "s"}
           </p>
         </div>
@@ -1030,7 +1305,9 @@ function PersonHistory({
 }
 
 function ProjectBucketRow({
-  bucket, canOpen, onOpen,
+  bucket,
+  canOpen,
+  onOpen,
 }: {
   bucket: ProjectBucket;
   canOpen: boolean;
@@ -1042,11 +1319,14 @@ function ProjectBucketRow({
   const inner = (
     <>
       <Folder size={13} style={{ color: "var(--text-muted)" }} />
-      <span className="flex-1 truncate text-[13px] font-semibold" style={{ color: "var(--text)" }}>
+      <span
+        className="flex-1 truncate text-[13px] font-semibold"
+        style={{ color: "var(--text)" }}
+      >
         {bucket.name}
       </span>
       <span
-        className="rounded-full px-1.5 py-0 text-[9px] font-semibold uppercase tracking-wider"
+        className="rounded-full px-1.5 py-0 text-[9px] font-semibold tracking-wider uppercase"
         style={{
           backgroundColor: "color-mix(in srgb, var(--text) 8%, transparent)",
           color: "var(--text-muted)",
@@ -1058,13 +1338,19 @@ function ProjectBucketRow({
         className="shrink-0 text-[10px] tabular-nums"
         style={{ color: "var(--text-faint)" }}
       >
-        {new Date(bucket.latestAt).toLocaleDateString([], { month: "short", day: "numeric" })}
+        {new Date(bucket.latestAt).toLocaleDateString([], {
+          month: "short",
+          day: "numeric",
+        })}
       </span>
     </>
   );
   if (!canOpen) {
     return (
-      <div className="flex items-center gap-2.5 border-b px-5 py-3" style={{ borderColor: "var(--border)" }}>
+      <div
+        className="flex items-center gap-2.5 border-b px-5 py-3"
+        style={{ borderColor: "var(--border)" }}
+      >
         {inner}
       </div>
     );
@@ -1082,7 +1368,14 @@ function ProjectBucketRow({
 }
 
 function EmptyHint({ text }: { text: string }) {
-  return <p className="px-5 py-8 text-center text-xs" style={{ color: "var(--text-muted)" }}>{text}</p>;
+  return (
+    <p
+      className="px-5 py-8 text-center text-xs"
+      style={{ color: "var(--text-muted)" }}
+    >
+      {text}
+    </p>
+  );
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -1092,7 +1385,10 @@ function EmptyHint({ text }: { text: string }) {
 // and routes the customer into a session via the normal new-session flow.
 // ──────────────────────────────────────────────────────────────────────────
 function PendingRequests({
-  requests, busyId, onAccept, onDecline,
+  requests,
+  busyId,
+  onAccept,
+  onDecline,
 }: {
   requests: ConnectRequest[];
   busyId: string | null;
@@ -1102,11 +1398,17 @@ function PendingRequests({
   return (
     <section
       className="shrink-0 border-b px-5 py-4"
-      style={{ borderColor: "var(--border)", backgroundColor: "color-mix(in srgb, var(--warn) 5%, var(--surface))" }}
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "color-mix(in srgb, var(--warn) 5%, var(--surface))",
+      }}
     >
       <header className="mb-3 flex items-center gap-2">
         <PhoneIncoming size={14} style={{ color: URGENT_AMBER }} />
-        <h2 className="text-[12px] font-semibold uppercase tracking-wider" style={{ color: "var(--text)" }}>
+        <h2
+          className="text-[12px] font-semibold tracking-wider uppercase"
+          style={{ color: "var(--text)" }}
+        >
           Pending requests · {requests.length}
         </h2>
       </header>
@@ -1121,28 +1423,48 @@ function PendingRequests({
             >
               <div
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold uppercase"
-                style={{ backgroundColor: URGENT_AMBER_SOFT, color: URGENT_AMBER }}
+                style={{
+                  backgroundColor: URGENT_AMBER_SOFT,
+                  color: URGENT_AMBER,
+                }}
               >
                 {(r.customerName || r.customerEmail || "?")[0]}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="truncate text-[13px] font-medium" style={{ color: "var(--text)" }}>
+                  <span
+                    className="truncate text-[13px] font-medium"
+                    style={{ color: "var(--text)" }}
+                  >
                     {r.customerName ?? r.customerEmail ?? "Customer"}
                   </span>
                   {r.projectName && (
-                    <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                    <span
+                      className="text-[11px]"
+                      style={{ color: "var(--text-muted)" }}
+                    >
                       · {r.projectName}
                     </span>
                   )}
                 </div>
                 {r.message && (
-                  <p className="mt-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
+                  <p
+                    className="mt-1 text-[12px]"
+                    style={{ color: "var(--text-muted)" }}
+                  >
                     &ldquo;{r.message}&rdquo;
                   </p>
                 )}
-                <div className="mt-1 text-[10px]" style={{ color: "var(--text-faint)" }}>
-                  {new Date(r.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                <div
+                  className="mt-1 text-[10px]"
+                  style={{ color: "var(--text-faint)" }}
+                >
+                  {new Date(r.createdAt).toLocaleString([], {
+                    month: "short",
+                    day: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
                 </div>
               </div>
               <div className="flex shrink-0 gap-1.5">
@@ -1154,15 +1476,22 @@ function PendingRequests({
                   style={{ backgroundColor: BRAND_GREEN }}
                   title="Accept request"
                 >
-                  {busy ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />}
+                  {busy ? (
+                    <Loader2 size={10} className="animate-spin" />
+                  ) : (
+                    <Check size={10} />
+                  )}
                   Accept
                 </button>
                 <button
                   type="button"
                   disabled={busy}
                   onClick={() => onDecline(r)}
-                  className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
-                  style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+                  className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
+                  style={{
+                    borderColor: "var(--border)",
+                    color: "var(--text-muted)",
+                  }}
                   title="Decline request"
                 >
                   <X size={10} />
@@ -1178,14 +1507,18 @@ function PendingRequests({
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const cfg = status === "live"
-    ? { bg: BRAND_GREEN_SOFT, fg: BRAND_GREEN }
-    : status === "queued" || status === "assigned" || status === "joining"
-    ? { bg: URGENT_AMBER_SOFT, fg: URGENT_AMBER }
-    : { bg: "color-mix(in srgb, var(--text) 8%, transparent)", fg: "var(--text-muted)" };
+  const cfg =
+    status === "live"
+      ? { bg: BRAND_GREEN_SOFT, fg: BRAND_GREEN }
+      : status === "queued" || status === "assigned" || status === "joining"
+        ? { bg: URGENT_AMBER_SOFT, fg: URGENT_AMBER }
+        : {
+            bg: "color-mix(in srgb, var(--text) 8%, transparent)",
+            fg: "var(--text-muted)",
+          };
   return (
     <span
-      className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+      className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase"
       style={{ backgroundColor: cfg.bg, color: cfg.fg }}
     >
       {status}

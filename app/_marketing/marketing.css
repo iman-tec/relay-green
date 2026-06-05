@@ -765,7 +765,10 @@
   color: var(--ink-soft);
   cursor: pointer;
   padding: 0;
-  transition: color 160ms ease, background 160ms ease, transform 120ms ease;
+  transition:
+    color 160ms ease,
+    background 160ms ease,
+    transform 120ms ease;
 }
 .mk-root .r-theme-icon:hover {
   color: var(--ink);
@@ -6070,7 +6073,11 @@
    new sections are added (no per-section class tagging needed).
    :not(...) excludes sections that intentionally use the inverting
    var(--ink) bg pair — those need to stay paired with var(--cream) text. */
-.mk-root[data-theme="espresso"] main > section:nth-of-type(even):not([style*="var(--ink)"]):not([style*="var(--green)"]) {
+.mk-root[data-theme="espresso"]
+  main
+  > section:nth-of-type(even):not([style*="var(--ink)"]):not(
+    [style*="var(--green)"]
+  ) {
   background: var(--cream-3) !important;
 }
 .mk-root[data-theme="espresso"] .r-hero::before {
@@ -6175,7 +6182,7 @@
   background: linear-gradient(
     100deg,
     rgba(0, 19, 64, 0.96) 0%,
-    rgba(0, 43, 107, 0.90) 50%,
+    rgba(0, 43, 107, 0.9) 50%,
     rgba(0, 88, 166, 0.78) 75%,
     rgba(0, 121, 194, 0.62) 90%,
     rgba(0, 161, 222, 0.4) 100%

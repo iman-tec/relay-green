@@ -15,22 +15,28 @@ import { requireEnterpriseAdmin } from "@/lib/enterprise-auth";
 import { STAFF_ROLES as ALL_STAFF_ROLES } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 const STAFF_ROLE_SET: ReadonlySet<string> = new Set(ALL_STAFF_ROLES);
 
 export async function GET() {
   const gate = await requireEnterpriseAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin, orgId } = gate;
 
   const { data: org, error: orgErr } = await admin
     .from("organizations")
-    .select("id, name, primary_domain, status, enterprise_code, created_at, reseller_id, discount_pct, discount_until, retention_days")
+    .select(
+      "id, name, primary_domain, status, enterprise_code, created_at, reseller_id, discount_pct, discount_until, retention_days"
+    )
     .eq("id", orgId)
     .single();
   if (orgErr || !org) {
-    return NextResponse.json({ error: orgErr?.message ?? "Org not found." }, { status: 404 });
+    return NextResponse.json(
+      { error: orgErr?.message ?? "Org not found." },
+      { status: 404 }
+    );
   }
 
   // Channel Partner who onboarded this org (non-editable, shown in Settings).
@@ -60,7 +66,7 @@ export async function GET() {
   const profileIds = (profiles ?? []).map((p) => p.id as string);
 
   let staffCount = 0;
-  let userCount  = profileIds.length;
+  let userCount = profileIds.length;
   if (profileIds.length > 0) {
     const { data: roleRows } = await admin
       .from("user_role_names")
@@ -71,37 +77,45 @@ export async function GET() {
       if (STAFF_ROLE_SET.has(r.role)) staffSet.add(r.user_id);
     }
     staffCount = staffSet.size;
-    userCount  = profileIds.length - staffCount;
+    userCount = profileIds.length - staffCount;
   }
 
   // Sessions scoped to this org. profiles already filtered to orgId so
   // sessions.customer_user_id ∈ profileIds is the org's session set.
-  const now      = new Date();
-  const dayAgo7  = new Date(now.getTime() - 7  * 86_400_000).toISOString();
+  const now = new Date();
+  const dayAgo7 = new Date(now.getTime() - 7 * 86_400_000).toISOString();
   const dayAgo30 = new Date(now.getTime() - 30 * 86_400_000).toISOString();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const monthStart = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    1
+  ).toISOString();
 
-  let sessions7  = 0;
+  let sessions7 = 0;
   let sessions30 = 0;
-  let activeIn7  = 0;
-  let liveNow    = 0;
+  let activeIn7 = 0;
+  let liveNow = 0;
   let spendMonth = 0;
   let avgDuration = 0;
 
   // Use guest_calls.organization_id when present; fall back to filtering
   // by customer_user_id ∈ org profiles for sessions seeded before that
   // column was added.
-  const orFilter = profileIds.length > 0
-    ? `organization_id.eq.${orgId},customer_user_id.in.(${profileIds.join(",")})`
-    : `organization_id.eq.${orgId}`;
+  const orFilter =
+    profileIds.length > 0
+      ? `organization_id.eq.${orgId},customer_user_id.in.(${profileIds.join(",")})`
+      : `organization_id.eq.${orgId}`;
   const { data: rows } = await admin
     .from("guest_calls")
-    .select("id, status, created_at, duration_minutes, customer_user_id, organization_id")
+    .select(
+      "id, status, created_at, duration_minutes, customer_user_id, organization_id"
+    )
     .or(orFilter)
     .gte("created_at", dayAgo30);
 
   const allRows = (rows ?? []) as Array<{
-    status: string; created_at: string;
+    status: string;
+    created_at: string;
     duration_minutes: number | null;
     customer_user_id: string | null;
     organization_id: string | null;
@@ -137,27 +151,30 @@ export async function GET() {
 
   return NextResponse.json({
     org: {
-      id:             org.id,
-      name:           org.name,
-      primaryDomain:  org.primary_domain,
-      status:         org.status,
+      id: org.id,
+      name: org.name,
+      primaryDomain: org.primary_domain,
+      status: org.status,
       enterpriseCode: org.enterprise_code,
-      createdAt:      org.created_at,
-      discountPct:    Number((org as { discount_pct?: number }).discount_pct ?? 0),
-      discountUntil:  (org as { discount_until?: string | null }).discount_until ?? null,
+      createdAt: org.created_at,
+      discountPct: Number((org as { discount_pct?: number }).discount_pct ?? 0),
+      discountUntil:
+        (org as { discount_until?: string | null }).discount_until ?? null,
       // 0 in the UI = "indefinite"; stored as NULL in the column.
-      retentionDays:  Number((org as { retention_days?: number | null }).retention_days ?? 0),
+      retentionDays: Number(
+        (org as { retention_days?: number | null }).retention_days ?? 0
+      ),
     },
     channelPartner,
     kpis: {
       staffCount,
       userCount,
-      sessions7Days:    sessions7,
-      sessions30Days:   sessions30,
-      activeIn7Days:    activeIn7,
+      sessions7Days: sessions7,
+      sessions30Days: sessions30,
+      activeIn7Days: activeIn7,
       liveNow,
-      spendMonthCents:  spendMonth,
-      avgDurationMin:   Math.round(avgDuration * 10) / 10,
+      spendMonthCents: spendMonth,
+      avgDurationMin: Math.round(avgDuration * 10) / 10,
     },
   });
 }

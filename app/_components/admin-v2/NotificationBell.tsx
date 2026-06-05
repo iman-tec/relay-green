@@ -17,15 +17,15 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, CheckCheck, Trash2 } from "lucide-react";
+import { Bell, CheckCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 
 type NotificationItem = {
-  id:        string;
-  kind:      string;
-  title:     string;
-  body:      string | null;
-  readAt:    string | null;
+  id: string;
+  kind: string;
+  title: string;
+  body: string | null;
+  readAt: string | null;
   createdAt: string;
 };
 
@@ -45,10 +45,18 @@ export function NotificationBell({
   endpoint = "/api/reseller/notifications",
   channelKey = "reseller",
   clearable = false,
+  align = "right",
 }: {
   endpoint?: string;
   channelKey?: string;
   clearable?: boolean;
+  /**
+   * Horizontal anchor of the dropdown relative to the bell. Defaults to
+   * "right" (right edges align — correct for a top-right top-bar bell).
+   * Pass "left" when the bell sits in a left sidebar so the panel opens
+   * rightward into the content area instead of clipping off-screen.
+   */
+  align?: "left" | "right";
 } = {}) {
   const [data, setData] = useState<Payload>({ items: [], unread: 0 });
   const [loading, setLoading] = useState(true);
@@ -75,19 +83,30 @@ export function NotificationBell({
   // matters for staying under the auth rate limit.
   const scheduleReload = useCallback(() => {
     if (reloadTimer.current) clearTimeout(reloadTimer.current);
-    reloadTimer.current = setTimeout(() => { void reload(); }, 1200);
+    reloadTimer.current = setTimeout(() => {
+      void reload();
+    }, 1200);
   }, [reload]);
 
-  useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => {
+    void reload();
+  }, [reload]);
 
   // Resolve the user id from the LOCAL session (no network round-trip) so we
   // can scope the realtime subscription to just this user's rows.
   useEffect(() => {
     let alive = true;
-    createClient().auth.getSession()
-      .then(({ data: s }) => { if (alive) setUid(s.session?.user?.id ?? null); })
-      .catch(() => { /* leave null — falls back to unfiltered */ });
-    return () => { alive = false; };
+    createClient()
+      .auth.getSession()
+      .then(({ data: s }) => {
+        if (alive) setUid(s.session?.user?.id ?? null);
+      })
+      .catch(() => {
+        /* leave null — falls back to unfiltered */
+      });
+    return () => {
+      alive = false;
+    };
   }, []);
 
   // Realtime: re-fetch (debounced) when one of OUR notifications changes. The
@@ -100,12 +119,21 @@ export function NotificationBell({
       .on(
         "postgres_changes",
         uid
-          ? { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${uid}` }
+          ? {
+              event: "*",
+              schema: "public",
+              table: "notifications",
+              filter: `user_id=eq.${uid}`,
+            }
           : { event: "*", schema: "public", table: "notifications" },
-        () => { scheduleReload(); },
+        () => {
+          scheduleReload();
+        }
       )
       .subscribe();
-    return () => { void supabase.removeChannel(channel); };
+    return () => {
+      void supabase.removeChannel(channel);
+    };
   }, [scheduleReload, channelKey, uid]);
 
   // Tab-focus refetch — covers networks that block Realtime websockets.
@@ -121,7 +149,10 @@ export function NotificationBell({
   useEffect(() => {
     if (!open) return;
     const onMouseDown = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
         setOpen(false);
       }
     };
@@ -136,23 +167,30 @@ export function NotificationBell({
     };
   }, [open]);
 
-  const markOne = useCallback(async (id: string) => {
-    // Optimistic: flip locally first, then re-fetch on success.
-    setData((d) => ({
-      items:  d.items.map((n) => (n.id === id ? { ...n, readAt: new Date().toISOString() } : n)),
-      unread: Math.max(0, d.unread - 1),
-    }));
-    try {
-      const res = await fetch(`${endpoint}/${id}`, { method: "PATCH" });
-      if (!res.ok) await reload(); // server rejected — re-sync from truth.
-    } catch {
-      await reload();
-    }
-  }, [reload, endpoint]);
+  const markOne = useCallback(
+    async (id: string) => {
+      // Optimistic: flip locally first, then re-fetch on success.
+      setData((d) => ({
+        items: d.items.map((n) =>
+          n.id === id ? { ...n, readAt: new Date().toISOString() } : n
+        ),
+        unread: Math.max(0, d.unread - 1),
+      }));
+      try {
+        const res = await fetch(`${endpoint}/${id}`, { method: "PATCH" });
+        if (!res.ok) await reload(); // server rejected — re-sync from truth.
+      } catch {
+        await reload();
+      }
+    },
+    [reload, endpoint]
+  );
 
   const markAll = useCallback(async () => {
     setData((d) => ({
-      items:  d.items.map((n) => (n.readAt ? n : { ...n, readAt: new Date().toISOString() })),
+      items: d.items.map((n) =>
+        n.readAt ? n : { ...n, readAt: new Date().toISOString() }
+      ),
       unread: 0,
     }));
     try {
@@ -179,7 +217,9 @@ export function NotificationBell({
     <div className="relative" ref={containerRef}>
       <button
         type="button"
-        aria-label={unread > 0 ? `Notifications (${unread} unread)` : "Notifications"}
+        aria-label={
+          unread > 0 ? `Notifications (${unread} unread)` : "Notifications"
+        }
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         className="relative inline-flex size-8 items-center justify-center rounded-md border transition-colors hover:bg-[var(--surface-raised)]"
@@ -189,11 +229,11 @@ export function NotificationBell({
         {unread > 0 && (
           <span
             aria-hidden
-            className="absolute -top-1 -right-1 flex min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] font-semibold leading-none"
+            className="absolute -top-1 -right-1 flex min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] leading-none font-semibold"
             style={{
-              height:     16,
+              height: 16,
               background: "var(--primary)",
-              color:      "var(--surface)",
+              color: "var(--surface)",
             }}
           >
             {unread > 9 ? "9+" : unread}
@@ -205,17 +245,23 @@ export function NotificationBell({
         <div
           role="dialog"
           aria-label="Notifications"
-          className="absolute right-0 z-50 mt-2 w-[360px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border shadow-2xl"
+          className={`absolute z-50 mt-2 w-[360px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border shadow-2xl ${align === "left" ? "left-0" : "right-0"}`}
           style={{ background: "var(--surface)", borderColor: "var(--border)" }}
         >
           <div
             className="flex items-center justify-between border-b px-4 py-2.5"
             style={{ borderColor: "var(--border)" }}
           >
-            <div className="text-sm font-medium" style={{ color: "var(--text)" }}>
+            <div
+              className="text-sm font-medium"
+              style={{ color: "var(--text)" }}
+            >
               Notifications
               {unread > 0 && (
-                <span className="ml-1.5 text-xs font-normal" style={{ color: "var(--text-muted)" }}>
+                <span
+                  className="ml-1.5 text-xs font-normal"
+                  style={{ color: "var(--text-muted)" }}
+                >
                   · {unread} unread
                 </span>
               )}
@@ -235,10 +281,10 @@ export function NotificationBell({
                 <button
                   type="button"
                   onClick={clearAll}
-                  className="inline-flex items-center gap-1 text-xs transition-colors hover:underline"
+                  className="text-xs font-medium transition-opacity hover:opacity-70"
                   style={{ color: "var(--text-muted)" }}
                 >
-                  <Trash2 size={12} /> Clear all
+                  Clear
                 </button>
               )}
             </div>
@@ -246,16 +292,28 @@ export function NotificationBell({
 
           <div className="max-h-[420px] overflow-y-auto">
             {loading && items.length === 0 ? (
-              <div className="px-4 py-10 text-center text-xs" style={{ color: "var(--text-muted)" }}>
+              <div
+                className="px-4 py-10 text-center text-xs"
+                style={{ color: "var(--text-muted)" }}
+              >
                 Loading…
               </div>
             ) : items.length === 0 ? (
               <div className="px-4 py-10 text-center">
-                <Bell className="mx-auto mb-2 size-5" style={{ color: "var(--text-faint)" }} />
-                <div className="text-sm font-medium" style={{ color: "var(--text)" }}>
+                <Bell
+                  className="mx-auto mb-2 size-5"
+                  style={{ color: "var(--text-faint)" }}
+                />
+                <div
+                  className="text-sm font-medium"
+                  style={{ color: "var(--text)" }}
+                >
                   You&apos;re all caught up
                 </div>
-                <div className="mt-0.5 text-xs" style={{ color: "var(--text-muted)" }}>
+                <div
+                  className="mt-0.5 text-xs"
+                  style={{ color: "var(--text-muted)" }}
+                >
                   No notifications yet.
                 </div>
               </div>
@@ -266,19 +324,25 @@ export function NotificationBell({
                     key={n.id}
                     className="cursor-pointer border-b px-4 py-3 transition-colors last:border-b-0 hover:bg-[var(--surface-raised)]"
                     style={{ borderColor: "var(--border)" }}
-                    onClick={() => { if (!n.readAt) void markOne(n.id); }}
+                    onClick={() => {
+                      if (!n.readAt) void markOne(n.id);
+                    }}
                   >
                     <div className="flex items-start gap-2.5">
                       <span
                         aria-hidden
                         className="mt-1.5 inline-block size-1.5 shrink-0 rounded-full"
-                        style={{ background: n.readAt ? "transparent" : "var(--primary)" }}
+                        style={{
+                          background: n.readAt
+                            ? "transparent"
+                            : "var(--primary)",
+                        }}
                       />
                       <div className="min-w-0 flex-1">
                         <div
                           className="truncate text-sm"
                           style={{
-                            color:      "var(--text)",
+                            color: "var(--text)",
                             fontWeight: n.readAt ? 400 : 500,
                           }}
                         >

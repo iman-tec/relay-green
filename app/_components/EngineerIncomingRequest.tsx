@@ -21,12 +21,12 @@ import { createClient } from "@/lib/supabase/browser";
 import { useRingingHud } from "@/lib/relay/ringingHud";
 import type { GuestCall } from "@/lib/supabase/types";
 
-const BRAND_GREEN       = "#3f5c2e";
-const BRAND_GREEN_SOFT  = "rgba(63, 92, 46, 0.12)";
+const BRAND_GREEN = "#3f5c2e";
+const BRAND_GREEN_SOFT = "rgba(63, 92, 46, 0.12)";
 const URGENT_AMBER_SOFT = "rgba(212, 160, 23, 0.14)";
-const URGENT_AMBER      = "#d4a017";
-const CRIT_RED_SOFT     = "rgba(139, 26, 26, 0.18)";
-const CRIT_RED          = "#8b1a1a";
+const URGENT_AMBER = "#d4a017";
+const CRIT_RED_SOFT = "rgba(139, 26, 26, 0.18)";
+const CRIT_RED = "#8b1a1a";
 
 export function EngineerIncomingRequest() {
   const router = useRouter();
@@ -42,9 +42,12 @@ export function EngineerIncomingRequest() {
   // Resolve own user ID once on mount so we can exclude our own customer
   // sessions from the incoming-request pop-up.
   useEffect(() => {
-    supabaseRef.current.auth.getUser().then(({ data }) => {
-      if (data.user?.id) myUserIdRef.current = data.user.id;
-    }, () => {});
+    supabaseRef.current.auth.getUser().then(
+      ({ data }) => {
+        if (data.user?.id) myUserIdRef.current = data.user.id;
+      },
+      () => {}
+    );
   }, []);
 
   // Don't pop notifications while the engineer is already inside a session room.
@@ -67,7 +70,7 @@ export function EngineerIncomingRequest() {
         (c) =>
           !declinedRef.current.has(c.id) &&
           // Never ring the engineer for their own customer session
-          (!myId || c.customer_user_id !== myId),
+          (!myId || c.customer_user_id !== myId)
       );
       setRequest((prev) => {
         // If we already had one and it's still in the queue, keep it; else swap to new head.
@@ -81,9 +84,13 @@ export function EngineerIncomingRequest() {
     // Realtime: any guest_calls change re-evaluates the queue head.
     const ch = sb
       .channel("engineer-incoming-queue")
-      .on("postgres_changes", { event: "*", schema: "public", table: "guest_calls" }, () => {
-        void refresh();
-      })
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "guest_calls" },
+        () => {
+          void refresh();
+        }
+      )
       .subscribe();
 
     return () => {
@@ -100,11 +107,12 @@ export function EngineerIncomingRequest() {
     label: request?.guest_name
       ? `📞 Incoming · ${request.guest_name}`
       : "📞 Incoming request",
-    body: request?.urgency === "critical"
-      ? "Critical priority — please pick up."
-      : request?.urgency === "urgent"
-      ? "Urgent — please pick up."
-      : "A customer is waiting in the queue.",
+    body:
+      request?.urgency === "critical"
+        ? "Critical priority — please pick up."
+        : request?.urgency === "urgent"
+          ? "Urgent — please pick up."
+          : "A customer is waiting in the queue.",
     tag: request?.id,
   });
 
@@ -149,7 +157,9 @@ export function EngineerIncomingRequest() {
       if (triggeredId !== request.id) return;
       void (async () => {
         const sb = supabaseRef.current;
-        const { error } = await sb.rpc("claim_session", { _session_id: request.id });
+        const { error } = await sb.rpc("claim_session", {
+          _session_id: request.id,
+        });
         relay.reportClaimResult(request.id, !error);
         if (error) {
           // Race lost / RLS / stale — local dismiss; realtime feed surfaces next head.
@@ -176,17 +186,20 @@ export function EngineerIncomingRequest() {
 
   if (!request || onSessionRoute) return null;
 
-  const urgencyCfg = request.urgency === "critical"
-    ? { label: "Critical priority", bg: CRIT_RED_SOFT, fg: CRIT_RED }
-    : request.urgency === "urgent"
-    ? { label: "Urgent priority", bg: URGENT_AMBER_SOFT, fg: URGENT_AMBER }
-    : null;
+  const urgencyCfg =
+    request.urgency === "critical"
+      ? { label: "Critical priority", bg: CRIT_RED_SOFT, fg: CRIT_RED }
+      : request.urgency === "urgent"
+        ? { label: "Urgent priority", bg: URGENT_AMBER_SOFT, fg: URGENT_AMBER }
+        : null;
 
   const onAccept = async () => {
     setBusy(true);
     try {
       const sb = supabaseRef.current;
-      const { error } = await sb.rpc("claim_session", { _session_id: request.id });
+      const { error } = await sb.rpc("claim_session", {
+        _session_id: request.id,
+      });
       if (error) {
         // Race lost, no-auth, or stale — drop the card; the realtime feed will
         // present the next queued head if any.
@@ -208,16 +221,22 @@ export function EngineerIncomingRequest() {
   return (
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center px-6"
-      style={{ backgroundColor: "rgba(0, 0, 0, 0.55)", backdropFilter: "blur(4px)" }}
+      style={{
+        backgroundColor: "rgba(0, 0, 0, 0.55)",
+        backdropFilter: "blur(4px)",
+      }}
     >
       <div
         className="relative w-full max-w-sm rounded-2xl border p-8 text-center shadow-xl"
-        style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}
+        style={{
+          backgroundColor: "var(--surface)",
+          borderColor: "var(--border)",
+        }}
       >
         <button
           onClick={onDecline}
           aria-label="Dismiss"
-          className="absolute right-4 top-4 opacity-50 transition-opacity hover:opacity-100"
+          className="absolute top-4 right-4 opacity-50 transition-opacity hover:opacity-100"
           style={{ color: "var(--text-muted)" }}
         >
           <X size={16} />
@@ -225,7 +244,7 @@ export function EngineerIncomingRequest() {
 
         {urgencyCfg && (
           <div
-            className="mx-auto mb-4 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
+            className="mx-auto mb-4 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-semibold tracking-[0.12em] uppercase"
             style={{ backgroundColor: urgencyCfg.bg, color: urgencyCfg.fg }}
           >
             {urgencyCfg.label}
@@ -244,18 +263,24 @@ export function EngineerIncomingRequest() {
         </div>
 
         <div
-          className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em]"
+          className="mb-2 text-[10px] font-semibold tracking-[0.18em] uppercase"
           style={{ color: "var(--text-muted)" }}
         >
           Incoming request
         </div>
         <h2
           className="mb-1 text-2xl font-medium"
-          style={{ fontFamily: "var(--font-source-serif)", color: "var(--text)" }}
+          style={{
+            fontFamily: "var(--font-source-serif)",
+            color: "var(--text)",
+          }}
         >
           {request.guest_name}
         </h2>
-        <p className="mb-6 text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
+        <p
+          className="mb-6 text-sm leading-relaxed"
+          style={{ color: "var(--text-muted)" }}
+        >
           is requesting a session with you
         </p>
 
@@ -274,7 +299,11 @@ export function EngineerIncomingRequest() {
             className="flex flex-1 items-center justify-center gap-2 rounded-full py-2.5 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
             style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
           >
-            {busy ? <Loader2 size={14} className="animate-spin" /> : <Phone size={14} />}
+            {busy ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Phone size={14} />
+            )}
             Accept
           </button>
         </div>

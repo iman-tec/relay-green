@@ -3,7 +3,7 @@
 import { useCallback } from "react";
 
 const BRAND_GREEN = "var(--primary)";
-const BRAND_GREEN_SOFT   = "rgba(63, 92, 46, 0.18)";
+const BRAND_GREEN_SOFT = "rgba(63, 92, 46, 0.18)";
 const BRAND_GREEN_BORDER = "rgba(63, 92, 46, 0.55)";
 
 export function ChipGroup({
@@ -29,11 +29,14 @@ export function ChipGroup({
         onChange(selected ? [] : [opt]);
       }
     },
-    [value, multi, onChange, disabled],
+    [value, multi, onChange, disabled]
   );
 
   return (
-    <div className="flex flex-wrap gap-2.5" role={multi ? "group" : "radiogroup"}>
+    <div
+      className="flex flex-wrap gap-2.5"
+      role={multi ? "group" : "radiogroup"}
+    >
       {options.map((opt) => {
         const active = value.includes(opt);
         return (

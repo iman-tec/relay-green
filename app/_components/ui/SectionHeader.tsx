@@ -33,26 +33,26 @@ export function SectionHeader({
   return (
     <header
       className={cn(
-        "flex items-end justify-between gap-4 flex-wrap pb-4 border-b border-[var(--border)]",
-        className,
+        "flex flex-wrap items-end justify-between gap-4 border-b border-[var(--border)] pb-4",
+        className
       )}
     >
-      <div className="flex flex-col gap-1 min-w-0">
+      <div className="flex min-w-0 flex-col gap-1">
         <h1
           className={cn(
-            "text-[var(--text)] tracking-tight leading-tight m-0",
-            display ? "font-serif text-3xl" : "font-sans text-2xl font-medium",
+            "m-0 leading-tight tracking-tight text-[var(--text)]",
+            display ? "font-serif text-3xl" : "font-sans text-2xl font-medium"
           )}
         >
           {title}
         </h1>
         {subtitle && (
-          <p className="text-[var(--text-muted)] text-sm leading-relaxed">
+          <p className="text-sm leading-relaxed text-[var(--text-muted)]">
             {subtitle}
           </p>
         )}
       </div>
-      {right && <div className="flex items-center gap-2 shrink-0">{right}</div>}
+      {right && <div className="flex shrink-0 items-center gap-2">{right}</div>}
     </header>
   );
 }

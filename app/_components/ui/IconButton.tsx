@@ -12,16 +12,14 @@
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { cn } from "./cn";
 
-export type IconButtonVariant =
-  | "primary"
-  | "secondary"
-  | "ghost"
-  | "danger";
+export type IconButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 
 export type IconButtonSize = "sm" | "md" | "lg";
 
-export interface IconButtonProps
-  extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "aria-label"> {
+export interface IconButtonProps extends Omit<
+  ButtonHTMLAttributes<HTMLButtonElement>,
+  "aria-label"
+> {
   variant?: IconButtonVariant;
   size?: IconButtonSize;
   /** Required for a11y — never optional. */
@@ -61,7 +59,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
       type = "button",
       ...rest
     },
-    ref,
+    ref
   ) {
     const isDisabled = disabled || loading;
     return (
@@ -73,11 +71,11 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
         className={cn(
           "inline-flex items-center justify-center transition-[background-color,border-color,color,box-shadow,transform]",
           "duration-[var(--motion-fast)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)]",
-          "disabled:opacity-50 disabled:cursor-not-allowed active:translate-y-px",
+          "active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50",
           shape === "circle" ? "rounded-full" : "rounded-xl",
           SIZE_CLASS[size],
           VARIANT_CLASS[variant],
-          className,
+          className
         )}
         {...rest}
       >
@@ -91,5 +89,5 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
         )}
       </button>
     );
-  },
+  }
 );

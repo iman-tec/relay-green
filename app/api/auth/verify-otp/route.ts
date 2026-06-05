@@ -24,38 +24,56 @@ import {
 } from "@/lib/relay/loginSurface";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
-const VALID_SURFACES = new Set<LoginSurface>(["customer", "staff", "partner", "business"]);
+const VALID_SURFACES = new Set<LoginSurface>([
+  "customer",
+  "staff",
+  "partner",
+  "business",
+]);
 
 export async function POST(request: Request) {
-  const reqBody = await request.json().catch(() => ({})) as {
-    email?: string; code?: string; mode?: string; surface?: string; purpose?: string;
+  const reqBody = (await request.json().catch(() => ({}))) as {
+    email?: string;
+    code?: string;
+    mode?: string;
+    surface?: string;
+    purpose?: string;
   };
   const { email, code, purpose } = reqBody;
   if (
-    !email || typeof email !== "string" ||
-    !code  || typeof code  !== "string"
+    !email ||
+    typeof email !== "string" ||
+    !code ||
+    typeof code !== "string"
   ) {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
   // Determine which login surface the OTP belongs to. New callers pass
   // `surface`; legacy callers pass `mode: "customer" | "staff"`. Default
   // to "customer" — a missing param should never silently escalate.
-  const surfaceParam = (reqBody.surface ?? reqBody.mode ?? "customer").toLowerCase();
+  const surfaceParam = (
+    reqBody.surface ??
+    reqBody.mode ??
+    "customer"
+  ).toLowerCase();
   const surface: LoginSurface = VALID_SURFACES.has(surfaceParam as LoginSurface)
     ? (surfaceParam as LoginSurface)
     : "customer";
   // Legacy alias preserved for the /set-password URL params downstream.
-  const signInMode: "customer" | "staff" = surface === "customer" ? "customer" : "staff";
+  const signInMode: "customer" | "staff" =
+    surface === "customer" ? "customer" : "staff";
   // `purpose` tells us why the user is in the OTP flow:
   //   "first-time" → brand-new signup, divert to /set-password.
   //   "forgot"     → forgotten password, force divert regardless of flag.
   //   undefined    → ordinary OTP sign-in; respect the password_set flag.
   const purposeIntent: "first-time" | "forgot" | "signin" =
-    purpose === "first-time" ? "first-time" :
-    purpose === "forgot"     ? "forgot"     :
-                               "signin";
+    purpose === "first-time"
+      ? "first-time"
+      : purpose === "forgot"
+        ? "forgot"
+        : "signin";
 
   const supabase = await createClient();
 
@@ -69,7 +87,7 @@ export async function POST(request: Request) {
   const { data: verified, error } = await supabase.auth.verifyOtp({
     email: email.trim(),
     token: code.trim(),
-    type:  "email",
+    type: "email",
   });
 
   if (error) {
@@ -89,16 +107,21 @@ export async function POST(request: Request) {
       .from("user_role_names")
       .select("role")
       .eq("user_id", userId);
-    const roles = toRoles((roleRows ?? []).map((r: { role: string }) => r.role));
+    const roles = toRoles(
+      (roleRows ?? []).map((r: { role: string }) => r.role)
+    );
     if (!isAllowedOnSurface(roles, surface)) {
       await supabase.auth.signOut({ scope: "global" }).catch(() => {});
       const allowed = preferredSurfaceForRoles(roles);
-      return NextResponse.json({
-        error: "wrong_login_surface",
-        allowed_surface: allowed,
-        allowed_surface_url: SURFACE_URL[allowed],
-        allowed_roles_here: SURFACE_ROLES[surface],
-      }, { status: 403 });
+      return NextResponse.json(
+        {
+          error: "wrong_login_surface",
+          allowed_surface: allowed,
+          allowed_surface_url: SURFACE_URL[allowed],
+          allowed_roles_here: SURFACE_ROLES[surface],
+        },
+        { status: 403 }
+      );
     }
     if (surface !== "customer") next = landingForRoles(roles);
   }
@@ -120,7 +143,7 @@ export async function POST(request: Request) {
       next = `/set-password?mode=${signInMode}&continue=${encodeURIComponent(next)}&reset=1`;
     } else {
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const serviceKey  = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
       if (supabaseUrl && serviceKey) {
         try {
           const admin = createAdminClient(supabaseUrl, serviceKey, {
@@ -128,18 +151,26 @@ export async function POST(request: Request) {
           });
           const { data: hasPw, error: hasPwErr } = await admin.rpc(
             "user_has_password",
-            { _user_id: userId },
+            { _user_id: userId }
           );
           if (hasPwErr) {
-            console.warn("[verify-otp] user_has_password RPC error:", hasPwErr.message);
+            console.warn(
+              "[verify-otp] user_has_password RPC error:",
+              hasPwErr.message
+            );
           } else if (hasPw === false) {
             next = `/set-password?mode=${signInMode}&continue=${encodeURIComponent(next)}`;
           }
         } catch (e) {
-          console.warn("[verify-otp] has-password admin check failed:", e instanceof Error ? e.message : e);
+          console.warn(
+            "[verify-otp] has-password admin check failed:",
+            e instanceof Error ? e.message : e
+          );
         }
       } else {
-        console.warn("[verify-otp] supabase service-role env missing — skipping has-password check");
+        console.warn(
+          "[verify-otp] supabase service-role env missing — skipping has-password check"
+        );
       }
     }
   }

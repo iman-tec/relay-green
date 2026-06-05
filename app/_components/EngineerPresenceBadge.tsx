@@ -23,9 +23,24 @@ type Presence = "online" | "busy" | "offline";
 type Opt = { value: Presence; label: string; blurb: string; color: string };
 
 const OPTIONS: readonly Opt[] = [
-  { value: "online",  label: "Online",  blurb: "Matcher rings me",     color: "#3f5c2e" },
-  { value: "busy",    label: "Busy",    blurb: "Customers can request", color: "#d4a017" },
-  { value: "offline", label: "Offline", blurb: "Customers can schedule", color: "#94a3b8" },
+  {
+    value: "online",
+    label: "Online",
+    blurb: "Matcher rings me",
+    color: "#3f5c2e",
+  },
+  {
+    value: "busy",
+    label: "Busy",
+    blurb: "Customers can request",
+    color: "#d4a017",
+  },
+  {
+    value: "offline",
+    label: "Offline",
+    blurb: "Customers can schedule",
+    color: "#94a3b8",
+  },
 ] as const;
 
 function isPresence(v: unknown): v is Presence {
@@ -51,7 +66,10 @@ export function EngineerPresenceBadge({ userId }: { userId: string }) {
         .eq("user_id", userId)
         .maybeSingle();
       if (!alive) return;
-      const row = (data ?? null) as { presence_state: string | null; is_available: boolean | null } | null;
+      const row = (data ?? null) as {
+        presence_state: string | null;
+        is_available: boolean | null;
+      } | null;
       if (!row) {
         // Engineer profile missing — likely a non-engineer landed here.
         // Render nothing rather than guess; matcher state stays correct.
@@ -68,9 +86,10 @@ export function EngineerPresenceBadge({ userId }: { userId: string }) {
 
     // Per-mount UUID on the channel name so the badge survives a stale
     // sibling subscription colliding under Supabase's name-based dedupe.
-    const suffix = typeof crypto !== "undefined" && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const suffix =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     const ch = sb
       .channel(`presence-badge-${userId}-${suffix}`)
       .on(
@@ -82,18 +101,24 @@ export function EngineerPresenceBadge({ userId }: { userId: string }) {
           filter: `user_id=eq.${userId}`,
         },
         (payload) => {
-          const next = payload.new as { presence_state?: string | null; is_available?: boolean | null } | null;
+          const next = payload.new as {
+            presence_state?: string | null;
+            is_available?: boolean | null;
+          } | null;
           if (!next) return;
           if (isPresence(next.presence_state)) {
             setPresence(next.presence_state);
           } else if (typeof next.is_available === "boolean") {
             setPresence(next.is_available ? "online" : "offline");
           }
-        },
+        }
       )
       .subscribe();
 
-    return () => { alive = false; sb.removeChannel(ch); };
+    return () => {
+      alive = false;
+      sb.removeChannel(ch);
+    };
   }, [userId]);
 
   // Close on outside-click. Pointerdown captures before any focus change so
@@ -101,32 +126,41 @@ export function EngineerPresenceBadge({ userId }: { userId: string }) {
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+      if (rootRef.current && !rootRef.current.contains(e.target as Node))
+        setOpen(false);
     };
     document.addEventListener("pointerdown", onDown);
     return () => document.removeEventListener("pointerdown", onDown);
   }, [open]);
 
-  const onSet = useCallback(async (next: Presence) => {
-    if (busy || next === presence) { setOpen(false); return; }
-    const previous = presence;
-    setPresence(next); // optimistic
-    setOpen(false);
-    setBusy(true);
-    try {
-      const sb = sbRef.current;
-      const { error } = await sb.rpc("set_engineer_presence", { _state: next });
-      if (error) {
-        // Roll back so the pill never lies about what the matcher sees.
-        setPresence(previous);
-        // Surface the error via console; the deeper Profile pane has the
-        // toast UI for richer feedback.
-        console.warn("[presence] set failed:", error.message);
+  const onSet = useCallback(
+    async (next: Presence) => {
+      if (busy || next === presence) {
+        setOpen(false);
+        return;
       }
-    } finally {
-      setBusy(false);
-    }
-  }, [busy, presence]);
+      const previous = presence;
+      setPresence(next); // optimistic
+      setOpen(false);
+      setBusy(true);
+      try {
+        const sb = sbRef.current;
+        const { error } = await sb.rpc("set_engineer_presence", {
+          _state: next,
+        });
+        if (error) {
+          // Roll back so the pill never lies about what the matcher sees.
+          setPresence(previous);
+          // Surface the error via console; the deeper Profile pane has the
+          // toast UI for richer feedback.
+          console.warn("[presence] set failed:", error.message);
+        }
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, presence]
+  );
 
   // Idle auto-offline removed — presence is fully manual. The engineer stays
   // Online until they explicitly switch to Busy/Offline themselves.
@@ -170,9 +204,15 @@ export function EngineerPresenceBadge({ userId }: { userId: string }) {
             style={{ backgroundColor: current.color }}
           />
         </span>
-        <span className="text-[12px] font-medium tracking-tight">{current.label}</span>
+        <span className="text-[12px] font-medium tracking-tight">
+          {current.label}
+        </span>
         {busy ? (
-          <Loader2 size={11} className="animate-spin" style={{ color: "var(--text-muted)" }} />
+          <Loader2
+            size={11}
+            className="animate-spin"
+            style={{ color: "var(--text-muted)" }}
+          />
         ) : (
           <ChevronDown
             size={11}
@@ -188,7 +228,7 @@ export function EngineerPresenceBadge({ userId }: { userId: string }) {
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-full mt-1.5 min-w-[220px] overflow-hidden rounded-xl border shadow-xl"
+          className="absolute top-full right-0 mt-1.5 min-w-[220px] overflow-hidden rounded-xl border shadow-xl"
           style={{
             backgroundColor: "var(--surface)",
             borderColor: "var(--border)",
@@ -196,7 +236,7 @@ export function EngineerPresenceBadge({ userId }: { userId: string }) {
           }}
         >
           <div
-            className="px-3 py-1.5 text-[9px] font-semibold uppercase tracking-[0.08em]"
+            className="px-3 py-1.5 text-[9px] font-semibold tracking-[0.08em] uppercase"
             style={{ color: "var(--text-faint)" }}
           >
             Set my presence
@@ -217,14 +257,20 @@ export function EngineerPresenceBadge({ userId }: { userId: string }) {
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[13px] font-medium" style={{ color: "var(--text)" }}>
+                    <span
+                      className="text-[13px] font-medium"
+                      style={{ color: "var(--text)" }}
+                    >
                       {opt.label}
                     </span>
                     {isActive && (
                       <Check size={11} style={{ color: opt.color }} />
                     )}
                   </div>
-                  <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                  <div
+                    className="text-[11px]"
+                    style={{ color: "var(--text-muted)" }}
+                  >
                     {opt.blurb}
                   </div>
                 </div>

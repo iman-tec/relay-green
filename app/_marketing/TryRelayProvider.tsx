@@ -81,4 +81,3 @@ export function TryRelayModal() {
   if (!isOpen) return null;
   return <TryRelayFunnel onClose={close} />;
 }
-

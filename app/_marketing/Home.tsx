@@ -771,4 +771,3 @@ export function MarketingHome() {
     </Shell>
   );
 }
-

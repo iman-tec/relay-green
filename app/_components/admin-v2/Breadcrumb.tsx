@@ -11,7 +11,7 @@
 import { ChevronRight } from "lucide-react";
 
 export type Crumb = {
-  label:   string;
+  label: string;
   /** Omit on the deepest crumb to render it as plain text. */
   onClick?: () => void;
 };
@@ -38,10 +38,7 @@ export function Breadcrumb({ items }: { items: readonly Crumb[] }) {
                 {c.label}
               </button>
             ) : (
-              <span
-                className="px-1.5 py-0.5"
-                style={{ color: "var(--text)" }}
-              >
+              <span className="px-1.5 py-0.5" style={{ color: "var(--text)" }}>
                 {c.label}
               </span>
             )}

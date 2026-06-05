@@ -16,7 +16,7 @@ export type PlanDefinition = {
   name: string;
   description: string;
   monthlyPriceCents: number | null; // null = "Custom / contact sales"
-  includedSeats: number | null;     // null = unlimited
+  includedSeats: number | null; // null = unlimited
   features: string[];
   stripePriceId: string | null;
 };
@@ -84,7 +84,7 @@ export function formatEur(cents: number | null | undefined): string {
   if (cents == null) return "—";
   const euros = cents / 100;
   return new Intl.NumberFormat("en-IE", {
-    style:    "currency",
+    style: "currency",
     currency: "EUR",
     maximumFractionDigits: euros >= 100 ? 0 : 2,
   }).format(euros);

@@ -23,16 +23,27 @@ export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
   function Textarea(
-    { label, srLabel, hint, error, id: idProp, className, required, rows = 3, ...rest },
-    ref,
+    {
+      label,
+      srLabel,
+      hint,
+      error,
+      id: idProp,
+      className,
+      required,
+      rows = 3,
+      ...rest
+    },
+    ref
   ) {
     const autoId = useId();
     const id = idProp ?? autoId;
     const hintId = `${id}-hint`;
     const errorId = `${id}-error`;
     const describedBy =
-      [error ? errorId : null, hint ? hintId : null].filter(Boolean).join(" ") ||
-      undefined;
+      [error ? errorId : null, hint ? hintId : null]
+        .filter(Boolean)
+        .join(" ") || undefined;
 
     return (
       <div className="flex w-full flex-col gap-1.5">
@@ -43,7 +54,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
         ) : label ? (
           <label
             htmlFor={id}
-            className="text-sm font-medium text-[var(--text)] flex items-center gap-1"
+            className="flex items-center gap-1 text-sm font-medium text-[var(--text)]"
           >
             {label}
             {required && (
@@ -63,27 +74,34 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
           aria-describedby={describedBy}
           className={cn(
             "w-full bg-[var(--background)] text-[var(--text)] placeholder:text-[var(--text-faint)]",
-            "border border-[var(--border)] rounded-lg px-3.5 py-2.5 outline-none resize-y leading-relaxed",
+            "resize-y rounded-lg border border-[var(--border)] px-3.5 py-2.5 leading-relaxed outline-none",
             "focus-visible:border-[var(--border-strong)] focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--primary)_45%,transparent)]",
-            "disabled:opacity-50 disabled:cursor-not-allowed",
+            "disabled:cursor-not-allowed disabled:opacity-50",
             "transition-[border-color,box-shadow] duration-[var(--motion-fast)]",
             error &&
               "border-[var(--risk)] focus-visible:border-[var(--risk)] focus-visible:ring-[color-mix(in_srgb,var(--risk)_35%,transparent)]",
-            className,
+            className
           )}
           {...rest}
         />
 
         {error ? (
-          <p id={errorId} role="alert" className="text-xs text-[var(--risk)] leading-snug">
+          <p
+            id={errorId}
+            role="alert"
+            className="text-xs leading-snug text-[var(--risk)]"
+          >
             {error}
           </p>
         ) : hint ? (
-          <p id={hintId} className="text-xs text-[var(--text-muted)] leading-snug">
+          <p
+            id={hintId}
+            className="text-xs leading-snug text-[var(--text-muted)]"
+          >
             {hint}
           </p>
         ) : null}
       </div>
     );
-  },
+  }
 );

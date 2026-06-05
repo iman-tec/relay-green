@@ -31,10 +31,12 @@ const VALID_TYPES: ReadonlySet<EmailOtpType> = new Set<EmailOtpType>([
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const token_hash = searchParams.get("token_hash");
-  const type       = searchParams.get("type") as EmailOtpType | null;
+  const type = searchParams.get("type") as EmailOtpType | null;
 
   if (!token_hash || !type || !VALID_TYPES.has(type)) {
-    return NextResponse.redirect(`${origin}/login?error=auth_confirm_bad_params`);
+    return NextResponse.redirect(
+      `${origin}/login?error=auth_confirm_bad_params`
+    );
   }
 
   const supabase = await createClient();

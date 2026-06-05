@@ -43,8 +43,11 @@ type ChunkInput = {
 function buildPoints(
   projectId: string,
   sessionId: string | null,
-  inputs: ChunkInput[],
-): { texts: string[]; meta: { id: string; payload: Record<string, unknown> }[] } {
+  inputs: ChunkInput[]
+): {
+  texts: string[];
+  meta: { id: string; payload: Record<string, unknown> }[];
+} {
   const texts: string[] = [];
   const meta: { id: string; payload: Record<string, unknown> }[] = [];
   for (const inp of inputs) {
@@ -71,11 +74,15 @@ function buildPoints(
 
 async function embedAndUpsert(
   texts: string[],
-  meta: { id: string; payload: Record<string, unknown> }[],
+  meta: { id: string; payload: Record<string, unknown> }[]
 ): Promise<number> {
   if (texts.length === 0) return 0;
   const vectors = await embedTexts(texts);
-  const points: QPoint[] = meta.map((m, i) => ({ id: m.id, vector: vectors[i], payload: m.payload }));
+  const points: QPoint[] = meta.map((m, i) => ({
+    id: m.id,
+    vector: vectors[i],
+    payload: m.payload,
+  }));
   await upsertPoints(points);
   return points.length;
 }
@@ -84,7 +91,15 @@ function nextStepsToString(v: unknown): string {
   if (!Array.isArray(v)) return "";
   return v
     .map((x) =>
-      typeof x === "string" ? x : x && typeof x === "object" ? String((x as { text?: string; description?: string }).text ?? (x as { description?: string }).description ?? "") : "",
+      typeof x === "string"
+        ? x
+        : x && typeof x === "object"
+          ? String(
+              (x as { text?: string; description?: string }).text ??
+                (x as { description?: string }).description ??
+                ""
+            )
+          : ""
     )
     .filter((s) => s.trim().length > 0)
     .join("; ");
@@ -92,12 +107,14 @@ function nextStepsToString(v: unknown): string {
 
 export async function indexSession(
   sb: SupabaseClient,
-  sessionId: string,
+  sessionId: string
 ): Promise<{ chunks: number; projectId: string | null; skipped?: string }> {
   await ensureCollection();
   const { data: s } = await sb
     .from("guest_calls")
-    .select("id, project_id, project_name, guest_name, created_at, ai_summary_title, ai_summary_overview, summary, status")
+    .select(
+      "id, project_id, project_name, guest_name, created_at, ai_summary_title, ai_summary_overview, summary, status"
+    )
     .eq("id", sessionId)
     .maybeSingle();
   if (!s) return { chunks: 0, projectId: null, skipped: "session_not_found" };
@@ -108,7 +125,11 @@ export async function indexSession(
   const inputs: ChunkInput[] = [];
 
   // 1. Session summary — always (keeps transcript-less sessions searchable).
-  const summaryParts = [s.ai_summary_title, s.ai_summary_overview, s.summary].filter(Boolean) as string[];
+  const summaryParts = [
+    s.ai_summary_title,
+    s.ai_summary_overview,
+    s.summary,
+  ].filter(Boolean) as string[];
   if (summaryParts.length > 0) {
     inputs.push({
       sourceType: "session_summary",
@@ -126,7 +147,10 @@ export async function indexSession(
     .eq("session_id", sessionId)
     .order("window_end", { ascending: true });
   const voice = (caps ?? [])
-    .map((c) => `${(c as { speaker?: string }).speaker ?? "Speaker"}: ${(c as { text?: string }).text ?? ""}`)
+    .map(
+      (c) =>
+        `${(c as { speaker?: string }).speaker ?? "Speaker"}: ${(c as { text?: string }).text ?? ""}`
+    )
     .join("\n")
     .trim();
   if (voice) {
@@ -146,8 +170,16 @@ export async function indexSession(
     .eq("guest_call_id", sessionId)
     .order("created_at", { ascending: true });
   const chat = (msgs ?? [])
-    .filter((m) => (m as { sender_kind?: string }).sender_kind !== "system" && typeof (m as { body?: unknown }).body === "string" && ((m as { body?: string }).body ?? "").trim().length > 0)
-    .map((m) => `${(m as { sender_name?: string }).sender_name ?? (m as { sender_kind?: string }).sender_kind}: ${(m as { body?: string }).body}`)
+    .filter(
+      (m) =>
+        (m as { sender_kind?: string }).sender_kind !== "system" &&
+        typeof (m as { body?: unknown }).body === "string" &&
+        ((m as { body?: string }).body ?? "").trim().length > 0
+    )
+    .map(
+      (m) =>
+        `${(m as { sender_name?: string }).sender_name ?? (m as { sender_kind?: string }).sender_kind}: ${(m as { body?: string }).body}`
+    )
     .join("\n")
     .trim();
   if (chat) {
@@ -163,12 +195,22 @@ export async function indexSession(
   // 4. Documents (PDF / DOCX / text) attached anywhere in this session.
   const { data: atts } = await sb
     .from("guest_message_attachments")
-    .select("id, path, name, mime, kind, created_at, guest_messages!inner(guest_call_id)")
+    .select(
+      "id, path, name, mime, kind, created_at, guest_messages!inner(guest_call_id)"
+    )
     .eq("guest_messages.guest_call_id", sessionId);
-  for (const a of (atts ?? []) as Array<{ id: string; path: string; name: string; mime: string; created_at: string }>) {
+  for (const a of (atts ?? []) as Array<{
+    id: string;
+    path: string;
+    name: string;
+    mime: string;
+    created_at: string;
+  }>) {
     if (!isParseableDocument(a.name, a.mime)) continue;
     try {
-      const { data: blob } = await sb.storage.from("chat-attachments").download(a.path);
+      const { data: blob } = await sb.storage
+        .from("chat-attachments")
+        .download(a.path);
       if (!blob) continue;
       const buf = Buffer.from(await blob.arrayBuffer());
       const text = await extractDocumentText(a.name, a.mime, buf);
@@ -193,7 +235,10 @@ export async function indexSession(
   return { chunks, projectId };
 }
 
-export async function indexProjectMeta(sb: SupabaseClient, projectId: string): Promise<{ chunks: number }> {
+export async function indexProjectMeta(
+  sb: SupabaseClient,
+  projectId: string
+): Promise<{ chunks: number }> {
   await ensureCollection();
   const { data: p } = await sb
     .from("projects")
@@ -228,7 +273,9 @@ export async function indexProjectMeta(sb: SupabaseClient, projectId: string): P
     .eq("project_id", projectId)
     .maybeSingle();
   if (intake) {
-    const techs = Array.isArray(intake.technologies) ? (intake.technologies as string[]).join(", ") : "";
+    const techs = Array.isArray(intake.technologies)
+      ? (intake.technologies as string[]).join(", ")
+      : "";
     const text = [
       `Building: ${intake.developing}`,
       techs ? `Tech stack: ${techs}` : "",
@@ -250,7 +297,9 @@ export async function indexProjectMeta(sb: SupabaseClient, projectId: string): P
   // "what did we quote?", "what's the bid status?", "what scope/timeline?".
   const { data: quotes } = await sb
     .from("project_quote_requests")
-    .select("id, kind, status, quote_amount_cents, bid_scope, bid_timeline, comments, customer_response_note, created_at")
+    .select(
+      "id, kind, status, quote_amount_cents, bid_scope, bid_timeline, comments, customer_response_note, created_at"
+    )
     .eq("project_id", projectId)
     .order("created_at", { ascending: true });
   for (const q of (quotes ?? []) as Array<{
@@ -265,14 +314,18 @@ export async function indexProjectMeta(sb: SupabaseClient, projectId: string): P
     created_at: string;
   }>) {
     const amount =
-      q.quote_amount_cents != null ? `$${(q.quote_amount_cents / 100).toLocaleString()}` : "not set";
+      q.quote_amount_cents != null
+        ? `$${(q.quote_amount_cents / 100).toLocaleString()}`
+        : "not set";
     const text = [
       `Quote/bid (${q.kind ?? "?"}) — status: ${q.status ?? "?"}`,
       `Amount: ${amount}`,
       q.bid_scope ? `Scope: ${q.bid_scope}` : "",
       q.bid_timeline ? `Timeline: ${q.bid_timeline}` : "",
       q.comments ? `Engineer notes: ${q.comments}` : "",
-      q.customer_response_note ? `Customer response: ${q.customer_response_note}` : "",
+      q.customer_response_note
+        ? `Customer response: ${q.customer_response_note}`
+        : "",
     ]
       .filter(Boolean)
       .join("\n");
@@ -299,10 +352,13 @@ export async function indexProjectMeta(sb: SupabaseClient, projectId: string): P
 
 export async function indexProject(
   sb: SupabaseClient,
-  projectId: string,
+  projectId: string
 ): Promise<{ sessions: number; chunks: number }> {
   let chunks = (await indexProjectMeta(sb, projectId)).chunks;
-  const { data: sessions } = await sb.from("guest_calls").select("id").eq("project_id", projectId);
+  const { data: sessions } = await sb
+    .from("guest_calls")
+    .select("id")
+    .eq("project_id", projectId);
   let count = 0;
   for (const row of (sessions ?? []) as { id: string }[]) {
     const r = await indexSession(sb, row.id);

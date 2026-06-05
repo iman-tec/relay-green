@@ -52,7 +52,10 @@ export function EnterpriseCta() {
 
     // Channel partner is required: pick from the list, or "Other" + a name.
     const customPartner = String(data.get("channelPartnerOther") ?? "").trim();
-    if (!partnerChoice || (partnerChoice === OTHER_PARTNER && customPartner.length === 0)) {
+    if (
+      !partnerChoice ||
+      (partnerChoice === OTHER_PARTNER && customPartner.length === 0)
+    ) {
       setStatus("error");
       setErrorMessage(
         "Please choose a channel partner — or pick “Other” and type a name."
@@ -220,7 +223,9 @@ export function EnterpriseCta() {
           </div>
 
           <div className="r-contact-field">
-            <label htmlFor="r-enterprise-channel-partner">Channel partner</label>
+            <label htmlFor="r-enterprise-channel-partner">
+              Channel partner
+            </label>
             <select
               id="r-enterprise-channel-partner"
               name="channelPartnerId"

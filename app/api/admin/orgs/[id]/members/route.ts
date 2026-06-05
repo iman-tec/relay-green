@@ -17,7 +17,7 @@ import { sendInvitationEmail } from "@/lib/admin-invite";
 import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 const ORG_MEMBER_ROLES: ReadonlySet<string> = new Set([
   ROLE.enterprise_admin,
@@ -28,7 +28,8 @@ type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function POST(request: Request, { params }: RouteCtx) {
   const gate = await requireSuperAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin, user: actor } = gate;
 
   const { id: orgId } = await params;
@@ -37,14 +38,15 @@ export async function POST(request: Request, { params }: RouteCtx) {
     displayName?: string;
     role?: string;
   };
-  const email       = body.email?.trim();
+  const email = body.email?.trim();
   const displayName = body.displayName?.trim();
-  const role        = body.role && ORG_MEMBER_ROLES.has(body.role) ? body.role : ROLE.client;
+  const role =
+    body.role && ORG_MEMBER_ROLES.has(body.role) ? body.role : ROLE.client;
 
   if (!email || !displayName) {
     return NextResponse.json(
       { error: "Need email and displayName." },
-      { status: 400 },
+      { status: 400 }
     );
   }
 
@@ -64,16 +66,19 @@ export async function POST(request: Request, { params }: RouteCtx) {
   // Enterprise admins get the enterprise_code so the new template can
   // show it; clients don't need a code.
   const invite = await sendInvitationEmail(admin, {
-    email:       trimmedEmail,
+    email: trimmedEmail,
     displayName,
     metadata: {
-      role_label:      role,
+      role_label: role,
       organization_id: orgId,
-      org_name:        org.name,
+      org_name: org.name,
       ...(role === ROLE.enterprise_admin
-        ? { enterprise_code: (org as { enterprise_code: string }).enterprise_code }
+        ? {
+            enterprise_code: (org as { enterprise_code: string })
+              .enterprise_code,
+          }
         : {}),
-      created_by:      actor.id,
+      created_by: actor.id,
     },
   });
   if (!invite.ok) {
@@ -83,14 +88,14 @@ export async function POST(request: Request, { params }: RouteCtx) {
   let userId = invite.userId ?? null;
   if (!userId) {
     const lookup = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-    userId = lookup.data?.users?.find(
-      (u) => u.email?.toLowerCase() === trimmedEmail,
-    )?.id ?? null;
+    userId =
+      lookup.data?.users?.find((u) => u.email?.toLowerCase() === trimmedEmail)
+        ?.id ?? null;
   }
   if (!userId) {
     return NextResponse.json(
       { error: "Member invited but auth row not yet visible — try again." },
-      { status: 500 },
+      { status: 500 }
     );
   }
 
@@ -102,7 +107,10 @@ export async function POST(request: Request, { params }: RouteCtx) {
     .maybeSingle();
   const roleId = (roleRow as { id: string } | null)?.id;
   if (!roleId) {
-    return NextResponse.json({ error: `Unknown role: ${role}` }, { status: 500 });
+    return NextResponse.json(
+      { error: `Unknown role: ${role}` },
+      { status: 500 }
+    );
   }
 
   // Don't clobber primary_role for existing users (e.g. a super_admin
@@ -113,20 +121,21 @@ export async function POST(request: Request, { params }: RouteCtx) {
     .select("full_name, primary_role_id")
     .eq("id", userId)
     .maybeSingle();
-  const cp = currentProfile as { full_name: string | null; primary_role_id: string | null } | null;
+  const cp = currentProfile as {
+    full_name: string | null;
+    primary_role_id: string | null;
+  } | null;
 
-  await admin
-    .from("profiles")
-    .upsert(
-      {
-        id:              userId,
-        full_name:       cp?.full_name?.trim() ? cp.full_name : displayName,
-        primary_role_id: cp?.primary_role_id ?? roleId,
-        organization_id: orgId,
-        is_onboarded:    true,
-      },
-      { onConflict: "id" },
-    );
+  await admin.from("profiles").upsert(
+    {
+      id: userId,
+      full_name: cp?.full_name?.trim() ? cp.full_name : displayName,
+      primary_role_id: cp?.primary_role_id ?? roleId,
+      organization_id: orgId,
+      is_onboarded: true,
+    },
+    { onConflict: "id" }
+  );
 
   const mode = invite.mode === "invited" ? "invited" : "attached_existing";
 
@@ -134,21 +143,21 @@ export async function POST(request: Request, { params }: RouteCtx) {
     .from("user_roles")
     .upsert(
       { user_id: userId, role_id: roleId },
-      { onConflict: "user_id,role_id", ignoreDuplicates: true },
+      { onConflict: "user_id,role_id", ignoreDuplicates: true }
     );
 
   console.log(
-    `[admin/orgs/${orgId}/members] ${mode} ${trimmedEmail} (${role})`,
+    `[admin/orgs/${orgId}/members] ${mode} ${trimmedEmail} (${role})`
   );
 
   return NextResponse.json({
     member: {
-      id:          userId,
-      email:       trimmedEmail,
+      id: userId,
+      email: trimmedEmail,
       displayName,
       role,
     },
-    invited:          mode === "invited",
+    invited: mode === "invited",
     attachedExisting: mode === "attached_existing",
   });
 }

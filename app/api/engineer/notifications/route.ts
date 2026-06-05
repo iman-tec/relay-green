@@ -25,8 +25,11 @@ export const NOTIFICATION_KINDS = [
 
 export async function GET() {
   const supabase = await createServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user)
+    return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
 
   const { data, error } = await supabase
     .from("notifications")
@@ -36,11 +39,24 @@ export async function GET() {
     .order("created_at", { ascending: false })
     .limit(50);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error)
+    return NextResponse.json({ error: error.message }, { status: 500 });
 
-  type Row = { id: string; kind: string; title: string; body: string | null; read_at: string | null; created_at: string };
+  type Row = {
+    id: string;
+    kind: string;
+    title: string;
+    body: string | null;
+    read_at: string | null;
+    created_at: string;
+  };
   const items = ((data ?? []) as Row[]).map((n) => ({
-    id: n.id, kind: n.kind, title: n.title, body: n.body, readAt: n.read_at, createdAt: n.created_at,
+    id: n.id,
+    kind: n.kind,
+    title: n.title,
+    body: n.body,
+    readAt: n.read_at,
+    createdAt: n.created_at,
   }));
   const unread = items.filter((i) => i.readAt == null).length;
 
@@ -49,8 +65,11 @@ export async function GET() {
 
 export async function POST() {
   const supabase = await createServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user)
+    return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
 
   const { error } = await supabase
     .from("notifications")
@@ -59,15 +78,19 @@ export async function POST() {
     .in("kind", NOTIFICATION_KINDS as unknown as string[])
     .is("read_at", null);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error)
+    return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }
 
 // Clear all — removes every notification of these kinds for the caller.
 export async function DELETE() {
   const supabase = await createServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user)
+    return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
 
   const { error } = await supabase
     .from("notifications")
@@ -75,6 +98,7 @@ export async function DELETE() {
     .eq("user_id", user.id)
     .in("kind", NOTIFICATION_KINDS as unknown as string[]);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error)
+    return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }

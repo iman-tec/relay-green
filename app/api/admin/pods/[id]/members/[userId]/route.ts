@@ -10,14 +10,15 @@ import { NextResponse } from "next/server";
 import { requireSuperAdmin } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 export async function DELETE(
   _request: Request,
-  { params }: { params: Promise<{ id: string; userId: string }> },
+  { params }: { params: Promise<{ id: string; userId: string }> }
 ) {
   const gate = await requireSuperAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin } = gate;
 
   const { id: podId, userId } = await params;
@@ -32,7 +33,10 @@ export async function DELETE(
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
   if (!count || count === 0) {
-    return NextResponse.json({ error: "Member not found in this pod." }, { status: 404 });
+    return NextResponse.json(
+      { error: "Member not found in this pod." },
+      { status: 404 }
+    );
   }
   return NextResponse.json({ ok: true });
 }

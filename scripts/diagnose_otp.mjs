@@ -21,8 +21,12 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const env = Object.fromEntries(
   readFileSync(path.resolve(__dirname, "../.env.local"), "utf8")
-    .split("\n").filter((l) => l.includes("=") && !l.startsWith("#"))
-    .map((l) => { const [k, ...r] = l.split("="); return [k.trim(), r.join("=").trim()]; })
+    .split("\n")
+    .filter((l) => l.includes("=") && !l.startsWith("#"))
+    .map((l) => {
+      const [k, ...r] = l.split("=");
+      return [k.trim(), r.join("=").trim()];
+    })
 );
 
 const TEST_EMAIL = process.argv[2];
@@ -35,10 +39,17 @@ const PASS = "\x1b[32m✓\x1b[0m";
 const FAIL = "\x1b[31m✗\x1b[0m";
 const STEP = "\x1b[36m→\x1b[0m";
 
-const anon  = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
-const admin = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
-  auth: { autoRefreshToken: false, persistSession: false },
-});
+const anon = createClient(
+  env.NEXT_PUBLIC_SUPABASE_URL,
+  env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
+const admin = createClient(
+  env.NEXT_PUBLIC_SUPABASE_URL,
+  env.SUPABASE_SERVICE_ROLE_KEY,
+  {
+    auth: { autoRefreshToken: false, persistSession: false },
+  }
+);
 
 console.log(`\n\x1b[1mOTP diagnosis for ${TEST_EMAIL}\x1b[0m\n`);
 
@@ -51,15 +62,21 @@ const r1 = await anon.auth.signInWithOtp({
 });
 const ms1 = Date.now() - t0;
 if (r1.error) {
-  console.log(`   ${FAIL} ${r1.error.message}  (${r1.error.status ?? "?"})  ${ms1}ms`);
+  console.log(
+    `   ${FAIL} ${r1.error.message}  (${r1.error.status ?? "?"})  ${ms1}ms`
+  );
   if (r1.error.status === 429) {
-    console.log(`     ↳ \x1b[33mRate-limited\x1b[0m by Supabase default mailer.`);
+    console.log(
+      `     ↳ \x1b[33mRate-limited\x1b[0m by Supabase default mailer.`
+    );
   } else if (/email rate/i.test(r1.error.message)) {
     console.log(`     ↳ \x1b[33mEmail rate limit\x1b[0m hit.`);
   }
 } else {
   console.log(`   ${PASS} Supabase accepted the request  (${ms1}ms)`);
-  console.log(`     ↳ But this only means the API returned 200. Email may still be silently dropped.`);
+  console.log(
+    `     ↳ But this only means the API returned 200. Email may still be silently dropped.`
+  );
 }
 
 // ── Step 2: Check whether the user got created ─────────────────────────
@@ -72,7 +89,9 @@ console.log(`\n${STEP} Did the user land in auth.users?`);
     console.log(`     last_sign_in_at: ${found.last_sign_in_at ?? "never"}`);
     console.log(`     confirmed_at:    ${found.email_confirmed_at ?? "never"}`);
   } else {
-    console.log(`   ${FAIL} user not created — Supabase rejected the request silently`);
+    console.log(
+      `   ${FAIL} user not created — Supabase rejected the request silently`
+    );
   }
 }
 
@@ -89,9 +108,13 @@ console.log(`\n${STEP} Generating a magic-link via admin API (no SMTP needed)`);
   if (error) {
     console.log(`   ${FAIL} ${error.message}`);
   } else if (data?.properties?.action_link) {
-    console.log(`   ${PASS} magic link ready — paste into a browser to sign in as this user:`);
+    console.log(
+      `   ${PASS} magic link ready — paste into a browser to sign in as this user:`
+    );
     console.log(`\n\x1b[36m${data.properties.action_link}\x1b[0m\n`);
-    console.log(`     ↳ This works regardless of SMTP. Use it to unblock other test accounts.`);
+    console.log(
+      `     ↳ This works regardless of SMTP. Use it to unblock other test accounts.`
+    );
   }
 }
 

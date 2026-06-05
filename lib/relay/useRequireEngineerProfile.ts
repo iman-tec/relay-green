@@ -36,7 +36,9 @@ export function useRequireEngineerProfile() {
       if (cancelled || !u.user) return;
 
       const { data: rolesData } = await sb
-        .from("user_role_names").select("role").eq("user_id", u.user.id);
+        .from("user_role_names")
+        .select("role")
+        .eq("user_id", u.user.id);
       const roles = (rolesData ?? []).map((r: { role: string }) => r.role);
       const isEngineer = roles.includes(ROLE.engineer);
       if (!isEngineer) return;
@@ -50,6 +52,8 @@ export function useRequireEngineerProfile() {
       if (cancelled) return;
       if (!profile) router.replace("/staff/onboarding");
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [router, pathname]);
 }

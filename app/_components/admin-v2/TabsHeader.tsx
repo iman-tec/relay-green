@@ -11,7 +11,7 @@ import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Wordmark } from "@/app/_components/Wordmark";
 
 export type Tab<T extends string = string> = {
-  key:   T;
+  key: T;
   label: string;
 };
 
@@ -22,16 +22,16 @@ export function TabsHeader<T extends string>({
   rightSlot,
   subtitle,
 }: {
-  tabs:       readonly Tab<T>[];
-  active:     T;
-  onChange:   (next: T) => void;
+  tabs: readonly Tab<T>[];
+  active: T;
+  onChange: (next: T) => void;
   /** Optional trailing element rendered after the tabs (profile chip, etc.). */
   rightSlot?: React.ReactNode;
   /** Muted text rendered next to the Relay wordmark (e.g. "Superadmin Panel"). Omit to render the wordmark alone. */
-  subtitle?:  string;
+  subtitle?: string;
 }) {
-  const router       = useRouter();
-  const pathname     = usePathname();
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
 
   useEffect(() => {
@@ -47,8 +47,8 @@ export function TabsHeader<T extends string>({
       className="flex shrink-0 items-center justify-between border-b px-5"
       style={{
         borderColor: "var(--border)",
-        background:  "var(--surface)",
-        height:      56,
+        background: "var(--surface)",
+        height: 56,
       }}
     >
       <div className="flex items-center gap-2.5">

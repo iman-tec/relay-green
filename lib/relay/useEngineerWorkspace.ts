@@ -22,11 +22,20 @@ import { isTransientNetworkError } from "./transient";
 function asString(e: unknown): string {
   if (!e) return "Unknown error";
   if (typeof e === "string") return e;
-  const err = e as { message?: unknown; error_description?: unknown; code?: unknown; details?: unknown };
+  const err = e as {
+    message?: unknown;
+    error_description?: unknown;
+    code?: unknown;
+    details?: unknown;
+  };
   if (typeof err.message === "string") return err.message;
   if (typeof err.error_description === "string") return err.error_description;
   if (typeof err.details === "string") return err.details;
-  try { return JSON.stringify(e); } catch { return String(e); }
+  try {
+    return JSON.stringify(e);
+  } catch {
+    return String(e);
+  }
 }
 
 export type WorkspaceState = {
@@ -74,20 +83,37 @@ export function useEngineerWorkspace(): WorkspaceState {
       // recent list until they take their first call. See migration
       // 20260521000000_engineer_recent_scope.sql.
       const [activeRes, queueRes, recentRes] = await Promise.all([
-        sb.from("guest_calls").select("*")
+        sb
+          .from("guest_calls")
+          .select("*")
           .eq("claimed_by", u.user.id)
           .in("status", ["queued", "assigned", "joining", "live", "grace"])
           .order("created_at", { ascending: false })
-          .then((r) => r, (e) => ({ data: null, error: e })),
-        sb.rpc("list_queue")
-          .then((r) => r, (e) => ({ data: null, error: e })),
-        sb.rpc("engineer_recent_sessions", { _engineer_id: u.user.id, _limit: 40 })
-          .then((r) => r, (e) => ({ data: null, error: e })),
+          .then(
+            (r) => r,
+            (e) => ({ data: null, error: e })
+          ),
+        sb.rpc("list_queue").then(
+          (r) => r,
+          (e) => ({ data: null, error: e })
+        ),
+        sb
+          .rpc("engineer_recent_sessions", {
+            _engineer_id: u.user.id,
+            _limit: 40,
+          })
+          .then(
+            (r) => r,
+            (e) => ({ data: null, error: e })
+          ),
       ]);
 
-      if (activeRes.error) console.warn("[workspace] active query:", asString(activeRes.error));
-      if (queueRes.error)  console.warn("[workspace] queue RPC:",  asString(queueRes.error));
-      if (recentRes.error) console.warn("[workspace] recent query:", asString(recentRes.error));
+      if (activeRes.error)
+        console.warn("[workspace] active query:", asString(activeRes.error));
+      if (queueRes.error)
+        console.warn("[workspace] queue RPC:", asString(queueRes.error));
+      if (recentRes.error)
+        console.warn("[workspace] recent query:", asString(recentRes.error));
 
       setMyActive((activeRes.data as GuestCall[] | null) ?? []);
       setQueue((queueRes.data as GuestCall[] | null) ?? []);
@@ -137,30 +163,40 @@ export function useEngineerWorkspace(): WorkspaceState {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "guest_calls" },
-        () => { refresh().catch(() => {}); },
+        () => {
+          refresh().catch(() => {});
+        }
       )
       .subscribe();
     channelRef.current = ch;
-    return () => { sb.removeChannel(ch); channelRef.current = null; };
+    return () => {
+      sb.removeChannel(ch);
+      channelRef.current = null;
+    };
   }, [refresh]);
 
-  const claim = useCallback(async (sessionId: string): Promise<GuestCall | null> => {
-    const sb = supabaseRef.current;
-    const { data, error: e } = await sb.rpc("claim_session", { _session_id: sessionId });
-    if (e) {
-      const msg = e.message ?? "";
-      if (msg.includes("ALREADY_CLAIMED")) {
-        setError("Another engineer just took this one.");
-      } else if (msg.includes("NOT_AUTHORIZED")) {
-        setError("You need engineer access. Pick a role on /staff first.");
-      } else {
-        setError(msg);
+  const claim = useCallback(
+    async (sessionId: string): Promise<GuestCall | null> => {
+      const sb = supabaseRef.current;
+      const { data, error: e } = await sb.rpc("claim_session", {
+        _session_id: sessionId,
+      });
+      if (e) {
+        const msg = e.message ?? "";
+        if (msg.includes("ALREADY_CLAIMED")) {
+          setError("Another engineer just took this one.");
+        } else if (msg.includes("NOT_AUTHORIZED")) {
+          setError("You need engineer access. Pick a role on /staff first.");
+        } else {
+          setError(msg);
+        }
+        setTimeout(() => setError(null), 4000);
+        return null;
       }
-      setTimeout(() => setError(null), 4000);
-      return null;
-    }
-    return (Array.isArray(data) ? data[0] : data) as GuestCall;
-  }, []);
+      return (Array.isArray(data) ? data[0] : data) as GuestCall;
+    },
+    []
+  );
 
   // Race-aware: on ALREADY_CLAIMED we silently refetch the live queue and try
   // the new head. Cap at 5 attempts so a hot queue doesn't loop forever.
@@ -179,7 +215,9 @@ export function useEngineerWorkspace(): WorkspaceState {
         setTimeout(() => setError(null), 3000);
         return null;
       }
-      const { data: claimed, error: e } = await sb.rpc("claim_session", { _session_id: head.id });
+      const { data: claimed, error: e } = await sb.rpc("claim_session", {
+        _session_id: head.id,
+      });
       if (!e) {
         return (Array.isArray(claimed) ? claimed[0] : claimed) as GuestCall;
       }
@@ -188,16 +226,30 @@ export function useEngineerWorkspace(): WorkspaceState {
         // Another engineer beat us — quietly try the next head.
         continue;
       }
-      setError(msg.includes("NOT_AUTHORIZED")
-        ? "You need engineer access. Pick a role on /staff first."
-        : asString(e));
+      setError(
+        msg.includes("NOT_AUTHORIZED")
+          ? "You need engineer access. Pick a role on /staff first."
+          : asString(e)
+      );
       setTimeout(() => setError(null), 4000);
       return null;
     }
-    setError("Couldn't claim a session — others are claiming faster. Try again.");
+    setError(
+      "Couldn't claim a session — others are claiming faster. Try again."
+    );
     setTimeout(() => setError(null), 4000);
     return null;
   }, []);
 
-  return { myActive, queue, recent, loading, error, takeNext, claim, refresh, userId };
+  return {
+    myActive,
+    queue,
+    recent,
+    loading,
+    error,
+    takeNext,
+    claim,
+    refresh,
+    userId,
+  };
 }

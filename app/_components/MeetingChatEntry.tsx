@@ -20,7 +20,10 @@ import { useState } from "react";
 import { Video, PhoneOff, ExternalLink, Sparkles, Loader2 } from "lucide-react";
 import { MeetingSummaryEntry } from "./MeetingSummaryEntry";
 import { Button } from "@/app/_components/ui";
-import { useLaunchCall, useLaunchCallShape } from "@/lib/video/LaunchCallContext";
+import {
+  useLaunchCall,
+  useLaunchCallShape,
+} from "@/lib/video/LaunchCallContext";
 
 type Props = {
   active: boolean;
@@ -85,7 +88,8 @@ export function MeetingChatEntry({
   // mount state; gating selfJoined on it restores the Join button when the
   // user is no longer actually on the call.
   const { isCallOpen } = useLaunchCallShape();
-  const effectiveSelfJoined = selfJoined && (effectiveLaunch ? isCallOpen : true);
+  const effectiveSelfJoined =
+    selfJoined && (effectiveLaunch ? isCallOpen : true);
 
   const hasSummary = !active && !!summaryBody;
   const hasRecording = !active && !!recordingBody;
@@ -121,14 +125,15 @@ export function MeetingChatEntry({
         <div
           className="flex w-full max-w-md flex-col items-center gap-3 rounded-2xl border px-5 py-4 text-center"
           style={{
-            borderColor: "color-mix(in srgb, var(--green-dot) 35%, transparent)",
+            borderColor:
+              "color-mix(in srgb, var(--green-dot) 35%, transparent)",
             background: "var(--ok-soft)",
           }}
         >
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[var(--ok)]">
+          <div className="flex items-center gap-2 text-xs font-semibold tracking-wider text-[var(--ok)] uppercase">
             <span
               aria-hidden
-              className="inline-block size-1.5 rounded-full animate-[relay-pulse-ok_1800ms_ease-in-out_infinite]"
+              className="inline-block size-1.5 animate-[relay-pulse-ok_1800ms_ease-in-out_infinite] rounded-full"
               style={{ background: "var(--green-dot)" }}
             />
             Zoom call · ongoing
@@ -141,7 +146,9 @@ export function MeetingChatEntry({
                 size="lg"
                 onClick={handleJoin}
                 iconLeft={<Video size={16} />}
-                iconRight={effectiveLaunch ? undefined : <ExternalLink size={14} />}
+                iconRight={
+                  effectiveLaunch ? undefined : <ExternalLink size={14} />
+                }
               >
                 {effectiveLaunch ? "Join call" : "Join Zoom call"}
               </Button>

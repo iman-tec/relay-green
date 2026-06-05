@@ -107,7 +107,8 @@ const rows: Row[] = [
   },
   {
     category: "Strictly necessary",
-    purpose: "Session authentication and CSRF protection on signed-in surfaces.",
+    purpose:
+      "Session authentication and CSRF protection on signed-in surfaces.",
     vendor: "Relay (first-party) + Supabase Auth",
     retention: "Session",
   },
@@ -122,14 +123,16 @@ const rows: Row[] = [
     purpose:
       "Aggregated, anonymized page-view counts. Only loaded after you Accept on the cookie banner.",
     vendor: "Vercel Analytics",
-    retention: "Per Vercel's published policy (vercel.com/legal/privacy-policy)",
+    retention:
+      "Per Vercel's published policy (vercel.com/legal/privacy-policy)",
   },
   {
     category: "Analytics",
     purpose:
       "Core Web Vitals telemetry (LCP, INP, CLS) to detect performance regressions. Only loaded after Accept.",
     vendor: "Vercel Speed Insights",
-    retention: "Per Vercel's published policy (vercel.com/legal/privacy-policy)",
+    retention:
+      "Per Vercel's published policy (vercel.com/legal/privacy-policy)",
   },
   {
     category: "Marketing",
@@ -157,7 +160,11 @@ export default function CookiesPage() {
 
       <section
         className="r-section"
-        style={{ paddingTop: 0, borderTop: "none", background: "var(--cream-2)" }}
+        style={{
+          paddingTop: 0,
+          borderTop: "none",
+          background: "var(--cream-2)",
+        }}
       >
         <div className="r-wrap-narrow">
           <p className="r-body" style={bodyStyle}>

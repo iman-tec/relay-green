@@ -54,25 +54,21 @@ export function Avatar({
   return (
     <span
       className={cn(
-        "inline-flex items-center justify-center rounded-full font-medium uppercase tracking-wide overflow-hidden",
+        "inline-flex items-center justify-center overflow-hidden rounded-full font-medium tracking-wide uppercase",
         tone === "brand"
-          ? "bg-[var(--primary-tint)] text-[var(--primary-hover)] border border-[color-mix(in_srgb,var(--primary)_22%,transparent)]"
-          : "bg-[var(--surface-raised)] text-[var(--text)] border",
+          ? "border border-[color-mix(in_srgb,var(--primary)_22%,transparent)] bg-[var(--primary-tint)] text-[var(--primary-hover)]"
+          : "border bg-[var(--surface-raised)] text-[var(--text)]",
         tone === "ok" && "border-[var(--ok)]",
         tone === "neutral" && "border-[var(--border)]",
         SIZE[size],
-        className,
+        className
       )}
       aria-label={name ?? email ?? "User"}
     >
       {src ? (
         // Avatar img is decorative — name announces identity via aria-label.
         // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={src}
-          alt=""
-          className="size-full rounded-full object-cover"
-        />
+        <img src={src} alt="" className="size-full rounded-full object-cover" />
       ) : (
         label
       )}

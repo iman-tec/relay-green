@@ -61,7 +61,8 @@ export async function submitEnterpriseRequest(
 
   if (res.ok) return { ok: true, deliveredVia: "api" };
   if (res.status === 429) return { ok: false, error: "rate_limited" };
-  if (res.status >= 400 && res.status < 500) return { ok: false, error: "invalid" };
+  if (res.status >= 400 && res.status < 500)
+    return { ok: false, error: "invalid" };
 
   // 5xx — backend reachable but broken; mailto so the user still reaches us.
   openMailtoFallback(payload);

@@ -37,10 +37,11 @@ export function CallClient({ sessionId }: { sessionId: string }) {
     sb.auth.getUser().then(({ data }) => {
       const u = data.user;
       if (!u) return;
-      const name = (u.user_metadata?.full_name as string | undefined)
-        ?? (u.user_metadata?.name as string | undefined)
-        ?? u.email
-        ?? "Relay user";
+      const name =
+        (u.user_metadata?.full_name as string | undefined) ??
+        (u.user_metadata?.name as string | undefined) ??
+        u.email ??
+        "Relay user";
       setViewer({ name, email: u.email ?? "" });
     });
   }, []);
@@ -108,7 +109,7 @@ export function CallClient({ sessionId }: { sessionId: string }) {
       <button
         type="button"
         onClick={() => void handleEnd()}
-        className="fixed bottom-6 right-6 z-[60] inline-flex items-center gap-2 rounded-full bg-red-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-red-900/40 transition-colors hover:bg-red-700"
+        className="fixed right-6 bottom-6 z-[60] inline-flex items-center gap-2 rounded-full bg-red-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-red-900/40 transition-colors hover:bg-red-700"
       >
         <PhoneOff size={16} />
         End call

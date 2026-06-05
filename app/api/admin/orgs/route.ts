@@ -22,18 +22,22 @@ import { findUserInAnotherOrg, crossOrgError } from "@/lib/relay/orgGuard";
 import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 export async function GET() {
   const gate = await requireSuperAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin } = gate;
 
   const { data: orgs, error: orgErr } = await admin
     .from("organizations")
-    .select("id, name, primary_domain, status, enterprise_code, enterprise_type, reseller_id, allocated_minutes, used_minutes, remaining_minutes, created_at")
+    .select(
+      "id, name, primary_domain, status, enterprise_code, enterprise_type, reseller_id, allocated_minutes, used_minutes, remaining_minutes, created_at"
+    )
     .order("created_at", { ascending: false });
-  if (orgErr) return NextResponse.json({ error: orgErr.message }, { status: 500 });
+  if (orgErr)
+    return NextResponse.json({ error: orgErr.message }, { status: 500 });
 
   if (!orgs || !orgs.length) {
     return NextResponse.json({ orgs: [] });
@@ -43,16 +47,24 @@ export async function GET() {
   // "via Reseller Name" instead of just the raw id. Skip when no inorganic
   // orgs exist.
   type OrgRow = {
-    id: string; name: string; primary_domain: string | null; status: string;
-    enterprise_code: string; enterprise_type: string;
+    id: string;
+    name: string;
+    primary_domain: string | null;
+    status: string;
+    enterprise_code: string;
+    enterprise_type: string;
     reseller_id: string | null;
-    allocated_minutes: number; used_minutes: number; remaining_minutes: number;
+    allocated_minutes: number;
+    used_minutes: number;
+    remaining_minutes: number;
     created_at: string;
   };
   const orgRows = orgs as OrgRow[];
-  const resellerIds = Array.from(new Set(
-    orgRows.map((o) => o.reseller_id).filter((id): id is string => !!id),
-  ));
+  const resellerIds = Array.from(
+    new Set(
+      orgRows.map((o) => o.reseller_id).filter((id): id is string => !!id)
+    )
+  );
   const resellerNameById = new Map<string, string>();
   if (resellerIds.length > 0) {
     const { data: resellers } = await admin
@@ -92,11 +104,13 @@ export async function GET() {
     (authPage?.users ?? []).map((u) => [
       u.id,
       {
-        email:               u.email ?? "",
-        banned:              Boolean(u.banned_until && new Date(u.banned_until) > new Date()),
+        email: u.email ?? "",
+        banned: Boolean(
+          u.banned_until && new Date(u.banned_until) > new Date()
+        ),
         awaitingFirstSignIn: !u.email_confirmed_at,
       },
-    ]),
+    ])
   );
 
   const membersByOrg = new Map<string, ReturnType<typeof formatMember>[]>();
@@ -112,7 +126,7 @@ export async function GET() {
   const { data: deptRows } = await admin
     .from("departments")
     .select(
-      "id, enterprise_id, name, department_code, admin_user_id, status, allocated_minutes, used_minutes, remaining_minutes, created_at",
+      "id, enterprise_id, name, department_code, admin_user_id, status, allocated_minutes, used_minutes, remaining_minutes, created_at"
     )
     .in("enterprise_id", orgIds)
     .order("created_at", { ascending: false });
@@ -141,11 +155,17 @@ export async function GET() {
       .in("department_id", deptIds)
       .eq("client_type", "employee");
     for (const e of (empRows ?? []) as { department_id: string }[]) {
-      memberCountByDept.set(e.department_id, (memberCountByDept.get(e.department_id) ?? 0) + 1);
+      memberCountByDept.set(
+        e.department_id,
+        (memberCountByDept.get(e.department_id) ?? 0) + 1
+      );
     }
   }
 
-  const departmentsByOrg = new Map<string, ReturnType<typeof formatDepartment>[]>();
+  const departmentsByOrg = new Map<
+    string,
+    ReturnType<typeof formatDepartment>[]
+  >();
   for (const d of depts) {
     const list = departmentsByOrg.get(d.enterprise_id) ?? [];
     list.push(formatDepartment(d, memberCountByDept.get(d.id) ?? 0));
@@ -154,49 +174,54 @@ export async function GET() {
 
   return NextResponse.json({
     orgs: orgRows.map((o) => ({
-      id:                o.id,
-      name:              o.name,
-      primaryDomain:     o.primary_domain,
-      status:            o.status,
-      enterpriseType:    o.enterprise_type,                   // 'organic' | 'inorganic'
-      resellerId:        o.reseller_id,                       // non-null when inorganic
-      resellerName:      o.reseller_id ? (resellerNameById.get(o.reseller_id) ?? null) : null,
-      allocatedMinutes:  Number(o.allocated_minutes ?? 0),
-      usedMinutes:       Number(o.used_minutes ?? 0),
-      remainingMinutes:  Number(o.remaining_minutes ?? 0),
-      createdAt:         o.created_at,
-      members:           membersByOrg.get(o.id) ?? [],
-      departments:       departmentsByOrg.get(o.id) ?? [],
+      id: o.id,
+      name: o.name,
+      primaryDomain: o.primary_domain,
+      status: o.status,
+      enterpriseType: o.enterprise_type, // 'organic' | 'inorganic'
+      resellerId: o.reseller_id, // non-null when inorganic
+      resellerName: o.reseller_id
+        ? (resellerNameById.get(o.reseller_id) ?? null)
+        : null,
+      allocatedMinutes: Number(o.allocated_minutes ?? 0),
+      usedMinutes: Number(o.used_minutes ?? 0),
+      remainingMinutes: Number(o.remaining_minutes ?? 0),
+      createdAt: o.created_at,
+      members: membersByOrg.get(o.id) ?? [],
+      departments: departmentsByOrg.get(o.id) ?? [],
     })),
   });
 }
 
 export async function POST(request: Request) {
   const gate = await requireSuperAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin, user: actor } = gate;
 
-  const { name, primaryDomain, adminEmail, adminDisplayName, allocatedMinutes, resellerId } =
-    (await request.json().catch(() => ({}))) as {
-      name?: string;
-      primaryDomain?: string;
-      adminEmail?: string;
-      adminDisplayName?: string;
-      allocatedMinutes?: number | string;
-      /** When set, creates an inorganic enterprise under that reseller
-       *  (org.reseller_id = resellerId). transfer_to_organization then
-       *  debits the reseller pool instead of minting unbacked minutes. */
-      resellerId?: string;
-    };
+  const {
+    name,
+    primaryDomain,
+    adminEmail,
+    adminDisplayName,
+    allocatedMinutes,
+    resellerId,
+  } = (await request.json().catch(() => ({}))) as {
+    name?: string;
+    primaryDomain?: string;
+    adminEmail?: string;
+    adminDisplayName?: string;
+    allocatedMinutes?: number | string;
+    /** When set, creates an inorganic enterprise under that reseller
+     *  (org.reseller_id = resellerId). transfer_to_organization then
+     *  debits the reseller pool instead of minting unbacked minutes. */
+    resellerId?: string;
+  };
 
-  if (
-    !name?.trim() ||
-    !adminEmail?.trim() ||
-    !adminDisplayName?.trim()
-  ) {
+  if (!name?.trim() || !adminEmail?.trim() || !adminDisplayName?.trim()) {
     return NextResponse.json(
       { error: "Need name, adminEmail, and adminDisplayName." },
-      { status: 400 },
+      { status: 400 }
     );
   }
 
@@ -204,9 +229,16 @@ export async function POST(request: Request) {
   // enterprise — otherwise creating the org would hijack that user. "" as
   // the target means "any existing org binding blocks" (this org has no id yet).
   {
-    const guard = await findUserInAnotherOrg(admin, adminEmail.trim().toLowerCase(), "");
+    const guard = await findUserInAnotherOrg(
+      admin,
+      adminEmail.trim().toLowerCase(),
+      ""
+    );
     if (guard.blocked) {
-      return NextResponse.json({ error: crossOrgError(guard.orgName) }, { status: 409 });
+      return NextResponse.json(
+        { error: crossOrgError(guard.orgName) },
+        { status: 409 }
+      );
     }
   }
 
@@ -215,7 +247,10 @@ export async function POST(request: Request) {
   // when the caller omits it (e.g. legacy clients that don't yet send it).
   const allocNum = Number(allocatedMinutes ?? 0);
   if (Number.isNaN(allocNum) || allocNum < 0) {
-    return NextResponse.json({ error: "Allocation must be non-negative." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Allocation must be non-negative." },
+      { status: 400 }
+    );
   }
 
   // Validate the resellerId (if supplied) — must exist, be active, AND
@@ -228,17 +263,29 @@ export async function POST(request: Request) {
       .select("id, status, remaining_minutes")
       .eq("id", resellerId)
       .maybeSingle();
-    const rr = r as { id: string; status: string; remaining_minutes: number } | null;
+    const rr = r as {
+      id: string;
+      status: string;
+      remaining_minutes: number;
+    } | null;
     if (!rr) {
-      return NextResponse.json({ error: "Reseller not found." }, { status: 404 });
+      return NextResponse.json(
+        { error: "Reseller not found." },
+        { status: 404 }
+      );
     }
     if (rr.status !== "active") {
-      return NextResponse.json({ error: "Reseller is suspended." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Reseller is suspended." },
+        { status: 400 }
+      );
     }
     if (allocNum > 0 && allocNum > Number(rr.remaining_minutes ?? 0)) {
       return NextResponse.json(
-        { error: `Allocation exceeds the reseller's remaining minutes (${rr.remaining_minutes}).` },
-        { status: 400 },
+        {
+          error: `Allocation exceeds the reseller's remaining minutes (${rr.remaining_minutes}).`,
+        },
+        { status: 400 }
       );
     }
   }
@@ -246,16 +293,20 @@ export async function POST(request: Request) {
   // Generate a unique enterprise_code. Retry on unique-violation; max 5
   // attempts is more than enough for a 32-bit-ish keyspace.
   type OrgRow = {
-    id: string; name: string; primary_domain: string | null;
-    status: string; enterprise_code: string; created_at: string;
+    id: string;
+    name: string;
+    primary_domain: string | null;
+    status: string;
+    enterprise_code: string;
+    created_at: string;
   };
   let org: OrgRow | undefined;
   let lastErr: { message?: string; code?: string } | null = null;
   for (let attempt = 0; attempt < 5; attempt++) {
     const orgInsert: Record<string, unknown> = {
-      name:               name.trim(),
+      name: name.trim(),
       created_by_user_id: actor.id,
-      enterprise_code:    generateEnterpriseCode(name.trim()),
+      enterprise_code: generateEnterpriseCode(name.trim()),
     };
     if (primaryDomain?.trim()) orgInsert.primary_domain = primaryDomain.trim();
     if (resellerId) {
@@ -263,7 +314,7 @@ export async function POST(request: Request) {
       //   inorganic ↔ reseller_id NOT NULL
       //   organic   ↔ reseller_id NULL
       // Setting reseller_id without flipping enterprise_type would violate it.
-      orgInsert.reseller_id     = resellerId;
+      orgInsert.reseller_id = resellerId;
       orgInsert.enterprise_type = "inorganic";
     }
 
@@ -281,11 +332,14 @@ export async function POST(request: Request) {
     if (error?.code !== "23505") break;
   }
   if (!org) {
-    return NextResponse.json({ error: lastErr?.message ?? "Couldn't create org." }, { status: 400 });
+    return NextResponse.json(
+      { error: lastErr?.message ?? "Couldn't create org." },
+      { status: 400 }
+    );
   }
 
   const trimmedEmail = adminEmail.trim().toLowerCase();
-  const trimmedName  = adminDisplayName.trim();
+  const trimmedName = adminDisplayName.trim();
 
   // If the email is already in Supabase Auth, skip the invite and attach
   // the existing user to the new org as enterprise_admin. This is the
@@ -295,15 +349,15 @@ export async function POST(request: Request) {
   // up the org context via user_metadata so the email template can show
   // "You've been added to <Org>".
   const invite = await sendInvitationEmail(admin, {
-    email:       trimmedEmail,
+    email: trimmedEmail,
     displayName: trimmedName,
     metadata: {
-      role_label:        "enterprise_admin",
-      organization_id:   org.id,
-      org_name:          org.name,
-      enterprise_code:   org.enterprise_code,
+      role_label: "enterprise_admin",
+      organization_id: org.id,
+      org_name: org.name,
+      enterprise_code: org.enterprise_code,
       allocated_minutes: allocNum,
-      created_by:        actor.id,
+      created_by: actor.id,
     },
   });
   if (!invite.ok) {
@@ -315,15 +369,18 @@ export async function POST(request: Request) {
   let userId = invite.userId ?? null;
   if (!userId) {
     const lookup = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-    userId = lookup.data?.users?.find(
-      (u) => u.email?.toLowerCase() === trimmedEmail,
-    )?.id ?? null;
+    userId =
+      lookup.data?.users?.find((u) => u.email?.toLowerCase() === trimmedEmail)
+        ?.id ?? null;
   }
   if (!userId) {
     await admin.from("organizations").delete().eq("id", org.id);
     return NextResponse.json(
-      { error: "Admin invited but auth row not yet visible — try again in a moment." },
-      { status: 500 },
+      {
+        error:
+          "Admin invited but auth row not yet visible — try again in a moment.",
+      },
+      { status: 500 }
     );
   }
 
@@ -336,7 +393,10 @@ export async function POST(request: Request) {
   const enterpriseAdminRoleId = (roleRow as { id: string } | null)?.id;
   if (!enterpriseAdminRoleId) {
     await admin.from("organizations").delete().eq("id", org.id);
-    return NextResponse.json({ error: "enterprise_admin role not seeded" }, { status: 500 });
+    return NextResponse.json(
+      { error: "enterprise_admin role not seeded" },
+      { status: 500 }
+    );
   }
 
   // Don't clobber primary_role for existing users (a super_admin who
@@ -348,20 +408,21 @@ export async function POST(request: Request) {
     .select("full_name, primary_role_id")
     .eq("id", userId)
     .maybeSingle();
-  const cp = currentProfile as { full_name: string | null; primary_role_id: string | null } | null;
+  const cp = currentProfile as {
+    full_name: string | null;
+    primary_role_id: string | null;
+  } | null;
 
-  await admin
-    .from("profiles")
-    .upsert(
-      {
-        id:              userId,
-        full_name:       cp?.full_name?.trim() ? cp.full_name : trimmedName,
-        primary_role_id: cp?.primary_role_id ?? enterpriseAdminRoleId,
-        organization_id: org.id,
-        is_onboarded:    true,
-      },
-      { onConflict: "id" },
-    );
+  await admin.from("profiles").upsert(
+    {
+      id: userId,
+      full_name: cp?.full_name?.trim() ? cp.full_name : trimmedName,
+      primary_role_id: cp?.primary_role_id ?? enterpriseAdminRoleId,
+      organization_id: org.id,
+      is_onboarded: true,
+    },
+    { onConflict: "id" }
+  );
 
   const mode = invite.mode === "invited" ? "invited" : "attached_existing";
 
@@ -371,7 +432,7 @@ export async function POST(request: Request) {
     .from("user_roles")
     .upsert(
       { user_id: userId, role_id: enterpriseAdminRoleId },
-      { onConflict: "user_id,role_id", ignoreDuplicates: true },
+      { onConflict: "user_id,role_id", ignoreDuplicates: true }
     );
 
   // Initial minutes allocation. Organic enterprises (reseller_id=NULL)
@@ -384,7 +445,10 @@ export async function POST(request: Request) {
       _amount: allocNum,
     });
     if (tErr) {
-      console.warn("[admin/orgs] initial transfer_to_organization failed:", tErr.message);
+      console.warn(
+        "[admin/orgs] initial transfer_to_organization failed:",
+        tErr.message
+      );
     }
   }
 
@@ -394,31 +458,31 @@ export async function POST(request: Request) {
   if (resellerId && typeof resellerId === "string") {
     void notifyResellerClientOnboarded(admin, {
       resellerId,
-      enterpriseId:   org.id,
+      enterpriseId: org.id,
       enterpriseName: org.name,
-      actorUserId:    null,
+      actorUserId: null,
     });
   }
 
   console.log(
-    `[admin/orgs] created org "${name}" (code=${org.enterprise_code}) — ${mode} ${trimmedEmail}`,
+    `[admin/orgs] created org "${name}" (code=${org.enterprise_code}) — ${mode} ${trimmedEmail}`
   );
 
   return NextResponse.json({
     org: {
-      id:             org.id,
-      name:           org.name,
-      primaryDomain:  org.primary_domain,
-      status:         org.status,
+      id: org.id,
+      name: org.name,
+      primaryDomain: org.primary_domain,
+      status: org.status,
       enterpriseCode: org.enterprise_code,
-      createdAt:      org.created_at,
+      createdAt: org.created_at,
     },
     admin: {
-      id:          userId,
-      email:       trimmedEmail,
+      id: userId,
+      email: trimmedEmail,
       displayName: trimmedName,
     },
-    invited:          mode === "invited",
+    invited: mode === "invited",
     attachedExisting: mode === "attached_existing",
   });
 }
@@ -434,7 +498,11 @@ function randSegment(len: number): string {
 }
 
 function generateEnterpriseCode(orgName: string): string {
-  const slug = orgName.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8) || "ORG";
+  const slug =
+    orgName
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "")
+      .slice(0, 8) || "ORG";
   return `${slug}-${randSegment(4)}-${randSegment(4)}`;
 }
 
@@ -454,16 +522,16 @@ type AuthInfo = {
 function formatMember(
   p: Profile,
   authByUser: Map<string, AuthInfo>,
-  rolesByUser: Map<string, string[]>,
+  rolesByUser: Map<string, string[]>
 ) {
   const a = authByUser.get(p.id);
   return {
-    id:                  p.id,
-    email:               a?.email ?? "",
-    displayName:         p.full_name ?? "",
-    roles:               rolesByUser.get(p.id) ?? [],
-    primaryRole:         p.primary_role,
-    status:              (a?.banned ? "DEACTIVATED" : "ACTIVE") as "DEACTIVATED" | "ACTIVE",
+    id: p.id,
+    email: a?.email ?? "",
+    displayName: p.full_name ?? "",
+    roles: rolesByUser.get(p.id) ?? [],
+    primaryRole: p.primary_role,
+    status: (a?.banned ? "DEACTIVATED" : "ACTIVE") as "DEACTIVATED" | "ACTIVE",
     awaitingFirstSignIn: a?.awaitingFirstSignIn ?? false,
   };
 }
@@ -482,15 +550,15 @@ type DeptDbRow = {
 
 function formatDepartment(d: DeptDbRow, memberCount: number) {
   return {
-    id:                d.id,
-    name:              d.name,
-    departmentCode:    d.department_code,
-    adminUserId:       d.admin_user_id,
-    status:            d.status,
-    allocatedMinutes:  Number(d.allocated_minutes ?? 0),
-    usedMinutes:       Number(d.used_minutes ?? 0),
-    remainingMinutes:  Number(d.remaining_minutes ?? 0),
+    id: d.id,
+    name: d.name,
+    departmentCode: d.department_code,
+    adminUserId: d.admin_user_id,
+    status: d.status,
+    allocatedMinutes: Number(d.allocated_minutes ?? 0),
+    usedMinutes: Number(d.used_minutes ?? 0),
+    remainingMinutes: Number(d.remaining_minutes ?? 0),
     memberCount,
-    createdAt:         d.created_at,
+    createdAt: d.created_at,
   };
 }

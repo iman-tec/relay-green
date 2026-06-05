@@ -32,13 +32,21 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ENV_PATH = path.resolve(__dirname, "../.env.local");
 const env = Object.fromEntries(
   readFileSync(ENV_PATH, "utf8")
-    .split("\n").filter((l) => l.includes("=") && !l.startsWith("#"))
-    .map((l) => { const [k, ...r] = l.split("="); return [k.trim(), r.join("=").trim()]; })
+    .split("\n")
+    .filter((l) => l.includes("=") && !l.startsWith("#"))
+    .map((l) => {
+      const [k, ...r] = l.split("=");
+      return [k.trim(), r.join("=").trim()];
+    })
 );
 
-const sb = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
-  auth: { autoRefreshToken: false, persistSession: false },
-});
+const sb = createClient(
+  env.NEXT_PUBLIC_SUPABASE_URL,
+  env.SUPABASE_SERVICE_ROLE_KEY,
+  {
+    auth: { autoRefreshToken: false, persistSession: false },
+  }
+);
 
 // ────────────────────────────────────────────────────────────────────────
 // DEMO ACCOUNTS  ·  Same password for all, dev-only.
@@ -47,10 +55,34 @@ const sb = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_
 export const DEMO_PASSWORD = "RelayDev123!";
 
 const DEMO_USERS = [
-  { role: "engineer",   email: "dev.soni@thegatewaycorp.co.in", full_name: "Dev Soni",          primary_role: "engineer",         userRole: "engineer"         },
-  { role: "supervisor", email: "supervisor.demo@relay.test",    full_name: "Sam Supervisor",    primary_role: "supervisor",       userRole: "supervisor"       },
-  { role: "internal",   email: "admin.demo@relay.test",         full_name: "Iris Internal",     primary_role: "department_admin", userRole: "department_admin" },
-  { role: "enterprise", email: "enterprise.demo@relay.test",    full_name: "Eric Enterprise",   primary_role: "enterprise_admin", userRole: "enterprise_admin" },
+  {
+    role: "engineer",
+    email: "dev.soni@thegatewaycorp.co.in",
+    full_name: "Dev Soni",
+    primary_role: "engineer",
+    userRole: "engineer",
+  },
+  {
+    role: "supervisor",
+    email: "supervisor.demo@relay.test",
+    full_name: "Sam Supervisor",
+    primary_role: "supervisor",
+    userRole: "supervisor",
+  },
+  {
+    role: "internal",
+    email: "admin.demo@relay.test",
+    full_name: "Iris Internal",
+    primary_role: "department_admin",
+    userRole: "department_admin",
+  },
+  {
+    role: "enterprise",
+    email: "enterprise.demo@relay.test",
+    full_name: "Eric Enterprise",
+    primary_role: "enterprise_admin",
+    userRole: "enterprise_admin",
+  },
 ];
 const KEEP_EMAILS = DEMO_USERS.map((u) => u.email);
 
@@ -67,17 +99,29 @@ async function main() {
   // ── 1. Wipe transactional data (children first) ─────────────────────
   log(`${STEP} Wiping transactional data…`);
   const tables = [
-    "call_sessions", "request_messages", "requests", "request_reads",
-    "notifications", "guest_messages", "session_recalls", "session_audit_log",
-    "guest_calls", "guest_threads", "customer_entitlements",
-    "credit_transactions", "credit_wallets",
+    "call_sessions",
+    "request_messages",
+    "requests",
+    "request_reads",
+    "notifications",
+    "guest_messages",
+    "session_recalls",
+    "session_audit_log",
+    "guest_calls",
+    "guest_threads",
+    "customer_entitlements",
+    "credit_transactions",
+    "credit_wallets",
   ];
   for (const t of tables) {
     let q = sb.from(t).delete();
     if (t === "session_audit_log") q = q.gte("id", 0);
-    else if (t === "request_reads") q = q.neq("user_id", "00000000-0000-0000-0000-000000000000");
-    else if (t === "credit_wallets") q = q.neq("user_id", "00000000-0000-0000-0000-000000000000");
-    else if (t === "customer_entitlements") q = q.neq("customer_user_id", "00000000-0000-0000-0000-000000000000");
+    else if (t === "request_reads")
+      q = q.neq("user_id", "00000000-0000-0000-0000-000000000000");
+    else if (t === "credit_wallets")
+      q = q.neq("user_id", "00000000-0000-0000-0000-000000000000");
+    else if (t === "customer_entitlements")
+      q = q.neq("customer_user_id", "00000000-0000-0000-0000-000000000000");
     else q = q.neq("id", "00000000-0000-0000-0000-000000000000");
     const { error } = await q;
     if (error) log(`    ${WARN} ${t}: ${error.message}`);
@@ -97,14 +141,19 @@ async function main() {
       await sb.from("profiles").delete().eq("id", u.id);
       const { error } = await sb.auth.admin.deleteUser(u.id, false);
       if (error) log(`    ${WARN} ${u.email}: ${error.message}`);
-      else { log(`    ${PASS} removed ${u.email}`); removed++; }
+      else {
+        log(`    ${PASS} removed ${u.email}`);
+        removed++;
+      }
     }
   }
   log(`    ${removed} removed`);
 
   // ── 3. Load roles lookup so we can write role_id / primary_role_id ─
   log(`\n${STEP} Loading roles lookup…`);
-  const { data: roleRows, error: rolesErr } = await sb.from("roles").select("id, name");
+  const { data: roleRows, error: rolesErr } = await sb
+    .from("roles")
+    .select("id, name");
   if (rolesErr) {
     log(`    ${WARN} couldn't load roles lookup: ${rolesErr.message}`);
     log(`    ${WARN} did you apply 20260521120000_roles_lookup_fk.sql?`);
@@ -146,7 +195,9 @@ async function main() {
     // Profile
     const primaryRoleId = roleIds.get(u.primary_role);
     if (!primaryRoleId) {
-      log(`    ${WARN} unknown primary role "${u.primary_role}" for ${u.email}, skipping profile upsert`);
+      log(
+        `    ${WARN} unknown primary role "${u.primary_role}" for ${u.email}, skipping profile upsert`
+      );
       continue;
     }
     await sb.from("profiles").upsert({
@@ -160,29 +211,43 @@ async function main() {
     if (u.userRole) {
       const roleId = roleIds.get(u.userRole);
       if (!roleId) {
-        log(`    ${WARN} unknown role "${u.userRole}" for ${u.email}, skipping role grant`);
+        log(
+          `    ${WARN} unknown role "${u.userRole}" for ${u.email}, skipping role grant`
+        );
         continue;
       }
-      await sb.from("user_roles").upsert(
-        { user_id: userId, role_id: roleId },
-        { onConflict: "user_id,role_id" },
-      );
+      await sb
+        .from("user_roles")
+        .upsert(
+          { user_id: userId, role_id: roleId },
+          { onConflict: "user_id,role_id" }
+        );
     }
   }
 
   // ── 5. Final state ──────────────────────────────────────────────────
   log(`\n${STEP} Final state:`);
-  const { data: users } = await sb.auth.admin.listUsers({ page: 1, perPage: 200 });
+  const { data: users } = await sb.auth.admin.listUsers({
+    page: 1,
+    perPage: 200,
+  });
   log(`  Auth users: ${users?.users?.length ?? 0}`);
-  for (const u of (users?.users ?? [])) log(`    · ${u.email}`);
-  const { data: roles } = await sb.from("user_role_names").select("role, user_id");
+  for (const u of users?.users ?? []) log(`    · ${u.email}`);
+  const { data: roles } = await sb
+    .from("user_role_names")
+    .select("role, user_id");
   log(`  user_roles: ${roles?.length ?? 0}`);
-  for (const r of (roles ?? [])) log(`    · ${r.role} → ${r.user_id.slice(0, 8)}…`);
+  for (const r of roles ?? [])
+    log(`    · ${r.role} → ${r.user_id.slice(0, 8)}…`);
 
   log(`\n\x1b[32mReady.\x1b[0m  One-click staff sign-in:`);
-  log(`  https://10.0.1.207:3000/staff/login    → \x1b[36mEngineer / Supervisor / Internal / Enterprise\x1b[0m`);
+  log(
+    `  https://10.0.1.207:3000/staff/login    → \x1b[36mEngineer / Supervisor / Internal / Enterprise\x1b[0m`
+  );
   log(``);
-  log(`  Customer sign-in goes through real OTP at https://10.0.1.207:3000/login`);
+  log(
+    `  Customer sign-in goes through real OTP at https://10.0.1.207:3000/login`
+  );
   log(``);
   log(`  Or hit the API directly:`);
   log(`    /api/dev/sign-in-as?role=engineer    → engineer dashboard`);

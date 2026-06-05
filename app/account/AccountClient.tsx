@@ -21,17 +21,39 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft, Building2, Camera, Check, CreditCard, KeyRound, Loader2, Mail,
-  ShieldCheck, Trash2, Wallet,
+  ArrowLeft,
+  Building2,
+  Camera,
+  Check,
+  CreditCard,
+  KeyRound,
+  Loader2,
+  Mail,
+  ShieldCheck,
+  Trash2,
+  Wallet,
 } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
 import {
-  Avatar, Button, Card, CardBody, CardHeader, Chip, ChipGroup, Input, Toast, cn,
+  Avatar,
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  Chip,
+  ChipGroup,
+  Input,
+  Toast,
+  cn,
 } from "@/app/_components/ui";
 import { PaywallModal } from "@/app/_components/PaywallModal";
 import { GuestUpgradeForm } from "@/app/_components/GuestUpgradeForm";
 import { createClient } from "@/lib/supabase/browser";
-import { patchProfile, readProfile, type TechComfort } from "@/lib/relay/profile";
+import {
+  patchProfile,
+  readProfile,
+  type TechComfort,
+} from "@/lib/relay/profile";
 import {
   AVATAR_INPUT_ACCEPT,
   FIELD_OF_INTEREST_OPTIONS,
@@ -116,9 +138,15 @@ export function AccountClient() {
         return;
       }
       setIsGuest(Boolean(data.user.is_anonymous) || !data.user.email);
-      setAuth({ kind: "authed", userId: data.user.id, email: data.user.email ?? "" });
+      setAuth({
+        kind: "authed",
+        userId: data.user.id,
+        email: data.user.email ?? "",
+      });
     });
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [router]);
 
   // ── Load the profile row (+ seed expertise from intake / localStorage) ─────
@@ -139,7 +167,8 @@ export function AccountClient() {
       const profile = (row as CustomerProfileRow | null) ?? null;
 
       // Resolve the read-only expertise: profile row → latest intake → local.
-      let resolvedExpertise: TechComfort | null = profile?.technical_expertise ?? null;
+      let resolvedExpertise: TechComfort | null =
+        profile?.technical_expertise ?? null;
       if (!resolvedExpertise) {
         const { data: intake } = await sb
           .from("client_intakes")
@@ -149,7 +178,9 @@ export function AccountClient() {
           .limit(1)
           .maybeSingle();
         resolvedExpertise =
-          techComfortFromFamiliarity((intake as { familiarity?: string } | null)?.familiarity) ??
+          techComfortFromFamiliarity(
+            (intake as { familiarity?: string } | null)?.familiarity
+          ) ??
           local.techComfort ??
           null;
       }
@@ -159,11 +190,14 @@ export function AccountClient() {
       // Standard pills vs. a free-text value get split into pills + "Other".
       const stored = profile?.fields_of_interest ?? [];
       const known = stored.filter((s) =>
-        (FIELD_OF_INTEREST_OPTIONS as readonly string[]).includes(s),
+        (FIELD_OF_INTEREST_OPTIONS as readonly string[]).includes(s)
       );
-      const customOther = profile?.interest_other ?? stored.find((s) =>
-        !(FIELD_OF_INTEREST_OPTIONS as readonly string[]).includes(s),
-      ) ?? "";
+      const customOther =
+        profile?.interest_other ??
+        stored.find(
+          (s) => !(FIELD_OF_INTEREST_OPTIONS as readonly string[]).includes(s)
+        ) ??
+        "";
 
       setName(profile?.display_name ?? "");
       setInterests(known);
@@ -175,14 +209,18 @@ export function AccountClient() {
       // Durably backfill expertise the very first time we derive it, so Q1
       // truly is "stored permanently, never asked again".
       if (resolvedExpertise && !profile?.technical_expertise) {
-        void sb.from("customer_profiles").upsert(
-          { user_id: auth.userId, technical_expertise: resolvedExpertise },
-          { onConflict: "user_id" },
-        );
+        void sb
+          .from("customer_profiles")
+          .upsert(
+            { user_id: auth.userId, technical_expertise: resolvedExpertise },
+            { onConflict: "user_id" }
+          );
       }
     })();
 
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [auth]);
 
   // Load wallet balance + free status + employment for the Wallet section
@@ -193,37 +231,60 @@ export function AccountClient() {
     let alive = true;
     (async () => {
       const [walletRes, entRes, emp] = await Promise.all([
-        sb.from("credit_wallets").select("balance").eq("user_id", auth.userId).maybeSingle(),
-        sb.from("customer_entitlements").select("free_session_consumed_at").eq("customer_user_id", auth.userId).maybeSingle(),
+        sb
+          .from("credit_wallets")
+          .select("balance")
+          .eq("user_id", auth.userId)
+          .maybeSingle(),
+        sb
+          .from("customer_entitlements")
+          .select("free_session_consumed_at")
+          .eq("customer_user_id", auth.userId)
+          .maybeSingle(),
         fetch("/api/customer/me-employment", { cache: "no-store" })
           .then((r) => (r.ok ? r.json() : { isEmployee: false }))
           .catch(() => ({ isEmployee: false })) as Promise<EmployeeInfo>,
       ]);
       if (!alive) return;
       setWallet({
-        paidMinutes: Number((walletRes.data as { balance?: number } | null)?.balance ?? 0),
-        freeConsumed: Boolean((entRes.data as { free_session_consumed_at?: string | null } | null)?.free_session_consumed_at),
+        paidMinutes: Number(
+          (walletRes.data as { balance?: number } | null)?.balance ?? 0
+        ),
+        freeConsumed: Boolean(
+          (entRes.data as { free_session_consumed_at?: string | null } | null)
+            ?.free_session_consumed_at
+        ),
         employment: emp,
       });
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [auth]);
 
   // Revoke the object URL when the staged file changes / unmounts.
   useEffect(() => {
-    return () => { if (previewUrl) URL.revokeObjectURL(previewUrl); };
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
   }, [previewUrl]);
 
-  const onPickFile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // allow re-picking the same file
-    if (!file) return;
-    const v = validateAvatar(file);
-    if (!v.ok) { showBanner({ tone: "risk", text: v.error }); return; }
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setStagedFile(file);
-    setPreviewUrl(URL.createObjectURL(file));
-  }, [previewUrl, showBanner]);
+  const onPickFile = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = ""; // allow re-picking the same file
+      if (!file) return;
+      const v = validateAvatar(file);
+      if (!v.ok) {
+        showBanner({ tone: "risk", text: v.error });
+        return;
+      }
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setStagedFile(file);
+      setPreviewUrl(URL.createObjectURL(file));
+    },
+    [previewUrl, showBanner]
+  );
 
   const clearStaged = useCallback(() => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -233,9 +294,10 @@ export function AccountClient() {
 
   const interestsSelected = useMemo(() => {
     const base = interests.filter((i) => i !== OTHER);
-    const other = interests.includes(OTHER) && interestOther.trim()
-      ? [interestOther.trim()]
-      : [];
+    const other =
+      interests.includes(OTHER) && interestOther.trim()
+        ? [interestOther.trim()]
+        : [];
     return [...base, ...other];
   }, [interests, interestOther]);
 
@@ -252,21 +314,31 @@ export function AccountClient() {
       // Upload a freshly-staged avatar under <user_id>/… then resolve its
       // public URL (the bucket is public, so no signing needed).
       if (stagedFile) {
-        const ext = stagedFile.type === "image/png" ? "png"
-          : stagedFile.type === "image/webp" ? "webp" : "jpg";
+        const ext =
+          stagedFile.type === "image/png"
+            ? "png"
+            : stagedFile.type === "image/webp"
+              ? "webp"
+              : "jpg";
         const path = `${auth.userId}/avatar-${Date.now()}.${ext}`;
         const { error: upErr } = await sb.storage
           .from("avatars")
-          .upload(path, stagedFile, { upsert: true, contentType: stagedFile.type });
+          .upload(path, stagedFile, {
+            upsert: true,
+            contentType: stagedFile.type,
+          });
         if (upErr) throw new Error(`Photo upload failed: ${upErr.message}`);
-        nextAvatarUrl = sb.storage.from("avatars").getPublicUrl(path).data.publicUrl;
+        nextAvatarUrl = sb.storage.from("avatars").getPublicUrl(path)
+          .data.publicUrl;
       }
 
       const payload = {
         user_id: auth.userId,
         display_name: name.trim() || null,
         fields_of_interest: interests.filter((i) => i !== OTHER),
-        interest_other: interests.includes(OTHER) ? interestOther.trim() || null : null,
+        interest_other: interests.includes(OTHER)
+          ? interestOther.trim() || null
+          : null,
         avatar_url: nextAvatarUrl,
         ...(expertise ? { technical_expertise: expertise } : {}),
       };
@@ -283,11 +355,24 @@ export function AccountClient() {
       clearStaged();
       showBanner({ tone: "ok", text: "Profile saved." });
     } catch (err) {
-      showBanner({ tone: "risk", text: err instanceof Error ? err.message : "Could not save profile." });
+      showBanner({
+        tone: "risk",
+        text: err instanceof Error ? err.message : "Could not save profile.",
+      });
     } finally {
       setSaving(false);
     }
-  }, [auth, avatarUrl, stagedFile, name, interests, interestOther, expertise, clearStaged, showBanner]);
+  }, [
+    auth,
+    avatarUrl,
+    stagedFile,
+    name,
+    interests,
+    interestOther,
+    expertise,
+    clearStaged,
+    showBanner,
+  ]);
 
   // ── Reset password ────────────────────────────────────────────────────────
   const onResetPassword = useCallback(async () => {
@@ -296,11 +381,20 @@ export function AccountClient() {
     setBanner(null);
     try {
       const redirectTo = `${window.location.origin}/set-password?mode=customer`;
-      const { error } = await sbRef.current.auth.resetPasswordForEmail(auth.email, { redirectTo });
+      const { error } = await sbRef.current.auth.resetPasswordForEmail(
+        auth.email,
+        { redirectTo }
+      );
       if (error) throw new Error(error.message);
-      showBanner({ tone: "ok", text: `We've sent a password reset link to ${auth.email}.` });
+      showBanner({
+        tone: "ok",
+        text: `We've sent a password reset link to ${auth.email}.`,
+      });
     } catch (err) {
-      showBanner({ tone: "risk", text: err instanceof Error ? err.message : "Could not send reset link." });
+      showBanner({
+        tone: "risk",
+        text: err instanceof Error ? err.message : "Could not send reset link.",
+      });
     } finally {
       setResetting(false);
     }
@@ -353,7 +447,13 @@ export function AccountClient() {
           <CardBody className="flex flex-col gap-6">
             {/* Avatar */}
             <div className="flex items-center gap-4">
-              <Avatar src={shownAvatar} name={name} email={email} size="lg" tone="brand" />
+              <Avatar
+                src={shownAvatar}
+                name={name}
+                email={email}
+                size="lg"
+                tone="brand"
+              />
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-2">
                   <Button
@@ -378,7 +478,9 @@ export function AccountClient() {
                 <p className="text-xs text-[var(--text-muted)]">
                   JPG, PNG, or WebP · up to 2 MB
                   {stagedFile && (
-                    <span className="ml-1 text-[var(--primary)]">· preview shown, not yet saved</span>
+                    <span className="ml-1 text-[var(--primary)]">
+                      · preview shown, not yet saved
+                    </span>
                   )}
                 </p>
                 <input
@@ -410,28 +512,39 @@ export function AccountClient() {
                   onUpgraded={(em) => {
                     setIsGuest(false);
                     setAuth((a) =>
-                      a.kind === "authed" ? { ...a, email: em } : a,
+                      a.kind === "authed" ? { ...a, email: em } : a
                     );
-                    showBanner({ tone: "ok", text: "Account created — you're all set." });
+                    showBanner({
+                      tone: "ok",
+                      text: "Account created — you're all set.",
+                    });
                   }}
                 />
               </div>
             ) : (
               <div className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium text-[var(--text)]">Email address</span>
+                <span className="text-sm font-medium text-[var(--text)]">
+                  Email address
+                </span>
                 <div className="flex h-11 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] px-3.5 text-[15px] text-[var(--text-muted)]">
                   <Mail className="size-4 shrink-0" />
                   <span className="truncate">{email || "—"}</span>
                 </div>
-                <p className="text-xs text-[var(--text-muted)]">Email can&apos;t be changed.</p>
+                <p className="text-xs text-[var(--text-muted)]">
+                  Email can&apos;t be changed.
+                </p>
               </div>
             )}
 
             {/* Technical expertise — read-only, from Q1 */}
             <div className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium text-[var(--text)]">Level of technical expertise</span>
+              <span className="text-sm font-medium text-[var(--text)]">
+                Level of technical expertise
+              </span>
               <div>
-                <Chip static active={!!expertise}>{techComfortLabel(expertise)}</Chip>
+                <Chip static active={!!expertise}>
+                  {techComfortLabel(expertise)}
+                </Chip>
               </div>
               <p className="text-xs text-[var(--text-muted)]">
                 Set from your first intake and used to right-size every session.
@@ -456,15 +569,20 @@ export function AccountClient() {
                   <Building2 className="size-5" />
                 </span>
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-[var(--text)]">Enterprise plan</p>
+                  <p className="text-sm font-medium text-[var(--text)]">
+                    Enterprise plan
+                  </p>
                   <p className="text-sm text-[var(--text-muted)]">
                     {wallet.employment.remainingMinutes > 0
                       ? `${Math.round(wallet.employment.remainingMinutes).toLocaleString()} min available`
                       : "Out of credits"}
-                    {wallet.employment.departmentName ? ` · ${wallet.employment.departmentName}` : ""}
+                    {wallet.employment.departmentName
+                      ? ` · ${wallet.employment.departmentName}`
+                      : ""}
                   </p>
                   <p className="mt-0.5 text-xs text-[var(--text-faint)]">
-                    {wallet.employment.enterpriseName} — minutes are managed by your organization.
+                    {wallet.employment.enterpriseName} — minutes are managed by
+                    your organization.
                   </p>
                 </div>
               </div>
@@ -502,7 +620,9 @@ export function AccountClient() {
         {/* ── Professional background ─────────────────────────────────────── */}
         <Card>
           <CardHeader>
-            <h2 className="font-serif text-lg text-[var(--text)]">Field of interest</h2>
+            <h2 className="font-serif text-lg text-[var(--text)]">
+              Field of interest
+            </h2>
           </CardHeader>
           <CardBody className="flex flex-col gap-4">
             <p className="text-sm text-[var(--text-muted)]">
@@ -537,7 +657,9 @@ export function AccountClient() {
                 <ShieldCheck className="size-5" />
               </span>
               <div className="flex-1">
-                <p className="text-sm font-medium text-[var(--text)]">Password</p>
+                <p className="text-sm font-medium text-[var(--text)]">
+                  Password
+                </p>
                 <p className="text-sm text-[var(--text-muted)]">
                   We&apos;ll email a secure link to set a new password.
                 </p>
@@ -555,10 +677,12 @@ export function AccountClient() {
         </Card>
 
         {/* ── Save bar ────────────────────────────────────────────────────── */}
-        <div className={cn(
-          "sticky bottom-4 flex items-center justify-between gap-3 rounded-2xl border border-[var(--border)]",
-          "bg-[var(--surface)]/95 px-5 py-3 shadow-lg backdrop-blur",
-        )}>
+        <div
+          className={cn(
+            "sticky bottom-4 flex items-center justify-between gap-3 rounded-2xl border border-[var(--border)]",
+            "bg-[var(--surface)]/95 px-5 py-3 shadow-lg backdrop-blur"
+          )}
+        >
           <p className="text-xs text-[var(--text-muted)]">
             {interestsSelected.length > 0
               ? `${interestsSelected.length} interest${interestsSelected.length === 1 ? "" : "s"} selected`

@@ -20,7 +20,11 @@ import { Loader2, Wifi } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import { Button, Modal, cn } from "@/app/_components/ui";
 
-export function SupervisorAvailabilityToggle({ className }: { className?: string }) {
+export function SupervisorAvailabilityToggle({
+  className,
+}: {
+  className?: string;
+}) {
   const sbRef = useRef(createClient());
   const [online, setOnline] = useState<boolean | null>(null); // null = loading
   const [saving, setSaving] = useState(false);
@@ -31,7 +35,9 @@ export function SupervisorAvailabilityToggle({ className }: { className?: string
     const sb = sbRef.current;
     let alive = true;
     (async () => {
-      const { data: { user } } = await sb.auth.getUser();
+      const {
+        data: { user },
+      } = await sb.auth.getUser();
       if (!user) return;
       const { data } = await sb
         .from("supervisor_presence")
@@ -51,7 +57,9 @@ export function SupervisorAvailabilityToggle({ className }: { className?: string
         setPromptOpen(true);
       }
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, []);
 
   const toggle = useCallback(async () => {
@@ -60,13 +68,17 @@ export function SupervisorAvailabilityToggle({ className }: { className?: string
     setOnline(next); // optimistic
     setSaving(true);
     setError(null);
-    const { error: e } = await sbRef.current.rpc("supervisor_set_online", { _online: next });
+    const { error: e } = await sbRef.current.rpc("supervisor_set_online", {
+      _online: next,
+    });
     setSaving(false);
     if (e) {
       setOnline(!next); // revert
-      setError(e.message.includes("NOT_A_SUPERVISOR")
-        ? "Supervisor access only."
-        : "Couldn't update status.");
+      setError(
+        e.message.includes("NOT_A_SUPERVISOR")
+          ? "Supervisor access only."
+          : "Couldn't update status."
+      );
       setTimeout(() => setError(null), 4000);
     }
   }, [online, saving]);
@@ -82,13 +94,17 @@ export function SupervisorAvailabilityToggle({ className }: { className?: string
           disabled={online === null || saving}
           role="switch"
           aria-checked={isOnline}
-          aria-label={isOnline ? "You're online — tap to go offline" : "You're offline — tap to go online"}
+          aria-label={
+            isOnline
+              ? "You're online — tap to go offline"
+              : "You're offline — tap to go online"
+          }
           className={cn(
             "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors",
             "disabled:cursor-not-allowed disabled:opacity-60",
             isOnline
               ? "border-[color-mix(in_srgb,var(--primary)_40%,transparent)] bg-[var(--primary-soft)] text-[var(--text)]"
-              : "border-[var(--border)] bg-[var(--surface)] text-[var(--text-muted)]",
+              : "border-[var(--border)] bg-[var(--surface)] text-[var(--text-muted)]"
           )}
         >
           {saving ? (
@@ -98,13 +114,15 @@ export function SupervisorAvailabilityToggle({ className }: { className?: string
               aria-hidden
               className={cn(
                 "inline-block size-2.5 rounded-full",
-                isOnline ? "bg-[var(--primary)]" : "bg-[var(--text-faint)]",
+                isOnline ? "bg-[var(--primary)]" : "bg-[var(--text-faint)]"
               )}
             />
           )}
           {online === null ? "…" : isOnline ? "On duty" : "Off duty"}
         </button>
-        {error && <span className="text-[11px] text-[var(--risk)]">{error}</span>}
+        {error && (
+          <span className="text-[11px] text-[var(--risk)]">{error}</span>
+        )}
       </div>
 
       <Modal
@@ -119,7 +137,13 @@ export function SupervisorAvailabilityToggle({ className }: { className?: string
         footer={
           isOnline ? (
             <>
-              <Button variant="ghost" onClick={() => { setPromptOpen(false); void toggle(); }}>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setPromptOpen(false);
+                  void toggle();
+                }}
+              >
                 Go off duty
               </Button>
               <Button variant="primary" onClick={() => setPromptOpen(false)}>
@@ -134,7 +158,10 @@ export function SupervisorAvailabilityToggle({ className }: { className?: string
               <Button
                 variant="primary"
                 iconLeft={<Wifi className="size-4" />}
-                onClick={() => { setPromptOpen(false); void toggle(); }}
+                onClick={() => {
+                  setPromptOpen(false);
+                  void toggle();
+                }}
               >
                 Go on duty
               </Button>

@@ -17,6 +17,7 @@
  */
 
 import { useSearchParams } from "next/navigation";
+import { NotificationBell } from "@/app/_components/admin-v2/NotificationBell";
 import { PanelHeader, useFirstName } from "./_kit";
 import { OverviewTab, type OverviewView } from "./OverviewTab";
 import { UsageTab } from "./UsageTab";
@@ -57,6 +58,9 @@ export function PanelClient({ me }: { me: { email: string; roleLabel: string } }
       <PanelHeader
         name={firstName}
         subtitle={`Enterprise console · ${me.roleLabel}`}
+        rightSlot={
+          <NotificationBell endpoint="/api/enterprise/notifications" channelKey="enterprise" />
+        }
       />
       <div className="min-h-0 flex-1 overflow-hidden">
         {active === "overview" && <OverviewTab initialView={initial.view} />}

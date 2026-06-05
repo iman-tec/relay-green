@@ -17,22 +17,38 @@ import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 export async function GET() {
   const supabase = await createServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
-  const { data: roleRows } = await supabase.from("user_role_names").select("role").eq("user_id", user.id);
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user)
+    return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
+  const { data: roleRows } = await supabase
+    .from("user_role_names")
+    .select("role")
+    .eq("user_id", user.id);
   const roles = (roleRows ?? []).map((r: { role: string }) => r.role);
-  if (!roles.some((r) => [ROLE.engineer, ROLE.supervisor, ROLE.super_admin].includes(r as never))) {
+  if (
+    !roles.some((r) =>
+      [ROLE.engineer, ROLE.supervisor, ROLE.super_admin].includes(r as never)
+    )
+  ) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return NextResponse.json({ error: "service_role_not_configured" }, { status: 500 });
-  const admin = createAdminClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+  if (!url || !key)
+    return NextResponse.json(
+      { error: "service_role_not_configured" },
+      { status: 500 }
+    );
+  const admin = createAdminClient(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 
   // 'committed' joins 'pending' + 'quoted' here so the engineer-side
   // inbox can render an "Accepted bid" filter chip with its own count —
@@ -40,15 +56,28 @@ export async function GET() {
   // record-of-work even though no further action is required.
   const { data: rows } = await admin
     .from("project_quote_requests")
-    .select("id, kind, status, comments, created_at, responded_at, project_id, customer_user_id, quote_amount_cents, bid_scope, bid_timeline, bid_validity_until, terms_url, appointment_requested_at, appointment_note")
+    .select(
+      "id, kind, status, comments, created_at, responded_at, project_id, customer_user_id, quote_amount_cents, bid_scope, bid_timeline, bid_validity_until, terms_url, appointment_requested_at, appointment_note"
+    )
     .in("status", ["pending", "pending_review", "quoted", "committed"])
     .order("created_at", { ascending: false })
     .limit(100);
   const qs = (rows ?? []) as {
-    id: string; kind: string; status: string; comments: string | null; created_at: string; responded_at: string | null;
-    project_id: string; customer_user_id: string; quote_amount_cents: number | null;
-    bid_scope: string | null; bid_timeline: string | null; bid_validity_until: string | null; terms_url: string | null;
-    appointment_requested_at: string | null; appointment_note: string | null;
+    id: string;
+    kind: string;
+    status: string;
+    comments: string | null;
+    created_at: string;
+    responded_at: string | null;
+    project_id: string;
+    customer_user_id: string;
+    quote_amount_cents: number | null;
+    bid_scope: string | null;
+    bid_timeline: string | null;
+    bid_validity_until: string | null;
+    terms_url: string | null;
+    appointment_requested_at: string | null;
+    appointment_note: string | null;
   }[];
   if (qs.length === 0) return NextResponse.json({ requests: [] });
 
@@ -59,9 +88,11 @@ export async function GET() {
     admin.from("projects").select("id, name").in("id", projIds),
   ]);
   const nameById = new Map<string, string>();
-  for (const p of (profs ?? []) as { id: string; full_name: string | null }[]) if (p.full_name) nameById.set(p.id, p.full_name);
+  for (const p of (profs ?? []) as { id: string; full_name: string | null }[])
+    if (p.full_name) nameById.set(p.id, p.full_name);
   const projById = new Map<string, string>();
-  for (const p of (projs ?? []) as { id: string; name: string | null }[]) if (p.name) projById.set(p.id, p.name);
+  for (const p of (projs ?? []) as { id: string; name: string | null }[])
+    if (p.name) projById.set(p.id, p.name);
 
   return NextResponse.json({
     requests: qs.map((q) => ({

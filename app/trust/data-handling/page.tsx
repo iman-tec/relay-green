@@ -69,7 +69,7 @@ export default function TrustDataHandlingPage() {
 
       <section className="r-section">
         <div className="r-wrap-narrow">
-            {STAGES.map((s, i) => (
+          {STAGES.map((s, i) => (
             <div
               key={s.num}
               style={{

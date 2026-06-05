@@ -18,16 +18,17 @@ import { requireSuperAdmin } from "@/lib/admin-auth";
 import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 const POD_ROLE_TO_USER_ROLE: Record<string, string> = {
   supervisor: ROLE.supervisor,
-  engineer:   ROLE.engineer,
+  engineer: ROLE.engineer,
 };
 
 export async function GET(request: Request) {
   const gate = await requireSuperAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin } = gate;
 
   const url = new URL(request.url);
@@ -36,7 +37,7 @@ export async function GET(request: Request) {
   if (!userRole) {
     return NextResponse.json(
       { error: "role param must be 'supervisor' or 'engineer'." },
-      { status: 400 },
+      { status: 400 }
     );
   }
 
@@ -45,7 +46,8 @@ export async function GET(request: Request) {
     .from("user_role_names")
     .select("user_id")
     .eq("role", userRole);
-  if (roleErr) return NextResponse.json({ error: roleErr.message }, { status: 500 });
+  if (roleErr)
+    return NextResponse.json({ error: roleErr.message }, { status: 500 });
 
   const candidateIds = [...new Set((roleRows ?? []).map((r) => r.user_id))];
   if (candidateIds.length === 0) return NextResponse.json({ users: [] });
@@ -67,18 +69,22 @@ export async function GET(request: Request) {
   ]);
 
   const profileMap = new Map<string, string>();
-  for (const p of (profiles ?? []) as { id: string; full_name: string | null }[]) {
+  for (const p of (profiles ?? []) as {
+    id: string;
+    full_name: string | null;
+  }[]) {
     if (p.full_name) profileMap.set(p.id, p.full_name);
   }
   const authMap = new Map<string, { email: string }>();
   for (const u of authPage?.users ?? []) {
-    if (availableIds.includes(u.id)) authMap.set(u.id, { email: u.email ?? "" });
+    if (availableIds.includes(u.id))
+      authMap.set(u.id, { email: u.email ?? "" });
   }
 
   return NextResponse.json({
     users: availableIds.map((id) => ({
       id,
-      email:       authMap.get(id)?.email ?? "",
+      email: authMap.get(id)?.email ?? "",
       displayName: profileMap.get(id) ?? "",
     })),
   });

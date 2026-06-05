@@ -35,7 +35,11 @@ type DashStats = {
 };
 function useDashboardStats(): DashStats {
   const [stats, setStats] = useState<DashStats>({
-    callsTaken: 0, uniqueCustomers: 0, goliveDone: 0, goliveActive: 0, maintaining: 0,
+    callsTaken: 0,
+    uniqueCustomers: 0,
+    goliveDone: 0,
+    goliveActive: 0,
+    maintaining: 0,
   });
   useEffect(() => {
     let alive = true;
@@ -55,12 +59,17 @@ function useDashboardStats(): DashStats {
         // distinct-by-project (sets, not counts).
         const { data, error } = await sb
           .from("guest_calls")
-          .select("project_id, created_at, status, customer_user_id, projects(contract_type, completion_status)")
+          .select(
+            "project_id, created_at, status, customer_user_id, projects(contract_type, completion_status)"
+          )
           .eq("claimed_by", me);
         if (!alive) return;
         if (error) return; // schema not yet migrated — fail silent
 
-        type Embed = { contract_type: string | null; completion_status: string | null };
+        type Embed = {
+          contract_type: string | null;
+          completion_status: string | null;
+        };
         type Row = {
           project_id: string | null;
           created_at: string;
@@ -77,27 +86,36 @@ function useDashboardStats(): DashStats {
         const maintaining = new Set<string>();
 
         for (const r of rows) {
-          if (r.status === "ended" && new Date(r.created_at) >= monthStart) callsTaken++;
+          if (r.status === "ended" && new Date(r.created_at) >= monthStart)
+            callsTaken++;
           if (r.customer_user_id) customers.add(r.customer_user_id);
           if (!r.project_id) continue;
           const p = Array.isArray(r.projects) ? r.projects[0] : r.projects;
           const ct = p?.contract_type;
           const cs = p?.completion_status;
-          if (ct === "golive" && (cs === "completed" || cs === "archived")) goliveDone.add(r.project_id);
-          if (ct === "golive" && cs === "active") goliveActive.add(r.project_id);
-          if (ct === "maintain" && cs === "active") maintaining.add(r.project_id);
+          if (ct === "golive" && (cs === "completed" || cs === "archived"))
+            goliveDone.add(r.project_id);
+          if (ct === "golive" && cs === "active")
+            goliveActive.add(r.project_id);
+          if (ct === "maintain" && cs === "active")
+            maintaining.add(r.project_id);
         }
 
-        if (alive) setStats({
-          callsTaken,
-          uniqueCustomers: customers.size,
-          goliveDone: goliveDone.size,
-          goliveActive: goliveActive.size,
-          maintaining: maintaining.size,
-        });
-      } catch { /* silent */ }
+        if (alive)
+          setStats({
+            callsTaken,
+            uniqueCustomers: customers.size,
+            goliveDone: goliveDone.size,
+            goliveActive: goliveActive.size,
+            maintaining: maintaining.size,
+          });
+      } catch {
+        /* silent */
+      }
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, []);
   return stats;
 }
@@ -140,77 +158,103 @@ export function DashboardClient() {
   // chose YOU (request or scheduled slot) outranks the anonymous queue.
   // Both lists realtime-sync so the engineer doesn't need to refresh.
   const sbRef = useRef(createClient());
-  const [incomingRequests, setIncomingRequests] = useState<IncomingRequest[]>([]);
-  const [incomingBookings, setIncomingBookings] = useState<IncomingBooking[]>([]);
+  const [incomingRequests, setIncomingRequests] = useState<IncomingRequest[]>(
+    []
+  );
+  const [incomingBookings, setIncomingBookings] = useState<IncomingBooking[]>(
+    []
+  );
   const [actionBusyId, setActionBusyId] = useState<string | null>(null);
 
   // Lookup helpers used to enrich the raw rows with customer / project
   // names. Pulled inline rather than via foreign-key embed because the
   // existing schema doesn't have an FK that PostgREST resolves to
   // customer_profiles cleanly.
-  const enrichRequest = useCallback(async (row: {
-    id: string;
-    customer_user_id: string;
-    project_id: string | null;
-    message: string | null;
-    created_at: string;
-  }): Promise<IncomingRequest> => {
-    const sb = sbRef.current;
-    const [custRes, projRes] = await Promise.all([
-      sb.from("customer_profiles")
-        .select("display_name, email")
-        .eq("user_id", row.customer_user_id)
-        .maybeSingle(),
-      row.project_id
-        ? sb.from("projects").select("name").eq("id", row.project_id).maybeSingle()
-        : Promise.resolve({ data: null }),
-    ]);
-    const cust = (custRes.data ?? null) as { display_name: string | null; email: string | null } | null;
-    const proj = (projRes.data ?? null) as { name: string | null } | null;
-    return {
-      id: row.id,
-      customerUserId: row.customer_user_id,
-      projectId: row.project_id,
-      message: row.message,
-      createdAt: row.created_at,
-      customerName: cust?.display_name ?? null,
-      customerEmail: cust?.email ?? null,
-      projectName: proj?.name ?? null,
-    };
-  }, []);
+  const enrichRequest = useCallback(
+    async (row: {
+      id: string;
+      customer_user_id: string;
+      project_id: string | null;
+      message: string | null;
+      created_at: string;
+    }): Promise<IncomingRequest> => {
+      const sb = sbRef.current;
+      const [custRes, projRes] = await Promise.all([
+        sb
+          .from("customer_profiles")
+          .select("display_name, email")
+          .eq("user_id", row.customer_user_id)
+          .maybeSingle(),
+        row.project_id
+          ? sb
+              .from("projects")
+              .select("name")
+              .eq("id", row.project_id)
+              .maybeSingle()
+          : Promise.resolve({ data: null }),
+      ]);
+      const cust = (custRes.data ?? null) as {
+        display_name: string | null;
+        email: string | null;
+      } | null;
+      const proj = (projRes.data ?? null) as { name: string | null } | null;
+      return {
+        id: row.id,
+        customerUserId: row.customer_user_id,
+        projectId: row.project_id,
+        message: row.message,
+        createdAt: row.created_at,
+        customerName: cust?.display_name ?? null,
+        customerEmail: cust?.email ?? null,
+        projectName: proj?.name ?? null,
+      };
+    },
+    []
+  );
 
-  const enrichBooking = useCallback(async (row: {
-    id: string;
-    slot_start: string;
-    slot_end: string;
-    customer_user_id: string;
-    project_id: string | null;
-    notes: string | null;
-  }): Promise<IncomingBooking> => {
-    const sb = sbRef.current;
-    const [custRes, projRes] = await Promise.all([
-      sb.from("customer_profiles")
-        .select("display_name, email")
-        .eq("user_id", row.customer_user_id)
-        .maybeSingle(),
-      row.project_id
-        ? sb.from("projects").select("name").eq("id", row.project_id).maybeSingle()
-        : Promise.resolve({ data: null }),
-    ]);
-    const cust = (custRes.data ?? null) as { display_name: string | null; email: string | null } | null;
-    const proj = (projRes.data ?? null) as { name: string | null } | null;
-    return {
-      id: row.id,
-      slotStart: row.slot_start,
-      slotEnd: row.slot_end,
-      customerUserId: row.customer_user_id,
-      projectId: row.project_id,
-      notes: row.notes,
-      customerName: cust?.display_name ?? null,
-      customerEmail: cust?.email ?? null,
-      projectName: proj?.name ?? null,
-    };
-  }, []);
+  const enrichBooking = useCallback(
+    async (row: {
+      id: string;
+      slot_start: string;
+      slot_end: string;
+      customer_user_id: string;
+      project_id: string | null;
+      notes: string | null;
+    }): Promise<IncomingBooking> => {
+      const sb = sbRef.current;
+      const [custRes, projRes] = await Promise.all([
+        sb
+          .from("customer_profiles")
+          .select("display_name, email")
+          .eq("user_id", row.customer_user_id)
+          .maybeSingle(),
+        row.project_id
+          ? sb
+              .from("projects")
+              .select("name")
+              .eq("id", row.project_id)
+              .maybeSingle()
+          : Promise.resolve({ data: null }),
+      ]);
+      const cust = (custRes.data ?? null) as {
+        display_name: string | null;
+        email: string | null;
+      } | null;
+      const proj = (projRes.data ?? null) as { name: string | null } | null;
+      return {
+        id: row.id,
+        slotStart: row.slot_start,
+        slotEnd: row.slot_end,
+        customerUserId: row.customer_user_id,
+        projectId: row.project_id,
+        notes: row.notes,
+        customerName: cust?.display_name ?? null,
+        customerEmail: cust?.email ?? null,
+        projectName: proj?.name ?? null,
+      };
+    },
+    []
+  );
 
   useEffect(() => {
     const sb = sbRef.current;
@@ -249,12 +293,19 @@ export function DashboardClient() {
 
       if (!alive) return;
       const reqRows = (reqRes.data ?? []) as Array<{
-        id: string; customer_user_id: string; project_id: string | null;
-        message: string | null; created_at: string;
+        id: string;
+        customer_user_id: string;
+        project_id: string | null;
+        message: string | null;
+        created_at: string;
       }>;
       const bkRows = (bkRes.data ?? []) as Array<{
-        id: string; slot_start: string; slot_end: string;
-        customer_user_id: string; project_id: string | null; notes: string | null;
+        id: string;
+        slot_start: string;
+        slot_end: string;
+        customer_user_id: string;
+        project_id: string | null;
+        notes: string | null;
       }>;
       const [enrichedReq, enrichedBk] = await Promise.all([
         Promise.all(reqRows.map(enrichRequest)),
@@ -268,9 +319,10 @@ export function DashboardClient() {
       // name-based dedupe yelling "cannot add postgres_changes after
       // subscribe()" if a stale leaked channel collides with this fresh
       // mount.
-      const suffix = typeof crypto !== "undefined" && crypto.randomUUID
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      const suffix =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
       // Realtime — connect-requests changes for this engineer.
       reqCh = sb
@@ -284,7 +336,9 @@ export function DashboardClient() {
             filter: `engineer_user_id=eq.${me}`,
           },
           (payload) => {
-            const next = payload.new as (typeof reqRows[number] & { status?: string }) | null;
+            const next = payload.new as
+              | ((typeof reqRows)[number] & { status?: string })
+              | null;
             const old = payload.old as { id?: string } | null;
             const oldId = old?.id;
             if (!next && oldId) {
@@ -293,7 +347,9 @@ export function DashboardClient() {
             }
             if (!next) return;
             if (next.status !== "pending") {
-              setIncomingRequests((prev) => prev.filter((r) => r.id !== next.id));
+              setIncomingRequests((prev) =>
+                prev.filter((r) => r.id !== next.id)
+              );
               return;
             }
             void enrichRequest(next).then((enriched) => {
@@ -301,11 +357,13 @@ export function DashboardClient() {
               setIncomingRequests((prev) => {
                 const without = prev.filter((r) => r.id !== enriched.id);
                 return [enriched, ...without].sort(
-                  (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+                  (a, b) =>
+                    new Date(b.createdAt).getTime() -
+                    new Date(a.createdAt).getTime()
                 );
               });
             });
-          },
+          }
         )
         .subscribe();
 
@@ -321,7 +379,9 @@ export function DashboardClient() {
             filter: `engineer_user_id=eq.${me}`,
           },
           (payload) => {
-            const next = payload.new as (typeof bkRows[number] & { status?: string }) | null;
+            const next = payload.new as
+              | ((typeof bkRows)[number] & { status?: string })
+              | null;
             const old = payload.old as { id?: string } | null;
             const oldId = old?.id;
             if (!next && oldId) {
@@ -330,12 +390,16 @@ export function DashboardClient() {
             }
             if (!next) return;
             if (next.status !== "booked") {
-              setIncomingBookings((prev) => prev.filter((b) => b.id !== next.id));
+              setIncomingBookings((prev) =>
+                prev.filter((b) => b.id !== next.id)
+              );
               return;
             }
             // Past slots fall out of the list.
             if (new Date(next.slot_end).getTime() < Date.now() - 15 * 60_000) {
-              setIncomingBookings((prev) => prev.filter((b) => b.id !== next.id));
+              setIncomingBookings((prev) =>
+                prev.filter((b) => b.id !== next.id)
+              );
               return;
             }
             void enrichBooking(next).then((enriched) => {
@@ -343,11 +407,13 @@ export function DashboardClient() {
               setIncomingBookings((prev) => {
                 const without = prev.filter((b) => b.id !== enriched.id);
                 return [...without, enriched].sort(
-                  (a, b) => new Date(a.slotStart).getTime() - new Date(b.slotStart).getTime(),
+                  (a, b) =>
+                    new Date(a.slotStart).getTime() -
+                    new Date(b.slotStart).getTime()
                 );
               });
             });
-          },
+          }
         )
         .subscribe();
     })();
@@ -359,54 +425,71 @@ export function DashboardClient() {
     };
   }, [enrichRequest, enrichBooking]);
 
-  const onAcceptRequest = useCallback(async (req: IncomingRequest) => {
-    if (actionBusyId) return;
-    setActionBusyId(req.id);
-    try {
-      const sb = sbRef.current;
-      const { error: rpcErr } = await sb.rpc("accept_connect_request", { _id: req.id });
-      if (rpcErr) {
-        window.alert(`Couldn't accept: ${rpcErr.message}`);
-        return;
+  const onAcceptRequest = useCallback(
+    async (req: IncomingRequest) => {
+      if (actionBusyId) return;
+      setActionBusyId(req.id);
+      try {
+        const sb = sbRef.current;
+        const { error: rpcErr } = await sb.rpc("accept_connect_request", {
+          _id: req.id,
+        });
+        if (rpcErr) {
+          window.alert(`Couldn't accept: ${rpcErr.message}`);
+          return;
+        }
+        setIncomingRequests((prev) => prev.filter((r) => r.id !== req.id));
+      } finally {
+        setActionBusyId(null);
       }
-      setIncomingRequests((prev) => prev.filter((r) => r.id !== req.id));
-    } finally {
-      setActionBusyId(null);
-    }
-  }, [actionBusyId]);
+    },
+    [actionBusyId]
+  );
 
-  const onDeclineRequest = useCallback(async (req: IncomingRequest) => {
-    if (actionBusyId) return;
-    setActionBusyId(req.id);
-    try {
-      const sb = sbRef.current;
-      const { error: rpcErr } = await sb.rpc("decline_connect_request", { _id: req.id });
-      if (rpcErr) {
-        window.alert(`Couldn't decline: ${rpcErr.message}`);
-        return;
+  const onDeclineRequest = useCallback(
+    async (req: IncomingRequest) => {
+      if (actionBusyId) return;
+      setActionBusyId(req.id);
+      try {
+        const sb = sbRef.current;
+        const { error: rpcErr } = await sb.rpc("decline_connect_request", {
+          _id: req.id,
+        });
+        if (rpcErr) {
+          window.alert(`Couldn't decline: ${rpcErr.message}`);
+          return;
+        }
+        setIncomingRequests((prev) => prev.filter((r) => r.id !== req.id));
+      } finally {
+        setActionBusyId(null);
       }
-      setIncomingRequests((prev) => prev.filter((r) => r.id !== req.id));
-    } finally {
-      setActionBusyId(null);
-    }
-  }, [actionBusyId]);
+    },
+    [actionBusyId]
+  );
 
-  const onCancelBooking = useCallback(async (b: IncomingBooking) => {
-    if (actionBusyId) return;
-    if (typeof window !== "undefined" && !window.confirm("Cancel this booking? The customer will be notified.")) return;
-    setActionBusyId(b.id);
-    try {
-      const sb = sbRef.current;
-      const { error: rpcErr } = await sb.rpc("cancel_booking", { _id: b.id });
-      if (rpcErr) {
-        window.alert(`Couldn't cancel: ${rpcErr.message}`);
+  const onCancelBooking = useCallback(
+    async (b: IncomingBooking) => {
+      if (actionBusyId) return;
+      if (
+        typeof window !== "undefined" &&
+        !window.confirm("Cancel this booking? The customer will be notified.")
+      )
         return;
+      setActionBusyId(b.id);
+      try {
+        const sb = sbRef.current;
+        const { error: rpcErr } = await sb.rpc("cancel_booking", { _id: b.id });
+        if (rpcErr) {
+          window.alert(`Couldn't cancel: ${rpcErr.message}`);
+          return;
+        }
+        setIncomingBookings((prev) => prev.filter((x) => x.id !== b.id));
+      } finally {
+        setActionBusyId(null);
       }
-      setIncomingBookings((prev) => prev.filter((x) => x.id !== b.id));
-    } finally {
-      setActionBusyId(null);
-    }
-  }, [actionBusyId]);
+    },
+    [actionBusyId]
+  );
 
   const stats = useDashboardStats();
 
@@ -414,10 +497,14 @@ export function DashboardClient() {
   // "Today" = the calendar date; "Tomorrow" = the next calendar date.
   // Past slots (ended >15 min ago) are filtered out by the parent fetch.
   const { todayBookings, tomorrowBookings } = useMemo(() => {
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
-    const dayAfter = new Date(tomorrow); dayAfter.setDate(dayAfter.getDate() + 1);
-    const inDay = (d: Date, ref: Date, next: Date) => d.getTime() >= ref.getTime() && d.getTime() < next.getTime();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const dayAfter = new Date(tomorrow);
+    dayAfter.setDate(dayAfter.getDate() + 1);
+    const inDay = (d: Date, ref: Date, next: Date) =>
+      d.getTime() >= ref.getTime() && d.getTime() < next.getTime();
     const t: IncomingBooking[] = [];
     const tm: IncomingBooking[] = [];
     for (const b of incomingBookings) {
@@ -446,8 +533,10 @@ export function DashboardClient() {
         <div
           className="rounded-md border px-4 py-2.5 text-sm"
           style={{
-            borderColor: "color-mix(in srgb, var(--accent-red) 30%, transparent)",
-            backgroundColor: "color-mix(in srgb, var(--accent-red) 8%, transparent)",
+            borderColor:
+              "color-mix(in srgb, var(--accent-red) 30%, transparent)",
+            backgroundColor:
+              "color-mix(in srgb, var(--accent-red) 8%, transparent)",
             color: "var(--accent-red)",
           }}
         >
@@ -494,7 +583,11 @@ export function DashboardClient() {
       {/* Loading shell only on first paint, when nothing else is rendered. */}
       {loading && (
         <div className="flex justify-center py-6">
-          <Loader2 size={18} className="animate-spin" style={{ color: BRAND_GREEN }} />
+          <Loader2
+            size={18}
+            className="animate-spin"
+            style={{ color: BRAND_GREEN }}
+          />
         </div>
       )}
 
@@ -505,7 +598,6 @@ export function DashboardClient() {
   );
 }
 
-
 // ──────────────────────────────────────────────────────────────────────────
 // DashboardHeader — greeting line + inline presence pill + Take-next CTA.
 // Replaces the prior "My Dashboard / Your sessions" header + standalone
@@ -513,7 +605,8 @@ export function DashboardClient() {
 // EngineerPresenceBadge so changes here mirror everywhere.
 // ──────────────────────────────────────────────────────────────────────────
 function DashboardHeader({
-  queueCount, onTakeNext,
+  queueCount,
+  onTakeNext,
 }: {
   queueCount: number;
   onTakeNext: () => void;
@@ -537,14 +630,20 @@ function DashboardHeader({
         .maybeSingle();
       if (!alive) return;
       const full = (prof as { full_name?: string | null } | null)?.full_name;
-      const first = full ? full.trim().split(/\s+/)[0] : (me.email ?? "").split("@")[0];
+      const first = full
+        ? full.trim().split(/\s+/)[0]
+        : (me.email ?? "").split("@")[0];
       setName(first || "engineer");
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, []);
 
   const dateLabel = new Date().toLocaleDateString([], {
-    weekday: "long", month: "long", day: "numeric",
+    weekday: "long",
+    month: "long",
+    day: "numeric",
   });
 
   // Header shows greeting + date. When the anonymous walk-in queue is
@@ -556,12 +655,18 @@ function DashboardHeader({
     <header className="flex flex-wrap items-center justify-between gap-3">
       <div>
         <h1
-          className="text-[20px] font-semibold leading-tight"
-          style={{ color: "var(--text)", fontFamily: "var(--font-source-serif)" }}
+          className="text-[20px] leading-tight font-semibold"
+          style={{
+            color: "var(--text)",
+            fontFamily: "var(--font-source-serif)",
+          }}
         >
           Hi {name ? capitalize(name) : "there"}
         </h1>
-        <p className="mt-0.5 text-[12px]" style={{ color: "var(--text-muted)" }}>
+        <p
+          className="mt-0.5 text-[12px]"
+          style={{ color: "var(--text-muted)" }}
+        >
           {dateLabel}
         </p>
       </div>
@@ -577,7 +682,11 @@ function DashboardHeader({
             Take next walk-in · {queueCount}
           </button>
         )}
-        <NotificationBell endpoint="/api/engineer/notifications" channelKey="engineer" clearable />
+        <NotificationBell
+          endpoint="/api/engineer/notifications"
+          channelKey="engineer"
+          clearable
+        />
       </div>
     </header>
   );
@@ -599,7 +708,10 @@ function capitalize(s: string): string {
 // "is my today empty?" as a useful answer, not a hidden component.
 // ──────────────────────────────────────────────────────────────────────────
 function ScheduledCallsBox({
-  todayBookings, tomorrowBookings, actionBusyId, onCancel,
+  todayBookings,
+  tomorrowBookings,
+  actionBusyId,
+  onCancel,
 }: {
   todayBookings: IncomingBooking[];
   tomorrowBookings: IncomingBooking[];
@@ -610,23 +722,35 @@ function ScheduledCallsBox({
   return (
     <section
       className="flex min-h-[420px] flex-col overflow-hidden rounded-xl border"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface)",
+      }}
     >
       <header
         className="flex items-center gap-2 border-b px-4 py-3"
         style={{ borderColor: "var(--border)" }}
       >
         <CalendarIcon size={14} style={{ color: "#0ea5e9" }} />
-        <h2 className="flex-1 text-[12px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text)" }}>
+        <h2
+          className="flex-1 text-[12px] font-semibold tracking-[0.08em] uppercase"
+          style={{ color: "var(--text)" }}
+        >
           Scheduled · today + tomorrow
         </h2>
-        <span className="text-[11px] tabular-nums" style={{ color: "var(--text-muted)" }}>
+        <span
+          className="text-[11px] tabular-nums"
+          style={{ color: "var(--text-muted)" }}
+        >
           {total === 0 ? "none" : total}
         </span>
       </header>
       <div className="flex-1 overflow-y-auto">
         {total === 0 ? (
-          <div className="flex h-full items-center justify-center px-4 py-6 text-center text-[12px]" style={{ color: "var(--text-faint)" }}>
+          <div
+            className="flex h-full items-center justify-center px-4 py-6 text-center text-[12px]"
+            style={{ color: "var(--text-faint)" }}
+          >
             No customer bookings today or tomorrow.
           </div>
         ) : (
@@ -653,7 +777,11 @@ function ScheduledCallsBox({
 }
 
 function ScheduledDayGroup({
-  label, bookings, actionBusyId, onCancel, emptyText,
+  label,
+  bookings,
+  actionBusyId,
+  onCancel,
+  emptyText,
 }: {
   label: string;
   bookings: IncomingBooking[];
@@ -663,18 +791,28 @@ function ScheduledDayGroup({
 }) {
   return (
     <div className="border-t" style={{ borderColor: "var(--border)" }}>
-      <div className="px-4 pt-2 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
+      <div
+        className="px-4 pt-2 text-[10px] font-semibold tracking-wider uppercase"
+        style={{ color: "var(--text-faint)" }}
+      >
         {label} · {bookings.length}
       </div>
       {bookings.length === 0 ? (
-        <div className="px-4 py-2 text-[12px]" style={{ color: "var(--text-faint)" }}>
+        <div
+          className="px-4 py-2 text-[12px]"
+          style={{ color: "var(--text-faint)" }}
+        >
           {emptyText}
         </div>
       ) : (
         <ul className="flex flex-col">
           {bookings
             .slice()
-            .sort((a, b) => new Date(a.slotStart).getTime() - new Date(b.slotStart).getTime())
+            .sort(
+              (a, b) =>
+                new Date(a.slotStart).getTime() -
+                new Date(b.slotStart).getTime()
+            )
             .map((b) => (
               <li key={b.id} className="px-4 py-2">
                 <ScheduledRow
@@ -694,7 +832,9 @@ function ScheduledDayGroup({
 // the legacy BookingRow (which has a heavier presentation for the prior
 // NowSection); this one is built for the narrow left column.
 function ScheduledRow({
-  booking, busy, onCancel,
+  booking,
+  busy,
+  onCancel,
 }: {
   booking: IncomingBooking;
   busy: boolean;
@@ -712,23 +852,39 @@ function ScheduledRow({
       />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline gap-x-2 text-[12px]">
-          <span className="font-semibold tabular-nums" style={{ color: "var(--text)" }}>
-            {start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+          <span
+            className="font-semibold tabular-nums"
+            style={{ color: "var(--text)" }}
+          >
+            {start.toLocaleTimeString([], {
+              hour: "numeric",
+              minute: "2-digit",
+            })}
           </span>
           <span className="tabular-nums" style={{ color: "var(--text-muted)" }}>
-            → {end.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+            →{" "}
+            {end.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
           </span>
-          <span className="truncate font-medium" style={{ color: "var(--text)" }}>
+          <span
+            className="truncate font-medium"
+            style={{ color: "var(--text)" }}
+          >
             {name}
           </span>
         </div>
         {booking.projectName && (
-          <div className="truncate text-[11px]" style={{ color: "var(--text-muted)" }}>
+          <div
+            className="truncate text-[11px]"
+            style={{ color: "var(--text-muted)" }}
+          >
             {booking.projectName}
           </div>
         )}
         {booking.notes && (
-          <div className="mt-0.5 text-[11px] italic" style={{ color: "var(--text-muted)" }}>
+          <div
+            className="mt-0.5 text-[11px] italic"
+            style={{ color: "var(--text-muted)" }}
+          >
             &ldquo;{booking.notes}&rdquo;
           </div>
         )}
@@ -739,7 +895,7 @@ function ScheduledRow({
         disabled={busy}
         title="Cancel booking"
         aria-label="Cancel booking"
-        className="rounded-md p-1 transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04] disabled:opacity-50"
+        className="rounded-md p-1 transition-colors hover:bg-black/[0.04] disabled:opacity-50 dark:hover:bg-white/[0.04]"
         style={{ color: "var(--text-faint)" }}
       >
         <X size={12} />
@@ -760,7 +916,10 @@ function ScheduledRow({
 // so this box always renders.
 // ──────────────────────────────────────────────────────────────────────────
 function CallsWaitingBox({
-  requests, actionBusyId, onAccept, onDecline,
+  requests,
+  actionBusyId,
+  onAccept,
+  onDecline,
 }: {
   requests: IncomingRequest[];
   actionBusyId: string | null;
@@ -771,36 +930,50 @@ function CallsWaitingBox({
     <section
       className="flex min-h-[420px] flex-col overflow-hidden rounded-xl border"
       style={{
-        borderColor: requests.length > 0
-          ? "color-mix(in srgb, " + URGENT_AMBER + " 38%, transparent)"
-          : "var(--border)",
-        backgroundColor: requests.length > 0
-          ? "color-mix(in srgb, " + URGENT_AMBER + " 4%, var(--surface))"
-          : "var(--surface)",
+        borderColor:
+          requests.length > 0
+            ? "color-mix(in srgb, " + URGENT_AMBER + " 38%, transparent)"
+            : "var(--border)",
+        backgroundColor:
+          requests.length > 0
+            ? "color-mix(in srgb, " + URGENT_AMBER + " 4%, var(--surface))"
+            : "var(--surface)",
       }}
     >
       <header
         className="flex items-center gap-2 border-b px-4 py-3"
         style={{
-          borderColor: requests.length > 0
-            ? "color-mix(in srgb, " + URGENT_AMBER + " 28%, transparent)"
-            : "var(--border)",
+          borderColor:
+            requests.length > 0
+              ? "color-mix(in srgb, " + URGENT_AMBER + " 28%, transparent)"
+              : "var(--border)",
         }}
       >
-        <PhoneIncoming size={14} style={{ color: requests.length > 0 ? URGENT_AMBER : "var(--text-faint)" }} />
+        <PhoneIncoming
+          size={14}
+          style={{
+            color: requests.length > 0 ? URGENT_AMBER : "var(--text-faint)",
+          }}
+        />
         <h2
-          className="flex-1 text-[12px] font-semibold uppercase tracking-[0.08em]"
+          className="flex-1 text-[12px] font-semibold tracking-[0.08em] uppercase"
           style={{ color: requests.length > 0 ? URGENT_AMBER : "var(--text)" }}
         >
           Calls waiting
         </h2>
-        <span className="text-[11px] tabular-nums" style={{ color: "var(--text-muted)" }}>
+        <span
+          className="text-[11px] tabular-nums"
+          style={{ color: "var(--text-muted)" }}
+        >
           {requests.length === 0 ? "none" : requests.length}
         </span>
       </header>
       <div className="flex-1 overflow-y-auto">
         {requests.length === 0 ? (
-          <div className="flex h-full items-center justify-center px-4 py-6 text-center text-[12px]" style={{ color: "var(--text-faint)" }}>
+          <div
+            className="flex h-full items-center justify-center px-4 py-6 text-center text-[12px]"
+            style={{ color: "var(--text-faint)" }}
+          >
             No callback requests right now.
           </div>
         ) : (
@@ -823,7 +996,10 @@ function CallsWaitingBox({
 }
 
 function WaitingRow({
-  request, busy, onAccept, onDecline,
+  request,
+  busy,
+  onAccept,
+  onDecline,
 }: {
   request: IncomingRequest;
   busy: boolean;
@@ -833,10 +1009,16 @@ function WaitingRow({
   return (
     <div
       className="border-t px-4 py-2.5"
-      style={{ borderColor: "color-mix(in srgb, " + URGENT_AMBER + " 18%, transparent)" }}
+      style={{
+        borderColor:
+          "color-mix(in srgb, " + URGENT_AMBER + " 18%, transparent)",
+      }}
     >
       <div className="flex flex-wrap items-baseline gap-x-2">
-        <span className="text-[13px] font-semibold" style={{ color: "var(--text)" }}>
+        <span
+          className="text-[13px] font-semibold"
+          style={{ color: "var(--text)" }}
+        >
           {request.customerName ?? request.customerEmail ?? "Customer"}
         </span>
         {request.projectName && (
@@ -844,12 +1026,18 @@ function WaitingRow({
             · {request.projectName}
           </span>
         )}
-        <span className="ml-auto text-[11px]" style={{ color: "var(--text-faint)" }}>
+        <span
+          className="ml-auto text-[11px]"
+          style={{ color: "var(--text-faint)" }}
+        >
           {timeAgo(new Date(request.createdAt))}
         </span>
       </div>
       {request.message && (
-        <p className="mt-1 text-[11px] italic" style={{ color: "var(--text-muted)" }}>
+        <p
+          className="mt-1 text-[11px] italic"
+          style={{ color: "var(--text-muted)" }}
+        >
           &ldquo;{request.message}&rdquo;
         </p>
       )}
@@ -861,14 +1049,18 @@ function WaitingRow({
           className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           style={{ backgroundColor: BRAND_GREEN }}
         >
-          {busy ? <Loader2 size={10} className="animate-spin" /> : <PhoneIncoming size={10} />}
+          {busy ? (
+            <Loader2 size={10} className="animate-spin" />
+          ) : (
+            <PhoneIncoming size={10} />
+          )}
           Connect
         </button>
         <button
           type="button"
           disabled={busy}
           onClick={onDecline}
-          className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+          className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
           style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
         >
           <X size={10} />
@@ -903,14 +1095,20 @@ function WaitingRow({
 // 30-day horizon covers our 28-day view comfortably.
 // ──────────────────────────────────────────────────────────────────────────
 function FourWeekCalendar({
-  bookings, actionBusyId, onCancel,
+  bookings,
+  actionBusyId,
+  onCancel,
 }: {
   bookings: IncomingBooking[];
   actionBusyId: string | null;
   onCancel: (b: IncomingBooking) => Promise<void>;
 }) {
   const sbRef = useRef(createClient());
-  const todayMid = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
+  const todayMid = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
 
   // First cell = Sunday of the week containing today.
   const gridStart = useMemo(() => {
@@ -947,30 +1145,68 @@ function FourWeekCalendar({
       setLoading(true);
       const { data: u } = await sb.auth.getUser();
       const me = u.user?.id;
-      if (!alive || !me) { setLoading(false); return; }
+      if (!alive || !me) {
+        setLoading(false);
+        return;
+      }
       const rangeStartKey = toDateInput(gridStart);
       const rangeEndKey = toDateInput(addDays(gridStart, 28));
       const [wRes, dwRes, hRes] = await Promise.all([
-        sb.from("engineer_availability_windows")
-          .select("weekday, start_minute, end_minute").eq("engineer_user_id", me),
-        sb.from("engineer_date_windows")
-          .select("the_date").eq("engineer_user_id", me)
-          .gte("the_date", rangeStartKey).lt("the_date", rangeEndKey),
-        sb.from("engineer_holidays")
-          .select("holiday_date, label").eq("engineer_user_id", me)
-          .gte("holiday_date", rangeStartKey).lt("holiday_date", rangeEndKey),
+        sb
+          .from("engineer_availability_windows")
+          .select("weekday, start_minute, end_minute")
+          .eq("engineer_user_id", me),
+        sb
+          .from("engineer_date_windows")
+          .select("the_date")
+          .eq("engineer_user_id", me)
+          .gte("the_date", rangeStartKey)
+          .lt("the_date", rangeEndKey),
+        sb
+          .from("engineer_holidays")
+          .select("holiday_date, label")
+          .eq("engineer_user_id", me)
+          .gte("holiday_date", rangeStartKey)
+          .lt("holiday_date", rangeEndKey),
       ]);
       if (!alive) return;
-      if (!wRes.error) setWindows(((wRes.data ?? []) as Array<{ weekday: number; start_minute: number; end_minute: number }>).map((r) => ({
-        weekday: r.weekday, startMinute: r.start_minute, endMinute: r.end_minute,
-      })));
-      if (!dwRes.error) setDateWindows(((dwRes.data ?? []) as Array<{ the_date: string }>).map((r) => ({ date: r.the_date })));
-      if (!hRes.error) setHolidays(((hRes.data ?? []) as Array<{ holiday_date: string; label: string | null }>).map((r) => ({
-        date: r.holiday_date, label: r.label,
-      })));
+      if (!wRes.error)
+        setWindows(
+          (
+            (wRes.data ?? []) as Array<{
+              weekday: number;
+              start_minute: number;
+              end_minute: number;
+            }>
+          ).map((r) => ({
+            weekday: r.weekday,
+            startMinute: r.start_minute,
+            endMinute: r.end_minute,
+          }))
+        );
+      if (!dwRes.error)
+        setDateWindows(
+          ((dwRes.data ?? []) as Array<{ the_date: string }>).map((r) => ({
+            date: r.the_date,
+          }))
+        );
+      if (!hRes.error)
+        setHolidays(
+          (
+            (hRes.data ?? []) as Array<{
+              holiday_date: string;
+              label: string | null;
+            }>
+          ).map((r) => ({
+            date: r.holiday_date,
+            label: r.label,
+          }))
+        );
       setLoading(false);
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [gridStart]);
 
   // Per-day stats (window, holiday, booking count).
@@ -979,9 +1215,11 @@ function FourWeekCalendar({
       const key = toDateInput(d);
       const hol = holidays.find((h) => h.date === key);
       const hasOverride = dateWindows.some((dw) => dw.date === key);
-      const hasWindow = !hol && (hasOverride || windows.some((w) => w.weekday === d.getDay()));
+      const hasWindow =
+        !hol && (hasOverride || windows.some((w) => w.weekday === d.getDay()));
       const dayBookings = bookings.filter((b) => {
-        const bd = new Date(b.slotStart); bd.setHours(0, 0, 0, 0);
+        const bd = new Date(b.slotStart);
+        bd.setHours(0, 0, 0, 0);
         return bd.getTime() === d.getTime();
       });
       return {
@@ -1001,24 +1239,36 @@ function FourWeekCalendar({
   const rangeLabel = useMemo(() => {
     const start = gridStart;
     const end = addDays(gridStart, 27);
-    const fmt = (d: Date) => d.toLocaleDateString([], { month: "short", day: "numeric" });
+    const fmt = (d: Date) =>
+      d.toLocaleDateString([], { month: "short", day: "numeric" });
     return `${fmt(start)} – ${fmt(end)}`;
   }, [gridStart]);
 
-  const selectedCell = selectedDateKey ? cells.find((c) => c.key === selectedDateKey) ?? null : null;
+  const selectedCell = selectedDateKey
+    ? (cells.find((c) => c.key === selectedDateKey) ?? null)
+    : null;
 
   return (
     <>
       <section
         className="overflow-hidden rounded-xl border"
-        style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+        style={{
+          borderColor: "var(--border)",
+          backgroundColor: "var(--surface)",
+        }}
       >
         <header
           className="flex flex-wrap items-center gap-2 border-b px-4 py-2.5"
           style={{ borderColor: "var(--border)" }}
         >
           <CalendarIcon size={13} style={{ color: BRAND_GREEN }} />
-          <h2 className="text-[13px] font-semibold" style={{ color: "var(--text)", fontFamily: "var(--font-source-serif)" }}>
+          <h2
+            className="text-[13px] font-semibold"
+            style={{
+              color: "var(--text)",
+              fontFamily: "var(--font-source-serif)",
+            }}
+          >
             Next 4 weeks
           </h2>
           <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
@@ -1028,20 +1278,28 @@ function FourWeekCalendar({
 
         {/* Weekday header */}
         <div
-          className="grid grid-cols-7 border-b px-2 py-1.5 text-[9px] font-semibold uppercase tracking-wider"
+          className="grid grid-cols-7 border-b px-2 py-1.5 text-[9px] font-semibold tracking-wider uppercase"
           style={{ borderColor: "var(--border)", color: "var(--text-faint)" }}
         >
           {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
-            <div key={d} className="text-center">{d}</div>
+            <div key={d} className="text-center">
+              {d}
+            </div>
           ))}
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center gap-2 px-4 py-12 text-[12px]" style={{ color: "var(--text-muted)" }}>
+          <div
+            className="flex items-center justify-center gap-2 px-4 py-12 text-[12px]"
+            style={{ color: "var(--text-muted)" }}
+          >
             <Loader2 size={14} className="animate-spin" /> Loading…
           </div>
         ) : (
-          <div className="grid grid-cols-7 gap-px p-2" style={{ backgroundColor: "var(--border)" }}>
+          <div
+            className="grid grid-cols-7 gap-px p-2"
+            style={{ backgroundColor: "var(--border)" }}
+          >
             {cells.map((c) => {
               // Color: holiday > availability > neutral.
               const bg = c.isHoliday
@@ -1057,9 +1315,11 @@ function FourWeekCalendar({
                   disabled={c.isPast}
                   onClick={() => setSelectedDateKey(c.key)}
                   title={
-                    c.isHoliday ? `Off${c.holidayLabel ? ` · ${c.holidayLabel}` : ""}`
-                    : c.hasWindow ? `Available · ${c.bookings.length} booking${c.bookings.length === 1 ? "" : "s"}`
-                    : "Off day"
+                    c.isHoliday
+                      ? `Off${c.holidayLabel ? ` · ${c.holidayLabel}` : ""}`
+                      : c.hasWindow
+                        ? `Available · ${c.bookings.length} booking${c.bookings.length === 1 ? "" : "s"}`
+                        : "Off day"
                   }
                   className="flex min-h-[72px] flex-col items-stretch gap-1 rounded-md border-2 p-2 text-left transition-colors hover:brightness-110 disabled:cursor-not-allowed"
                   style={{
@@ -1072,7 +1332,11 @@ function FourWeekCalendar({
                     <span
                       className="text-[13px] font-semibold tabular-nums"
                       style={{
-                        color: c.isToday ? BRAND_GREEN : c.isHoliday ? "var(--accent-red)" : "var(--text)",
+                        color: c.isToday
+                          ? BRAND_GREEN
+                          : c.isHoliday
+                            ? "var(--accent-red)"
+                            : "var(--text)",
                         textDecoration: c.isHoliday ? "line-through" : "none",
                       }}
                     >
@@ -1080,15 +1344,26 @@ function FourWeekCalendar({
                     </span>
                     {c.bookings.length > 0 && (
                       <span
-                        className="inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold tabular-nums text-white"
+                        className="inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold text-white tabular-nums"
                         style={{ backgroundColor: BRAND_GREEN }}
                       >
                         {c.bookings.length}
                       </span>
                     )}
                   </div>
-                  <div className="text-[10px]" style={{ color: c.isHoliday ? "var(--accent-red)" : "var(--text-muted)" }}>
-                    {c.isHoliday ? (c.holidayLabel ?? "Off") : c.hasWindow ? "Available" : ""}
+                  <div
+                    className="text-[10px]"
+                    style={{
+                      color: c.isHoliday
+                        ? "var(--accent-red)"
+                        : "var(--text-muted)",
+                    }}
+                  >
+                    {c.isHoliday
+                      ? (c.holidayLabel ?? "Off")
+                      : c.hasWindow
+                        ? "Available"
+                        : ""}
                   </div>
                 </button>
               );
@@ -1102,16 +1377,30 @@ function FourWeekCalendar({
           style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
         >
           <span className="inline-flex items-center gap-1.5">
-            <span className="size-2 rounded" style={{ backgroundColor: "color-mix(in srgb, var(--primary) 16%, var(--surface))", border: "1px solid var(--border)" }} />
+            <span
+              className="size-2 rounded"
+              style={{
+                backgroundColor:
+                  "color-mix(in srgb, var(--primary) 16%, var(--surface))",
+                border: "1px solid var(--border)",
+              }}
+            />
             available
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="size-2 rounded" style={{ backgroundColor: "color-mix(in srgb, var(--accent-red) 18%, var(--surface))", border: "1px solid var(--border)" }} />
+            <span
+              className="size-2 rounded"
+              style={{
+                backgroundColor:
+                  "color-mix(in srgb, var(--accent-red) 18%, var(--surface))",
+                border: "1px solid var(--border)",
+              }}
+            />
             holiday / off
           </span>
           <span className="inline-flex items-center gap-1.5">
             <span
-              className="inline-flex h-3 min-w-3 items-center justify-center rounded-full px-1 text-[8px] font-semibold tabular-nums text-white"
+              className="inline-flex h-3 min-w-3 items-center justify-center rounded-full px-1 text-[8px] font-semibold text-white tabular-nums"
               style={{ backgroundColor: BRAND_GREEN }}
             >
               N
@@ -1150,7 +1439,14 @@ function FourWeekCalendar({
 // handled via the keydown listener so keyboard users aren't trapped.
 // ──────────────────────────────────────────────────────────────────────────
 function DayDetailModal({
-  date, isHoliday, holidayLabel, hasWindow, bookings, actionBusyId, onCancel, onClose,
+  date,
+  isHoliday,
+  holidayLabel,
+  hasWindow,
+  bookings,
+  actionBusyId,
+  onCancel,
+  onClose,
 }: {
   date: Date;
   isHoliday: boolean;
@@ -1162,24 +1458,35 @@ function DayDetailModal({
   onClose: () => void;
 }) {
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
   const dateLabel = date.toLocaleDateString([], {
-    weekday: "long", month: "long", day: "numeric", year: "numeric",
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
   });
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center px-4 py-12"
-      style={{ backgroundColor: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}
+      style={{
+        backgroundColor: "rgba(0,0,0,0.55)",
+        backdropFilter: "blur(4px)",
+      }}
       onClick={onClose}
     >
       <div
         className="relative w-full max-w-md overflow-hidden rounded-2xl border shadow-xl"
-        style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}
+        style={{
+          backgroundColor: "var(--surface)",
+          borderColor: "var(--border)",
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         <header
@@ -1194,16 +1501,26 @@ function DayDetailModal({
                 : hasWindow
                   ? BRAND_GREEN_SOFT
                   : "color-mix(in srgb, var(--text) 6%, transparent)",
-              color: isHoliday ? "var(--accent-red)" : hasWindow ? BRAND_GREEN : "var(--text-muted)",
+              color: isHoliday
+                ? "var(--accent-red)"
+                : hasWindow
+                  ? BRAND_GREEN
+                  : "var(--text-muted)",
             }}
           >
             <CalendarIcon size={16} />
           </div>
           <div className="min-w-0 flex-1">
-            <h3 className="text-[15px] font-semibold" style={{ color: "var(--text)" }}>
+            <h3
+              className="text-[15px] font-semibold"
+              style={{ color: "var(--text)" }}
+            >
               {dateLabel}
             </h3>
-            <p className="mt-0.5 text-[12px]" style={{ color: "var(--text-muted)" }}>
+            <p
+              className="mt-0.5 text-[12px]"
+              style={{ color: "var(--text-muted)" }}
+            >
               {isHoliday
                 ? `Off${holidayLabel ? ` · ${holidayLabel}` : ""}`
                 : hasWindow
@@ -1224,14 +1541,21 @@ function DayDetailModal({
 
         <div className="max-h-[60vh] overflow-y-auto">
           {bookings.length === 0 ? (
-            <div className="px-5 py-8 text-center text-[13px]" style={{ color: "var(--text-faint)" }}>
+            <div
+              className="px-5 py-8 text-center text-[13px]"
+              style={{ color: "var(--text-faint)" }}
+            >
               No scheduled calls.
             </div>
           ) : (
             <ul className="flex flex-col">
               {bookings
                 .slice()
-                .sort((a, b) => new Date(a.slotStart).getTime() - new Date(b.slotStart).getTime())
+                .sort(
+                  (a, b) =>
+                    new Date(a.slotStart).getTime() -
+                    new Date(b.slotStart).getTime()
+                )
                 .map((b) => (
                   <li
                     key={b.id}
@@ -1254,7 +1578,9 @@ function DayDetailModal({
 }
 
 function ModalBookingRow({
-  booking, busy, onCancel,
+  booking,
+  busy,
+  onCancel,
 }: {
   booking: IncomingBooking;
   busy: boolean;
@@ -1274,14 +1600,27 @@ function ModalBookingRow({
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline gap-x-2">
-          <span className="font-semibold tabular-nums text-[13px]" style={{ color: "var(--text)" }}>
-            {start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+          <span
+            className="text-[13px] font-semibold tabular-nums"
+            style={{ color: "var(--text)" }}
+          >
+            {start.toLocaleTimeString([], {
+              hour: "numeric",
+              minute: "2-digit",
+            })}
             <span style={{ color: "var(--text-muted)" }}>
-              {" → "}{end.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+              {" → "}
+              {end.toLocaleTimeString([], {
+                hour: "numeric",
+                minute: "2-digit",
+              })}
             </span>
           </span>
         </div>
-        <div className="text-[13px] font-medium" style={{ color: "var(--text)" }}>
+        <div
+          className="text-[13px] font-medium"
+          style={{ color: "var(--text)" }}
+        >
           {name}
         </div>
         {booking.projectName && (
@@ -1290,7 +1629,10 @@ function ModalBookingRow({
           </div>
         )}
         {booking.notes && (
-          <p className="mt-1 text-[12px] italic" style={{ color: "var(--text-muted)" }}>
+          <p
+            className="mt-1 text-[12px] italic"
+            style={{ color: "var(--text-muted)" }}
+          >
             &ldquo;{booking.notes}&rdquo;
           </p>
         )}
@@ -1299,11 +1641,15 @@ function ModalBookingRow({
         type="button"
         onClick={onCancel}
         disabled={busy}
-        className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+        className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
         style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
         title="Cancel this booking"
       >
-        {busy ? <Loader2 size={10} className="animate-spin" /> : <X size={10} />}
+        {busy ? (
+          <Loader2 size={10} className="animate-spin" />
+        ) : (
+          <X size={10} />
+        )}
         Cancel
       </button>
     </div>
@@ -1315,7 +1661,9 @@ function toDateInput(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 function addDays(d: Date, n: number): Date {
-  const out = new Date(d); out.setDate(out.getDate() + n); return out;
+  const out = new Date(d);
+  out.setDate(out.getDate() + n);
+  return out;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -1328,12 +1676,42 @@ function addDays(d: Date, n: number): Date {
 // Layout flexes from 5-up on wide screens to 2-up on mobile.
 // ──────────────────────────────────────────────────────────────────────────
 function MonthStatsRow({ stats }: { stats: DashStats }) {
-  const tiles: Array<{ value: number; label: string; sub: string; accent: string }> = [
-    { value: stats.callsTaken,      label: "Calls taken",      sub: "this month",  accent: BRAND_GREEN },
-    { value: stats.uniqueCustomers, label: "Customers served", sub: "all time",    accent: "#0ea5e9" },
-    { value: stats.goliveDone,      label: "Go-lives done",    sub: "completed",   accent: "#16a34a" },
-    { value: stats.goliveActive,    label: "Go-lives active",  sub: "in progress", accent: "#7c3aed" },
-    { value: stats.maintaining,     label: "Maintaining",      sub: "active",      accent: "#dc2626" },
+  const tiles: Array<{
+    value: number;
+    label: string;
+    sub: string;
+    accent: string;
+  }> = [
+    {
+      value: stats.callsTaken,
+      label: "Calls taken",
+      sub: "this month",
+      accent: BRAND_GREEN,
+    },
+    {
+      value: stats.uniqueCustomers,
+      label: "Customers served",
+      sub: "all time",
+      accent: "#0ea5e9",
+    },
+    {
+      value: stats.goliveDone,
+      label: "Go-lives done",
+      sub: "completed",
+      accent: "#16a34a",
+    },
+    {
+      value: stats.goliveActive,
+      label: "Go-lives active",
+      sub: "in progress",
+      accent: "#7c3aed",
+    },
+    {
+      value: stats.maintaining,
+      label: "Maintaining",
+      sub: "active",
+      accent: "#dc2626",
+    },
   ];
   return (
     <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
@@ -1341,15 +1719,21 @@ function MonthStatsRow({ stats }: { stats: DashStats }) {
         <div
           key={t.label}
           className="flex flex-col gap-1 rounded-xl border px-4 py-3"
-          style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+          style={{
+            borderColor: "var(--border)",
+            backgroundColor: "var(--surface)",
+          }}
         >
           <span
-            className="text-[26px] font-semibold leading-none tabular-nums"
+            className="text-[26px] leading-none font-semibold tabular-nums"
             style={{ color: t.accent, fontFamily: "var(--font-source-serif)" }}
           >
             {t.value}
           </span>
-          <span className="mt-1 text-[12px] font-medium" style={{ color: "var(--text)" }}>
+          <span
+            className="mt-1 text-[12px] font-medium"
+            style={{ color: "var(--text)" }}
+          >
             {t.label}
           </span>
           <span className="text-[10px]" style={{ color: "var(--text-faint)" }}>
@@ -1388,21 +1772,50 @@ function DashboardFooterEscalate() {
       {open && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center px-6"
-          style={{ backgroundColor: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}
+          style={{
+            backgroundColor: "rgba(0,0,0,0.55)",
+            backdropFilter: "blur(4px)",
+          }}
         >
           <div
             className="relative w-full max-w-md rounded-2xl border p-6 shadow-xl"
-            style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}
+            style={{
+              backgroundColor: "var(--surface)",
+              borderColor: "var(--border)",
+            }}
           >
-            <h3 className="mb-2 text-base font-semibold" style={{ color: "var(--text)" }}>
+            <h3
+              className="mb-2 text-base font-semibold"
+              style={{ color: "var(--text)" }}
+            >
               Contact your supervisor
             </h3>
-            <p className="text-[13px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
-              In-app chat + 1-click Zoom with your assigned supervisor is coming in a follow-up. For now:
+            <p
+              className="text-[13px] leading-relaxed"
+              style={{ color: "var(--text-muted)" }}
+            >
+              In-app chat + 1-click Zoom with your assigned supervisor is coming
+              in a follow-up. For now:
             </p>
-            <ul className="mt-3 flex flex-col gap-1.5 text-[13px]" style={{ color: "var(--text)" }}>
-              <li>📧 Email <a href="mailto:ops@relay.green" className="underline" style={{ color: "var(--primary)" }}>ops@relay.green</a> for non-urgent matters</li>
-              <li>📱 Use your usual emergency Slack/WhatsApp channel for live incidents</li>
+            <ul
+              className="mt-3 flex flex-col gap-1.5 text-[13px]"
+              style={{ color: "var(--text)" }}
+            >
+              <li>
+                📧 Email{" "}
+                <a
+                  href="mailto:ops@relay.green"
+                  className="underline"
+                  style={{ color: "var(--primary)" }}
+                >
+                  ops@relay.green
+                </a>{" "}
+                for non-urgent matters
+              </li>
+              <li>
+                📱 Use your usual emergency Slack/WhatsApp channel for live
+                incidents
+              </li>
             </ul>
             <button
               type="button"

@@ -26,18 +26,30 @@ import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
-const ACTIVE_CALL_STATUSES = ["assigned", "joining", "live", "grace", "expired_free", "ending"];
+const ACTIVE_CALL_STATUSES = [
+  "assigned",
+  "joining",
+  "live",
+  "grace",
+  "expired_free",
+  "ending",
+];
 
 type Status = "available" | "busy" | "offline";
 
 export async function POST(req: Request) {
   const supabase = await createServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user)
+    return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
 
-  const body = (await req.json().catch(() => ({}))) as { engineerIds?: unknown };
+  const body = (await req.json().catch(() => ({}))) as {
+    engineerIds?: unknown;
+  };
   const ids = Array.isArray(body.engineerIds)
     ? (body.engineerIds.filter((x) => typeof x === "string") as string[])
     : [];
@@ -46,25 +58,38 @@ export async function POST(req: Request) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
-    return NextResponse.json({ error: "service_role_not_configured" }, { status: 500 });
+    return NextResponse.json(
+      { error: "service_role_not_configured" },
+      { status: 500 }
+    );
   }
   const admin = createAdminClient(url, key, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
   const [profRes, busyRes] = await Promise.all([
-    admin.from("engineer_profiles").select("user_id, is_available").in("user_id", ids),
-    admin.from("guest_calls").select("claimed_by, status").in("claimed_by", ids).in("status", ACTIVE_CALL_STATUSES),
+    admin
+      .from("engineer_profiles")
+      .select("user_id, is_available")
+      .in("user_id", ids),
+    admin
+      .from("guest_calls")
+      .select("claimed_by, status")
+      .in("claimed_by", ids)
+      .in("status", ACTIVE_CALL_STATUSES),
   ]);
 
   const availableById = new Map<string, boolean>();
-  for (const p of (profRes.data ?? []) as { user_id: string; is_available: boolean | null }[]) {
+  for (const p of (profRes.data ?? []) as {
+    user_id: string;
+    is_available: boolean | null;
+  }[]) {
     availableById.set(p.user_id, !!p.is_available);
   }
   const busyIds = new Set(
     ((busyRes.data ?? []) as { claimed_by: string | null }[])
       .map((r) => r.claimed_by)
-      .filter((id): id is string => !!id),
+      .filter((id): id is string => !!id)
   );
 
   const presence: Record<string, Status> = {};

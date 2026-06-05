@@ -15,7 +15,7 @@ import { requireSuperAdmin } from "@/lib/admin-auth";
 import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 // Platform-side roles super_admin can assign via the user-admin console.
 // Enterprise-side roles (enterprise_admin, department_admin) are managed
@@ -47,28 +47,29 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
   if (id === actor.id) {
     return NextResponse.json(
       { error: "You can't edit your own super-admin record from here." },
-      { status: 400 },
+      { status: 400 }
     );
   }
 
   const body = await request.json().catch(() => ({}));
   const displayName: unknown = body.displayName;
-  const role: unknown        = body.role;
-  const status: unknown      = body.status;
+  const role: unknown = body.role;
+  const status: unknown = body.status;
 
   if (typeof displayName === "string" && displayName.trim()) {
     const { error } = await admin
       .from("profiles")
       .update({ full_name: displayName.trim() })
       .eq("id", id);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error)
+      return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
   if (typeof role === "string") {
     if (!CREATABLE_ROLES.has(role)) {
       return NextResponse.json(
         { error: "Role must be engineer, supervisor, or super_admin." },
-        { status: 400 },
+        { status: 400 }
       );
     }
 
@@ -81,10 +82,15 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
       .select("id, name")
       .in("name", [role, ...Array.from(CLEARABLE_ROLES)]);
     const roles = (roleLookup ?? []) as { id: string; name: string }[];
-    const targetRoleId   = roles.find((r) => r.name === role)?.id;
-    const clearableIds   = roles.filter((r) => CLEARABLE_ROLES.has(r.name)).map((r) => r.id);
+    const targetRoleId = roles.find((r) => r.name === role)?.id;
+    const clearableIds = roles
+      .filter((r) => CLEARABLE_ROLES.has(r.name))
+      .map((r) => r.id);
     if (!targetRoleId) {
-      return NextResponse.json({ error: `Unknown role: ${role}` }, { status: 500 });
+      return NextResponse.json(
+        { error: `Unknown role: ${role}` },
+        { status: 500 }
+      );
     }
 
     if (clearableIds.length > 0) {
@@ -112,16 +118,18 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
       const { error } = await admin.auth.admin.updateUserById(id, {
         ban_duration: "876000h",
       });
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error)
+        return NextResponse.json({ error: error.message }, { status: 500 });
     } else if (status === "ACTIVE") {
       const { error } = await admin.auth.admin.updateUserById(id, {
         ban_duration: "none",
       });
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error)
+        return NextResponse.json({ error: error.message }, { status: 500 });
     } else {
       return NextResponse.json(
         { error: "Status must be ACTIVE or DEACTIVATED." },
-        { status: 400 },
+        { status: 400 }
       );
     }
   }
@@ -140,7 +148,7 @@ export async function DELETE(_request: Request, { params }: RouteCtx) {
   if (id === actor.id) {
     return NextResponse.json(
       { error: "You can't delete your own super-admin record." },
-      { status: 400 },
+      { status: 400 }
     );
   }
 
@@ -151,11 +159,13 @@ export async function DELETE(_request: Request, { params }: RouteCtx) {
     .from("user_role_names")
     .select("role")
     .eq("user_id", id);
-  const isSuper = (targetRoles ?? []).some((r: { role: string }) => r.role === ROLE.super_admin);
+  const isSuper = (targetRoles ?? []).some(
+    (r: { role: string }) => r.role === ROLE.super_admin
+  );
   if (isSuper) {
     return NextResponse.json(
       { error: "Super Admins can't be deleted from the admin UI." },
-      { status: 403 },
+      { status: 403 }
     );
   }
 

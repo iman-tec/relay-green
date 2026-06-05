@@ -73,9 +73,9 @@ export default function Page() {
         built will hold.
       </Body>
       <Body>
-        Three things follow from that. First, the software engineer&rsquo;s job is
-        denser, not lighter. They review more diffs, from more authors, in more
-        domains, per week than they used to. Second, the company&rsquo;s
+        Three things follow from that. First, the software engineer&rsquo;s job
+        is denser, not lighter. They review more diffs, from more authors, in
+        more domains, per week than they used to. Second, the company&rsquo;s
         engineering footprint expands rather than contracts. It expands in the
         direction of governance, not generation: review, observability,
         security, audit. Third, the failure mode of the new company is not

@@ -12,19 +12,23 @@ import { requireEnterpriseAdmin } from "@/lib/enterprise-auth";
 import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 export async function DELETE(
   _req: Request,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const gate = await requireEnterpriseAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin, orgId, user: actor } = gate;
 
   const { id: targetId } = await params;
   if (targetId === actor.id) {
-    return NextResponse.json({ error: "Can't remove yourself." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Can't remove yourself." },
+      { status: 400 }
+    );
   }
 
   const { data: target } = await admin
@@ -33,7 +37,10 @@ export async function DELETE(
     .eq("id", targetId)
     .maybeSingle();
   if (!target || target.organization_id !== orgId) {
-    return NextResponse.json({ error: "Not in your organization." }, { status: 404 });
+    return NextResponse.json(
+      { error: "Not in your organization." },
+      { status: 404 }
+    );
   }
 
   const { data: targetRoles } = await admin
@@ -41,17 +48,18 @@ export async function DELETE(
     .select("role")
     .eq("user_id", targetId);
   const isEntAdmin = (targetRoles ?? []).some(
-    (r: { role: string }) => r.role === ROLE.enterprise_admin,
+    (r: { role: string }) => r.role === ROLE.enterprise_admin
   );
   if (isEntAdmin) {
     return NextResponse.json(
       { error: "Enterprise admins can only be removed by a super admin." },
-      { status: 403 },
+      { status: 403 }
     );
   }
 
   const { error } = await admin.auth.admin.deleteUser(targetId);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error)
+    return NextResponse.json({ error: error.message }, { status: 500 });
 
   return NextResponse.json({ ok: true });
 }

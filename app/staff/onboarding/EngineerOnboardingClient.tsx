@@ -100,9 +100,8 @@ export function EngineerOnboardingClient() {
     setError(null);
     try {
       const sb = createClient();
-      const { error: upsertErr } = await sb
-        .from("engineer_profiles")
-        .upsert({
+      const { error: upsertErr } = await sb.from("engineer_profiles").upsert(
+        {
           user_id: userId,
           expertise,
           // Technologies kept around for backward compat with the matcher
@@ -110,7 +109,9 @@ export function EngineerOnboardingClient() {
           // the engineer doesn't have to enter it twice. Once the matcher
           // is updated to read the new structured columns directly,
           // technologies can be removed entirely.
-          technologies: Array.from(new Set([...backendStacks, ...frontendStacks])),
+          technologies: Array.from(
+            new Set([...backendStacks, ...frontendStacks])
+          ),
           experience_level: experienceLevel[0],
           // Customer-aligned axes — new in 20260527200000.
           project_types: projectTypes,
@@ -124,11 +125,15 @@ export function EngineerOnboardingClient() {
           environments: [],
           is_available: true,
           updated_at: new Date().toISOString(),
-        }, { onConflict: "user_id" });
+        },
+        { onConflict: "user_id" }
+      );
       if (upsertErr) throw upsertErr;
       // Assign a stable privacy alias now so the engineer has a nickname from
       // the start — customers never see real names. Best-effort.
-      await sb.rpc("assign_engineer_alias", { _user: userId }).then(undefined, () => {});
+      await sb
+        .rpc("assign_engineer_alias", { _user: userId })
+        .then(undefined, () => {});
       setDone(true);
       setTimeout(() => router.replace("/dashboard"), 1200);
     } catch (e) {
@@ -137,13 +142,27 @@ export function EngineerOnboardingClient() {
     } finally {
       setBusy(false);
     }
-  }, [canAdvance, step, userId, expertise, experienceLevel, projectTypes, aiTools, backendStacks, frontendStacks, router]);
+  }, [
+    canAdvance,
+    step,
+    userId,
+    expertise,
+    experienceLevel,
+    projectTypes,
+    aiTools,
+    backendStacks,
+    frontendStacks,
+    router,
+  ]);
 
   const onBack = step > 1 ? () => setStep((s) => s - 1) : undefined;
 
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-sm" style={{ color: "var(--text-muted)" }}>
+      <div
+        className="flex min-h-screen items-center justify-center text-sm"
+        style={{ color: "var(--text-muted)" }}
+      >
         Loading…
       </div>
     );
@@ -151,10 +170,10 @@ export function EngineerOnboardingClient() {
 
   if (done) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-6">
+      <div className="flex min-h-screen items-center justify-center px-6">
         <div className="flex flex-col items-center gap-4 text-center">
           <div
-            className="size-14 rounded-full inline-flex items-center justify-center"
+            className="inline-flex size-14 items-center justify-center rounded-full"
             style={{ background: "rgba(63, 92, 46, 0.18)", color: "#3f5c2e" }}
           >
             <Check className="size-7" />
@@ -188,22 +207,51 @@ export function EngineerOnboardingClient() {
       }
     >
       {step === 1 && (
-        <ChipGroup options={EXPERTISE} value={expertise} multi onChange={setExpertise} />
+        <ChipGroup
+          options={EXPERTISE}
+          value={expertise}
+          multi
+          onChange={setExpertise}
+        />
       )}
       {step === 2 && (
-        <ChipGroup options={PROJECT_TYPE_VALUES} value={projectTypes} multi onChange={setProjectTypes} />
+        <ChipGroup
+          options={PROJECT_TYPE_VALUES}
+          value={projectTypes}
+          multi
+          onChange={setProjectTypes}
+        />
       )}
       {step === 3 && (
-        <ChipGroup options={AI_TOOL_OPTIONS} value={aiTools} multi onChange={setAiTools} />
+        <ChipGroup
+          options={AI_TOOL_OPTIONS}
+          value={aiTools}
+          multi
+          onChange={setAiTools}
+        />
       )}
       {step === 4 && (
-        <ChipGroup options={BACKEND_STACK_OPTIONS} value={backendStacks} multi onChange={setBackendStacks} />
+        <ChipGroup
+          options={BACKEND_STACK_OPTIONS}
+          value={backendStacks}
+          multi
+          onChange={setBackendStacks}
+        />
       )}
       {step === 5 && (
-        <ChipGroup options={FRONTEND_STACK_OPTIONS} value={frontendStacks} multi onChange={setFrontendStacks} />
+        <ChipGroup
+          options={FRONTEND_STACK_OPTIONS}
+          value={frontendStacks}
+          multi
+          onChange={setFrontendStacks}
+        />
       )}
       {step === 6 && (
-        <ChipGroup options={EXPERIENCE_LEVELS} value={experienceLevel} onChange={setExperienceLevel} />
+        <ChipGroup
+          options={EXPERIENCE_LEVELS}
+          value={experienceLevel}
+          onChange={setExperienceLevel}
+        />
       )}
     </WizardShell>
   );

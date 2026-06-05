@@ -26,15 +26,18 @@
  */
 
 import { randomBytes } from "node:crypto";
-import { createClient as createAnonClient, type SupabaseClient } from "@supabase/supabase-js";
+import {
+  createClient as createAnonClient,
+  type SupabaseClient,
+} from "@supabase/supabase-js";
 
 export type InvitePayload = {
   /** Recipient — lowercased + trimmed inside. */
-  email:        string;
+  email: string;
   /** Display name written to user_metadata. Optional. */
   displayName?: string;
   /** Free-form metadata merged into user_metadata (org_id, role_label, …). */
-  metadata?:    Record<string, unknown>;
+  metadata?: Record<string, unknown>;
   /**
    * Invite-only mode (bugs2.txt #1). When true, existing-active users
    * (password_set === true) return mode: "already_active" without
@@ -46,11 +49,16 @@ export type InvitePayload = {
    * confirmed users still return already_active rather than getting
    * their chosen password reset.
    */
-  inviteOnly?:  boolean;
+  inviteOnly?: boolean;
 };
 
 export type InviteResult =
-  | { ok: true;  mode: "invited" | "reset" | "already_active"; userId?: string; tempPassword?: string }
+  | {
+      ok: true;
+      mode: "invited" | "reset" | "already_active";
+      userId?: string;
+      tempPassword?: string;
+    }
   | { ok: false; error: string };
 
 /**
@@ -67,7 +75,7 @@ function generateTempPassword(): string {
 
 async function findExistingUser(
   admin: SupabaseClient,
-  email: string,
+  email: string
 ): Promise<{ id: string; passwordSet: boolean } | null> {
   const { data } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
   const u = data?.users?.find((x) => x.email?.toLowerCase() === email);
@@ -84,7 +92,7 @@ async function findExistingUser(
  */
 export async function sendInvitationEmail(
   admin: SupabaseClient,
-  payload: InvitePayload,
+  payload: InvitePayload
 ): Promise<InviteResult> {
   const email = payload.email.trim().toLowerCase();
   if (!email) return { ok: false, error: "Email is required." };
@@ -103,7 +111,9 @@ export async function sendInvitationEmail(
   // code is entered at sign-in). Strip them here so they never land in
   // user_metadata or render in the invite email, regardless of which caller
   // route passed them.
-  const metaWithoutCodes: Record<string, unknown> = { ...(payload.metadata ?? {}) };
+  const metaWithoutCodes: Record<string, unknown> = {
+    ...(payload.metadata ?? {}),
+  };
   delete metaWithoutCodes.reseller_code;
   delete metaWithoutCodes.enterprise_code;
   delete metaWithoutCodes.department_code;
@@ -117,15 +127,20 @@ export async function sendInvitationEmail(
   // set the temp password. By the time the email is delivered the user
   // can sign in normally.
   if (!existing) {
-    const invite = await admin.auth.admin.inviteUserByEmail(email, { data: userMeta });
+    const invite = await admin.auth.admin.inviteUserByEmail(email, {
+      data: userMeta,
+    });
     if (invite.error || !invite.data?.user) {
-      return { ok: false, error: explainSmtp(invite.error?.message ?? "Invite failed.") };
+      return {
+        ok: false,
+        error: explainSmtp(invite.error?.message ?? "Invite failed."),
+      };
     }
     const userId = invite.data.user.id;
     const { error: updErr } = await admin.auth.admin.updateUserById(userId, {
-      password:      tempPassword,
+      password: tempPassword,
       email_confirm: true,
-      app_metadata:  { password_set: false },
+      app_metadata: { password_set: false },
     });
     if (updErr) {
       return { ok: false, error: updErr.message };
@@ -137,10 +152,10 @@ export async function sendInvitationEmail(
   // and re-send the email via signInWithOtp (the only call that mails
   // confirmed users).
   const { error: updErr } = await admin.auth.admin.updateUserById(existing.id, {
-    password:      tempPassword,
+    password: tempPassword,
     email_confirm: true,
     user_metadata: userMeta,
-    app_metadata:  { password_set: false },
+    app_metadata: { password_set: false },
   });
   if (updErr) {
     return { ok: false, error: updErr.message };
@@ -158,9 +173,12 @@ export async function sendInvitationEmail(
   // The template will render with the temp_password we just stored on
   // user_metadata.
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey     = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!supabaseUrl || !anonKey) {
-    return { ok: false, error: "Supabase env not configured for re-invite email." };
+    return {
+      ok: false,
+      error: "Supabase env not configured for re-invite email.",
+    };
   }
   const anon = createAnonClient(supabaseUrl, anonKey, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -182,7 +200,7 @@ export async function sendInvitationEmail(
  */
 export async function resendInvitationEmail(
   admin: SupabaseClient,
-  userId: string,
+  userId: string
 ): Promise<InviteResult> {
   const { data, error } = await admin.auth.admin.getUserById(userId);
   if (error || !data.user?.email) {

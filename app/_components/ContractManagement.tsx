@@ -521,9 +521,7 @@ export function BidViewer({
         }
         style={{
           borderColor: "var(--border)",
-          backgroundColor: inline
-            ? "var(--surface-raised)"
-            : "var(--surface)",
+          backgroundColor: inline ? "var(--surface-raised)" : "var(--surface)",
         }}
       >
         <div className="flex items-start gap-2">

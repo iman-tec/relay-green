@@ -10,9 +10,10 @@ import { useEffect, useState } from "react";
 import { Drawer } from "@/app/_components/admin-v2/Drawer";
 
 type Target = {
-  id: string; name: string;
+  id: string;
+  name: string;
   allocatedMinutes: number;
-  usedMinutes:      number;
+  usedMinutes: number;
   remainingMinutes: number;
 };
 
@@ -22,13 +23,13 @@ export function RefillDrawer({
   onClose,
   onRefilled,
 }: {
-  target:            Target | null;
+  target: Target | null;
   resellerRemaining: number;
-  onClose:           () => void;
-  onRefilled:        () => void;
+  onClose: () => void;
+  onRefilled: () => void;
 }) {
-  const [amount, setAmount]   = useState("100");
-  const [error, setError]     = useState<string | null>(null);
+  const [amount, setAmount] = useState("100");
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   // Reset form whenever the drawer opens against a new target.
@@ -43,7 +44,10 @@ export function RefillDrawer({
 
   const submit = async () => {
     const n = Number(amount);
-    if (!Number.isFinite(n) || n <= 0) { setError("Amount must be > 0."); return; }
+    if (!Number.isFinite(n) || n <= 0) {
+      setError("Amount must be > 0.");
+      return;
+    }
     if (n > resellerRemaining) {
       setError(`Exceeds your remaining minutes (${resellerRemaining}).`);
       return;
@@ -52,9 +56,9 @@ export function RefillDrawer({
     setError(null);
     try {
       const res = await fetch(`/api/reseller/enterprises/${target.id}/refill`, {
-        method:  "POST",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ amount: n }),
+        body: JSON.stringify({ amount: n }),
       });
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
@@ -76,7 +80,9 @@ export function RefillDrawer({
       title={`Refill — ${target.name}`}
       footer={
         <>
-          <SecondaryBtn onClick={onClose} disabled={loading}>Cancel</SecondaryBtn>
+          <SecondaryBtn onClick={onClose} disabled={loading}>
+            Cancel
+          </SecondaryBtn>
           <PrimaryBtn onClick={submit} disabled={loading}>
             {loading ? "Adding…" : "Add minutes"}
           </PrimaryBtn>
@@ -84,17 +90,24 @@ export function RefillDrawer({
       }
     >
       <p className="mb-3 text-xs" style={{ color: "var(--text-muted)" }}>
-        Your remaining pool: <strong style={{ color: "var(--text)" }}>{resellerRemaining.toLocaleString()}</strong> minutes.
+        Your remaining pool:{" "}
+        <strong style={{ color: "var(--text)" }}>
+          {resellerRemaining.toLocaleString()}
+        </strong>{" "}
+        minutes.
       </p>
       <p className="mb-4 text-xs" style={{ color: "var(--text-muted)" }}>
         Enterprise currently has{" "}
         <strong style={{ color: "var(--text)" }}>
-          {target.remainingMinutes.toLocaleString()} / {target.allocatedMinutes.toLocaleString()}
+          {target.remainingMinutes.toLocaleString()} /{" "}
+          {target.allocatedMinutes.toLocaleString()}
         </strong>{" "}
         minutes remaining.
       </p>
       <label className="flex flex-col gap-1.5">
-        <span className="text-xs font-medium" style={{ color: "var(--text)" }}>Minutes to add</span>
+        <span className="text-xs font-medium" style={{ color: "var(--text)" }}>
+          Minutes to add
+        </span>
         <input
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
@@ -109,8 +122,8 @@ export function RefillDrawer({
           className="mt-3 rounded-md border px-3 py-2 text-xs"
           style={{
             borderColor: "color-mix(in srgb, var(--primary) 30%, transparent)",
-            background:  "color-mix(in srgb, var(--primary) 8%, transparent)",
-            color:       "var(--primary)",
+            background: "color-mix(in srgb, var(--primary) 8%, transparent)",
+            color: "var(--primary)",
           }}
         >
           {error}
@@ -120,12 +133,20 @@ export function RefillDrawer({
   );
 }
 
-function PrimaryBtn({ onClick, disabled, children }: {
-  onClick: () => void; disabled?: boolean; children: React.ReactNode;
+function PrimaryBtn({
+  onClick,
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
 }) {
   return (
     <button
-      type="button" onClick={onClick} disabled={disabled}
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
       className="rounded-md px-3 py-2 text-sm font-medium transition-opacity disabled:opacity-50"
       style={{ background: "var(--primary)", color: "#fff" }}
     >
@@ -134,12 +155,20 @@ function PrimaryBtn({ onClick, disabled, children }: {
   );
 }
 
-function SecondaryBtn({ onClick, disabled, children }: {
-  onClick: () => void; disabled?: boolean; children: React.ReactNode;
+function SecondaryBtn({
+  onClick,
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
 }) {
   return (
     <button
-      type="button" onClick={onClick} disabled={disabled}
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
       className="rounded-md border px-3 py-2 text-sm font-medium transition-opacity disabled:opacity-50"
       style={{ borderColor: "var(--border)", color: "var(--text)" }}
     >

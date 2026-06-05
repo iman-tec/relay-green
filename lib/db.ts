@@ -21,8 +21,8 @@ type AnyFn = (...args: unknown[]) => unknown;
 function deadStub(): never {
   throw new Error(
     "Prisma is no longer wired in this app. All persistence goes through " +
-    "@supabase/supabase-js. If you reached this error, the calling page is " +
-    "legacy code that should be rewritten or removed.",
+      "@supabase/supabase-js. If you reached this error, the calling page is " +
+      "legacy code that should be rewritten or removed."
   );
 }
 

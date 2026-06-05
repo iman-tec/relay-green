@@ -30,8 +30,8 @@ export interface SessionDraft {
   projectId: string;
   /** The problem write-up. Plain text; markdown / formatting deferred. */
   text: string;
-  createdAt: number;   // ms epoch
-  updatedAt: number;   // ms epoch — bumped on every save
+  createdAt: number; // ms epoch
+  updatedAt: number; // ms epoch — bumped on every save
 }
 
 const STORAGE_KEY = "relay-session-drafts-v1";
@@ -117,9 +117,10 @@ export function saveDraft(args: {
     if (oldest) delete map[oldest.id];
   }
   const created: SessionDraft = {
-    id: typeof crypto !== "undefined" && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `draft-${now}-${Math.random().toString(36).slice(2, 9)}`,
+    id:
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `draft-${now}-${Math.random().toString(36).slice(2, 9)}`,
     projectId: args.projectId,
     text: args.text,
     createdAt: now,
@@ -151,11 +152,72 @@ async function mirrorDraftToServer(draft: SessionDraft): Promise<void> {
         text: draft.text,
         updated_at: new Date(draft.updatedAt).toISOString(),
       },
-      { onConflict: "customer_user_id,project_id,local_id" },
+      { onConflict: "customer_user_id,project_id,local_id" }
     );
   } catch {
     /* best-effort; local copy remains authoritative */
   }
+}
+
+/** Awaitable server mirror for the engineer handoff.
+ *
+ *  saveDraft's mirror is fire-and-forget and only runs for drafts the
+ *  customer explicitly "saved for later". When the customer hits "Call
+ *  engineer" we instead need to guarantee the prep text is queryable
+ *  BEFORE the engineer's session-mount fetch runs — including for a fresh
+ *  draft that was never saved. This upserts the row and resolves once the
+ *  write lands so the caller can ring without racing the engineer's read.
+ *
+ *  Best-effort: resolves `false` (never throws) on auth/network/RLS
+ *  failure so the call flow is never blocked by a mirror blip — the worst
+ *  case is the engineer's chat opens without the prep text, same as today.
+ *  Returns the `local_id` used so the caller can clean up the matching
+ *  local row without touching the server copy. */
+export async function ensureDraftMirrored(args: {
+  id?: string | null;
+  projectId: string;
+  text: string;
+}): Promise<{ ok: boolean; localId: string | null }> {
+  if (typeof window === "undefined") return { ok: false, localId: null };
+  const text = args.text.trim();
+  if (!text || !args.projectId) return { ok: false, localId: null };
+  const localId = args.id
+    ?? (typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `draft-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`);
+  try {
+    const sb = createClient();
+    const { data: u } = await sb.auth.getUser();
+    const customerUserId = u.user?.id;
+    if (!customerUserId) return { ok: false, localId };
+    const { error } = await sb.from("customer_session_drafts").upsert(
+      {
+        customer_user_id: customerUserId,
+        project_id: args.projectId,
+        local_id: localId,
+        text,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "customer_user_id,project_id,local_id" },
+    );
+    return { ok: !error, localId };
+  } catch {
+    return { ok: false, localId };
+  }
+}
+
+/** Remove a draft from localStorage only, leaving any server mirror
+ *  intact. Used when "Call engineer" promotes a draft into a live session:
+ *  the sidebar row should disappear, but the engineer still needs to fetch
+ *  the mirrored prep text (and consumes the server row itself afterwards
+ *  via engineer_consume_draft). Contrast with deleteDraft, which also
+ *  tears down the server mirror. */
+export function deleteDraftLocalOnly(id: string): void {
+  if (!id) return;
+  const map = safeRead();
+  if (!map[id]) return;
+  delete map[id];
+  safeWrite(map);
 }
 
 /** Delete a draft by id. No-op if not found. */
@@ -172,7 +234,9 @@ export function deleteDraft(id: string): void {
     try {
       const sb = createClient();
       await sb.from("customer_session_drafts").delete().eq("local_id", id);
-    } catch { /* swallow */ }
+    } catch {
+      /* swallow */
+    }
   })();
 }
 

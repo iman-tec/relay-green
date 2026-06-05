@@ -16,7 +16,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useOverlayDismiss } from "@/lib/relay/useOverlayDismiss";
 import Link from "next/link";
 import { PanelGroup, Panel, PanelResizeHandle } from "react-resizable-panels";
@@ -55,6 +55,7 @@ import { ProjectAIAssistant } from "@/app/_components/ProjectAIAssistant";
 import { MessageAttachments } from "@/app/_components/MessageAttachments";
 import { EditableSummary } from "@/app/_components/EditableSummary";
 import { createClient } from "@/lib/supabase/browser";
+import { CUSTOMER_PREP_PRELUDE } from "@/lib/relay/engineerAiContext";
 import { useEngineerSession } from "@/lib/relay/useEngineerSession";
 import {
   useIsSupervisor,
@@ -102,6 +103,18 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
   // by another engineer that they're inspecting.
   const isSupervisor = useIsSupervisor();
 
+  // Where "Back" / post-session redirect sends staff: supervisors return to
+  // /supervise (their home), engineers to their inbox.
+  const backHref = isSupervisor ? "/supervise" : "/inbox";
+
+  // "Join call" intent (?join=1) — set when a supervisor opens a session that
+  // needs attention (shaky / at-risk / escalated) from /supervise, vs. plain
+  // "Watch" on a healthy session. It lifts the read-only chat lock so the
+  // supervisor can step in, exactly like the appointment flow. (Healthy →
+  // "Watch" → no param → read-only.)
+  const searchParams = useSearchParams();
+  const joinIntent = searchParams.get("join") === "1";
+
   // Appointment flow: the supervisor OWNS the booking and is a genuine
   // participant, not a silent monitor. They already join the Zoom call; the
   // only thing missing was chat. So in an is_appointment session we lift the
@@ -109,7 +122,7 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
   // Video hosting is untouched — the assigned engineer remains the Zoom host
   // (the video token only authorises claimed_by/customer).
   const isAppointment = !!state.session?.is_appointment;
-  const supervisorCanChat = isSupervisor && isAppointment;
+  const supervisorCanChat = isSupervisor && (isAppointment || joinIntent);
 
   // Appointment flow only: tell the customer's room that the moderator has
   // joined, so their ring stops and the chat/Zoom call become available even
@@ -121,8 +134,37 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
     if (!s || !isSupervisor || !s.is_appointment) return;
     if (supJoinedRef.current.has(s.id)) return;
     supJoinedRef.current.add(s.id);
-    void createClient().rpc("mark_supervisor_joined", { _session_id: s.id });
+    void (async () => {
+      try {
+        await createClient().rpc("mark_supervisor_joined", { _session_id: s.id });
+      } catch {
+        /* best-effort */
+      }
+    })();
   }, [state.session?.id, state.session?.is_appointment, isSupervisor]);
+
+  // "Join call" on an escalated session (?join=1): mark the session's active
+  // escalation as joined so it counts as attended (joined_at stamped) — the
+  // card "Join call" path doesn't go through the ack→join toast flow. Once per
+  // session; the RPC is a no-op when there's no active escalation / already
+  // joined. Skipped for ended sessions (nothing to join).
+  const escJoinedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const s = state.session;
+    if (!s || !isSupervisor || !joinIntent) return;
+    if (s.status === "ended") return;
+    if (escJoinedRef.current.has(s.id)) return;
+    escJoinedRef.current.add(s.id);
+    // Must await inside an async IIFE — a Supabase builder only fires when
+    // then'd/awaited; a bare `void rpc()` never executes the request.
+    void (async () => {
+      try {
+        await createClient().rpc("supervisor_join_escalation", { _session_id: s.id });
+      } catch {
+        /* best-effort */
+      }
+    })();
+  }, [state.session?.id, state.session?.status, isSupervisor, joinIntent]);
 
   // Drives whether the Zoom embed is mounted. We auto-mount the embed as
   // soon as the engineer lands on the session room (status=assigned/joining)
@@ -165,19 +207,33 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
 
   // ── Customer-prep handoff ───────────────────────────────────────────────
   // When the engineer lands on the session room, look up the customer's
-  // most-recent saved draft for this session's project and post its text
-  // as the opening chat message. The server-side mirror in
-  // customer_session_drafts lets us bridge across browsers — the customer
-  // wrote it in their localStorage, we mirrored it on save, and now we
-  // pull it back via the engineer_fetch_customer_draft RPC.
+  // most-recent prep draft for this session's project (what they wrote in the
+  // "Tell the engineer what you're working on" panel before ringing) and post
+  // it as the opening chat message. The customer mirrored the text into
+  // customer_session_drafts on "Call engineer"; the engineer can't read that
+  // table under RLS, so /api/engineer/customer-draft fetches + consumes it
+  // server-side with the service role. (This replaces the engineer_fetch/
+  // consume_customer_draft RPCs, which shipped referencing a non-existent
+  // guest_calls.customer_id column and silently errored on every call.)
   //
   // Once-per-session guard: a ref keyed by session id prevents re-renders
-  // from posting the prep text twice. We also call engineer_consume_draft
-  // so the next session on the same project doesn't see stale prep text.
+  // from posting the prep text twice. The route consumes the draft so the
+  // next session on the same project doesn't re-replay stale prep text.
   const prepHandedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const s = state.session;
-    if (!s || !state.isAssignedEngineer || isSupervisor) return;
+    if (!s) return;
+    // TEMP DIAGNOSTIC (prep handoff) — logs why the handoff does/doesn't run.
+    // Remove once root-caused.
+    console.warn("[prep-handoff] eval", {
+      sessionId: s.id,
+      status: s.status,
+      isAssignedEngineer: state.isAssignedEngineer,
+      isSupervisor,
+      projectId: s.project_id ?? null,
+      alreadyHanded: prepHandedRef.current.has(s.id),
+    });
+    if (!state.isAssignedEngineer || isSupervisor) return;
     if (!["assigned", "joining", "live"].includes(s.status)) return;
     if (prepHandedRef.current.has(s.id)) return;
     if (!s.project_id) return;
@@ -199,12 +255,12 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
         if (!text) return;
         // System prelude lets the engineer see "this is prep, not a live
         // message" at a glance.
-        await sb.from("guest_messages").insert([
+        const { error: insErr } = await sb.from("guest_messages").insert([
           {
             guest_call_id: s.id,
             sender_kind: "system",
             sender_name: "Relay",
-            body: "💡 Customer prepared this before the call:",
+            body: CUSTOMER_PREP_PRELUDE,
           },
           {
             guest_call_id: s.id,
@@ -213,12 +269,11 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
             body: text,
           },
         ]);
-        // Consume the draft on the server so the next engineer joining
-        // this project doesn't re-replay it as opening prep.
-        await sb.rpc("engineer_consume_draft", { _draft_id: draft.id });
+        if (insErr) console.warn("[prep-handoff] INSERT FAILED:", insErr.message);
+        else console.warn("[prep-handoff] posted opening message");
         await state.refresh();
-      } catch {
-        /* best-effort handoff; chat still works without it */
+      } catch (e) {
+        console.warn("[prep-handoff] threw:", e instanceof Error ? e.message : e);
       }
     })();
     return () => {
@@ -319,7 +374,7 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
       prevStatusRef.current &&
       prevStatusRef.current !== "ended"
     ) {
-      const dest = isSupervisor ? "/inbox" : `/session-review/${sessionId}`;
+      const dest = isSupervisor ? "/supervise" : `/session-review/${sessionId}`;
       const t = setTimeout(() => router.push(dest), 3000);
       return () => clearTimeout(t);
     }
@@ -395,11 +450,11 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
           Session not found.
         </p>
         <button
-          onClick={() => router.push("/inbox")}
+          onClick={() => router.push(backHref)}
           className="mt-4 text-sm underline"
           style={{ color: BRAND_GREEN }}
         >
-          Back to inbox
+          {isSupervisor ? "Back to supervise" : "Back to inbox"}
         </button>
       </div>
     );
@@ -452,9 +507,11 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
                       }}
                     >
                       <Eye size={11} />
-                      {supervisorCanChat
+                      {isAppointment
                         ? "Supervisor · appointment"
-                        : "Supervisor · read-only"}
+                        : supervisorCanChat
+                          ? "Supervisor · joined"
+                          : "Supervisor · read-only"}
                     </div>
                   )}
                   <main className="min-h-0 flex-1 overflow-hidden">
@@ -530,9 +587,11 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
                 }}
               >
                 <Eye size={11} />
-                {supervisorCanChat
+                {isAppointment
                   ? "Supervisor view · appointment"
-                  : "Supervisor view · read-only"}
+                  : supervisorCanChat
+                    ? "Supervisor view · joined"
+                    : "Supervisor view · read-only"}
               </div>
             )}
             {!isSupervisor && (
@@ -807,8 +866,8 @@ function Sidebar({
         </button>
 
         <Link
-          href="/inbox"
-          title="Back to inbox"
+          href={isSupervisor ? "/supervise" : "/inbox"}
+          title={isSupervisor ? "Back to supervise" : "Back to inbox"}
           className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5"
           style={{ color: "var(--text-muted)" }}
         >
@@ -900,9 +959,9 @@ function Sidebar({
         <Wordmark size="md" />
         <div className="flex items-center gap-1">
           <Link
-            href="/inbox"
+            href={isSupervisor ? "/supervise" : "/inbox"}
             className="rounded-md p-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-            title="Back to inbox"
+            title={isSupervisor ? "Back to supervise" : "Back to inbox"}
             style={{ color: "var(--text-muted)" }}
           >
             <ArrowLeft size={14} />
@@ -1526,6 +1585,7 @@ function FloatingStatus({
   const [busyStart, setBusyStart] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [mintError, setMintError] = useState<string | null>(null);
+  const [minting, setMinting] = useState(false);
 
   const isPreLive = ["assigned", "joining", "grace"].includes(session.status);
   const isLive = session.status === "live";
@@ -1612,6 +1672,30 @@ function FloatingStatus({
       onStart();
     } finally {
       setBusyStart(false);
+    }
+  };
+
+  // Mint (or restart) the Zoom meeting via the edge function. On success a
+  // "Zoom meeting started" system message arrives via realtime and the inline
+  // ZoomCallCard in the chat refreshes. The defensive refresh keeps the UI in
+  // sync if the realtime subscription drops.
+  const handleStartMeeting = async () => {
+    setMinting(true);
+    setMintError(null);
+    try {
+      const sb = createClient();
+      const { error } = await sb.functions.invoke("mint-zoom-for-session", {
+        body: { session_id: session.id },
+      });
+      if (error) {
+        const msg = error.message ?? "Couldn't start a Zoom meeting";
+        setMintError(msg);
+        setTimeout(() => setMintError(null), 6000);
+        return;
+      }
+      await state.refresh();
+    } finally {
+      setMinting(false);
     }
   };
 

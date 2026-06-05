@@ -16,13 +16,14 @@ import { requireSuperAdmin } from "@/lib/admin-auth";
 import { banUser, unbanUser } from "@/lib/auth-ban";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: Request, { params }: RouteCtx) {
   const gate = await requireSuperAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin } = gate;
 
   const { id } = await params;
@@ -43,10 +44,14 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
         .select("owner_user_id")
         .eq("id", id)
         .maybeSingle();
-      const ownerUserId = (rRow as { owner_user_id: string | null } | null)?.owner_user_id;
+      const ownerUserId = (rRow as { owner_user_id: string | null } | null)
+        ?.owner_user_id;
 
-      const { error } = await admin.rpc("deactivate_reseller", { _reseller_id: id });
-      if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+      const { error } = await admin.rpc("deactivate_reseller", {
+        _reseller_id: id,
+      });
+      if (error)
+        return NextResponse.json({ error: error.message }, { status: 400 });
 
       // The reseller row is now suspended and its enterprises stay linked
       // (reversible). Banning the owner's login makes the suspension mean
@@ -59,13 +64,15 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
         .from("resellers")
         .update({ status: "active" })
         .eq("id", id);
-      if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+      if (error)
+        return NextResponse.json({ error: error.message }, { status: 400 });
       const { data: rRow } = await admin
         .from("resellers")
         .select("owner_user_id")
         .eq("id", id)
         .maybeSingle();
-      const ownerUserId = (rRow as { owner_user_id: string | null } | null)?.owner_user_id;
+      const ownerUserId = (rRow as { owner_user_id: string | null } | null)
+        ?.owner_user_id;
       if (ownerUserId) await unbanUser(admin, ownerUserId);
       return NextResponse.json({ ok: true, status: "active" });
     }
@@ -84,7 +91,10 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
   if (body.commission !== undefined) {
     const n = Number(body.commission);
     if (Number.isNaN(n) || n < 0 || n > 100) {
-      return NextResponse.json({ error: "Commission must be 0–100." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Commission must be 0–100." },
+        { status: 400 }
+      );
     }
     update.commission = n;
   }
@@ -97,7 +107,10 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
   if (error) {
     // 23505 = unique_violation (email collision).
     if ((error as { code?: string }).code === "23505") {
-      return NextResponse.json({ error: "Another reseller already uses this email." }, { status: 409 });
+      return NextResponse.json(
+        { error: "Another reseller already uses this email." },
+        { status: 409 }
+      );
     }
     return NextResponse.json({ error: error.message }, { status: 400 });
   }

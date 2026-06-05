@@ -21,8 +21,12 @@ async function main() {
   if (only) {
     ids.add(only);
   } else {
-    const { data: gc } = await sb.from("guest_calls").select("project_id").not("project_id", "is", null);
-    for (const r of (gc ?? []) as { project_id: string | null }[]) if (r.project_id) ids.add(r.project_id);
+    const { data: gc } = await sb
+      .from("guest_calls")
+      .select("project_id")
+      .not("project_id", "is", null);
+    for (const r of (gc ?? []) as { project_id: string | null }[])
+      if (r.project_id) ids.add(r.project_id);
     const { data: pr } = await sb.from("projects").select("id");
     for (const r of (pr ?? []) as { id: string }[]) ids.add(r.id);
   }
@@ -35,12 +39,19 @@ async function main() {
     try {
       const r = await indexProject(sb, id);
       totalChunks += r.chunks;
-      console.log(`[${i}/${ids.size}] ${id} → ${r.sessions} session(s), ${r.chunks} chunk(s)`);
+      console.log(
+        `[${i}/${ids.size}] ${id} → ${r.sessions} session(s), ${r.chunks} chunk(s)`
+      );
     } catch (e) {
-      console.error(`[${i}/${ids.size}] ${id} FAILED:`, e instanceof Error ? e.message : e);
+      console.error(
+        `[${i}/${ids.size}] ${id} FAILED:`,
+        e instanceof Error ? e.message : e
+      );
     }
   }
-  console.log(`\nDone. ${totalChunks} chunk(s) indexed across ${ids.size} project(s).`);
+  console.log(
+    `\nDone. ${totalChunks} chunk(s) indexed across ${ids.size} project(s).`
+  );
 }
 
 main()

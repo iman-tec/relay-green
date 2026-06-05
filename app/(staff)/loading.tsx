@@ -11,12 +11,16 @@ export default function StaffLoading() {
       {/* Title placeholder */}
       <div className="space-y-2">
         <span
-          className="block h-6 w-44 rounded animate-pulse"
-          style={{ backgroundColor: "color-mix(in srgb, var(--text) 8%, transparent)" }}
+          className="block h-6 w-44 animate-pulse rounded"
+          style={{
+            backgroundColor: "color-mix(in srgb, var(--text) 8%, transparent)",
+          }}
         />
         <span
-          className="block h-3 w-72 rounded animate-pulse"
-          style={{ backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)" }}
+          className="block h-3 w-72 animate-pulse rounded"
+          style={{
+            backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)",
+          }}
         />
       </div>
 
@@ -25,10 +29,11 @@ export default function StaffLoading() {
         {Array.from({ length: 5 }).map((_, i) => (
           <div
             key={i}
-            className="h-20 rounded-xl border animate-pulse"
+            className="h-20 animate-pulse rounded-xl border"
             style={{
               borderColor: "var(--border)",
-              backgroundColor: "color-mix(in srgb, var(--text) 4%, var(--surface))",
+              backgroundColor:
+                "color-mix(in srgb, var(--text) 4%, var(--surface))",
               animationDelay: `${i * 40}ms`,
             }}
           />
@@ -38,12 +43,21 @@ export default function StaffLoading() {
       {/* Content card placeholder */}
       <div
         className="rounded-xl border"
-        style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+        style={{
+          borderColor: "var(--border)",
+          backgroundColor: "var(--surface)",
+        }}
       >
-        <div className="border-b px-5 py-3" style={{ borderColor: "var(--border)" }}>
+        <div
+          className="border-b px-5 py-3"
+          style={{ borderColor: "var(--border)" }}
+        >
           <span
-            className="block h-4 w-32 rounded animate-pulse"
-            style={{ backgroundColor: "color-mix(in srgb, var(--text) 8%, transparent)" }}
+            className="block h-4 w-32 animate-pulse rounded"
+            style={{
+              backgroundColor:
+                "color-mix(in srgb, var(--text) 8%, transparent)",
+            }}
           />
         </div>
         <ul>
@@ -54,24 +68,27 @@ export default function StaffLoading() {
               style={{ borderColor: "var(--border)" }}
             >
               <span
-                className="h-8 w-8 shrink-0 rounded-full animate-pulse"
+                className="h-8 w-8 shrink-0 animate-pulse rounded-full"
                 style={{
-                  backgroundColor: "color-mix(in srgb, var(--text) 8%, transparent)",
+                  backgroundColor:
+                    "color-mix(in srgb, var(--text) 8%, transparent)",
                   animationDelay: `${i * 60}ms`,
                 }}
               />
               <div className="flex-1 space-y-1.5">
                 <span
-                  className="block h-3 w-1/3 rounded animate-pulse"
+                  className="block h-3 w-1/3 animate-pulse rounded"
                   style={{
-                    backgroundColor: "color-mix(in srgb, var(--text) 8%, transparent)",
+                    backgroundColor:
+                      "color-mix(in srgb, var(--text) 8%, transparent)",
                     animationDelay: `${i * 60}ms`,
                   }}
                 />
                 <span
-                  className="block h-2.5 w-1/4 rounded animate-pulse"
+                  className="block h-2.5 w-1/4 animate-pulse rounded"
                   style={{
-                    backgroundColor: "color-mix(in srgb, var(--text) 5%, transparent)",
+                    backgroundColor:
+                      "color-mix(in srgb, var(--text) 5%, transparent)",
                     animationDelay: `${i * 60 + 30}ms`,
                   }}
                 />

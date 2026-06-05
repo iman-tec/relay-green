@@ -24,15 +24,18 @@ const DEMO_PASSWORD = "RelayDev123!";
 // Customer-side bypass is intentionally absent — production demo flow goes
 // through real OTP. Only staff roles get the one-click sign-in for testing.
 const ROLE_TO_USER: Record<string, { email: string; landing: string }> = {
-  engineer:    { email: "dev.soni@thegatewaycorp.co.in",    landing: "/dashboard"  },
-  supervisor:  { email: "supervisor.demo@relay.test",       landing: "/supervise"  },
-  internal:    { email: "admin.demo@relay.test",            landing: "/admin"      },
-  enterprise:  { email: "enterprise.demo@relay.test",       landing: "/enterprise" },
+  engineer: { email: "dev.soni@thegatewaycorp.co.in", landing: "/dashboard" },
+  supervisor: { email: "supervisor.demo@relay.test", landing: "/supervise" },
+  internal: { email: "admin.demo@relay.test", landing: "/admin" },
+  enterprise: { email: "enterprise.demo@relay.test", landing: "/enterprise" },
 };
 
 export async function GET(request: Request) {
   if (process.env.NODE_ENV === "production") {
-    return NextResponse.json({ error: "forbidden_in_production" }, { status: 403 });
+    return NextResponse.json(
+      { error: "forbidden_in_production" },
+      { status: 403 }
+    );
   }
 
   const requestUrl = new URL(request.url);
@@ -42,21 +45,26 @@ export async function GET(request: Request) {
   // the LAN IP. That would cause us to redirect them off-host. The Host
   // header reflects what the browser actually sent.
   const host = request.headers.get("host") ?? requestUrl.host;
-  const proto = request.headers.get("x-forwarded-proto") ?? requestUrl.protocol.replace(":", "");
+  const proto =
+    request.headers.get("x-forwarded-proto") ??
+    requestUrl.protocol.replace(":", "");
   const origin = `${proto}://${host}`;
   const role = (searchParams.get("role") ?? "").toLowerCase();
   const target = ROLE_TO_USER[role];
   if (!target) {
     return NextResponse.json(
       { error: "unknown_role", valid_roles: Object.keys(ROLE_TO_USER) },
-      { status: 400 },
+      { status: 400 }
     );
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!supabaseUrl || !anonKey) {
-    return NextResponse.json({ error: "supabase_env_missing" }, { status: 500 });
+    return NextResponse.json(
+      { error: "supabase_env_missing" },
+      { status: 500 }
+    );
   }
 
   // Anon-key client to perform a real signInWithPassword.
@@ -70,7 +78,7 @@ export async function GET(request: Request) {
   if (signErr || !signed?.session) {
     return NextResponse.json(
       { error: "demo_signin_failed", detail: signErr?.message ?? "no session" },
-      { status: 500 },
+      { status: 500 }
     );
   }
 
@@ -96,7 +104,10 @@ export async function GET(request: Request) {
     refresh_token: signed.session.refresh_token,
   });
   if (setErr) {
-    return NextResponse.json({ error: "set_session_failed", detail: setErr.message }, { status: 500 });
+    return NextResponse.json(
+      { error: "set_session_failed", detail: setErr.message },
+      { status: 500 }
+    );
   }
 
   return response;

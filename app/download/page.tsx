@@ -39,7 +39,7 @@ type Build = {
   filename: string;
   sizeMb: number;
   accentText: string;
-  accentBg:   string;
+  accentBg: string;
   accentGlow: string;
 };
 
@@ -69,13 +69,13 @@ export default function DownloadPage() {
 
         <header className="relative mb-16 text-center">
           <p
-            className="mb-4 text-xs font-semibold uppercase tracking-[0.2em]"
+            className="mb-4 text-xs font-semibold tracking-[0.2em] uppercase"
             style={{ color: "var(--ink-soft)" }}
           >
             Desktop downloads
           </p>
           <h1
-            className="text-4xl font-medium leading-[1.1] tracking-tight sm:text-5xl md:text-6xl"
+            className="text-4xl leading-[1.1] font-medium tracking-tight sm:text-5xl md:text-6xl"
             style={{ fontFamily: "var(--font-display)", color: "var(--ink)" }}
           >
             Relay on your machine.
@@ -84,8 +84,8 @@ export default function DownloadPage() {
             className="mx-auto mt-5 max-w-2xl text-base leading-relaxed sm:text-lg"
             style={{ color: "var(--ink-2)" }}
           >
-            Native app for the people who can&apos;t afford to miss a call —
-            and for the builders who want one in seconds. Pick your platform.
+            Native app for the people who can&apos;t afford to miss a call — and
+            for the builders who want one in seconds. Pick your platform.
           </p>
         </header>
 
@@ -123,7 +123,7 @@ export default function DownloadPage() {
             <div className="relative flex flex-col items-start gap-5 sm:flex-row sm:items-center sm:justify-between">
               <div className="max-w-xl">
                 <div
-                  className="mb-3 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]"
+                  className="mb-3 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold tracking-[0.16em] uppercase"
                   style={{
                     color: "var(--ink)",
                     borderColor: "var(--rule)",
@@ -146,8 +146,8 @@ export default function DownloadPage() {
                   style={{ color: "var(--ink-2)" }}
                 >
                   We&apos;re packaging signed universal binaries for Apple
-                  Silicon and Intel. Until then, the web app gives you the
-                  full experience in any modern browser.
+                  Silicon and Intel. Until then, the web app gives you the full
+                  experience in any modern browser.
                 </p>
               </div>
               <Link
@@ -193,9 +193,9 @@ export default function DownloadPage() {
                   className="mt-2 text-[15px] leading-relaxed"
                   style={{ color: "var(--ink-2)" }}
                 >
-                  Relay runs as a fully-featured web app in any modern
-                  browser. Same matching, same chat, same Zoom hand-off —
-                  no install, no privileged background process.
+                  Relay runs as a fully-featured web app in any modern browser.
+                  Same matching, same chat, same Zoom hand-off — no install, no
+                  privileged background process.
                 </p>
               </div>
               <Link
@@ -216,7 +216,7 @@ export default function DownloadPage() {
         {/* ── First-run notes ───────────────────────────────────────── */}
         <section className="mt-20">
           <h2
-            className="mb-5 text-sm font-semibold uppercase tracking-[0.16em]"
+            className="mb-5 text-sm font-semibold tracking-[0.16em] uppercase"
             style={{ color: "var(--ink-soft)" }}
           >
             First-run notes
@@ -332,12 +332,12 @@ function BuildCard({ build }: { build: Build }) {
       {/* Accent glow in the corner — soft so it reads as polish */}
       <div
         aria-hidden
-        className="pointer-events-none absolute -right-12 -top-12 size-40 rounded-full opacity-60 blur-2xl"
+        className="pointer-events-none absolute -top-12 -right-12 size-40 rounded-full opacity-60 blur-2xl"
         style={{ backgroundColor: build.accentGlow }}
       />
 
       <div
-        className="mb-3 inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]"
+        className="mb-3 inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold tracking-[0.16em] uppercase"
         style={{
           color: build.accentText,
           backgroundColor: "var(--cream)",
@@ -410,7 +410,7 @@ function ComingSoonWindowsPanel() {
       <div className="relative flex flex-col items-start gap-5 sm:flex-row sm:items-center sm:justify-between">
         <div className="max-w-xl">
           <div
-            className="mb-3 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]"
+            className="mb-3 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold tracking-[0.16em] uppercase"
             style={{
               color: "var(--ink)",
               borderColor: "var(--rule)",
@@ -432,10 +432,9 @@ function ComingSoonWindowsPanel() {
             className="mt-2 text-[15px] leading-relaxed"
             style={{ color: "var(--ink-2)" }}
           >
-            We&apos;re finalizing an Authenticode-signed installer so
-            Windows won&apos;t flag it on first launch. Until that ships,
-            the web app gives you the full experience in any modern
-            browser.
+            We&apos;re finalizing an Authenticode-signed installer so Windows
+            won&apos;t flag it on first launch. Until that ships, the web app
+            gives you the full experience in any modern browser.
           </p>
         </div>
         <Link
@@ -463,7 +462,10 @@ function NoteItem({ title, body }: { title: string; body: string }) {
         borderColor: "var(--rule)",
       }}
     >
-      <div className="text-[15px] font-semibold" style={{ color: "var(--ink)" }}>
+      <div
+        className="text-[15px] font-semibold"
+        style={{ color: "var(--ink)" }}
+      >
         {title}
       </div>
       <p
@@ -480,7 +482,13 @@ function NoteItem({ title, body }: { title: string; body: string }) {
 
 function WindowsIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden
+    >
       <path d="M3 5.7 10.5 4.5v7.5H3V5.7zM11.5 4.4 21 3v9h-9.5V4.4zM3 13h7.5v7.3L3 19V13zm8.5 0H21v9l-9.5-1.3V13z" />
     </svg>
   );
@@ -488,7 +496,13 @@ function WindowsIcon() {
 
 function AppleIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden
+    >
       <path d="M17.5 12.6c0-2.7 2.2-4 2.3-4.1-1.2-1.8-3.2-2-3.9-2.1-1.7-.2-3.2 1-4.1 1-.9 0-2.2-1-3.6-1-1.9 0-3.6 1.1-4.5 2.8-1.9 3.3-.5 8.2 1.4 10.9.9 1.3 2 2.7 3.4 2.7 1.4-.1 1.9-.9 3.5-.9 1.7 0 2.1.9 3.6.9 1.5 0 2.4-1.3 3.3-2.6 1-1.5 1.5-3 1.5-3.1-.1-.1-2.9-1.1-2.9-4.5zM14.8 4.4c.8-.9 1.3-2.2 1.1-3.4-1.1 0-2.4.7-3.2 1.6-.7.8-1.3 2.1-1.2 3.3 1.2.1 2.4-.6 3.3-1.5z" />
     </svg>
   );
@@ -496,7 +510,17 @@ function AppleIcon() {
 
 function TerminalIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
       <polyline points="4 17 10 11 4 5" />
       <line x1="12" y1="19" x2="20" y2="19" />
     </svg>
@@ -505,7 +529,17 @@ function TerminalIcon() {
 
 function ClockIcon() {
   return (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg
+      width="11"
+      height="11"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
       <circle cx="12" cy="12" r="10" />
       <polyline points="12 6 12 12 16 14" />
     </svg>
@@ -514,7 +548,17 @@ function ClockIcon() {
 
 function DownloadIcon() {
   return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
       <polyline points="7 10 12 15 17 10" />
       <line x1="12" y1="15" x2="12" y2="3" />
@@ -524,7 +568,17 @@ function DownloadIcon() {
 
 function ArrowRight() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
       <line x1="5" y1="12" x2="19" y2="12" />
       <polyline points="12 5 19 12 12 19" />
     </svg>

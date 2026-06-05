@@ -14,18 +14,18 @@ const SPECIALS = "!@#$%^&*()_+\\-=\\[\\]{};:'\",.<>/?\\\\|`~";
 export const PASSWORD_MIN_LENGTH = 8;
 
 export type PasswordCheck = {
-  length:    boolean;
+  length: boolean;
   lowercase: boolean;
-  digit:     boolean;
-  special:   boolean;
+  digit: boolean;
+  special: boolean;
 };
 
 export function checkPassword(password: string): PasswordCheck {
   return {
-    length:    password.length >= PASSWORD_MIN_LENGTH,
+    length: password.length >= PASSWORD_MIN_LENGTH,
     lowercase: /[a-z]/.test(password),
-    digit:     /\d/.test(password),
-    special:   new RegExp(`[${SPECIALS}]`).test(password),
+    digit: /\d/.test(password),
+    special: new RegExp(`[${SPECIALS}]`).test(password),
   };
 }
 

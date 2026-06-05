@@ -19,16 +19,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 export type SortState = { column: string; dir: "asc" | "desc" } | null;
 
 export type ListResponse<T> = {
-  rows:     T[];
-  total:    number;
-  page:     number;
+  rows: T[];
+  total: number;
+  page: number;
   pageSize: number;
 };
 
 type Options = {
   pageSize?: number;
-  sort?:     SortState;
-  filters?:  readonly string[];
+  sort?: SortState;
+  filters?: readonly string[];
   /** Extra query params merged into every request (use for fixed scoping
    *  like `?scope=staff`). Not stored in state, not user-editable. */
   fixedParams?: Record<string, string | undefined>;
@@ -39,7 +39,7 @@ export function useListQuery<T>(endpoint: string, opts: Options = {}) {
   // ({ filters: [...], fixedParams: {...} } as literals) don't push new
   // identities into the fetch dependency array and cause an endless
   // refetch loop.
-  const filterKeysKey  = JSON.stringify(opts.filters     ?? []);
+  const filterKeysKey = JSON.stringify(opts.filters ?? []);
   const fixedParamsKey = JSON.stringify(opts.fixedParams ?? {});
 
   // Always-current reference for use inside fetchRows without listing the
@@ -48,19 +48,21 @@ export function useListQuery<T>(endpoint: string, opts: Options = {}) {
   optsRef.current = opts;
 
   const initialPageSize = opts.pageSize ?? 25;
-  const initialSort     = opts.sort     ?? null;
+  const initialSort = opts.sort ?? null;
 
-  const [q,        setQ]        = useState("");
+  const [q, setQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
-  const [page,     setPage]     = useState(1);
+  const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(initialPageSize);
-  const [sort,     setSort]     = useState<SortState>(initialSort);
-  const [filters,  setFilters]  = useState<Record<string, string | undefined>>({});
+  const [sort, setSort] = useState<SortState>(initialSort);
+  const [filters, setFilters] = useState<Record<string, string | undefined>>(
+    {}
+  );
 
-  const [rows,    setRows]    = useState<T[]>([]);
-  const [total,   setTotal]   = useState(0);
+  const [rows, setRows] = useState<T[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [error,   setError]   = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const filtersKey = JSON.stringify(filters);
 
@@ -84,13 +86,19 @@ export function useListQuery<T>(endpoint: string, opts: Options = {}) {
     setError(null);
     const o = optsRef.current;
     const filterKeys: readonly string[] = JSON.parse(filterKeysKey);
-    const fixedParams = JSON.parse(fixedParamsKey) as Record<string, string | undefined>;
-    const filtersSnap = JSON.parse(filtersKey)     as Record<string, string | undefined>;
+    const fixedParams = JSON.parse(fixedParamsKey) as Record<
+      string,
+      string | undefined
+    >;
+    const filtersSnap = JSON.parse(filtersKey) as Record<
+      string,
+      string | undefined
+    >;
 
     const params = new URLSearchParams();
     if (debouncedQ) params.set("q", debouncedQ);
-    if (sort)       params.set("sort", `${sort.column}:${sort.dir}`);
-    params.set("page",     String(page));
+    if (sort) params.set("sort", `${sort.column}:${sort.dir}`);
+    params.set("page", String(page));
     params.set("pageSize", String(pageSize));
     for (const k of filterKeys) {
       const v = filtersSnap[k];
@@ -103,10 +111,17 @@ export function useListQuery<T>(endpoint: string, opts: Options = {}) {
 
     const sep = endpoint.includes("?") ? "&" : "?";
     try {
-      const res = await fetch(`${endpoint}${sep}${params.toString()}`, { cache: "no-store" });
-      const body = (await res.json().catch(() => null)) as ListResponse<T> | { error?: string } | null;
+      const res = await fetch(`${endpoint}${sep}${params.toString()}`, {
+        cache: "no-store",
+      });
+      const body = (await res.json().catch(() => null)) as
+        | ListResponse<T>
+        | { error?: string }
+        | null;
       if (!res.ok || !body || "error" in body) {
-        setError(((body as { error?: string }) ?? {}).error ?? `HTTP ${res.status}`);
+        setError(
+          ((body as { error?: string }) ?? {}).error ?? `HTTP ${res.status}`
+        );
         setRows([]);
         setTotal(0);
         return;
@@ -122,9 +137,21 @@ export function useListQuery<T>(endpoint: string, opts: Options = {}) {
       setLoading(false);
       isFirstRender.current = false;
     }
-  }, [endpoint, debouncedQ, sort?.column, sort?.dir, page, pageSize, filtersKey, fixedParamsKey, filterKeysKey]);
+  }, [
+    endpoint,
+    debouncedQ,
+    sort?.column,
+    sort?.dir,
+    page,
+    pageSize,
+    filtersKey,
+    fixedParamsKey,
+    filterKeysKey,
+  ]);
 
-  useEffect(() => { void fetchRows(); }, [fetchRows]);
+  useEffect(() => {
+    void fetchRows();
+  }, [fetchRows]);
 
   const toggleSort = useCallback((column: string) => {
     setSort((prev) => {
@@ -141,12 +168,21 @@ export function useListQuery<T>(endpoint: string, opts: Options = {}) {
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
   return {
-    rows, total, loading, error,
-    q,        setQ,
-    page,     setPage,
-    pageSize, setPageSize,
-    sort,     toggleSort, setSort,
-    filters,  setFilter,
+    rows,
+    total,
+    loading,
+    error,
+    q,
+    setQ,
+    page,
+    setPage,
+    pageSize,
+    setPageSize,
+    sort,
+    toggleSort,
+    setSort,
+    filters,
+    setFilter,
     pageCount,
     refresh: fetchRows,
   };

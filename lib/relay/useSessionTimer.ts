@@ -46,22 +46,27 @@ export type SessionTimer = {
   remaining: number;
   isWarning: boolean;
   isExpired: boolean;
-  format: string;            // MM:SS — elapsed since anchor (legacy)
-  formatRemaining: string;   // MM:SS — remaining in free cap (legacy)
+  format: string; // MM:SS — elapsed since anchor (legacy)
+  formatRemaining: string; // MM:SS — remaining in free cap (legacy)
   mode: SessionTimerMode;
-  display: string;           // MM:SS — what the UI should render in `mode`
+  display: string; // MM:SS — what the UI should render in `mode`
 };
 
 export function useSessionTimer(
   joinedAtOrInput: string | null | SessionTimerInput,
-  legacyFreeMinutes?: number,
+  legacyFreeMinutes?: number
 ): SessionTimer {
   // Normalize positional callers (`useSessionTimer(joinedAt, freeMinutes)`)
   // into the object form. The engineer / supervisor sidebar uses positional.
   const input: SessionTimerInput =
-    typeof joinedAtOrInput === "object" && joinedAtOrInput !== null && "joinedAt" in joinedAtOrInput
+    typeof joinedAtOrInput === "object" &&
+    joinedAtOrInput !== null &&
+    "joinedAt" in joinedAtOrInput
       ? joinedAtOrInput
-      : { joinedAt: joinedAtOrInput as string | null, freeMinutes: legacyFreeMinutes };
+      : {
+          joinedAt: joinedAtOrInput as string | null,
+          freeMinutes: legacyFreeMinutes,
+        };
 
   // Tick at 250ms (sub-second) so the visible MM:SS rolls over within a
   // quarter-second of crossing the next second boundary, and `Date.now()`
@@ -83,7 +88,8 @@ export function useSessionTimer(
     anchor: input.joinedAt,
     now: Date.now(),
     freeMinutes: input.freeMinutes,
-    freeConsumed: input.isFreeSession === undefined ? undefined : !input.isFreeSession,
+    freeConsumed:
+      input.isFreeSession === undefined ? undefined : !input.isFreeSession,
     paidExtensionAt: input.paidExtensionAt ?? null,
   });
 

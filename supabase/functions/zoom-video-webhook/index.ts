@@ -18,9 +18,10 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
-const SUPABASE_URL              = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const ZOOM_VIDEO_WEBHOOK_SECRET = Deno.env.get("ZOOM_VIDEO_WEBHOOK_SECRET") ?? "";
+const ZOOM_VIDEO_WEBHOOK_SECRET =
+  Deno.env.get("ZOOM_VIDEO_WEBHOOK_SECRET") ?? "";
 
 // Same rate as the Meeting SDK side (see zoom-webhook/index.ts).
 const CREDITS_PER_MINUTE = 1000 / 60; // ≈16.6667
@@ -37,13 +38,22 @@ async function hmacHex(secret: string, message: string): Promise<string> {
     new TextEncoder().encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
-    ["sign"],
+    ["sign"]
   );
-  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
-  return Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  const sig = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(message)
+  );
+  return Array.from(new Uint8Array(sig))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
-async function verifyZoomSignature(req: Request, body: string): Promise<boolean> {
+async function verifyZoomSignature(
+  req: Request,
+  body: string
+): Promise<boolean> {
   if (!ZOOM_VIDEO_WEBHOOK_SECRET) return true; // allow during local setup
   const ts = req.headers.get("x-zm-request-timestamp") ?? "";
   const sig = req.headers.get("x-zm-signature") ?? "";
@@ -60,8 +70,11 @@ function sessionKeyFrom(payload: any): string | null {
 }
 
 function topicFrom(payload: any): string | null {
-  return (payload?.object?.session_name as string) ??
-         (payload?.object?.topic as string) ?? null;
+  return (
+    (payload?.object?.session_name as string) ??
+    (payload?.object?.topic as string) ??
+    null
+  );
 }
 
 // Try session_key first; fall back to topic regex if missing.
@@ -92,7 +105,8 @@ async function handleSessionStarted(payload: any): Promise<void> {
   const gcId = await resolveGuestCallId(payload);
   if (!gcId) return;
   const sessionKey = sessionKeyFrom(payload) ?? gcId;
-  const startedAt = (payload?.object?.start_time as string) ?? new Date().toISOString();
+  const startedAt =
+    (payload?.object?.start_time as string) ?? new Date().toISOString();
 
   // Stamp guest_calls.video_started_at (idempotent — only if NULL).
   await admin()
@@ -110,26 +124,34 @@ async function handleSessionStarted(payload: any): Promise<void> {
 
   await admin()
     .from("call_sessions")
-    .upsert({
-      session_key: sessionKey,
-      builder_id:  (gc as { customer_user_id?: string } | null)?.customer_user_id ?? null,
-      engineer_id: (gc as { claimed_by?: string }       | null)?.claimed_by       ?? null,
-      started_at:  startedAt,
-      status:      "in_progress",
-    }, { onConflict: "session_key" });
+    .upsert(
+      {
+        session_key: sessionKey,
+        builder_id:
+          (gc as { customer_user_id?: string } | null)?.customer_user_id ??
+          null,
+        engineer_id: (gc as { claimed_by?: string } | null)?.claimed_by ?? null,
+        started_at: startedAt,
+        status: "in_progress",
+      },
+      { onConflict: "session_key" }
+    );
 
-  await admin().from("session_video_events").insert({
-    guest_call_id: gcId,
-    kind:          "session_started",
-    payload:       payload ?? {},
-  });
+  await admin()
+    .from("session_video_events")
+    .insert({
+      guest_call_id: gcId,
+      kind: "session_started",
+      payload: payload ?? {},
+    });
 }
 
 async function handleSessionEnded(payload: any): Promise<void> {
   const gcId = await resolveGuestCallId(payload);
   if (!gcId) return;
   const sessionKey = sessionKeyFrom(payload) ?? gcId;
-  const endedAt = (payload?.object?.end_time as string) ?? new Date().toISOString();
+  const endedAt =
+    (payload?.object?.end_time as string) ?? new Date().toISOString();
 
   // Stamp guest_calls.video_ended_at (idempotent).
   await admin()
@@ -150,7 +172,7 @@ async function handleSessionEnded(payload: any): Promise<void> {
   let csId: string | null = null;
   let builderId: string | null = null;
   if (cs) {
-    csId      = (cs as { id: string }).id;
+    csId = (cs as { id: string }).id;
     builderId = (cs as { builder_id: string | null }).builder_id ?? null;
     const startedAt = (cs as { started_at: string }).started_at;
     const ms = new Date(endedAt).getTime() - new Date(startedAt).getTime();
@@ -160,10 +182,10 @@ async function handleSessionEnded(payload: any): Promise<void> {
     await admin()
       .from("call_sessions")
       .update({
-        ended_at:       endedAt,
+        ended_at: endedAt,
         actual_minutes: actualMinutes,
         billed_credits: billedCredits,
-        status:         "completed",
+        status: "completed",
       })
       .eq("id", csId);
   }
@@ -174,13 +196,17 @@ async function handleSessionEnded(payload: any): Promise<void> {
   if (csId && builderId && billedCredits > 0) {
     try {
       await admin().rpc("debit_credits", {
-        _user_id:         builderId,
-        _amount:          billedCredits,
-        _reason:          "call_charge",
-        _request_id:      null,
+        _user_id: builderId,
+        _amount: billedCredits,
+        _reason: "call_charge",
+        _request_id: null,
         _call_session_id: csId,
-        _description:     "Relay video session",
-        _metadata:        { source: "zoom-video-webhook", session_key: sessionKey, minutes: actualMinutes },
+        _description: "Relay video session",
+        _metadata: {
+          source: "zoom-video-webhook",
+          session_key: sessionKey,
+          minutes: actualMinutes,
+        },
       });
       await admin()
         .from("call_sessions")
@@ -194,30 +220,36 @@ async function handleSessionEnded(payload: any): Promise<void> {
   // System chat message — mirrors zoom-webhook's "Zoom meeting ended" row.
   // Body must contain "Zoom meeting ended" so MeetingChatEntry's pairing
   // logic flips the ongoing card to its ended state on the client.
-  await admin().from("guest_messages").insert({
-    guest_call_id: gcId,
-    sender_kind:   "system",
-    sender_name:   "Relay",
-    body:          `📞 Zoom meeting ended${actualMinutes ? ` · ${actualMinutes} min` : ""}`,
-  });
+  await admin()
+    .from("guest_messages")
+    .insert({
+      guest_call_id: gcId,
+      sender_kind: "system",
+      sender_name: "Relay",
+      body: `📞 Zoom meeting ended${actualMinutes ? ` · ${actualMinutes} min` : ""}`,
+    });
 
-  await admin().from("session_video_events").insert({
-    guest_call_id: gcId,
-    kind:          "session_ended",
-    payload:       { actual_minutes: actualMinutes, billed_credits: billedCredits },
-  });
+  await admin()
+    .from("session_video_events")
+    .insert({
+      guest_call_id: gcId,
+      kind: "session_ended",
+      payload: { actual_minutes: actualMinutes, billed_credits: billedCredits },
+    });
 
   // Chain summarize-guest-call (fire-and-forget).
   try {
     void fetch(`${SUPABASE_URL}/functions/v1/summarize-guest-call`, {
-      method:  "POST",
+      method: "POST",
       headers: {
-        Authorization:  `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ session_id: gcId }),
     });
-  } catch { /* best-effort */ }
+  } catch {
+    /* best-effort */
+  }
 }
 
 async function handleRecordingCompleted(payload: any): Promise<void> {
@@ -225,42 +257,55 @@ async function handleRecordingCompleted(payload: any): Promise<void> {
   if (!gcId) return;
   const obj = payload?.object ?? {};
 
-  const files: any[] = Array.isArray(obj.recording_files) ? obj.recording_files : [];
+  const files: any[] = Array.isArray(obj.recording_files)
+    ? obj.recording_files
+    : [];
   const videoFile = files.find((f) => f.file_type === "MP4") ?? files[0] ?? {};
-  const playUrl:  string | null = obj.share_url ?? videoFile.play_url ?? null;
-  const password: string | null = obj.password ?? obj.recording_play_passcode ?? null;
-  const duration: number | null = Number.isFinite(obj.duration) ? Number(obj.duration) : null;
+  const playUrl: string | null = obj.share_url ?? videoFile.play_url ?? null;
+  const password: string | null =
+    obj.password ?? obj.recording_play_passcode ?? null;
+  const duration: number | null = Number.isFinite(obj.duration)
+    ? Number(obj.duration)
+    : null;
 
   await admin()
     .from("guest_calls")
     .update({
       recording_play_url: playUrl,
       recording_password: password,
-      duration_minutes:   duration,
+      duration_minutes: duration,
     })
     .eq("id", gcId);
 
-  await admin().from("session_video_events").insert({
-    guest_call_id: gcId,
-    kind:          "recording_completed",
-    payload:       { play_url: playUrl ? "[set]" : null, duration_minutes: duration },
-  });
+  await admin()
+    .from("session_video_events")
+    .insert({
+      guest_call_id: gcId,
+      kind: "recording_completed",
+      payload: {
+        play_url: playUrl ? "[set]" : null,
+        duration_minutes: duration,
+      },
+    });
 
   // Supervisor-only chat row with the recording link — mirrors the existing
   // visibility='supervisor' pattern.
   if (playUrl) {
-    await admin().from("guest_messages").insert({
-      guest_call_id: gcId,
-      sender_kind:   "system",
-      sender_name:   "Relay",
-      body:          `🎥 Recording available${password ? ` (passcode ${password})` : ""}: ${playUrl}`,
-      visibility:    "supervisor",
-    });
+    await admin()
+      .from("guest_messages")
+      .insert({
+        guest_call_id: gcId,
+        sender_kind: "system",
+        sender_name: "Relay",
+        body: `🎥 Recording available${password ? ` (passcode ${password})` : ""}: ${playUrl}`,
+        visibility: "supervisor",
+      });
   }
 }
 
 Deno.serve(async (req) => {
-  if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
+  if (req.method !== "POST")
+    return new Response("Method not allowed", { status: 405 });
 
   const body = await req.text();
   let payload: any;
@@ -275,19 +320,24 @@ Deno.serve(async (req) => {
   if (payload?.event === "endpoint.url_validation") {
     const plainToken = payload?.payload?.plainToken ?? "";
     const encryptedToken = await hmacHex(ZOOM_VIDEO_WEBHOOK_SECRET, plainToken);
-    return new Response(
-      JSON.stringify({ plainToken, encryptedToken }),
-      { status: 200, headers: { "Content-Type": "application/json" } },
-    );
+    return new Response(JSON.stringify({ plainToken, encryptedToken }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   if (!(await verifyZoomSignature(req, body))) {
     return new Response("Invalid signature", { status: 401 });
   }
 
-  console.log("[zoom-video-webhook] event:", payload?.event,
-    "session_key:", sessionKeyFrom(payload?.payload),
-    "topic:", topicFrom(payload?.payload));
+  console.log(
+    "[zoom-video-webhook] event:",
+    payload?.event,
+    "session_key:",
+    sessionKeyFrom(payload?.payload),
+    "topic:",
+    topicFrom(payload?.payload)
+  );
 
   try {
     switch (payload?.event) {

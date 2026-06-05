@@ -32,7 +32,10 @@ import { ExternalLink, FileText, ShieldCheck, X } from "lucide-react";
 
 export type LegalKind = "privacy" | "terms";
 
-const PAGE: Record<LegalKind, { title: string; path: string; Icon: typeof ShieldCheck }> = {
+const PAGE: Record<
+  LegalKind,
+  { title: string; path: string; Icon: typeof ShieldCheck }
+> = {
   privacy: {
     title: "Privacy Policy",
     path: "/legal/privacy-policy",
@@ -56,14 +59,17 @@ export function LegalPane({
   const Icon = page.Icon;
 
   return (
-    <div className="flex h-full w-full flex-col" style={{ backgroundColor: "var(--surface)" }}>
+    <div
+      className="flex h-full w-full flex-col"
+      style={{ backgroundColor: "var(--surface)" }}
+    >
       {/* Header bar — mirrors AccountPane's chrome so navigation between
           panes feels uniform. */}
       <header
         className="flex shrink-0 items-center gap-3 border-b px-6 py-4"
         style={{ borderColor: "var(--border)" }}
       >
-        <div className="flex flex-1 items-center gap-3 min-w-0">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           <Icon size={14} style={{ color: "var(--primary)" }} />
           <h1
             className="truncate text-[15px] font-semibold tracking-tight"

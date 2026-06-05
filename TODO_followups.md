@@ -8,7 +8,7 @@ permits.
 
 - **Platform-side `client → "Client"` label.** In the org-facing
   `/enterprise` we relabeled `client → "Employee"` since that matches the
-  customer org's mental model (these are *their* employees). But on the
+  customer org's mental model (these are _their_ employees). But on the
   platform-side surfaces (`/admin/users` Resellers / Enterprise tabs etc.)
   `formatRole` from `lib/relay/role-labels.ts` still returns `"Client"` for
   the role identifier. That's intentional from the platform's perspective

@@ -44,10 +44,10 @@ export function EngineerIncomingMatch() {
   const supabaseRef = useRef(createClient());
   const myIdRef = useRef<string | null>(null);
 
-  const [offer, setOffer]   = useState<Offer | null>(null);
+  const [offer, setOffer] = useState<Offer | null>(null);
   const [intake, setIntake] = useState<Intake | null>(null);
-  const [busy, setBusy]     = useState(false);
-  const [now, setNow]       = useState(() => Date.now());
+  const [busy, setBusy] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
 
   // 1Hz tick for countdown.
   useEffect(() => {
@@ -115,10 +115,14 @@ export function EngineerIncomingMatch() {
             table: "engineer_match_offers",
             filter: `engineer_user_id=eq.${u.user.id}`,
           },
-          () => { void fetchOffer(); },
+          () => {
+            void fetchOffer();
+          }
         )
         .subscribe();
-      poll = setInterval(() => { void fetchOffer(); }, 2000);
+      poll = setInterval(() => {
+        void fetchOffer();
+      }, 2000);
     })();
     return () => {
       cancelled = true;
@@ -132,7 +136,9 @@ export function EngineerIncomingMatch() {
   useEffect(() => {
     if (!offer) return;
     if (new Date(offer.expires_at).getTime() <= now) {
-      void supabaseRef.current.rpc("expire_stale_offers").then(() => fetchOffer());
+      void supabaseRef.current
+        .rpc("expire_stale_offers")
+        .then(() => fetchOffer());
     }
   }, [offer, now, fetchOffer]);
 
@@ -154,7 +160,9 @@ export function EngineerIncomingMatch() {
     if (!offer || busy) return;
     setBusy(true);
     const sb = supabaseRef.current;
-    const { data, error } = await sb.rpc("accept_match", { _offer_id: offer.id });
+    const { data, error } = await sb.rpc("accept_match", {
+      _offer_id: offer.id,
+    });
     setBusy(false);
     if (error) {
       // OFFER_NOT_ACTIONABLE → someone else accepted, or expired
@@ -186,7 +194,10 @@ export function EngineerIncomingMatch() {
 
   if (onSessionRoute || !offer) return null;
 
-  const remaining = Math.max(0, Math.ceil((new Date(offer.expires_at).getTime() - now) / 1000));
+  const remaining = Math.max(
+    0,
+    Math.ceil((new Date(offer.expires_at).getTime() - now) / 1000)
+  );
   const subtitle = intake?.developing
     ? `Building: ${intake.developing}`
     : "A customer is asking for you";
@@ -198,12 +209,15 @@ export function EngineerIncomingMatch() {
   return (
     <div
       className="fixed inset-0 z-[var(--z-ring)] flex flex-col items-center justify-center gap-8 px-4 py-12 text-center"
-      style={{ background: "rgba(15, 15, 15, 0.86)", backdropFilter: "blur(8px)" }}
+      style={{
+        background: "rgba(15, 15, 15, 0.86)",
+        backdropFilter: "blur(8px)",
+      }}
     >
       <RingingBall />
 
       <div
-        className="font-mono text-4xl tabular-nums tracking-[0.05em]"
+        className="font-mono text-4xl tracking-[0.05em] tabular-nums"
         style={{ color: "#fff", fontFeatureSettings: '"tnum"' }}
         aria-live="polite"
       >
@@ -211,7 +225,10 @@ export function EngineerIncomingMatch() {
       </div>
 
       <div className="max-w-md space-y-1.5">
-        <p className="font-serif text-2xl" style={{ letterSpacing: "-0.01em", color: "#fff" }}>
+        <p
+          className="font-serif text-2xl"
+          style={{ letterSpacing: "-0.01em", color: "#fff" }}
+        >
           Incoming match
         </p>
         <p className="text-sm" style={{ color: "rgba(255,255,255,0.65)" }}>
@@ -225,18 +242,20 @@ export function EngineerIncomingMatch() {
               tags (e.g. two "Not sure" entries), and React throws
               "two children with the same key" when the tag string is used
               as the key. Unique-by-value keeps one chip per distinct tag. */}
-          {Array.from(new Set(intake.technologies)).slice(0, 8).map((t) => (
-            <span
-              key={t}
-              className="rounded-full border px-2.5 py-1 text-xs"
-              style={{
-                borderColor: "rgba(255,255,255,0.18)",
-                color: "rgba(255,255,255,0.85)",
-              }}
-            >
-              {t}
-            </span>
-          ))}
+          {Array.from(new Set(intake.technologies))
+            .slice(0, 8)
+            .map((t) => (
+              <span
+                key={t}
+                className="rounded-full border px-2.5 py-1 text-xs"
+                style={{
+                  borderColor: "rgba(255,255,255,0.18)",
+                  color: "rgba(255,255,255,0.85)",
+                }}
+              >
+                {t}
+              </span>
+            ))}
         </div>
       ) : null}
 
@@ -252,7 +271,11 @@ export function EngineerIncomingMatch() {
             background: "transparent",
           }}
         >
-          {busy ? <Loader2 className="size-4 animate-spin" /> : <X className="size-4" />}
+          {busy ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <X className="size-4" />
+          )}
           Decline
         </button>
         <button
@@ -267,7 +290,11 @@ export function EngineerIncomingMatch() {
               "0 4px 8px color-mix(in srgb, var(--primary) 30%, transparent)",
           }}
         >
-          {busy ? <Loader2 className="size-4 animate-spin" /> : <Phone className="size-4" />}
+          {busy ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <Phone className="size-4" />
+          )}
           Accept
         </button>
       </div>

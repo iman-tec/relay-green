@@ -21,34 +21,36 @@ import { sendInvitationEmail } from "@/lib/admin-invite";
 import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 type ResellerRow = {
-  id:                 string;
-  name:               string;
-  email:              string | null;
-  reseller_code:      string;
-  commission:         number;
-  allocated_minutes:  number;
-  used_minutes:       number;
-  remaining_minutes:  number;
-  status:             string;
-  owner_user_id:      string | null;
-  created_at:         string;
+  id: string;
+  name: string;
+  email: string | null;
+  reseller_code: string;
+  commission: number;
+  allocated_minutes: number;
+  used_minutes: number;
+  remaining_minutes: number;
+  status: string;
+  owner_user_id: string | null;
+  created_at: string;
 };
 
 export async function GET() {
   const gate = await requireSuperAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin } = gate;
 
   const { data: resellers, error } = await admin
     .from("resellers")
     .select(
-      "id, name, email, reseller_code, commission, allocated_minutes, used_minutes, remaining_minutes, status, owner_user_id, created_at",
+      "id, name, email, reseller_code, commission, allocated_minutes, used_minutes, remaining_minutes, status, owner_user_id, created_at"
     )
     .order("created_at", { ascending: false });
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error)
+    return NextResponse.json({ error: error.message }, { status: 500 });
 
   if (!resellers || !resellers.length) {
     return NextResponse.json({ resellers: [] });
@@ -60,21 +62,30 @@ export async function GET() {
   const { data: orgRows } = await admin
     .from("organizations")
     .select(
-      "id, name, primary_domain, status, enterprise_code, reseller_id, allocated_minutes, used_minutes, remaining_minutes, created_at",
+      "id, name, primary_domain, status, enterprise_code, reseller_id, allocated_minutes, used_minutes, remaining_minutes, created_at"
     )
     .in("reseller_id", ids)
     .order("created_at", { ascending: false });
 
   type OrgRow = {
-    id: string; name: string; primary_domain: string | null;
-    status: string; enterprise_code: string; reseller_id: string;
-    allocated_minutes: number; used_minutes: number; remaining_minutes: number;
+    id: string;
+    name: string;
+    primary_domain: string | null;
+    status: string;
+    enterprise_code: string;
+    reseller_id: string;
+    allocated_minutes: number;
+    used_minutes: number;
+    remaining_minutes: number;
     created_at: string;
   };
   const orgs = (orgRows ?? []) as OrgRow[];
 
   const counts = new Map<string, { total: number; active: number }>();
-  const enterprisesByReseller = new Map<string, ReturnType<typeof formatEnterprise>[]>();
+  const enterprisesByReseller = new Map<
+    string,
+    ReturnType<typeof formatEnterprise>[]
+  >();
   for (const o of orgs) {
     const c = counts.get(o.reseller_id) ?? { total: 0, active: 0 };
     c.total += 1;
@@ -88,62 +99,69 @@ export async function GET() {
 
   return NextResponse.json({
     resellers: (resellers as ResellerRow[]).map((r) => ({
-      id:                r.id,
-      name:              r.name,
-      email:             r.email,
-      resellerCode:      r.reseller_code,
-      commission:        Number(r.commission ?? 0),
-      allocatedMinutes:  Number(r.allocated_minutes ?? 0),
-      usedMinutes:       Number(r.used_minutes ?? 0),
-      remainingMinutes:  Number(r.remaining_minutes ?? 0),
-      status:            r.status,
-      ownerUserId:       r.owner_user_id,
-      totalEnterprises:  counts.get(r.id)?.total ?? 0,
+      id: r.id,
+      name: r.name,
+      email: r.email,
+      resellerCode: r.reseller_code,
+      commission: Number(r.commission ?? 0),
+      allocatedMinutes: Number(r.allocated_minutes ?? 0),
+      usedMinutes: Number(r.used_minutes ?? 0),
+      remainingMinutes: Number(r.remaining_minutes ?? 0),
+      status: r.status,
+      ownerUserId: r.owner_user_id,
+      totalEnterprises: counts.get(r.id)?.total ?? 0,
       activeEnterprises: counts.get(r.id)?.active ?? 0,
-      enterprises:       enterprisesByReseller.get(r.id) ?? [],
-      createdAt:         r.created_at,
+      enterprises: enterprisesByReseller.get(r.id) ?? [],
+      createdAt: r.created_at,
     })),
   });
 }
 
 type EnterpriseDbRow = {
-  id: string; name: string; primary_domain: string | null;
-  status: string; enterprise_code: string;
-  allocated_minutes: number; used_minutes: number; remaining_minutes: number;
+  id: string;
+  name: string;
+  primary_domain: string | null;
+  status: string;
+  enterprise_code: string;
+  allocated_minutes: number;
+  used_minutes: number;
+  remaining_minutes: number;
   created_at: string;
 };
 
 function formatEnterprise(o: EnterpriseDbRow) {
   return {
-    id:                o.id,
-    name:              o.name,
-    primaryDomain:     o.primary_domain,
-    status:            o.status,
-    enterpriseCode:    o.enterprise_code,
-    allocatedMinutes:  Number(o.allocated_minutes ?? 0),
-    usedMinutes:       Number(o.used_minutes ?? 0),
-    remainingMinutes:  Number(o.remaining_minutes ?? 0),
-    createdAt:         o.created_at,
+    id: o.id,
+    name: o.name,
+    primaryDomain: o.primary_domain,
+    status: o.status,
+    enterpriseCode: o.enterprise_code,
+    allocatedMinutes: Number(o.allocated_minutes ?? 0),
+    usedMinutes: Number(o.used_minutes ?? 0),
+    remainingMinutes: Number(o.remaining_minutes ?? 0),
+    createdAt: o.created_at,
   };
 }
 
 export async function POST(request: Request) {
   const gate = await requireSuperAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin, user: actor } = gate;
 
-  const { name, email, commission, allocatedMinutes } =
-    (await request.json().catch(() => ({}))) as {
-      name?: string;
-      email?: string;
-      commission?: number | string;
-      allocatedMinutes?: number | string;
-    };
+  const { name, email, commission, allocatedMinutes } = (await request
+    .json()
+    .catch(() => ({}))) as {
+    name?: string;
+    email?: string;
+    commission?: number | string;
+    allocatedMinutes?: number | string;
+  };
 
   if (!name?.trim() || !email?.trim()) {
     return NextResponse.json(
       { error: "Need name and email." },
-      { status: 400 },
+      { status: 400 }
     );
   }
 
@@ -154,12 +172,18 @@ export async function POST(request: Request) {
 
   const commissionNum = Number(commission ?? 0);
   if (Number.isNaN(commissionNum) || commissionNum < 0 || commissionNum > 100) {
-    return NextResponse.json({ error: "Commission must be between 0 and 100." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Commission must be between 0 and 100." },
+      { status: 400 }
+    );
   }
 
   const allocNum = Number(allocatedMinutes ?? 0);
   if (Number.isNaN(allocNum) || allocNum < 0) {
-    return NextResponse.json({ error: "Allocation must be non-negative." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Allocation must be non-negative." },
+      { status: 400 }
+    );
   }
 
   // Duplicate-email guard — reseller_email is unique in our schema, but
@@ -170,7 +194,10 @@ export async function POST(request: Request) {
     .ilike("email", cleanEmail)
     .maybeSingle();
   if (existing) {
-    return NextResponse.json({ error: "A reseller with this email already exists." }, { status: 409 });
+    return NextResponse.json(
+      { error: "A reseller with this email already exists." },
+      { status: 409 }
+    );
   }
 
   // Insert the reseller row. The set-code trigger fills reseller_code in
@@ -178,10 +205,10 @@ export async function POST(request: Request) {
   const { data: resellerData, error: insertErr } = await admin
     .from("resellers")
     .insert({
-      name:               name.trim(),
-      email:              cleanEmail,
-      commission:         commissionNum,
-      status:             "active",
+      name: name.trim(),
+      email: cleanEmail,
+      commission: commissionNum,
+      status: "active",
       created_by_user_id: actor.id,
     })
     .select("id, name, email, reseller_code, commission, status, created_at")
@@ -189,7 +216,7 @@ export async function POST(request: Request) {
   if (insertErr || !resellerData) {
     return NextResponse.json(
       { error: insertErr?.message ?? "Couldn't create reseller." },
-      { status: 400 },
+      { status: 400 }
     );
   }
   const reseller = resellerData as ResellerRow;
@@ -198,14 +225,14 @@ export async function POST(request: Request) {
   // fallback for existing-confirmed users). Metadata carries the
   // spec-required fields so the email template can render them.
   const invite = await sendInvitationEmail(admin, {
-    email:       cleanEmail,
+    email: cleanEmail,
     displayName: name.trim(),
     metadata: {
-      role_label:        "reseller",
-      reseller_id:       reseller.id,
-      reseller_code:     reseller.reseller_code,
+      role_label: "reseller",
+      reseller_id: reseller.id,
+      reseller_code: reseller.reseller_code,
       allocated_minutes: allocNum,
-      created_by:        actor.id,
+      created_by: actor.id,
     },
   });
   if (!invite.ok) {
@@ -216,15 +243,18 @@ export async function POST(request: Request) {
   let userId = invite.userId ?? null;
   if (!userId) {
     const lookup = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-    userId = lookup.data?.users?.find(
-      (u) => u.email?.toLowerCase() === cleanEmail,
-    )?.id ?? null;
+    userId =
+      lookup.data?.users?.find((u) => u.email?.toLowerCase() === cleanEmail)
+        ?.id ?? null;
   }
   if (!userId) {
     await admin.from("resellers").delete().eq("id", reseller.id);
     return NextResponse.json(
-      { error: "Reseller invited but auth row not yet visible — try again in a moment." },
-      { status: 500 },
+      {
+        error:
+          "Reseller invited but auth row not yet visible — try again in a moment.",
+      },
+      { status: 500 }
     );
   }
 
@@ -237,7 +267,10 @@ export async function POST(request: Request) {
   const resellerRoleId = (roleRow as { id: string } | null)?.id;
   if (!resellerRoleId) {
     await admin.from("resellers").delete().eq("id", reseller.id);
-    return NextResponse.json({ error: "reseller role not seeded" }, { status: 500 });
+    return NextResponse.json(
+      { error: "reseller role not seeded" },
+      { status: 500 }
+    );
   }
 
   // Update the profile with reseller_id + full_name (only if blank).
@@ -246,11 +279,17 @@ export async function POST(request: Request) {
     .select("full_name")
     .eq("id", userId)
     .maybeSingle();
-  const fullNameInsert = (currentProfile as { full_name: string | null } | null)?.full_name?.trim()
+  const fullNameInsert = (
+    currentProfile as { full_name: string | null } | null
+  )?.full_name?.trim()
     ? undefined
     : name.trim();
 
-  const profileUpdate: Record<string, unknown> = { id: userId, reseller_id: reseller.id, is_onboarded: true };
+  const profileUpdate: Record<string, unknown> = {
+    id: userId,
+    reseller_id: reseller.id,
+    is_onboarded: true,
+  };
   if (fullNameInsert) profileUpdate.full_name = fullNameInsert;
 
   const { error: profileErr } = await admin
@@ -266,7 +305,7 @@ export async function POST(request: Request) {
     .from("user_roles")
     .upsert(
       { user_id: userId, role_id: resellerRoleId },
-      { onConflict: "user_id,role_id", ignoreDuplicates: true },
+      { onConflict: "user_id,role_id", ignoreDuplicates: true }
     );
 
   // Link the reseller's owner_user_id back to the user.
@@ -279,7 +318,7 @@ export async function POST(request: Request) {
   if (allocNum > 0) {
     const { error: tErr } = await admin.rpc("transfer_to_reseller", {
       _reseller_id: reseller.id,
-      _amount:      allocNum,
+      _amount: allocNum,
     });
     if (tErr) {
       // Reseller is created and invited; we just couldn't credit the
@@ -293,20 +332,20 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     reseller: {
-      id:                reseller.id,
-      name:              reseller.name,
-      email:             reseller.email,
-      resellerCode:      reseller.reseller_code,
-      commission:        Number(reseller.commission ?? 0),
-      status:            reseller.status,
-      createdAt:         reseller.created_at,
+      id: reseller.id,
+      name: reseller.name,
+      email: reseller.email,
+      resellerCode: reseller.reseller_code,
+      commission: Number(reseller.commission ?? 0),
+      status: reseller.status,
+      createdAt: reseller.created_at,
     },
     contact: {
-      id:          userId,
-      email:       cleanEmail,
+      id: userId,
+      email: cleanEmail,
       displayName: name.trim(),
     },
-    invited:          mode === "invited",
+    invited: mode === "invited",
     attachedExisting: mode === "attached_existing",
   });
 }

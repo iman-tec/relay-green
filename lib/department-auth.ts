@@ -30,7 +30,9 @@ export type DepartmentGate =
 
 export async function requireDepartmentAdmin(): Promise<DepartmentGate> {
   const supabase = await createServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) return { ok: false, status: 401, error: "not_signed_in" };
 
   const [{ data: roles }, { data: profile }] = await Promise.all([
@@ -43,15 +45,18 @@ export async function requireDepartmentAdmin(): Promise<DepartmentGate> {
   ]);
 
   const isDeptAdmin = (roles ?? []).some(
-    (r: { role: string }) => r.role === ROLE.department_admin,
+    (r: { role: string }) => r.role === ROLE.department_admin
   );
   if (!isDeptAdmin) return { ok: false, status: 403, error: "forbidden" };
 
-  const p = profile as { department_id?: string; organization_id?: string } | null;
+  const p = profile as {
+    department_id?: string;
+    organization_id?: string;
+  } | null;
   const departmentId = p?.department_id;
   const orgId = p?.organization_id;
   if (!departmentId) return { ok: false, status: 403, error: "no_department" };
-  if (!orgId)        return { ok: false, status: 403, error: "no_organization" };
+  if (!orgId) return { ok: false, status: 403, error: "no_organization" };
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;

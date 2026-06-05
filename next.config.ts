@@ -14,16 +14,31 @@ const nextConfig: NextConfig = {
   // only in the nodejs-runtime indexing routes — keep them external so Next
   // doesn't try to bundle their native/dynamic deps for the client/edge.
   serverExternalPackages: ["mammoth", "unpdf", "xlsx"],
-  // Dev server runs on https://10.0.3.175:3000 only — both schemes whitelisted
-  // (was 10.0.1.207, then 10.0.1.112; updated for this machine's LAN IP)
-  // (the http variants stay so a stray http:// link doesn't 403 the asset
-  // even though every page redirects to https).
+  // Dev origins for EVERY developer machine (10.0.1.112, 10.0.3.175,
+  // 10.0.2.129) — the dev server binds to one of them via package.json's
+  // -H flag, but whitelisting all of them means syncing the repo between
+  // machines never breaks asset loading. The http variants stay so a stray
+  // http:// link doesn't 403 the asset even though every page redirects
+  // to https.
   allowedDevOrigins: [
+    "10.0.1.112",
+    "10.0.1.112:3000",
+    "10.0.1.112:3001",
+    "https://10.0.1.112",
+    "https://10.0.1.112:3000",
+    "https://10.0.1.112:3001",
     "10.0.3.175",
+    "10.0.3.175:3000",
     "10.0.3.175:3001",
     "https://10.0.3.175",
     "https://10.0.3.175:3000",
     "https://10.0.3.175:3001",
+    "10.0.2.129",
+    "10.0.2.129:3000",
+    "10.0.2.129:3001",
+    "https://10.0.2.129",
+    "https://10.0.2.129:3000",
+    "https://10.0.2.129:3001",
   ],
   // The Zoom Meeting SDK (Component View) uses singleton state on `window`.
   // StrictMode's intentional double-invoke of effects causes the SDK to

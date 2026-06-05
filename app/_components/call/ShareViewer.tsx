@@ -28,7 +28,12 @@ type Props = {
 };
 
 export function ShareViewer({
-  canvasRef, videoRef, activeMode, sharerName, selfSharing, onStop,
+  canvasRef,
+  videoRef,
+  activeMode,
+  sharerName,
+  selfSharing,
+  onStop,
 }: Props) {
   return (
     <div
@@ -36,16 +41,18 @@ export function ShareViewer({
       style={{ background: "#000" }}
     >
       <div
-        className="absolute left-2 top-2 z-10 rounded-md px-2 py-1 text-[11px] font-medium"
+        className="absolute top-2 left-2 z-10 rounded-md px-2 py-1 text-[11px] font-medium"
         style={{ background: "rgba(0,0,0,0.6)", color: "#fff" }}
       >
-        {selfSharing ? "You are sharing your screen" : `${sharerName} is sharing`}
+        {selfSharing
+          ? "You are sharing your screen"
+          : `${sharerName} is sharing`}
       </div>
       {selfSharing && onStop && (
         <button
           type="button"
           onClick={onStop}
-          className="absolute right-2 top-2 z-10 rounded-md px-2 py-1 text-[11px] font-semibold"
+          className="absolute top-2 right-2 z-10 rounded-md px-2 py-1 text-[11px] font-semibold"
           style={{ background: "var(--risk)", color: "#fff" }}
         >
           Stop sharing

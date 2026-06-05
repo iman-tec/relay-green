@@ -158,16 +158,19 @@ export async function POST(req: Request) {
       }),
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "network_error";
-    return NextResponse.json({ error: msg }, { status: 502 });
+    // Log the real reason server-side; never echo err.message (can carry
+    // internal host/proxy/DNS detail) back to the client.
+    console.error("[intake/turn] OpenAI fetch failed:", err instanceof Error ? err.message : err);
+    return NextResponse.json({ error: "openai_unreachable" }, { status: 502 });
   }
 
   if (!upstream.ok) {
+    // Read the upstream body for SERVER-SIDE diagnostics only. Never return
+    // it (or the upstream status) to the client: OpenAI error bodies can
+    // carry request ids, org ids, key hints, and rate-limit metadata.
     const text = await upstream.text().catch(() => "");
-    return NextResponse.json(
-      { error: "openai_upstream", status: upstream.status, detail: text.slice(0, 500) },
-      { status: 502 },
-    );
+    console.error(`[intake/turn] OpenAI ${upstream.status}: ${text.slice(0, 500)}`);
+    return NextResponse.json({ error: "openai_upstream" }, { status: 502 });
   }
 
   let payload: unknown;
@@ -188,7 +191,9 @@ export async function POST(req: Request) {
   try {
     turn = JSON.parse(stripJsonFence(content)) as AiTurn;
   } catch {
-    return NextResponse.json({ error: "bad_completion_json", raw: content.slice(0, 400) }, { status: 502 });
+    // Log the unparseable completion server-side; don't echo model output.
+    console.error("[intake/turn] unparseable completion:", content.slice(0, 400));
+    return NextResponse.json({ error: "bad_completion_json" }, { status: 502 });
   }
 
   // Defensive normalisation — never trust the model with the UI's shape.

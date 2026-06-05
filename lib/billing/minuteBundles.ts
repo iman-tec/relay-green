@@ -17,9 +17,19 @@ export type MinuteBundle = {
 export const LIST_CENTS_PER_MINUTE = 300;
 
 export const MINUTE_BUNDLES: readonly MinuteBundle[] = [
-  { code: "starter", label: "Starter", minutes: 500,    amountCents: 500 * 300 },          // €3.00/min
-  { code: "team",    label: "Team",    minutes: 2_000,  amountCents: Math.round(2_000 * 285) }, // €2.85/min
-  { code: "scale",   label: "Scale",   minutes: 10_000, amountCents: Math.round(10_000 * 270) }, // €2.70/min
+  { code: "starter", label: "Starter", minutes: 500, amountCents: 500 * 300 }, // €3.00/min
+  {
+    code: "team",
+    label: "Team",
+    minutes: 2_000,
+    amountCents: Math.round(2_000 * 285),
+  }, // €2.85/min
+  {
+    code: "scale",
+    label: "Scale",
+    minutes: 10_000,
+    amountCents: Math.round(10_000 * 270),
+  }, // €2.70/min
 ];
 
 export function bundleByCode(code: string): MinuteBundle | undefined {

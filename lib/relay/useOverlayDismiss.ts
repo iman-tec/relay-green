@@ -19,7 +19,10 @@ const FOCUSABLE =
  * `active=true` is fine. For always-mounted components that toggle via an
  * `open` prop, pass that prop as `active` so the lock/trap only engage while open.
  */
-export function useOverlayDismiss<T extends HTMLElement = HTMLDivElement>(onClose: () => void, active = true) {
+export function useOverlayDismiss<T extends HTMLElement = HTMLDivElement>(
+  onClose: () => void,
+  active = true
+) {
   const ref = useRef<T>(null);
   // Stabilise the onClose callback. Callers commonly pass inline closures
   // (e.g. `onClose={() => { reset(); close(); }}`); without this ref
@@ -29,7 +32,9 @@ export function useOverlayDismiss<T extends HTMLElement = HTMLDivElement>(onClos
   // dialog's first focusable element (the ✕ Close button). Bug symptom:
   // typing one character in any field steals focus to Close.
   const onCloseRef = useRef(onClose);
-  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
   useEffect(() => {
     if (!active) return;
     const prevFocus = document.activeElement as HTMLElement | null;

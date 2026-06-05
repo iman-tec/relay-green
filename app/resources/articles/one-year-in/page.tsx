@@ -29,9 +29,9 @@ export default function Page() {
       <Body>
         We started this company a year ago this week. We had a hypothesis: AI
         was going to make most builders into people who could not, on their own,
-        ship the thing they had built; a software engineer one click away was the
-        missing piece; the press, as a category, would emerge whether we built
-        it or somebody else did.
+        ship the thing they had built; a software engineer one click away was
+        the missing piece; the press, as a category, would emerge whether we
+        built it or somebody else did.
       </Body>
       <Body>
         A year in, three things turned out as expected. Three turned out

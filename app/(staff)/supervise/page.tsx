@@ -15,7 +15,9 @@ export const metadata: Metadata = {
 // We branch server-side so the URL stays the same regardless of identity.
 export default async function SupervisePage() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) redirect("/staff");
 
   const { data: roleRows } = await supabase
@@ -25,7 +27,9 @@ export default async function SupervisePage() {
   const roles = (roleRows ?? []).map((r: { role: string }) => r.role);
 
   const isSuperAdmin = roles.includes(ROLE.super_admin);
-  const isOrgAdmin   = roles.includes(ROLE.enterprise_admin) || roles.includes(ROLE.department_admin);
+  const isOrgAdmin =
+    roles.includes(ROLE.enterprise_admin) ||
+    roles.includes(ROLE.department_admin);
   if (!isSuperAdmin && isOrgAdmin) {
     return <EnterpriseSuperviseClient />;
   }

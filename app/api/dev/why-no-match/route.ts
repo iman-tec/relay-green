@@ -20,7 +20,12 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const ACTIVE_SESSION_STATES = [
-  "assigned", "joining", "live", "grace", "expired_free", "ending",
+  "assigned",
+  "joining",
+  "live",
+  "grace",
+  "expired_free",
+  "ending",
 ];
 
 export async function GET(req: NextRequest) {
@@ -31,7 +36,10 @@ export async function GET(req: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceKey) {
-    return NextResponse.json({ error: "supabase_unconfigured" }, { status: 500 });
+    return NextResponse.json(
+      { error: "supabase_unconfigured" },
+      { status: 500 }
+    );
   }
   const sb = createServiceClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false },
@@ -57,7 +65,9 @@ export async function GET(req: NextRequest) {
   if (intakeIdParam) {
     const { data } = await sb
       .from("client_intakes")
-      .select("id, customer_user_id, guest_call_id, technologies, issues, environments, declined_by")
+      .select(
+        "id, customer_user_id, guest_call_id, technologies, issues, environments, declined_by"
+      )
       .eq("id", intakeIdParam)
       .maybeSingle();
     intake = (data as IntakeRow | null) ?? null;
@@ -71,7 +81,9 @@ export async function GET(req: NextRequest) {
     if (customerUid) {
       const { data } = await sb
         .from("client_intakes")
-        .select("id, customer_user_id, guest_call_id, technologies, issues, environments, declined_by")
+        .select(
+          "id, customer_user_id, guest_call_id, technologies, issues, environments, declined_by"
+        )
         .eq("customer_user_id", customerUid)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -81,7 +93,9 @@ export async function GET(req: NextRequest) {
   } else {
     const { data } = await sb
       .from("client_intakes")
-      .select("id, customer_user_id, guest_call_id, technologies, issues, environments, declined_by")
+      .select(
+        "id, customer_user_id, guest_call_id, technologies, issues, environments, declined_by"
+      )
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -89,10 +103,13 @@ export async function GET(req: NextRequest) {
   }
 
   if (!intake) {
-    return NextResponse.json({
-      error: "no_intake_found",
-      hint: "Pass ?intake_id=<uuid> or ?customer_email=...",
-    }, { status: 404 });
+    return NextResponse.json(
+      {
+        error: "no_intake_found",
+        hint: "Pass ?intake_id=<uuid> or ?customer_email=...",
+      },
+      { status: 404 }
+    );
   }
 
   // Pull every engineer-role user via the same view the matcher uses.
@@ -103,42 +120,58 @@ export async function GET(req: NextRequest) {
     .select("user_id")
     .eq("role", "engineer");
   if (rolesErr) {
-    return NextResponse.json({
-      error: "user_role_names_query_failed",
-      detail: rolesErr.message,
-    }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: "user_role_names_query_failed",
+        detail: rolesErr.message,
+      },
+      { status: 500 }
+    );
   }
-  const engineerIds = Array.from(new Set(
-    ((engineerRoles ?? []) as { user_id: string }[]).map((r) => r.user_id),
-  ));
+  const engineerIds = Array.from(
+    new Set(
+      ((engineerRoles ?? []) as { user_id: string }[]).map((r) => r.user_id)
+    )
+  );
 
   if (engineerIds.length === 0) {
     return NextResponse.json({
       intake_id: intake.id,
       guest_call_id: intake.guest_call_id,
       total_engineers_in_user_role_names: 0,
-      diagnosis: "Zero rows in user_role_names with role='engineer'. The matcher's first filter excludes everyone. Check the roles lookup table + user_roles assignments.",
+      diagnosis:
+        "Zero rows in user_role_names with role='engineer'. The matcher's first filter excludes everyone. Check the roles lookup table + user_roles assignments.",
       engineers: [],
     });
   }
 
   // Hydrate the per-engineer data the matcher reads.
-  const [profilesRes, presenceRes, identitiesRes, activeSessionsRes, offersRes] = await Promise.all([
-    sb.from("engineer_profiles")
-      .select("user_id, is_available, presence_state, technologies, issues, environments, experience_level")
+  const [
+    profilesRes,
+    presenceRes,
+    identitiesRes,
+    activeSessionsRes,
+    offersRes,
+  ] = await Promise.all([
+    sb
+      .from("engineer_profiles")
+      .select(
+        "user_id, is_available, presence_state, technologies, issues, environments, experience_level"
+      )
       .in("user_id", engineerIds),
-    sb.from("engineer_presence")
+    sb
+      .from("engineer_presence")
       .select("engineer_id, last_seen_at, focused")
       .in("engineer_id", engineerIds),
-    sb.from("profiles")
-      .select("id, email, full_name")
-      .in("id", engineerIds),
-    sb.from("guest_calls")
+    sb.from("profiles").select("id, email, full_name").in("id", engineerIds),
+    sb
+      .from("guest_calls")
       .select("id, claimed_by, status")
       .in("claimed_by", engineerIds)
       .in("status", ACTIVE_SESSION_STATES),
     intake.guest_call_id
-      ? sb.from("engineer_match_offers")
+      ? sb
+          .from("engineer_match_offers")
           .select("engineer_user_id")
           .eq("intake_id", intake.id)
           .eq("guest_call_id", intake.guest_call_id)
@@ -146,20 +179,32 @@ export async function GET(req: NextRequest) {
   ]);
 
   const profilesById = new Map(
-    ((profilesRes.data ?? []) as any[]).map((p) => [p.user_id, p]),
+    ((profilesRes.data ?? []) as any[]).map((p) => [p.user_id, p])
   );
   const presenceById = new Map(
-    ((presenceRes.data ?? []) as any[]).map((p) => [p.engineer_id, p]),
+    ((presenceRes.data ?? []) as any[]).map((p) => [p.engineer_id, p])
   );
   const identityById = new Map(
-    ((identitiesRes.data ?? []) as any[]).map((p) => [p.id, p]),
+    ((identitiesRes.data ?? []) as any[]).map((p) => [p.id, p])
   );
-  const inActiveSessionByEngineer = new Map<string, { id: string; status: string }>();
-  for (const row of (activeSessionsRes.data ?? []) as { id: string; claimed_by: string; status: string }[]) {
-    inActiveSessionByEngineer.set(row.claimed_by, { id: row.id, status: row.status });
+  const inActiveSessionByEngineer = new Map<
+    string,
+    { id: string; status: string }
+  >();
+  for (const row of (activeSessionsRes.data ?? []) as {
+    id: string;
+    claimed_by: string;
+    status: string;
+  }[]) {
+    inActiveSessionByEngineer.set(row.claimed_by, {
+      id: row.id,
+      status: row.status,
+    });
   }
   const alreadyOfferedIds = new Set(
-    ((offersRes.data ?? []) as { engineer_user_id: string }[]).map((r) => r.engineer_user_id),
+    ((offersRes.data ?? []) as { engineer_user_id: string }[]).map(
+      (r) => r.engineer_user_id
+    )
   );
 
   const declinedBy = new Set((intake.declined_by ?? []) as string[]);
@@ -199,20 +244,26 @@ export async function GET(req: NextRequest) {
       full_name: identity?.full_name ?? null,
       would_match: exclusion_reason === null,
       exclusion_reason,
-      profile: profile ? {
-        is_available: profile.is_available,
-        presence_state: profile.presence_state,
-        experience_level: profile.experience_level,
-        technologies: profile.technologies,
-      } : { missing: true },
-      presence: presence ? {
-        last_seen_at: presence.last_seen_at,
-        focused: presence.focused,
-        age_seconds: presence.last_seen_at
-          ? Math.round((nowMs - new Date(presence.last_seen_at).getTime()) / 1000)
-          : null,
-        is_hot: isHot(presence.last_seen_at, presence.focused),
-      } : { missing: true },
+      profile: profile
+        ? {
+            is_available: profile.is_available,
+            presence_state: profile.presence_state,
+            experience_level: profile.experience_level,
+            technologies: profile.technologies,
+          }
+        : { missing: true },
+      presence: presence
+        ? {
+            last_seen_at: presence.last_seen_at,
+            focused: presence.focused,
+            age_seconds: presence.last_seen_at
+              ? Math.round(
+                  (nowMs - new Date(presence.last_seen_at).getTime()) / 1000
+                )
+              : null,
+            is_hot: isHot(presence.last_seen_at, presence.focused),
+          }
+        : { missing: true },
       in_active_session: activeSession,
       already_offered: alreadyOffered,
     };
@@ -224,19 +275,22 @@ export async function GET(req: NextRequest) {
       ? `ZERO engineers would be matched. Most common reason: is_available=false on engineer_profiles (check the "exclusion_reason" field per engineer).`
       : `${wouldMatchCount} engineer(s) would be matched. If the customer is still seeing 'no engineers', re-check intake.guest_call_id and the matcher RPC permissions.`;
 
-  return NextResponse.json({
-    intake_id: intake.id,
-    guest_call_id: intake.guest_call_id,
-    customer_user_id: customerUid,
-    intake_signals: {
-      technologies: intake.technologies,
-      issues: intake.issues,
-      environments: intake.environments,
-      declined_by: intake.declined_by,
+  return NextResponse.json(
+    {
+      intake_id: intake.id,
+      guest_call_id: intake.guest_call_id,
+      customer_user_id: customerUid,
+      intake_signals: {
+        technologies: intake.technologies,
+        issues: intake.issues,
+        environments: intake.environments,
+        declined_by: intake.declined_by,
+      },
+      total_engineers_in_user_role_names: engineerIds.length,
+      would_match_count: wouldMatchCount,
+      summary,
+      engineers,
     },
-    total_engineers_in_user_role_names: engineerIds.length,
-    would_match_count: wouldMatchCount,
-    summary,
-    engineers,
-  }, { status: 200 });
+    { status: 200 }
+  );
 }

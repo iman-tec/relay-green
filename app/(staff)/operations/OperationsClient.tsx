@@ -80,21 +80,28 @@ export function OperationsClient() {
     async (engineerId: string, makeOnline: boolean) => {
       setPendingId(engineerId);
       setRows((prev) =>
-        prev.map((r) => (r.userId === engineerId ? { ...r, isOnline: makeOnline } : r)),
+        prev.map((r) =>
+          r.userId === engineerId ? { ...r, isOnline: makeOnline } : r
+        )
       );
-      const { error } = await supabaseRef.current.rpc("supervisor_set_engineer_online", {
-        _engineer_id: engineerId,
-        _online: makeOnline,
-      });
+      const { error } = await supabaseRef.current.rpc(
+        "supervisor_set_engineer_online",
+        {
+          _engineer_id: engineerId,
+          _online: makeOnline,
+        }
+      );
       if (error) {
         setRows((prev) =>
-          prev.map((r) => (r.userId === engineerId ? { ...r, isOnline: !makeOnline } : r)),
+          prev.map((r) =>
+            r.userId === engineerId ? { ...r, isOnline: !makeOnline } : r
+          )
         );
         console.warn("[operations] set engineer online failed:", error.message);
       }
       setPendingId(null);
     },
-    [],
+    []
   );
 
   // Fetch on mount + poll every 5s so the roster's online dots stay live
@@ -112,7 +119,10 @@ export function OperationsClient() {
     };
     void load();
     const id = setInterval(() => void load(), 5_000);
-    return () => { alive = false; clearInterval(id); };
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
   }, []);
 
   const filtered = useMemo(() => {
@@ -122,7 +132,7 @@ export function OperationsClient() {
       (r) =>
         r.displayName.toLowerCase().includes(q) ||
         r.email.toLowerCase().includes(q) ||
-        (r.currentCustomer ?? "").toLowerCase().includes(q),
+        (r.currentCustomer ?? "").toLowerCase().includes(q)
     );
   }, [rows, query]);
 
@@ -137,16 +147,24 @@ export function OperationsClient() {
         lastCallAt: r.lastCallAt,
         onLiveCall: !!r.currentCustomer,
       })),
-    [rows],
+    [rows]
   );
 
   const capacity = podCapacity(allocRows);
 
   return (
-    <div className="mx-auto max-w-screen-xl space-y-6 px-8 py-8">
+    <div className="mx-auto max-w-screen-xl space-y-6 px-4 py-6 sm:px-8 sm:py-8">
       <SectionHeader
         title={pod ? `Pod ${pod.name}` : "Operations"}
-        subtitle="Engineers under your watch. The capacity meter shows the 10-engineer threshold — engineers 1–10 belong to the first supervisor, 11–15 to the second."
+        // Wrapped so the description is hidden on phones (the empty <p>
+        // collapses); shown on sm+.
+        subtitle={
+          <span className="hidden sm:inline">
+            Engineers under your watch. The capacity meter shows the 10-engineer
+            threshold — engineers 1–10 belong to the first supervisor, 11–15 to
+            the second.
+          </span>
+        }
         right={
           <div className="w-72 max-w-full">
             <Input
@@ -168,13 +186,18 @@ export function OperationsClient() {
       <Card variant="surface">
         {loading ? (
           <div className="flex justify-center py-10">
-            <Loader2 size={16} className="animate-spin text-[var(--text-muted)]" />
+            <Loader2
+              size={16}
+              className="animate-spin text-[var(--text-muted)]"
+            />
           </div>
         ) : filtered.length === 0 ? (
           <UiEmptyState
             compact
             icon={<Users size={20} className="text-[var(--text-muted)]" />}
-            title={rows.length === 0 ? "No engineers in your pod yet" : "No matches"}
+            title={
+              rows.length === 0 ? "No engineers in your pod yet" : "No matches"
+            }
             body={
               rows.length === 0
                 ? "Once an engineer joins your pod they'll appear here."
@@ -183,7 +206,9 @@ export function OperationsClient() {
           />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            {/* min-w keeps columns from squeezing on phones (headers wrapping
+                one letter per line); the wrapper scrolls horizontally instead. */}
+            <table className="w-full min-w-[680px] text-sm">
               <thead className="bg-[var(--surface-raised)]">
                 <tr className="border-b border-[var(--border)]">
                   <Th>Engineer</Th>
@@ -196,9 +221,10 @@ export function OperationsClient() {
               <tbody>
                 {filtered.map((r) => {
                   const alloc = allocRows.find((a) => a.userId === r.userId);
-                  const supervisor = alloc && pod
-                    ? getSupervisorForEngineer(alloc, pod, supervisors)
-                    : null;
+                  const supervisor =
+                    alloc && pod
+                      ? getSupervisorForEngineer(alloc, pod, supervisors)
+                      : null;
                   // Prefer the explicit online toggle (§3.2); fall back to
                   // the last-seen heuristic for engineers without a profile.
                   const engineerOnline =
@@ -239,7 +265,7 @@ export function OperationsClient() {
                                 "inline-block size-1.5 rounded-full",
                                 supervisor.online
                                   ? "bg-[var(--ok)]"
-                                  : "bg-[var(--text-faint)]",
+                                  : "bg-[var(--text-faint)]"
                               )}
                               title={supervisor.online ? "Online" : "Offline"}
                             />
@@ -282,12 +308,15 @@ export function OperationsClient() {
                           <span className="text-[var(--text)]">
                             {r.lastCustomer ?? "—"}
                             <span className="ml-2 text-[12px] text-[var(--text-muted)]">
-                              {new Date(r.lastCallAt).toLocaleString(undefined, {
-                                month: "short",
-                                day: "numeric",
-                                hour: "numeric",
-                                minute: "2-digit",
-                              })}
+                              {new Date(r.lastCallAt).toLocaleString(
+                                undefined,
+                                {
+                                  month: "short",
+                                  day: "numeric",
+                                  hour: "numeric",
+                                  minute: "2-digit",
+                                }
+                              )}
                             </span>
                           </span>
                         ) : (
@@ -301,21 +330,29 @@ export function OperationsClient() {
                             <button
                               type="button"
                               disabled={pendingId === r.userId}
-                              onClick={() => void setEngineerOnline(r.userId, !isAvail)}
-                              title={isAvail ? "Set this engineer offline" : "Set this engineer online"}
+                              onClick={() =>
+                                void setEngineerOnline(r.userId, !isAvail)
+                              }
+                              title={
+                                isAvail
+                                  ? "Set this engineer offline"
+                                  : "Set this engineer online"
+                              }
                               aria-pressed={isAvail}
                               className={cn(
                                 "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50",
                                 isAvail
                                   ? "border-[color-mix(in_srgb,var(--ok)_40%,transparent)] bg-[var(--ok-soft)] text-[var(--ok)]"
-                                  : "border-[var(--border)] text-[var(--text-muted)] hover:bg-[color-mix(in_srgb,var(--text)_5%,transparent)]",
+                                  : "border-[var(--border)] text-[var(--text-muted)] hover:bg-[color-mix(in_srgb,var(--text)_5%,transparent)]"
                               )}
                             >
                               <span
                                 aria-hidden
                                 className={cn(
                                   "inline-block size-1.5 rounded-full",
-                                  isAvail ? "bg-[var(--ok)]" : "bg-[var(--text-faint)]",
+                                  isAvail
+                                    ? "bg-[var(--ok)]"
+                                    : "bg-[var(--text-faint)]"
                                 )}
                               />
                               {isAvail ? "Online" : "Offline"}
@@ -358,7 +395,7 @@ function CapacityMeter({
             </h3>
           </div>
           <div className="flex items-center gap-3 text-xs">
-            <span className="tabular-nums text-[var(--text-muted)]">
+            <span className="text-[var(--text-muted)] tabular-nums">
               {capacity.total} / {POD_MAX_ENGINEERS}
             </span>
             {capacity.overflow > 0 && (
@@ -378,7 +415,9 @@ function CapacityMeter({
           <div className="relative">
             <div
               className="h-full bg-[var(--primary)] transition-[width] duration-[var(--motion-med)]"
-              style={{ width: `${(capacity.primary / POD_PRIMARY_SUPERVISOR_CAP) * 100}%` }}
+              style={{
+                width: `${(capacity.primary / POD_PRIMARY_SUPERVISOR_CAP) * 100}%`,
+              }}
             />
           </div>
           <div className="relative border-l-2 border-[var(--background)]">
@@ -386,8 +425,9 @@ function CapacityMeter({
               className="h-full bg-[var(--green-dot)] transition-[width] duration-[var(--motion-med)]"
               style={{
                 width: `${
-                  ((capacity.secondary) /
-                    (POD_MAX_ENGINEERS - POD_PRIMARY_SUPERVISOR_CAP)) * 100
+                  (capacity.secondary /
+                    (POD_MAX_ENGINEERS - POD_PRIMARY_SUPERVISOR_CAP)) *
+                  100
                 }%`,
               }}
             />
@@ -411,9 +451,9 @@ function CapacityMeter({
           />
         </div>
 
-        <p className="mt-3 text-[11px] leading-relaxed text-[var(--text-faint)]">
+        <p className="mt-3 hidden text-[11px] leading-relaxed text-[var(--text-faint)] sm:block">
           {/* SEAM hint surfaced inline so admins know why allocation looks
-              flat today (pass-through impl). */}
+              flat today (pass-through impl). Hidden on phones. */}
           Allocation rule (preview): the first 10 engineers belong to the
           first supervisor; engineers 11–15 belong to the second once
           they&apos;re online. Cleanup in progress — see
@@ -452,7 +492,7 @@ function SupervisorSlot({
           />
           {label}
         </span>
-        <span className="tabular-nums text-[var(--text-muted)]">
+        <span className="text-[var(--text-muted)] tabular-nums">
           {count} / {cap}
         </span>
       </div>
@@ -467,7 +507,7 @@ function SupervisorSlot({
 
 function Th({ children }: { children: React.ReactNode }) {
   return (
-    <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+    <th className="px-5 py-3 text-left text-[11px] font-semibold tracking-[0.08em] whitespace-nowrap text-[var(--text-muted)] uppercase">
       {children}
     </th>
   );

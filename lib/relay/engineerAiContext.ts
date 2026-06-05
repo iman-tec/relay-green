@@ -53,6 +53,13 @@ const MAX_PAST_SESSIONS = 20;
 const MAX_FILES = 100;
 const MAX_CURRENT_SESSION_MESSAGES = 30;
 
+// The fixed system prelude the engineer handoff posts immediately before the
+// customer's pre-call note (see EngineerSessionClient). The AI assembler
+// matches on it to pull the note out of guest_messages durably — so the prep
+// stays available even after it scrolls out of the 30-message tail, with NO
+// schema change. Shared so the two sides can't drift.
+export const CUSTOMER_PREP_PRELUDE = "💡 Customer prepared this before the call:";
+
 // Type shapes for the rows we read. Kept narrow on purpose — only the
 // columns this module actually consumes.
 type ProjectRow = {
@@ -116,6 +123,7 @@ export async function assembleProjectContext(
     sessionsRes,
     currentMsgsRes,
     currentCapsRes,
+    prepProbeRes,
   ] = await Promise.all([
     sb.from("projects")
       .select("id, name, customer_id, ai_summary_title, ai_summary_overview, ai_next_steps, summary")
@@ -141,7 +149,28 @@ export async function assembleProjectContext(
       .eq("session_id", currentSessionId)
       .order("window_end", { ascending: false })
       .limit(MAX_CURRENT_SESSION_MESSAGES),
+    // The customer's pre-call note for THIS session. The engineer handoff
+    // posts it as the guest message immediately after CUSTOMER_PREP_PRELUDE,
+    // so we pull the first handful of messages oldest-first and extract it —
+    // always present, independent of the 30-message recency tail above, and
+    // with no extra column.
+    sb.from("guest_messages")
+      .select("sender_kind, body, created_at")
+      .eq("guest_call_id", currentSessionId)
+      .order("created_at", { ascending: true })
+      .limit(8),
   ]);
+
+  // Locate the prep note: the first `guest` message after the fixed prelude.
+  const customerPrep = (() => {
+    const rows = (prepProbeRes.data ?? []) as Array<{ sender_kind: string; body: string | null }>;
+    const preludeIdx = rows.findIndex(
+      (m) => m.sender_kind === "system" && (m.body ?? "").trim() === CUSTOMER_PREP_PRELUDE,
+    );
+    if (preludeIdx === -1) return "";
+    const note = rows.slice(preludeIdx + 1).find((m) => m.sender_kind === "guest");
+    return (note?.body ?? "").trim();
+  })();
 
   const project = (projectRes.data ?? null) as ProjectRow | null;
 
@@ -221,6 +250,15 @@ export async function assembleProjectContext(
     lines.push("");
     lines.push("Project next steps:");
     for (const s of projectNextSteps) lines.push(`  - ${s}`);
+  }
+
+  // Customer's pre-call prep note — what they typed in the "Tell the engineer
+  // what you're working on" panel before ringing. The customer's own framing
+  // of THIS call's goal/blocker; treat as authoritative and surface it first.
+  if (customerPrep) {
+    lines.push("");
+    lines.push("== Customer's pre-call note (what they're here for, in their words) ==");
+    lines.push(customerPrep);
   }
 
   // Customer-level rollup

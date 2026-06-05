@@ -33,7 +33,7 @@ const STRIPE_KEY =
 async function stripeRequest<T>(
   path: string,
   method: "GET" | "POST" | "DELETE",
-  body?: Record<string, string | number | undefined>,
+  body?: Record<string, string | number | undefined>
 ): Promise<T> {
   const url = `https://api.stripe.com/v1${path}`;
   const init: RequestInit = {
@@ -49,12 +49,15 @@ async function stripeRequest<T>(
       if (v !== undefined && v !== null) form.set(k, String(v));
     }
     init.body = form.toString();
-    (init.headers as Record<string, string>)["Content-Type"] = "application/x-www-form-urlencoded";
+    (init.headers as Record<string, string>)["Content-Type"] =
+      "application/x-www-form-urlencoded";
   }
   const res = await fetch(url, init);
   const json = (await res.json()) as T & { error?: { message?: string } };
   if (!res.ok) {
-    throw new Error(json?.error?.message ?? `Stripe ${method} ${path} failed (${res.status})`);
+    throw new Error(
+      json?.error?.message ?? `Stripe ${method} ${path} failed (${res.status})`
+    );
   }
   return json;
 }
@@ -63,7 +66,7 @@ export async function POST() {
   if (!STRIPE_KEY) {
     return NextResponse.json(
       { error: "Stripe is not configured on this environment." },
-      { status: 500 },
+      { status: 500 }
     );
   }
 
@@ -82,29 +85,39 @@ export async function POST() {
     .eq("customer_user_id", userId)
     .maybeSingle();
   let stripeCustomerId: string | null =
-    (entRow as { stripe_customer_id?: string | null } | null)?.stripe_customer_id ?? null;
+    (entRow as { stripe_customer_id?: string | null } | null)
+      ?.stripe_customer_id ?? null;
 
   // Create + persist a Stripe Customer if we don't have one yet. This
   // is the lazy-create path — most customers won't have one until they
   // visit Billing for the first time.
   if (!stripeCustomerId) {
     try {
-      const created = await stripeRequest<{ id: string }>("/customers", "POST", {
-        email,
-        "metadata[relay_user_id]": userId,
-      });
+      const created = await stripeRequest<{ id: string }>(
+        "/customers",
+        "POST",
+        {
+          email,
+          "metadata[relay_user_id]": userId,
+        }
+      );
       stripeCustomerId = created.id;
       // Persist so future calls (list, delete, future checkouts) can
       // reuse the same customer. Upsert because customer_entitlements
       // might not have a row yet for this customer.
-      await sb.from("customer_entitlements").upsert(
-        { customer_user_id: userId, stripe_customer_id: stripeCustomerId },
-        { onConflict: "customer_user_id" },
-      );
+      await sb
+        .from("customer_entitlements")
+        .upsert(
+          { customer_user_id: userId, stripe_customer_id: stripeCustomerId },
+          { onConflict: "customer_user_id" }
+        );
     } catch (e) {
       return NextResponse.json(
-        { error: e instanceof Error ? e.message : "Couldn't create Stripe customer." },
-        { status: 502 },
+        {
+          error:
+            e instanceof Error ? e.message : "Couldn't create Stripe customer.",
+        },
+        { status: 502 }
       );
     }
   }
@@ -120,7 +133,7 @@ export async function POST() {
         customer: stripeCustomerId,
         "payment_method_types[]": "card",
         usage: "off_session",
-      },
+      }
     );
     return NextResponse.json({
       clientSecret: intent.client_secret,
@@ -128,8 +141,10 @@ export async function POST() {
     });
   } catch (e) {
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Couldn't create SetupIntent." },
-      { status: 502 },
+      {
+        error: e instanceof Error ? e.message : "Couldn't create SetupIntent.",
+      },
+      { status: 502 }
     );
   }
 }

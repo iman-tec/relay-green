@@ -19,17 +19,28 @@ const NAMES_TO_DELETE = ["dev soni", "dev.soni", "new-project"];
 
 type AdminClient = SupabaseClient<any, "public", "public", any, any>;
 
-async function findUserId(admin: AdminClient, email: string): Promise<string | null> {
+async function findUserId(
+  admin: AdminClient,
+  email: string
+): Promise<string | null> {
   const { data } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-  return data?.users?.find((u) => u.email?.toLowerCase() === email.toLowerCase())?.id ?? null;
+  return (
+    data?.users?.find((u) => u.email?.toLowerCase() === email.toLowerCase())
+      ?.id ?? null
+  );
 }
 
 async function main() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !key)
+    throw new Error(
+      "Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY"
+    );
 
-  const admin = createClient(url, key, { auth: { persistSession: false } }) as AdminClient;
+  const admin = createClient(url, key, {
+    auth: { persistSession: false },
+  }) as AdminClient;
 
   const ownerId = await findUserId(admin, OWNER_EMAIL);
   if (!ownerId) {
@@ -51,14 +62,18 @@ async function main() {
     return;
   }
 
-  console.log(`→ Deleting ${doomed.length} stale project${doomed.length === 1 ? "" : "s"}:`);
+  console.log(
+    `→ Deleting ${doomed.length} stale project${doomed.length === 1 ? "" : "s"}:`
+  );
   for (const p of doomed) {
     const { error } = await admin.from("projects").delete().eq("id", p.id);
     if (error) console.warn(`  ⚠ ${p.name}: ${error.message}`);
-    else      console.log(`  ✓ ${p.name} (${p.id})`);
+    else console.log(`  ✓ ${p.name} (${p.id})`);
   }
   console.log("");
-  console.log("Sessions previously linked to those projects now sit under General.");
+  console.log(
+    "Sessions previously linked to those projects now sit under General."
+  );
 }
 
 main().catch((err) => {

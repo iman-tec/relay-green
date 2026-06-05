@@ -49,15 +49,28 @@ export async function POST(req: NextRequest) {
     // ── Reconcile: catch ANY recent change (sessions ending, quotes raised,
     //    edits) regardless of whether a direct trigger fired. Idempotent. ──
     if (body.reconcile) {
-      const lookbackMin = Math.max(5, Math.min(1440, body.lookbackMinutes ?? 120));
+      const lookbackMin = Math.max(
+        5,
+        Math.min(1440, body.lookbackMinutes ?? 120)
+      );
       const since = new Date(Date.now() - lookbackMin * 60_000).toISOString();
       const projectIds = new Set<string>();
       const [gc, quotes] = await Promise.all([
-        sb.from("guest_calls").select("project_id, updated_at").gte("updated_at", since).not("project_id", "is", null),
-        sb.from("project_quote_requests").select("project_id, created_at").gte("created_at", since).not("project_id", "is", null),
+        sb
+          .from("guest_calls")
+          .select("project_id, updated_at")
+          .gte("updated_at", since)
+          .not("project_id", "is", null),
+        sb
+          .from("project_quote_requests")
+          .select("project_id, created_at")
+          .gte("created_at", since)
+          .not("project_id", "is", null),
       ]);
-      for (const r of (gc.data ?? []) as { project_id: string | null }[]) if (r.project_id) projectIds.add(r.project_id);
-      for (const r of (quotes.data ?? []) as { project_id: string | null }[]) if (r.project_id) projectIds.add(r.project_id);
+      for (const r of (gc.data ?? []) as { project_id: string | null }[])
+        if (r.project_id) projectIds.add(r.project_id);
+      for (const r of (quotes.data ?? []) as { project_id: string | null }[])
+        if (r.project_id) projectIds.add(r.project_id);
       let reconciled = 0;
       let chunks = 0;
       for (const pid of projectIds) {
@@ -83,7 +96,10 @@ export async function POST(req: NextRequest) {
     } else if (body.project_id) {
       result.projectMeta = await indexProjectMeta(sb, body.project_id);
     } else {
-      return NextResponse.json({ error: "session_id, project_id, or reconcile required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "session_id, project_id, or reconcile required" },
+        { status: 400 }
+      );
     }
     return NextResponse.json(result);
   } catch (e) {

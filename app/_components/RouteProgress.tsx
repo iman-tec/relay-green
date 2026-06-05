@@ -31,7 +31,8 @@ export function RouteProgress() {
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
       if (e.defaultPrevented) return;
-      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)
+        return;
       const anchor = (e.target as HTMLElement | null)?.closest?.("a");
       if (!anchor) return;
       const href = anchor.getAttribute("href");
@@ -43,8 +44,14 @@ export function RouteProgress() {
         const url = new URL(href, window.location.href);
         if (url.origin !== window.location.origin) return;
         // Same path = no nav.
-        if (url.pathname === window.location.pathname && url.search === window.location.search) return;
-      } catch { return; }
+        if (
+          url.pathname === window.location.pathname &&
+          url.search === window.location.search
+        )
+          return;
+      } catch {
+        return;
+      }
       setPhase("loading");
       setProgress(8);
     };
@@ -81,7 +88,7 @@ export function RouteProgress() {
       setProgress(0);
     }, 280);
     return () => window.clearTimeout(t);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
   const visible = phase !== "idle";
@@ -98,9 +105,10 @@ export function RouteProgress() {
           width: `${progress}%`,
           background: `linear-gradient(to right, ${BRAND_GREEN}, color-mix(in srgb, ${BRAND_GREEN} 60%, transparent))`,
           boxShadow: `0 0 8px ${BRAND_GREEN}`,
-          transition: phase === "done"
-            ? "width 220ms ease-out"
-            : "width 180ms cubic-bezier(0.4, 0, 0.2, 1)",
+          transition:
+            phase === "done"
+              ? "width 220ms ease-out"
+              : "width 180ms cubic-bezier(0.4, 0, 0.2, 1)",
         }}
       />
     </div>

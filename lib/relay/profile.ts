@@ -27,9 +27,9 @@
  */
 
 export type TechComfort =
-  | "non_technical"      // "I'm building with AI tools and need things explained simply."
-  | "semi_technical"     // "I can follow along and make edits, but I get stuck."
-  | "well_experienced";  // "I code; I just need an expert pair on this."
+  | "non_technical" // "I'm building with AI tools and need things explained simply."
+  | "semi_technical" // "I can follow along and make edits, but I get stuck."
+  | "well_experienced"; // "I code; I just need an expert pair on this."
 
 export type Urgency = "now" | "this_week" | "planning";
 
@@ -112,7 +112,10 @@ export interface ProfilePatch {
   userId?: string | null;
 }
 
-function mergeStack(prev: ProfileStack, incoming?: Partial<ProfileStack>): ProfileStack {
+function mergeStack(
+  prev: ProfileStack,
+  incoming?: Partial<ProfileStack>
+): ProfileStack {
   if (!incoming) return prev;
   const dedupAppend = (a: string[], b?: string[]) => {
     if (!b) return a;
@@ -144,7 +147,9 @@ export function patchProfile(p: ProfilePatch): ProfileSnapshot {
     lastProjectId:
       p.lastProjectId === undefined ? prev.lastProjectId : p.lastProjectId,
     lastProjectName:
-      p.lastProjectName === undefined ? prev.lastProjectName : p.lastProjectName,
+      p.lastProjectName === undefined
+        ? prev.lastProjectName
+        : p.lastProjectName,
     hasFullIntake:
       p.hasFullIntake === undefined ? prev.hasFullIntake : p.hasFullIntake,
     userId: p.userId === undefined ? prev.userId : p.userId,
@@ -186,7 +191,7 @@ export function writeStack(stack: ProfileStack): ProfileSnapshot {
  */
 export function hasFullIntake(
   p: ProfileSnapshot = readProfile(),
-  currentUserId?: string | null,
+  currentUserId?: string | null
 ): boolean {
   if (!p.hasFullIntake) return false;
   if (!p.techComfort) return false;
@@ -305,12 +310,31 @@ export const STACK_OPTIONS: {
   {
     category: "aiTools",
     label: "AI tool you use",
-    options: ["Claude", "ChatGPT", "Cursor", "Copilot", "Gemini", "Lovable", "Replit", "Other"],
+    options: [
+      "Claude",
+      "ChatGPT",
+      "Cursor",
+      "Copilot",
+      "Gemini",
+      "Lovable",
+      "Replit",
+      "Other",
+    ],
   },
   {
     category: "backend",
     label: "Backend & infrastructure",
-    options: ["AWS", "Vercel", "GCP", "Cloudflare", "Node.js", "Python", "Postgres", "Supabase", "Other"],
+    options: [
+      "AWS",
+      "Vercel",
+      "GCP",
+      "Cloudflare",
+      "Node.js",
+      "Python",
+      "Postgres",
+      "Supabase",
+      "Other",
+    ],
   },
   {
     category: "frontend",

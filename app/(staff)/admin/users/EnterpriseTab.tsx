@@ -19,57 +19,68 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, Mail, Power, Trash2, X, Search, CheckCircle2, Building2, Users } from "lucide-react";
+import {
+  Loader2,
+  Plus,
+  Mail,
+  Power,
+  Trash2,
+  X,
+  Search,
+  CheckCircle2,
+  Building2,
+  Users,
+} from "lucide-react";
 import { formatRole } from "@/lib/relay/role-labels";
 import { useConfirmDialog } from "@/app/_components/ConfirmDialog";
 
 type Member = {
-  id:                  string;
-  email:               string;
-  displayName:         string;
-  roles:               string[];
-  primaryRole:         string | null;
-  status:              "ACTIVE" | "DEACTIVATED";
+  id: string;
+  email: string;
+  displayName: string;
+  roles: string[];
+  primaryRole: string | null;
+  status: "ACTIVE" | "DEACTIVATED";
   awaitingFirstSignIn: boolean;
 };
 
 type Department = {
-  id:               string;
-  name:             string;
-  departmentCode:   string;
-  adminUserId:      string | null;
-  status:           string;
+  id: string;
+  name: string;
+  departmentCode: string;
+  adminUserId: string | null;
+  status: string;
   allocatedMinutes: number;
-  usedMinutes:      number;
+  usedMinutes: number;
   remainingMinutes: number;
-  memberCount:      number;
-  createdAt:        string;
+  memberCount: number;
+  createdAt: string;
 };
 
 type Org = {
-  id:             string;
-  name:           string;
-  primaryDomain:  string | null;
-  status:         string;
+  id: string;
+  name: string;
+  primaryDomain: string | null;
+  status: string;
   /** 'organic' = created by super_admin directly. 'inorganic' = minted
    *  by a reseller. Drives the "via reseller" badge in the UI. */
   enterpriseType: "organic" | "inorganic";
-  resellerId:     string | null;
-  resellerName:   string | null;
-  createdAt:      string;
-  members:        Member[];
-  departments:    Department[];
+  resellerId: string | null;
+  resellerName: string | null;
+  createdAt: string;
+  members: Member[];
+  departments: Department[];
 };
 
 const BRAND_GREEN = "#3f5c2e";
 
 export function EnterpriseTab() {
-  const [orgs, setOrgs]               = useState<Org[]>([]);
-  const [selectedId, setSelectedId]   = useState<string | null>(null);
-  const [loading, setLoading]         = useState(true);
-  const [error, setError]             = useState<string | null>(null);
-  const [info, setInfo]               = useState<string | null>(null);
-  const confirmDialog                 = useConfirmDialog();
+  const [orgs, setOrgs] = useState<Org[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const confirmDialog = useConfirmDialog();
 
   useEffect(() => {
     if (!info) return;
@@ -82,10 +93,16 @@ export function EnterpriseTab() {
     setError(null);
     try {
       const res = await fetch("/api/admin/orgs", { cache: "no-store" });
-      const body = (await res.json().catch(() => ({}))) as { orgs?: Org[]; error?: string };
-      if (!res.ok) { setError(body.error ?? "Couldn't load orgs."); return; }
+      const body = (await res.json().catch(() => ({}))) as {
+        orgs?: Org[];
+        error?: string;
+      };
+      if (!res.ok) {
+        setError(body.error ?? "Couldn't load orgs.");
+        return;
+      }
       setOrgs(body.orgs ?? []);
-      setSelectedId((curr) => curr ?? (body.orgs?.[0]?.id ?? null));
+      setSelectedId((curr) => curr ?? body.orgs?.[0]?.id ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't load orgs.");
     } finally {
@@ -93,18 +110,31 @@ export function EnterpriseTab() {
     }
   };
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    void load();
+  }, []);
 
   const createOrg = async (input: {
-    name: string; primaryDomain: string; adminEmail: string; adminDisplayName: string; allocatedMinutes: number;
+    name: string;
+    primaryDomain: string;
+    adminEmail: string;
+    adminDisplayName: string;
+    allocatedMinutes: number;
   }) => {
     const res = await fetch("/api/admin/orgs", {
-      method:  "POST",
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify(input),
+      body: JSON.stringify(input),
     });
-    const body = (await res.json().catch(() => ({}))) as { org?: Org; error?: string };
-    if (!res.ok) return { ok: false as const, error: body.error ?? "Couldn't create org." };
+    const body = (await res.json().catch(() => ({}))) as {
+      org?: Org;
+      error?: string;
+    };
+    if (!res.ok)
+      return {
+        ok: false as const,
+        error: body.error ?? "Couldn't create org.",
+      };
     await load();
     if (body.org?.id) setSelectedId(body.org.id);
     return { ok: true as const };
@@ -112,65 +142,88 @@ export function EnterpriseTab() {
 
   const addMember = async (
     orgId: string,
-    input: { email: string; displayName: string; role: "enterprise_admin" | "client" },
+    input: {
+      email: string;
+      displayName: string;
+      role: "enterprise_admin" | "client";
+    }
   ) => {
     const res = await fetch(`/api/admin/orgs/${orgId}/members`, {
-      method:  "POST",
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify(input),
+      body: JSON.stringify(input),
     });
     const body = (await res.json().catch(() => ({}))) as { error?: string };
-    if (!res.ok) return { ok: false as const, error: body.error ?? "Couldn't add member." };
+    if (!res.ok)
+      return {
+        ok: false as const,
+        error: body.error ?? "Couldn't add member.",
+      };
     await load();
     return { ok: true as const };
   };
 
   const regenerate = async (m: Member) => {
     if (!confirm(`Re-send sign-in email to ${m.email}?`)) return;
-    const res = await fetch(`/api/admin/users/${m.id}/resend-invite`, { method: "POST" });
+    const res = await fetch(`/api/admin/users/${m.id}/resend-invite`, {
+      method: "POST",
+    });
     const body = (await res.json().catch(() => ({}))) as { error?: string };
-    if (!res.ok) { setError(body.error ?? "Resend failed."); return; }
+    if (!res.ok) {
+      setError(body.error ?? "Resend failed.");
+      return;
+    }
     await load();
   };
 
   const toggleStatus = async (m: Member) => {
     const next = m.status === "ACTIVE" ? "DEACTIVATED" : "ACTIVE";
     const res = await fetch(`/api/admin/users/${m.id}`, {
-      method:  "PATCH",
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ status: next }),
+      body: JSON.stringify({ status: next }),
     });
     const body = (await res.json().catch(() => ({}))) as { error?: string };
-    if (!res.ok) { setError(body.error ?? "Update failed."); return; }
+    if (!res.ok) {
+      setError(body.error ?? "Update failed.");
+      return;
+    }
     await load();
   };
 
   const removeMember = async (m: Member) => {
     const ok = await confirmDialog.ask({
-      title:        "Delete member?",
-      message:      `${m.email} will be permanently removed — auth record, profile, and roles included.`,
+      title: "Delete member?",
+      message: `${m.email} will be permanently removed — auth record, profile, and roles included.`,
       confirmLabel: "Delete",
-      tone:         "danger",
+      tone: "danger",
     });
     if (!ok) return;
     const res = await fetch(`/api/admin/users/${m.id}`, { method: "DELETE" });
     const body = (await res.json().catch(() => ({}))) as { error?: string };
-    if (!res.ok) { setError(body.error ?? "Delete failed."); return; }
+    if (!res.ok) {
+      setError(body.error ?? "Delete failed.");
+      return;
+    }
     setInfo(`Deleted ${m.email}.`);
     await load();
   };
 
   const deleteOrg = async (o: Org) => {
     const ok = await confirmDialog.ask({
-      title:        `Delete "${o.name}"?`,
-      message:      "The organization will be removed and its members detached. Member accounts themselves are kept.",
+      title: `Delete "${o.name}"?`,
+      message:
+        "The organization will be removed and its members detached. Member accounts themselves are kept.",
       confirmLabel: "Delete organization",
-      tone:         "danger",
+      tone: "danger",
     });
     if (!ok) return;
     const res = await fetch(`/api/admin/orgs/${o.id}`, { method: "DELETE" });
     const body = (await res.json().catch(() => ({}))) as { error?: string };
-    if (!res.ok) { setError(body.error ?? "Delete failed."); return; }
+    if (!res.ok) {
+      setError(body.error ?? "Delete failed.");
+      return;
+    }
     setInfo(`Organization "${o.name}" deleted.`);
     if (selectedId === o.id) setSelectedId(null);
     await load();
@@ -185,17 +238,24 @@ export function EnterpriseTab() {
         <div
           className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm font-medium"
           style={{
-            backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
-            color:           BRAND_GREEN,
-            borderColor:     "color-mix(in srgb, " + BRAND_GREEN + " 35%, transparent)",
-            animation:       "relay-toast-in 180ms ease-out",
+            backgroundColor:
+              "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
+            color: BRAND_GREEN,
+            borderColor:
+              "color-mix(in srgb, " + BRAND_GREEN + " 35%, transparent)",
+            animation: "relay-toast-in 180ms ease-out",
           }}
         >
           <span className="inline-flex items-center gap-2">
             <CheckCircle2 size={14} />
             {info}
           </span>
-          <button type="button" onClick={() => setInfo(null)} aria-label="Dismiss" className="rounded-md p-1">
+          <button
+            type="button"
+            onClick={() => setInfo(null)}
+            aria-label="Dismiss"
+            className="rounded-md p-1"
+          >
             <X size={14} />
           </button>
         </div>
@@ -233,14 +293,22 @@ export function EnterpriseTab() {
 /* ──────── Left pane: org list + create ──────── */
 
 function OrgList({
-  orgs, selectedId, onSelect, loading, createOrg,
+  orgs,
+  selectedId,
+  onSelect,
+  loading,
+  createOrg,
 }: {
   orgs: Org[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   loading: boolean;
   createOrg: (input: {
-    name: string; primaryDomain: string; adminEmail: string; adminDisplayName: string; allocatedMinutes: number;
+    name: string;
+    primaryDomain: string;
+    adminEmail: string;
+    adminDisplayName: string;
+    allocatedMinutes: number;
   }) => Promise<{ ok: true } | { ok: false; error: string }>;
 }) {
   const [creating, setCreating] = useState(false);
@@ -252,14 +320,17 @@ function OrgList({
     return orgs.filter(
       (o) =>
         o.name.toLowerCase().includes(q) ||
-        (o.primaryDomain ?? "").toLowerCase().includes(q),
+        (o.primaryDomain ?? "").toLowerCase().includes(q)
     );
   }, [orgs, query]);
 
   return (
     <aside
       className="overflow-hidden rounded-xl border"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface)",
+      }}
     >
       <div
         className="flex items-center justify-between gap-2 border-b px-4 py-3"
@@ -296,15 +367,17 @@ function OrgList({
         >
           <Search
             size={12}
-            className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2"
+            className="pointer-events-none absolute top-1/2 left-5 -translate-y-1/2"
             style={{ color: "var(--text-muted)" }}
           />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setQuery("");
+            }}
             placeholder="Search organizations…"
-            className="w-full rounded-md border py-1.5 pl-7 pr-7 text-xs outline-none"
+            className="w-full rounded-md border py-1.5 pr-7 pl-7 text-xs outline-none"
             style={{
               borderColor: "var(--border)",
               backgroundColor: "var(--background)",
@@ -314,7 +387,7 @@ function OrgList({
           {query && (
             <button
               onClick={() => setQuery("")}
-              className="absolute right-5 top-1/2 -translate-y-1/2 rounded-md p-0.5"
+              className="absolute top-1/2 right-5 -translate-y-1/2 rounded-md p-0.5"
               style={{ color: "var(--text-muted)" }}
               title="Clear search"
             >
@@ -326,14 +399,25 @@ function OrgList({
 
       {loading ? (
         <div className="flex justify-center py-10">
-          <Loader2 size={16} className="animate-spin" style={{ color: BRAND_GREEN }} />
+          <Loader2
+            size={16}
+            className="animate-spin"
+            style={{ color: BRAND_GREEN }}
+          />
         </div>
       ) : orgs.length === 0 ? (
-        <p className="px-4 py-10 text-center text-xs" style={{ color: "var(--text-muted)" }}>
-          No organizations yet. Create your first one to start adding admins and customers.
+        <p
+          className="px-4 py-10 text-center text-xs"
+          style={{ color: "var(--text-muted)" }}
+        >
+          No organizations yet. Create your first one to start adding admins and
+          customers.
         </p>
       ) : filtered.length === 0 ? (
-        <p className="px-4 py-10 text-center text-xs" style={{ color: "var(--text-muted)" }}>
+        <p
+          className="px-4 py-10 text-center text-xs"
+          style={{ color: "var(--text-muted)" }}
+        >
           No organizations match “{query}”.
         </p>
       ) : (
@@ -341,7 +425,7 @@ function OrgList({
           {filtered.map((o) => {
             const active = o.id === selectedId;
             const admins = o.members.filter((m) => isAdmin(m)).length;
-            const depts  = o.departments?.length ?? 0;
+            const depts = o.departments?.length ?? 0;
             const viaReseller = o.enterpriseType === "inorganic";
             return (
               <button
@@ -350,7 +434,9 @@ function OrgList({
                 className="relative block w-full border-b px-4 py-3 text-left transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
                 style={{
                   borderColor: "var(--border)",
-                  backgroundColor: active ? "color-mix(in srgb, var(--text) 4%, transparent)" : "transparent",
+                  backgroundColor: active
+                    ? "color-mix(in srgb, var(--text) 4%, transparent)"
+                    : "transparent",
                 }}
               >
                 {active && (
@@ -361,23 +447,45 @@ function OrgList({
                   />
                 )}
                 <div className="flex items-center gap-2">
-                  <span className="truncate text-sm font-medium" style={{ color: "var(--text)" }}>{o.name}</span>
+                  <span
+                    className="truncate text-sm font-medium"
+                    style={{ color: "var(--text)" }}
+                  >
+                    {o.name}
+                  </span>
                   {viaReseller && (
                     <span
-                      className="shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider"
+                      className="shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold tracking-wider uppercase"
                       style={{
-                        backgroundColor: "color-mix(in srgb, var(--text-muted) 14%, transparent)",
+                        backgroundColor:
+                          "color-mix(in srgb, var(--text-muted) 14%, transparent)",
                         color: "var(--text-muted)",
                       }}
-                      title={o.resellerName ? `Created via ${o.resellerName}` : "Created via a reseller"}
+                      title={
+                        o.resellerName
+                          ? `Created via ${o.resellerName}`
+                          : "Created via a reseller"
+                      }
                     >
                       via reseller
                     </span>
                   )}
                 </div>
-                <div className="mt-0.5 text-[11px]" style={{ color: "var(--text-muted)" }}>
-                  {admins} admin{admins === 1 ? "" : "s"} · {depts} department{depts === 1 ? "" : "s"}
-                  {o.primaryDomain && <> · <span style={{ fontFamily: "var(--font-mono)" }}>{o.primaryDomain}</span></>}
+                <div
+                  className="mt-0.5 text-[11px]"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  {admins} admin{admins === 1 ? "" : "s"} · {depts} department
+                  {depts === 1 ? "" : "s"}
+                  {o.primaryDomain && (
+                    <>
+                      {" "}
+                      ·{" "}
+                      <span style={{ fontFamily: "var(--font-mono)" }}>
+                        {o.primaryDomain}
+                      </span>
+                    </>
+                  )}
                 </div>
               </button>
             );
@@ -402,10 +510,15 @@ function EmptyDetail() {
 }
 
 function OrgCreateInline({
-  submit, cancel,
+  submit,
+  cancel,
 }: {
   submit: (input: {
-    name: string; primaryDomain: string; adminEmail: string; adminDisplayName: string; allocatedMinutes: number;
+    name: string;
+    primaryDomain: string;
+    adminEmail: string;
+    adminDisplayName: string;
+    allocatedMinutes: number;
   }) => Promise<{ ok: true } | { ok: false; error: string }>;
   cancel: () => void;
 }) {
@@ -415,7 +528,7 @@ function OrgCreateInline({
   const [adminDisplayName, setAdminDisplayName] = useState("");
   const [allocatedMinutes, setAllocatedMinutes] = useState("0");
   const [busy, setBusy] = useState(false);
-  const [err, setErr]   = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
   const onSubmit = async () => {
     if (!name.trim() || !adminEmail.trim() || !adminDisplayName.trim()) {
@@ -430,9 +543,9 @@ function OrgCreateInline({
     setBusy(true);
     setErr(null);
     const r = await submit({
-      name:             name.trim(),
-      primaryDomain:    primaryDomain.trim(),
-      adminEmail:       adminEmail.trim(),
+      name: name.trim(),
+      primaryDomain: primaryDomain.trim(),
+      adminEmail: adminEmail.trim(),
       adminDisplayName: adminDisplayName.trim(),
       allocatedMinutes: alloc,
     });
@@ -449,13 +562,45 @@ function OrgCreateInline({
       }}
     >
       <div className="grid grid-cols-1 gap-2">
-        <Field label="Organization name" value={name} onChange={setName} placeholder="Acme Inc" autoFocus />
-        <Field label="Primary domain (optional)" value={primaryDomain} onChange={setPrimaryDomain} placeholder="acme.com" />
-        <Field label="First admin — name" value={adminDisplayName} onChange={setAdminDisplayName} placeholder="Jane Doe" />
-        <Field label="First admin — email" value={adminEmail} onChange={setAdminEmail} placeholder="jane@acme.com" type="email" />
-        <Field label="Minutes allocation" value={allocatedMinutes} onChange={setAllocatedMinutes} placeholder="0" type="number" />
+        <Field
+          label="Organization name"
+          value={name}
+          onChange={setName}
+          placeholder="Acme Inc"
+          autoFocus
+        />
+        <Field
+          label="Primary domain (optional)"
+          value={primaryDomain}
+          onChange={setPrimaryDomain}
+          placeholder="acme.com"
+        />
+        <Field
+          label="First admin — name"
+          value={adminDisplayName}
+          onChange={setAdminDisplayName}
+          placeholder="Jane Doe"
+        />
+        <Field
+          label="First admin — email"
+          value={adminEmail}
+          onChange={setAdminEmail}
+          placeholder="jane@acme.com"
+          type="email"
+        />
+        <Field
+          label="Minutes allocation"
+          value={allocatedMinutes}
+          onChange={setAllocatedMinutes}
+          placeholder="0"
+          type="number"
+        />
       </div>
-      {err && <p className="mt-1 text-[11px]" style={{ color: "var(--accent-red)" }}>{err}</p>}
+      {err && (
+        <p className="mt-1 text-[11px]" style={{ color: "var(--accent-red)" }}>
+          {err}
+        </p>
+      )}
       <div className="mt-2 flex justify-end gap-2">
         <button
           type="button"
@@ -484,22 +629,34 @@ function OrgCreateInline({
 /* ──────── Right pane: org detail ──────── */
 
 function OrgDetail({
-  org, addMember, regenerate, toggleStatus, remove, deleteOrg,
+  org,
+  addMember,
+  regenerate,
+  toggleStatus,
+  remove,
+  deleteOrg,
 }: {
   org: Org;
-  addMember: (input: { email: string; displayName: string; role: "enterprise_admin" | "client" }) => Promise<{ ok: true } | { ok: false; error: string }>;
+  addMember: (input: {
+    email: string;
+    displayName: string;
+    role: "enterprise_admin" | "client";
+  }) => Promise<{ ok: true } | { ok: false; error: string }>;
   regenerate: (m: Member) => void;
   toggleStatus: (m: Member) => void;
   remove: (m: Member) => void;
   deleteOrg: () => void;
 }) {
-  const admins      = org.members.filter(isAdmin);
+  const admins = org.members.filter(isAdmin);
   const departments = org.departments ?? [];
 
   return (
     <div
       className="overflow-hidden rounded-xl border"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface)",
+      }}
     >
       <div
         className="flex items-center justify-between gap-3 border-b px-5 py-3"
@@ -507,17 +664,25 @@ function OrgDetail({
       >
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="truncate text-sm font-semibold" style={{ color: "var(--text)" }}>
+            <span
+              className="truncate text-sm font-semibold"
+              style={{ color: "var(--text)" }}
+            >
               {org.name}
             </span>
             {org.enterpriseType === "inorganic" && (
               <span
-                className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
+                className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wider uppercase"
                 style={{
-                  backgroundColor: "color-mix(in srgb, var(--text-muted) 14%, transparent)",
+                  backgroundColor:
+                    "color-mix(in srgb, var(--text-muted) 14%, transparent)",
                   color: "var(--text-muted)",
                 }}
-                title={org.resellerName ? `Minted by reseller "${org.resellerName}"` : "Minted by a reseller"}
+                title={
+                  org.resellerName
+                    ? `Minted by reseller "${org.resellerName}"`
+                    : "Minted by a reseller"
+                }
               >
                 via {org.resellerName ?? "reseller"}
               </span>
@@ -526,7 +691,10 @@ function OrgDetail({
           {org.primaryDomain && (
             <div
               className="mt-0.5 text-[11px]"
-              style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}
+              style={{
+                color: "var(--text-muted)",
+                fontFamily: "var(--font-mono)",
+              }}
             >
               {org.primaryDomain}
             </div>
@@ -534,9 +702,10 @@ function OrgDetail({
         </div>
         <div className="flex items-center gap-2">
           <span
-            className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
+            className="rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wider uppercase"
             style={{
-              backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
+              backgroundColor:
+                "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
               color: BRAND_GREEN,
             }}
           >
@@ -575,7 +744,10 @@ function DepartmentSection({ departments }: { departments: Department[] }) {
   return (
     <section className="border-b" style={{ borderColor: "var(--border)" }}>
       <div className="flex items-center justify-between gap-2 px-5 py-3">
-        <h3 className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--text-muted)" }}>
+        <h3
+          className="text-[10px] font-semibold tracking-[0.12em] uppercase"
+          style={{ color: "var(--text-muted)" }}
+        >
           Departments ({departments.length})
         </h3>
         <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
@@ -585,7 +757,11 @@ function DepartmentSection({ departments }: { departments: Department[] }) {
 
       {departments.length === 0 ? (
         <p className="px-5 pb-4 text-xs" style={{ color: "var(--text-muted)" }}>
-          No departments yet. The enterprise admin can create departments from <span style={{ fontFamily: "var(--font-mono)" }}>/enterprise/departments</span>.
+          No departments yet. The enterprise admin can create departments from{" "}
+          <span style={{ fontFamily: "var(--font-mono)" }}>
+            /enterprise/departments
+          </span>
+          .
         </p>
       ) : (
         <ul className="pb-2">
@@ -598,19 +774,26 @@ function DepartmentSection({ departments }: { departments: Department[] }) {
               <span
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
                 style={{
-                  backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
+                  backgroundColor:
+                    "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
                   color: BRAND_GREEN,
                 }}
               >
                 <Building2 size={14} />
               </span>
               <div className="min-w-0 flex-1 leading-tight">
-                <div className="truncate text-sm" style={{ color: "var(--text)" }}>
+                <div
+                  className="truncate text-sm"
+                  style={{ color: "var(--text)" }}
+                >
                   {d.name}
                 </div>
                 <div
                   className="mt-0.5 truncate text-[11px]"
-                  style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}
+                  style={{
+                    color: "var(--text-muted)",
+                    fontFamily: "var(--font-mono)",
+                  }}
                 >
                   {d.departmentCode}
                 </div>
@@ -628,7 +811,8 @@ function DepartmentSection({ departments }: { departments: Department[] }) {
                 style={{ color: "var(--text-muted)" }}
                 title={`Allocated ${d.allocatedMinutes}, used ${d.usedMinutes}, remaining ${d.remainingMinutes}`}
               >
-                {Math.round(d.remainingMinutes)} / {Math.round(d.allocatedMinutes)} min
+                {Math.round(d.remainingMinutes)} /{" "}
+                {Math.round(d.allocatedMinutes)} min
               </span>
               <StatusChipInline
                 status={d.status === "active" ? "ACTIVE" : "DEACTIVATED"}
@@ -642,13 +826,24 @@ function DepartmentSection({ departments }: { departments: Department[] }) {
 }
 
 function MemberSection({
-  title, addLabel, addRole, members, addMember, regenerate, toggleStatus, remove,
+  title,
+  addLabel,
+  addRole,
+  members,
+  addMember,
+  regenerate,
+  toggleStatus,
+  remove,
 }: {
   title: string;
   addLabel: string;
   addRole: "enterprise_admin" | "client";
   members: Member[];
-  addMember: (input: { email: string; displayName: string; role: "enterprise_admin" | "client" }) => Promise<{ ok: true } | { ok: false; error: string }>;
+  addMember: (input: {
+    email: string;
+    displayName: string;
+    role: "enterprise_admin" | "client";
+  }) => Promise<{ ok: true } | { ok: false; error: string }>;
   regenerate: (m: Member) => void;
   toggleStatus: (m: Member) => void;
   remove: (m: Member) => void;
@@ -658,7 +853,10 @@ function MemberSection({
   return (
     <section className="border-b" style={{ borderColor: "var(--border)" }}>
       <div className="flex items-center justify-between gap-2 px-5 py-3">
-        <h3 className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--text-muted)" }}>
+        <h3
+          className="text-[10px] font-semibold tracking-[0.12em] uppercase"
+          style={{ color: "var(--text-muted)" }}
+        >
           {title} ({members.length})
         </h3>
         <button
@@ -699,28 +897,51 @@ function MemberSection({
               <span
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold uppercase"
                 style={{
-                  backgroundColor: "color-mix(in srgb, var(--text-muted) 14%, transparent)",
+                  backgroundColor:
+                    "color-mix(in srgb, var(--text-muted) 14%, transparent)",
                   color: "var(--text-muted)",
                 }}
               >
                 {(m.displayName || m.email || "?")[0]}
               </span>
               <div className="min-w-0 flex-1 leading-tight">
-                <div className="truncate text-sm" style={{ color: "var(--text)" }}>
+                <div
+                  className="truncate text-sm"
+                  style={{ color: "var(--text)" }}
+                >
                   {m.displayName || m.email}
                 </div>
                 {m.displayName && m.email && (
-                  <div className="truncate text-[11px]" style={{ color: "var(--text-muted)" }}>
+                  <div
+                    className="truncate text-[11px]"
+                    style={{ color: "var(--text-muted)" }}
+                  >
                     {m.email}
                   </div>
                 )}
               </div>
               <RoleChipInline role={m.primaryRole ?? m.roles[0] ?? "—"} />
-              <StatusChipInline status={m.status} awaitingFirstSignIn={m.awaitingFirstSignIn} />
+              <StatusChipInline
+                status={m.status}
+                awaitingFirstSignIn={m.awaitingFirstSignIn}
+              />
               <div className="inline-flex items-center gap-1">
-                <IconBtn onClick={() => regenerate(m)}    title="Resend invitation email" icon={<Mail size={12} />} />
-                <IconBtn onClick={() => toggleStatus(m)}  title={m.status === "ACTIVE" ? "Deactivate" : "Reactivate"} icon={<Power size={12} />} />
-                <IconBtn onClick={() => remove(m)}        title="Delete" icon={<Trash2 size={12} />} danger />
+                <IconBtn
+                  onClick={() => regenerate(m)}
+                  title="Resend invitation email"
+                  icon={<Mail size={12} />}
+                />
+                <IconBtn
+                  onClick={() => toggleStatus(m)}
+                  title={m.status === "ACTIVE" ? "Deactivate" : "Reactivate"}
+                  icon={<Power size={12} />}
+                />
+                <IconBtn
+                  onClick={() => remove(m)}
+                  title="Delete"
+                  icon={<Trash2 size={12} />}
+                  danger
+                />
               </div>
             </li>
           ))}
@@ -731,16 +952,22 @@ function MemberSection({
 }
 
 function MemberDraft({
-  role, cancel, submit,
+  role,
+  cancel,
+  submit,
 }: {
   role: "enterprise_admin" | "client";
   cancel: () => void;
-  submit: (input: { email: string; displayName: string; role: "enterprise_admin" | "client" }) => Promise<{ ok: true } | { ok: false; error: string }>;
+  submit: (input: {
+    email: string;
+    displayName: string;
+    role: "enterprise_admin" | "client";
+  }) => Promise<{ ok: true } | { ok: false; error: string }>;
 }) {
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
-  const [err, setErr]   = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
   const onSubmit = async () => {
     if (!email.trim() || !displayName.trim()) {
@@ -749,7 +976,11 @@ function MemberDraft({
     }
     setBusy(true);
     setErr(null);
-    const r = await submit({ email: email.trim(), displayName: displayName.trim(), role });
+    const r = await submit({
+      email: email.trim(),
+      displayName: displayName.trim(),
+      role,
+    });
     if (!r.ok) setErr(r.error);
     setBusy(false);
   };
@@ -767,24 +998,42 @@ function MemberDraft({
           autoFocus
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") void onSubmit(); if (e.key === "Escape") cancel(); }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void onSubmit();
+            if (e.key === "Escape") cancel();
+          }}
           placeholder="Full name"
           className="flex-1 rounded-md border px-2 py-1.5 text-xs outline-none"
-          style={{ borderColor: "var(--border)", backgroundColor: "var(--background)", color: "var(--text)" }}
+          style={{
+            borderColor: "var(--border)",
+            backgroundColor: "var(--background)",
+            color: "var(--text)",
+          }}
           disabled={busy}
         />
         <input
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") void onSubmit(); if (e.key === "Escape") cancel(); }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void onSubmit();
+            if (e.key === "Escape") cancel();
+          }}
           placeholder="email@company.com"
           className="flex-1 rounded-md border px-2 py-1.5 text-xs outline-none"
-          style={{ borderColor: "var(--border)", backgroundColor: "var(--background)", color: "var(--text)" }}
+          style={{
+            borderColor: "var(--border)",
+            backgroundColor: "var(--background)",
+            color: "var(--text)",
+          }}
           disabled={busy}
         />
       </div>
-      {err && <p className="mb-2 text-[11px]" style={{ color: "var(--accent-red)" }}>{err}</p>}
+      {err && (
+        <p className="mb-2 text-[11px]" style={{ color: "var(--accent-red)" }}>
+          {err}
+        </p>
+      )}
       <div className="flex items-center justify-end gap-1.5">
         <button
           onClick={cancel}
@@ -800,7 +1049,11 @@ function MemberDraft({
           className="inline-flex items-center gap-1 rounded-md px-3 py-1 text-[11px] font-semibold text-white disabled:opacity-50"
           style={{ backgroundColor: BRAND_GREEN }}
         >
-          {busy ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />}
+          {busy ? (
+            <Loader2 size={11} className="animate-spin" />
+          ) : (
+            <Plus size={11} />
+          )}
           {busy ? "Sending…" : "Send invite"}
         </button>
       </div>
@@ -811,12 +1064,18 @@ function MemberDraft({
 /* ──────── Small helpers ──────── */
 
 function isAdmin(m: Member): boolean {
-  return m.primaryRole === "enterprise_admin"
-    || m.roles.includes("enterprise_admin");
+  return (
+    m.primaryRole === "enterprise_admin" || m.roles.includes("enterprise_admin")
+  );
 }
 
 function Field({
-  label, value, onChange, placeholder, type = "text", autoFocus,
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = "text",
+  autoFocus,
 }: {
   label: string;
   value: string;
@@ -827,7 +1086,10 @@ function Field({
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-[11px] font-medium" style={{ color: "var(--text-muted)" }}>
+      <label
+        className="text-[11px] font-medium"
+        style={{ color: "var(--text-muted)" }}
+      >
         {label}
       </label>
       <input
@@ -852,7 +1114,8 @@ function RoleChipInline({ role }: { role: string }) {
     <span
       className="inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium"
       style={{
-        backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
+        backgroundColor:
+          "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
         color: BRAND_GREEN,
       }}
     >
@@ -872,7 +1135,8 @@ function StatusChipInline({
       <span
         className="inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium"
         style={{
-          backgroundColor: "color-mix(in srgb, var(--text-muted) 14%, transparent)",
+          backgroundColor:
+            "color-mix(in srgb, var(--text-muted) 14%, transparent)",
           color: "var(--text-muted)",
         }}
       >
@@ -884,7 +1148,8 @@ function StatusChipInline({
     <span
       className="inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium"
       style={{
-        backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
+        backgroundColor:
+          "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
         color: BRAND_GREEN,
       }}
     >
@@ -894,7 +1159,10 @@ function StatusChipInline({
 }
 
 function IconBtn({
-  onClick, title, icon, danger,
+  onClick,
+  title,
+  icon,
+  danger,
 }: {
   onClick: () => void;
   title: string;
@@ -916,7 +1184,8 @@ function IconBtn({
 }
 
 function ErrorLine({
-  message, dismiss,
+  message,
+  dismiss,
 }: {
   message: string;
   dismiss: () => void;
@@ -925,13 +1194,19 @@ function ErrorLine({
     <div
       className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
       style={{
-        backgroundColor: "color-mix(in srgb, var(--accent-red) 8%, transparent)",
+        backgroundColor:
+          "color-mix(in srgb, var(--accent-red) 8%, transparent)",
         color: "var(--accent-red)",
         borderColor: "color-mix(in srgb, var(--accent-red) 25%, transparent)",
       }}
     >
       <span>{message}</span>
-      <button type="button" onClick={dismiss} aria-label="Dismiss" className="rounded-md p-1">
+      <button
+        type="button"
+        onClick={dismiss}
+        aria-label="Dismiss"
+        className="rounded-md p-1"
+      >
         <X size={14} />
       </button>
     </div>

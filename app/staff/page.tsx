@@ -3,7 +3,8 @@ import { SurfaceLoginPage } from "@/app/_components/login/SurfaceLoginPage";
 
 export const metadata: Metadata = {
   title: "Staff sign in — Relay.green",
-  description: "Sign in to Relay.green. Engineers, supervisors and platform admins.",
+  description:
+    "Sign in to Relay.green. Engineers, supervisors and platform admins.",
 };
 
 export default async function StaffLoginPage({

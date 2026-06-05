@@ -56,7 +56,8 @@ export function GlobalNewChatModal({
               ))}
             </div>
             <p className="text-xs text-[var(--text-muted)]">
-              We&apos;ll open the chat and ring an engineer who fits the project.
+              We&apos;ll open the chat and ring an engineer who fits the
+              project.
             </p>
           </div>
         ) : (

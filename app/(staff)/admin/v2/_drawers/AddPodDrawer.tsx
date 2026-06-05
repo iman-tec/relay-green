@@ -13,31 +13,41 @@ export function AddPodDrawer({
   onClose,
   onCreated,
 }: {
-  open:      boolean;
-  onClose:   () => void;
+  open: boolean;
+  onClose: () => void;
   onCreated: (podId: string) => void;
 }) {
-  const [name, setName]               = useState("");
+  const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [error, setError]             = useState<string | null>(null);
-  const [loading, setLoading]         = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const reset = () => { setName(""); setDescription(""); setError(null); };
+  const reset = () => {
+    setName("");
+    setDescription("");
+    setError(null);
+  };
 
   const submit = async () => {
-    if (!name.trim()) { setError("Pod name is required."); return; }
+    if (!name.trim()) {
+      setError("Pod name is required.");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
       const res = await fetch("/api/admin/pods", {
-        method:  "POST",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name:        name.trim(),
+          name: name.trim(),
           description: description.trim() || undefined,
         }),
       });
-      const body = (await res.json().catch(() => ({}))) as { pod?: { id: string }; error?: string };
+      const body = (await res.json().catch(() => ({}))) as {
+        pod?: { id: string };
+        error?: string;
+      };
       if (!res.ok || !body.pod) {
         setError(body.error ?? "Couldn't create pod.");
         return;
@@ -54,11 +64,22 @@ export function AddPodDrawer({
   return (
     <Drawer
       open={open}
-      onClose={() => { reset(); onClose(); }}
+      onClose={() => {
+        reset();
+        onClose();
+      }}
       title="Add Pod"
       footer={
         <>
-          <SecondaryBtn onClick={() => { reset(); onClose(); }} disabled={loading}>Cancel</SecondaryBtn>
+          <SecondaryBtn
+            onClick={() => {
+              reset();
+              onClose();
+            }}
+            disabled={loading}
+          >
+            Cancel
+          </SecondaryBtn>
           <PrimaryBtn onClick={submit} disabled={loading}>
             {loading ? "Creating…" : "Create"}
           </PrimaryBtn>
@@ -70,7 +91,11 @@ export function AddPodDrawer({
           <Input value={name} onChange={setName} placeholder="Pod Alpha" />
         </Field>
         <Field label="Description (optional)">
-          <Textarea value={description} onChange={setDescription} placeholder="What this pod focuses on…" />
+          <Textarea
+            value={description}
+            onChange={setDescription}
+            placeholder="What this pod focuses on…"
+          />
         </Field>
         {error && <ErrorBanner message={error} />}
       </div>
@@ -78,18 +103,32 @@ export function AddPodDrawer({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <label className="flex flex-col gap-1.5">
-      <span className="text-xs font-medium" style={{ color: "var(--text)" }}>{label}</span>
+      <span className="text-xs font-medium" style={{ color: "var(--text)" }}>
+        {label}
+      </span>
       {children}
     </label>
   );
 }
 
 function Input({
-  value, onChange, placeholder,
-}: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
   return (
     <input
       value={value}
@@ -102,8 +141,14 @@ function Input({
 }
 
 function Textarea({
-  value, onChange, placeholder,
-}: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
   return (
     <textarea
       value={value}
@@ -116,12 +161,20 @@ function Textarea({
   );
 }
 
-function PrimaryBtn({ onClick, disabled, children }: {
-  onClick: () => void; disabled?: boolean; children: React.ReactNode;
+function PrimaryBtn({
+  onClick,
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
 }) {
   return (
     <button
-      type="button" onClick={onClick} disabled={disabled}
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
       className="rounded-md px-3 py-2 text-sm font-medium transition-opacity disabled:opacity-50"
       style={{ background: "var(--primary)", color: "#fff" }}
     >
@@ -130,12 +183,20 @@ function PrimaryBtn({ onClick, disabled, children }: {
   );
 }
 
-function SecondaryBtn({ onClick, disabled, children }: {
-  onClick: () => void; disabled?: boolean; children: React.ReactNode;
+function SecondaryBtn({
+  onClick,
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
 }) {
   return (
     <button
-      type="button" onClick={onClick} disabled={disabled}
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
       className="rounded-md border px-3 py-2 text-sm font-medium transition-opacity disabled:opacity-50"
       style={{ borderColor: "var(--border)", color: "var(--text)" }}
     >
@@ -150,8 +211,8 @@ function ErrorBanner({ message }: { message: string }) {
       className="rounded-md border px-3 py-2 text-xs"
       style={{
         borderColor: "color-mix(in srgb, var(--primary) 30%, transparent)",
-        background:  "color-mix(in srgb, var(--primary) 8%, transparent)",
-        color:       "var(--primary)",
+        background: "color-mix(in srgb, var(--primary) 8%, transparent)",
+        color: "var(--primary)",
       }}
     >
       {message}

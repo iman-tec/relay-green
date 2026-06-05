@@ -72,10 +72,12 @@ function buildSystemPrompt(body: AssistantBody): string {
     "Speak warmly and concisely. Never invent product details. Keep replies under 3 sentences.",
   ];
   const stack = flattenStack(body.profile?.stack).concat(
-    flattenStack(body.funnel?.stack),
+    flattenStack(body.funnel?.stack)
   );
   if (stack.length) {
-    lines.push(`Customer stack: ${Array.from(new Set(stack)).slice(0, 10).join(", ")}.`);
+    lines.push(
+      `Customer stack: ${Array.from(new Set(stack)).slice(0, 10).join(", ")}.`
+    );
   }
   if (body.funnel?.need) lines.push(`Customer need: ${body.funnel.need}.`);
   if (body.funnel?.urgency) lines.push(`Urgency: ${body.funnel.urgency}.`);
@@ -95,7 +97,7 @@ function fallback(body: AssistantBody, reason: "no_key" | "openai_error") {
   const text = FALLBACK_GREETINGS[mode];
   return NextResponse.json(
     { text, model: "heuristic-fallback", fallback: reason },
-    { status: 200 },
+    { status: 200 }
   );
 }
 
@@ -122,7 +124,10 @@ export async function POST(req: NextRequest) {
         ? "Write a 1-2 sentence 'welcome back' that references the prior session title and asks what's changed."
         : "Reply naturally to continue the conversation in 1-3 sentences.";
 
-  const openaiMessages: { role: "system" | "user" | "assistant"; content: string }[] = [
+  const openaiMessages: {
+    role: "system" | "user" | "assistant";
+    content: string;
+  }[] = [
     { role: "system", content: system },
     ...((body.messages ?? []).map((m) => ({
       role: m.role === "system" ? "user" : m.role,
@@ -157,7 +162,10 @@ export async function POST(req: NextRequest) {
     if (!text) {
       return fallback(body, "openai_error");
     }
-    return NextResponse.json({ text, model: json.model ?? "openai" }, { status: 200 });
+    return NextResponse.json(
+      { text, model: json.model ?? "openai" },
+      { status: 200 }
+    );
   } catch (e) {
     console.warn("[assistant] OpenAI fetch error", e);
     return fallback(body, "openai_error");

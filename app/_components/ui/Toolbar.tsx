@@ -30,9 +30,9 @@ function ToolbarRoot({
   return (
     <div
       className={cn(
-        "flex items-center gap-2 w-full",
+        "flex w-full items-center gap-2",
         dense ? "py-1" : "py-2",
-        className,
+        className
       )}
       {...rest}
     >
@@ -61,7 +61,7 @@ function ToolbarDivider() {
   return (
     <span
       aria-hidden
-      className="inline-block h-5 w-px bg-[var(--border)] mx-1"
+      className="mx-1 inline-block h-5 w-px bg-[var(--border)]"
     />
   );
 }

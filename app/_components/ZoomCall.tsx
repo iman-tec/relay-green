@@ -82,12 +82,16 @@ let scriptsLoadedPromise: Promise<void> | null = null;
 
 function loadZoomSdk(): Promise<void> {
   if (typeof window === "undefined") return Promise.resolve();
-  if ((window as unknown as Record<string, unknown>).ZoomMtgEmbedded) return Promise.resolve();
+  if ((window as unknown as Record<string, unknown>).ZoomMtgEmbedded)
+    return Promise.resolve();
   if (scriptsLoadedPromise) return scriptsLoadedPromise;
   scriptsLoadedPromise = (async () => {
     for (const src of SCRIPTS) {
       await new Promise<void>((resolve, reject) => {
-        if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+        if (document.querySelector(`script[src="${src}"]`)) {
+          resolve();
+          return;
+        }
         const s = document.createElement("script");
         s.src = src;
         s.async = false;
@@ -106,9 +110,13 @@ type ZoomClient = {
   join: (opts: unknown) => Promise<void>;
   leaveMeeting: () => Promise<void>;
   /** Post-init layout switcher per Component View 3.x embedded.d.ts. */
-  setViewType?: (view: "gallery" | "speaker" | "ribbon" | "active") => Promise<void> | void;
+  setViewType?: (
+    view: "gallery" | "speaker" | "ribbon" | "active"
+  ) => Promise<void> | void;
   /** Legacy alias (3.5 era). */
-  switchVideoLayout?: (view: "gallery" | "speaker" | "ribbon" | "active") => void;
+  switchVideoLayout?: (
+    view: "gallery" | "speaker" | "ribbon" | "active"
+  ) => void;
   /** Resize the rendered video area at runtime. */
   updateVideoOptions?: (opts: unknown) => void;
 };
@@ -128,7 +136,9 @@ export function ZoomCall({
   const rootRef = useRef<HTMLDivElement>(null);
   const clientRef = useRef<ZoomClient | null>(null);
   const joinedKeyRef = useRef<string | null>(null);
-  const [status, setStatus] = useState<"idle" | "loading" | "joined" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "loading" | "joined" | "error">(
+    "idle"
+  );
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -150,7 +160,11 @@ export function ZoomCall({
       // still attached.
       const prev = clientRef.current;
       if (prev?.leaveMeeting) {
-        try { await prev.leaveMeeting(); } catch { /* nothing to leave */ }
+        try {
+          await prev.leaveMeeting();
+        } catch {
+          /* nothing to leave */
+        }
         clientRef.current = null;
       }
 
@@ -166,7 +180,8 @@ export function ZoomCall({
       }
 
       if (cancelled) return;
-      const NS = (window as unknown as { ZoomMtgEmbedded?: ZoomMtgEmbeddedNS }).ZoomMtgEmbedded;
+      const NS = (window as unknown as { ZoomMtgEmbedded?: ZoomMtgEmbeddedNS })
+        .ZoomMtgEmbedded;
       if (!NS) {
         setError("Zoom SDK not available after load");
         setStatus("error");
@@ -180,13 +195,25 @@ export function ZoomCall({
       });
       if (sigRes.error || !sigRes.data?.signature) {
         if (cancelled) return;
-        setError(sigRes.error?.message ?? sigRes.data?.error ?? "Couldn't get signature");
+        setError(
+          sigRes.error?.message ??
+            sigRes.data?.error ??
+            "Couldn't get signature"
+        );
         setStatus("error");
         onError?.("signature_failed");
         return;
       }
-      const { signature, sdkKey, password: sigPassword, zak } = sigRes.data as {
-        signature: string; sdkKey: string; password?: string; zak?: string;
+      const {
+        signature,
+        sdkKey,
+        password: sigPassword,
+        zak,
+      } = sigRes.data as {
+        signature: string;
+        sdkKey: string;
+        password?: string;
+        zak?: string;
       };
 
       if (cancelled || !rootRef.current) return;
@@ -249,7 +276,9 @@ export function ZoomCall({
                 ribbon: { width: 640, height: h },
               },
             });
-          } catch { /* ignore */ }
+          } catch {
+            /* ignore */
+          }
         };
         pushViewSizes();
         resizeHandler = () => {
@@ -268,15 +297,26 @@ export function ZoomCall({
           } else if (typeof client.switchVideoLayout === "function") {
             client.switchVideoLayout("gallery");
           }
-        } catch { /* ignore — fallback to defaultViewType from init */ }
+        } catch {
+          /* ignore — fallback to defaultViewType from init */
+        }
 
         setStatus("joined");
         onJoined?.();
       } catch (e: unknown) {
         if (cancelled) return;
-        const err = e as { reason?: string; message?: string; errorCode?: number; type?: string };
-        const baseReason = err?.reason ?? err?.message
-          ?? (err?.errorCode != null ? `Zoom error ${err.errorCode}: ${err.type ?? "unknown"}` : "Couldn't join the meeting");
+        const err = e as {
+          reason?: string;
+          message?: string;
+          errorCode?: number;
+          type?: string;
+        };
+        const baseReason =
+          err?.reason ??
+          err?.message ??
+          (err?.errorCode != null
+            ? `Zoom error ${err.errorCode}: ${err.type ?? "unknown"}`
+            : "Couldn't join the meeting");
         const cleanNumber = String(meetingNumber).replace(/\D/g, "");
         const reason = `${baseReason} (meeting #${cleanNumber || "<empty>"})`;
         // eslint-disable-next-line no-console
@@ -307,7 +347,11 @@ export function ZoomCall({
       clientRef.current = null;
       joinedKeyRef.current = null;
       if (c?.leaveMeeting) {
-        try { void c.leaveMeeting(); } catch { /* ignore */ }
+        try {
+          void c.leaveMeeting();
+        } catch {
+          /* ignore */
+        }
       }
       onLeave?.();
     };
@@ -329,8 +373,12 @@ export function ZoomCall({
         <div className="absolute inset-0 flex items-center justify-center bg-black/80 px-6">
           <div className="max-w-sm text-center">
             <Video size={28} className="mx-auto mb-3 text-white/60" />
-            <p className="text-sm font-medium text-white">Couldn&apos;t connect to Zoom</p>
-            <p className="mt-2 text-xs leading-relaxed text-white/70">{error}</p>
+            <p className="text-sm font-medium text-white">
+              Couldn&apos;t connect to Zoom
+            </p>
+            <p className="mt-2 text-xs leading-relaxed text-white/70">
+              {error}
+            </p>
             {fallbackJoinUrl ? (
               <a
                 href={fallbackJoinUrl}

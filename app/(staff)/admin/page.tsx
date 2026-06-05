@@ -12,7 +12,9 @@ export const metadata: Metadata = {
 // admins have their own org-scoped surfaces and are bounced away.
 export default async function AdminPage() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) redirect("/staff");
 
   const { data: roleRows } = await supabase

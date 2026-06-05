@@ -227,10 +227,13 @@ export const ScheduledCallsPill = memo(function ScheduledCallsPill({
         return;
       setBusyId(b.id);
       try {
-        const { error } = await sbRef.current.rpc("cancel_booking_with_reason", {
-          _id: b.id,
-          _reason: "Cancelled by customer",
-        });
+        const { error } = await sbRef.current.rpc(
+          "cancel_booking_with_reason",
+          {
+            _id: b.id,
+            _reason: "Cancelled by customer",
+          }
+        );
         if (error) {
           window.alert(`Couldn't cancel: ${error.message}`);
           return;
@@ -265,7 +268,9 @@ export const ScheduledCallsPill = memo(function ScheduledCallsPill({
     void (async () => {
       const { data } = await sb
         .from("supervisor_bookings")
-        .select("id, slot_start, slot_end, project_name, call_started_at, quote_id")
+        .select(
+          "id, slot_start, slot_end, project_name, call_started_at, quote_id"
+        )
         .eq("customer_user_id", customerUserId)
         .eq("status", "booked")
         .gte("slot_end", new Date().toISOString())
@@ -486,7 +491,10 @@ export const ScheduledCallsPill = memo(function ScheduledCallsPill({
                     {started ? (
                       <span
                         className="inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold"
-                        style={{ background: "var(--green-dot)", color: "#fff" }}
+                        style={{
+                          background: "var(--green-dot)",
+                          color: "#fff",
+                        }}
                       >
                         <span className="size-1.5 animate-pulse rounded-full bg-white" />
                         In call

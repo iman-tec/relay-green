@@ -69,37 +69,32 @@ export interface IntakePrompt {
 export const INTAKE_SCRIPT: ReadonlyArray<IntakePrompt> = [
   {
     id: "building",
-    body:
-      "While we line up an engineer — tell me what you're building. A sentence or two is plenty: the kind of product, who it's for, and how far along you are.",
+    body: "While we line up an engineer — tell me what you're building. A sentence or two is plenty: the kind of product, who it's for, and how far along you are.",
     composerHint: "e.g. a CRM dashboard for our sales team…",
     fieldFromAnswer: "building",
   },
   {
     id: "problem",
-    body:
-      "What's going wrong, or what's the next step you can't quite get past? Paste the exact error or a screenshot if you have one — the more context I have, the faster your engineer can dive in.",
+    body: "What's going wrong, or what's the next step you can't quite get past? Paste the exact error or a screenshot if you have one — the more context I have, the faster your engineer can dive in.",
     composerHint: "Describe the error or what's blocked…",
     fieldFromAnswer: "problem",
   },
   {
     id: "stack",
-    body:
-      "Which stack is involved? Frameworks, services, anything you've tried so far. (e.g. Next.js + Supabase on Vercel, Python + Postgres, Lovable + Cloudflare.)",
+    body: "Which stack is involved? Frameworks, services, anything you've tried so far. (e.g. Next.js + Supabase on Vercel, Python + Postgres, Lovable + Cloudflare.)",
     composerHint: "Languages, frameworks, services…",
     fieldFromAnswer: "stack",
   },
   {
     id: "aiTools",
-    body:
-      "Which AI tools have you been pairing with on this build? It helps me match you with someone who's shipped on the same toolchain.",
+    body: "Which AI tools have you been pairing with on this build? It helps me match you with someone who's shipped on the same toolchain.",
     composerHint: "Comma-separated is fine…",
     fieldFromAnswer: "aiTools",
     quickReplies: ["Claude", "ChatGPT", "Cursor", "Replit", "Lovable", "Bolt"],
   },
   {
     id: "wrap_up",
-    body:
-      "Thanks — your engineer will see all of this the moment they join. Feel free to keep adding context or drop a screenshot any time; nothing here goes to waste.",
+    body: "Thanks — your engineer will see all of this the moment they join. Feel free to keep adding context or drop a screenshot any time; nothing here goes to waste.",
     fieldFromAnswer: null,
   },
 ];
@@ -111,7 +106,7 @@ export function askNext(ctx: IntakeContext): IntakePrompt | null {
     if (p.id === "wrap_up") {
       // Only emit wrap-up once all the field-bearing prompts are answered.
       const allFilled = INTAKE_SCRIPT.every(
-        (q) => !q.fieldFromAnswer || Boolean(ctx[q.fieldFromAnswer]),
+        (q) => !q.fieldFromAnswer || Boolean(ctx[q.fieldFromAnswer])
       );
       return allFilled ? p : null;
     }
@@ -127,11 +122,13 @@ export function captureAnswer(
   ctx: IntakeContext,
   prompt: IntakePrompt,
   answer: string,
-  attachment?: IntakeMessage["attachment"],
+  attachment?: IntakeMessage["attachment"]
 ): IntakeContext {
   const next: IntakeContext = {
     ...ctx,
-    attachments: attachment ? [...ctx.attachments, attachment] : ctx.attachments,
+    attachments: attachment
+      ? [...ctx.attachments, attachment]
+      : ctx.attachments,
   };
   if (prompt.fieldFromAnswer && answer.trim()) {
     next[prompt.fieldFromAnswer] = answer.trim();

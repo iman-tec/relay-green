@@ -7,13 +7,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Rocket,
-  Wrench,
-  ShieldCheck,
-  ChevronDown,
-  Search,
-} from "lucide-react";
+import { Rocket, Wrench, ShieldCheck, ChevronDown, Search } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import { BidViewer, type Quote } from "./ContractManagement";
 
@@ -120,7 +114,10 @@ export function ContractsCenterView({
 
   if (loading) {
     return (
-      <p className="py-12 text-center text-sm" style={{ color: "var(--text-muted)" }}>
+      <p
+        className="py-12 text-center text-sm"
+        style={{ color: "var(--text-muted)" }}
+      >
         Loading…
       </p>
     );
@@ -128,7 +125,10 @@ export function ContractsCenterView({
 
   if (quotes.length === 0) {
     return (
-      <p className="py-12 text-center text-sm" style={{ color: "var(--text-muted)" }}>
+      <p
+        className="py-12 text-center text-sm"
+        style={{ color: "var(--text-muted)" }}
+      >
         No bids yet.
       </p>
     );
@@ -139,7 +139,10 @@ export function ContractsCenterView({
       {/* Search */}
       <div
         className="flex items-center gap-2 rounded-xl border px-3.5 py-2.5"
-        style={{ borderColor: "var(--border)", background: "var(--background)" }}
+        style={{
+          borderColor: "var(--border)",
+          background: "var(--background)",
+        }}
       >
         <Search size={16} style={{ color: "var(--text-muted)" }} />
         <input

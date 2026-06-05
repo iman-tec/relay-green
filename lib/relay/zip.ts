@@ -12,7 +12,7 @@
  * Spec ref: PKWARE APPNOTE.TXT v6.3.10, sections 4.3.7, 4.3.12, 4.3.16.
  */
 
-const SIG_LFH  = 0x04034b50; // Local file header
+const SIG_LFH = 0x04034b50; // Local file header
 const SIG_CDFH = 0x02014b50; // Central directory file header
 const SIG_EOCD = 0x06054b50; // End of central directory
 
@@ -60,23 +60,24 @@ export function buildZip(entries: ZipEntry[]): Uint8Array {
 
   for (const e of entries) {
     const nameBytes = encoder.encode(e.name);
-    const dataBytes = typeof e.data === "string" ? encoder.encode(e.data) : e.data;
-    const crc       = crc32(dataBytes);
-    const size      = dataBytes.length;
+    const dataBytes =
+      typeof e.data === "string" ? encoder.encode(e.data) : e.data;
+    const crc = crc32(dataBytes);
+    const size = dataBytes.length;
 
     // Local file header (30 bytes + filename).
     const lfh = new DataView(new ArrayBuffer(30));
-    lfh.setUint32(0,  SIG_LFH, true);
-    lfh.setUint16(4,  20, true);       // version needed (2.0)
-    lfh.setUint16(6,  0, true);        // general purpose flag
-    lfh.setUint16(8,  0, true);        // compression method (stored)
-    lfh.setUint16(10, 0, true);        // last mod time (00:00:00)
-    lfh.setUint16(12, 0x21, true);     // last mod date (1980-01-01)
+    lfh.setUint32(0, SIG_LFH, true);
+    lfh.setUint16(4, 20, true); // version needed (2.0)
+    lfh.setUint16(6, 0, true); // general purpose flag
+    lfh.setUint16(8, 0, true); // compression method (stored)
+    lfh.setUint16(10, 0, true); // last mod time (00:00:00)
+    lfh.setUint16(12, 0x21, true); // last mod date (1980-01-01)
     lfh.setUint32(14, crc, true);
-    lfh.setUint32(18, size, true);     // compressed = uncompressed (stored)
+    lfh.setUint32(18, size, true); // compressed = uncompressed (stored)
     lfh.setUint32(22, size, true);
     lfh.setUint16(26, nameBytes.length, true);
-    lfh.setUint16(28, 0, true);        // extra field length
+    lfh.setUint16(28, 0, true); // extra field length
 
     parts.push(new Uint8Array(lfh.buffer));
     parts.push(nameBytes);
@@ -84,10 +85,10 @@ export function buildZip(entries: ZipEntry[]): Uint8Array {
 
     // Central directory file header (46 bytes + filename).
     const cdfh = new DataView(new ArrayBuffer(46));
-    cdfh.setUint32(0,  SIG_CDFH, true);
-    cdfh.setUint16(4,  20, true);      // version made by
-    cdfh.setUint16(6,  20, true);      // version needed
-    cdfh.setUint16(8,  0, true);
+    cdfh.setUint32(0, SIG_CDFH, true);
+    cdfh.setUint16(4, 20, true); // version made by
+    cdfh.setUint16(6, 20, true); // version needed
+    cdfh.setUint16(8, 0, true);
     cdfh.setUint16(10, 0, true);
     cdfh.setUint16(12, 0, true);
     cdfh.setUint16(14, 0x21, true);
@@ -95,12 +96,12 @@ export function buildZip(entries: ZipEntry[]): Uint8Array {
     cdfh.setUint32(20, size, true);
     cdfh.setUint32(24, size, true);
     cdfh.setUint16(28, nameBytes.length, true);
-    cdfh.setUint16(30, 0, true);       // extra field length
-    cdfh.setUint16(32, 0, true);       // comment length
-    cdfh.setUint16(34, 0, true);       // disk number start
-    cdfh.setUint16(36, 0, true);       // internal attrs
-    cdfh.setUint32(38, 0, true);       // external attrs
-    cdfh.setUint32(42, offset, true);  // local header offset
+    cdfh.setUint16(30, 0, true); // extra field length
+    cdfh.setUint16(32, 0, true); // comment length
+    cdfh.setUint16(34, 0, true); // disk number start
+    cdfh.setUint16(36, 0, true); // internal attrs
+    cdfh.setUint32(38, 0, true); // external attrs
+    cdfh.setUint32(42, offset, true); // local header offset
 
     cdParts.push(new Uint8Array(cdfh.buffer));
     cdParts.push(nameBytes);
@@ -113,14 +114,14 @@ export function buildZip(entries: ZipEntry[]): Uint8Array {
   for (const p of cdParts) cdSize += p.length;
 
   const eocd = new DataView(new ArrayBuffer(22));
-  eocd.setUint32(0,  SIG_EOCD, true);
-  eocd.setUint16(4,  0, true);        // disk number
-  eocd.setUint16(6,  0, true);        // disk with CD
-  eocd.setUint16(8,  entries.length, true);
+  eocd.setUint32(0, SIG_EOCD, true);
+  eocd.setUint16(4, 0, true); // disk number
+  eocd.setUint16(6, 0, true); // disk with CD
+  eocd.setUint16(8, entries.length, true);
   eocd.setUint16(10, entries.length, true);
   eocd.setUint32(12, cdSize, true);
   eocd.setUint32(16, cdOffset, true);
-  eocd.setUint16(20, 0, true);        // comment length
+  eocd.setUint16(20, 0, true); // comment length
 
   // Concatenate everything.
   const all = [...parts, ...cdParts, new Uint8Array(eocd.buffer)];
@@ -128,7 +129,10 @@ export function buildZip(entries: ZipEntry[]): Uint8Array {
   for (const p of all) total += p.length;
   const out = new Uint8Array(total);
   let pos = 0;
-  for (const p of all) { out.set(p, pos); pos += p.length; }
+  for (const p of all) {
+    out.set(p, pos);
+    pos += p.length;
+  }
   return out;
 }
 
@@ -147,7 +151,10 @@ export function csvCell(v: unknown): string {
 }
 
 /** Build a CSV from a header row + body rows. Joins with CRLF (Excel-friendly). */
-export function toCsv(header: readonly string[], rows: readonly (readonly unknown[])[]): string {
+export function toCsv(
+  header: readonly string[],
+  rows: readonly (readonly unknown[])[]
+): string {
   const lines: string[] = [];
   lines.push(header.map(csvCell).join(","));
   for (const r of rows) {

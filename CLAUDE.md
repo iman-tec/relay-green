@@ -95,13 +95,13 @@ the proxy is only the fast-edge layer.
 
 Five roles map to the routes in [app/](app/):
 
-| Role             | Route          | Notes                                          |
-| ---------------- | -------------- | ---------------------------------------------- |
-| Customer         | `/room`        | Live engagement surface (legacy: `/customer`)  |
-| Engineer         | `/staff/session/[id]`, `/inbox` | Session + queue              |
-| Supervisor       | `/supervise`   | Pod monitoring (legacy: `/supervisor`)         |
-| Enterprise admin | `/enterprise`  | Org code, wallet, usage                        |
-| Internal admin   | `/admin`       | Cross-tenant ops                               |
+| Role             | Route                           | Notes                                         |
+| ---------------- | ------------------------------- | --------------------------------------------- |
+| Customer         | `/room`                         | Live engagement surface (legacy: `/customer`) |
+| Engineer         | `/staff/session/[id]`, `/inbox` | Session + queue                               |
+| Supervisor       | `/supervise`                    | Pod monitoring (legacy: `/supervisor`)        |
+| Enterprise admin | `/enterprise`                   | Org code, wallet, usage                       |
+| Internal admin   | `/admin`                        | Cross-tenant ops                              |
 
 Staff routes are grouped under `app/(staff)/` and share
 `app/(staff)/layout.tsx`.

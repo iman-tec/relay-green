@@ -18,25 +18,33 @@ import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 export type AssignableEngineer = {
-  userId:      string;
+  userId: string;
   displayName: string;
-  email:       string;
-  available:   boolean;
-  busy:        boolean;
-  podName:     string | null;
+  email: string;
+  available: boolean;
+  busy: boolean;
+  podName: string | null;
 };
 
 const ACTIVE_CALL_STATUSES = [
-  "assigned", "joining", "live", "grace", "expired_free", "ending",
+  "assigned",
+  "joining",
+  "live",
+  "grace",
+  "expired_free",
+  "ending",
 ];
 
 export async function GET() {
   const supabase = await createServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user)
+    return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
 
   const { data: roleRows } = await supabase
     .from("user_role_names")
@@ -57,7 +65,10 @@ export async function GET() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
-    return NextResponse.json({ error: "service_role_not_configured" }, { status: 500 });
+    return NextResponse.json(
+      { error: "service_role_not_configured" },
+      { status: 500 }
+    );
   }
   const admin = createAdminClient(url, key, {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -74,7 +85,9 @@ export async function GET() {
     .select("user_id")
     .eq("role", "engineer");
   const engineerIds: string[] = Array.from(
-    new Set(((allEngineers ?? []) as { user_id: string }[]).map((r) => r.user_id)),
+    new Set(
+      ((allEngineers ?? []) as { user_id: string }[]).map((r) => r.user_id)
+    )
   );
 
   if (engineerIds.length === 0) {
@@ -82,54 +95,84 @@ export async function GET() {
   }
 
   // ── Enrich: name, email, availability, busy state, pod name ───────────────
-  const [profilesRes, availRes, busyRes, podMemRes, authListRes] = await Promise.all([
-    admin.from("profiles_with_role").select("id, full_name").in("id", engineerIds),
-    admin.from("engineer_profiles").select("user_id, is_available").in("user_id", engineerIds),
-    admin.from("guest_calls").select("claimed_by").in("claimed_by", engineerIds).in("status", ACTIVE_CALL_STATUSES),
-    admin.from("pod_members").select("user_id, pod_id").eq("pod_role", "engineer").in("user_id", engineerIds),
-    admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
-  ]);
+  const [profilesRes, availRes, busyRes, podMemRes, authListRes] =
+    await Promise.all([
+      admin
+        .from("profiles_with_role")
+        .select("id, full_name")
+        .in("id", engineerIds),
+      admin
+        .from("engineer_profiles")
+        .select("user_id, is_available")
+        .in("user_id", engineerIds),
+      admin
+        .from("guest_calls")
+        .select("claimed_by")
+        .in("claimed_by", engineerIds)
+        .in("status", ACTIVE_CALL_STATUSES),
+      admin
+        .from("pod_members")
+        .select("user_id, pod_id")
+        .eq("pod_role", "engineer")
+        .in("user_id", engineerIds),
+      admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
+    ]);
 
-  const nameById  = new Map<string, string>();
+  const nameById = new Map<string, string>();
   const emailById = new Map<string, string>();
-  for (const p of (profilesRes.data ?? []) as { id: string; full_name: string | null }[]) {
+  for (const p of (profilesRes.data ?? []) as {
+    id: string;
+    full_name: string | null;
+  }[]) {
     if (p.full_name) nameById.set(p.id, p.full_name);
   }
   for (const u of authListRes?.data?.users ?? []) {
     if (u.id && u.email) emailById.set(u.id, u.email);
-    if (u.id && !nameById.has(u.id) && u.email) nameById.set(u.id, u.email.split("@")[0]);
+    if (u.id && !nameById.has(u.id) && u.email)
+      nameById.set(u.id, u.email.split("@")[0]);
   }
 
   const availableById = new Map<string, boolean>();
-  for (const r of (availRes.data ?? []) as { user_id: string; is_available: boolean }[]) {
+  for (const r of (availRes.data ?? []) as {
+    user_id: string;
+    is_available: boolean;
+  }[]) {
     availableById.set(r.user_id, r.is_available);
   }
   const busySet = new Set<string>(
     ((busyRes.data ?? []) as { claimed_by: string | null }[])
       .map((r) => r.claimed_by)
-      .filter((id): id is string => !!id),
+      .filter((id): id is string => !!id)
   );
 
   const podIdByEngineer = new Map<string, string>();
-  for (const m of (podMemRes.data ?? []) as { user_id: string; pod_id: string }[]) {
-    if (!podIdByEngineer.has(m.user_id)) podIdByEngineer.set(m.user_id, m.pod_id);
+  for (const m of (podMemRes.data ?? []) as {
+    user_id: string;
+    pod_id: string;
+  }[]) {
+    if (!podIdByEngineer.has(m.user_id))
+      podIdByEngineer.set(m.user_id, m.pod_id);
   }
   const podIds = Array.from(new Set([...podIdByEngineer.values()]));
   const podNameById = new Map<string, string>();
   if (podIds.length) {
-    const { data: pods } = await admin.from("pods").select("id, name").in("id", podIds);
-    for (const p of (pods ?? []) as { id: string; name: string }[]) podNameById.set(p.id, p.name);
+    const { data: pods } = await admin
+      .from("pods")
+      .select("id, name")
+      .in("id", podIds);
+    for (const p of (pods ?? []) as { id: string; name: string }[])
+      podNameById.set(p.id, p.name);
   }
 
   const engineers: AssignableEngineer[] = engineerIds.map((id) => {
     const podId = podIdByEngineer.get(id) ?? null;
     return {
-      userId:      id,
+      userId: id,
       displayName: nameById.get(id) ?? "Unknown",
-      email:       emailById.get(id) ?? "",
-      available:   availableById.get(id) ?? true,
-      busy:        busySet.has(id),
-      podName:     podId ? podNameById.get(podId) ?? null : null,
+      email: emailById.get(id) ?? "",
+      available: availableById.get(id) ?? true,
+      busy: busySet.has(id),
+      podName: podId ? (podNameById.get(podId) ?? null) : null,
     };
   });
 

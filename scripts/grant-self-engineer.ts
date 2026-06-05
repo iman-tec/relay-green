@@ -17,18 +17,29 @@ loadEnv({ path: ".env" });
 type AdminClient = SupabaseClient<any, "public", "public", any, any>;
 
 const TARGET_EMAIL = "dev.soni@thegatewaycorp.co.in";
-const POD_NAME     = "Alpha";
+const POD_NAME = "Alpha";
 
-async function findUserId(admin: AdminClient, email: string): Promise<string | null> {
+async function findUserId(
+  admin: AdminClient,
+  email: string
+): Promise<string | null> {
   const { data } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-  return data?.users?.find((u) => u.email?.toLowerCase() === email.toLowerCase())?.id ?? null;
+  return (
+    data?.users?.find((u) => u.email?.toLowerCase() === email.toLowerCase())
+      ?.id ?? null
+  );
 }
 
 async function main() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
-  const admin = createClient(url, key, { auth: { persistSession: false } }) as AdminClient;
+  if (!url || !key)
+    throw new Error(
+      "Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY"
+    );
+  const admin = createClient(url, key, {
+    auth: { persistSession: false },
+  }) as AdminClient;
 
   const userId = await findUserId(admin, TARGET_EMAIL);
   if (!userId) throw new Error(`${TARGET_EMAIL} not found.`);
@@ -36,17 +47,22 @@ async function main() {
 
   // 1. Resolve engineer role id, then grant (additive — keeps super_admin etc).
   const { data: roleRow } = await admin
-    .from("roles").select("id").eq("name", "engineer").maybeSingle();
+    .from("roles")
+    .select("id")
+    .eq("name", "engineer")
+    .maybeSingle();
   const engineerRoleId = (roleRow as { id: string } | null)?.id;
   if (!engineerRoleId) {
-    throw new Error("engineer role not seeded — did you apply 20260521120000_roles_lookup_fk.sql?");
+    throw new Error(
+      "engineer role not seeded — did you apply 20260521120000_roles_lookup_fk.sql?"
+    );
   }
 
   const { error: rErr } = await admin
     .from("user_roles")
     .upsert(
       { user_id: userId, role_id: engineerRoleId },
-      { onConflict: "user_id,role_id", ignoreDuplicates: true },
+      { onConflict: "user_id,role_id", ignoreDuplicates: true }
     );
   if (rErr) throw new Error(`role grant failed: ${rErr.message}`);
   console.log("  ✓ engineer role granted");
@@ -57,7 +73,8 @@ async function main() {
     .from("engineer_status")
     .upsert({ user_id: userId, status: "available" }, { onConflict: "user_id" })
     .then((r) => {
-      if (r.error) console.log(`  • engineer_status upsert skipped: ${r.error.message}`);
+      if (r.error)
+        console.log(`  • engineer_status upsert skipped: ${r.error.message}`);
       else console.log("  ✓ engineer_status = available");
     });
 
@@ -73,8 +90,12 @@ async function main() {
   const { error: pErr } = await admin
     .from("pod_members")
     .upsert(
-      { pod_id: (pod as { id: string }).id, user_id: userId, pod_role: "engineer" },
-      { onConflict: "user_id" },
+      {
+        pod_id: (pod as { id: string }).id,
+        user_id: userId,
+        pod_role: "engineer",
+      },
+      { onConflict: "user_id" }
     );
   if (pErr) throw new Error(`pod_members upsert failed: ${pErr.message}`);
   console.log(`  ✓ added to Pod ${POD_NAME} as engineer`);
@@ -82,8 +103,12 @@ async function main() {
   console.log("");
   console.log("Done. Sign in as dev.soni and you'll have:");
   console.log("  - super_admin (existing) → /admin");
-  console.log("  - engineer    (new)      → /dashboard, can claim incoming calls");
-  console.log("  - pod member  (new)      → Sam's Operations table will list you");
+  console.log(
+    "  - engineer    (new)      → /dashboard, can claim incoming calls"
+  );
+  console.log(
+    "  - pod member  (new)      → Sam's Operations table will list you"
+  );
 }
 
 main().catch((err) => {

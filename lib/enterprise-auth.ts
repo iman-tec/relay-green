@@ -29,22 +29,30 @@ export type EnterpriseGate =
 
 export async function requireEnterpriseAdmin(): Promise<EnterpriseGate> {
   const supabase = await createServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) return { ok: false, status: 401, error: "not_signed_in" };
 
   // Caller must hold enterprise_admin OR department_admin AND have an org.
   // Super_admin is NOT accepted here — they have their own console at /admin.
   const [{ data: roles }, { data: profile }] = await Promise.all([
     supabase.from("user_role_names").select("role").eq("user_id", user.id),
-    supabase.from("profiles").select("organization_id").eq("id", user.id).maybeSingle(),
+    supabase
+      .from("profiles")
+      .select("organization_id")
+      .eq("id", user.id)
+      .maybeSingle(),
   ]);
 
   const isOrgAdmin = (roles ?? []).some(
-    (r: { role: string }) => r.role === ROLE.enterprise_admin || r.role === ROLE.department_admin,
+    (r: { role: string }) =>
+      r.role === ROLE.enterprise_admin || r.role === ROLE.department_admin
   );
   if (!isOrgAdmin) return { ok: false, status: 403, error: "forbidden" };
 
-  const orgId = (profile as { organization_id?: string } | null)?.organization_id;
+  const orgId = (profile as { organization_id?: string } | null)
+    ?.organization_id;
   if (!orgId) return { ok: false, status: 403, error: "no_organization" };
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;

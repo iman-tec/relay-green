@@ -47,8 +47,7 @@ export default function GlobalError({ error, reset }: Props) {
         textAlign: "center",
         padding: "clamp(48px, 8vw, 96px) 24px",
         background: "#ffffff",
-        fontFamily:
-          "var(--font-inter), -apple-system, system-ui, sans-serif",
+        fontFamily: "var(--font-inter), -apple-system, system-ui, sans-serif",
         color: "#1d1d1f",
       }}
     >
@@ -96,8 +95,8 @@ export default function GlobalError({ error, reset }: Props) {
           margin: "0 0 28px",
         }}
       >
-        It&rsquo;s on us, not you. Try again, or head back to the homepage
-        while we look into it.
+        It&rsquo;s on us, not you. Try again, or head back to the homepage while
+        we look into it.
       </p>
 
       <div

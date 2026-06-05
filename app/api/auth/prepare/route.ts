@@ -42,15 +42,20 @@ function rateLimit(ip: string): boolean {
 }
 
 export async function POST(request: Request) {
-  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
-          ?? request.headers.get("x-real-ip")
-          ?? "unknown";
+  const ip =
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    request.headers.get("x-real-ip") ??
+    "unknown";
   if (!rateLimit(ip)) {
     return NextResponse.json({ error: "rate_limited" }, { status: 429 });
   }
 
   const { email, purpose } = await request.json().catch(() => ({}));
-  if (!email || typeof email !== "string" || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+  if (
+    !email ||
+    typeof email !== "string" ||
+    !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)
+  ) {
     return NextResponse.json({ error: "invalid_email" }, { status: 400 });
   }
 
@@ -60,14 +65,19 @@ export async function POST(request: Request) {
   //   "first-time" → create the user if absent (brand-new signup).
   //   undefined    → legacy "ensure-exists" sign-in: create if absent.
   const intent: "first-time" | "forgot" | "any" =
-    purpose === "first-time" ? "first-time" :
-    purpose === "forgot"     ? "forgot"     :
-                               "any";
+    purpose === "first-time"
+      ? "first-time"
+      : purpose === "forgot"
+        ? "forgot"
+        : "any";
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
-    return NextResponse.json({ error: "supabase_env_missing" }, { status: 500 });
+    return NextResponse.json(
+      { error: "supabase_env_missing" },
+      { status: 500 }
+    );
   }
 
   const admin = createClient(url, key, { auth: { persistSession: false } });
@@ -78,14 +88,22 @@ export async function POST(request: Request) {
   try {
     // Look up by email — admin.listUsers doesn't support filter, so paginate
     // a single page (works fine while user count is small).
-    const { data } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 });
-    const existing = data?.users?.find((u) => u.email?.toLowerCase() === email.toLowerCase());
+    const { data } = await admin.auth.admin.listUsers({
+      page: 1,
+      perPage: 200,
+    });
+    const existing = data?.users?.find(
+      (u) => u.email?.toLowerCase() === email.toLowerCase()
+    );
 
     // Only the "forgot" flow refrains from creating; for an existing account
     // (any intent) there's nothing to do — the next OTP uses the Magic Link
     // template either way. For first-time/legacy with no account, pre-create.
     if (!existing && intent !== "forgot") {
-      const { error } = await admin.auth.admin.createUser({ email, email_confirm: true });
+      const { error } = await admin.auth.admin.createUser({
+        email,
+        email_confirm: true,
+      });
       // "already registered" races are fine — the user exists, which is all
       // we needed. Anything else we log but still answer neutrally.
       if (error && !error.message.toLowerCase().includes("already")) {
@@ -93,7 +111,10 @@ export async function POST(request: Request) {
       }
     }
   } catch (e) {
-    console.warn("[prepare] provisioning error:", e instanceof Error ? e.message : e);
+    console.warn(
+      "[prepare] provisioning error:",
+      e instanceof Error ? e.message : e
+    );
   }
 
   // Uniform neutral response regardless of account existence or lifecycle.

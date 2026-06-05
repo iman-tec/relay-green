@@ -21,6 +21,9 @@ import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  X,
   Folder,
   FileText,
   Image as ImageIcon,
@@ -36,6 +39,14 @@ import { useRequireEngineerProfile } from "@/lib/relay/useRequireEngineerProfile
 import { ProjectAIAssistant } from "@/app/_components/ProjectAIAssistant";
 
 const BRAND_GREEN = "#3f5c2e";
+
+// Phone-width viewport — drives the project view's mobile collapse defaults.
+function isMobileViewport(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    window.matchMedia("(max-width: 767px)").matches
+  );
+}
 
 type SessionRow = {
   id: string;
@@ -96,15 +107,22 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
   // Center tabs: the project-level summary, or a specific session's summary
   // (selected from the left sidebar).
   const [tab, setTab] = useState<"project" | "session">("project");
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(
+    null
+  );
 
   // Resizable right (AI assistant) pane — drag its left edge to widen/narrow.
   const [rightWidth, setRightWidth] = useState(384);
+  // Mobile: the desktop AI panel is hidden, so a FAB opens it as a full-screen
+  // overlay instead.
+  const [mobileAiOpen, setMobileAiOpen] = useState(false);
   const draggingRight = useRef(false);
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (!draggingRight.current) return;
-      setRightWidth(Math.min(760, Math.max(320, window.innerWidth - e.clientX)));
+      setRightWidth(
+        Math.min(760, Math.max(320, window.innerWidth - e.clientX))
+      );
     };
     const onUp = () => {
       if (!draggingRight.current) return;
@@ -127,7 +145,7 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
       const { data: sessRaw } = await sb
         .from("guest_calls")
         .select(
-          "id, guest_name, guest_email, status, created_at, duration_minutes, ai_summary_title, ai_summary_overview, summary, ai_next_steps, agent_name, customer_user_id, project_id, project_name",
+          "id, guest_name, guest_email, status, created_at, duration_minutes, ai_summary_title, ai_summary_overview, summary, ai_next_steps, agent_name, customer_user_id, project_id, project_name"
         )
         .eq("project_id", projectId)
         .order("created_at", { ascending: false });
@@ -136,7 +154,9 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
       // 2. Project row (name + fallback summary).
       const { data: proj } = await sb
         .from("projects")
-        .select("id, name, summary, ai_summary_overview, ai_summary_title, summary_updated_at")
+        .select(
+          "id, name, summary, ai_summary_overview, ai_summary_title, summary_updated_at"
+        )
         .eq("id", projectId)
         .maybeSingle();
 
@@ -144,7 +164,9 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
       const customerName = sessions[0]?.guest_name ?? "Customer";
       const customerEmail = sessions[0]?.guest_email ?? null;
       const projectName =
-        (proj as ProjectRow | null)?.name ?? sessions[0]?.project_name ?? "Project";
+        (proj as ProjectRow | null)?.name ??
+        sessions[0]?.project_name ??
+        "Project";
 
       // 3. The customer's other projects (for the switcher) + total sessions.
       let customerProjects: { id: string; name: string }[] = [];
@@ -154,12 +176,17 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
           .from("guest_calls")
           .select("id, project_id, project_name")
           .eq("customer_user_id", customerId);
-        const rows = (all ?? []) as { id: string; project_id: string | null; project_name: string | null }[];
+        const rows = (all ?? []) as {
+          id: string;
+          project_id: string | null;
+          project_name: string | null;
+        }[];
         totalSessions = rows.length;
         const map = new Map<string, string>();
         for (const r of rows) {
           if (!r.project_id) continue;
-          if (!map.has(r.project_id)) map.set(r.project_id, r.project_name ?? "Untitled project");
+          if (!map.has(r.project_id))
+            map.set(r.project_id, r.project_name ?? "Untitled project");
         }
         customerProjects = Array.from(map, ([id, name]) => ({ id, name }));
       }
@@ -172,7 +199,7 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
         const { data: fr } = await sb
           .from("guest_message_attachments")
           .select(
-            "id, path, name, mime, size_bytes, kind, created_at, guest_messages!inner(guest_call_id)",
+            "id, path, name, mime, size_bytes, kind, created_at, guest_messages!inner(guest_call_id)"
           )
           .in("guest_messages.guest_call_id", sessionIds);
         type RawFile = {
@@ -243,13 +270,18 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
     );
   }
 
-  const selectedSession = data.sessions.find((s) => s.id === selectedSessionId) ?? null;
+  const selectedSession =
+    data.sessions.find((s) => s.id === selectedSessionId) ?? null;
   // Fall back to the project tab if the selected session is gone (e.g. after a
   // project switch) so we never show an empty session tab.
-  const activeTab = tab === "session" && selectedSession ? "session" : "project";
+  const activeTab =
+    tab === "session" && selectedSession ? "session" : "project";
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: "var(--background)" }}>
+    <div
+      className="flex h-screen overflow-hidden"
+      style={{ background: "var(--background)" }}
+    >
       {/* ── LEFT ─────────────────────────────────────────────── */}
       <ProjectLeftSidebar
         projectId={projectId}
@@ -269,16 +301,25 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
       />
 
       {/* ── CENTER ───────────────────────────────────────────── */}
-      <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-3xl px-6 py-6">
+      <main className="min-w-0 flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-3xl px-3 py-4 sm:px-6 sm:py-6">
           {/* Tabs — Project summary always; the selected session as a second
               tab once one is picked from the left. */}
-          <div className="mb-5 flex gap-1 border-b" style={{ borderColor: "var(--border)" }}>
-            <CenterTab active={activeTab === "project"} onClick={() => setTab("project")}>
+          <div
+            className="mb-5 flex gap-1 border-b"
+            style={{ borderColor: "var(--border)" }}
+          >
+            <CenterTab
+              active={activeTab === "project"}
+              onClick={() => setTab("project")}
+            >
               Project summary
             </CenterTab>
             {selectedSession && (
-              <CenterTab active={activeTab === "session"} onClick={() => setTab("session")}>
+              <CenterTab
+                active={activeTab === "session"}
+                onClick={() => setTab("session")}
+              >
                 {selectedSession.ai_summary_title ?? "Session summary"}
               </CenterTab>
             )}
@@ -288,11 +329,15 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
             <div className="space-y-5">
               <SessionSummaryCard
                 session={selectedSession}
-                onOpenFull={() => router.push(`/session-review/${selectedSession.id}`)}
+                onOpenFull={() =>
+                  router.push(`/session-review/${selectedSession.id}`)
+                }
               />
               <DocsCard />
               <FilesPane
-                files={data.files.filter((f) => f.sessionId === selectedSession.id)}
+                files={data.files.filter(
+                  (f) => f.sessionId === selectedSession.id
+                )}
                 sb={sb}
               />
             </div>
@@ -309,7 +354,11 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
       {/* ── RIGHT (resizable) ────────────────────────────────── */}
       <aside
         className="relative hidden shrink-0 flex-col border-l lg:flex"
-        style={{ width: rightWidth, borderColor: "var(--border)", background: "var(--surface)" }}
+        style={{
+          width: rightWidth,
+          borderColor: "var(--border)",
+          background: "var(--surface)",
+        }}
       >
         {/* Drag handle on the left edge to stretch the pane. */}
         <div
@@ -319,16 +368,66 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
             document.body.style.userSelect = "none";
             document.body.style.cursor = "col-resize";
           }}
-          className="absolute left-0 top-0 z-20 h-full w-1.5 cursor-col-resize transition-colors hover:bg-[var(--primary-soft)]"
+          className="absolute top-0 left-0 z-20 h-full w-1.5 cursor-col-resize transition-colors hover:bg-[var(--primary-soft)]"
         />
-        <ProjectAIAssistant projectId={projectId} projectName={data.projectName} />
+        <ProjectAIAssistant
+          projectId={projectId}
+          projectName={data.projectName}
+        />
       </aside>
+
+      {/* ── Mobile: FAB to open the AI assistant (desktop panel is hidden) ── */}
+      {!mobileAiOpen && (
+        <button
+          type="button"
+          onClick={() => setMobileAiOpen(true)}
+          aria-label="Open AI project assistant"
+          className="fixed bottom-4 right-4 z-40 flex h-12 w-12 items-center justify-center rounded-full shadow-lg transition-transform hover:scale-105 lg:hidden"
+          style={{ background: BRAND_GREEN, color: "#fff" }}
+        >
+          <Sparkles size={20} />
+        </button>
+      )}
+
+      {/* ── Mobile: AI assistant as a full-screen sheet ── */}
+      {mobileAiOpen && (
+        <div
+          className="fixed inset-0 z-[var(--z-modal)] flex flex-col lg:hidden"
+          style={{ background: "var(--surface)" }}
+        >
+          <div
+            className="flex shrink-0 items-center justify-between border-b px-4 py-2"
+            style={{ borderColor: "var(--border)" }}
+          >
+            <span
+              className="text-[11px] font-semibold uppercase tracking-wide"
+              style={{ color: "var(--text-muted)" }}
+            >
+              AI project assistant
+            </span>
+            <button
+              type="button"
+              onClick={() => setMobileAiOpen(false)}
+              aria-label="Close AI assistant"
+              className="inline-flex size-7 items-center justify-center rounded-md border transition-colors hover:bg-[var(--surface-raised)]"
+              style={{ borderColor: "var(--border)", color: "var(--text)" }}
+            >
+              <X size={14} />
+            </button>
+          </div>
+          <div className="min-h-0 flex-1">
+            <ProjectAIAssistant projectId={projectId} projectName={data.projectName} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 function CenterTab({
-  active, onClick, children,
+  active,
+  onClick,
+  children,
 }: {
   active: boolean;
   onClick: () => void;
@@ -379,6 +478,39 @@ function ProjectLeftSidebar({
   onSelectSession: (id: string) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  // Collapsible on mobile so the center summary is the main view.
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    if (isMobileViewport()) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setCollapsed(true);
+    }
+  }, []);
+
+  if (collapsed) {
+    return (
+      <aside
+        className="flex w-10 shrink-0 flex-col border-r"
+        style={{ borderColor: "var(--border)", background: "var(--surface)" }}
+      >
+        <button
+          type="button"
+          onClick={() => setCollapsed(false)}
+          title="Expand customer / sessions"
+          className="flex h-full w-full flex-col items-center justify-start gap-3 px-2 py-3 transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
+          style={{ color: "var(--text-muted)" }}
+        >
+          <ChevronRight size={14} />
+          <span
+            className="select-none text-[10px] font-semibold uppercase tracking-[0.18em]"
+            style={{ writingMode: "vertical-rl" }}
+          >
+            Customer
+          </span>
+        </button>
+      </aside>
+    );
+  }
 
   return (
     <aside
@@ -386,40 +518,65 @@ function ProjectLeftSidebar({
       style={{ borderColor: "var(--border)", background: "var(--surface)" }}
     >
       {/* Customer header */}
-      <header className="border-b px-5 py-4" style={{ borderColor: "var(--border)" }}>
-        <button
-          type="button"
-          onClick={onBack}
-          className="mb-3 inline-flex items-center gap-1.5 text-[12px] font-medium transition-colors hover:opacity-80"
-          style={{ color: "var(--text-muted)" }}
-        >
-          <ArrowLeft size={14} /> Back to inbox
-        </button>
+      <header
+        className="border-b px-5 py-4"
+        style={{ borderColor: "var(--border)" }}
+      >
+        {/* Merge: escalations branch added the rail-collapse button. */}
+        <div className="mb-3 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex items-center gap-1.5 text-[12px] font-medium transition-colors hover:opacity-80"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <ArrowLeft size={14} /> Back to inbox
+          </button>
+          <button
+            type="button"
+            onClick={() => setCollapsed(true)}
+            title="Collapse"
+            className="rounded-md p-0.5"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <ChevronLeft size={14} />
+          </button>
+        </div>
         <p
-          className="text-[10px] font-semibold uppercase tracking-[0.12em]"
+          className="text-[10px] font-semibold tracking-[0.12em] uppercase"
           style={{ color: BRAND_GREEN }}
         >
           Customer
         </p>
         <h1
           className="mt-0.5 truncate text-lg font-semibold"
-          style={{ color: "var(--text)", fontFamily: "var(--font-source-serif)" }}
+          style={{
+            color: "var(--text)",
+            fontFamily: "var(--font-source-serif)",
+          }}
         >
           {customerName}
         </h1>
         {customerEmail && (
-          <p className="truncate text-[12px]" style={{ color: "var(--text-muted)" }}>
+          <p
+            className="truncate text-[12px]"
+            style={{ color: "var(--text-muted)" }}
+          >
             {customerEmail}
           </p>
         )}
         <p className="mt-1 text-[11px]" style={{ color: "var(--text-faint)" }}>
-          {customerProjects.length} project{customerProjects.length === 1 ? "" : "s"} ·{" "}
-          {totalSessions} session{totalSessions === 1 ? "" : "s"}
+          {customerProjects.length} project
+          {customerProjects.length === 1 ? "" : "s"} · {totalSessions} session
+          {totalSessions === 1 ? "" : "s"}
         </p>
       </header>
 
       {/* Project switcher */}
-      <div className="relative border-b px-3 py-3" style={{ borderColor: "var(--border)" }}>
+      <div
+        className="relative border-b px-3 py-3"
+        style={{ borderColor: "var(--border)" }}
+      >
         <button
           type="button"
           onClick={() => setMenuOpen((o) => !o)}
@@ -428,7 +585,10 @@ function ProjectLeftSidebar({
           style={{ borderColor: "var(--border)" }}
         >
           <Folder size={14} style={{ color: BRAND_GREEN }} />
-          <span className="flex-1 truncate text-[13px] font-semibold" style={{ color: "var(--text)" }}>
+          <span
+            className="flex-1 truncate text-[13px] font-semibold"
+            style={{ color: "var(--text)" }}
+          >
             {projectName}
           </span>
           <ChevronDown
@@ -442,8 +602,11 @@ function ProjectLeftSidebar({
         </button>
         {menuOpen && customerProjects.length > 0 && (
           <div
-            className="absolute left-3 right-3 z-10 mt-1 overflow-hidden rounded-lg border shadow-lg"
-            style={{ borderColor: "var(--border)", background: "var(--surface)" }}
+            className="absolute right-3 left-3 z-10 mt-1 overflow-hidden rounded-lg border shadow-lg"
+            style={{
+              borderColor: "var(--border)",
+              background: "var(--surface)",
+            }}
           >
             {customerProjects.map((p) => {
               const active = p.id === projectId;
@@ -458,7 +621,12 @@ function ProjectLeftSidebar({
                   className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.05]"
                   style={{ color: active ? BRAND_GREEN : "var(--text)" }}
                 >
-                  <Folder size={12} style={{ color: active ? BRAND_GREEN : "var(--text-muted)" }} />
+                  <Folder
+                    size={12}
+                    style={{
+                      color: active ? BRAND_GREEN : "var(--text-muted)",
+                    }}
+                  />
                   <span className="flex-1 truncate font-medium">{p.name}</span>
                 </button>
               );
@@ -468,9 +636,9 @@ function ProjectLeftSidebar({
       </div>
 
       {/* Sessions in this project */}
-      <div className="px-5 pb-1.5 pt-3">
+      <div className="px-5 pt-3 pb-1.5">
         <p
-          className="text-[10px] font-semibold uppercase tracking-wider"
+          className="text-[10px] font-semibold tracking-wider uppercase"
           style={{ color: "var(--text-muted)" }}
         >
           Sessions · {sessions.length}
@@ -478,7 +646,10 @@ function ProjectLeftSidebar({
       </div>
       <div className="hide-scrollbar flex-1 overflow-y-auto">
         {sessions.length === 0 ? (
-          <p className="px-5 py-6 text-center text-xs" style={{ color: "var(--text-muted)" }}>
+          <p
+            className="px-5 py-6 text-center text-xs"
+            style={{ color: "var(--text-muted)" }}
+          >
             No sessions in this project yet.
           </p>
         ) : (
@@ -489,7 +660,11 @@ function ProjectLeftSidebar({
                 <li key={s.id}>
                   <button
                     type="button"
-                    onClick={() => onSelectSession(s.id)}
+                    onClick={() => {
+                      onSelectSession(s.id);
+                      // On mobile, collapse so the session summary takes over.
+                      if (isMobileViewport()) setCollapsed(true);
+                    }}
                     className="relative flex w-full flex-col gap-0.5 border-b px-5 py-2.5 text-left transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
                     style={{
                       borderColor: "var(--border)",
@@ -505,15 +680,31 @@ function ProjectLeftSidebar({
                         style={{ background: BRAND_GREEN }}
                       />
                     )}
-                    <span className="truncate text-[13px]" style={{ color: "var(--text)" }}>
+                    <span
+                      className="truncate text-[13px]"
+                      style={{ color: "var(--text)" }}
+                    >
                       {s.ai_summary_title ?? "Session"}
                     </span>
-                    <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                    <span
+                      className="text-[11px]"
+                      style={{ color: "var(--text-muted)" }}
+                    >
                       <span className="lowercase">{s.status}</span>
                       {s.duration_minutes != null && (
-                        <span> · {Math.round(Number(s.duration_minutes))}m</span>
+                        <span>
+                          {" "}
+                          · {Math.round(Number(s.duration_minutes))}m
+                        </span>
                       )}
-                      <span> · {new Date(s.created_at).toLocaleDateString([], { month: "short", day: "numeric" })}</span>
+                      <span>
+                        {" "}
+                        ·{" "}
+                        {new Date(s.created_at).toLocaleDateString([], {
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </span>
                     </span>
                   </button>
                 </li>
@@ -546,7 +737,7 @@ function ProjectSummaryCard({ project }: { project: ProjectRow | null }) {
       <div className="mb-3 flex items-center gap-2">
         <Sparkles size={14} style={{ color: BRAND_GREEN }} />
         <h2
-          className="text-[11px] font-semibold uppercase tracking-wider"
+          className="text-[11px] font-semibold tracking-wider uppercase"
           style={{ color: "var(--text-muted)" }}
         >
           Project summary
@@ -555,7 +746,7 @@ function ProjectSummaryCard({ project }: { project: ProjectRow | null }) {
       {summaryText ? (
         <>
           <p
-            className={`whitespace-pre-wrap text-[13px] leading-relaxed ${expanded ? "" : "line-clamp-4"}`}
+            className={`text-[13px] leading-relaxed whitespace-pre-wrap ${expanded ? "" : "line-clamp-4"}`}
             style={{ color: "var(--text)" }}
           >
             {summaryText}
@@ -570,7 +761,10 @@ function ProjectSummaryCard({ project }: { project: ProjectRow | null }) {
           </button>
         </>
       ) : (
-        <p className="text-[13px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
+        <p
+          className="text-[13px] leading-relaxed"
+          style={{ color: "var(--text-muted)" }}
+        >
           No project summary yet. This is where the AI summary of every
           conversation and session across the project will appear.
         </p>
@@ -614,7 +808,7 @@ function SessionSummaryCard({
         <div className="flex items-center gap-2">
           <Sparkles size={14} style={{ color: BRAND_GREEN }} />
           <h2
-            className="text-[11px] font-semibold uppercase tracking-wider"
+            className="text-[11px] font-semibold tracking-wider uppercase"
             style={{ color: "var(--text-muted)" }}
           >
             Session summary
@@ -632,22 +826,35 @@ function SessionSummaryCard({
 
       {session.ai_summary_title && (
         <h3
-          className="mb-1 text-base font-semibold leading-tight"
-          style={{ color: "var(--text)", fontFamily: "var(--font-source-serif)" }}
+          className="mb-1 text-base leading-tight font-semibold"
+          style={{
+            color: "var(--text)",
+            fontFamily: "var(--font-source-serif)",
+          }}
         >
           {session.ai_summary_title}
         </h3>
       )}
       <p className="text-[11px]" style={{ color: "var(--text-faint)" }}>
         <span className="lowercase">{session.status}</span>
-        {session.duration_minutes != null && <span> · {Math.round(Number(session.duration_minutes))}m</span>}
+        {session.duration_minutes != null && (
+          <span> · {Math.round(Number(session.duration_minutes))}m</span>
+        )}
         {session.agent_name && <span> · w/ {session.agent_name}</span>}
-        <span> · {new Date(session.created_at).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })}</span>
+        <span>
+          {" "}
+          ·{" "}
+          {new Date(session.created_at).toLocaleDateString([], {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          })}
+        </span>
       </p>
 
       {overview ? (
         <p
-          className="mt-3 whitespace-pre-wrap text-[13px] leading-relaxed"
+          className="mt-3 text-[13px] leading-relaxed whitespace-pre-wrap"
           style={{ color: "var(--text)" }}
         >
           {overview}
@@ -661,7 +868,7 @@ function SessionSummaryCard({
       {steps.length > 0 && (
         <div className="mt-4">
           <div
-            className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider"
+            className="mb-1.5 text-[10px] font-semibold tracking-wider uppercase"
             style={{ color: "var(--text-muted)" }}
           >
             Next steps
@@ -696,13 +903,16 @@ function DocsCard() {
       <div className="mb-3 flex items-center gap-2">
         <FileText size={14} style={{ color: BRAND_GREEN }} />
         <h2
-          className="text-[11px] font-semibold uppercase tracking-wider"
+          className="text-[11px] font-semibold tracking-wider uppercase"
           style={{ color: "var(--text-muted)" }}
         >
           Docs
         </h2>
       </div>
-      <p className="text-[13px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
+      <p
+        className="text-[13px] leading-relaxed"
+        style={{ color: "var(--text-muted)" }}
+      >
         Project documents will appear here.
       </p>
     </section>
@@ -738,7 +948,7 @@ function FilesPane({
       const url = await signedDownloadUrl(sb, f.path, f.name);
       if (url) window.location.href = url;
     },
-    [sb],
+    [sb]
   );
 
   return (
@@ -749,7 +959,7 @@ function FilesPane({
       <div className="mb-3 flex items-center gap-2">
         <Folder size={14} style={{ color: BRAND_GREEN }} />
         <h2
-          className="text-[11px] font-semibold uppercase tracking-wider"
+          className="text-[11px] font-semibold tracking-wider uppercase"
           style={{ color: "var(--text-muted)" }}
         >
           Files · {files.length}
@@ -761,9 +971,21 @@ function FilesPane({
         </p>
       ) : (
         <div className="space-y-4">
-          <FileGroup label="Images" rows={groups.images} onDownload={download} />
-          <FileGroup label="Documents" rows={groups.documents} onDownload={download} />
-          <FileGroup label="Voice notes" rows={groups.audio} onDownload={download} />
+          <FileGroup
+            label="Images"
+            rows={groups.images}
+            onDownload={download}
+          />
+          <FileGroup
+            label="Documents"
+            rows={groups.documents}
+            onDownload={download}
+          />
+          <FileGroup
+            label="Voice notes"
+            rows={groups.audio}
+            onDownload={download}
+          />
         </div>
       )}
     </section>
@@ -783,7 +1005,7 @@ function FileGroup({
   return (
     <div>
       <p
-        className="mb-2 text-[10px] font-semibold uppercase tracking-wider"
+        className="mb-2 text-[10px] font-semibold tracking-wider uppercase"
         style={{ color: "var(--text-faint)" }}
       >
         {label}
@@ -797,10 +1019,16 @@ function FileGroup({
           >
             <FileKindIcon kind={f.kind} mime={f.mime} />
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[13px]" style={{ color: "var(--text)" }}>
+              <div
+                className="truncate text-[13px]"
+                style={{ color: "var(--text)" }}
+              >
                 {f.name}
               </div>
-              <div className="text-[11px]" style={{ color: "var(--text-faint)" }}>
+              <div
+                className="text-[11px]"
+                style={{ color: "var(--text-faint)" }}
+              >
                 {(f.size_bytes / 1024).toFixed(0)} KB
               </div>
             </div>
@@ -808,7 +1036,10 @@ function FileGroup({
               type="button"
               onClick={() => onDownload(f)}
               className="inline-flex shrink-0 items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.05]"
-              style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+              style={{
+                borderColor: "var(--border)",
+                color: "var(--text-muted)",
+              }}
             >
               <Download size={12} /> Download
             </button>
@@ -820,12 +1051,13 @@ function FileGroup({
 }
 
 function FileKindIcon({ kind, mime }: { kind: string; mime: string }) {
-  const box = (
-    icon: React.ReactNode,
-  ): React.ReactElement => (
+  const box = (icon: React.ReactNode): React.ReactElement => (
     <span
       className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg"
-      style={{ background: "var(--primary-tint)", color: "var(--primary-hover)" }}
+      style={{
+        background: "var(--primary-tint)",
+        color: "var(--primary-hover)",
+      }}
     >
       {icon}
     </span>

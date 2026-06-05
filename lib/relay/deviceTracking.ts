@@ -26,9 +26,10 @@ export function getOrCreateFingerprint(): string {
   try {
     const existing = window.localStorage.getItem(FINGERPRINT_KEY);
     if (existing && existing.length >= 8) return existing;
-    const fresh = (typeof crypto !== "undefined" && crypto.randomUUID)
-      ? crypto.randomUUID()
-      : `dev-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const fresh =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `dev-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     window.localStorage.setItem(FINGERPRINT_KEY, fresh);
     return fresh;
   } catch {
@@ -47,18 +48,18 @@ export function deriveDeviceLabel(ua: string): string {
   // Browser detection — order matters because UA strings often contain
   // multiple browser names ("Chrome/" appears in Edge UAs too).
   let browser = "Browser";
-  if (/Edg\//.test(ua))            browser = "Edge";
-  else if (/OPR\//.test(ua))       browser = "Opera";
-  else if (/Firefox\//.test(ua))   browser = "Firefox";
-  else if (/Chrome\//.test(ua))    browser = "Chrome";
-  else if (/Safari\//.test(ua))    browser = "Safari";
+  if (/Edg\//.test(ua)) browser = "Edge";
+  else if (/OPR\//.test(ua)) browser = "Opera";
+  else if (/Firefox\//.test(ua)) browser = "Firefox";
+  else if (/Chrome\//.test(ua)) browser = "Chrome";
+  else if (/Safari\//.test(ua)) browser = "Safari";
 
   let os = "Device";
-  if      (/Windows NT/.test(ua))                                                            os = "Windows";
-  else if (/Mac OS X/.test(ua) && !/iPhone|iPad/.test(ua))                                   os = "macOS";
-  else if (/Android/.test(ua))                                                                os = "Android";
-  else if (/iPhone|iPad|iPod/.test(ua))                                                       os = "iOS";
-  else if (/Linux/.test(ua))                                                                  os = "Linux";
+  if (/Windows NT/.test(ua)) os = "Windows";
+  else if (/Mac OS X/.test(ua) && !/iPhone|iPad/.test(ua)) os = "macOS";
+  else if (/Android/.test(ua)) os = "Android";
+  else if (/iPhone|iPad|iPod/.test(ua)) os = "iOS";
+  else if (/Linux/.test(ua)) os = "Linux";
 
   return `${browser} on ${os}`;
 }
@@ -110,13 +111,15 @@ export async function registerDeviceAndEnforceLimit(): Promise<DeviceRegistratio
     // Revoke any devices the server flagged as over-cap. We fire all in
     // parallel — they're independent per-device deletes.
     if (Array.isArray(result.to_revoke) && result.to_revoke.length > 0) {
-      await Promise.all(result.to_revoke.map(async (deviceId) => {
-        try {
-          await sb.rpc("revoke_my_device", { _device_id: deviceId });
-        } catch (e) {
-          console.warn("[device] revoke failed:", e);
-        }
-      }));
+      await Promise.all(
+        result.to_revoke.map(async (deviceId) => {
+          try {
+            await sb.rpc("revoke_my_device", { _device_id: deviceId });
+          } catch (e) {
+            console.warn("[device] revoke failed:", e);
+          }
+        })
+      );
     }
 
     return result;
@@ -160,7 +163,9 @@ export async function listMyDevices(): Promise<UserDevice[]> {
 export async function revokeDevice(deviceId: string): Promise<boolean> {
   try {
     const sb = createClient();
-    const { error } = await sb.rpc("revoke_my_device", { _device_id: deviceId });
+    const { error } = await sb.rpc("revoke_my_device", {
+      _device_id: deviceId,
+    });
     if (error) {
       console.warn("[device] revoke failed:", error.message);
       return false;

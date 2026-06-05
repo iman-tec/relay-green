@@ -39,9 +39,15 @@ const ENGINEER_EMAILS = [
 ];
 
 const PROJECT_NAMES = [
-  "Inventory sync bug", "Stripe webhook failures", "Email deliverability",
-  "Pricing tier confusion", "Login OTP delays", "Dashboard 500s",
-  "Slack integration", "PDF export", "Mobile crash on iOS 18",
+  "Inventory sync bug",
+  "Stripe webhook failures",
+  "Email deliverability",
+  "Pricing tier confusion",
+  "Login OTP delays",
+  "Dashboard 500s",
+  "Slack integration",
+  "PDF export",
+  "Mobile crash on iOS 18",
 ];
 
 const SAMPLE_SUMMARIES = [
@@ -55,15 +61,28 @@ const SAMPLE_SUMMARIES = [
   "Diagnosed a mobile crash and routed to the correct on-call engineer.",
 ];
 
-const URGENCIES = ["normal", "normal", "normal", "normal", "urgent", "critical"];
+const URGENCIES = [
+  "normal",
+  "normal",
+  "normal",
+  "normal",
+  "urgent",
+  "critical",
+];
 
 function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)]!;
 }
 
-async function findUserByEmail(admin: AdminClient, email: string): Promise<string | null> {
+async function findUserByEmail(
+  admin: AdminClient,
+  email: string
+): Promise<string | null> {
   const { data } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-  return data?.users?.find((u) => u.email?.toLowerCase() === email.toLowerCase())?.id ?? null;
+  return (
+    data?.users?.find((u) => u.email?.toLowerCase() === email.toLowerCase())
+      ?.id ?? null
+  );
 }
 
 async function ensureCustomer(
@@ -71,7 +90,7 @@ async function ensureCustomer(
   email: string,
   name: string,
   orgId: string,
-  clientRoleId: string,
+  clientRoleId: string
 ): Promise<string> {
   let userId = await findUserByEmail(admin, email);
   if (userId) {
@@ -83,28 +102,27 @@ async function ensureCustomer(
       email_confirm: true,
       user_metadata: { display_name: name },
     });
-    if (error || !data.user) throw new Error(`createUser failed for ${email}: ${error?.message}`);
+    if (error || !data.user)
+      throw new Error(`createUser failed for ${email}: ${error?.message}`);
     userId = data.user.id;
     console.log(`  → customer ${email} created (${userId})`);
   }
 
-  await admin
-    .from("profiles")
-    .upsert(
-      {
-        id:              userId,
-        full_name:       name,
-        primary_role_id: clientRoleId,
-        organization_id: orgId,
-        is_onboarded:    true,
-      },
-      { onConflict: "id" },
-    );
+  await admin.from("profiles").upsert(
+    {
+      id: userId,
+      full_name: name,
+      primary_role_id: clientRoleId,
+      organization_id: orgId,
+      is_onboarded: true,
+    },
+    { onConflict: "id" }
+  );
   await admin
     .from("user_roles")
     .upsert(
       { user_id: userId, role_id: clientRoleId },
-      { onConflict: "user_id,role_id", ignoreDuplicates: true },
+      { onConflict: "user_id,role_id", ignoreDuplicates: true }
     );
   return userId;
 }
@@ -112,8 +130,13 @@ async function ensureCustomer(
 async function main() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
-  const admin = createClient(url, key, { auth: { persistSession: false } }) as AdminClient;
+  if (!url || !key)
+    throw new Error(
+      "Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY"
+    );
+  const admin = createClient(url, key, {
+    auth: { persistSession: false },
+  }) as AdminClient;
 
   // 1. Resolve org id
   console.log(`→ Finding "${ORG_NAME}"…`);
@@ -122,7 +145,10 @@ async function main() {
     .select("id, name")
     .eq("name", ORG_NAME)
     .single();
-  if (!org) throw new Error(`Org "${ORG_NAME}" not found. Run bootstrap-enterprise-demo.ts first.`);
+  if (!org)
+    throw new Error(
+      `Org "${ORG_NAME}" not found. Run bootstrap-enterprise-demo.ts first.`
+    );
   const orgId = (org as { id: string }).id;
   console.log(`  ✓ org ${orgId}`);
 
@@ -131,7 +157,10 @@ async function main() {
   const engineerIds: { id: string; email: string }[] = [];
   for (const eEmail of ENGINEER_EMAILS) {
     const id = await findUserByEmail(admin, eEmail);
-    if (!id) throw new Error(`Engineer ${eEmail} not found. Run bootstrap-org-hierarchy.ts first.`);
+    if (!id)
+      throw new Error(
+        `Engineer ${eEmail} not found. Run bootstrap-org-hierarchy.ts first.`
+      );
     engineerIds.push({ id, email: eEmail });
   }
   console.log(`  ✓ ${engineerIds.length} engineers`);
@@ -139,16 +168,27 @@ async function main() {
   // 3. Ensure customer users under the org
   console.log("→ Looking up client role id…");
   const { data: clientRoleRow } = await admin
-    .from("roles").select("id").eq("name", "client").maybeSingle();
+    .from("roles")
+    .select("id")
+    .eq("name", "client")
+    .maybeSingle();
   const clientRoleId = (clientRoleRow as { id: string } | null)?.id;
   if (!clientRoleId) {
-    throw new Error("client role not seeded — did you apply 20260521120000_roles_lookup_fk.sql?");
+    throw new Error(
+      "client role not seeded — did you apply 20260521120000_roles_lookup_fk.sql?"
+    );
   }
 
   console.log("→ Ensuring customer users…");
   const customerIds: { id: string; email: string; name: string }[] = [];
   for (const c of CUSTOMERS) {
-    const id = await ensureCustomer(admin, c.email, c.name, orgId, clientRoleId);
+    const id = await ensureCustomer(
+      admin,
+      c.email,
+      c.name,
+      orgId,
+      clientRoleId
+    );
     customerIds.push({ id, email: c.email, name: c.name });
   }
 
@@ -172,54 +212,56 @@ async function main() {
 
   // 12 ended sessions spread across last 30 days
   for (let i = 0; i < 12; i++) {
-    const daysAgo  = Math.floor(Math.random() * 30);
-    const createdAt = new Date(now - daysAgo * 86_400_000 - Math.random() * 8 * 3_600_000);
-    const duration  = +(2 + Math.random() * 18).toFixed(1); // 2–20 min
-    const endedAt   = new Date(createdAt.getTime() + duration * 60_000);
+    const daysAgo = Math.floor(Math.random() * 30);
+    const createdAt = new Date(
+      now - daysAgo * 86_400_000 - Math.random() * 8 * 3_600_000
+    );
+    const duration = +(2 + Math.random() * 18).toFixed(1); // 2–20 min
+    const endedAt = new Date(createdAt.getTime() + duration * 60_000);
     const cust = pick(customerIds);
-    const eng  = pick(engineerIds);
+    const eng = pick(engineerIds);
     rows.push({
-      guest_name:        cust.name,
-      guest_email:       cust.email,
-      customer_user_id:  cust.id,
-      organization_id:   orgId,
-      claimed_by:        eng.id,
-      agent_name:        eng.email.split("@")[0],
-      status:            "ended",
-      urgency:           pick(URGENCIES),
-      recall_count:      Math.random() < 0.2 ? 1 : 0,
-      created_at:        createdAt.toISOString(),
-      claimed_at:        new Date(createdAt.getTime() + 30_000).toISOString(),
-      joined_at:         new Date(createdAt.getTime() + 60_000).toISOString(),
-      started_at:        new Date(createdAt.getTime() + 60_000).toISOString(),
-      ended_at:          endedAt.toISOString(),
-      duration_minutes:  duration,
-      project_name:      pick(PROJECT_NAMES),
-      ai_summary_title:  pick(SAMPLE_SUMMARIES).split(".")[0] + ".",
-      summary:           pick(SAMPLE_SUMMARIES),
+      guest_name: cust.name,
+      guest_email: cust.email,
+      customer_user_id: cust.id,
+      organization_id: orgId,
+      claimed_by: eng.id,
+      agent_name: eng.email.split("@")[0],
+      status: "ended",
+      urgency: pick(URGENCIES),
+      recall_count: Math.random() < 0.2 ? 1 : 0,
+      created_at: createdAt.toISOString(),
+      claimed_at: new Date(createdAt.getTime() + 30_000).toISOString(),
+      joined_at: new Date(createdAt.getTime() + 60_000).toISOString(),
+      started_at: new Date(createdAt.getTime() + 60_000).toISOString(),
+      ended_at: endedAt.toISOString(),
+      duration_minutes: duration,
+      project_name: pick(PROJECT_NAMES),
+      ai_summary_title: pick(SAMPLE_SUMMARIES).split(".")[0] + ".",
+      summary: pick(SAMPLE_SUMMARIES),
     });
   }
 
   // 1 live session — started ~6 minutes ago, no ended_at
   {
     const cust = customerIds[0]!;
-    const eng  = engineerIds[0]!;
+    const eng = engineerIds[0]!;
     const startedAt = new Date(now - 6 * 60_000);
     rows.push({
-      guest_name:        cust.name,
-      guest_email:       cust.email,
-      customer_user_id:  cust.id,
-      organization_id:   orgId,
-      claimed_by:        eng.id,
-      agent_name:        eng.email.split("@")[0],
-      status:            "live",
-      urgency:           "normal",
-      recall_count:      0,
-      created_at:        new Date(startedAt.getTime() - 90_000).toISOString(),
-      claimed_at:        new Date(startedAt.getTime() - 60_000).toISOString(),
-      joined_at:         startedAt.toISOString(),
-      started_at:        startedAt.toISOString(),
-      project_name:      "Pricing tier confusion",
+      guest_name: cust.name,
+      guest_email: cust.email,
+      customer_user_id: cust.id,
+      organization_id: orgId,
+      claimed_by: eng.id,
+      agent_name: eng.email.split("@")[0],
+      status: "live",
+      urgency: "normal",
+      recall_count: 0,
+      created_at: new Date(startedAt.getTime() - 90_000).toISOString(),
+      claimed_at: new Date(startedAt.getTime() - 60_000).toISOString(),
+      joined_at: startedAt.toISOString(),
+      started_at: startedAt.toISOString(),
+      project_name: "Pricing tier confusion",
     });
   }
 
@@ -227,15 +269,15 @@ async function main() {
   {
     const cust = customerIds[1]!;
     rows.push({
-      guest_name:        cust.name,
-      guest_email:       cust.email,
-      customer_user_id:  cust.id,
-      organization_id:   orgId,
-      status:            "queued",
-      urgency:           "urgent",
-      recall_count:      0,
-      created_at:        new Date(now - 80_000).toISOString(),
-      project_name:      "Login OTP delays",
+      guest_name: cust.name,
+      guest_email: cust.email,
+      customer_user_id: cust.id,
+      organization_id: orgId,
+      status: "queued",
+      urgency: "urgent",
+      recall_count: 0,
+      created_at: new Date(now - 80_000).toISOString(),
+      project_name: "Login OTP delays",
     });
   }
 
@@ -250,9 +292,13 @@ async function main() {
   console.log("✓ Session data seeded for Demo Enterprise Co.");
   console.log("");
   console.log("  Visit:");
-  console.log("    /enterprise           → KPIs, sparkline, recent sessions populated");
+  console.log(
+    "    /enterprise           → KPIs, sparkline, recent sessions populated"
+  );
   console.log("    /supervise            → Live (1), Waiting (1), Past (12)");
-  console.log("    /admin                → super_admin sees the same data org-wide");
+  console.log(
+    "    /admin                → super_admin sees the same data org-wide"
+  );
 }
 
 main().catch((err) => {

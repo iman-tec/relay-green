@@ -16,7 +16,7 @@ import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 
 export type SidebarItem = {
-  id:    string;
+  id: string;
   label: string;
   /** Lowercase haystack the search box filters on. Falls back to label. */
   search?: string;
@@ -33,30 +33,34 @@ export function Sidebar<T extends SidebarItem>({
   width = 280,
   emptyMessage = "No items.",
 }: {
-  title?:             string;
+  title?: string;
   searchPlaceholder?: string;
-  items:              readonly T[];
-  selectedId:         string | null;
-  onSelect:           (item: T) => void;
-  renderRow:          (item: T, selected: boolean) => React.ReactNode;
+  items: readonly T[];
+  selectedId: string | null;
+  onSelect: (item: T) => void;
+  renderRow: (item: T, selected: boolean) => React.ReactNode;
   /** Pinned to the bottom. Typically an "+ Add …" button. */
-  footer?:            React.ReactNode;
-  width?:             number;
-  emptyMessage?:      string;
+  footer?: React.ReactNode;
+  width?: number;
+  emptyMessage?: string;
 }) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
   const filtered = useMemo(() => {
     if (!q) return items;
     return items.filter((it) =>
-      (it.search ?? it.label).toLowerCase().includes(q),
+      (it.search ?? it.label).toLowerCase().includes(q)
     );
   }, [items, q]);
 
   return (
     <aside
       className="flex shrink-0 flex-col border-r"
-      style={{ width, borderColor: "var(--border)", background: "var(--surface)" }}
+      style={{
+        width,
+        borderColor: "var(--border)",
+        background: "var(--surface)",
+      }}
     >
       {title && (
         <header
@@ -80,7 +84,7 @@ export function Sidebar<T extends SidebarItem>({
             className="w-full rounded-md border bg-transparent py-2 pr-2 pl-8 text-sm outline-none"
             style={{
               borderColor: "var(--border)",
-              color:       "var(--text)",
+              color: "var(--text)",
             }}
           />
         </div>
@@ -88,7 +92,10 @@ export function Sidebar<T extends SidebarItem>({
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-2">
         {filtered.length === 0 ? (
-          <p className="px-4 py-6 text-center text-xs" style={{ color: "var(--text-muted)" }}>
+          <p
+            className="px-4 py-6 text-center text-xs"
+            style={{ color: "var(--text-muted)" }}
+          >
             {q ? "No matches." : emptyMessage}
           </p>
         ) : (

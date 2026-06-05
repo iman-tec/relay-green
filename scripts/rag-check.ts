@@ -14,10 +14,19 @@ async function main() {
   const hits = await search(v, matchFilter({ project_id: projectId }), 8);
   console.log(`Q: ${q}\n${hits.length} hits:\n`);
   for (const h of hits) {
-    const p = h.payload as { source_type?: string; title?: string; text?: string };
+    const p = h.payload as {
+      source_type?: string;
+      title?: string;
+      text?: string;
+    };
     console.log(
-      `${h.score.toFixed(3)}  ${p.source_type} · ${p.title}\n   ${(p.text ?? "").slice(0, 140).replace(/\s+/g, " ")}…\n`,
+      `${h.score.toFixed(3)}  ${p.source_type} · ${p.title}\n   ${(p.text ?? "").slice(0, 140).replace(/\s+/g, " ")}…\n`
     );
   }
 }
-main().then(() => process.exit(0)).catch((e) => { console.error(e); process.exit(1); });
+main()
+  .then(() => process.exit(0))
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });

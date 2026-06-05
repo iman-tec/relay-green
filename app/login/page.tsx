@@ -5,7 +5,10 @@ import { SignInForm } from "./SignInForm";
 import { CookieConsent } from "@/app/_marketing/CookieConsent";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { createClient } from "@/lib/supabase/server";
-import { isAllowedOnSurface, redirectForWrongSurface } from "@/lib/relay/loginSurface";
+import {
+  isAllowedOnSurface,
+  redirectForWrongSurface,
+} from "@/lib/relay/loginSurface";
 
 export const metadata: Metadata = {
   title: "Sign in, Relay.green",
@@ -52,9 +55,7 @@ async function redirectIfSignedIn(): Promise<void> {
 export default async function LoginPage() {
   await redirectIfSignedIn();
   return (
-    <main
-      className="relative flex min-h-[100dvh] flex-col items-center justify-center bg-[var(--background)] px-6 py-16"
-    >
+    <main className="relative flex min-h-[100dvh] flex-col items-center justify-center bg-[var(--background)] px-6 py-16">
       {/* Atmospheric top gradient — quiet, never noisy */}
       <div
         aria-hidden
@@ -71,7 +72,7 @@ export default async function LoginPage() {
             <Wordmark size="lg" />
           </Link>
           <div className="flex flex-col gap-1">
-            <h1 className="font-serif text-2xl font-medium leading-tight text-[var(--text)]">
+            <h1 className="font-serif text-2xl leading-tight font-medium text-[var(--text)]">
               Sign in to Relay
             </h1>
             <p className="text-sm leading-relaxed text-[var(--text-muted)]">
@@ -110,14 +111,14 @@ export default async function LoginPage() {
         By signing in you agree to our{" "}
         <Link
           href="/legal/terms-consumer"
-          className="text-[var(--text-muted)] underline-offset-2 hover:underline hover:text-[var(--text)]"
+          className="text-[var(--text-muted)] underline-offset-2 hover:text-[var(--text)] hover:underline"
         >
           Terms
         </Link>{" "}
         and{" "}
         <Link
           href="/legal/privacy-policy"
-          className="text-[var(--text-muted)] underline-offset-2 hover:underline hover:text-[var(--text)]"
+          className="text-[var(--text-muted)] underline-offset-2 hover:text-[var(--text)] hover:underline"
         >
           Privacy Policy
         </Link>

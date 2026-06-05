@@ -20,8 +20,18 @@
  * the table + create_project_quote_request RPC + RLS.
  */
 
-import { useState } from "react";
-import { Loader2, X, ChevronLeft, Check, Send, Rocket, Wrench, Plus } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import {
+  Loader2,
+  X,
+  ChevronDown,
+  ChevronLeft,
+  Check,
+  Send,
+  Rocket,
+  Wrench,
+  Plus,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 
 const BRAND_GREEN = "var(--primary)";
@@ -53,9 +63,11 @@ export function QuoteRequestModal({
   onCreateProject?: () => void;
 }) {
   const [step, setStep] = useState<"pick" | "details" | "done">(
-    initialProjectId ? "details" : "pick",
+    initialProjectId ? "details" : "pick"
   );
-  const [projectId, setProjectId] = useState<string | null>(initialProjectId ?? null);
+  const [projectId, setProjectId] = useState<string | null>(
+    initialProjectId ?? null
+  );
   const [comments, setComments] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [errMsg, setErrMsg] = useState<string | null>(null);
@@ -63,25 +75,31 @@ export function QuoteRequestModal({
   // Single source of truth for kind-specific copy. Keeping it here so the
   // step bodies below stay short — they pull from this map instead of
   // ternary-branching at every label.
-  const copy = kind === "golive"
-    ? {
-        Icon: Rocket,
-        eyebrow: "Quote to GoLive",
-        title: "Ready to ship this project?",
-        blurb: "Pick the project you want to take live. Your engineer and a supervisor will reply with a fixed-scope quote over email within 24 hours.",
-        commentLabel: "Anything they should know? (timelines, scope, integrations…)",
-        successTitle: "Sent — we'll reply within 24 hours.",
-        successBody: "Your engineer and a supervisor were notified. Expect a fixed-scope launch quote in your inbox.",
-      }
-    : {
-        Icon: Wrench,
-        eyebrow: "Quote to Maintain / Enhance",
-        title: "Keep building after launch?",
-        blurb: "Pick the project. Your engineer + a supervisor will scope the maintenance or enhancement work and email back with an effort estimate within 24 hours.",
-        commentLabel: "What needs maintaining or enhancing?",
-        successTitle: "Sent — we'll reply within 24 hours.",
-        successBody: "Your engineer and a supervisor were notified. Expect an effort estimate in your inbox.",
-      };
+  const copy =
+    kind === "golive"
+      ? {
+          Icon: Rocket,
+          eyebrow: "Quote to GoLive",
+          title: "Ready to ship this project?",
+          blurb:
+            "Pick the project you want to take live. Your engineer and a supervisor will reply with a fixed-scope quote over email within 24 hours.",
+          commentLabel:
+            "Anything they should know? (timelines, scope, integrations…)",
+          successTitle: "Sent — we'll reply within 24 hours.",
+          successBody:
+            "Your engineer and a supervisor were notified. Expect a fixed-scope launch quote in your inbox.",
+        }
+      : {
+          Icon: Wrench,
+          eyebrow: "Quote to Maintain / Enhance",
+          title: "Keep building after launch?",
+          blurb:
+            "Pick the project. Your engineer + a supervisor will scope the maintenance or enhancement work and email back with an effort estimate within 24 hours.",
+          commentLabel: "What needs maintaining or enhancing?",
+          successTitle: "Sent — we'll reply within 24 hours.",
+          successBody:
+            "Your engineer and a supervisor were notified. Expect an effort estimate in your inbox.",
+        };
 
   const { Icon } = copy;
 
@@ -110,7 +128,7 @@ export function QuoteRequestModal({
       if (existing && existing.length > 0) {
         const niceKind = kind === "golive" ? "go-live" : "maintenance";
         setErrMsg(
-          `A ${niceKind} bid is already in flight for this project. Open Contract management to review it instead of starting a new one.`,
+          `A ${niceKind} bid is already in flight for this project. Open Contract management to review it instead of starting a new one.`
         );
         setSubmitting(false);
         return;
@@ -140,7 +158,7 @@ export function QuoteRequestModal({
       <div
         role="dialog"
         aria-modal="true"
-        className="fixed left-1/2 top-1/2 z-[61] w-[calc(100vw-1.5rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border shadow-2xl max-h-[calc(100vh-2rem)] overflow-y-auto"
+        className="fixed top-1/2 left-1/2 z-[61] max-h-[calc(100vh-2rem)] w-[calc(100vw-1.5rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border shadow-2xl"
         style={{
           borderColor: "var(--border)",
           backgroundColor: "var(--surface)",
@@ -149,7 +167,10 @@ export function QuoteRequestModal({
       >
         {/* Header — eyebrow + close, plus a back arrow when we're past
             the pick step. */}
-        <div className="flex items-start gap-3 border-b px-5 py-4" style={{ borderColor: "var(--border)" }}>
+        <div
+          className="flex items-start gap-3 border-b px-5 py-4"
+          style={{ borderColor: "var(--border)" }}
+        >
           <div
             className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
             style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
@@ -157,10 +178,16 @@ export function QuoteRequestModal({
             <Icon size={16} />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: BRAND_GREEN }}>
+            <div
+              className="text-[10px] font-semibold tracking-[0.12em] uppercase"
+              style={{ color: BRAND_GREEN }}
+            >
               {copy.eyebrow}
             </div>
-            <h2 className="mt-0.5 text-[15px] font-semibold" style={{ color: "var(--text)" }}>
+            <h2
+              className="mt-0.5 text-[15px] font-semibold"
+              style={{ color: "var(--text)" }}
+            >
               {step === "done" ? copy.successTitle : copy.title}
             </h2>
           </div>
@@ -183,7 +210,10 @@ export function QuoteRequestModal({
           <PickProjectStep
             projects={projects}
             blurb={copy.blurb}
-            onPick={(id) => { setProjectId(id); setStep("details"); }}
+            onPick={(id) => {
+              setProjectId(id);
+              setStep("details");
+            }}
             onClose={onClose}
             onCreateProject={onCreateProject}
           />
@@ -192,13 +222,21 @@ export function QuoteRequestModal({
         {step === "details" && projectId && (
           <DetailsStep
             project={projects.find((p) => p.id === projectId) ?? null}
+            projects={projects}
+            onChangeProject={(id) => {
+              setProjectId(id);
+              setErrMsg(null);
+            }}
             blurb={copy.blurb}
             commentLabel={copy.commentLabel}
             comments={comments}
             setComments={setComments}
             submitting={submitting}
             errMsg={errMsg}
-            onBack={() => { setStep("pick"); setErrMsg(null); }}
+            onBack={() => {
+              setStep("pick");
+              setErrMsg(null);
+            }}
             onSubmit={() => void handleSubmit()}
             hideBack={!!initialProjectId && step === "details"}
           />
@@ -214,7 +252,11 @@ export function QuoteRequestModal({
 
 // ── Step 1: pick a project ───────────────────────────────────────────
 function PickProjectStep({
-  projects, blurb, onPick, onClose, onCreateProject,
+  projects,
+  blurb,
+  onPick,
+  onClose,
+  onCreateProject,
 }: {
   projects: QuoteProjectOption[];
   blurb: string;
@@ -224,16 +266,26 @@ function PickProjectStep({
 }) {
   return (
     <div className="px-5 py-4">
-      <p className="mb-3 text-[12px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
+      <p
+        className="mb-3 text-[12px] leading-relaxed"
+        style={{ color: "var(--text-muted)" }}
+      >
         {blurb}
       </p>
-      <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text-faint)" }}>
+      <div
+        className="mb-1 text-[10px] font-semibold tracking-[0.08em] uppercase"
+        style={{ color: "var(--text-faint)" }}
+      >
         Pick a project
       </div>
       {projects.length === 0 ? (
         <div
           className="rounded-lg border px-3 py-3 text-[12px]"
-          style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)", color: "var(--text-muted)" }}
+          style={{
+            borderColor: "var(--border)",
+            backgroundColor: "var(--surface-raised)",
+            color: "var(--text-muted)",
+          }}
         >
           {onCreateProject
             ? "No projects yet. Create one to request a quote on it."
@@ -270,10 +322,17 @@ function PickProjectStep({
                 className="flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
                 style={{ borderColor: "var(--border)" }}
               >
-                <span className="min-w-0 flex-1 truncate text-[13px]" style={{ color: "var(--text)" }}>
+                <span
+                  className="min-w-0 flex-1 truncate text-[13px]"
+                  style={{ color: "var(--text)" }}
+                >
                   {p.name}
                 </span>
-                <ChevronLeft size={12} className="rotate-180" style={{ color: "var(--text-muted)" }} />
+                <ChevronLeft
+                  size={12}
+                  className="rotate-180"
+                  style={{ color: "var(--text-muted)" }}
+                />
               </button>
             </li>
           ))}
@@ -285,10 +344,24 @@ function PickProjectStep({
 
 // ── Step 2: comments + submit ─────────────────────────────────────────
 function DetailsStep({
-  project, blurb, commentLabel, comments, setComments,
-  submitting, errMsg, onBack, onSubmit, hideBack,
+  project,
+  projects,
+  onChangeProject,
+  blurb,
+  commentLabel,
+  comments,
+  setComments,
+  submitting,
+  errMsg,
+  onBack,
+  onSubmit,
+  hideBack,
 }: {
   project: QuoteProjectOption | null;
+  /** Full list — the PROJECT field is a dropdown so the customer can
+   *  switch projects without backing out to the pick step. */
+  projects: QuoteProjectOption[];
+  onChangeProject: (id: string) => void;
   blurb: string;
   commentLabel: string;
   comments: string;
@@ -299,6 +372,19 @@ function DetailsStep({
   onSubmit: () => void;
   hideBack: boolean;
 }) {
+  const [projMenuOpen, setProjMenuOpen] = useState(false);
+  const projMenuRef = useRef<HTMLDivElement>(null);
+  // Outside-click closes the project dropdown.
+  useEffect(() => {
+    if (!projMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (projMenuRef.current && !projMenuRef.current.contains(e.target as Node))
+        setProjMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [projMenuOpen]);
+
   return (
     <div className="px-5 py-4">
       {!hideBack && (
@@ -312,21 +398,90 @@ function DetailsStep({
           <ChevronLeft size={11} /> Pick a different project
         </button>
       )}
-      <div
-        className="mb-3 rounded-lg border px-3 py-2 text-[12px]"
-        style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)" }}
-      >
-        <div className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text-faint)" }}>
-          Project
-        </div>
-        <div className="mt-0.5 text-[13px]" style={{ color: "var(--text)" }}>
-          {project?.name ?? "—"}
-        </div>
+      {/* PROJECT — dropdown, not a static label: the customer can switch
+          the target project right here. */}
+      <div ref={projMenuRef} className="relative mb-3">
+        <button
+          type="button"
+          disabled={submitting}
+          onClick={() => setProjMenuOpen((o) => !o)}
+          aria-expanded={projMenuOpen}
+          aria-label="Change project"
+          className="flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-[12px] transition-colors hover:bg-black/5 disabled:opacity-60 dark:hover:bg-white/5"
+          style={{
+            borderColor: "var(--border)",
+            backgroundColor: "var(--surface-raised)",
+          }}
+        >
+          <span className="min-w-0 flex-1">
+            <span
+              className="block text-[10px] font-semibold tracking-[0.08em] uppercase"
+              style={{ color: "var(--text-faint)" }}
+            >
+              Project
+            </span>
+            <span
+              className="mt-0.5 block truncate text-[13px]"
+              style={{ color: "var(--text)" }}
+            >
+              {project?.name ?? "—"}
+            </span>
+          </span>
+          <ChevronDown
+            size={14}
+            className="shrink-0 transition-transform"
+            style={{
+              color: "var(--text-muted)",
+              transform: projMenuOpen ? "rotate(180deg)" : "none",
+            }}
+          />
+        </button>
+        {projMenuOpen && (
+          <div
+            role="listbox"
+            aria-label="Project"
+            className="absolute top-full right-0 left-0 z-10 mt-1 max-h-56 overflow-y-auto rounded-lg border py-1 shadow-xl"
+            style={{
+              borderColor: "var(--border)",
+              backgroundColor: "var(--surface)",
+            }}
+          >
+            {projects.map((p) => {
+              const active = p.id === project?.id;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  role="option"
+                  aria-selected={active}
+                  onClick={() => {
+                    setProjMenuOpen(false);
+                    if (!active) onChangeProject(p.id);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12.5px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                  style={{
+                    color: active ? BRAND_GREEN : "var(--text)",
+                    fontWeight: active ? 600 : 400,
+                  }}
+                >
+                  <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                  {active && <Check size={12} className="shrink-0" />}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
-      <p className="mb-3 text-[11.5px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
+      <p
+        className="mb-3 text-[11.5px] leading-relaxed"
+        style={{ color: "var(--text-muted)" }}
+      >
         {blurb}
       </p>
-      <label className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text-faint)" }}>
+      <label
+        className="mb-1 block text-[10px] font-semibold tracking-[0.08em] uppercase"
+        style={{ color: "var(--text-faint)" }}
+      >
         {commentLabel}
       </label>
       <textarea
@@ -339,11 +494,17 @@ function DetailsStep({
         style={{
           borderColor: "var(--border)",
           color: "var(--text)",
-          ["--tw-ring-color" as string]: "color-mix(in srgb, var(--primary) 35%, transparent)",
+          ["--tw-ring-color" as string]:
+            "color-mix(in srgb, var(--primary) 35%, transparent)",
         }}
       />
       {errMsg && (
-        <p className="mt-1.5 text-[11px]" style={{ color: "var(--accent-red)" }}>{errMsg}</p>
+        <p
+          className="mt-1.5 text-[11px]"
+          style={{ color: "var(--accent-red)" }}
+        >
+          {errMsg}
+        </p>
       )}
       <button
         type="button"
@@ -352,7 +513,11 @@ function DetailsStep({
         className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2 text-[12px] font-semibold transition-opacity hover:opacity-90 disabled:opacity-50"
         style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
       >
-        {submitting ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+        {submitting ? (
+          <Loader2 size={12} className="animate-spin" />
+        ) : (
+          <Send size={12} />
+        )}
         {submitting ? "Sending…" : "Send for estimation"}
       </button>
     </div>
@@ -369,7 +534,10 @@ function DoneStep({ blurb, onClose }: { blurb: string; onClose: () => void }) {
       >
         <Check size={18} />
       </div>
-      <p className="mx-auto max-w-xs text-[12.5px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
+      <p
+        className="mx-auto max-w-xs text-[12.5px] leading-relaxed"
+        style={{ color: "var(--text-muted)" }}
+      >
         {blurb}
       </p>
       <button

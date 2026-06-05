@@ -13,19 +13,23 @@ export function AddResellerDrawer({
   onClose,
   onCreated,
 }: {
-  open:      boolean;
-  onClose:   () => void;
+  open: boolean;
+  onClose: () => void;
   onCreated: (resellerId: string) => void;
 }) {
-  const [name, setName]         = useState("");
-  const [email, setEmail]       = useState("");
-  const [commission, setComm]   = useState("");
-  const [minutes, setMinutes]   = useState("");
-  const [error, setError]       = useState<string | null>(null);
-  const [loading, setLoading]   = useState(false);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [commission, setComm] = useState("");
+  const [minutes, setMinutes] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   const reset = () => {
-    setName(""); setEmail(""); setComm(""); setMinutes(""); setError(null);
+    setName("");
+    setEmail("");
+    setComm("");
+    setMinutes("");
+    setError(null);
   };
 
   const submit = async () => {
@@ -37,17 +41,18 @@ export function AddResellerDrawer({
     setError(null);
     try {
       const res = await fetch("/api/admin/resellers", {
-        method:  "POST",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name:             name.trim(),
-          email:            email.trim(),
-          commission:       commission.trim() ? Number(commission) : 0,
+          name: name.trim(),
+          email: email.trim(),
+          commission: commission.trim() ? Number(commission) : 0,
           allocatedMinutes: minutes.trim() ? Number(minutes) : 0,
         }),
       });
       const body = (await res.json().catch(() => ({}))) as {
-        reseller?: { id: string }; error?: string;
+        reseller?: { id: string };
+        error?: string;
       };
       if (!res.ok || !body.reseller) {
         setError(body.error ?? "Couldn't create channel partner.");
@@ -56,7 +61,9 @@ export function AddResellerDrawer({
       onCreated(body.reseller.id);
       reset();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't create channel partner.");
+      setError(
+        e instanceof Error ? e.message : "Couldn't create channel partner."
+      );
     } finally {
       setLoading(false);
     }
@@ -65,11 +72,22 @@ export function AddResellerDrawer({
   return (
     <Drawer
       open={open}
-      onClose={() => { reset(); onClose(); }}
+      onClose={() => {
+        reset();
+        onClose();
+      }}
       title="Add Channel Partner"
       footer={
         <>
-          <SecondaryBtn onClick={() => { reset(); onClose(); }} disabled={loading}>Cancel</SecondaryBtn>
+          <SecondaryBtn
+            onClick={() => {
+              reset();
+              onClose();
+            }}
+            disabled={loading}
+          >
+            Cancel
+          </SecondaryBtn>
           <PrimaryBtn onClick={submit} disabled={loading}>
             {loading ? "Creating…" : "Create"}
           </PrimaryBtn>
@@ -78,16 +96,35 @@ export function AddResellerDrawer({
     >
       <div className="flex flex-col gap-3">
         <Field label="Channel partner name">
-          <Input value={name} onChange={setName} placeholder="Acme Channel Partners LLC" />
+          <Input
+            value={name}
+            onChange={setName}
+            placeholder="Acme Channel Partners LLC"
+          />
         </Field>
         <Field label="Owner email">
-          <Input value={email} onChange={setEmail} placeholder="owner@acme-partners.com" type="email" />
+          <Input
+            value={email}
+            onChange={setEmail}
+            placeholder="owner@acme-partners.com"
+            type="email"
+          />
         </Field>
         <Field label="Commission (%)">
-          <Input value={commission} onChange={setComm} placeholder="10" inputMode="numeric" />
+          <Input
+            value={commission}
+            onChange={setComm}
+            placeholder="10"
+            inputMode="numeric"
+          />
         </Field>
         <Field label="Initial minutes pool">
-          <Input value={minutes} onChange={setMinutes} placeholder="0" inputMode="numeric" />
+          <Input
+            value={minutes}
+            onChange={setMinutes}
+            placeholder="0"
+            inputMode="numeric"
+          />
         </Field>
         {error && <ErrorBanner message={error} />}
       </div>
@@ -95,20 +132,35 @@ export function AddResellerDrawer({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <label className="flex flex-col gap-1.5">
-      <span className="text-xs font-medium" style={{ color: "var(--text)" }}>{label}</span>
+      <span className="text-xs font-medium" style={{ color: "var(--text)" }}>
+        {label}
+      </span>
       {children}
     </label>
   );
 }
 
 function Input({
-  value, onChange, placeholder, type, inputMode,
+  value,
+  onChange,
+  placeholder,
+  type,
+  inputMode,
 }: {
-  value: string; onChange: (v: string) => void; placeholder?: string;
-  type?: string; inputMode?: "numeric" | "text";
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  type?: string;
+  inputMode?: "numeric" | "text";
 }) {
   return (
     <input
@@ -123,12 +175,20 @@ function Input({
   );
 }
 
-function PrimaryBtn({ onClick, disabled, children }: {
-  onClick: () => void; disabled?: boolean; children: React.ReactNode;
+function PrimaryBtn({
+  onClick,
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
 }) {
   return (
     <button
-      type="button" onClick={onClick} disabled={disabled}
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
       className="rounded-md px-3 py-2 text-sm font-medium transition-opacity disabled:opacity-50"
       style={{ background: "var(--primary)", color: "#fff" }}
     >
@@ -137,12 +197,20 @@ function PrimaryBtn({ onClick, disabled, children }: {
   );
 }
 
-function SecondaryBtn({ onClick, disabled, children }: {
-  onClick: () => void; disabled?: boolean; children: React.ReactNode;
+function SecondaryBtn({
+  onClick,
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
 }) {
   return (
     <button
-      type="button" onClick={onClick} disabled={disabled}
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
       className="rounded-md border px-3 py-2 text-sm font-medium transition-opacity disabled:opacity-50"
       style={{ borderColor: "var(--border)", color: "var(--text)" }}
     >
@@ -157,8 +225,8 @@ function ErrorBanner({ message }: { message: string }) {
       className="rounded-md border px-3 py-2 text-xs"
       style={{
         borderColor: "color-mix(in srgb, var(--primary) 30%, transparent)",
-        background:  "color-mix(in srgb, var(--primary) 8%, transparent)",
-        color:       "var(--primary)",
+        background: "color-mix(in srgb, var(--primary) 8%, transparent)",
+        color: "var(--primary)",
       }}
     >
       {message}

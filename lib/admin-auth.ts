@@ -36,7 +36,7 @@ export async function requireSuperAdmin(): Promise<RequireResult> {
     .select("role")
     .eq("user_id", user.id);
   const isSuperAdmin = (roles ?? []).some(
-    (r: { role: string }) => r.role === ROLE.super_admin,
+    (r: { role: string }) => r.role === ROLE.super_admin
   );
   if (!isSuperAdmin) {
     return { ok: false, status: 403, error: "forbidden" };
@@ -54,4 +54,3 @@ export async function requireSuperAdmin(): Promise<RequireResult> {
 
   return { ok: true, user, supabase, admin };
 }
-

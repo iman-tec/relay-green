@@ -113,20 +113,29 @@ export function computeSessionClock(input: SessionClockInput): SessionClock {
   const freeRemainingSec = Math.max(0, freeCapSec - elapsedSec);
   const isExpired = mode === "free_countdown" && freeRemainingSec === 0;
   const isWarning =
-    mode === "free_countdown" && !isExpired && freeRemainingSec <= WARNING_THRESHOLD_SECONDS;
+    mode === "free_countdown" &&
+    !isExpired &&
+    freeRemainingSec <= WARNING_THRESHOLD_SECONDS;
 
   // Paid clock. Returning customers bill from the anchor (assigned_at); a
   // first-timer who upgraded bills from paid_extension_at.
-  const paidAnchorMs = pivoted ? new Date(input.paidExtensionAt as string).getTime() : startMs;
-  const paidElapsedSec = onPaid ? Math.max(0, Math.floor((input.now - paidAnchorMs) / 1000)) : 0;
+  const paidAnchorMs = pivoted
+    ? new Date(input.paidExtensionAt as string).getTime()
+    : startMs;
+  const paidElapsedSec = onPaid
+    ? Math.max(0, Math.floor((input.now - paidAnchorMs) / 1000))
+    : 0;
   const paidBudgetSec =
     hasBilling && input.paidMinutesRemaining != null
       ? Math.round(input.paidMinutesRemaining * 60)
       : null;
   const paidRemainingSec =
-    onPaid && paidBudgetSec != null ? Math.max(0, paidBudgetSec - paidElapsedSec) : null;
+    onPaid && paidBudgetSec != null
+      ? Math.max(0, paidBudgetSec - paidElapsedSec)
+      : null;
 
-  const displaySec = mode === "free_countdown" ? freeRemainingSec : paidElapsedSec;
+  const displaySec =
+    mode === "free_countdown" ? freeRemainingSec : paidElapsedSec;
 
   // Enforcement — only when we have the customer billing context.
   let shouldPivotToPaid = false;
@@ -182,7 +191,9 @@ export function formatClock(totalSec: number): string {
  * Ticking wrapper. Recomputes the clock once a second while the session has an
  * anchor. Pass the same fields as computeSessionClock minus `now`.
  */
-export function useSessionClock(input: Omit<SessionClockInput, "now">): SessionClock {
+export function useSessionClock(
+  input: Omit<SessionClockInput, "now">
+): SessionClock {
   const [now, setNow] = useState<number>(() => Date.now());
   useEffect(() => {
     if (!input.anchor) return;

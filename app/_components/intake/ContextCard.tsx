@@ -82,7 +82,7 @@ export function ContextCard({ ctx }: { ctx: IntakeContext }) {
 
         {ctx.attachments.length > 0 && (
           <div className="border-t border-[var(--border)] pt-3">
-            <p className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+            <p className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold tracking-wider text-[var(--text-muted)] uppercase">
               <Paperclip size={11} /> Attachments
             </p>
             <ul className="grid grid-cols-3 gap-2">
@@ -98,7 +98,7 @@ export function ContextCard({ ctx }: { ctx: IntakeContext }) {
                       <img
                         src={a.previewUrl}
                         alt={a.name}
-                        className="block size-full aspect-square object-cover"
+                        className="block aspect-square size-full object-cover"
                       />
                     ) : (
                       <div className="flex aspect-square items-center justify-center px-2 text-center text-[10px] text-[var(--text-muted)]">
@@ -106,7 +106,7 @@ export function ContextCard({ ctx }: { ctx: IntakeContext }) {
                       </div>
                     )}
                   </li>
-                ) : null,
+                ) : null
               )}
             </ul>
           </div>
@@ -141,10 +141,10 @@ function ContextRow({
         {icon}
       </span>
       <div className="min-w-0 flex-1">
-        <dt className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+        <dt className="text-[10px] font-semibold tracking-wider text-[var(--text-muted)] uppercase">
           {label}
         </dt>
-        <dd className="mt-0.5 whitespace-pre-wrap text-sm leading-snug text-[var(--text)]">
+        <dd className="mt-0.5 text-sm leading-snug whitespace-pre-wrap text-[var(--text)]">
           {value}
         </dd>
       </div>

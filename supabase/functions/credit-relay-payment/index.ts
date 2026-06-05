@@ -22,29 +22,37 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const SUPABASE_URL              = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_ANON             = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY")!;
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_ANON =
+  Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ??
+  Deno.env.get("SUPABASE_ANON_KEY")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const STRIPE_KEY                =
-  Deno.env.get("STRIPE_SANDBOX_API_KEY")
-  ?? Deno.env.get("STRIPE_LIVE_API_KEY")
-  ?? "";
+const STRIPE_KEY =
+  Deno.env.get("STRIPE_SANDBOX_API_KEY") ??
+  Deno.env.get("STRIPE_LIVE_API_KEY") ??
+  "";
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method === "OPTIONS")
+    return new Response("ok", { headers: corsHeaders });
 
   try {
     if (!STRIPE_KEY) {
-      return new Response(JSON.stringify({ error: "STRIPE key not configured" }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ error: "STRIPE key not configured" }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     // ── Auth ────────────────────────────────────────────────────────────────
     const auth = req.headers.get("Authorization") ?? "";
     if (!auth.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
     const userClient = createClient(SUPABASE_URL, SUPABASE_ANON, {
@@ -53,17 +61,26 @@ Deno.serve(async (req) => {
     const { data: u, error: uErr } = await userClient.auth.getUser();
     if (uErr || !u.user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     // ── Input ───────────────────────────────────────────────────────────────
     const body = await req.json().catch(() => ({}));
     const paymentIntentId: string | undefined = body.payment_intent_id;
-    if (!paymentIntentId || typeof paymentIntentId !== "string" || !paymentIntentId.startsWith("pi_")) {
-      return new Response(JSON.stringify({ error: "Invalid payment_intent_id" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (
+      !paymentIntentId ||
+      typeof paymentIntentId !== "string" ||
+      !paymentIntentId.startsWith("pi_")
+    ) {
+      return new Response(
+        JSON.stringify({ error: "Invalid payment_intent_id" }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     // ── Verify against Stripe ──────────────────────────────────────────────
@@ -73,24 +90,38 @@ Deno.serve(async (req) => {
     });
     const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
     if (intent.status !== "succeeded") {
-      return new Response(JSON.stringify({ error: `PaymentIntent not succeeded: ${intent.status}` }), {
-        status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({
+          error: `PaymentIntent not succeeded: ${intent.status}`,
+        }),
+        {
+          status: 409,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     const piUserId = intent.metadata?.relay_user_id;
-    const plan     = intent.metadata?.relay_plan;
-    const minutes  = Number(intent.metadata?.relay_minutes ?? "0");
+    const plan = intent.metadata?.relay_plan;
+    const minutes = Number(intent.metadata?.relay_minutes ?? "0");
     if (!piUserId || !plan || !Number.isFinite(minutes) || minutes <= 0) {
-      return new Response(JSON.stringify({ error: "PaymentIntent missing Relay metadata" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ error: "PaymentIntent missing Relay metadata" }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
     // Don't let user A credit a PI that belonged to user B.
     if (piUserId !== u.user.id) {
-      return new Response(JSON.stringify({ error: "PaymentIntent does not belong to this user" }), {
-        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ error: "PaymentIntent does not belong to this user" }),
+        {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     // ── Credit (idempotent) ────────────────────────────────────────────────
@@ -108,9 +139,14 @@ Deno.serve(async (req) => {
         .select("balance")
         .eq("user_id", piUserId)
         .maybeSingle();
-      return new Response(JSON.stringify({
-        ok: true, dedup: true, balance: Number(w?.balance ?? 0),
-      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          dedup: true,
+          balance: Number(w?.balance ?? 0),
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     // Wallet upsert
@@ -123,9 +159,9 @@ Deno.serve(async (req) => {
       await admin
         .from("credit_wallets")
         .update({
-          balance:            Number(wallet.balance ?? 0) + minutes,
+          balance: Number(wallet.balance ?? 0) + minutes,
           lifetime_purchased: Number(wallet.lifetime_purchased ?? 0) + minutes,
-          updated_at:         new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         })
         .eq("user_id", piUserId);
     } else {
@@ -146,19 +182,28 @@ Deno.serve(async (req) => {
 
     await admin
       .from("customer_entitlements")
-      .upsert({ customer_user_id: piUserId }, { onConflict: "customer_user_id" });
+      .upsert(
+        { customer_user_id: piUserId },
+        { onConflict: "customer_user_id" }
+      );
     const { data: ent } = await admin
       .from("customer_entitlements")
       .select("paid_minutes_remaining, paid_minutes_lifetime, total_paid_cents")
       .eq("customer_user_id", piUserId)
       .maybeSingle();
     if (ent) {
-      await admin.from("customer_entitlements").update({
-        paid_minutes_remaining: Number(ent.paid_minutes_remaining ?? 0) + minutes,
-        paid_minutes_lifetime:  Number(ent.paid_minutes_lifetime ?? 0) + minutes,
-        total_paid_cents:       Number(ent.total_paid_cents ?? 0) + Number(intent.amount ?? 0),
-        updated_at:             new Date().toISOString(),
-      }).eq("customer_user_id", piUserId);
+      await admin
+        .from("customer_entitlements")
+        .update({
+          paid_minutes_remaining:
+            Number(ent.paid_minutes_remaining ?? 0) + minutes,
+          paid_minutes_lifetime:
+            Number(ent.paid_minutes_lifetime ?? 0) + minutes,
+          total_paid_cents:
+            Number(ent.total_paid_cents ?? 0) + Number(intent.amount ?? 0),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("customer_user_id", piUserId);
     }
 
     const { data: post } = await admin
@@ -167,18 +212,22 @@ Deno.serve(async (req) => {
       .eq("user_id", piUserId)
       .maybeSingle();
 
-    return new Response(JSON.stringify({
-      ok: true,
-      credited: minutes,
-      balance:  Number(post?.balance ?? 0),
-    }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        credited: minutes,
+        balance: Number(post?.balance ?? 0),
+      }),
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     console.error("[credit-relay-payment]", msg);
     return new Response(JSON.stringify({ error: msg }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });

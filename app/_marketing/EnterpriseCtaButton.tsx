@@ -65,7 +65,10 @@ export function EnterpriseCtaButton({
 
     // Channel partner is required: pick from the list, or "Other" + a name.
     const customPartner = String(data.get("channelPartnerOther") ?? "").trim();
-    if (!partnerChoice || (partnerChoice === OTHER_PARTNER && customPartner.length === 0)) {
+    if (
+      !partnerChoice ||
+      (partnerChoice === OTHER_PARTNER && customPartner.length === 0)
+    ) {
       setStatus("error");
       setErrorMessage(
         "Please choose a channel partner — or pick “Other” and type a name."
@@ -227,7 +230,9 @@ export function EnterpriseCtaButton({
           </div>
 
           <div className="r-contact-field">
-            <label htmlFor={`${idPrefix}-channel-partner`}>Channel partner</label>
+            <label htmlFor={`${idPrefix}-channel-partner`}>
+              Channel partner
+            </label>
             <select
               id={`${idPrefix}-channel-partner`}
               name="channelPartnerId"
@@ -270,9 +275,7 @@ export function EnterpriseCtaButton({
           )}
 
           <div className="r-contact-field">
-            <label htmlFor={`${idPrefix}-message`}>
-              Tell us what you need
-            </label>
+            <label htmlFor={`${idPrefix}-message`}>Tell us what you need</label>
             <textarea
               id={`${idPrefix}-message`}
               name="message"

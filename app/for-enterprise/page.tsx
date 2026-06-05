@@ -11,10 +11,7 @@ import { Shell } from "../_marketing/Shell";
 import { RelayLogo } from "../_marketing/RelayLogo";
 import { EnterpriseCtaButton } from "../_marketing/EnterpriseCtaButton";
 import { JsonLd } from "../_marketing/JsonLd";
-import {
-  breadcrumbSchema,
-  webPageSchema,
-} from "../../lib/seo/schema";
+import { breadcrumbSchema, webPageSchema } from "../../lib/seo/schema";
 
 const SITE_URL = "https://www.relay.green";
 
@@ -428,9 +425,7 @@ export default function ForEnterprisePage() {
                   textWrap: "balance",
                 }}
               >
-                <em
-                  style={{ color: "var(--green)", fontStyle: "italic" }}
-                >
+                <em style={{ color: "var(--green)", fontStyle: "italic" }}>
                   Govern
                 </em>{" "}
                 the AI
@@ -484,10 +479,10 @@ export default function ForEnterprisePage() {
                   maxWidth: "54ch",
                 }}
               >
-                Your team is building with Cursor, Claude, and Lovable,
-                whether IT signed off or not. Relay puts a qualified engineer
-                behind every AI-built system in seconds:
-                under your NDA, in your region, and on your audit trail.
+                Your team is building with Cursor, Claude, and Lovable, whether
+                IT signed off or not. Relay puts a qualified engineer behind
+                every AI-built system in seconds: under your NDA, in your
+                region, and on your audit trail.
               </p>
 
               <div
@@ -1044,9 +1039,9 @@ export default function ForEnterprisePage() {
                 maxWidth: "48ch",
               }}
             >
-              A pooled retainer your whole org can press into — with
-              single-pane visibility, audit logs, and a named team that learns
-              your stack across departments.
+              A pooled retainer your whole org can press into — with single-pane
+              visibility, audit logs, and a named team that learns your stack
+              across departments.
             </p>
           </div>
 
@@ -1095,10 +1090,7 @@ export default function ForEnterprisePage() {
                     letterSpacing: "-0.005em",
                   }}
                 >
-                  <span
-                    className="mk-sweep"
-                    style={{ color: "var(--green)" }}
-                  >
+                  <span className="mk-sweep" style={{ color: "var(--green)" }}>
                     {card.title}
                   </span>
                 </h3>

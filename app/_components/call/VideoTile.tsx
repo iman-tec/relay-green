@@ -50,7 +50,9 @@ export function VideoTile({ participant, client }: Props) {
     // to fill + clip its host cell so the SDK's <video-player> can't
     // overflow into a neighbouring tile (which made one tile look like it
     // filled the whole pane and hid the other).
-    let vpc = host.querySelector("video-player-container") as HTMLElement | null;
+    let vpc = host.querySelector(
+      "video-player-container"
+    ) as HTMLElement | null;
     if (!vpc) {
       vpc = document.createElement("video-player-container");
       vpc.style.position = "absolute";
@@ -71,7 +73,11 @@ export function VideoTile({ participant, client }: Props) {
           // an ExecutedFailure ({ type, reason, errorCode }) shape on
           // failure. Only append when we got a real DOM node.
           if (cancelled) {
-            try { await ms.detachVideo(userId); } catch { /* nothing attached */ }
+            try {
+              await ms.detachVideo(userId);
+            } catch {
+              /* nothing attached */
+            }
             return;
           }
           if (result instanceof HTMLElement) {
@@ -82,7 +88,10 @@ export function VideoTile({ participant, client }: Props) {
             container.appendChild(result);
             attachedRef.current = true;
           } else {
-            console.warn("[VideoTile] attachVideo did not return an element", result);
+            console.warn(
+              "[VideoTile] attachVideo did not return an element",
+              result
+            );
           }
         } catch (e) {
           console.warn("[VideoTile] attachVideo threw", e);
@@ -99,7 +108,9 @@ export function VideoTile({ participant, client }: Props) {
         try {
           const r = ms.detachVideo(userId);
           if (r && typeof r.then === "function") r.catch(() => {});
-        } catch { /* already detached */ }
+        } catch {
+          /* already detached */
+        }
       }
     };
   }, [client, participant.userId, participant.video.on]);
@@ -119,20 +130,29 @@ export function VideoTile({ participant, client }: Props) {
       />
 
       {!participant.video.on && (
-        <div className="flex h-full w-full items-center justify-center" style={{ color: "var(--text-faint)" }}>
+        <div
+          className="flex h-full w-full items-center justify-center"
+          style={{ color: "var(--text-faint)" }}
+        >
           <VideoOff size={18} aria-label="Camera off" strokeWidth={1.5} />
         </div>
       )}
 
       <div
-        className="pointer-events-none absolute bottom-1.5 left-1.5 right-1.5 flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium"
-        style={{ background: "rgba(0,0,0,0.45)", color: "rgba(255,255,255,0.92)" }}
+        className="pointer-events-none absolute right-1.5 bottom-1.5 left-1.5 flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium"
+        style={{
+          background: "rgba(0,0,0,0.45)",
+          color: "rgba(255,255,255,0.92)",
+        }}
       >
-        {participant.audio.muted
-          ? <MicOff size={10} className="shrink-0 opacity-90" />
-          : <Mic size={10} className="shrink-0 opacity-90" />}
+        {participant.audio.muted ? (
+          <MicOff size={10} className="shrink-0 opacity-90" />
+        ) : (
+          <Mic size={10} className="shrink-0 opacity-90" />
+        )}
         <span className="truncate">
-          {participant.displayName}{participant.isCurrentUser ? " (you)" : ""}
+          {participant.displayName}
+          {participant.isCurrentUser ? " (you)" : ""}
         </span>
       </div>
     </div>

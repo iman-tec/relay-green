@@ -18,17 +18,20 @@ import { NextResponse } from "next/server";
 import { requireSuperAdmin } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function POST(request: Request, { params }: RouteCtx) {
   const gate = await requireSuperAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin } = gate;
 
   const { id } = await params;
-  const { amount } = (await request.json().catch(() => ({}))) as { amount?: number | string };
+  const { amount } = (await request.json().catch(() => ({}))) as {
+    amount?: number | string;
+  };
   const amt = Number(amount);
   if (!Number.isFinite(amt) || amt <= 0) {
     return NextResponse.json({ error: "amount must be > 0" }, { status: 400 });
@@ -39,7 +42,11 @@ export async function POST(request: Request, { params }: RouteCtx) {
     .select("id")
     .eq("id", id)
     .maybeSingle();
-  if (!org) return NextResponse.json({ error: "Organization not found." }, { status: 404 });
+  if (!org)
+    return NextResponse.json(
+      { error: "Organization not found." },
+      { status: 404 }
+    );
 
   const { error } = await admin.rpc("transfer_to_organization", {
     _org_id: id,
@@ -50,8 +57,11 @@ export async function POST(request: Request, { params }: RouteCtx) {
     // remaining_minutes" for inorganic orgs whose partner pool is short.
     if (/insufficient/i.test(error.message ?? "")) {
       return NextResponse.json(
-        { error: "The Channel Partner's pool is short — top up the partner first." },
-        { status: 400 },
+        {
+          error:
+            "The Channel Partner's pool is short — top up the partner first.",
+        },
+        { status: 400 }
       );
     }
     return NextResponse.json({ error: error.message }, { status: 400 });
@@ -67,10 +77,14 @@ export async function POST(request: Request, { params }: RouteCtx) {
     ok: true,
     organization: after
       ? {
-          id:               (after as { id: string }).id,
-          allocatedMinutes: Number((after as { allocated_minutes: number }).allocated_minutes),
-          usedMinutes:      Number((after as { used_minutes: number }).used_minutes),
-          remainingMinutes: Number((after as { remaining_minutes: number }).remaining_minutes),
+          id: (after as { id: string }).id,
+          allocatedMinutes: Number(
+            (after as { allocated_minutes: number }).allocated_minutes
+          ),
+          usedMinutes: Number((after as { used_minutes: number }).used_minutes),
+          remainingMinutes: Number(
+            (after as { remaining_minutes: number }).remaining_minutes
+          ),
         }
       : null,
   });

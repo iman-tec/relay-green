@@ -21,9 +21,13 @@ const DEDUPE_WINDOW_MS = 30_000;
 async function getZoomAccessToken(): Promise<string> {
   const basic = btoa(`${ZOOM_CLIENT_ID}:${ZOOM_CLIENT_SECRET}`);
   const url = `https://zoom.us/oauth/token?grant_type=account_credentials&account_id=${ZOOM_ACCOUNT_ID}`;
-  const r = await fetch(url, { method: "POST", headers: { Authorization: `Basic ${basic}` } });
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Basic ${basic}` },
+  });
   const data = await r.json();
-  if (!r.ok) throw new Error(`Zoom OAuth failed [${r.status}]: ${JSON.stringify(data)}`);
+  if (!r.ok)
+    throw new Error(`Zoom OAuth failed [${r.status}]: ${JSON.stringify(data)}`);
   return data.access_token as string;
 }
 
@@ -32,7 +36,10 @@ async function endAndDeleteZoomMeeting(token: string, meetingId: string) {
     // End first (kicks all participants), then delete the record.
     await fetch(`https://api.zoom.us/v2/meetings/${meetingId}/status`, {
       method: "PUT",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({ action: "end" }),
     });
     const r = await fetch(`https://api.zoom.us/v2/meetings/${meetingId}`, {
@@ -49,7 +56,8 @@ async function endAndDeleteZoomMeeting(token: string, meetingId: string) {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method === "OPTIONS")
+    return new Response("ok", { headers: corsHeaders });
   try {
     if (!ZOOM_ACCOUNT_ID || !ZOOM_CLIENT_ID || !ZOOM_CLIENT_SECRET) {
       throw new Error("Zoom credentials are not configured");
@@ -57,13 +65,16 @@ Deno.serve(async (req) => {
     const { guest_call_id } = await req.json().catch(() => ({}));
     if (!guest_call_id) {
       return new Response(JSON.stringify({ error: "guest_call_id required" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const { data: gc, error: gcErr } = await admin
       .from("guest_calls")
-      .select("id, guest_name, status, zoom_meeting_id, zoom_join_url, zoom_start_url, updated_at")
+      .select(
+        "id, guest_name, status, zoom_meeting_id, zoom_join_url, zoom_start_url, updated_at"
+      )
       .eq("id", guest_call_id)
       .maybeSingle();
     if (gcErr || !gc) throw new Error("Session not found");
@@ -74,14 +85,22 @@ Deno.serve(async (req) => {
     const lastUpdated = gc.updated_at ? new Date(gc.updated_at).getTime() : 0;
     const ageMs = Date.now() - lastUpdated;
     if (gc.zoom_meeting_id && gc.zoom_join_url && ageMs < DEDUPE_WINDOW_MS) {
-      console.log(`Reusing fresh meeting ${gc.zoom_meeting_id} (age ${ageMs}ms)`);
-      return new Response(JSON.stringify({
-        ok: true,
-        reused: true,
-        zoom_join_url: gc.zoom_join_url,
-        zoom_start_url: gc.zoom_start_url,
-        zoom_meeting_id: gc.zoom_meeting_id,
-      }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      console.log(
+        `Reusing fresh meeting ${gc.zoom_meeting_id} (age ${ageMs}ms)`
+      );
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          reused: true,
+          zoom_join_url: gc.zoom_join_url,
+          zoom_start_url: gc.zoom_start_url,
+          zoom_meeting_id: gc.zoom_meeting_id,
+        }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     const accessToken = await getZoomAccessToken();
@@ -93,7 +112,10 @@ Deno.serve(async (req) => {
 
     const zoomRes = await fetch("https://api.zoom.us/v2/users/me/meetings", {
       method: "POST",
-      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({
         topic: `Relay session — ${gc.guest_name}`,
         type: 1,
@@ -112,14 +134,18 @@ Deno.serve(async (req) => {
       }),
     });
     const zoomData = await zoomRes.json();
-    if (!zoomRes.ok) throw new Error(`Zoom create failed: ${JSON.stringify(zoomData)}`);
+    if (!zoomRes.ok)
+      throw new Error(`Zoom create failed: ${JSON.stringify(zoomData)}`);
 
-    await admin.from("guest_calls").update({
-      zoom_meeting_id: String(zoomData.id),
-      zoom_join_url: zoomData.join_url,
-      zoom_start_url: zoomData.start_url,
-      updated_at: new Date().toISOString(),
-    }).eq("id", guest_call_id);
+    await admin
+      .from("guest_calls")
+      .update({
+        zoom_meeting_id: String(zoomData.id),
+        zoom_join_url: zoomData.join_url,
+        zoom_start_url: zoomData.start_url,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", guest_call_id);
 
     await admin.from("guest_messages").insert({
       guest_call_id,
@@ -128,18 +154,25 @@ Deno.serve(async (req) => {
       body: "🔄 New video room created — click Start video call to rejoin.",
     });
 
-    return new Response(JSON.stringify({
-      ok: true,
-      reused: false,
-      zoom_join_url: zoomData.join_url,
-      zoom_start_url: zoomData.start_url,
-      zoom_meeting_id: String(zoomData.id),
-    }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        reused: false,
+        zoom_join_url: zoomData.join_url,
+        zoom_start_url: zoomData.start_url,
+        zoom_meeting_id: String(zoomData.id),
+      }),
+      {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     console.error("restart-guest-zoom error:", msg);
     return new Response(JSON.stringify({ error: msg }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });

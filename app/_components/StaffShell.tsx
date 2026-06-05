@@ -42,6 +42,7 @@ import {
   Settings,
   ShieldCheck,
   FileText,
+  Gavel,
   Home,
 } from "lucide-react";
 import { Wordmark } from "./Wordmark";
@@ -70,9 +71,7 @@ import type { GuestCall } from "@/lib/supabase/types";
 const BRAND_GREEN = "#3f5c2e";
 const BRAND_GREEN_SOFT = "rgba(63, 92, 46, 0.12)";
 const URGENT_AMBER = "#d4a017";
-const URGENT_AMBER_SOFT = "rgba(212, 160, 23, 0.14)";
 const CRIT_RED = "#8b1a1a";
-const CRIT_RED_SOFT = "rgba(139, 26, 26, 0.18)";
 
 // 272px: 240 was too tight once the header gained the Home shortcut +
 // 3-icon ThemeTriplet + collapse button — the rightmost icon clipped on
@@ -101,9 +100,19 @@ const NAV: Nav[] = [
   },
   // People + per-customer session history + call log. Engineers see their own
   // sessions; supervisors get an all-platform view of the same surface.
-  { href: "/inbox", label: "Inbox", icon: InboxIcon, roles: [ROLE.engineer, ROLE.supervisor] },
+  {
+    href: "/inbox",
+    label: "Inbox",
+    icon: InboxIcon,
+    roles: [ROLE.engineer, ROLE.supervisor],
+  },
   // Engineer-only. Global quote-request / bid queue across all customers.
-  { href: "/quotations", label: "Quotation", icon: FileText, roles: [ROLE.engineer] },
+  {
+    href: "/quotations",
+    label: "Quotation",
+    icon: FileText,
+    roles: [ROLE.engineer],
+  },
   // /supervise renders the platform-wide grid for super_admin + supervisor,
   // and the org-scoped grid for enterprise + department admins — see
   // app/(staff)/supervise/page.tsx.
@@ -120,40 +129,15 @@ const NAV: Nav[] = [
   },
   // super_admin's primary surface — the redesigned 4-tab panel
   // (Enterprise / Reseller / Pods / Internal Users).
-  {
-    href: "/admin/v2",
-    label: "Users",
-    icon: UsersIcon,
-    roles: [ROLE.super_admin],
-  },
+  { href: "/admin/v2",             label: "Users",     icon: UsersIcon,       roles: [ROLE.super_admin] },
   // enterprise_admin's console — the panel's tabs surface directly as
   // sidebar items (the in-page tab strip was removed; ?tab= drives which
   // tab PanelClient renders, so these are plain links). Active-state for
   // these query-carrying hrefs is resolved tab-aware in the nav render.
-  {
-    href: "/enterprise/v2?tab=overview",
-    label: "Overview",
-    icon: LayoutDashboard,
-    roles: [ROLE.enterprise_admin],
-  },
-  {
-    href: "/enterprise/v2?tab=usage",
-    label: "Usage",
-    icon: BarChart3,
-    roles: [ROLE.enterprise_admin],
-  },
-  {
-    href: "/enterprise/v2?tab=billing",
-    label: "Billing",
-    icon: WalletIcon,
-    roles: [ROLE.enterprise_admin],
-  },
-  {
-    href: "/enterprise/v2?tab=settings",
-    label: "Settings",
-    icon: Settings,
-    roles: [ROLE.enterprise_admin],
-  },
+  { href: "/enterprise/v2?tab=overview", label: "Overview", icon: LayoutDashboard, roles: [ROLE.enterprise_admin] },
+  { href: "/enterprise/v2?tab=usage",    label: "Usage",    icon: BarChart3,       roles: [ROLE.enterprise_admin] },
+  { href: "/enterprise/v2?tab=billing",  label: "Billing",  icon: WalletIcon,      roles: [ROLE.enterprise_admin] },
+  { href: "/enterprise/v2?tab=settings", label: "Settings", icon: Settings,        roles: [ROLE.enterprise_admin] },
   // reseller-owner console — redesigned v2 panel (from rutul-working).
   {
     href: "/reseller/v2",
@@ -183,6 +167,14 @@ const NAV: Nav[] = [
     href: "/operations",
     label: "Operations",
     icon: TableIcon,
+    roles: [ROLE.supervisor],
+  },
+  // /bids is the pod supervisor's estimation-request / bid queue (the former
+  // "Act now" rail beside /supervise, promoted to its own surface).
+  {
+    href: "/bids",
+    label: "Bids",
+    icon: Gavel,
     roles: [ROLE.supervisor],
   },
   // Supervisor-only. Upcoming appointments customers booked off a bid
@@ -245,9 +237,9 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   // (staff) route is dynamically rendered (the group layout reads auth
   // cookies), so there's no static prerender to bail out of.
   const searchParams = useSearchParams();
-  const router = useRouter();
-  const guard = useStaffGuard();
-  const roles = guard.kind === "staff" ? guard.roles : [];
+  const router   = useRouter();
+  const guard    = useStaffGuard();
+  const roles    = guard.kind === "staff" ? guard.roles : [];
   const engineer = isEngineer(roles);
   const isEnterpriseAdmin =
     roles.includes(ROLE.enterprise_admin) && !roles.includes(ROLE.super_admin);
@@ -350,9 +342,19 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
     };
   }, [guard.kind, meEmail]);
 
-  // Restore sidebar state from localStorage on mount.
+  // On mount: phones always start collapsed (the expanded nav doesn't fit),
+  // regardless of any saved desktop preference. On wider screens, restore the
+  // saved preference.
   useEffect(() => {
     try {
+      const mobile =
+        typeof window !== "undefined" &&
+        window.matchMedia("(max-width: 767px)").matches;
+      if (mobile) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setCollapsed(true);
+        return;
+      }
       const v = localStorage.getItem(COLLAPSED_KEY);
       // eslint-disable-next-line react-hooks/set-state-in-effect
       if (v === "1") setCollapsed(true);
@@ -479,10 +481,8 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   // department admin consoles share the engineer panel's chrome (their
   // tab strip moved in-page; see each panel's PanelClient).
   const isBare =
-    pathname === "/admin/v2" ||
-    pathname.startsWith("/admin/v2/") ||
-    pathname === "/reseller/v2" ||
-    pathname.startsWith("/reseller/v2/");
+    pathname === "/admin/v2"    || pathname.startsWith("/admin/v2/")    ||
+    pathname === "/reseller/v2" || pathname.startsWith("/reseller/v2/");
   if (isBare) {
     return (
       <div
@@ -513,9 +513,10 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   // Routes that super_admin should never see even when they hold the
   // underlying role for testing (e.g. dev.soni also has supervisor so she
   // can join real sessions, but /operations is a supervisor surface).
-  const SUPER_ADMIN_HIDDEN = new Set(["/operations"]);
+  const SUPER_ADMIN_HIDDEN = new Set(["/operations", "/bids"]);
   const isSuperAdmin = roles.includes(ROLE.super_admin);
-  const navItems = NAV.filter((n) => n.roles.some((r) => roles.includes(r)))
+  const navItems = NAV
+    .filter((n) => n.roles.some((r) => roles.includes(r)))
     // Strip the ?tab=… query before matching — the enterprise console
     // items all live under the allowed /enterprise/v2 path.
     .filter((n) => !isEnterpriseAdmin || ENT_ADMIN_ALLOW.has(n.href.split("?")[0]))
@@ -530,20 +531,24 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
     // (dashboard, inbox, supervise) fit perfectly because <main>'s height
     // equals the viewport.
     <div
-      className="flex h-screen overflow-hidden"
+      className="relative flex h-screen overflow-hidden"
       style={{ backgroundColor: "var(--background)" }}
     >
       <aside
-        className={`flex h-full shrink-0 flex-col border-r ${sidebarDragging ? "" : "transition-[width] duration-200 ease-out"}`}
+        // On phones the aside is pulled OUT of flow (`absolute`) so expanding
+        // it overlays the page instead of pushing <main> rightwards — a
+        // standard mobile drawer. <main> reserves the collapsed-rail width
+        // (pl) so the always-visible icon rail never sits on top of content.
+        // From `lg` up it returns to an in-flow flex sibling (`lg:relative`)
+        // and the push-to-resize behaviour is unchanged.
+        className={`absolute inset-y-0 left-0 z-40 flex h-full shrink-0 flex-col border-r lg:relative lg:inset-auto lg:z-auto ${sidebarDragging ? "" : "transition-[width] duration-200 ease-out"}`}
         style={{
           width: collapsed ? SIDEBAR_CLOSED_W : sidebarWidth,
           borderColor: "var(--border)",
           backgroundColor: "var(--surface)",
-          // `relative` so the drag-resize handle (absolutely positioned
-          // child below) anchors here. We no longer need `sticky top-0`
-          // because the parent wrapper is locked at viewport height with
-          // overflow-hidden — nothing scrolls past the aside.
-          position: "relative",
+          // Both `absolute` (mobile) and `lg:relative` (desktop) make this a
+          // positioned ancestor, so the drag-resize handle below anchors here
+          // in either mode.
         }}
       >
         {/* Drag-to-resize handle on the right edge. Hidden when the
@@ -605,17 +610,21 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
           )}
         </div>
 
-        {/* Collapsed-mode toggle (separate row so it's reachable) */}
+        {/* Collapsed-mode toggle (separate row so it's reachable). Mirrors the
+            nav-item box (px-2 container + full-width, centered icon, py-2) so
+            its icon lines up vertically with the nav icons below it. */}
         {collapsed && (
-          <button
-            type="button"
-            onClick={toggle}
-            className="mx-2 mt-2 rounded-md p-2 transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
-            aria-label="Expand sidebar"
-            style={{ color: "var(--text-muted)" }}
-          >
-            <PanelLeftOpen size={16} />
-          </button>
+          <div className="px-2 pt-2">
+            <button
+              type="button"
+              onClick={toggle}
+              className="flex w-full items-center justify-center rounded-md py-2 transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
+              aria-label="Expand sidebar"
+              style={{ color: "var(--text-muted)" }}
+            >
+              <PanelLeftOpen size={16} />
+            </button>
+          </div>
         )}
 
         {/* Nav */}
@@ -637,6 +646,16 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
                 key={item.href}
                 href={item.href}
                 title={collapsed ? item.label : undefined}
+                onClick={() => {
+                  // On mobile, collapse the nav after picking a destination so
+                  // the page content takes over (matches the inbox People rail).
+                  if (
+                    typeof window !== "undefined" &&
+                    window.matchMedia("(max-width: 767px)").matches
+                  ) {
+                    setCollapsed(true);
+                  }
+                }}
                 className="flex items-center gap-3 rounded-md px-2.5 py-2 text-sm transition-colors"
                 style={{
                   fontWeight: active ? 600 : 500,
@@ -683,21 +702,16 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
             customer. Empty render — pure side-effect. */}
         {engineer && guard.kind === "staff" && <FifoAutoRing />}
 
-        {/* Bottom: profile. Theme triplet moved to the top (next to
-            wordmark + home button). When collapsed, we keep a single
-            ThemeTriplet here as a fallback so the user isn't locked out
-            of switching themes.
+        {/* Bottom: profile. The theme triplet lives only in the top header
+            (next to wordmark + home), which is shown when the sidebar is open —
+            so when collapsed there's no theme control here (it looked cramped
+            crammed into the icon rail).
             mb-4 lifts the chip clear of the bottom edge so it doesn't
             kiss the viewport on short screens. */}
         <div
           className="mb-4 border-t px-2 py-2"
           style={{ borderColor: "var(--border)" }}
         >
-          {collapsed && (
-            <div className="mb-1 flex justify-center">
-              <ThemeTriplet />
-            </div>
-          )}
           <ProfileButton
             email={meEmail}
             onEmailResolved={setMeEmail}
@@ -716,6 +730,18 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
+      {/* Mobile-only scrim: when the drawer is expanded on a phone it sits at
+          z-40 over the page; this dims the rest and taps-to-close. Hidden from
+          `lg` up where the sidebar is in-flow and pushes instead of overlays. */}
+      {!collapsed && (
+        <button
+          type="button"
+          aria-label="Close navigation"
+          onClick={() => setCollapsed(true)}
+          className="absolute inset-0 z-30 bg-black/30 lg:hidden"
+        />
+      )}
+
       {/* Sole scroll region. flex-1 + min-w-0 + h-full + overflow-y-auto
           is the canonical "fills remaining row width, full row height,
           scrolls own content" pattern. Routes with internal h-screen flex
@@ -724,7 +750,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
           DOM (calendar, settings, admin tables) scroll here instead of
           taking the document with them — which is exactly what kept the
           sidebar moving in the original bug. */}
-      <main className="h-full min-w-0 flex-1 overflow-y-auto">
+      <main className="h-full min-w-0 flex-1 overflow-y-auto pl-[60px] lg:pl-0">
         {profilePaneOpen && engineer && guard.kind === "staff" ? (
           <EngineerProfilePane
             userId={guard.userId}
@@ -1130,6 +1156,9 @@ const SUPERVISOR_MUTE_KEY = "relay.engineer.ring.muted.v1";
 
 function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
   const isSupervisor = !isEngineer(roles);
+  const pathname = usePathname();
+  const onSupervise =
+    !!pathname && (pathname === "/supervise" || pathname.startsWith("/supervise/"));
   const [alerts, setAlerts] = useState<AlertToast[]>([]);
   const seenRef = useRef<Set<string>>(new Set());
   // Separate dedupe set for "reassignment needed" toasts so a session can be
@@ -1144,23 +1173,25 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
   const dismiss = (id: string) =>
     setAlerts((prev) => prev.filter((a) => a.id !== id));
 
-  // Auto-dismiss non-actionable toasts (reassign / urgent-session) after 10s so
-  // they don't linger on the supervisor's screen. Escalation toasts are
-  // actionable (Acknowledge & join / Snooze) and stay until the supervisor
-  // acts. Each toast is scheduled exactly once (tracked in a ref) so a
-  // re-render never resets or duplicates its timer.
+  // Auto-dismiss toasts so they don't linger on the supervisor's screen.
+  //  • Escalation toasts PERSIST while the supervisor is off the Supervise
+  //    screen (so they can't miss a raised hand), then clear 5s after they
+  //    land on /supervise (or 5s from appearing if already there).
+  //  • Other toasts (reassign / urgent-session) clear after 10s regardless.
+  // Each toast is scheduled exactly once (tracked in a ref) — re-running on
+  // pathname change is what arms the escalation timer once they reach Supervise.
   const autoExpiredRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     for (const a of alerts) {
-      if (a.urgency === "escalation") continue;
       if (autoExpiredRef.current.has(a.id)) continue;
+      if (a.urgency === "escalation" && !onSupervise) continue; // keep persistent
       autoExpiredRef.current.add(a.id);
       setTimeout(
         () => setAlerts((prev) => prev.filter((x) => x.id !== a.id)),
-        10_000
+        a.urgency === "escalation" ? 5_000 : 10_000
       );
     }
-  }, [alerts]);
+  }, [alerts, onSupervise]);
 
   useEffect(() => {
     if (!isSupervisor) return;
@@ -1261,7 +1292,9 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
             status?: string;
           } | null;
           if (!row?.id || !row.session_id) return;
-          if (row.status !== "pending") return;
+          // session_escalations rows are 'open' when raised (not 'pending') —
+          // the old check silently dropped every escalation toast.
+          if (row.status && row.status !== "open") return;
           if (seenEscalationRef.current.has(row.id)) return;
           seenEscalationRef.current.add(row.id);
 
@@ -1313,7 +1346,9 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
         return;
       }
       setAlerts((prev) => prev.filter((a) => a.id !== toast.id));
-      router.push(`/staff/session/${toast.sessionId}`);
+      // ?join=1 unlocks the chat composer for the supervisor (and stamps the
+      // escalation joined) — same as the /supervise "Join call" button.
+      router.push(`/staff/session/${toast.sessionId}?join=1`);
     },
     [router]
   );
@@ -1321,15 +1356,14 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
   if (!isSupervisor || !alerts.length) return null;
 
   return (
-    <div className="fixed right-6 bottom-6 z-50 flex flex-col gap-2">
+    <div className="fixed left-1/2 top-4 z-50 flex -translate-x-1/2 flex-col items-center gap-2">
       {alerts.map((a) => {
         const isEscalation = a.urgency === "escalation";
-        const tintBg =
-          a.urgency === "critical" || isEscalation
-            ? CRIT_RED_SOFT
-            : URGENT_AMBER_SOFT;
         const tintFg =
           a.urgency === "critical" || isEscalation ? CRIT_RED : URGENT_AMBER;
+        // OPAQUE tinted surface (mixed over --surface, not the translucent
+        // *_SOFT rgba) so the page text behind the toast doesn't bleed through.
+        const tintBg = `color-mix(in srgb, ${tintFg} 16%, var(--surface))`;
         return (
           <div
             key={a.id}
@@ -1364,7 +1398,7 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
                     : `${a.urgency} session`}
               </div>
               {isEscalation && (
-                <div className="mt-2 flex gap-1.5">
+                <div className="mt-2 flex justify-center gap-1.5">
                   <button
                     type="button"
                     onClick={() => void acknowledgeAndJoin(a)}
@@ -1372,17 +1406,6 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
                     style={{ backgroundColor: tintFg }}
                   >
                     Acknowledge &amp; join
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => dismiss(a.id)}
-                    className="rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                    style={{
-                      borderColor: "var(--border)",
-                      color: "var(--text-muted)",
-                    }}
-                  >
-                    Snooze
                   </button>
                 </div>
               )}

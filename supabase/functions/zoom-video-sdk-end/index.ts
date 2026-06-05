@@ -17,15 +17,19 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
 };
 
-const SUPABASE_URL              = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_ANON_KEY         = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY")!;
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_ANON_KEY =
+  Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ??
+  Deno.env.get("SUPABASE_ANON_KEY")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method === "OPTIONS")
+    return new Response(null, { headers: corsHeaders });
 
   try {
     const { session_id } = await req.json();
@@ -70,17 +74,22 @@ Deno.serve(async (req) => {
     // just posts the system message so the chat card flips to ended on
     // both sides.
     const isEngineer = session.claimed_by === userId;
-    const isCustomer = (session as { customer_user_id?: string }).customer_user_id === userId;
+    const isCustomer =
+      (session as { customer_user_id?: string }).customer_user_id === userId;
     let isSupervisor = false;
     if (!isEngineer && !isCustomer) {
       const { data: roleRows } = await admin
         .from("user_role_names")
         .select("role")
         .eq("user_id", userId);
-      const roles = new Set((roleRows ?? []).map((r) => (r as { role: string }).role));
+      const roles = new Set(
+        (roleRows ?? []).map((r) => (r as { role: string }).role)
+      );
       isSupervisor =
-        roles.has("supervisor") || roles.has("pod_lead") ||
-        roles.has("ops_manager") || roles.has("admin") ||
+        roles.has("supervisor") ||
+        roles.has("pod_lead") ||
+        roles.has("ops_manager") ||
+        roles.has("admin") ||
         roles.has("super_admin");
     }
     if (!isEngineer && !isCustomer && !isSupervisor) {
@@ -109,7 +118,7 @@ Deno.serve(async (req) => {
     // flag is cleared; the other side may still be on the call.
     const update: Record<string, unknown> = {};
     if (isEngineer || isSupervisor) update.engineer_joined_at = null;
-    if (isCustomer)                  update.customer_joined_at = null;
+    if (isCustomer) update.customer_joined_at = null;
     if (Object.keys(update).length > 0) {
       await admin.from("guest_calls").update(update).eq("id", session.id);
     }
@@ -126,27 +135,37 @@ Deno.serve(async (req) => {
       .or("body.ilike.%Zoom meeting started%,body.ilike.%Zoom meeting ended%")
       .order("created_at", { ascending: false })
       .limit(2);
-    const latestStarted = (lastMsgs ?? []).find((m) => /started/i.test((m as { body: string }).body));
-    const latestEnded   = (lastMsgs ?? []).find((m) => /ended/i.test((m as { body: string }).body));
-    const shouldPost = !latestEnded ||
+    const latestStarted = (lastMsgs ?? []).find((m) =>
+      /started/i.test((m as { body: string }).body)
+    );
+    const latestEnded = (lastMsgs ?? []).find((m) =>
+      /ended/i.test((m as { body: string }).body)
+    );
+    const shouldPost =
+      !latestEnded ||
       (latestStarted &&
-       new Date((latestStarted as { created_at: string }).created_at).getTime() >
-       new Date((latestEnded as { created_at: string }).created_at).getTime());
+        new Date(
+          (latestStarted as { created_at: string }).created_at
+        ).getTime() >
+          new Date(
+            (latestEnded as { created_at: string }).created_at
+          ).getTime());
 
     if (shouldPost) {
       const { error: insErr } = await admin.from("guest_messages").insert({
         guest_call_id: session.id,
-        sender_kind:   "system",
-        sender_name:   "Relay",
-        body:          "📞 Zoom meeting ended",
+        sender_kind: "system",
+        sender_name: "Relay",
+        body: "📞 Zoom meeting ended",
       });
-      if (insErr) console.error("[zoom-video-sdk-end] insert system msg failed:", insErr);
+      if (insErr)
+        console.error("[zoom-video-sdk-end] insert system msg failed:", insErr);
     }
 
     // Audit.
     await admin.from("session_video_events").insert({
       guest_call_id: session.id,
-      kind:          endForAll ? "end_for_all" : "participant_left",
+      kind: endForAll ? "end_for_all" : "participant_left",
       actor_user_id: userId,
     });
 
@@ -164,18 +183,19 @@ Deno.serve(async (req) => {
         void fetch(`${SUPABASE_URL}/functions/v1/summarize-call`, {
           method: "POST",
           headers: {
-            Authorization:  `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ session_id: session.id }),
         });
-      } catch { /* best-effort */ }
+      } catch {
+        /* best-effort */
+      }
     }
 
-    return new Response(
-      JSON.stringify({ ok: true, end_for_all: endForAll }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
+    return new Response(JSON.stringify({ ok: true, end_for_all: endForAll }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   } catch (e) {
     return new Response(JSON.stringify({ error: String(e) }), {
       status: 500,

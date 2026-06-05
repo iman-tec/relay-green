@@ -42,14 +42,40 @@ const DEVELOPING_OPTIONS: ReadonlyArray<{
   description: string;
   emoji: string;
 }> = [
-  { value: "Website", label: "Website / web app", description: "Browser-based product, dashboard, or marketing site.", emoji: "🌐" },
-  { value: "Mobile App", label: "Mobile app", description: "iOS, Android, or cross-platform.", emoji: "📱" },
-  { value: "IoT System", label: "IoT / hardware", description: "Devices, sensors, embedded systems.", emoji: "🔌" },
-  { value: "AIML product", label: "AI / ML product", description: "Model, pipeline, or AI-first feature.", emoji: "🤖" },
+  {
+    value: "Website",
+    label: "Website / web app",
+    description: "Browser-based product, dashboard, or marketing site.",
+    emoji: "🌐",
+  },
+  {
+    value: "Mobile App",
+    label: "Mobile app",
+    description: "iOS, Android, or cross-platform.",
+    emoji: "📱",
+  },
+  {
+    value: "IoT System",
+    label: "IoT / hardware",
+    description: "Devices, sensors, embedded systems.",
+    emoji: "🔌",
+  },
+  {
+    value: "AIML product",
+    label: "AI / ML product",
+    description: "Model, pipeline, or AI-first feature.",
+    emoji: "🤖",
+  },
 ];
 
 const ACTIVE_SESSION_STATES = [
-  "queued", "assigned", "joining", "live", "grace", "ending", "expired_free",
+  "queued",
+  "assigned",
+  "joining",
+  "live",
+  "grace",
+  "ending",
+  "expired_free",
 ] as const;
 
 const TOTAL_STEPS = 4;
@@ -112,7 +138,7 @@ export function IntakeClient() {
         if (existing?.id) {
           const { data: sessRow } = await sb.rpc(
             "get_or_create_active_customer_session",
-            { _project_id: projectIdParam },
+            { _project_id: projectIdParam }
           );
           const session = (Array.isArray(sessRow) ? sessRow[0] : sessRow) as {
             id?: string;
@@ -160,7 +186,7 @@ export function IntakeClient() {
       if (!projectId) {
         const { data: created, error: projErr } = await sb.rpc(
           "create_project",
-          { _name: projectName },
+          { _name: projectName }
         );
         if (projErr) throw projErr;
         const row = Array.isArray(created)
@@ -187,7 +213,7 @@ export function IntakeClient() {
 
       const { data: callData, error: rpcErr } = await sb.rpc(
         "get_or_create_active_customer_session",
-        { _project_id: projectId },
+        { _project_id: projectId }
       );
       if (rpcErr) {
         if ((rpcErr.message ?? "").includes("NO_ENTITLEMENT")) {
@@ -252,7 +278,15 @@ export function IntakeClient() {
       setError(e instanceof Error ? e.message : "Could not start matching");
       setBusy(false);
     }
-  }, [router, projectIdParam, newProjectName, techComfort, stack, developing, urgency]);
+  }, [
+    router,
+    projectIdParam,
+    newProjectName,
+    techComfort,
+    stack,
+    developing,
+    urgency,
+  ]);
 
   const canAdvance = useMemo(() => {
     if (step === 1) return techComfort !== null;
@@ -313,7 +347,7 @@ export function IntakeClient() {
           type="button"
           onClick={() => router.replace("/room")}
           aria-label="Close intake"
-          className="absolute right-4 top-4 inline-flex size-8 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-raised)] hover:text-[var(--text)]"
+          className="absolute top-4 right-4 inline-flex size-8 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-raised)] hover:text-[var(--text)]"
         >
           <X size={16} />
         </button>
@@ -321,7 +355,7 @@ export function IntakeClient() {
         <CardBody className="flex flex-col gap-6 px-6 py-8 sm:px-8">
           {/* Step pill + progress */}
           <div className="flex flex-col items-center gap-3">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--primary-tint)] px-3 py-1 font-mono text-[11px] uppercase tracking-[0.18em] text-[var(--primary-hover)]">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--primary-tint)] px-3 py-1 font-mono text-[11px] tracking-[0.18em] text-[var(--primary-hover)] uppercase">
               Question {displayStep} of {totalQuestions}
             </span>
             <ProgressSegments current={displayStep} total={totalQuestions} />
@@ -330,7 +364,7 @@ export function IntakeClient() {
           {/* Headline + subline */}
           <header className="text-center">
             <Headline step={step} />
-            <p className="mt-2 max-w-md mx-auto text-sm leading-relaxed text-[var(--text-muted)]">
+            <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-[var(--text-muted)]">
               {subtitleFor(step)}
             </p>
           </header>
@@ -390,33 +424,34 @@ function Headline({ step }: { step: number }) {
   // One italic green word per step — matches the editorial demo.
   if (step === 1) {
     return (
-      <h1 className="font-serif text-3xl font-medium leading-tight text-[var(--text)] sm:text-4xl">
-        How <em className="not-italic italic text-[var(--primary)]">comfortable</em>{" "}
+      <h1 className="font-serif text-3xl leading-tight font-medium text-[var(--text)] sm:text-4xl">
+        How{" "}
+        <em className="text-[var(--primary)] italic not-italic">comfortable</em>{" "}
         are you with code?
       </h1>
     );
   }
   if (step === 2) {
     return (
-      <h1 className="font-serif text-3xl font-medium leading-tight text-[var(--text)] sm:text-4xl">
+      <h1 className="font-serif text-3xl leading-tight font-medium text-[var(--text)] sm:text-4xl">
         What are you{" "}
-        <em className="not-italic italic text-[var(--primary)]">building</em>{" "}
+        <em className="text-[var(--primary)] italic not-italic">building</em>{" "}
         with?
       </h1>
     );
   }
   if (step === 3) {
     return (
-      <h1 className="font-serif text-3xl font-medium leading-tight text-[var(--text)] sm:text-4xl">
+      <h1 className="font-serif text-3xl leading-tight font-medium text-[var(--text)] sm:text-4xl">
         What kind of{" "}
-        <em className="not-italic italic text-[var(--primary)]">project</em>{" "}
-        is this?
+        <em className="text-[var(--primary)] italic not-italic">project</em> is
+        this?
       </h1>
     );
   }
   return (
-    <h1 className="font-serif text-3xl font-medium leading-tight text-[var(--text)] sm:text-4xl">
-      How <em className="not-italic italic text-[var(--primary)]">soon</em> do
+    <h1 className="font-serif text-3xl leading-tight font-medium text-[var(--text)] sm:text-4xl">
+      How <em className="text-[var(--primary)] italic not-italic">soon</em> do
       you need someone?
     </h1>
   );
@@ -430,7 +465,13 @@ function subtitleFor(step: number): string {
   return "We'll line your engineer up accordingly.";
 }
 
-function ProgressSegments({ current, total }: { current: number; total: number }) {
+function ProgressSegments({
+  current,
+  total,
+}: {
+  current: number;
+  total: number;
+}) {
   return (
     <div
       className="flex items-center gap-1.5"
@@ -446,7 +487,7 @@ function ProgressSegments({ current, total }: { current: number; total: number }
           aria-hidden
           className={cn(
             "h-1.5 w-8 rounded-full transition-colors",
-            i < current ? "bg-[var(--primary)]" : "bg-[var(--surface-raised)]",
+            i < current ? "bg-[var(--primary)]" : "bg-[var(--surface-raised)]"
           )}
         />
       ))}
@@ -484,7 +525,7 @@ function RadioCardGroup<T extends string>({
               "group flex w-full items-start gap-3 rounded-xl border px-4 py-3 text-left transition-colors",
               selected
                 ? "border-[var(--primary)] bg-[var(--primary-tint)]"
-                : "border-[var(--border)] bg-[var(--surface)] hover:border-[var(--border-strong)]",
+                : "border-[var(--border)] bg-[var(--surface)] hover:border-[var(--border-strong)]"
             )}
           >
             <span aria-hidden className="mt-0.5 text-xl leading-none">
@@ -504,7 +545,7 @@ function RadioCardGroup<T extends string>({
                 "mt-1 inline-flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
                 selected
                   ? "border-[var(--primary)] bg-[var(--primary)] text-white"
-                  : "border-[var(--border-strong)] bg-[var(--surface)]",
+                  : "border-[var(--border-strong)] bg-[var(--surface)]"
               )}
             >
               {selected && <Check size={12} strokeWidth={3} />}
@@ -538,13 +579,13 @@ function StackChipGroups({
     <div className="flex flex-col gap-5">
       {STACK_OPTIONS.map((group) => (
         <section key={group.category}>
-          <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">
+          <div className="mb-2 text-[11px] font-medium tracking-[0.18em] text-[var(--text-muted)] uppercase">
             {group.label}
           </div>
           <div className="flex flex-wrap gap-1.5">
             {group.options.map((opt) => {
               const selected = stack[group.category as StackCat].some(
-                (x) => x.toLowerCase() === opt.toLowerCase(),
+                (x) => x.toLowerCase() === opt.toLowerCase()
               );
               return (
                 <button
@@ -556,7 +597,7 @@ function StackChipGroups({
                     "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors",
                     selected
                       ? "border-[var(--primary)] bg-[var(--primary-tint)] text-[var(--primary-hover)]"
-                      : "border-[var(--border)] bg-[var(--surface)] text-[var(--text)] hover:border-[var(--border-strong)]",
+                      : "border-[var(--border)] bg-[var(--surface)] text-[var(--text)] hover:border-[var(--border-strong)]"
                   )}
                 >
                   {selected && <Check size={12} strokeWidth={3} />}

@@ -14,7 +14,7 @@ import { requireSuperAdmin } from "@/lib/admin-auth";
 import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 type RouteCtx = { params: Promise<{ id: string; deptId: string }> };
 
@@ -31,15 +31,20 @@ async function loadDept(admin: SupabaseClient, orgId: string, deptId: string) {
 
 export async function PATCH(request: Request, { params }: RouteCtx) {
   const gate = await requireSuperAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin } = gate;
   const { id: orgId, deptId } = await params;
 
   const dept = await loadDept(admin, orgId, deptId);
-  if (!dept) return NextResponse.json({ error: "Department not found in this org." }, { status: 404 });
+  if (!dept)
+    return NextResponse.json(
+      { error: "Department not found in this org." },
+      { status: 404 }
+    );
 
   const { name, status } = (await request.json().catch(() => ({}))) as {
-    name?:   string;
+    name?: string;
     status?: string;
   };
   const patch: Record<string, unknown> = {};
@@ -57,7 +62,10 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
     .maybeSingle();
   if (error) {
     if ((error as { code?: string }).code === "23505") {
-      return NextResponse.json({ error: "A department with this name already exists." }, { status: 409 });
+      return NextResponse.json(
+        { error: "A department with this name already exists." },
+        { status: 409 }
+      );
     }
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
@@ -66,12 +74,31 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
 
 export async function DELETE(_request: Request, { params }: RouteCtx) {
   const gate = await requireSuperAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin } = gate;
   const { id: orgId, deptId } = await params;
 
   const dept = await loadDept(admin, orgId, deptId);
-  if (!dept) return NextResponse.json({ error: "Department not found in this org." }, { status: 404 });
+  if (!dept)
+    return NextResponse.json(
+      { error: "Department not found in this org." },
+      { status: 404 }
+    );
+
+  // Drain the department's minutes (member remainders → dept pool →
+  // enterprise pool) BEFORE the row is deleted, or the whole pool would
+  // vanish with it (see 20260604120000_current_grant_ledger.sql).
+  //
+  // PGRST202 = the RPC isn't deployed yet (migration not applied). Fall
+  // back to the legacy delete-without-refund rather than blocking.
+  const { error: relErr } = await admin.rpc("release_department_minutes", { _dept_id: deptId });
+  if (relErr) {
+    const missing = (relErr as { code?: string }).code === "PGRST202"
+      || relErr.message.includes("Could not find the function");
+    if (!missing) return NextResponse.json({ error: relErr.message }, { status: 400 });
+    console.warn("[admin/dept-delete] release_department_minutes missing — apply 20260604120000_current_grant_ledger.sql");
+  }
 
   // Drain the department's minutes (member remainders → dept pool →
   // enterprise pool) BEFORE the row is deleted, or the whole pool would
@@ -88,7 +115,9 @@ export async function DELETE(_request: Request, { params }: RouteCtx) {
   }
 
   const { data: memberRows } = await admin
-    .from("profiles").select("id").eq("department_id", deptId);
+    .from("profiles")
+    .select("id")
+    .eq("department_id", deptId);
   const memberIds = ((memberRows ?? []) as { id: string }[]).map((m) => m.id);
   if (memberIds.length) {
     await admin
@@ -96,14 +125,22 @@ export async function DELETE(_request: Request, { params }: RouteCtx) {
       .update({ department_id: null, client_type: "client" })
       .in("id", memberIds);
     const { data: roleRow } = await admin
-      .from("roles").select("id").eq("name", ROLE.department_admin).maybeSingle();
+      .from("roles")
+      .select("id")
+      .eq("name", ROLE.department_admin)
+      .maybeSingle();
     const roleId = (roleRow as { id: string } | null)?.id;
     if (roleId) {
-      await admin.from("user_roles").delete().in("user_id", memberIds).eq("role_id", roleId);
+      await admin
+        .from("user_roles")
+        .delete()
+        .in("user_id", memberIds)
+        .eq("role_id", roleId);
     }
   }
 
   const { error } = await admin.from("departments").delete().eq("id", deptId);
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  if (error)
+    return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json({ ok: true });
 }

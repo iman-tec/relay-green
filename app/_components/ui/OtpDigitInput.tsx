@@ -70,11 +70,14 @@ export function OtpDigitInput({
     }
   }, [autoFocus]);
 
-  const focusIndex = useCallback((i: number) => {
-    const target = refs.current[Math.max(0, Math.min(length - 1, i))];
-    target?.focus();
-    target?.select();
-  }, [length]);
+  const focusIndex = useCallback(
+    (i: number) => {
+      const target = refs.current[Math.max(0, Math.min(length - 1, i))];
+      target?.focus();
+      target?.select();
+    },
+    [length]
+  );
 
   const writeAt = useCallback(
     (index: number, ch: string) => {
@@ -86,7 +89,7 @@ export function OtpDigitInput({
         onComplete(joined);
       }
     },
-    [digits, length, onChange, onComplete],
+    [digits, length, onChange, onComplete]
   );
 
   const handleChange = (index: number, raw: string) => {
@@ -144,8 +147,8 @@ export function OtpDigitInput({
     >
       <legend
         className={cn(
-          "text-sm font-medium text-[var(--text)] mb-0.5",
-          srLabelOnly && "sr-only",
+          "mb-0.5 text-sm font-medium text-[var(--text)]",
+          srLabelOnly && "sr-only"
         )}
       >
         {label}
@@ -158,7 +161,7 @@ export function OtpDigitInput({
           // squares don't become cartoonish; the inline grid-template
           // adapts to whatever `length` prop is in use (default 8).
           "grid w-full max-w-md gap-1.5 sm:gap-2",
-          focused && "transition-[gap] duration-[var(--motion-fast)]",
+          focused && "transition-[gap] duration-[var(--motion-fast)]"
         )}
         style={{
           gridTemplateColumns: `repeat(${length}, minmax(0, 1fr))`,
@@ -193,9 +196,9 @@ export function OtpDigitInput({
               // `min-w-0` lets the grid actually shrink the cells on
               // tight viewports; without it the inputs would refuse to
               // narrow past their intrinsic width and overflow the row.
-              "w-full min-w-0 aspect-square text-center text-lg sm:text-xl font-mono",
+              "aspect-square w-full min-w-0 text-center font-mono text-lg sm:text-xl",
               "bg-[var(--surface-raised)] text-[var(--text)] caret-[var(--primary)]",
-              "border-2 border-[var(--border-strong)] rounded-lg outline-none",
+              "rounded-lg border-2 border-[var(--border-strong)] outline-none",
               // Hover: nudge the border darker so an empty field reveals
               // itself as clickable without a focus event.
               "hover:border-[color-mix(in_srgb,var(--text)_28%,transparent)]",
@@ -204,10 +207,10 @@ export function OtpDigitInput({
               // produce a square halo against the rounded edge.
               "focus-visible:border-[var(--primary)] focus-visible:bg-[var(--surface)]",
               "transition-[border-color,background-color] duration-[var(--motion-fast)]",
-              "disabled:opacity-50 disabled:cursor-not-allowed",
+              "disabled:cursor-not-allowed disabled:opacity-50",
               // Filled state: white interior so the typed digit pops.
               d && "border-[var(--text)] bg-[var(--surface)]",
-              error && "border-[var(--risk)]",
+              error && "border-[var(--risk)]"
             )}
           />
         ))}

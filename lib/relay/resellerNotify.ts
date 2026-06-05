@@ -13,11 +13,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type ClientOnboardedArgs = {
-  resellerId:     string;
-  enterpriseId:   string;
+  resellerId: string;
+  enterpriseId: string;
   enterpriseName: string;
   /** User who triggered the action — excluded from the fan-out so they don't notify themselves. */
-  actorUserId?:   string | null;
+  actorUserId?: string | null;
 };
 
 /**
@@ -32,7 +32,7 @@ export type ClientOnboardedArgs = {
  */
 export async function notifyResellerClientOnboarded(
   admin: SupabaseClient,
-  args: ClientOnboardedArgs,
+  args: ClientOnboardedArgs
 ): Promise<void> {
   try {
     const { data: prefs } = await admin
@@ -55,31 +55,31 @@ export async function notifyResellerClientOnboarded(
     if (ids.length === 0) return;
 
     const title = `New client onboarded: ${args.enterpriseName}`;
-    const body  = "They've been added to your portfolio.";
+    const body = "They've been added to your portfolio.";
 
     await Promise.all(
       ids.map(async (userId) => {
         try {
           await admin.rpc("create_notification", {
-            _user_id:    userId,
+            _user_id: userId,
             _request_id: null,
-            _kind:       "client_onboarded",
-            _title:      title,
-            _body:       body,
+            _kind: "client_onboarded",
+            _title: title,
+            _body: body,
           });
         } catch (err) {
           console.warn(
             "[resellerNotify] create_notification failed for user",
             userId,
-            err instanceof Error ? err.message : err,
+            err instanceof Error ? err.message : err
           );
         }
-      }),
+      })
     );
   } catch (err) {
     console.warn(
       "[resellerNotify] client_onboarded fan-out failed:",
-      err instanceof Error ? err.message : err,
+      err instanceof Error ? err.message : err
     );
   }
 }

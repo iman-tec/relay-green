@@ -14,13 +14,14 @@ import { requireEnterpriseAdmin } from "@/lib/enterprise-auth";
 import { banUsers, unbanUser } from "@/lib/auth-ban";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: Request, { params }: RouteCtx) {
   const gate = await requireEnterpriseAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin, orgId } = gate;
 
   const { id } = await params;
@@ -50,8 +51,11 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
         .eq("department_id", id);
       const memberIds = (members ?? []).map((m: { id: string }) => m.id);
 
-      const { error } = await admin.rpc("deactivate_department", { _dept_id: id });
-      if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+      const { error } = await admin.rpc("deactivate_department", {
+        _dept_id: id,
+      });
+      if (error)
+        return NextResponse.json({ error: error.message }, { status: 400 });
 
       await banUsers(admin, memberIds);
       return NextResponse.json({ ok: true, status: "suspended" });
@@ -61,7 +65,8 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
         .from("departments")
         .update({ status: "active" })
         .eq("id", id);
-      if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+      if (error)
+        return NextResponse.json({ error: error.message }, { status: 400 });
       // Reactivating a dept only restores the dept-admin's login. Employees
       // remain suspended until the dept admin reactivates each one — the
       // spec doesn't cascade reactivation, only deactivation.
@@ -70,7 +75,8 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
         .select("admin_user_id")
         .eq("id", id)
         .maybeSingle();
-      const adminId = (deptRow as { admin_user_id: string | null } | null)?.admin_user_id;
+      const adminId = (deptRow as { admin_user_id: string | null } | null)
+        ?.admin_user_id;
       if (adminId) await unbanUser(admin, adminId);
       return NextResponse.json({ ok: true, status: "active" });
     }
@@ -85,7 +91,10 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
   const { error } = await admin.from("departments").update(update).eq("id", id);
   if (error) {
     if ((error as { code?: string }).code === "23505") {
-      return NextResponse.json({ error: "Another department already uses this name." }, { status: 409 });
+      return NextResponse.json(
+        { error: "Another department already uses this name." },
+        { status: 409 }
+      );
     }
     return NextResponse.json({ error: error.message }, { status: 400 });
   }

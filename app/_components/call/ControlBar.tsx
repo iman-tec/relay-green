@@ -1,6 +1,15 @@
 "use client";
 
-import { Mic, MicOff, Video, VideoOff, MonitorUp, MonitorX, PhoneOff, MessageSquare } from "lucide-react";
+import {
+  Mic,
+  MicOff,
+  Video,
+  VideoOff,
+  MonitorUp,
+  MonitorX,
+  PhoneOff,
+  MessageSquare,
+} from "lucide-react";
 import type { Participant } from "@/lib/video/useZoomCall";
 import { ConnectionPill } from "./ConnectionPill";
 
@@ -37,9 +46,19 @@ function pillStyle(active: boolean): React.CSSProperties {
 }
 
 export function ControlBar({
-  self, isHost, sharing, someoneElseSharing = false, sharerName,
-  showChatToggle, chatOpen, networkQuality,
-  onToggleMic, onToggleCamera, onToggleShare, onToggleChat, onLeave,
+  self,
+  isHost,
+  sharing,
+  someoneElseSharing = false,
+  sharerName,
+  showChatToggle,
+  chatOpen,
+  networkQuality,
+  onToggleMic,
+  onToggleCamera,
+  onToggleShare,
+  onToggleChat,
+  onLeave,
 }: Props) {
   const muted = !!self?.audio.muted;
   const camOff = !self?.video.on;
@@ -112,7 +131,11 @@ export function ControlBar({
         <button
           type="button"
           className={BTN_BASE}
-          style={{ borderColor: "var(--risk)", background: "var(--risk)", color: "#fff" }}
+          style={{
+            borderColor: "var(--risk)",
+            background: "var(--risk)",
+            color: "#fff",
+          }}
           onClick={onLeave}
           title={isHost ? "End call for everyone" : "Leave call"}
         >

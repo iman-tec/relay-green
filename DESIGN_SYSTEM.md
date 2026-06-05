@@ -14,26 +14,26 @@ not over it.
 
 ## Color discipline
 
-| Token | Hex / Source | Meaning | Where it appears |
-|---|---|---|---|
-| `--background` | `#2c2a26` | Page canvas | `<body>` only. |
-| `--surface` | `#1f1e1b` | First card layer | Cards, modals, panels. |
-| `--surface-raised` | `#25241f` | Second card layer | Cards on top of cards (e.g. session card inside a Card). |
-| `--border` | `#3a3833` | Hairline | All container borders. |
-| `--border-strong` | `#4a4842` | Hover / focus hairline | Inputs on focus, hovered cards. |
-| `--text` | `#f5f4ee` | Body text | Default. |
-| `--text-muted` | `#a6a29b` | Secondary metadata | "X min ago", helper text, captions. |
-| `--text-faint` | `#777268` | Tertiary / placeholders | Placeholder text, disabled labels. |
-| `--primary` | `#d97757` (Claude coral) | **Primary CTA. One per screen.** | `Button variant="primary"`. |
-| `--primary-hover` | `#c66645` | Hover/active for primary CTA | (auto in Button). |
-| `--primary-soft` | 14% coral tint | Selected chip background, focus ring | `Chip` active, focus rings. |
-| `--green-dot` | `#3dcb7e` | **Launcher dot + healthy/ok status.** Scarce. | `Button variant="launcher"`, focus outlines, `StatusBadge tone="ok"`, `HealthBar` healthy. |
-| `--green-soft` | 14% green tint | Healthy backgrounds | `StatusBadge tone="ok"`. |
-| `--ok` / `--ok-soft` | = green-dot family | Semantic ok | `StatusBadge`, `HealthBar`. |
-| `--warn` / `--warn-soft` | `#d4a017` (amber) | Urgent / shaky | `StatusBadge tone="warn"`, `HealthBar` shaky. |
-| `--risk` / `--risk-soft` | `#c84a3a` | Critical / at-risk / destructive | `StatusBadge tone="risk"`, `Button variant="danger"`, `HealthBar` at-risk. |
-| `--scrim` | `rgba(0,0,0,.62)` | Modal backdrop | `Modal`. |
-| `--accent` | alias → `--primary` | Generic "the brand action color" | Use only where coral is contextually correct. |
+| Token                    | Hex / Source             | Meaning                                       | Where it appears                                                                           |
+| ------------------------ | ------------------------ | --------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `--background`           | `#2c2a26`                | Page canvas                                   | `<body>` only.                                                                             |
+| `--surface`              | `#1f1e1b`                | First card layer                              | Cards, modals, panels.                                                                     |
+| `--surface-raised`       | `#25241f`                | Second card layer                             | Cards on top of cards (e.g. session card inside a Card).                                   |
+| `--border`               | `#3a3833`                | Hairline                                      | All container borders.                                                                     |
+| `--border-strong`        | `#4a4842`                | Hover / focus hairline                        | Inputs on focus, hovered cards.                                                            |
+| `--text`                 | `#f5f4ee`                | Body text                                     | Default.                                                                                   |
+| `--text-muted`           | `#a6a29b`                | Secondary metadata                            | "X min ago", helper text, captions.                                                        |
+| `--text-faint`           | `#777268`                | Tertiary / placeholders                       | Placeholder text, disabled labels.                                                         |
+| `--primary`              | `#d97757` (Claude coral) | **Primary CTA. One per screen.**              | `Button variant="primary"`.                                                                |
+| `--primary-hover`        | `#c66645`                | Hover/active for primary CTA                  | (auto in Button).                                                                          |
+| `--primary-soft`         | 14% coral tint           | Selected chip background, focus ring          | `Chip` active, focus rings.                                                                |
+| `--green-dot`            | `#3dcb7e`                | **Launcher dot + healthy/ok status.** Scarce. | `Button variant="launcher"`, focus outlines, `StatusBadge tone="ok"`, `HealthBar` healthy. |
+| `--green-soft`           | 14% green tint           | Healthy backgrounds                           | `StatusBadge tone="ok"`.                                                                   |
+| `--ok` / `--ok-soft`     | = green-dot family       | Semantic ok                                   | `StatusBadge`, `HealthBar`.                                                                |
+| `--warn` / `--warn-soft` | `#d4a017` (amber)        | Urgent / shaky                                | `StatusBadge tone="warn"`, `HealthBar` shaky.                                              |
+| `--risk` / `--risk-soft` | `#c84a3a`                | Critical / at-risk / destructive              | `StatusBadge tone="risk"`, `Button variant="danger"`, `HealthBar` at-risk.                 |
+| `--scrim`                | `rgba(0,0,0,.62)`        | Modal backdrop                                | `Modal`.                                                                                   |
+| `--accent`               | alias → `--primary`      | Generic "the brand action color"              | Use only where coral is contextually correct.                                              |
 
 ### Forbidden
 
@@ -47,11 +47,11 @@ not over it.
 
 ## Typography
 
-| Family | Token | Use |
-|---|---|---|
+| Family         | Token          | Use                                                          |
+| -------------- | -------------- | ------------------------------------------------------------ |
 | Source Serif 4 | `--font-serif` | Page titles, hero headlines, card titles. Editorial moments. |
-| Inter | `--font-sans` | All UI text, body, buttons, inputs, labels. |
-| JetBrains Mono | `--font-mono` | Code, OTP digits, IDs. |
+| Inter          | `--font-sans`  | All UI text, body, buttons, inputs, labels.                  |
+| JetBrains Mono | `--font-mono`  | Code, OTP digits, IDs.                                       |
 
 Scale:
 
@@ -64,11 +64,11 @@ Scale:
 
 ## Motion
 
-| Token | Duration | Use |
-|---|---|---|
-| `--motion-fast` | 150ms | Buttons, inputs, hovers. |
-| `--motion-med` | 240ms | Modal entry, page reveals. |
-| `--motion-slow` | 320ms | Hero/empty-state staggers. |
+| Token           | Duration | Use                        |
+| --------------- | -------- | -------------------------- |
+| `--motion-fast` | 150ms    | Buttons, inputs, hovers.   |
+| `--motion-med`  | 240ms    | Modal entry, page reveals. |
+| `--motion-slow` | 320ms    | Hero/empty-state staggers. |
 
 Living motion (`data-relay-pulse` / `relay-pulse-ok` keyframe) is reserved
 for: the launcher CTA, the ringing-state surface, the live call status.
@@ -140,7 +140,7 @@ code, numeric keyboard on mobile, fires `onComplete` when full.
   options={AI_TOOLS}
   value={aiTools}
   onChange={setAiTools}
-  multi              // <-- step 2 multi-select fix lands by passing this
+  multi // <-- step 2 multi-select fix lands by passing this
   label="AI tools you use"
 />
 ```
@@ -199,7 +199,9 @@ Renders label + percentage + colored fill. Used on Supervise board cards.
   title="Real engineers, ninety seconds away."
   body="A real engineer joins your chat + Zoom in ~90 seconds."
   action={
-    <Button variant="launcher" size="xl">Get an engineer now</Button>
+    <Button variant="launcher" size="xl">
+      Get an engineer now
+    </Button>
   }
 />
 ```
@@ -213,7 +215,11 @@ panel, Supervise tab empty states.
 <SectionHeader
   title="Pod GATEWAY-ANGULAR"
   subtitle="Engineers under your watch"
-  right={<Button variant="ghost" size="sm">Export</Button>}
+  right={
+    <Button variant="ghost" size="sm">
+      Export
+    </Button>
+  }
 />
 ```
 
@@ -243,12 +249,14 @@ const [open, setOpen] = useState(false);
       <Button variant="secondary" onClick={() => setOpen(false)}>
         Keep going
       </Button>
-      <Button variant="danger" onClick={confirm}>End session</Button>
+      <Button variant="danger" onClick={confirm}>
+        End session
+      </Button>
     </>
   }
 >
   Are you sure you want to end the session now?
-</Modal>
+</Modal>;
 ```
 
 `role="dialog"`, focus-trap, ESC, scrim-click close, body-scroll lock,
@@ -379,15 +387,15 @@ import {
 
 ## Anti-patterns (do NOT do)
 
-| Don't | Do |
-|---|---|
-| `style={{ background: "#3f5c2e" }}` | `<Button variant="primary">` |
-| `<input placeholder="Email" />` | `<Input label="Email" type="email" autoComplete="email" />` |
-| `<button className="rounded px-2 py-1 text-[11px] bg-green-700">Join</button>` | `<Button variant="launcher">Join Zoom call</Button>` |
-| Color-only status (green dot, no text) | `<StatusBadge tone="ok">Live</StatusBadge>` |
-| Ad-hoc modal with no ESC / focus trap | `<Modal open onClose=… title=… footer=…>` |
-| `text-[10px]` body | `text-sm` minimum; ≥12px in product surfaces |
-| Emoji icons | Lucide / `StatusBadge` glyphs |
+| Don't                                                                          | Do                                                          |
+| ------------------------------------------------------------------------------ | ----------------------------------------------------------- |
+| `style={{ background: "#3f5c2e" }}`                                            | `<Button variant="primary">`                                |
+| `<input placeholder="Email" />`                                                | `<Input label="Email" type="email" autoComplete="email" />` |
+| `<button className="rounded px-2 py-1 text-[11px] bg-green-700">Join</button>` | `<Button variant="launcher">Join Zoom call</Button>`        |
+| Color-only status (green dot, no text)                                         | `<StatusBadge tone="ok">Live</StatusBadge>`                 |
+| Ad-hoc modal with no ESC / focus trap                                          | `<Modal open onClose=… title=… footer=…>`                   |
+| `text-[10px]` body                                                             | `text-sm` minimum; ≥12px in product surfaces                |
+| Emoji icons                                                                    | Lucide / `StatusBadge` glyphs                               |
 
 ---
 

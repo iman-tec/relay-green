@@ -16,12 +16,12 @@ export function Drawer({
   footer,
   width = 440,
 }: {
-  open:     boolean;
-  onClose:  () => void;
-  title:    string;
+  open: boolean;
+  onClose: () => void;
+  title: string;
   children: React.ReactNode;
-  footer?:  React.ReactNode;
-  width?:   number;
+  footer?: React.ReactNode;
+  width?: number;
 }) {
   const dialogRef = useOverlayDismiss<HTMLElement>(onClose, open);
 
@@ -43,15 +43,18 @@ export function Drawer({
         className="absolute top-0 right-0 flex h-full flex-col shadow-2xl"
         style={{
           width,
-          background:  "var(--surface)",
-          borderLeft:  "1px solid var(--border)",
+          background: "var(--surface)",
+          borderLeft: "1px solid var(--border)",
         }}
       >
         <header
           className="flex shrink-0 items-center justify-between border-b px-5 py-3.5"
           style={{ borderColor: "var(--border)" }}
         >
-          <h2 className="text-sm font-semibold" style={{ color: "var(--text)" }}>
+          <h2
+            className="text-sm font-semibold"
+            style={{ color: "var(--text)" }}
+          >
             {title}
           </h2>
           <button

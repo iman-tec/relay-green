@@ -31,10 +31,12 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const SENDGRID_API_KEY = Deno.env.get("SENDGRID_API_KEY") ?? "";
-const FROM = Deno.env.get("MORNING_BRIEF_FROM") ?? "Relay Ops <ops@relay.green>";
+const FROM =
+  Deno.env.get("MORNING_BRIEF_FROM") ?? "Relay Ops <ops@relay.green>";
 const OPS_TO = Deno.env.get("MORNING_BRIEF_OPS_TO") ?? "";
 
-const OPEN_HOUR = 8, CLOSE_HOUR = 22;
+const OPEN_HOUR = 8,
+  CLOSE_HOUR = 22;
 
 // Parse "Name <email>" (or a bare email) into SendGrid's { email, name } shape.
 function parseFrom(s: string): { email: string; name?: string } {
@@ -45,12 +47,17 @@ function parseFrom(s: string): { email: string; name?: string } {
 
 async function sendEmail(to: string, subject: string, html: string) {
   if (!SENDGRID_API_KEY) {
-    console.log(`[morning-brief] (no SENDGRID_API_KEY) would email ${to}: ${subject}`);
+    console.log(
+      `[morning-brief] (no SENDGRID_API_KEY) would email ${to}: ${subject}`
+    );
     return;
   }
   const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
     method: "POST",
-    headers: { Authorization: `Bearer ${SENDGRID_API_KEY}`, "Content-Type": "application/json" },
+    headers: {
+      Authorization: `Bearer ${SENDGRID_API_KEY}`,
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({
       personalizations: [{ to: [{ email: to }] }],
       from: parseFrom(FROM),
@@ -59,30 +66,50 @@ async function sendEmail(to: string, subject: string, html: string) {
     }),
   });
   // SendGrid returns 202 Accepted on success.
-  if (!res.ok) console.error(`[morning-brief] email to ${to} failed: ${res.status} ${await res.text()}`);
+  if (!res.ok)
+    console.error(
+      `[morning-brief] email to ${to} failed: ${res.status} ${await res.text()}`
+    );
 }
 
 Deno.serve(async () => {
-  const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
+  const admin = createClient(SUPABASE_URL, SERVICE_KEY, {
+    auth: { persistSession: false },
+  });
   const now = new Date();
   const since24 = new Date(now.getTime() - 24 * 3_600_000).toISOString();
 
   // Pods + their supervisors + engineers.
   const { data: pods } = await admin.from("pods").select("id, name");
-  const { data: members } = await admin.from("pod_members").select("pod_id, user_id, pod_role");
+  const { data: members } = await admin
+    .from("pod_members")
+    .select("pod_id, user_id, pod_role");
   const supByPod = new Map<string, string[]>();
   const engByPod = new Map<string, string[]>();
-  for (const m of (members ?? []) as { pod_id: string; user_id: string; pod_role: string }[]) {
-    const map = m.pod_role === "supervisor" ? supByPod : m.pod_role === "engineer" ? engByPod : null;
+  for (const m of (members ?? []) as {
+    pod_id: string;
+    user_id: string;
+    pod_role: string;
+  }[]) {
+    const map =
+      m.pod_role === "supervisor"
+        ? supByPod
+        : m.pod_role === "engineer"
+          ? engByPod
+          : null;
     if (!map) continue;
     if (!map.has(m.pod_id)) map.set(m.pod_id, []);
     map.get(m.pod_id)!.push(m.user_id);
   }
 
   // Auth emails for supervisors.
-  const { data: authList } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  const { data: authList } = await admin.auth.admin.listUsers({
+    page: 1,
+    perPage: 1000,
+  });
   const emailById = new Map<string, string>();
-  for (const u of authList?.users ?? []) if (u.id && u.email) emailById.set(u.id, u.email);
+  for (const u of authList?.users ?? [])
+    if (u.id && u.email) emailById.set(u.id, u.email);
 
   let sent = 0;
   for (const pod of (pods ?? []) as { id: string; name: string }[]) {
@@ -92,25 +119,59 @@ Deno.serve(async () => {
 
     // Overnight escalations.
     const { data: escs } = engIds.length
-      ? await admin.from("session_escalations").select("reason, status, created_at").in("engineer_user_id", engIds).gte("created_at", since24)
+      ? await admin
+          .from("session_escalations")
+          .select("reason, status, created_at")
+          .in("engineer_user_id", engIds)
+          .gte("created_at", since24)
       : { data: [] };
     // Ended sessions awaiting review (no final sentiment yet).
     const { data: ended } = engIds.length
-      ? await admin.from("guest_calls").select("id").in("claimed_by", engIds).eq("status", "ended").is("final_sentiment_score", null).gte("ended_at", since24)
+      ? await admin
+          .from("guest_calls")
+          .select("id")
+          .in("claimed_by", engIds)
+          .eq("status", "ended")
+          .is("final_sentiment_score", null)
+          .gte("ended_at", since24)
       : { data: [] };
     // Next-24h coverage: tomorrow's weekday windows minus holidays.
     const tomorrow = new Date(now.getTime() + 86_400_000);
     const dateStr = tomorrow.toISOString().slice(0, 10);
     const weekday = tomorrow.getUTCDay();
     const [{ data: wins }, { data: hols }] = await Promise.all([
-      engIds.length ? admin.from("engineer_availability_windows").select("engineer_user_id, start_minute, end_minute").in("engineer_user_id", engIds).eq("weekday", weekday) : Promise.resolve({ data: [] }),
-      engIds.length ? admin.from("engineer_holidays").select("engineer_user_id").in("engineer_user_id", engIds).eq("holiday_date", dateStr) : Promise.resolve({ data: [] }),
+      engIds.length
+        ? admin
+            .from("engineer_availability_windows")
+            .select("engineer_user_id, start_minute, end_minute")
+            .in("engineer_user_id", engIds)
+            .eq("weekday", weekday)
+        : Promise.resolve({ data: [] }),
+      engIds.length
+        ? admin
+            .from("engineer_holidays")
+            .select("engineer_user_id")
+            .in("engineer_user_id", engIds)
+            .eq("holiday_date", dateStr)
+        : Promise.resolve({ data: [] }),
     ]);
-    const onHoliday = new Set((hols ?? []).map((h: { engineer_user_id: string }) => h.engineer_user_id));
+    const onHoliday = new Set(
+      (hols ?? []).map((h: { engineer_user_id: string }) => h.engineer_user_id)
+    );
     const gaps: string[] = [];
     for (let h = OPEN_HOUR; h < CLOSE_HOUR; h++) {
-      const covered = ((wins ?? []) as { engineer_user_id: string; start_minute: number; end_minute: number }[])
-        .some((w) => !onHoliday.has(w.engineer_user_id) && w.start_minute < (h + 1) * 60 && w.end_minute > h * 60);
+      const covered = (
+        (wins ?? []) as {
+          engineer_user_id: string;
+          start_minute: number;
+          end_minute: number;
+        }[]
+      ).some(
+        (w) =>
+          !onHoliday.has(w.engineer_user_id) &&
+          w.start_minute < (h + 1) * 60 &&
+          w.end_minute > h * 60
+      );
       if (!covered) gaps.push(`${String(h).padStart(2, "0")}:00`);
     }
 
@@ -124,10 +185,17 @@ Deno.serve(async () => {
     `;
     const subject = `Relay brief — ${pod.name}: ${escCount} escalations, ${gaps.length} coverage gaps`;
 
-    const recipients = supIds.map((id) => emailById.get(id)).filter(Boolean) as string[];
+    const recipients = supIds
+      .map((id) => emailById.get(id))
+      .filter(Boolean) as string[];
     if (OPS_TO) recipients.push(OPS_TO);
-    for (const to of [...new Set(recipients)]) { await sendEmail(to, subject, html); sent++; }
+    for (const to of [...new Set(recipients)]) {
+      await sendEmail(to, subject, html);
+      sent++;
+    }
   }
 
-  return new Response(JSON.stringify({ ok: true, briefsSent: sent }), { headers: { "Content-Type": "application/json" } });
+  return new Response(JSON.stringify({ ok: true, briefsSent: sent }), {
+    headers: { "Content-Type": "application/json" },
+  });
 });

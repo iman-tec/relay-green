@@ -14,11 +14,16 @@ export async function embedTexts(texts: string[]): Promise<number[][]> {
     const batch = texts.slice(i, i + BATCH).map((t) => t.slice(0, MAX_CHARS));
     const res = await fetch("https://api.openai.com/v1/embeddings", {
       method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({ model: MODEL, input: batch }),
     });
     if (!res.ok) {
-      throw new Error(`OpenAI embeddings ${res.status}: ${await res.text().catch(() => "")}`);
+      throw new Error(
+        `OpenAI embeddings ${res.status}: ${await res.text().catch(() => "")}`
+      );
     }
     const j = (await res.json()) as { data: { embedding: number[] }[] };
     for (const d of j.data) out.push(d.embedding);

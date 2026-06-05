@@ -35,21 +35,55 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Building2, Camera, Check, CreditCard, KeyRound, Loader2, Mail,
-  ShieldCheck, Trash2, Wallet, User, Bell, X, Sparkles, AlertTriangle,
-  ChevronRight, Receipt, Clock, Monitor, Download as DownloadIcon, BellRing,
-  Plus, Lock,
+  Building2,
+  Camera,
+  Check,
+  CreditCard,
+  KeyRound,
+  Loader2,
+  Mail,
+  ShieldCheck,
+  Trash2,
+  Wallet,
+  User,
+  Bell,
+  X,
+  Sparkles,
+  AlertTriangle,
+  ChevronRight,
+  Receipt,
+  Clock,
+  Monitor,
+  Download as DownloadIcon,
+  BellRing,
+  Plus,
+  Lock,
 } from "lucide-react";
 import { loadStripe, type Stripe as StripeJs } from "@stripe/stripe-js";
-import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
+import {
+  Elements,
+  PaymentElement,
+  useStripe,
+  useElements,
+} from "@stripe/react-stripe-js";
 import { buildStripeAppearance } from "@/lib/stripe/appearance";
 import { useTheme } from "@/app/_components/ThemeProvider";
 import {
-  Avatar, Button, Chip, ChipGroup, Input, Toast, cn,
+  Avatar,
+  Button,
+  Chip,
+  ChipGroup,
+  Input,
+  Toast,
+  cn,
 } from "@/app/_components/ui";
 import { PaywallModal } from "@/app/_components/PaywallModal";
 import { createClient } from "@/lib/supabase/browser";
-import { patchProfile, readProfile, type TechComfort } from "@/lib/relay/profile";
+import {
+  patchProfile,
+  readProfile,
+  type TechComfort,
+} from "@/lib/relay/profile";
 import {
   AVATAR_INPUT_ACCEPT,
   FIELD_OF_INTEREST_OPTIONS,
@@ -64,7 +98,9 @@ const OTHER = "Other";
 // Single Stripe.js loader for the whole app — Stripe recommends not
 // re-loading on every modal open. Mirrors the pattern in PaywallModal.
 const STRIPE_PUBLISHABLE_KEY =
-  (typeof process !== "undefined" && process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) || "";
+  (typeof process !== "undefined" &&
+    process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) ||
+  "";
 let _stripePromise: Promise<StripeJs | null> | null = null;
 function getStripePromise(): Promise<StripeJs | null> | null {
   if (!STRIPE_PUBLISHABLE_KEY) return null;
@@ -76,11 +112,11 @@ function getStripePromise(): Promise<StripeJs | null> | null {
 // /api/billing/payment-methods (Stripe PaymentMethod flattened + the
 // default-card flag derived from Customer.invoice_settings).
 type SavedPaymentMethod = {
-  id:        string;
-  brand:     string;
-  last4:     string;
-  expMonth:  number | null;
-  expYear:   number | null;
+  id: string;
+  brand: string;
+  last4: string;
+  expMonth: number | null;
+  expYear: number | null;
   isDefault: boolean;
 };
 
@@ -88,15 +124,23 @@ type SavedPaymentMethod = {
 // codes ("visa", "mastercard", "amex"); we capitalize for display.
 function brandLabel(brand: string): string {
   switch (brand.toLowerCase()) {
-    case "visa":       return "Visa";
-    case "mastercard": return "Mastercard";
+    case "visa":
+      return "Visa";
+    case "mastercard":
+      return "Mastercard";
     case "amex":
-    case "american_express": return "Amex";
-    case "discover":   return "Discover";
-    case "diners":     return "Diners";
-    case "jcb":        return "JCB";
-    case "unionpay":   return "UnionPay";
-    default: return brand.charAt(0).toUpperCase() + brand.slice(1);
+    case "american_express":
+      return "Amex";
+    case "discover":
+      return "Discover";
+    case "diners":
+      return "Diners";
+    case "jcb":
+      return "JCB";
+    case "unionpay":
+      return "UnionPay";
+    default:
+      return brand.charAt(0).toUpperCase() + brand.slice(1);
   }
 }
 function formatExp(month: number | null, year: number | null): string {
@@ -105,7 +149,12 @@ function formatExp(month: number | null, year: number | null): string {
 }
 
 // ── Tab identity ──────────────────────────────────────────────────────────
-export type AccountTab = "profile" | "wallet" | "billing" | "security" | "notifications";
+export type AccountTab =
+  | "profile"
+  | "wallet"
+  | "billing"
+  | "security"
+  | "notifications";
 
 type TabDef = {
   id: AccountTab;
@@ -115,11 +164,36 @@ type TabDef = {
 };
 
 const TABS: readonly TabDef[] = [
-  { id: "profile",       label: "Profile",       description: "Identity, photo, interests",  Icon: User },
-  { id: "wallet",        label: "Wallet",        description: "Balance and recharge",        Icon: Wallet },
-  { id: "billing",       label: "Billing",       description: "Past purchases and receipts", Icon: Receipt },
-  { id: "security",      label: "Security",      description: "Password and account safety", Icon: ShieldCheck },
-  { id: "notifications", label: "Notifications", description: "Email and in-app prefs",      Icon: Bell },
+  {
+    id: "profile",
+    label: "Profile",
+    description: "Identity, photo, interests",
+    Icon: User,
+  },
+  {
+    id: "wallet",
+    label: "Wallet",
+    description: "Balance and recharge",
+    Icon: Wallet,
+  },
+  {
+    id: "billing",
+    label: "Billing",
+    description: "Past purchases and receipts",
+    Icon: Receipt,
+  },
+  {
+    id: "security",
+    label: "Security",
+    description: "Password and account safety",
+    Icon: ShieldCheck,
+  },
+  {
+    id: "notifications",
+    label: "Notifications",
+    description: "Email and in-app prefs",
+    Icon: Bell,
+  },
 ] as const;
 
 // ── Employment shape (mirrors /api/customer/me-employment) ────────────────
@@ -150,8 +224,8 @@ type WalletState = {
 // and the Stripe id for the receipt link.
 type PurchaseRow = {
   id: string;
-  createdAt: string;          // ISO timestamp
-  minutes: number;            // delta
+  createdAt: string; // ISO timestamp
+  minutes: number; // delta
   /** Human-readable plan name. Resolves in priority order:
    *  credit_packages.name (by code match) → reason after colon → "Recharge". */
   planLabel: string;
@@ -162,7 +236,7 @@ type PurchaseRow = {
   /** Resolved price in cents (from credit_packages.price_cents). Null when
    *  package lookup misses — we can't fabricate a number we don't have. */
   priceCents: number | null;
-  currency: string;           // e.g. "USD"
+  currency: string; // e.g. "USD"
   stripeSessionId: string | null;
   description: string | null;
 };
@@ -181,7 +255,10 @@ type Banner = { tone: "ok" | "risk" | "info"; text: string } | null;
 
 // Parse a package code from a credit_transactions row's reason/description.
 // Handles both writer formats; returns null when neither matches.
-function parsePackageCode(reason: string, description: string | null): string | null {
+function parsePackageCode(
+  reason: string,
+  description: string | null
+): string | null {
   // New format: "relay_plan:starter" → "starter"
   const m = reason.match(/^relay_plan:(.+)$/);
   if (m) return m[1].trim() || null;
@@ -219,7 +296,9 @@ function formatDateLong(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleDateString("en-US", {
-    year: "numeric", month: "short", day: "numeric",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
   });
 }
 
@@ -276,8 +355,11 @@ export function AccountPane({
   // Track the snapshot the form was loaded with so we can detect a "dirty"
   // state — drives the Save bar's visibility.
   const initialRef = useRef<{
-    name: string; interests: string[]; interestOther: string;
-    expertise: TechComfort | null; avatarUrl: string | null;
+    name: string;
+    interests: string[];
+    interestOther: string;
+    expertise: TechComfort | null;
+    avatarUrl: string | null;
   } | null>(null);
 
   const showBanner = useCallback((b: NonNullable<Banner>) => {
@@ -301,7 +383,8 @@ export function AccountPane({
         .maybeSingle();
       const profile = (row as CustomerProfileRow | null) ?? null;
 
-      let resolvedExpertise: TechComfort | null = profile?.technical_expertise ?? null;
+      let resolvedExpertise: TechComfort | null =
+        profile?.technical_expertise ?? null;
       if (!resolvedExpertise) {
         const { data: intake } = await sb
           .from("client_intakes")
@@ -311,7 +394,9 @@ export function AccountPane({
           .limit(1)
           .maybeSingle();
         resolvedExpertise =
-          techComfortFromFamiliarity((intake as { familiarity?: string } | null)?.familiarity) ??
+          techComfortFromFamiliarity(
+            (intake as { familiarity?: string } | null)?.familiarity
+          ) ??
           local.techComfort ??
           null;
       }
@@ -320,11 +405,14 @@ export function AccountPane({
 
       const stored = profile?.fields_of_interest ?? [];
       const known = stored.filter((s) =>
-        (FIELD_OF_INTEREST_OPTIONS as readonly string[]).includes(s),
+        (FIELD_OF_INTEREST_OPTIONS as readonly string[]).includes(s)
       );
-      const customOther = profile?.interest_other ?? stored.find((s) =>
-        !(FIELD_OF_INTEREST_OPTIONS as readonly string[]).includes(s),
-      ) ?? "";
+      const customOther =
+        profile?.interest_other ??
+        stored.find(
+          (s) => !(FIELD_OF_INTEREST_OPTIONS as readonly string[]).includes(s)
+        ) ??
+        "";
 
       const nm = profile?.display_name ?? "";
       const av = profile?.avatar_url ?? null;
@@ -337,23 +425,30 @@ export function AccountPane({
       // toggled (per the ToS opt-in). Older rows might have NULL or
       // missing column — treat both as true.
       setEmailNotif(
-        profile?.email_notifications_enabled === false ? false : true,
+        profile?.email_notifications_enabled === false ? false : true
       );
       initialRef.current = {
-        name: nm, interests: known, interestOther: customOther,
-        expertise: resolvedExpertise, avatarUrl: av,
+        name: nm,
+        interests: known,
+        interestOther: customOther,
+        expertise: resolvedExpertise,
+        avatarUrl: av,
       };
       setLoading(false);
 
       if (resolvedExpertise && !profile?.technical_expertise) {
-        void sb.from("customer_profiles").upsert(
-          { user_id: userId, technical_expertise: resolvedExpertise },
-          { onConflict: "user_id" },
-        );
+        void sb
+          .from("customer_profiles")
+          .upsert(
+            { user_id: userId, technical_expertise: resolvedExpertise },
+            { onConflict: "user_id" }
+          );
       }
     })();
 
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [userId]);
 
   // ── Load wallet + employment ──────────────────────────────────────────
@@ -362,20 +457,35 @@ export function AccountPane({
     let alive = true;
     void (async () => {
       const [walletRes, entRes, emp] = await Promise.all([
-        sb.from("credit_wallets").select("balance").eq("user_id", userId).maybeSingle(),
-        sb.from("customer_entitlements").select("free_session_consumed_at").eq("customer_user_id", userId).maybeSingle(),
+        sb
+          .from("credit_wallets")
+          .select("balance")
+          .eq("user_id", userId)
+          .maybeSingle(),
+        sb
+          .from("customer_entitlements")
+          .select("free_session_consumed_at")
+          .eq("customer_user_id", userId)
+          .maybeSingle(),
         fetch("/api/customer/me-employment", { cache: "no-store" })
           .then((r) => (r.ok ? r.json() : { isEmployee: false }))
           .catch(() => ({ isEmployee: false })) as Promise<EmployeeInfo>,
       ]);
       if (!alive) return;
       setWallet({
-        paidMinutes: Number((walletRes.data as { balance?: number } | null)?.balance ?? 0),
-        freeConsumed: Boolean((entRes.data as { free_session_consumed_at?: string | null } | null)?.free_session_consumed_at),
+        paidMinutes: Number(
+          (walletRes.data as { balance?: number } | null)?.balance ?? 0
+        ),
+        freeConsumed: Boolean(
+          (entRes.data as { free_session_consumed_at?: string | null } | null)
+            ?.free_session_consumed_at
+        ),
         employment: emp,
       });
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [userId]);
 
   // ── Billing lazy-load ─────────────────────────────────────────────────
@@ -406,19 +516,25 @@ export function AccountPane({
         //      (sums of every successful purchase) whereas per-transaction
         //      amounts depend on package-lookup matching.
         const [txRes, pkgRes, walletRes, entRes] = await Promise.all([
-          sb.from("credit_transactions")
-            .select("id, delta, reason, description, stripe_session_id, created_at, metadata")
+          sb
+            .from("credit_transactions")
+            .select(
+              "id, delta, reason, description, stripe_session_id, created_at, metadata"
+            )
             .eq("user_id", userId)
             .or("reason.eq.purchase,reason.like.relay_plan:%")
             .order("created_at", { ascending: false })
             .limit(200),
-          sb.from("credit_packages")
+          sb
+            .from("credit_packages")
             .select("code, name, price_cents, currency"),
-          sb.from("credit_wallets")
+          sb
+            .from("credit_wallets")
             .select("lifetime_purchased")
             .eq("user_id", userId)
             .maybeSingle(),
-          sb.from("customer_entitlements")
+          sb
+            .from("customer_entitlements")
             .select("total_paid_cents")
             .eq("customer_user_id", userId)
             .maybeSingle(),
@@ -430,9 +546,15 @@ export function AccountPane({
 
         // Build a code → package lookup. Falls back gracefully if the
         // packages table is empty (no matches → amount column shows "—").
-        const pkgMap = new Map<string, { name: string; priceCents: number; currency: string }>();
+        const pkgMap = new Map<
+          string,
+          { name: string; priceCents: number; currency: string }
+        >();
         for (const p of (pkgRes.data ?? []) as Array<{
-          code: string; name: string; price_cents: number; currency: string;
+          code: string;
+          name: string;
+          price_cents: number;
+          currency: string;
         }>) {
           pkgMap.set(p.code, {
             name: p.name,
@@ -441,18 +563,21 @@ export function AccountPane({
           });
         }
 
-        const purchases: PurchaseRow[] = ((txRes.data ?? []) as Array<{
-          id: string;
-          delta: number | string;
-          reason: string;
-          description: string | null;
-          stripe_session_id: string | null;
-          created_at: string;
-          metadata: Record<string, unknown> | null;
-        }>).map((row) => {
+        const purchases: PurchaseRow[] = (
+          (txRes.data ?? []) as Array<{
+            id: string;
+            delta: number | string;
+            reason: string;
+            description: string | null;
+            stripe_session_id: string | null;
+            created_at: string;
+            metadata: Record<string, unknown> | null;
+          }>
+        ).map((row) => {
           const code = parsePackageCode(row.reason, row.description);
-          const pkg = code ? pkgMap.get(code) ?? null : null;
-          const planLabel = pkg?.name ?? (code ? humanizePlanCode(code) : "Recharge");
+          const pkg = code ? (pkgMap.get(code) ?? null) : null;
+          const planLabel =
+            pkg?.name ?? (code ? humanizePlanCode(code) : "Recharge");
           return {
             id: row.id,
             createdAt: row.created_at,
@@ -467,22 +592,28 @@ export function AccountPane({
         });
 
         const lifetimeMinutes = Number(
-          (walletRes.data as { lifetime_purchased?: number } | null)?.lifetime_purchased ?? 0,
+          (walletRes.data as { lifetime_purchased?: number } | null)
+            ?.lifetime_purchased ?? 0
         );
         const totalPaidCents = Number(
-          (entRes.data as { total_paid_cents?: number } | null)?.total_paid_cents ?? 0,
+          (entRes.data as { total_paid_cents?: number } | null)
+            ?.total_paid_cents ?? 0
         );
 
         setBilling({ purchases, lifetimeMinutes, totalPaidCents });
       } catch (err) {
         if (!alive) return;
-        setBillingError(err instanceof Error ? err.message : "Failed to load billing history.");
+        setBillingError(
+          err instanceof Error ? err.message : "Failed to load billing history."
+        );
       } finally {
         if (alive) setBillingLoading(false);
       }
     })();
 
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
     // Deps are intentionally just [tab, userId]. `billing`/`billingLoading`
     // are read as in-effect GUARDS (don't refetch if we already have data
     // or a fetch is in flight) but must NOT be in the dep array: including
@@ -495,19 +626,27 @@ export function AccountPane({
 
   // Revoke the preview URL when staged file changes / unmounts.
   useEffect(() => {
-    return () => { if (previewUrl) URL.revokeObjectURL(previewUrl); };
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
   }, [previewUrl]);
 
-  const onPickFile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    const v = validateAvatar(file);
-    if (!v.ok) { showBanner({ tone: "risk", text: v.error }); return; }
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setStagedFile(file);
-    setPreviewUrl(URL.createObjectURL(file));
-  }, [previewUrl, showBanner]);
+  const onPickFile = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (!file) return;
+      const v = validateAvatar(file);
+      if (!v.ok) {
+        showBanner({ tone: "risk", text: v.error });
+        return;
+      }
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setStagedFile(file);
+      setPreviewUrl(URL.createObjectURL(file));
+    },
+    [previewUrl, showBanner]
+  );
 
   const clearStaged = useCallback(() => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -525,7 +664,8 @@ export function AccountPane({
     if (expertise !== i.expertise) return true;
     if (stagedFile) return true;
     if (interests.length !== i.interests.length) return true;
-    const a = new Set(interests); const b = new Set(i.interests);
+    const a = new Set(interests);
+    const b = new Set(i.interests);
     for (const x of a) if (!b.has(x)) return true;
     return false;
   }, [name, interests, interestOther, expertise, stagedFile]);
@@ -540,21 +680,31 @@ export function AccountPane({
       let nextAvatarUrl = avatarUrl;
 
       if (stagedFile) {
-        const ext = stagedFile.type === "image/png" ? "png"
-          : stagedFile.type === "image/webp" ? "webp" : "jpg";
+        const ext =
+          stagedFile.type === "image/png"
+            ? "png"
+            : stagedFile.type === "image/webp"
+              ? "webp"
+              : "jpg";
         const path = `${userId}/avatar-${Date.now()}.${ext}`;
         const { error: upErr } = await sb.storage
           .from("avatars")
-          .upload(path, stagedFile, { upsert: true, contentType: stagedFile.type });
+          .upload(path, stagedFile, {
+            upsert: true,
+            contentType: stagedFile.type,
+          });
         if (upErr) throw new Error(`Photo upload failed: ${upErr.message}`);
-        nextAvatarUrl = sb.storage.from("avatars").getPublicUrl(path).data.publicUrl;
+        nextAvatarUrl = sb.storage.from("avatars").getPublicUrl(path)
+          .data.publicUrl;
       }
 
       const payload = {
         user_id: userId,
         display_name: name.trim() || null,
         fields_of_interest: interests.filter((i) => i !== OTHER),
-        interest_other: interests.includes(OTHER) ? interestOther.trim() || null : null,
+        interest_other: interests.includes(OTHER)
+          ? interestOther.trim() || null
+          : null,
         avatar_url: nextAvatarUrl,
         ...(expertise ? { technical_expertise: expertise } : {}),
       };
@@ -569,56 +719,74 @@ export function AccountPane({
       setAvatarUrl(nextAvatarUrl);
       clearStaged();
       initialRef.current = {
-        name, interests, interestOther,
-        expertise, avatarUrl: nextAvatarUrl,
+        name,
+        interests,
+        interestOther,
+        expertise,
+        avatarUrl: nextAvatarUrl,
       };
       showBanner({ tone: "ok", text: "Profile saved." });
     } catch (err) {
-      showBanner({ tone: "risk", text: err instanceof Error ? err.message : "Could not save profile." });
+      showBanner({
+        tone: "risk",
+        text: err instanceof Error ? err.message : "Could not save profile.",
+      });
     } finally {
       setSaving(false);
     }
-  }, [userId, avatarUrl, stagedFile, name, interests, interestOther, expertise, clearStaged, showBanner]);
+  }, [
+    userId,
+    avatarUrl,
+    stagedFile,
+    name,
+    interests,
+    interestOther,
+    expertise,
+    clearStaged,
+    showBanner,
+  ]);
 
   // ── Email-notifications toggle ────────────────────────────────────────
   // Optimistic UI: flip local state immediately so the toggle feels
   // responsive, then persist. On error, roll back + show a banner so
   // the customer isn't left thinking the change took when it didn't.
-  const onToggleEmailNotif = useCallback(async (next: boolean) => {
-    if (emailNotifSaving) return;
-    const previous = emailNotif;
-    setEmailNotif(next);
-    setEmailNotifSaving(true);
-    try {
-      const sb = sbRef.current;
-      const { error } = await sb
-        .from("customer_profiles")
-        .upsert(
+  const onToggleEmailNotif = useCallback(
+    async (next: boolean) => {
+      if (emailNotifSaving) return;
+      const previous = emailNotif;
+      setEmailNotif(next);
+      setEmailNotifSaving(true);
+      try {
+        const sb = sbRef.current;
+        const { error } = await sb.from("customer_profiles").upsert(
           {
             user_id: userId,
             email_notifications_enabled: next,
             email_notifications_updated_at: new Date().toISOString(),
           },
-          { onConflict: "user_id" },
+          { onConflict: "user_id" }
         );
-      if (error) throw new Error(error.message);
-      showBanner({
-        tone: "ok",
-        text: next
-          ? "Email notifications turned on."
-          : "Email notifications turned off.",
-      });
-    } catch (err) {
-      // Roll back the optimistic flip so the toggle UI reflects reality.
-      setEmailNotif(previous);
-      showBanner({
-        tone: "risk",
-        text: err instanceof Error ? err.message : "Couldn't save preference.",
-      });
-    } finally {
-      setEmailNotifSaving(false);
-    }
-  }, [emailNotif, emailNotifSaving, userId, showBanner]);
+        if (error) throw new Error(error.message);
+        showBanner({
+          tone: "ok",
+          text: next
+            ? "Email notifications turned on."
+            : "Email notifications turned off.",
+        });
+      } catch (err) {
+        // Roll back the optimistic flip so the toggle UI reflects reality.
+        setEmailNotif(previous);
+        showBanner({
+          tone: "risk",
+          text:
+            err instanceof Error ? err.message : "Couldn't save preference.",
+        });
+      } finally {
+        setEmailNotifSaving(false);
+      }
+    },
+    [emailNotif, emailNotifSaving, userId, showBanner]
+  );
 
   // ── Reset password ────────────────────────────────────────────────────
   const onResetPassword = useCallback(async () => {
@@ -627,11 +795,19 @@ export function AccountPane({
     setBanner(null);
     try {
       const redirectTo = `${window.location.origin}/set-password?mode=customer`;
-      const { error } = await sbRef.current.auth.resetPasswordForEmail(email, { redirectTo });
+      const { error } = await sbRef.current.auth.resetPasswordForEmail(email, {
+        redirectTo,
+      });
       if (error) throw new Error(error.message);
-      showBanner({ tone: "ok", text: `We've sent a password reset link to ${email}.` });
+      showBanner({
+        tone: "ok",
+        text: `We've sent a password reset link to ${email}.`,
+      });
     } catch (err) {
-      showBanner({ tone: "risk", text: err instanceof Error ? err.message : "Could not send reset link." });
+      showBanner({
+        tone: "risk",
+        text: err instanceof Error ? err.message : "Could not send reset link.",
+      });
     } finally {
       setResetting(false);
     }
@@ -641,14 +817,24 @@ export function AccountPane({
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center" style={{ backgroundColor: "var(--surface)" }}>
-        <Loader2 size={20} className="animate-spin" style={{ color: "var(--text-muted)" }} />
+      <div
+        className="flex h-full items-center justify-center"
+        style={{ backgroundColor: "var(--surface)" }}
+      >
+        <Loader2
+          size={20}
+          className="animate-spin"
+          style={{ color: "var(--text-muted)" }}
+        />
       </div>
     );
   }
 
   return (
-    <div className="flex h-full w-full flex-col" style={{ backgroundColor: "var(--surface)" }}>
+    <div
+      className="flex h-full w-full flex-col"
+      style={{ backgroundColor: "var(--surface)" }}
+    >
       {/* Header bar — title + close. Sits inside the pane, not page-level. */}
       <header
         className="flex shrink-0 items-center gap-3 border-b px-6 py-4"
@@ -692,9 +878,12 @@ export function AccountPane({
           <div className="mx-auto max-w-2xl px-6 py-6 pb-24">
             {tab === "profile" && (
               <ProfileTab
-                name={name}              onName={setName}
-                interests={interests}    onInterests={setInterests}
-                interestOther={interestOther} onInterestOther={setInterestOther}
+                name={name}
+                onName={setName}
+                interests={interests}
+                onInterests={setInterests}
+                interestOther={interestOther}
+                onInterestOther={setInterestOther}
                 expertise={expertise}
                 email={email}
                 shownAvatar={shownAvatar}
@@ -749,7 +938,8 @@ export function AccountPane({
           className="shrink-0 border-t px-6 py-3"
           style={{
             borderColor: "var(--border)",
-            backgroundColor: "color-mix(in srgb, var(--surface) 95%, transparent)",
+            backgroundColor:
+              "color-mix(in srgb, var(--surface) 95%, transparent)",
             backdropFilter: "blur(8px)",
           }}
         >
@@ -786,7 +976,8 @@ export function AccountPane({
 // filled background tint matching the brand.
 // ──────────────────────────────────────────────────────────────────────────
 function SubNav({
-  active, onChange,
+  active,
+  onChange,
 }: {
   active: AccountTab;
   onChange: (t: AccountTab) => void;
@@ -798,7 +989,7 @@ function SubNav({
       style={{ borderColor: "var(--border)" }}
     >
       <div
-        className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.08em]"
+        className="mb-2 px-3 text-[10px] font-semibold tracking-[0.08em] uppercase"
         style={{ color: "var(--text-faint)" }}
       >
         Settings
@@ -814,9 +1005,7 @@ function SubNav({
                 aria-current={isActive ? "page" : undefined}
                 className={cn(
                   "group flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition-colors",
-                  isActive
-                    ? ""
-                    : "hover:bg-black/5 dark:hover:bg-white/5",
+                  isActive ? "" : "hover:bg-black/5 dark:hover:bg-white/5"
                 )}
                 style={{
                   backgroundColor: isActive
@@ -833,7 +1022,7 @@ function SubNav({
                 />
                 <div className="min-w-0 flex-1">
                   <div
-                    className="text-[13px] font-medium leading-tight"
+                    className="text-[13px] leading-tight font-medium"
                     style={{ color: isActive ? "var(--text)" : "var(--text)" }}
                   >
                     {label}
@@ -860,9 +1049,12 @@ function SubNav({
 // hierarchy reads top→bottom without crowding.
 // ──────────────────────────────────────────────────────────────────────────
 function ProfileTab({
-  name, onName,
-  interests, onInterests,
-  interestOther, onInterestOther,
+  name,
+  onName,
+  interests,
+  onInterests,
+  interestOther,
+  onInterestOther,
   expertise,
   email,
   shownAvatar,
@@ -871,9 +1063,12 @@ function ProfileTab({
   onClearStaged,
   fileInputRef,
 }: {
-  name: string; onName: (v: string) => void;
-  interests: string[]; onInterests: (v: string[]) => void;
-  interestOther: string; onInterestOther: (v: string) => void;
+  name: string;
+  onName: (v: string) => void;
+  interests: string[];
+  onInterests: (v: string[]) => void;
+  interestOther: string;
+  onInterestOther: (v: string) => void;
   expertise: TechComfort | null;
   email: string;
   shownAvatar: string | null;
@@ -892,7 +1087,13 @@ function ProfileTab({
       {/* Avatar block */}
       <SectionCard>
         <div className="flex items-start gap-5">
-          <Avatar src={shownAvatar} name={name} email={email} size="lg" tone="brand" />
+          <Avatar
+            src={shownAvatar}
+            name={name}
+            email={email}
+            size="lg"
+            tone="brand"
+          />
           <div className="flex flex-1 flex-col gap-3">
             <div className="flex flex-wrap items-center gap-2">
               <Button
@@ -944,7 +1145,10 @@ function ProfileTab({
             autoComplete="name"
           />
           <div className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium" style={{ color: "var(--text)" }}>
+            <span
+              className="text-sm font-medium"
+              style={{ color: "var(--text)" }}
+            >
               Email address
             </span>
             <div
@@ -968,11 +1172,16 @@ function ProfileTab({
       {/* Technical expertise (read-only) */}
       <SectionCard>
         <div className="flex flex-col gap-2">
-          <span className="text-sm font-medium" style={{ color: "var(--text)" }}>
+          <span
+            className="text-sm font-medium"
+            style={{ color: "var(--text)" }}
+          >
             Level of technical expertise
           </span>
           <div>
-            <Chip static active={!!expertise}>{techComfortLabel(expertise)}</Chip>
+            <Chip static active={!!expertise}>
+              {techComfortLabel(expertise)}
+            </Chip>
           </div>
           <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
             Set from your first intake and used to right-size every session.
@@ -1023,7 +1232,10 @@ function WalletTab({
 }) {
   if (!wallet) {
     return (
-      <div className="flex items-center gap-2 text-sm" style={{ color: "var(--text-muted)" }}>
+      <div
+        className="flex items-center gap-2 text-sm"
+        style={{ color: "var(--text-muted)" }}
+      >
         <Loader2 className="size-4 animate-spin" /> Loading balance…
       </div>
     );
@@ -1035,9 +1247,11 @@ function WalletTab({
     <div className="flex flex-col gap-6">
       <SectionHead
         title="Wallet"
-        blurb={isEmployee
-          ? "Your minutes are managed by your organization."
-          : "Buy minutes once — no subscription, no auto-renew."}
+        blurb={
+          isEmployee
+            ? "Your minutes are managed by your organization."
+            : "Buy minutes once — no subscription, no auto-renew."
+        }
       />
 
       {/* Hero balance card — large, clear amount + plan + CTA */}
@@ -1053,21 +1267,38 @@ function WalletTab({
           <div className="flex items-start gap-4">
             <div
               className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full"
-              style={{ backgroundColor: "var(--primary-soft)", color: "var(--primary)" }}
+              style={{
+                backgroundColor: "var(--primary-soft)",
+                color: "var(--primary)",
+              }}
             >
               <Building2 className="size-6" />
             </div>
             <div className="flex-1">
-              <div className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+              <div
+                className="text-[11px] font-semibold tracking-wider uppercase"
+                style={{ color: "var(--text-muted)" }}
+              >
                 Enterprise plan
               </div>
-              <div className="mt-1 text-[28px] font-semibold leading-tight" style={{ color: "var(--text)", fontFamily: "var(--font-source-serif)" }}>
+              <div
+                className="mt-1 text-[28px] leading-tight font-semibold"
+                style={{
+                  color: "var(--text)",
+                  fontFamily: "var(--font-source-serif)",
+                }}
+              >
                 {wallet.employment.remainingMinutes > 0
                   ? `${Math.round(wallet.employment.remainingMinutes).toLocaleString()} min`
                   : "Out of credits"}
               </div>
-              <div className="mt-1 text-[13px]" style={{ color: "var(--text-muted)" }}>
-                {wallet.employment.departmentName ? `${wallet.employment.departmentName} · ` : ""}
+              <div
+                className="mt-1 text-[13px]"
+                style={{ color: "var(--text-muted)" }}
+              >
+                {wallet.employment.departmentName
+                  ? `${wallet.employment.departmentName} · `
+                  : ""}
                 {wallet.employment.enterpriseName}
               </div>
             </div>
@@ -1076,22 +1307,37 @@ function WalletTab({
           <div className="flex items-start gap-4">
             <div
               className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full"
-              style={{ backgroundColor: "var(--primary-soft)", color: "var(--primary)" }}
+              style={{
+                backgroundColor: "var(--primary-soft)",
+                color: "var(--primary)",
+              }}
             >
               <Wallet className="size-6" />
             </div>
             <div className="flex-1">
-              <div className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+              <div
+                className="text-[11px] font-semibold tracking-wider uppercase"
+                style={{ color: "var(--text-muted)" }}
+              >
                 {wallet.paidMinutes > 0 ? "Paid plan" : "Free plan"}
               </div>
-              <div className="mt-1 text-[28px] font-semibold leading-tight" style={{ color: "var(--text)", fontFamily: "var(--font-source-serif)" }}>
+              <div
+                className="mt-1 text-[28px] leading-tight font-semibold"
+                style={{
+                  color: "var(--text)",
+                  fontFamily: "var(--font-source-serif)",
+                }}
+              >
                 {wallet.paidMinutes > 0
                   ? `${wallet.paidMinutes.toFixed(2)} min`
                   : wallet.freeConsumed
                     ? "0 min"
                     : "10 min free"}
               </div>
-              <div className="mt-1 text-[13px]" style={{ color: "var(--text-muted)" }}>
+              <div
+                className="mt-1 text-[13px]"
+                style={{ color: "var(--text-muted)" }}
+              >
                 {wallet.paidMinutes > 0
                   ? "Remaining balance"
                   : wallet.freeConsumed
@@ -1144,10 +1390,16 @@ function WalletTab({
         <SectionCard>
           <div className="mb-3 flex items-baseline justify-between gap-3">
             <div>
-              <h3 className="text-[13px] font-semibold" style={{ color: "var(--text)" }}>
+              <h3
+                className="text-[13px] font-semibold"
+                style={{ color: "var(--text)" }}
+              >
                 Payment methods
               </h3>
-              <p className="mt-0.5 text-[11px]" style={{ color: "var(--text-muted)" }}>
+              <p
+                className="mt-0.5 text-[11px]"
+                style={{ color: "var(--text-muted)" }}
+              >
                 Saved with Stripe so future top-ups skip card entry.
               </p>
             </div>
@@ -1164,23 +1416,33 @@ function WalletTab({
           type="button"
           onClick={onSeeBilling}
           className="flex w-full items-center justify-between rounded-2xl border px-5 py-4 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-          style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)" }}
+          style={{
+            borderColor: "var(--border)",
+            backgroundColor: "var(--surface-raised)",
+          }}
         >
           <div className="flex items-center gap-3">
             <div
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
               style={{
-                backgroundColor: "color-mix(in srgb, var(--text) 5%, transparent)",
+                backgroundColor:
+                  "color-mix(in srgb, var(--text) 5%, transparent)",
                 color: "var(--text-muted)",
               }}
             >
               <Receipt size={16} />
             </div>
             <div>
-              <p className="text-[13px] font-medium" style={{ color: "var(--text)" }}>
+              <p
+                className="text-[13px] font-medium"
+                style={{ color: "var(--text)" }}
+              >
                 Past purchases &amp; receipts
               </p>
-              <p className="mt-0.5 text-[11px]" style={{ color: "var(--text-muted)" }}>
+              <p
+                className="mt-0.5 text-[11px]"
+                style={{ color: "var(--text-muted)" }}
+              >
                 Every recharge in one place, with downloadable receipts.
               </p>
             </div>
@@ -1221,7 +1483,10 @@ function BillingTab({
 }) {
   if (loading && !state) {
     return (
-      <div className="flex items-center gap-2 text-sm" style={{ color: "var(--text-muted)" }}>
+      <div
+        className="flex items-center gap-2 text-sm"
+        style={{ color: "var(--text-muted)" }}
+      >
         <Loader2 className="size-4 animate-spin" /> Loading billing history…
       </div>
     );
@@ -1235,10 +1500,16 @@ function BillingTab({
           <div className="flex items-start gap-3">
             <AlertTriangle size={16} style={{ color: "var(--accent-red)" }} />
             <div className="flex-1">
-              <p className="text-sm font-medium" style={{ color: "var(--text)" }}>
+              <p
+                className="text-sm font-medium"
+                style={{ color: "var(--text)" }}
+              >
                 Couldn&apos;t load your billing history
               </p>
-              <p className="mt-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
+              <p
+                className="mt-1 text-[12px]"
+                style={{ color: "var(--text-muted)" }}
+              >
                 {error}
               </p>
             </div>
@@ -1303,10 +1574,16 @@ function BillingTab({
         <SectionCard>
           <div className="flex flex-col items-start gap-3 py-4 text-left sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-sm font-medium" style={{ color: "var(--text)" }}>
+              <p
+                className="text-sm font-medium"
+                style={{ color: "var(--text)" }}
+              >
                 No purchases yet
               </p>
-              <p className="mt-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
+              <p
+                className="mt-1 text-[12px]"
+                style={{ color: "var(--text-muted)" }}
+              >
                 Your past recharges and downloadable receipts will appear here.
               </p>
             </div>
@@ -1325,14 +1602,17 @@ function BillingTab({
           {groups.map(({ year, rows }) => (
             <section key={year} className="flex flex-col gap-2">
               <div
-                className="px-1 text-[10px] font-semibold uppercase tracking-[0.08em]"
+                className="px-1 text-[10px] font-semibold tracking-[0.08em] uppercase"
                 style={{ color: "var(--text-faint)" }}
               >
                 {year}
               </div>
               <div
                 className="overflow-hidden rounded-2xl border"
-                style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)" }}
+                style={{
+                  borderColor: "var(--border)",
+                  backgroundColor: "var(--surface-raised)",
+                }}
               >
                 {rows.map((row, i) => (
                   <PurchaseRowItem
@@ -1347,10 +1627,16 @@ function BillingTab({
 
           {/* Disclaimer about retrieval — Stripe receipts can be opened
               from the row's overflow but we don't host them ourselves. */}
-          <p className="px-1 text-[11px]" style={{ color: "var(--text-faint)" }}>
-            Receipts are hosted by Stripe and remain accessible from your
-            bank statement record. For an invoice or VAT receipt, contact
-            <span className="mx-1" style={{ color: "var(--text-muted)" }}>support@relay.green</span>.
+          <p
+            className="px-1 text-[11px]"
+            style={{ color: "var(--text-faint)" }}
+          >
+            Receipts are hosted by Stripe and remain accessible from your bank
+            statement record. For an invoice or VAT receipt, contact
+            <span className="mx-1" style={{ color: "var(--text-muted)" }}>
+              support@relay.green
+            </span>
+            .
           </p>
         </div>
       )}
@@ -1363,8 +1649,15 @@ function BillingTab({
 // the session id alone, so we don't link out by default. When the user has
 // a real stripe payment_intent we could open the customer-portal — for
 // now we just surface the id as supporting text. Easy to upgrade later.
-function PurchaseRowItem({ row, isLast }: { row: PurchaseRow; isLast: boolean }) {
-  const amountText = row.priceCents != null ? formatCurrency(row.priceCents, row.currency) : "—";
+function PurchaseRowItem({
+  row,
+  isLast,
+}: {
+  row: PurchaseRow;
+  isLast: boolean;
+}) {
+  const amountText =
+    row.priceCents != null ? formatCurrency(row.priceCents, row.currency) : "—";
 
   return (
     <div
@@ -1386,20 +1679,27 @@ function PurchaseRowItem({ row, isLast }: { row: PurchaseRow; isLast: boolean })
       {/* Plan + meta */}
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex items-center gap-2">
-          <span className="truncate text-[13px] font-medium" style={{ color: "var(--text)" }}>
+          <span
+            className="truncate text-[13px] font-medium"
+            style={{ color: "var(--text)" }}
+          >
             {row.planLabel}
           </span>
           <span
-            className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider"
+            className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold tracking-wider uppercase"
             style={{
-              backgroundColor: "color-mix(in srgb, var(--primary) 14%, transparent)",
+              backgroundColor:
+                "color-mix(in srgb, var(--primary) 14%, transparent)",
               color: "var(--primary)",
             }}
           >
             +{Math.round(row.minutes)} min
           </span>
         </div>
-        <div className="mt-0.5 flex items-center gap-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
+        <div
+          className="mt-0.5 flex items-center gap-2 text-[11px]"
+          style={{ color: "var(--text-muted)" }}
+        >
           <span>{formatDateLong(row.createdAt)}</span>
           {row.stripeSessionId && (
             <>
@@ -1421,11 +1721,14 @@ function PurchaseRowItem({ row, isLast }: { row: PurchaseRow; isLast: boolean })
       {/* Amount + status — amount column right-aligned for fast
           vertical scanning of "how much have I spent here." */}
       <div className="flex flex-col items-end gap-0.5">
-        <span className="text-[14px] font-semibold tabular-nums" style={{ color: "var(--text)" }}>
+        <span
+          className="text-[14px] font-semibold tabular-nums"
+          style={{ color: "var(--text)" }}
+        >
           {amountText}
         </span>
         <span
-          className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider"
+          className="inline-flex items-center gap-1 text-[10px] font-medium tracking-wider uppercase"
           style={{ color: "var(--primary)" }}
         >
           <Check size={9} />
@@ -1437,19 +1740,31 @@ function PurchaseRowItem({ row, isLast }: { row: PurchaseRow; isLast: boolean })
 }
 
 function StatCard({
-  label, value, Icon,
-}: { label: string; value: string; Icon: typeof Receipt }) {
+  label,
+  value,
+  Icon,
+}: {
+  label: string;
+  value: string;
+  Icon: typeof Receipt;
+}) {
   return (
     <div
       className="rounded-xl border p-4"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)" }}
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface-raised)",
+      }}
     >
-      <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+      <div
+        className="flex items-center gap-2 text-[10px] font-semibold tracking-wider uppercase"
+        style={{ color: "var(--text-muted)" }}
+      >
         <Icon size={11} />
         {label}
       </div>
       <div
-        className="mt-1.5 text-[20px] font-semibold leading-tight"
+        className="mt-1.5 text-[20px] leading-tight font-semibold"
         style={{ color: "var(--text)", fontFamily: "var(--font-source-serif)" }}
       >
         {value}
@@ -1472,16 +1787,16 @@ function SecurityTab({
 }) {
   return (
     <div className="flex flex-col gap-6">
-      <SectionHead
-        title="Security"
-        blurb="Keep your account safe."
-      />
+      <SectionHead title="Security" blurb="Keep your account safe." />
 
       <SectionCard>
         <div className="flex items-start gap-4">
           <div
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
-            style={{ backgroundColor: "var(--primary-soft)", color: "var(--primary)" }}
+            style={{
+              backgroundColor: "var(--primary-soft)",
+              color: "var(--primary)",
+            }}
           >
             <ShieldCheck className="size-5" />
           </div>
@@ -1489,8 +1804,12 @@ function SecurityTab({
             <p className="text-sm font-medium" style={{ color: "var(--text)" }}>
               Password
             </p>
-            <p className="mt-0.5 text-[12px]" style={{ color: "var(--text-muted)" }}>
-              We&apos;ll email a secure link to {email || "your address"} to set a new one.
+            <p
+              className="mt-0.5 text-[12px]"
+              style={{ color: "var(--text-muted)" }}
+            >
+              We&apos;ll email a secure link to {email || "your address"} to set
+              a new one.
             </p>
           </div>
           <Button
@@ -1546,7 +1865,8 @@ function NotificationsTab({
   // `window.__RELAY_DESKTOP__ = true` at load — when present we hide the
   // download CTA and show an "installed" status pill instead.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const desktopInstalled = typeof window !== "undefined" && Boolean((window as any).__RELAY_DESKTOP__);
+  const desktopInstalled =
+    typeof window !== "undefined" && Boolean((window as any).__RELAY_DESKTOP__);
 
   return (
     <div className="flex flex-col gap-6">
@@ -1560,18 +1880,27 @@ function NotificationsTab({
         <div className="flex items-start gap-4">
           <div
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
-            style={{ backgroundColor: "var(--primary-soft)", color: "var(--primary)" }}
+            style={{
+              backgroundColor: "var(--primary-soft)",
+              color: "var(--primary)",
+            }}
           >
             <Mail className="size-5" />
           </div>
           <div className="flex-1">
             <div className="flex items-center gap-2">
-              <p className="text-sm font-medium" style={{ color: "var(--text)" }}>
+              <p
+                className="text-sm font-medium"
+                style={{ color: "var(--text)" }}
+              >
                 Email notifications
               </p>
               <StatusPill on={emailEnabled} />
             </div>
-            <p className="mt-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
+            <p
+              className="mt-1 text-[12px]"
+              style={{ color: "var(--text-muted)" }}
+            >
               Session summaries, engineer assignments, recharge receipts, and
               account safety messages. On by default per the{" "}
               <a
@@ -1582,8 +1911,8 @@ function NotificationsTab({
                 style={{ color: "var(--text-muted)" }}
               >
                 Terms
-              </a>
-              {" "}and{" "}
+              </a>{" "}
+              and{" "}
               <a
                 href="/legal/privacy-policy"
                 target="_blank"
@@ -1592,10 +1921,13 @@ function NotificationsTab({
                 style={{ color: "var(--text-muted)" }}
               >
                 Privacy Policy
-              </a>
-              {" "}— you can turn them off here whenever you like.
+              </a>{" "}
+              — you can turn them off here whenever you like.
             </p>
-            <p className="mt-2 text-[11px]" style={{ color: "var(--text-faint)" }}>
+            <p
+              className="mt-2 text-[11px]"
+              style={{ color: "var(--text-faint)" }}
+            >
               Account-critical security emails (password resets, suspicious
               sign-in alerts) still come through even when this is off.
             </p>
@@ -1614,22 +1946,29 @@ function NotificationsTab({
         <div className="flex items-start gap-4">
           <div
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
-            style={{ backgroundColor: "var(--primary-soft)", color: "var(--primary)" }}
+            style={{
+              backgroundColor: "var(--primary-soft)",
+              color: "var(--primary)",
+            }}
           >
             <BellRing className="size-5" />
           </div>
           <div className="flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-sm font-medium" style={{ color: "var(--text)" }}>
+              <p
+                className="text-sm font-medium"
+                style={{ color: "var(--text)" }}
+              >
                 In-app &amp; system notifications
               </p>
               {desktopInstalled ? (
                 <StatusPill on label="Installed" />
               ) : (
                 <span
-                  className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider"
+                  className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold tracking-wider uppercase"
                   style={{
-                    backgroundColor: "color-mix(in srgb, var(--text) 8%, transparent)",
+                    backgroundColor:
+                      "color-mix(in srgb, var(--text) 8%, transparent)",
                     color: "var(--text-muted)",
                   }}
                 >
@@ -1637,7 +1976,10 @@ function NotificationsTab({
                 </span>
               )}
             </div>
-            <p className="mt-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
+            <p
+              className="mt-1 text-[12px]"
+              style={{ color: "var(--text-muted)" }}
+            >
               {desktopInstalled
                 ? "You'll get OS-level notifications when an engineer joins, when your free minutes are running low, and when a session summary is ready — even when the browser tab is closed."
                 : "Get OS-level push when an engineer joins, when minutes run low, and when a session summary is ready. Available exclusively through the Relay desktop app — install it once and notifications work even when the browser tab is closed."}
@@ -1671,7 +2013,8 @@ function NotificationsTab({
           <div
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
             style={{
-              backgroundColor: "color-mix(in srgb, var(--text) 5%, transparent)",
+              backgroundColor:
+                "color-mix(in srgb, var(--text) 5%, transparent)",
               color: "var(--text-muted)",
             }}
           >
@@ -1681,7 +2024,10 @@ function NotificationsTab({
             <p className="text-sm font-medium" style={{ color: "var(--text)" }}>
               In-room toasts
             </p>
-            <p className="mt-0.5 text-[12px]" style={{ color: "var(--text-muted)" }}>
+            <p
+              className="mt-0.5 text-[12px]"
+              style={{ color: "var(--text-muted)" }}
+            >
               Banner messages that show up while you&apos;re actively on Relay
               (engineer joined, free time running out). Always on while
               you&apos;re in a session — they&apos;re part of the flow.
@@ -1697,7 +2043,10 @@ function NotificationsTab({
 // for one use — this gives us the right look (filled green when on, muted
 // gray when off) using just var(--*) tokens so themes still apply.
 function Toggle({
-  checked, disabled, onChange, ariaLabel,
+  checked,
+  disabled,
+  onChange,
+  ariaLabel,
 }: {
   checked: boolean;
   disabled?: boolean;
@@ -1732,7 +2081,7 @@ function Toggle({
 function StatusPill({ on, label }: { on: boolean; label?: string }) {
   return (
     <span
-      className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider"
+      className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-semibold tracking-wider uppercase"
       style={{
         backgroundColor: on
           ? "color-mix(in srgb, var(--primary) 14%, transparent)"
@@ -1778,9 +2127,10 @@ function SectionCard({
       className="rounded-2xl border p-5"
       style={{
         borderColor: "var(--border)",
-        backgroundColor: variant === "muted"
-          ? "color-mix(in srgb, var(--surface-raised) 60%, transparent)"
-          : "var(--surface-raised)",
+        backgroundColor:
+          variant === "muted"
+            ? "color-mix(in srgb, var(--surface-raised) 60%, transparent)"
+            : "var(--surface-raised)",
       }}
     >
       {children}
@@ -1799,11 +2149,17 @@ function Highlight({ title, body }: { title: string; body: string }) {
     >
       <div className="flex items-center gap-2">
         <Check size={13} style={{ color: "var(--primary)" }} />
-        <div className="text-[12px] font-semibold" style={{ color: "var(--text)" }}>
+        <div
+          className="text-[12px] font-semibold"
+          style={{ color: "var(--text)" }}
+        >
           {title}
         </div>
       </div>
-      <div className="mt-1 text-[11px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
+      <div
+        className="mt-1 text-[11px] leading-relaxed"
+        style={{ color: "var(--text-muted)" }}
+      >
         {body}
       </div>
     </div>
@@ -1828,16 +2184,20 @@ function ComingSoonRow({ title, body }: { title: string; body: string }) {
             {title}
           </p>
           <span
-            className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider"
+            className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold tracking-wider uppercase"
             style={{
-              backgroundColor: "color-mix(in srgb, var(--text) 8%, transparent)",
+              backgroundColor:
+                "color-mix(in srgb, var(--text) 8%, transparent)",
               color: "var(--text-muted)",
             }}
           >
             Soon
           </span>
         </div>
-        <p className="mt-0.5 text-[12px]" style={{ color: "var(--text-muted)" }}>
+        <p
+          className="mt-0.5 text-[12px]"
+          style={{ color: "var(--text-muted)" }}
+        >
           {body}
         </p>
       </div>
@@ -1853,9 +2213,9 @@ function ComingSoonRow({ title, body }: { title: string; body: string }) {
 // the Stripe PaymentElement in SetupIntent mode — no charge happens,
 // just card-on-file attachment.
 function PaymentMethodsCard() {
-  const [items, setItems]     = useState<SavedPaymentMethod[] | null>(null);
+  const [items, setItems] = useState<SavedPaymentMethod[] | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
 
@@ -1863,37 +2223,54 @@ function PaymentMethodsCard() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/billing/payment-methods", { cache: "no-store" });
-      const json = await res.json() as { paymentMethods?: SavedPaymentMethod[]; error?: string };
-      if (!res.ok) throw new Error(json.error ?? "Failed to load payment methods");
+      const res = await fetch("/api/billing/payment-methods", {
+        cache: "no-store",
+      });
+      const json = (await res.json()) as {
+        paymentMethods?: SavedPaymentMethod[];
+        error?: string;
+      };
+      if (!res.ok)
+        throw new Error(json.error ?? "Failed to load payment methods");
       setItems(json.paymentMethods ?? []);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't load payment methods.");
+      setError(
+        e instanceof Error ? e.message : "Couldn't load payment methods."
+      );
       setItems([]);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
-  const handleRemove = useCallback(async (id: string) => {
-    if (removingId) return;
-    if (typeof window !== "undefined" && !window.confirm("Remove this card?")) return;
-    setRemovingId(id);
-    try {
-      const res = await fetch(`/api/billing/payment-methods?id=${encodeURIComponent(id)}`, {
-        method: "DELETE",
-      });
-      const json = await res.json().catch(() => ({})) as { error?: string };
-      if (!res.ok) throw new Error(json.error ?? "Failed to remove card");
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't remove card.");
-    } finally {
-      setRemovingId(null);
-    }
-  }, [removingId, load]);
+  const handleRemove = useCallback(
+    async (id: string) => {
+      if (removingId) return;
+      if (typeof window !== "undefined" && !window.confirm("Remove this card?"))
+        return;
+      setRemovingId(id);
+      try {
+        const res = await fetch(
+          `/api/billing/payment-methods?id=${encodeURIComponent(id)}`,
+          {
+            method: "DELETE",
+          }
+        );
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) throw new Error(json.error ?? "Failed to remove card");
+        await load();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Couldn't remove card.");
+      } finally {
+        setRemovingId(null);
+      }
+    },
+    [removingId, load]
+  );
 
   return (
     <div className="flex flex-col gap-3">
@@ -1905,7 +2282,10 @@ function PaymentMethodsCard() {
           >
             Payment methods
           </h3>
-          <p className="mt-0.5 text-[12px]" style={{ color: "var(--text-muted)" }}>
+          <p
+            className="mt-0.5 text-[12px]"
+            style={{ color: "var(--text-muted)" }}
+          >
             Saved cards skip checkout entry on future top-ups.
           </p>
         </div>
@@ -1923,8 +2303,10 @@ function PaymentMethodsCard() {
         <div
           className="rounded-md border px-3 py-2 text-[12px]"
           style={{
-            borderColor: "color-mix(in srgb, var(--accent-red) 30%, transparent)",
-            backgroundColor: "color-mix(in srgb, var(--accent-red) 8%, transparent)",
+            borderColor:
+              "color-mix(in srgb, var(--accent-red) 30%, transparent)",
+            backgroundColor:
+              "color-mix(in srgb, var(--accent-red) 8%, transparent)",
             color: "var(--accent-red)",
           }}
         >
@@ -1935,7 +2317,11 @@ function PaymentMethodsCard() {
       {loading && !items && (
         <div
           className="rounded-2xl border p-4 text-[13px]"
-          style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)", color: "var(--text-muted)" }}
+          style={{
+            borderColor: "var(--border)",
+            backgroundColor: "var(--surface-raised)",
+            color: "var(--text-muted)",
+          }}
         >
           <Loader2 className="mr-2 inline-block size-4 animate-spin" />
           Loading saved cards…
@@ -1945,7 +2331,11 @@ function PaymentMethodsCard() {
       {items && items.length === 0 && !loading && (
         <div
           className="rounded-2xl border p-4 text-[13px]"
-          style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)", color: "var(--text-muted)" }}
+          style={{
+            borderColor: "var(--border)",
+            backgroundColor: "var(--surface-raised)",
+            color: "var(--text-muted)",
+          }}
         >
           No saved cards yet. Add one to make future recharges one-click.
         </div>
@@ -1957,7 +2347,10 @@ function PaymentMethodsCard() {
             <li
               key={pm.id}
               className="flex items-center gap-3 rounded-2xl border p-3"
-              style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)" }}
+              style={{
+                borderColor: "var(--border)",
+                backgroundColor: "var(--surface-raised)",
+              }}
             >
               <div
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md"
@@ -1970,14 +2363,18 @@ function PaymentMethodsCard() {
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-[13px] font-medium" style={{ color: "var(--text)" }}>
+                  <span
+                    className="text-[13px] font-medium"
+                    style={{ color: "var(--text)" }}
+                  >
                     {brandLabel(pm.brand)} •••• {pm.last4}
                   </span>
                   {pm.isDefault && (
                     <span
-                      className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider"
+                      className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold tracking-wider uppercase"
                       style={{
-                        backgroundColor: "color-mix(in srgb, var(--primary) 14%, transparent)",
+                        backgroundColor:
+                          "color-mix(in srgb, var(--primary) 14%, transparent)",
                         color: "var(--primary)",
                       }}
                     >
@@ -1985,7 +2382,10 @@ function PaymentMethodsCard() {
                     </span>
                   )}
                 </div>
-                <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                <div
+                  className="text-[11px]"
+                  style={{ color: "var(--text-muted)" }}
+                >
                   Expires {formatExp(pm.expMonth, pm.expYear) || "—"}
                 </div>
               </div>
@@ -1998,7 +2398,11 @@ function PaymentMethodsCard() {
                 className="flex h-8 w-8 items-center justify-center rounded-full transition-opacity hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-white/5"
                 style={{ color: "var(--text-muted)" }}
               >
-                {removingId === pm.id ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+                {removingId === pm.id ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Trash2 className="size-4" />
+                )}
               </button>
             </li>
           ))}
@@ -2055,7 +2459,10 @@ function AddPaymentMethodModal({
         const res = await fetch("/api/billing/payment-methods/setup-intent", {
           method: "POST",
         });
-        const json = await res.json() as { clientSecret?: string; error?: string };
+        const json = (await res.json()) as {
+          clientSecret?: string;
+          error?: string;
+        };
         if (!alive) return;
         if (!res.ok || !json.clientSecret) {
           throw new Error(json.error ?? "Couldn't initialize card setup.");
@@ -2063,10 +2470,14 @@ function AddPaymentMethodModal({
         setClientSecret(json.clientSecret);
       } catch (e) {
         if (!alive) return;
-        setFetchError(e instanceof Error ? e.message : "Couldn't initialize card setup.");
+        setFetchError(
+          e instanceof Error ? e.message : "Couldn't initialize card setup."
+        );
       }
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, []);
 
   // Theme-aware Elements appearance. The key={theme} on <Elements>
@@ -2083,14 +2494,17 @@ function AddPaymentMethodModal({
       <div
         role="dialog"
         aria-modal="true"
-        className="fixed left-1/2 top-1/2 z-[61] w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border shadow-2xl"
+        className="fixed top-1/2 left-1/2 z-[61] w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border shadow-2xl"
         style={{
           borderColor: "var(--border)",
           backgroundColor: "var(--surface)",
           boxShadow: "0 24px 64px rgba(0, 0, 0, 0.5)",
         }}
       >
-        <div className="flex items-start gap-3 border-b px-5 py-4" style={{ borderColor: "var(--border)" }}>
+        <div
+          className="flex items-start gap-3 border-b px-5 py-4"
+          style={{ borderColor: "var(--border)" }}
+        >
           <div
             className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
             style={{
@@ -2101,13 +2515,19 @@ function AddPaymentMethodModal({
             <CreditCard size={16} />
           </div>
           <div className="min-w-0 flex-1">
-            <h2 className="text-[15px] font-semibold" style={{ color: "var(--text)" }}>
+            <h2
+              className="text-[15px] font-semibold"
+              style={{ color: "var(--text)" }}
+            >
               Add a payment method
             </h2>
-            <p className="mt-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
-              No charge happens now — your card is held on file so future top-ups skip
-              card entry. Downloadable receipts land in Account → Billing after every
-              recharge.
+            <p
+              className="mt-1 text-[12px]"
+              style={{ color: "var(--text-muted)" }}
+            >
+              No charge happens now — your card is held on file so future
+              top-ups skip card entry. Downloadable receipts land in Account →
+              Billing after every recharge.
             </p>
           </div>
           <button
@@ -2144,7 +2564,9 @@ function AddPaymentMethodModal({
             <br />
             <span style={{ display: "block", marginTop: 6 }}>
               Card-on-file rules vary by country. Cards issued in{" "}
-              <span style={{ color: "var(--text)", fontWeight: 500 }}>India, Brazil</span>{" "}
+              <span style={{ color: "var(--text)", fontWeight: 500 }}>
+                India, Brazil
+              </span>{" "}
               and a few other markets may need to be re-entered each top-up due
               to local regulator (e.g. RBI) tokenization rules — your card
               issuer will decline the save if so.
@@ -2155,8 +2577,10 @@ function AddPaymentMethodModal({
             <div
               className="rounded-md border px-3 py-2 text-[12px]"
               style={{
-                borderColor: "color-mix(in srgb, var(--accent-red) 30%, transparent)",
-                backgroundColor: "color-mix(in srgb, var(--accent-red) 8%, transparent)",
+                borderColor:
+                  "color-mix(in srgb, var(--accent-red) 30%, transparent)",
+                backgroundColor:
+                  "color-mix(in srgb, var(--accent-red) 8%, transparent)",
                 color: "var(--accent-red)",
               }}
             >
@@ -2164,8 +2588,12 @@ function AddPaymentMethodModal({
             </div>
           )}
           {!fetchError && !clientSecret && (
-            <div className="flex items-center gap-2 py-6 text-[13px]" style={{ color: "var(--text-muted)" }}>
-              <Loader2 className="size-4 animate-spin" /> Preparing the card form…
+            <div
+              className="flex items-center gap-2 py-6 text-[13px]"
+              style={{ color: "var(--text-muted)" }}
+            >
+              <Loader2 className="size-4 animate-spin" /> Preparing the card
+              form…
             </div>
           )}
           {!fetchError && clientSecret && stripePromise && (
@@ -2182,7 +2610,8 @@ function AddPaymentMethodModal({
               className="rounded-md border px-3 py-2 text-[12px]"
               style={{
                 borderColor: "color-mix(in srgb, var(--warn) 30%, transparent)",
-                backgroundColor: "color-mix(in srgb, var(--warn) 8%, transparent)",
+                backgroundColor:
+                  "color-mix(in srgb, var(--warn) 8%, transparent)",
                 color: "var(--warn)",
               }}
             >
@@ -2204,7 +2633,7 @@ function AddPaymentMethodForm({
   onCancel: () => void;
   onSuccess: () => void;
 }) {
-  const stripe   = useStripe();
+  const stripe = useStripe();
   const elements = useElements();
   const [submitting, setSubmitting] = useState(false);
   const [errMsg, setErrMsg] = useState<string | null>(null);
@@ -2229,13 +2658,17 @@ function AddPaymentMethodForm({
 
   return (
     <div className="flex flex-col gap-3">
-      <PaymentElement options={{ layout: { type: "tabs", defaultCollapsed: false } }} />
+      <PaymentElement
+        options={{ layout: { type: "tabs", defaultCollapsed: false } }}
+      />
       {errMsg && (
         <div
           className="rounded-md border px-3 py-2 text-[12px]"
           style={{
-            borderColor: "color-mix(in srgb, var(--accent-red) 30%, transparent)",
-            backgroundColor: "color-mix(in srgb, var(--accent-red) 8%, transparent)",
+            borderColor:
+              "color-mix(in srgb, var(--accent-red) 30%, transparent)",
+            backgroundColor:
+              "color-mix(in srgb, var(--accent-red) 8%, transparent)",
             color: "var(--accent-red)",
           }}
         >

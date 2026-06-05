@@ -225,11 +225,7 @@ export function ContactForm() {
       </div>
 
       <label className="r-contact-consent">
-        <input
-          type="checkbox"
-          name="marketingConsent"
-          disabled={submitting}
-        />
+        <input type="checkbox" name="marketingConsent" disabled={submitting} />
         <span>
           I consent to receive email updates, newsletters, and other
           communications from Relay

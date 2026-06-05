@@ -232,8 +232,8 @@ export function PhaseCtaForm({
           lineHeight: 1.5,
         }}
       >
-        * Goes straight to your Relay engineer. Want a custom quote? Say so
-        in the message and submit.
+        * Goes straight to your Relay engineer. Want a custom quote? Say so in
+        the message and submit.
       </p>
 
       {errorMessage && (

@@ -42,7 +42,7 @@ olive green) in 15+ files** as the de-facto CTA color.
 - **Kill `BRAND_GREEN = "#3f5c2e"`.** It was a third green that never
   belonged. All 15+ hardcoded usages migrate to tokens.
 
-The brief's "Relay green CTA" intent is honored *aesthetically* (the
+The brief's "Relay green CTA" intent is honored _aesthetically_ (the
 launcher and the live "ringing" surface are visibly green and feel like the
 brand), while the primary action color across the rest of the product is
 coral — matching the codified spec and avoiding a fight between three
@@ -53,7 +53,7 @@ wired in [`app/layout.tsx`](app/layout.tsx). Body ≥16px, line-height ~1.5,
 deliberate scale. No font swap — repo already uses next/font with the
 serif-grotesque pairing the brief asks for. The brief's suggestions
 (Fraunces / Newsreader / General Sans) are valid but introducing a new font
-load is a *separate* decision; flagged as a question for review (§G).
+load is a _separate_ decision; flagged as a question for review (§G).
 
 **Surfaces & motion:** layered dark via lightness on `--surface` /
 `--background` / `--border` (already present). Hairline borders. Single
@@ -67,20 +67,20 @@ already partially honored — needs to extend to the existing `ping`,
 
 ## A. Stack & tooling
 
-| Layer | Reality on disk |
-|---|---|
-| Framework | **Next.js 16.2.6** App Router, edge `proxy.ts` (not `middleware.ts`). |
-| React | **19.2.4**. `reactStrictMode: false` (Zoom SDK singleton). |
-| TypeScript | 5.x, strict mode (`tsc --noEmit` via `npm run typecheck`). |
-| Styling | **Tailwind v4** (`@tailwindcss/postcss`) + `@theme inline` block in [`app/globals.css`](app/globals.css:37-52) mapping CSS vars → utility colors. **Tokens-in-globals.css is the source of truth.** No `tailwind.config.{js,ts}`. |
-| Token vars | [`app/globals.css:13-35`](app/globals.css:13). Dark-only (`color-scheme: dark`). `--background`, `--surface`, `--border`, `--text`, `--text-muted`, `--primary` (coral), `--primary-hover`, `--green-dot`, `--accent-red`. **No `--surface-raised`, `--text-faint`, semantic `--ok` / `--warn` / `--risk`.** |
+| Layer         | Reality on disk                                                                                                                                                                                                                                                                                                    |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Framework     | **Next.js 16.2.6** App Router, edge `proxy.ts` (not `middleware.ts`).                                                                                                                                                                                                                                              |
+| React         | **19.2.4**. `reactStrictMode: false` (Zoom SDK singleton).                                                                                                                                                                                                                                                         |
+| TypeScript    | 5.x, strict mode (`tsc --noEmit` via `npm run typecheck`).                                                                                                                                                                                                                                                         |
+| Styling       | **Tailwind v4** (`@tailwindcss/postcss`) + `@theme inline` block in [`app/globals.css`](app/globals.css:37-52) mapping CSS vars → utility colors. **Tokens-in-globals.css is the source of truth.** No `tailwind.config.{js,ts}`.                                                                                  |
+| Token vars    | [`app/globals.css:13-35`](app/globals.css:13). Dark-only (`color-scheme: dark`). `--background`, `--surface`, `--border`, `--text`, `--text-muted`, `--primary` (coral), `--primary-hover`, `--green-dot`, `--accent-red`. **No `--surface-raised`, `--text-faint`, semantic `--ok` / `--warn` / `--risk`.**       |
 | Component lib | **Custom + ad-hoc.** No shadcn, no Radix, no Headless UI. Some reusable primitives exist under `app/_components/admin-v2/` (Drawer, Sidebar, TabsHeader, DataTable, DetailCard, MinutesBar, UserChip) — built for the admin redesign in [`UIchanges.md`](UIchanges.md). Outside admin, ~everything is hand-rolled. |
-| Icons | **`lucide-react ^1.14.0`** dependency present, but most surfaces use literal characters (`→`, emoji, custom SVGs inline). Lucide is **available**, **underused**. |
-| Fonts | `@fontsource/source-serif-4` + `@fontsource/inter` (npm), JetBrains Mono via next/font. Wired in [`app/layout.tsx`](app/layout.tsx). |
-| Animation | CSS keyframes only (`@keyframes ping`, `relay-pulse`, `engineer-ring`, `relay-page-in`, `relay-fade-in`, `relay-toast-in`). No Framer Motion. `aos ^2.3.4` is present but only for marketing. |
-| Auth | Supabase `@supabase/ssr` + `@supabase/supabase-js`. Customer = magic link (`/login`). Staff = 8-digit OTP (`/staff/login`). Read-only `lib/auth.ts` is the **demo-cookie shim**, do not touch. |
-| Data | **Supabase exclusively.** Prisma stub at [`lib/db.ts`](lib/db.ts) throws on call. `prisma/schema.prisma` is doc-only. Schema migrations live in [`supabase/migrations/`](supabase/migrations/). |
-| Tests | Playwright (`tests/`), `workers: 1`, baseURL `https://10.0.1.207:3000` (stale — package.json dev binds to `10.0.2.62`; see [`CLAUDE.md`](CLAUDE.md) drift note). |
+| Icons         | **`lucide-react ^1.14.0`** dependency present, but most surfaces use literal characters (`→`, emoji, custom SVGs inline). Lucide is **available**, **underused**.                                                                                                                                                  |
+| Fonts         | `@fontsource/source-serif-4` + `@fontsource/inter` (npm), JetBrains Mono via next/font. Wired in [`app/layout.tsx`](app/layout.tsx).                                                                                                                                                                               |
+| Animation     | CSS keyframes only (`@keyframes ping`, `relay-pulse`, `engineer-ring`, `relay-page-in`, `relay-fade-in`, `relay-toast-in`). No Framer Motion. `aos ^2.3.4` is present but only for marketing.                                                                                                                      |
+| Auth          | Supabase `@supabase/ssr` + `@supabase/supabase-js`. Customer = magic link (`/login`). Staff = 8-digit OTP (`/staff/login`). Read-only `lib/auth.ts` is the **demo-cookie shim**, do not touch.                                                                                                                     |
+| Data          | **Supabase exclusively.** Prisma stub at [`lib/db.ts`](lib/db.ts) throws on call. `prisma/schema.prisma` is doc-only. Schema migrations live in [`supabase/migrations/`](supabase/migrations/).                                                                                                                    |
+| Tests         | Playwright (`tests/`), `workers: 1`, baseURL `https://10.0.1.207:3000` (stale — package.json dev binds to `10.0.2.62`; see [`CLAUDE.md`](CLAUDE.md) drift note).                                                                                                                                                   |
 
 **Implication for the transformation:** we **work within Tailwind v4 + CSS
 vars in `globals.css`**. The token system gets extended (semantic statuses,
@@ -92,50 +92,50 @@ brief allows it but the repo has rejected that path; we keep one toolkit.
 ## B. Route & screen map
 
 Generated from `app/**/page.tsx` + every `*Client.tsx`. **Bold** = primary
-target of this transformation. *(legacy/Prisma-stub — see [`CLAUDE.md`](CLAUDE.md:64-73))*
+target of this transformation. _(legacy/Prisma-stub — see [`CLAUDE.md`](CLAUDE.md:64-73))_
 = surfaces flagged by repo guidance as either dead, broken, or marketing.
 
 ### Customer + auth
 
-| Brief screen | Route | Client | Notes |
-|---|---|---|---|
-| Login | `/login` | [`SignInForm.tsx`](app/login/SignInForm.tsx) | Email + password + OTP fallback. Multi-mode form. |
-| First-time signup | (no dedicated route) | same `SignInForm.tsx` `purpose: "first-time"` branch | OTP code input is a single `<input>`, **not digit boxes** today. |
-| Set password | `/set-password` | [`SetPasswordClient.tsx`](app/set-password/SetPasswordClient.tsx) | `mode=customer\|staff` query param. |
-| Onboarding / Intake (4-step) | `/intake` | [`IntakeClient.tsx`](app/intake/IntakeClient.tsx) | Wizard. **Step 2 (AI tool) is single-select today** — see §G.intake. |
-| Matching (ringing engineers) | `/intake/matching/[id]` | [`MatchingClient.tsx`](app/intake/matching/[id]/MatchingClient.tsx) | Live phase machine + countdown. Chat is **NOT** present here today. |
-| Dashboard / empty | `/room` | [`RoomClient.tsx`](app/room/RoomClient.tsx) | **The big one — ~2500 lines.** Hosts: sidebar, dashboard empty state, chat thread, summary panel, every customer modal. Routes through internal state, not separate routes. |
-| Chat + call room (live) | `/room` (same client, `session` state) | same | |
-| Chat + call room (ended/read-only) | `/room?viewing=<id>` | same | `viewingPastId` internal state — **no history push** today. |
-| Direct Zoom join page | `/call/[id]` | [`CallClient.tsx`](app/call/[id]/CallClient.tsx) | Standalone Zoom embed surface. |
-| Embeddable widgets | `/widget/customer`, `/widget/engineer` | [`CustomerWidgetClient.tsx`](app/widget/customer/CustomerWidgetClient.tsx), [`EngineerWidgetClient.tsx`](app/widget/engineer/EngineerWidgetClient.tsx) | Iframe surfaces. **Treat as separate from main reform — restyle to match but verify iframe sizing constraints.** |
+| Brief screen                       | Route                                  | Client                                                                                                                                                 | Notes                                                                                                                                                                       |
+| ---------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Login                              | `/login`                               | [`SignInForm.tsx`](app/login/SignInForm.tsx)                                                                                                           | Email + password + OTP fallback. Multi-mode form.                                                                                                                           |
+| First-time signup                  | (no dedicated route)                   | same `SignInForm.tsx` `purpose: "first-time"` branch                                                                                                   | OTP code input is a single `<input>`, **not digit boxes** today.                                                                                                            |
+| Set password                       | `/set-password`                        | [`SetPasswordClient.tsx`](app/set-password/SetPasswordClient.tsx)                                                                                      | `mode=customer\|staff` query param.                                                                                                                                         |
+| Onboarding / Intake (4-step)       | `/intake`                              | [`IntakeClient.tsx`](app/intake/IntakeClient.tsx)                                                                                                      | Wizard. **Step 2 (AI tool) is single-select today** — see §G.intake.                                                                                                        |
+| Matching (ringing engineers)       | `/intake/matching/[id]`                | [`MatchingClient.tsx`](app/intake/matching/[id]/MatchingClient.tsx)                                                                                    | Live phase machine + countdown. Chat is **NOT** present here today.                                                                                                         |
+| Dashboard / empty                  | `/room`                                | [`RoomClient.tsx`](app/room/RoomClient.tsx)                                                                                                            | **The big one — ~2500 lines.** Hosts: sidebar, dashboard empty state, chat thread, summary panel, every customer modal. Routes through internal state, not separate routes. |
+| Chat + call room (live)            | `/room` (same client, `session` state) | same                                                                                                                                                   |                                                                                                                                                                             |
+| Chat + call room (ended/read-only) | `/room?viewing=<id>`                   | same                                                                                                                                                   | `viewingPastId` internal state — **no history push** today.                                                                                                                 |
+| Direct Zoom join page              | `/call/[id]`                           | [`CallClient.tsx`](app/call/[id]/CallClient.tsx)                                                                                                       | Standalone Zoom embed surface.                                                                                                                                              |
+| Embeddable widgets                 | `/widget/customer`, `/widget/engineer` | [`CustomerWidgetClient.tsx`](app/widget/customer/CustomerWidgetClient.tsx), [`EngineerWidgetClient.tsx`](app/widget/engineer/EngineerWidgetClient.tsx) | Iframe surfaces. **Treat as separate from main reform — restyle to match but verify iframe sizing constraints.**                                                            |
 
 ### Staff
 
-| Brief screen | Route | Client | Notes |
-|---|---|---|---|
-| Staff login | `/staff/login` | [`StaffLoginForm.tsx`](app/staff/login/StaffLoginForm.tsx) | 8-digit OTP code. Today single text input. |
-| Engineer onboarding | `/staff/onboarding` | [`EngineerOnboardingClient.tsx`](app/staff/onboarding/EngineerOnboardingClient.tsx) | Engineer profile setup. |
-| Dashboard | `/dashboard` *(staff)* | [`DashboardClient.tsx`](app/(staff)/dashboard/DashboardClient.tsx) | Stats + take-next CTA. |
-| Inbox (queue) | `/inbox` | [`InboxClient.tsx`](app/(staff)/inbox/InboxClient.tsx) | 3-col `grid-cols-[280px_1fr_320px]`, no responsive collapse. |
-| Active engineer session | `/staff/session/[id]` | [`EngineerSessionClient.tsx`](app/staff/session/[id]/EngineerSessionClient.tsx) | Engineer-side mirror of `/room`. Auto-mints Zoom. |
-| Supervisor session (read-only) | `/staff/session/[id]` (same client, `isSupervisor` branch) | same | Read-only banner, no end/mute. |
-| Supervise board | `/supervise` | [`SuperviseClient.tsx`](app/(staff)/supervise/SuperviseClient.tsx) | All/Waiting/Live/Past tabs, health bars, pod-scoped. |
-| Operations (pod) | `/operations` | [`OperationsClient.tsx`](app/(staff)/operations/OperationsClient.tsx) | The pod engineer table. **Pod-allocation seam home.** |
-| Enterprise admin | `/enterprise` + `/enterprise/departments` + `/enterprise/supervise` + `/enterprise/wallet` + `/enterprise/v2` | `EnterpriseClient.tsx`, `DepartmentsClient.tsx`, `EnterpriseSuperviseClient.tsx`, `WalletClient.tsx`, `PanelClient.tsx` | Out of brief's §5 but reformed-by-osmosis through shared `StaffShell`. |
-| Internal admin | `/admin` + `/admin/users` + `/admin/v2` | `AdminClient.tsx`, `UsersClient.tsx`, `PanelClient.tsx` | Same. [`UIchanges.md`](UIchanges.md) owns the v2 redesign — coordinate. |
-| Department panel | `/department`, `/department/v2` | `DepartmentClient.tsx`, `PanelClient.tsx` | Same. |
-| Reseller panel | `/reseller`, `/reseller/v2` | `ResellerClient.tsx`, `PanelClient.tsx` | Same. |
-| Finance | `/finance` | `FinanceClient.tsx` | Same. |
-| Settings (profile/account) | `/settings` | `app/(staff)/settings/page.tsx` | **Profile screen of §5.10.** Today: thin. |
+| Brief screen                   | Route                                                                                                         | Client                                                                                                                  | Notes                                                                   |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Staff login                    | `/staff/login`                                                                                                | [`StaffLoginForm.tsx`](app/staff/login/StaffLoginForm.tsx)                                                              | 8-digit OTP code. Today single text input.                              |
+| Engineer onboarding            | `/staff/onboarding`                                                                                           | [`EngineerOnboardingClient.tsx`](app/staff/onboarding/EngineerOnboardingClient.tsx)                                     | Engineer profile setup.                                                 |
+| Dashboard                      | `/dashboard` _(staff)_                                                                                        | [`DashboardClient.tsx`](<app/(staff)/dashboard/DashboardClient.tsx>)                                                    | Stats + take-next CTA.                                                  |
+| Inbox (queue)                  | `/inbox`                                                                                                      | [`InboxClient.tsx`](<app/(staff)/inbox/InboxClient.tsx>)                                                                | 3-col `grid-cols-[280px_1fr_320px]`, no responsive collapse.            |
+| Active engineer session        | `/staff/session/[id]`                                                                                         | [`EngineerSessionClient.tsx`](app/staff/session/[id]/EngineerSessionClient.tsx)                                         | Engineer-side mirror of `/room`. Auto-mints Zoom.                       |
+| Supervisor session (read-only) | `/staff/session/[id]` (same client, `isSupervisor` branch)                                                    | same                                                                                                                    | Read-only banner, no end/mute.                                          |
+| Supervise board                | `/supervise`                                                                                                  | [`SuperviseClient.tsx`](<app/(staff)/supervise/SuperviseClient.tsx>)                                                    | All/Waiting/Live/Past tabs, health bars, pod-scoped.                    |
+| Operations (pod)               | `/operations`                                                                                                 | [`OperationsClient.tsx`](<app/(staff)/operations/OperationsClient.tsx>)                                                 | The pod engineer table. **Pod-allocation seam home.**                   |
+| Enterprise admin               | `/enterprise` + `/enterprise/departments` + `/enterprise/supervise` + `/enterprise/wallet` + `/enterprise/v2` | `EnterpriseClient.tsx`, `DepartmentsClient.tsx`, `EnterpriseSuperviseClient.tsx`, `WalletClient.tsx`, `PanelClient.tsx` | Out of brief's §5 but reformed-by-osmosis through shared `StaffShell`.  |
+| Internal admin                 | `/admin` + `/admin/users` + `/admin/v2`                                                                       | `AdminClient.tsx`, `UsersClient.tsx`, `PanelClient.tsx`                                                                 | Same. [`UIchanges.md`](UIchanges.md) owns the v2 redesign — coordinate. |
+| Department panel               | `/department`, `/department/v2`                                                                               | `DepartmentClient.tsx`, `PanelClient.tsx`                                                                               | Same.                                                                   |
+| Reseller panel                 | `/reseller`, `/reseller/v2`                                                                                   | `ResellerClient.tsx`, `PanelClient.tsx`                                                                                 | Same.                                                                   |
+| Finance                        | `/finance`                                                                                                    | `FinanceClient.tsx`                                                                                                     | Same.                                                                   |
+| Settings (profile/account)     | `/settings`                                                                                                   | `app/(staff)/settings/page.tsx`                                                                                         | **Profile screen of §5.10.** Today: thin.                               |
 
 ### Legacy / out of scope
 
-| Route | Status | Action |
-|---|---|---|
-| `/customer`, `/engineer`, `/supervisor` | **Legacy** per [`CLAUDE.md`](CLAUDE.md:71-73). Likely Prisma-stub throwers. | Do not restyle. Flag in `TRANSFORMATION_LOG.md`. |
-| `/brand-guidelines`, `/explainer`, `/sitemap-and-content-plan` | Internal marketing aids. | Out of scope. |
-| `/`, `/_marketing/*`, `/company/*`, `/for/*`, `/for-enterprise`, `/pricing`, `/product`, `/resources/*`, `/legal/*`, `/trust/*`, `/download` | **Marketing site.** | **Out of scope.** Brief is product UI only. |
+| Route                                                                                                                                        | Status                                                                      | Action                                           |
+| -------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------ |
+| `/customer`, `/engineer`, `/supervisor`                                                                                                      | **Legacy** per [`CLAUDE.md`](CLAUDE.md:71-73). Likely Prisma-stub throwers. | Do not restyle. Flag in `TRANSFORMATION_LOG.md`. |
+| `/brand-guidelines`, `/explainer`, `/sitemap-and-content-plan`                                                                               | Internal marketing aids.                                                    | Out of scope.                                    |
+| `/`, `/_marketing/*`, `/company/*`, `/for/*`, `/for-enterprise`, `/pricing`, `/product`, `/resources/*`, `/legal/*`, `/trust/*`, `/download` | **Marketing site.**                                                         | **Out of scope.** Brief is product UI only.      |
 
 ### Routes the brief implies but the code does **not** currently expose
 
@@ -151,22 +151,22 @@ target of this transformation. *(legacy/Prisma-stub — see [`CLAUDE.md`](CLAUDE
 
 Reusable primitives **already shared** (good — keep + extend):
 
-| Name | Path | Notes |
-|---|---|---|
-| `StaffShell` | [`app/_components/StaffShell.tsx`](app/_components/StaffShell.tsx) | Staff left-nav chrome, profile dropdown, 240↔60 collapse, role-gated nav, incoming-call gate. |
-| `ChatComposer` | [`app/_components/ChatComposer.tsx`](app/_components/ChatComposer.tsx) | Textarea + file picker. Used by `RoomClient` and `EngineerSessionClient`. |
-| `MeetingChatEntry` | [`app/_components/MeetingChatEntry.tsx`](app/_components/MeetingChatEntry.tsx) | Inline "Zoom call started/ended" chat card with Join button. |
-| `MatchingModal` | [`app/_components/MatchingModal.tsx`](app/_components/MatchingModal.tsx) | 4 phases (loading/ringing/no_engineer/accepted). |
-| `PaywallModal` | [`app/_components/PaywallModal.tsx`](app/_components/PaywallModal.tsx) | 627 lines, hardcodes its **own** palette (`#5d8a44` brighter green, `#0a0a0a` surface). Disjoint from rest of app per audit. |
-| `EngineerIncomingMatch` | [`app/_components/EngineerIncomingMatch.tsx`](app/_components/EngineerIncomingMatch.tsx) | Engineer's "incoming call" full-screen. |
-| `ConfirmDialog` | [`app/_components/ConfirmDialog.tsx`](app/_components/ConfirmDialog.tsx) | `useConfirmDialog()` hook. |
-| `DataTable` | [`app/_components/DataTable.tsx`](app/_components/DataTable.tsx) | Sortable + paginated + filterable table. |
-| `ChipGroup` | [`app/_components/wizard/ChipGroup.tsx`](app/_components/wizard/ChipGroup.tsx) | Single+multi-select chip group. **Already supports multi** — the multi-select fix in §5.2 is a state-cap change, not a new component. |
-| `WizardShell` | [`app/_components/wizard/WizardShell.tsx`](app/_components/wizard/WizardShell.tsx) | Intake wizard chrome. |
-| `MessageAttachments` | [`app/_components/MessageAttachments.tsx`](app/_components/MessageAttachments.tsx) | Renders message attachments. |
-| `MeetingSummaryEntry` | [`app/_components/MeetingSummaryEntry.tsx`](app/_components/MeetingSummaryEntry.tsx) | Inline AI-summary chat card. |
-| `PostCallView` | [`app/_components/PostCallView.tsx`](app/_components/PostCallView.tsx) | Engineer post-call summary. |
-| admin-v2 primitives | [`app/_components/admin-v2/`](app/_components/admin-v2/) | `Breadcrumb`, `DetailCard`, `Drawer`, `EditNameDrawer`, `FilterTile`, `MinutesBar`, `Sidebar`, `SignOutButton`, `TabsHeader`, `UserChip`. **These are the closest thing to a design system in the repo.** Built per [`UIchanges.md`](UIchanges.md). Will lift the best ones to top-level. |
+| Name                    | Path                                                                                     | Notes                                                                                                                                                                                                                                                                                     |
+| ----------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `StaffShell`            | [`app/_components/StaffShell.tsx`](app/_components/StaffShell.tsx)                       | Staff left-nav chrome, profile dropdown, 240↔60 collapse, role-gated nav, incoming-call gate.                                                                                                                                                                                             |
+| `ChatComposer`          | [`app/_components/ChatComposer.tsx`](app/_components/ChatComposer.tsx)                   | Textarea + file picker. Used by `RoomClient` and `EngineerSessionClient`.                                                                                                                                                                                                                 |
+| `MeetingChatEntry`      | [`app/_components/MeetingChatEntry.tsx`](app/_components/MeetingChatEntry.tsx)           | Inline "Zoom call started/ended" chat card with Join button.                                                                                                                                                                                                                              |
+| `MatchingModal`         | [`app/_components/MatchingModal.tsx`](app/_components/MatchingModal.tsx)                 | 4 phases (loading/ringing/no_engineer/accepted).                                                                                                                                                                                                                                          |
+| `PaywallModal`          | [`app/_components/PaywallModal.tsx`](app/_components/PaywallModal.tsx)                   | 627 lines, hardcodes its **own** palette (`#5d8a44` brighter green, `#0a0a0a` surface). Disjoint from rest of app per audit.                                                                                                                                                              |
+| `EngineerIncomingMatch` | [`app/_components/EngineerIncomingMatch.tsx`](app/_components/EngineerIncomingMatch.tsx) | Engineer's "incoming call" full-screen.                                                                                                                                                                                                                                                   |
+| `ConfirmDialog`         | [`app/_components/ConfirmDialog.tsx`](app/_components/ConfirmDialog.tsx)                 | `useConfirmDialog()` hook.                                                                                                                                                                                                                                                                |
+| `DataTable`             | [`app/_components/DataTable.tsx`](app/_components/DataTable.tsx)                         | Sortable + paginated + filterable table.                                                                                                                                                                                                                                                  |
+| `ChipGroup`             | [`app/_components/wizard/ChipGroup.tsx`](app/_components/wizard/ChipGroup.tsx)           | Single+multi-select chip group. **Already supports multi** — the multi-select fix in §5.2 is a state-cap change, not a new component.                                                                                                                                                     |
+| `WizardShell`           | [`app/_components/wizard/WizardShell.tsx`](app/_components/wizard/WizardShell.tsx)       | Intake wizard chrome.                                                                                                                                                                                                                                                                     |
+| `MessageAttachments`    | [`app/_components/MessageAttachments.tsx`](app/_components/MessageAttachments.tsx)       | Renders message attachments.                                                                                                                                                                                                                                                              |
+| `MeetingSummaryEntry`   | [`app/_components/MeetingSummaryEntry.tsx`](app/_components/MeetingSummaryEntry.tsx)     | Inline AI-summary chat card.                                                                                                                                                                                                                                                              |
+| `PostCallView`          | [`app/_components/PostCallView.tsx`](app/_components/PostCallView.tsx)                   | Engineer post-call summary.                                                                                                                                                                                                                                                               |
+| admin-v2 primitives     | [`app/_components/admin-v2/`](app/_components/admin-v2/)                                 | `Breadcrumb`, `DetailCard`, `Drawer`, `EditNameDrawer`, `FilterTile`, `MinutesBar`, `Sidebar`, `SignOutButton`, `TabsHeader`, `UserChip`. **These are the closest thing to a design system in the repo.** Built per [`UIchanges.md`](UIchanges.md). Will lift the best ones to top-level. |
 
 **Components that do NOT yet exist and need building** (the design-system
 layer in §9 step 2):
@@ -191,13 +191,13 @@ audit. `ZoomEmbed.tsx` contains 11 `console.*` statements.
 
 **Hardcoded-constant duplication to centralize** (audit confirmed):
 
-| Constant | Files | Replace with |
-|---|---|---|
-| `BRAND_GREEN = "#3f5c2e"` | StaffShell, RoomClient, EngineerSessionClient, ChatComposer, MatchingModal, PaywallModal, ConfirmDialog, DataTable, MeetingChatEntry, EngineerIncomingRequest, EngineerIncomingMatch, ChipGroup, AdminClient, EnterpriseTab, PodsTab (**15+**) | **delete** — repo brand is coral, not olive green. Use `--primary` for CTAs, `--green-dot` for launcher/healthy. |
-| `URGENT_AMBER = "#d4a017"` | 6+ files | new token `--warn` |
-| `CRIT_RED = "#8b1a1a"` | 6+ files | new token `--risk` |
-| PaywallModal palette (`#5d8a44`, `#0a0a0a`, `#141413`) | `PaywallModal.tsx` | unify to repo tokens |
-| `rgba(0,0,0,0.55)` / `0.78` / various `color-mix` | many | new token `--scrim` |
+| Constant                                               | Files                                                                                                                                                                                                                                          | Replace with                                                                                                     |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `BRAND_GREEN = "#3f5c2e"`                              | StaffShell, RoomClient, EngineerSessionClient, ChatComposer, MatchingModal, PaywallModal, ConfirmDialog, DataTable, MeetingChatEntry, EngineerIncomingRequest, EngineerIncomingMatch, ChipGroup, AdminClient, EnterpriseTab, PodsTab (**15+**) | **delete** — repo brand is coral, not olive green. Use `--primary` for CTAs, `--green-dot` for launcher/healthy. |
+| `URGENT_AMBER = "#d4a017"`                             | 6+ files                                                                                                                                                                                                                                       | new token `--warn`                                                                                               |
+| `CRIT_RED = "#8b1a1a"`                                 | 6+ files                                                                                                                                                                                                                                       | new token `--risk`                                                                                               |
+| PaywallModal palette (`#5d8a44`, `#0a0a0a`, `#141413`) | `PaywallModal.tsx`                                                                                                                                                                                                                             | unify to repo tokens                                                                                             |
+| `rgba(0,0,0,0.55)` / `0.78` / various `color-mix`      | many                                                                                                                                                                                                                                           | new token `--scrim`                                                                                              |
 
 ---
 
@@ -257,7 +257,7 @@ audit. `ZoomEmbed.tsx` contains 11 `console.*` statements.
 ### `RoomClient`
 
 - Hooks: `useCustomerSession(sessionId)` (returns `{ session, messages,
-  status, urgency, … }`), `useSessionTimer(startedAt, freeMinutes)`,
+status, urgency, … }`), `useSessionTimer(startedAt, freeMinutes)`,
   `useIsSupervisor()`.
 - Realtime: `guest_calls` (INSERT/UPDATE filtered by `session_id`),
   `guest_messages` (INSERT/UPDATE/DELETE).
@@ -273,7 +273,7 @@ audit. `ZoomEmbed.tsx` contains 11 `console.*` statements.
 
 - Same `GuestCall` + `GuestMessage` model.
 - Hook: `useEngineerSession(sessionId)` returns `{ session,
-  isAssignedEngineer, messages, … }`.
+isAssignedEngineer, messages, … }`.
 - Edge function: `mint-zoom-for-session`. Auto-fires on engineer landing
   in `assigned|joining|grace` states, **not** for supervisors.
 - `mark_joined("engineer")` fires only on Zoom embed `onJoined` callback.
@@ -300,7 +300,7 @@ audit. `ZoomEmbed.tsx` contains 11 `console.*` statements.
   `pod_id` filter when `useStaffGuard()` is not `super_admin`.
 - Reads: `latest_session_health` view (DISTINCT ON session_id) — health
   scores merged onto GuestCall as `SessionWithHealth = GuestCall & {
-  health?: HealthSnapshot }`.
+health?: HealthSnapshot }`.
 - Tab filters use `LIVE_STATES`, `WAITING_STATES` constants.
 - `MIN_MESSAGES_FOR_AI = 2` threshold for trusting AI health.
 - `UNSCOPED_ROLES = ["super_admin"]` — these see all pods.
@@ -309,7 +309,7 @@ audit. `ZoomEmbed.tsx` contains 11 `console.*` statements.
 
 - `GET /api/supervisor/team` → `{ pod: { id, name }, engineers: Engineer[] }`.
 - `Engineer = { userId, displayName, email, primaryRole, currentCustomer,
-  lastCustomer, lastCallAt }`.
+lastCustomer, lastCallAt }`.
 - One fetch on mount, client-side filter on `name | email | currentCustomer`.
 
 ### `StaffShell`
@@ -370,7 +370,7 @@ escalated for the transformation.)
 ### Chat + call room (`/room` live state)
 
 - Call CTA buried — `MeetingChatEntry` Join button is `px-2.5 py-1
-  text-[11px]` (~28px high, audit-flagged).
+text-[11px]` (~28px high, audit-flagged).
 - Three-pane layout exists but proportions feel cramped.
 - Chat bubbles user vs engineer styling is subtle — needs stronger
   attribution.
@@ -423,7 +423,7 @@ escalated for the transformation.)
 
 - [`supabase/migrations/20260514120000_pods_staff_management.sql`](supabase/migrations/20260514120000_pods_staff_management.sql)
   defines `public.pod_members(user_id UNIQUE, pod_id, pod_role IN
-  ('supervisor', 'engineer'))`. **One user → one pod.**
+('supervisor', 'engineer'))`. **One user → one pod.**
 - [`supabase/migrations/20260519100000_guest_calls_pod_scope.sql`](supabase/migrations/20260519100000_guest_calls_pod_scope.sql)
   adds `guest_calls.pod_id`, stamped at `claim_session` RPC from the
   engineer's `pod_members` row.
@@ -432,14 +432,14 @@ escalated for the transformation.)
 **Current UI scoping** (where engineer→supervisor or pod→session is
 expressed):
 
-| Surface | File:line | What it does | Data fields read |
-|---|---|---|---|
-| Operations table | [`OperationsClient.tsx:35-37,108`](app/(staff)/operations/OperationsClient.tsx:35) | Fetches `/api/supervisor/team` → `{pod, engineers[]}`. Columns: name, email, **currentCustomer** ("Currently working with"), last-call. | `Engineer.currentCustomer`, `pod.name`. |
-| Operations API | [`app/api/supervisor/team/route.ts:47-93,114-126`](app/api/supervisor/team/route.ts) | Resolves caller's pod (`pod_members.eq(user_id, supervisor).pod_role=supervisor`), lists all engineers in that pod, joins with current `guest_calls.claimed_by IN engineerIds AND status IN LIVE_STATES`. | `pod_members`, `guest_calls`. |
-| Supervise board scope | [`SuperviseClient.tsx:131-133,171-172`](app/(staff)/supervise/SuperviseClient.tsx) | `pod_members.select('pod_id').eq('user_id', me)` → `guest_calls.eq('pod_id', podId)`. Super_admins skip the filter. | `pod_id`. |
-| Supervise unscoping | [`SuperviseClient.tsx:94-95`](app/(staff)/supervise/SuperviseClient.tsx) | `UNSCOPED_ROLES = ["super_admin"]`. | role string. |
-| Admin pods tab | [`app/(staff)/admin/users/PodsTab.tsx:43-44`](app/(staff)/admin/users/PodsTab.tsx) | Shows `supervisors: Member[]` + `engineers: Member[]` per pod — **already two role-sorted arrays** but no engineer→supervisor link. | `pod_role`. |
-| Pod members admin | [`app/api/admin/pods/[id]/members/route.ts:46`](app/api/admin/pods/[id]/members/route.ts) | Insert `pod_members { pod_id, user_id, pod_role }`. UNIQUE(user_id). | — |
+| Surface               | File:line                                                                                 | What it does                                                                                                                                                                                              | Data fields read                        |
+| --------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| Operations table      | [`OperationsClient.tsx:35-37,108`](<app/(staff)/operations/OperationsClient.tsx:35>)      | Fetches `/api/supervisor/team` → `{pod, engineers[]}`. Columns: name, email, **currentCustomer** ("Currently working with"), last-call.                                                                   | `Engineer.currentCustomer`, `pod.name`. |
+| Operations API        | [`app/api/supervisor/team/route.ts:47-93,114-126`](app/api/supervisor/team/route.ts)      | Resolves caller's pod (`pod_members.eq(user_id, supervisor).pod_role=supervisor`), lists all engineers in that pod, joins with current `guest_calls.claimed_by IN engineerIds AND status IN LIVE_STATES`. | `pod_members`, `guest_calls`.           |
+| Supervise board scope | [`SuperviseClient.tsx:131-133,171-172`](<app/(staff)/supervise/SuperviseClient.tsx>)      | `pod_members.select('pod_id').eq('user_id', me)` → `guest_calls.eq('pod_id', podId)`. Super_admins skip the filter.                                                                                       | `pod_id`.                               |
+| Supervise unscoping   | [`SuperviseClient.tsx:94-95`](<app/(staff)/supervise/SuperviseClient.tsx>)                | `UNSCOPED_ROLES = ["super_admin"]`.                                                                                                                                                                       | role string.                            |
+| Admin pods tab        | [`app/(staff)/admin/users/PodsTab.tsx:43-44`](<app/(staff)/admin/users/PodsTab.tsx>)      | Shows `supervisors: Member[]` + `engineers: Member[]` per pod — **already two role-sorted arrays** but no engineer→supervisor link.                                                                       | `pod_role`.                             |
+| Pod members admin     | [`app/api/admin/pods/[id]/members/route.ts:46`](app/api/admin/pods/[id]/members/route.ts) | Insert `pod_members { pod_id, user_id, pod_role }`. UNIQUE(user_id).                                                                                                                                      | —                                       |
 
 **Important fact:** the **engineer→supervisor mapping does not exist
 today.** Every engineer in a pod is implicitly "the pod's
@@ -456,7 +456,7 @@ the pod as flat. **The 10-threshold rule is genuinely net-new logic.**
   in the pod (current behavior). Marked with the `// SEAM:` comment block
   the brief specifies, including the threshold spec.
 - UI calls this module from `OperationsClient` and `SuperviseClient` so
-  the *layout* already renders an "Assigned supervisor" column and
+  the _layout_ already renders an "Assigned supervisor" column and
   groupings. With the pass-through, every engineer shows the same
   supervisor — which matches today's behavior — until the algorithm is
   swapped in later.
@@ -482,20 +482,20 @@ the pod as flat. **The 10-threshold rule is genuinely net-new logic.**
 
 ### Order (per brief §9)
 
-| # | Screen / phase | File(s) | New components introduced |
-|---|---|---|---|
-| 0 | Branch + report (this doc) | — | — |
-| 1 | Design-system layer | `app/_components/ui/*`, extend `globals.css` tokens | `Button`, `Input`, `Textarea`, `Select`, `OtpDigitInput`, `Chip`, `ChipGroup` (refactor), `StatusBadge`, `HealthBar`, `Card`, `Modal`, `Toolbar`, `EmptyState`, `SectionHeader`, `Avatar`, `Tabs`, `Toast`, `Sidebar` (lift from admin-v2), `Drawer` (lift) |
-| 2 | Login + signup | `SignInForm.tsx`, `StaffLoginForm.tsx`, `SetPasswordClient.tsx` | + `OtpDigitInput` |
-| 3 | Intake | `IntakeClient.tsx`, `WizardShell.tsx`, `ChipGroup.tsx` | + multi-select fix |
-| 4 | Dashboard / empty | `RoomClient.tsx` (no-session branch) | + dashboard hero, `EmptyState` |
-| 5 | Ringing + chat-while-waiting | `MatchingClient.tsx`, `MatchingModal.tsx`, **new** `IntakeAssistant` shell | + `IntakeAssistant`, `ChatBubble`, `ChatComposer` reused |
-| 6 | Chat/call room (live + ended) | `RoomClient.tsx`, `MeetingChatEntry.tsx`, `ChatComposer.tsx` | + giant call CTA, `ChatBubble`, in-call `IntakeAssistant` |
-| 7 | Summary panel | `RoomClient.tsx` right rail, `MeetingSummaryEntry.tsx` | scannable summary card |
-| 8 | Supervise board | `SuperviseClient.tsx` | + `HealthBar`, `StatusBadge` |
-| 9 | Operations + pod-allocation seam | `OperationsClient.tsx`, **new** `lib/allocation/podAllocation.ts` | + supervisor column, capacity meter |
-| 10 | Read-only session view | `EngineerSessionClient.tsx` (supervisor branch) | distinct calm read-only treatment |
-| 11 | Profile / account / settings | `app/(staff)/settings/page.tsx`, `StaffShell.tsx` profile dropdown | clean layout + fix profile-chip bug |
+| #   | Screen / phase                   | File(s)                                                                    | New components introduced                                                                                                                                                                                                                                   |
+| --- | -------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0   | Branch + report (this doc)       | —                                                                          | —                                                                                                                                                                                                                                                           |
+| 1   | Design-system layer              | `app/_components/ui/*`, extend `globals.css` tokens                        | `Button`, `Input`, `Textarea`, `Select`, `OtpDigitInput`, `Chip`, `ChipGroup` (refactor), `StatusBadge`, `HealthBar`, `Card`, `Modal`, `Toolbar`, `EmptyState`, `SectionHeader`, `Avatar`, `Tabs`, `Toast`, `Sidebar` (lift from admin-v2), `Drawer` (lift) |
+| 2   | Login + signup                   | `SignInForm.tsx`, `StaffLoginForm.tsx`, `SetPasswordClient.tsx`            | + `OtpDigitInput`                                                                                                                                                                                                                                           |
+| 3   | Intake                           | `IntakeClient.tsx`, `WizardShell.tsx`, `ChipGroup.tsx`                     | + multi-select fix                                                                                                                                                                                                                                          |
+| 4   | Dashboard / empty                | `RoomClient.tsx` (no-session branch)                                       | + dashboard hero, `EmptyState`                                                                                                                                                                                                                              |
+| 5   | Ringing + chat-while-waiting     | `MatchingClient.tsx`, `MatchingModal.tsx`, **new** `IntakeAssistant` shell | + `IntakeAssistant`, `ChatBubble`, `ChatComposer` reused                                                                                                                                                                                                    |
+| 6   | Chat/call room (live + ended)    | `RoomClient.tsx`, `MeetingChatEntry.tsx`, `ChatComposer.tsx`               | + giant call CTA, `ChatBubble`, in-call `IntakeAssistant`                                                                                                                                                                                                   |
+| 7   | Summary panel                    | `RoomClient.tsx` right rail, `MeetingSummaryEntry.tsx`                     | scannable summary card                                                                                                                                                                                                                                      |
+| 8   | Supervise board                  | `SuperviseClient.tsx`                                                      | + `HealthBar`, `StatusBadge`                                                                                                                                                                                                                                |
+| 9   | Operations + pod-allocation seam | `OperationsClient.tsx`, **new** `lib/allocation/podAllocation.ts`          | + supervisor column, capacity meter                                                                                                                                                                                                                         |
+| 10  | Read-only session view           | `EngineerSessionClient.tsx` (supervisor branch)                            | distinct calm read-only treatment                                                                                                                                                                                                                           |
+| 11  | Profile / account / settings     | `app/(staff)/settings/page.tsx`, `StaffShell.tsx` profile dropdown         | clean layout + fix profile-chip bug                                                                                                                                                                                                                         |
 
 ### Mocked AI shells (§7)
 
@@ -506,8 +506,8 @@ the pod as flat. **The 10-threshold rule is genuinely net-new logic.**
 - New component: `app/_components/intake/ContextCard.tsx`. The
   "Context for your engineer" summary card.
 - Boundary marker: `// TODO(api): replace stub with real assistant
-  transport (Anthropic) — keep this interface identical so the UI does
-  not change when wired.`
+transport (Anthropic) — keep this interface identical so the UI does
+not change when wired.`
 
 ### Token system extension (proposed additions to `globals.css`)
 
@@ -515,22 +515,22 @@ the pod as flat. **The 10-threshold rule is genuinely net-new logic.**
 :root {
   /* existing tokens kept verbatim — see globals.css */
   /* additions: */
-  --surface-raised: #25241f;       /* elevation above --surface */
-  --text-faint:     #777268;       /* below --text-muted */
-  --scrim:          rgba(0,0,0,.62); /* unified modal backdrop */
+  --surface-raised: #25241f; /* elevation above --surface */
+  --text-faint: #777268; /* below --text-muted */
+  --scrim: rgba(0, 0, 0, 0.62); /* unified modal backdrop */
 
   /* Semantic status — divorced from brand */
-  --ok:    var(--green-dot);
-  --warn:  #d4a017;   /* lift from hardcoded URGENT_AMBER */
-  --risk:  #c84a3a;   /* aligned to --accent-red family */
+  --ok: var(--green-dot);
+  --warn: #d4a017; /* lift from hardcoded URGENT_AMBER */
+  --risk: #c84a3a; /* aligned to --accent-red family */
 
   /* Aliases the brief asks for */
-  --accent:        var(--primary);          /* coral remains the CTA */
+  --accent: var(--primary); /* coral remains the CTA */
   --accent-strong: var(--primary-hover);
 
   /* Motion */
   --motion-fast: 150ms;
-  --motion-med:  240ms;
+  --motion-med: 240ms;
   --motion-slow: 320ms;
 }
 ```
@@ -564,7 +564,7 @@ short conversation before code (see Open questions).
      `// TODO(api): widen to text[]`.
    - (c) Send the full `string[]` and let the upsert fail loudly.
      Brittle.
-   **Recommend (b).** Approve?
+     **Recommend (b).** Approve?
 6. **Engineer presence for the pod-allocation seam.** Derive
    online/offline from existing `lastCallAt` (≤5min idle = online), or
    wait for a real presence channel? Recommend the derived heuristic
@@ -583,7 +583,7 @@ set; the full breakdown is preserved here for reference.)
 
 **Buttons** — all ad-hoc inline `<button>` with hardcoded `BRAND_GREEN`
 or per-file palette. No shared primary/secondary/ghost/danger variants.
-Pagination `PagerButton` exists *inside* `DataTable.tsx` and nowhere
+Pagination `PagerButton` exists _inside_ `DataTable.tsx` and nowhere
 else.
 
 **Inputs** — inline `<input>`, `<textarea>`, `<select>`. Search inputs

@@ -15,7 +15,9 @@ export const metadata: Metadata = {
 // reseller role. Bare-mode render handled in StaffShell.
 export default async function ResellerV2Page() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) redirect("/partner");
 
   const { data: roleRows } = await supabase
@@ -32,7 +34,9 @@ export default async function ResellerV2Page() {
 
   return (
     <Suspense fallback={null}>
-      <PanelClient me={{ email: user.email ?? "", roleLabel: highestRoleLabel(roles) }} />
+      <PanelClient
+        me={{ email: user.email ?? "", roleLabel: highestRoleLabel(roles) }}
+      />
     </Suspense>
   );
 }

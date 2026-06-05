@@ -15,7 +15,9 @@ type ZoomClient = ReturnType<typeof ZoomVideoLib.createClient>;
 
 declare global {
   // eslint-disable-next-line no-var
-  var __relayVideoClient__: { lib?: typeof ZoomVideoLib; client?: ZoomClient } | undefined;
+  var __relayVideoClient__:
+    | { lib?: typeof ZoomVideoLib; client?: ZoomClient }
+    | undefined;
 }
 
 function bag() {
@@ -29,7 +31,9 @@ async function lib(): Promise<typeof ZoomVideoLib> {
   const b = bag();
   if (!b.lib) {
     const mod = await import("@zoom/videosdk");
-    b.lib = (mod as unknown as { default: typeof ZoomVideoLib }).default ?? (mod as unknown as typeof ZoomVideoLib);
+    b.lib =
+      (mod as unknown as { default: typeof ZoomVideoLib }).default ??
+      (mod as unknown as typeof ZoomVideoLib);
   }
   return b.lib;
 }
@@ -50,11 +54,19 @@ export async function getVideoClient(): Promise<ZoomClient> {
 export async function destroyVideoClient(): Promise<void> {
   const b = bag();
   if (b.client) {
-    try { await b.client.leave(true); } catch { /* may not be in a session */ }
+    try {
+      await b.client.leave(true);
+    } catch {
+      /* may not be in a session */
+    }
     try {
       const ZoomVideo = await lib();
-      (ZoomVideo as unknown as { destroyClient?: () => void }).destroyClient?.();
-    } catch { /* ignore */ }
+      (
+        ZoomVideo as unknown as { destroyClient?: () => void }
+      ).destroyClient?.();
+    } catch {
+      /* ignore */
+    }
     b.client = undefined;
   }
 }

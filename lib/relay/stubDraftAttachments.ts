@@ -109,10 +109,15 @@ function tx(db: IDBDatabase, mode: IDBTransactionMode) {
  * specific scope. Validates client-side; throws if the type isn't
  * accepted. Returns the new attachment's metadata.
  */
-export async function addAttachment(file: File, scope: string): Promise<StubAttachmentMeta> {
+export async function addAttachment(
+  file: File,
+  scope: string
+): Promise<StubAttachmentMeta> {
   const kind = classify(file);
   if (!kind) {
-    throw new Error("Unsupported file type. PDF, DOCX, XLSX, TXT, images, or audio.");
+    throw new Error(
+      "Unsupported file type. PDF, DOCX, XLSX, TXT, images, or audio."
+    );
   }
   const item: StubAttachment = {
     id: crypto.randomUUID(),
@@ -137,9 +142,15 @@ export async function addAttachment(file: File, scope: string): Promise<StubAtta
 }
 
 /** List pending attachments for a scope. Newest first. */
-export async function listAttachments(scope: string): Promise<StubAttachmentMeta[]> {
+export async function listAttachments(
+  scope: string
+): Promise<StubAttachmentMeta[]> {
   let db: IDBDatabase;
-  try { db = await openDb(); } catch { return []; }
+  try {
+    db = await openDb();
+  } catch {
+    return [];
+  }
   const items = await new Promise<StubAttachment[]>((resolve, reject) => {
     const store = tx(db, "readonly");
     const idx = store.index(SCOPE_INDEX);
@@ -150,7 +161,33 @@ export async function listAttachments(scope: string): Promise<StubAttachmentMeta
   db.close();
   return items
     .sort((a, b) => b.addedAt - a.addedAt)
-    .map(({ blob: _b, ...meta }) => { void _b; return meta; });
+    .map(({ blob: _b, ...meta }) => {
+      void _b;
+      return meta;
+    });
+}
+
+/**
+ * Read one attachment's Blob by id — used by the stub chat's draft
+ * bubbles to preview images and play voice notes before delivery.
+ * Returns null when the row is gone (already flushed / removed).
+ */
+export async function getAttachmentBlob(id: string): Promise<Blob | null> {
+  let db: IDBDatabase;
+  try {
+    db = await openDb();
+  } catch {
+    return null;
+  }
+  const item = await new Promise<StubAttachment | undefined>(
+    (resolve, reject) => {
+      const req = tx(db, "readonly").get(id);
+      req.onsuccess = () => resolve(req.result as StubAttachment | undefined);
+      req.onerror = () => reject(req.error ?? new Error("IDB get failed"));
+    }
+  ).catch(() => undefined);
+  db.close();
+  return item?.blob ?? null;
 }
 
 export async function removeAttachment(id: string): Promise<void> {
@@ -166,14 +203,21 @@ export async function removeAttachment(id: string): Promise<void> {
 /** Clear all attachments for a specific scope. */
 export async function clearAttachments(scope: string): Promise<void> {
   let db: IDBDatabase;
-  try { db = await openDb(); } catch { return; }
+  try {
+    db = await openDb();
+  } catch {
+    return;
+  }
   await new Promise<void>((resolve, reject) => {
     const store = tx(db, "readwrite");
     const idx = store.index(SCOPE_INDEX);
     const req = idx.openCursor(scope || "general");
     req.onsuccess = () => {
       const cursor = req.result;
-      if (!cursor) { resolve(); return; }
+      if (!cursor) {
+        resolve();
+        return;
+      }
       cursor.delete();
       cursor.continue();
     };
@@ -185,7 +229,11 @@ export async function clearAttachments(scope: string): Promise<void> {
 // Internal — read both meta and Blob for a specific scope, used by flush.
 async function readScopeWithBlobs(scope: string): Promise<StubAttachment[]> {
   let db: IDBDatabase;
-  try { db = await openDb(); } catch { return []; }
+  try {
+    db = await openDb();
+  } catch {
+    return [];
+  }
   const items = await new Promise<StubAttachment[]>((resolve, reject) => {
     const store = tx(db, "readonly");
     const idx = store.index(SCOPE_INDEX);
@@ -224,7 +272,10 @@ export async function flushAttachmentsToSession(args: {
   const items = await readScopeWithBlobs(scope);
   if (items.length === 0) return 0;
 
-  type Pending = { uploaded: Awaited<ReturnType<typeof uploadOne>>; kind: AttachmentKind };
+  type Pending = {
+    uploaded: Awaited<ReturnType<typeof uploadOne>>;
+    kind: AttachmentKind;
+  };
   const uploaded: Pending[] = [];
   for (const it of items) {
     const file = new File([it.blob], it.name, { type: it.mime });
@@ -250,7 +301,8 @@ export async function flushAttachmentsToSession(args: {
       })
       .select("id")
       .single();
-    if (msgErr || !msg) throw new Error(msgErr?.message ?? "Couldn't post the prepared files.");
+    if (msgErr || !msg)
+      throw new Error(msgErr?.message ?? "Couldn't post the prepared files.");
 
     const rows = chunk.map(({ uploaded: u, kind }) => ({
       message_id: msg.id,
@@ -260,7 +312,9 @@ export async function flushAttachmentsToSession(args: {
       size_bytes: u.size,
       kind,
     }));
-    const { error: attErr } = await sb.from("guest_message_attachments").insert(rows);
+    const { error: attErr } = await sb
+      .from("guest_message_attachments")
+      .insert(rows);
     if (attErr) throw new Error(attErr.message);
   }
 

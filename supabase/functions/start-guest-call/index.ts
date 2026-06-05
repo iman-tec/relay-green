@@ -18,9 +18,13 @@ const ZOOM_CLIENT_SECRET = Deno.env.get("ZOOM_CLIENT_SECRET");
 async function getZoomAccessToken(): Promise<string> {
   const basic = btoa(`${ZOOM_CLIENT_ID}:${ZOOM_CLIENT_SECRET}`);
   const url = `https://zoom.us/oauth/token?grant_type=account_credentials&account_id=${ZOOM_ACCOUNT_ID}`;
-  const r = await fetch(url, { method: "POST", headers: { Authorization: `Basic ${basic}` } });
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Basic ${basic}` },
+  });
   const data = await r.json();
-  if (!r.ok) throw new Error(`Zoom OAuth failed [${r.status}]: ${JSON.stringify(data)}`);
+  if (!r.ok)
+    throw new Error(`Zoom OAuth failed [${r.status}]: ${JSON.stringify(data)}`);
   return data.access_token as string;
 }
 
@@ -31,7 +35,7 @@ async function endAllLiveMeetings(accessToken: string): Promise<void> {
   try {
     const r = await fetch(
       "https://api.zoom.us/v2/users/me/meetings?type=live&page_size=30",
-      { headers: { Authorization: `Bearer ${accessToken}` } },
+      { headers: { Authorization: `Bearer ${accessToken}` } }
     );
     if (!r.ok) return;
     const data = await r.json();
@@ -40,25 +44,41 @@ async function endAllLiveMeetings(accessToken: string): Promise<void> {
       meetings.map((m) =>
         fetch(`https://api.zoom.us/v2/meetings/${m.id}/status`, {
           method: "PUT",
-          headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
           body: JSON.stringify({ action: "end" }),
-        }).catch(() => {/* non-fatal */})
-      ),
+        }).catch(() => {
+          /* non-fatal */
+        })
+      )
     );
-    if (meetings.length > 0) console.log(`Ended ${meetings.length} live meeting(s).`);
+    if (meetings.length > 0)
+      console.log(`Ended ${meetings.length} live meeting(s).`);
   } catch (e) {
     console.error("endAllLiveMeetings failed (non-fatal):", e);
   }
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method === "OPTIONS")
+    return new Response("ok", { headers: corsHeaders });
 
   try {
     const body = await req.json().catch(() => ({}));
-    const guestName: string = (body.guest_name ?? "").toString().trim().slice(0, 80);
-    const guestEmail: string = (body.guest_email ?? "").toString().trim().slice(0, 200);
-    const guestLocalId: string = (body.guest_local_id ?? "").toString().trim().slice(0, 80);
+    const guestName: string = (body.guest_name ?? "")
+      .toString()
+      .trim()
+      .slice(0, 80);
+    const guestEmail: string = (body.guest_email ?? "")
+      .toString()
+      .trim()
+      .slice(0, 200);
+    const guestLocalId: string = (body.guest_local_id ?? "")
+      .toString()
+      .trim()
+      .slice(0, 80);
     if (!guestName) {
       return new Response(JSON.stringify({ error: "Name required" }), {
         status: 400,
@@ -69,11 +89,14 @@ Deno.serve(async (req) => {
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     // Find or create the persistent guest thread
-    const { data: threadId, error: threadErr } = await admin.rpc("find_or_create_guest_thread", {
-      _email: guestEmail || null,
-      _local_id: guestLocalId || null,
-      _display_name: guestName,
-    });
+    const { data: threadId, error: threadErr } = await admin.rpc(
+      "find_or_create_guest_thread",
+      {
+        _email: guestEmail || null,
+        _local_id: guestLocalId || null,
+        _display_name: guestName,
+      }
+    );
     if (threadErr) console.error("thread upsert failed:", threadErr);
 
     // Carry the cumulative free-minute usage forward so the next session
@@ -89,7 +112,9 @@ Deno.serve(async (req) => {
     if (threadId) {
       const { data: prevCalls } = await admin
         .from("guest_calls")
-        .select("free_minutes_used, duration_minutes, started_at, ended_at, status")
+        .select(
+          "free_minutes_used, duration_minutes, started_at, ended_at, status"
+        )
         .eq("thread_id", threadId);
       threadUsed = (prevCalls ?? []).reduce((sum: number, c: any) => {
         const recorded = Number(c.free_minutes_used) || 0;
@@ -104,7 +129,10 @@ Deno.serve(async (req) => {
         let liveEstimate = 0;
         if (recorded === 0 && recordedDuration === 0 && c.started_at) {
           const end = c.ended_at ? new Date(c.ended_at).getTime() : Date.now();
-          liveEstimate = Math.max(0, (end - new Date(c.started_at).getTime()) / 60000);
+          liveEstimate = Math.max(
+            0,
+            (end - new Date(c.started_at).getTime()) / 60000
+          );
         }
         return sum + Math.max(recorded, recordedDuration, liveEstimate);
       }, 0);
@@ -119,27 +147,33 @@ Deno.serve(async (req) => {
       try {
         const accessToken = await getZoomAccessToken();
         await endAllLiveMeetings(accessToken);
-        const zoomRes = await fetch("https://api.zoom.us/v2/users/me/meetings", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            topic: `Relay session — ${guestName}`,
-            type: 1, // instant
-            settings: {
-              join_before_host: true,
-              waiting_room: false,
-              approval_type: 2,
-              // Force-disable cloud recording (overrides Zoom account-level
-              // auto-record default). Engineer can manually hit ⏺ Record in
-              // the meeting. AI Companion stays auto-on for the summary.
-              auto_recording: "none",
-              auto_start_meeting_summary: true,
-              auto_start_ai_companion_questions: true,
-              meeting_summary: true,
-              ai_companion_auto_start: true,
+        const zoomRes = await fetch(
+          "https://api.zoom.us/v2/users/me/meetings",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
             },
-          }),
-        });
+            body: JSON.stringify({
+              topic: `Relay session — ${guestName}`,
+              type: 1, // instant
+              settings: {
+                join_before_host: true,
+                waiting_room: false,
+                approval_type: 2,
+                // Force-disable cloud recording (overrides Zoom account-level
+                // auto-record default). Engineer can manually hit ⏺ Record in
+                // the meeting. AI Companion stays auto-on for the summary.
+                auto_recording: "none",
+                auto_start_meeting_summary: true,
+                auto_start_ai_companion_questions: true,
+                meeting_summary: true,
+                ai_companion_auto_start: true,
+              },
+            }),
+          }
+        );
         const zoomData = await zoomRes.json();
         if (zoomRes.ok) {
           zoomJoinUrl = zoomData.join_url;
@@ -169,7 +203,8 @@ Deno.serve(async (req) => {
       .select("id")
       .single();
 
-    if (error || !gc) throw new Error(error?.message || "Failed to create session");
+    if (error || !gc)
+      throw new Error(error?.message || "Failed to create session");
 
     // Seed a system welcome message — short and warm, no minute counts.
     // The sidebar timer + paywall already communicate quota state visually.
@@ -181,7 +216,10 @@ Deno.serve(async (req) => {
     });
 
     // Notify any engineers who exist
-    const { data: engs } = await admin.from("user_role_names").select("user_id").eq("role", "engineer");
+    const { data: engs } = await admin
+      .from("user_role_names")
+      .select("user_id")
+      .eq("role", "engineer");
     for (const row of (engs ?? []) as { user_id: string }[]) {
       await admin.rpc("create_notification", {
         _user_id: row.user_id,

@@ -30,7 +30,9 @@ import { Maximize2 } from "lucide-react";
 
 function findVideoCanvas(root: HTMLElement | null): HTMLCanvasElement | null {
   if (!root) return null;
-  const canvases = Array.from(root.querySelectorAll("canvas")) as HTMLCanvasElement[];
+  const canvases = Array.from(
+    root.querySelectorAll("canvas")
+  ) as HTMLCanvasElement[];
   let best: HTMLCanvasElement | null = null;
   let bestArea = 0;
   for (const c of canvases) {
@@ -44,11 +46,7 @@ function findVideoCanvas(root: HTMLElement | null): HTMLCanvasElement | null {
   return best;
 }
 
-export function PopOutContainer({
-  children,
-}: {
-  children: ReactNode;
-}) {
+export function PopOutContainer({ children }: { children: ReactNode }) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const bridgeVideoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -63,7 +61,9 @@ export function PopOutContainer({
   // No-op in a plain browser (window.relay is undefined).
   useEffect(() => {
     const bridge = (
-      window as unknown as { relay?: { setSessionActive?: (active: boolean) => void } }
+      window as unknown as {
+        relay?: { setSessionActive?: (active: boolean) => void };
+      }
     ).relay;
     bridge?.setSessionActive?.(true);
     return () => {
@@ -75,7 +75,7 @@ export function PopOutContainer({
     setSupported(
       typeof document !== "undefined" &&
         "pictureInPictureEnabled" in document &&
-        document.pictureInPictureEnabled,
+        document.pictureInPictureEnabled
     );
 
     // Hidden <video> "bridge" lives off-screen in the main document. We
@@ -168,7 +168,9 @@ export function PopOutContainer({
       }
     }
     if (!streamRef.current) {
-      setErr("Waiting for the meeting to render — try again once you see video.");
+      setErr(
+        "Waiting for the meeting to render — try again once you see video."
+      );
       return;
     }
 
@@ -215,7 +217,7 @@ export function PopOutContainer({
         onClick={() => (pipActive ? void closePip() : void popOut())}
         disabled={!supported}
         style={{ zIndex: 9999, pointerEvents: "auto" }}
-        className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-md border border-white/20 bg-black/70 px-2 py-1 text-[11px] font-medium text-white/95 backdrop-blur transition-colors hover:bg-black/90 disabled:cursor-not-allowed disabled:opacity-40"
+        className="absolute top-3 right-3 inline-flex items-center gap-1.5 rounded-md border border-white/20 bg-black/70 px-2 py-1 text-[11px] font-medium text-white/95 backdrop-blur transition-colors hover:bg-black/90 disabled:cursor-not-allowed disabled:opacity-40"
         title={
           !supported
             ? "Picture-in-Picture not supported in this browser"
@@ -232,7 +234,7 @@ export function PopOutContainer({
       {err && (
         <div
           style={{ zIndex: 9999 }}
-          className="absolute right-3 top-12 max-w-[260px] rounded-md bg-black/85 px-2 py-1 text-[10px] text-white/85"
+          className="absolute top-12 right-3 max-w-[260px] rounded-md bg-black/85 px-2 py-1 text-[10px] text-white/85"
         >
           {err}
         </div>

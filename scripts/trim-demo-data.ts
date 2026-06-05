@@ -25,8 +25,8 @@ type AdminClient = SupabaseClient<any, "public", "public", any, any>;
 
 const USERS_TO_DELETE = [
   // Surplus engineers from bootstrap-org-hierarchy
-  "engineer.alpha2@relay.test",   // Aria
-  "engineer.beta2@relay.test",    // Bree
+  "engineer.alpha2@relay.test", // Aria
+  "engineer.beta2@relay.test", // Bree
   // Entire bootstrap-enterprise-staff set (duplicates the pod hierarchy)
   "enterprise.sup1@demoent.test", // Sienna
   "enterprise.sup2@demoent.test", // Steve
@@ -37,22 +37,38 @@ const USERS_TO_DELETE = [
 // Anything that isn't a live call — wipes both the demo backlog and any
 // stuck queue rows so the UI lands on an empty pit.
 const SESSION_STATUSES_TO_DELETE = [
-  "queued", "assigned",                       // waiting
-  "ended", "cancelled", "abandoned",          // past
-  "expired_free", "joining", "grace",         // other terminal-ish
+  "queued",
+  "assigned", // waiting
+  "ended",
+  "cancelled",
+  "abandoned", // past
+  "expired_free",
+  "joining",
+  "grace", // other terminal-ish
 ];
 
-async function findUserId(admin: AdminClient, email: string): Promise<string | null> {
+async function findUserId(
+  admin: AdminClient,
+  email: string
+): Promise<string | null> {
   const { data } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-  return data?.users?.find((u) => u.email?.toLowerCase() === email.toLowerCase())?.id ?? null;
+  return (
+    data?.users?.find((u) => u.email?.toLowerCase() === email.toLowerCase())
+      ?.id ?? null
+  );
 }
 
 async function main() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !key)
+    throw new Error(
+      "Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY"
+    );
 
-  const admin = createClient(url, key, { auth: { persistSession: false } }) as AdminClient;
+  const admin = createClient(url, key, {
+    auth: { persistSession: false },
+  }) as AdminClient;
 
   console.log("→ Deleting surplus demo users…");
   for (const email of USERS_TO_DELETE) {
@@ -88,18 +104,31 @@ async function main() {
     await admin.from("session_audit_log").delete().in("session_id", ids);
     const { error } = await admin.from("guest_calls").delete().in("id", ids);
     if (error) console.warn(`  ⚠ delete failed: ${error.message}`);
-    else console.log(`  ✓ ${ids.length} session${ids.length === 1 ? "" : "s"} deleted`);
+    else
+      console.log(
+        `  ✓ ${ids.length} session${ids.length === 1 ? "" : "s"} deleted`
+      );
   }
 
   console.log("");
   console.log("✓ Demo trimmed to:");
-  console.log("    Internal Admin   admin.demo@relay.test            (Iris Internal)");
+  console.log(
+    "    Internal Admin   admin.demo@relay.test            (Iris Internal)"
+  );
   console.log("    Pod Alpha");
-  console.log("      Supervisor     supervisor.demo@relay.test       (Sam Supervisor)");
-  console.log("      Engineer       engineer.alpha1@relay.test       (Alex Alpha One)");
+  console.log(
+    "      Supervisor     supervisor.demo@relay.test       (Sam Supervisor)"
+  );
+  console.log(
+    "      Engineer       engineer.alpha1@relay.test       (Alex Alpha One)"
+  );
   console.log("    Pod Beta");
-  console.log("      Supervisor     supervisor.beta@relay.test       (Beth Supervisor)");
-  console.log("      Engineer       engineer.beta1@relay.test        (Ben Beta One)");
+  console.log(
+    "      Supervisor     supervisor.beta@relay.test       (Beth Supervisor)"
+  );
+  console.log(
+    "      Engineer       engineer.beta1@relay.test        (Ben Beta One)"
+  );
 }
 
 main().catch((err) => {

@@ -28,7 +28,9 @@ import {
   ChevronDown,
   CalendarCheck,
   Calendar as CalendarIcon,
+  Clock,
   Search,
+  Video,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import {
@@ -136,17 +138,28 @@ export function ScheduleEngineerModal({
   // Captured once when the modal opens — keeps the slot useMemo pure.
   const [nowMs] = useState(() => Date.now());
   const [duration, setDuration] = useState<number>(durationMinutes);
+  // Calendly-style confirm step: clicking a time arms it (splits the row
+  // into [time | Confirm]); only Confirm actually books. Cleared whenever
+  // the day or duration changes so a stale selection can't be confirmed.
+  const [pendingSlot, setPendingSlot] = useState<Slot | null>(null);
 
   const today = useMemo(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
     return d;
   }, []);
-  // Bookings are limited to the CURRENT WEEK only (Mon-first calendar → through
-  // the coming Sunday). No advance bookings beyond that.
+  // Booking horizon: the CURRENT WEEK (through Sunday) at most — except
+  // when opened on Friday/Saturday/Sunday, where the remaining week is
+  // (almost) gone: then the horizon extends through the end of NEXT week
+  // so there's always a usable booking window (an engineer with weekday
+  // availability would otherwise show "No upcoming availability" every
+  // Friday).
   const horizonEnd = useMemo(() => {
     const d = new Date(today);
-    d.setDate(d.getDate() + ((7 - d.getDay()) % 7)); // getDay(): Sun=0 → end of week
+    const dow = d.getDay(); // Sun=0 … Sat=6
+    const daysToSunday = (7 - dow) % 7;
+    const extendNextWeek = dow === 5 || dow === 6 || dow === 0 ? 7 : 0;
+    d.setDate(d.getDate() + daysToSunday + extendNextWeek);
     return d;
   }, [today]);
 
@@ -559,36 +572,25 @@ export function ScheduleEngineerModal({
       onClick={onClose}
     >
       <div
-        className="relative flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl border shadow-xl"
+        className="relative flex w-full max-w-3xl flex-col overflow-hidden rounded-2xl border shadow-xl"
         style={{
           backgroundColor: "var(--surface)",
           borderColor: "var(--border)",
-          maxHeight: "min(90vh, 640px)",
+          maxHeight: "min(90vh, 620px)",
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <header
-          className="flex items-center gap-2 border-b px-5 py-4"
-          style={{ borderColor: "var(--border)" }}
+        {/* Calendly-style chrome: no full-width header bar — the left info
+            pane owns the identity; close floats top-right. */}
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="absolute top-3 right-3 z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-opacity hover:bg-black/5 dark:hover:bg-white/5"
+          style={{ color: "var(--text-muted)" }}
         >
-          <CalendarIcon size={14} style={{ color: "var(--primary)" }} />
-          <h2
-            className="min-w-0 flex-1 truncate text-[15px] font-semibold"
-            style={{ color: "var(--text)" }}
-          >
-            Request a session with {engineerName}
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-opacity hover:bg-black/5 dark:hover:bg-white/5"
-            style={{ color: "var(--text-muted)" }}
-          >
-            <X size={16} />
-          </button>
-        </header>
+          <X size={16} />
+        </button>
 
         {loading ? (
           <div className="flex items-center justify-center px-5 py-16">
@@ -611,11 +613,127 @@ export function ScheduleEngineerModal({
           </div>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto sm:flex-row sm:overflow-hidden">
-            {/* LEFT — month calendar */}
+            {/* LEFT — engineer / event info (Calendly's host pane). On
+                mobile it compacts into horizontal rows so the calendar
+                stays above the fold; on sm+ it's the classic info column. */}
             <div
-              className="border-b p-5 sm:w-[320px] sm:shrink-0 sm:border-r sm:border-b-0"
+              className="border-b p-4 sm:w-[200px] sm:shrink-0 sm:border-r sm:border-b-0 sm:p-5"
               style={{ borderColor: "var(--border)" }}
             >
+              <div className="flex items-center gap-2">
+                <CalendarIcon size={14} style={{ color: "var(--primary)" }} />
+                <span
+                  className="text-[11px] font-semibold tracking-[0.12em] uppercase"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  Relay
+                </span>
+              </div>
+              {/* Identity: avatar beside name/title on mobile, stacked on
+                  sm+. Initials circle — engineer aliases have no avatar
+                  URLs. */}
+              <div className="mt-3 flex items-center gap-3 sm:mt-4 sm:block">
+                <div
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[15px] font-semibold"
+                  style={{
+                    backgroundColor: "var(--primary-soft)",
+                    color: "var(--primary)",
+                    fontFamily: "var(--font-source-serif)",
+                  }}
+                  aria-hidden
+                >
+                  {engineerName
+                    .split(/\s+/)
+                    .map((w) => w[0])
+                    .slice(0, 2)
+                    .join("")
+                    .toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <div
+                    className="truncate text-[12.5px] sm:mt-2"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {engineerName}
+                  </div>
+                  <h2
+                    className="mt-0.5 text-[17px] leading-snug font-semibold"
+                    style={{
+                      color: "var(--text)",
+                      fontFamily: "var(--font-source-serif)",
+                    }}
+                  >
+                    Engineering session
+                  </h2>
+                </div>
+              </div>
+              {/* Meta — one row on mobile, stacked on sm+. */}
+              <div className="mt-3 flex items-center gap-4 sm:block">
+                <div
+                  className="flex items-center gap-2 text-[12px]"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  <Clock size={13} className="shrink-0" />
+                  {duration} min
+                </div>
+                <div
+                  className="flex items-center gap-2 text-[12px] sm:mt-1.5"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  <Video size={13} className="shrink-0" />
+                  Zoom
+                </div>
+              </div>
+              {/* Duration picker — kept from the old layout, restyled to fit
+                  the quiet info column. */}
+              <div
+                className="mt-3 text-[10.5px] font-semibold tracking-[0.1em] uppercase sm:mt-4"
+                style={{ color: "var(--text-faint)" }}
+              >
+                How long do you need?
+              </div>
+              <div
+                className="mt-1.5 inline-flex rounded-lg border p-0.5"
+                style={{
+                  borderColor: "var(--border)",
+                  backgroundColor: "var(--surface-raised)",
+                }}
+              >
+                {DURATION_OPTIONS.map((opt) => {
+                  const on = duration === opt;
+                  return (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() => {
+                        setDuration(opt);
+                        setPendingSlot(null);
+                      }}
+                      className="rounded-md px-2.5 py-1 text-[11.5px] font-medium transition-colors"
+                      style={{
+                        backgroundColor: on ? "var(--surface)" : "transparent",
+                        color: on ? "var(--text)" : "var(--text-muted)",
+                        boxShadow: on ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
+                      }}
+                    >
+                      {opt}m
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* CENTER — "Select a Date & Time" month calendar. */}
+            <div
+              className="min-w-0 flex-1 border-b p-5 sm:border-r sm:border-b-0"
+              style={{ borderColor: "var(--border)" }}
+            >
+              <h3
+                className="mb-3 text-[15px] font-semibold"
+                style={{ color: "var(--text)" }}
+              >
+                Select a Date &amp; Time
+              </h3>
               <div className="mb-3 flex items-center justify-between">
                 <button
                   type="button"
@@ -673,7 +791,10 @@ export function ScheduleEngineerModal({
                       key={d.toISOString()}
                       type="button"
                       disabled={!selectable}
-                      onClick={() => setActiveDay(new Date(d))}
+                      onClick={() => {
+                        setActiveDay(new Date(d));
+                        setPendingSlot(null);
+                      }}
                       title={
                         isHoliday && inMonth
                           ? `${engineerName} is off this day`
@@ -684,13 +805,17 @@ export function ScheduleEngineerModal({
                         color: isActive
                           ? "#fff"
                           : selectable
-                            ? "var(--text)"
+                            ? "var(--primary)"
                             : inMonth
                               ? "var(--text-faint)"
                               : "transparent",
+                        // Calendly treatment: every bookable day wears a
+                        // soft tinted circle; the selected day is filled.
                         backgroundColor: isActive
                           ? "var(--primary)"
-                          : "transparent",
+                          : selectable
+                            ? "var(--primary-soft)"
+                            : "transparent",
                         fontWeight: selectable ? 600 : 400,
                         cursor: selectable ? "pointer" : "default",
                         textDecoration:
@@ -702,62 +827,15 @@ export function ScheduleEngineerModal({
                   );
                 })}
               </div>
-            </div>
 
-            {/* RIGHT — duration + timezone + times */}
-            <div className="flex min-w-0 flex-1 flex-col p-5">
-              {/* Duration (kept) */}
+              {/* Timezone — bottom of the calendar pane, Calendly-style. */}
               <div
-                className="text-[13px] font-semibold"
-                style={{ color: "var(--text)" }}
+                className="mt-4 text-[10.5px] font-semibold tracking-[0.1em] uppercase"
+                style={{ color: "var(--text-faint)" }}
               >
-                How long do you need?
+                Time zone
               </div>
-              <div
-                className="mt-1.5 inline-flex self-start rounded-lg border p-1"
-                style={{
-                  borderColor: "var(--border)",
-                  backgroundColor: "var(--surface-raised)",
-                }}
-              >
-                {DURATION_OPTIONS.map((opt) => {
-                  const on = duration === opt;
-                  return (
-                    <button
-                      key={opt}
-                      type="button"
-                      onClick={() => setDuration(opt)}
-                      className="rounded-md px-4 py-1 text-[13px] font-medium transition-colors"
-                      style={{
-                        backgroundColor: on ? "var(--surface)" : "transparent",
-                        color: on ? "var(--text)" : "var(--text-muted)",
-                        boxShadow: on ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
-                      }}
-                    >
-                      {opt} min
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Time header + day */}
-              <div
-                className="mt-4 text-[13px] font-semibold"
-                style={{ color: "var(--text)" }}
-              >
-                What time works best?
-              </div>
-              {dayLabel && (
-                <div
-                  className="mt-0.5 text-[12px]"
-                  style={{ color: "var(--text-muted)" }}
-                >
-                  {dayLabel}
-                </div>
-              )}
-
-              {/* Timezone switcher (searchable) */}
-              <div ref={tzRef} className="relative mt-2 mb-3">
+              <div ref={tzRef} className="relative mt-1">
                 <button
                   type="button"
                   onClick={() => {
@@ -782,7 +860,10 @@ export function ScheduleEngineerModal({
                   <div
                     role="listbox"
                     aria-label="Timezone"
-                    className="absolute top-full left-0 z-10 mt-1 flex max-h-72 w-72 max-w-[calc(100vw-3rem)] flex-col overflow-hidden rounded-lg border shadow-xl"
+                    // Drops UP: the trigger sits at the bottom of the
+                    // calendar pane, so a downward menu gets clipped by the
+                    // modal's overflow-hidden shell.
+                    className="absolute bottom-full left-0 z-10 mb-1 flex max-h-72 w-72 max-w-[calc(100vw-3rem)] flex-col overflow-hidden rounded-lg border shadow-xl"
                     style={{
                       background: "var(--surface)",
                       borderColor: "var(--border)",
@@ -845,10 +926,19 @@ export function ScheduleEngineerModal({
                   </div>
                 )}
               </div>
+            </div>
 
-              {/* Times. On mobile the whole modal body scrolls (so the slots
-                  are never clipped); on sm+ this column scrolls on its own. */}
-              <div className="min-h-[160px] flex-1 sm:max-h-[300px] sm:overflow-y-auto">
+            {/* RIGHT — day label + time slots (Calendly's times rail).
+                Clicking a time arms it: the row splits into a greyed time
+                + a green Confirm button; only Confirm books. */}
+            <div className="flex min-w-0 flex-col p-5 sm:w-[230px] sm:shrink-0">
+              <div
+                className="mb-3 text-[13px] font-semibold"
+                style={{ color: "var(--text)" }}
+              >
+                {dayLabel || "Pick a date"}
+              </div>
+              <div className="min-h-[160px] flex-1 sm:max-h-[420px] sm:overflow-y-auto">
                 {!effectiveDay ? (
                   <p
                     className="py-8 text-center text-[13px]"
@@ -864,28 +954,66 @@ export function ScheduleEngineerModal({
                     No open times on {dayLabel}.
                   </p>
                 ) : (
-                  <div className="flex flex-col gap-1.5">
-                    {slots.map((s) => (
-                      <button
-                        key={s.start.toISOString()}
-                        type="button"
-                        disabled={booking}
-                        onClick={() => void submitBooking(s)}
-                        className="rounded-lg border px-4 py-2.5 text-center text-[13px] font-medium tabular-nums transition-colors hover:border-[var(--primary)] hover:bg-[var(--primary-soft)] disabled:opacity-50"
-                        style={{
-                          borderColor: "var(--border)",
-                          backgroundColor: "var(--surface-raised)",
-                          color: "var(--text)",
-                        }}
-                      >
-                        {new Intl.DateTimeFormat([], {
-                          timeZone: selectedTz,
-                          hour: "2-digit",
-                          minute: "2-digit",
-                          hour12: false,
-                        }).format(s.start)}
-                      </button>
-                    ))}
+                  <div className="flex flex-col gap-1.5 pr-0.5">
+                    {slots.map((s) => {
+                      const timeLabel = new Intl.DateTimeFormat([], {
+                        timeZone: selectedTz,
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        hour12: false,
+                      }).format(s.start);
+                      const armed =
+                        pendingSlot &&
+                        pendingSlot.start.getTime() === s.start.getTime();
+                      if (armed) {
+                        return (
+                          <div
+                            key={s.start.toISOString()}
+                            className="flex gap-1.5"
+                          >
+                            <span
+                              className="flex flex-1 items-center justify-center rounded-lg px-2 py-2.5 text-center text-[13px] font-semibold tabular-nums"
+                              style={{
+                                backgroundColor:
+                                  "color-mix(in srgb, var(--text) 14%, transparent)",
+                                color: "var(--text)",
+                              }}
+                            >
+                              {timeLabel}
+                            </span>
+                            <button
+                              type="button"
+                              disabled={booking}
+                              onClick={() => void submitBooking(s)}
+                              className="flex flex-1 items-center justify-center gap-1 rounded-lg px-2 py-2.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+                              style={{ backgroundColor: "var(--primary)" }}
+                            >
+                              {booking ? (
+                                <Loader2 size={13} className="animate-spin" />
+                              ) : (
+                                "Confirm"
+                              )}
+                            </button>
+                          </div>
+                        );
+                      }
+                      return (
+                        <button
+                          key={s.start.toISOString()}
+                          type="button"
+                          disabled={booking}
+                          onClick={() => setPendingSlot(s)}
+                          className="rounded-lg border px-4 py-2.5 text-center text-[13px] font-semibold tabular-nums transition-colors hover:bg-[var(--primary-soft)] disabled:opacity-50"
+                          style={{
+                            borderColor: "var(--primary)",
+                            backgroundColor: "transparent",
+                            color: "var(--primary)",
+                          }}
+                        >
+                          {timeLabel}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>

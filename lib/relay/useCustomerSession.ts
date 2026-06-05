@@ -20,18 +20,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/browser";
-import type { GuestCall, GuestMessage, SessionStatus } from "@/lib/supabase/types";
+import type {
+  GuestCall,
+  GuestMessage,
+  SessionStatus,
+} from "@/lib/supabase/types";
 import { isTransientNetworkError } from "./transient";
 import { uploadOne, validateStagedFiles } from "./chatAttachments";
 
 function asString(e: unknown): string {
   if (!e) return "Unknown error";
   if (typeof e === "string") return e;
-  const err = e as { message?: unknown; error_description?: unknown; details?: unknown };
+  const err = e as {
+    message?: unknown;
+    error_description?: unknown;
+    details?: unknown;
+  };
   if (typeof err.message === "string") return err.message;
   if (typeof err.error_description === "string") return err.error_description;
   if (typeof err.details === "string") return err.details;
-  try { return JSON.stringify(e); } catch { return String(e); }
+  try {
+    return JSON.stringify(e);
+  } catch {
+    return String(e);
+  }
 }
 
 type AuthState =
@@ -40,16 +52,16 @@ type AuthState =
   | { kind: "authed"; userId: string; email: string; isAnonymous: boolean };
 
 export type Entitlement = {
-  free_consumed_at: string | null;     // when their free 10-min was used up
-  free_minutes_used: number;            // cumulative minutes across all ended sessions
-  paid_minutes_remaining: number;       // from credit_wallets (Phase 3.5)
+  free_consumed_at: string | null; // when their free 10-min was used up
+  free_minutes_used: number; // cumulative minutes across all ended sessions
+  paid_minutes_remaining: number; // from credit_wallets (Phase 3.5)
 };
 
 export type CustomerSessionState = {
   auth: AuthState;
   session: GuestCall | null;
   messages: GuestMessage[];
-  entitlement: Entitlement;             // for the profile chip
+  entitlement: Entitlement; // for the profile chip
   loading: boolean;
   error: string | null;
   /** Resolved customer display name for UI labels: profile display_name →
@@ -71,14 +83,24 @@ export type CustomerSessionState = {
   sendOrStart: (body: string, projectId?: string) => Promise<void>;
   /** Bundled send: text + up to N files in a single chat bubble.
    *  Bootstraps a session if needed. */
-  sendBundle: (payload: { text: string; files: File[]; projectId?: string }) => Promise<void>;
+  sendBundle: (payload: {
+    text: string;
+    files: File[];
+    projectId?: string;
+  }) => Promise<void>;
 };
 
 const TERMINAL_STATES: SessionStatus[] = ["ended", "abandoned", "cancelled"];
 
 // Statuses where a session is still "in progress" (not yet terminal).
 const ACTIVE_STATUSES: SessionStatus[] = [
-  "queued", "assigned", "joining", "live", "grace", "ending", "expired_free",
+  "queued",
+  "assigned",
+  "joining",
+  "live",
+  "grace",
+  "ending",
+  "expired_free",
 ];
 
 export function useCustomerSession(): CustomerSessionState {
@@ -105,29 +127,32 @@ export function useCustomerSession(): CustomerSessionState {
     const sb = supabaseRef.current;
     let cancelled = false;
 
-    sb.auth.getUser().then(({ data, error }) => {
-      if (cancelled) return;
-      if (error || !data.user) {
+    sb.auth.getUser().then(
+      ({ data, error }) => {
+        if (cancelled) return;
+        if (error || !data.user) {
+          setAuth({ kind: "anonymous" });
+          setLoading(false);
+          return;
+        }
+        setAuth({
+          kind: "authed",
+          userId: data.user.id,
+          email: data.user.email ?? "",
+          // Supabase tags users minted via signInAnonymously() with
+          // is_anonymous=true. Try-Relay funnel uses that path, so this is
+          // the signal for "guest who hasn't verified an email yet" —
+          // surfaced to the UI to hide profile/billing/logout entries.
+          isAnonymous: data.user.is_anonymous === true,
+        });
+      },
+      (e) => {
+        if (cancelled) return;
+        console.warn("[customer-session] getUser failed:", asString(e));
         setAuth({ kind: "anonymous" });
         setLoading(false);
-        return;
       }
-      setAuth({
-        kind: "authed",
-        userId: data.user.id,
-        email: data.user.email ?? "",
-        // Supabase tags users minted via signInAnonymously() with
-        // is_anonymous=true. Try-Relay funnel uses that path, so this is
-        // the signal for "guest who hasn't verified an email yet" —
-        // surfaced to the UI to hide profile/billing/logout entries.
-        isAnonymous: data.user.is_anonymous === true,
-      });
-    }, (e) => {
-      if (cancelled) return;
-      console.warn("[customer-session] getUser failed:", asString(e));
-      setAuth({ kind: "anonymous" });
-      setLoading(false);
-    });
+    );
 
     const { data: sub } = sb.auth.onAuthStateChange((_event, sess) => {
       if (sess?.user) {
@@ -188,7 +213,9 @@ export function useCustomerSession(): CustomerSessionState {
       if (row && row.status === "queued") {
         const ageMs = Date.now() - new Date(row.created_at).getTime();
         if (ageMs > STALE_QUEUED_MS) {
-          void (async () => { await sb.rpc("cancel_customer_session", { _session_id: row!.id }); })();
+          void (async () => {
+            await sb.rpc("cancel_customer_session", { _session_id: row!.id });
+          })();
           row = null;
         }
       }
@@ -206,7 +233,10 @@ export function useCustomerSession(): CustomerSessionState {
       }
     } catch (e) {
       if (isTransientNetworkError(e)) {
-        console.warn("[customer-session] transient network blip (loadExisting):", asString(e));
+        console.warn(
+          "[customer-session] transient network blip (loadExisting):",
+          asString(e)
+        );
       } else {
         console.error("[customer-session] loadExisting failed:", asString(e));
       }
@@ -227,55 +257,61 @@ export function useCustomerSession(): CustomerSessionState {
 
   // ── Create (or re-fetch) a session via get_or_create RPC ─────────────────
   // Called only when the user explicitly starts a new session through the UI.
-  const loadSession = useCallback(async (projectId?: string): Promise<GuestCall | null> => {
-    if (auth.kind !== "authed") return null;
-    setLoading(true);
-    setError(null);
-    const sb = supabaseRef.current;
-    try {
-      const rpcArgs = projectId ? { _project_id: projectId } : undefined;
-      const { data, error: rpcErr } = await sb.rpc(
-        "get_or_create_active_customer_session",
-        rpcArgs,
-      );
-      if (rpcErr) {
-        const msg = asString(rpcErr);
-        console.warn("[customer-session] RPC error:", msg);
-        if (msg.includes("NO_ENTITLEMENT")) {
-          setError("NO_ENTITLEMENT");
+  const loadSession = useCallback(
+    async (projectId?: string): Promise<GuestCall | null> => {
+      if (auth.kind !== "authed") return null;
+      setLoading(true);
+      setError(null);
+      const sb = supabaseRef.current;
+      try {
+        const rpcArgs = projectId ? { _project_id: projectId } : undefined;
+        const { data, error: rpcErr } = await sb.rpc(
+          "get_or_create_active_customer_session",
+          rpcArgs
+        );
+        if (rpcErr) {
+          const msg = asString(rpcErr);
+          console.warn("[customer-session] RPC error:", msg);
+          if (msg.includes("NO_ENTITLEMENT")) {
+            setError("NO_ENTITLEMENT");
+            setSession(null);
+            return null;
+          }
+          setError(msg);
           setSession(null);
           return null;
         }
-        setError(msg);
-        setSession(null);
+        const row = (Array.isArray(data) ? data[0] : data) as GuestCall;
+        if (!row) {
+          setError("Could not load session");
+          setSession(null);
+          return null;
+        }
+        setSession(row);
+        const { data: msgs } = await sb
+          .from("guest_messages")
+          .select("*")
+          .eq("guest_call_id", row.id)
+          .order("created_at", { ascending: true });
+        setMessages((msgs ?? []) as GuestMessage[]);
+        return row;
+      } catch (e) {
+        if (isTransientNetworkError(e)) {
+          console.warn(
+            "[customer-session] transient network blip:",
+            asString(e)
+          );
+        } else {
+          console.error("[customer-session] loadSession failed:", asString(e));
+        }
+        setError(asString(e));
         return null;
+      } finally {
+        setLoading(false);
       }
-      const row = (Array.isArray(data) ? data[0] : data) as GuestCall;
-      if (!row) {
-        setError("Could not load session");
-        setSession(null);
-        return null;
-      }
-      setSession(row);
-      const { data: msgs } = await sb
-        .from("guest_messages")
-        .select("*")
-        .eq("guest_call_id", row.id)
-        .order("created_at", { ascending: true });
-      setMessages((msgs ?? []) as GuestMessage[]);
-      return row;
-    } catch (e) {
-      if (isTransientNetworkError(e)) {
-        console.warn("[customer-session] transient network blip:", asString(e));
-      } else {
-        console.error("[customer-session] loadSession failed:", asString(e));
-      }
-      setError(asString(e));
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  }, [auth]);
+    },
+    [auth]
+  );
 
   // Load entitlement (free time used, paid balance) whenever auth/session changes
   useEffect(() => {
@@ -294,18 +330,39 @@ export function useCustomerSession(): CustomerSessionState {
         .select("duration_minutes, free_minutes_used")
         .eq("customer_user_id", auth.userId)
         .eq("status", "ended");
-      const totalUsed = (ended ?? []).reduce((sum, r: { duration_minutes: number | null; free_minutes_used: number | null }) => {
-        const used = Number(r.free_minutes_used) || Number(r.duration_minutes) || 0;
-        return sum + used;
-      }, 0);
-      const wallet = await sb.from("credit_wallets").select("balance").eq("user_id", auth.userId).maybeSingle();
+      const totalUsed = (ended ?? []).reduce(
+        (
+          sum,
+          r: {
+            duration_minutes: number | null;
+            free_minutes_used: number | null;
+          }
+        ) => {
+          const used =
+            Number(r.free_minutes_used) || Number(r.duration_minutes) || 0;
+          return sum + used;
+        },
+        0
+      );
+      const wallet = await sb
+        .from("credit_wallets")
+        .select("balance")
+        .eq("user_id", auth.userId)
+        .maybeSingle();
       setEntitlement({
-        free_consumed_at: (ent as { free_session_consumed_at: string | null } | null)?.free_session_consumed_at ?? null,
+        free_consumed_at:
+          (ent as { free_session_consumed_at: string | null } | null)
+            ?.free_session_consumed_at ?? null,
         free_minutes_used: totalUsed,
         paid_minutes_remaining: Number(wallet.data?.balance ?? 0),
       });
     })();
-  }, [auth.kind, "userId" in auth ? auth.userId : null, session?.status, session?.id]);
+  }, [
+    auth.kind,
+    "userId" in auth ? auth.userId : null,
+    session?.status,
+    session?.id,
+  ]);
 
   // Load the customer's profile display name once auth resolves. This is
   // the name the customer typed in Profile & settings, and it should win
@@ -321,10 +378,14 @@ export function useCustomerSession(): CustomerSessionState {
         .eq("user_id", auth.userId)
         .maybeSingle();
       if (cancelled) return;
-      const dn = (data as { display_name: string | null } | null)?.display_name?.trim();
+      const dn = (
+        data as { display_name: string | null } | null
+      )?.display_name?.trim();
       setProfileName(dn && dn.length > 0 ? dn : null);
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [auth.kind, "userId" in auth ? auth.userId : null]);
 
   // ── Realtime subscription on the session row + messages ───────────────────
@@ -337,18 +398,34 @@ export function useCustomerSession(): CustomerSessionState {
       .channel(`relay-session:${sessionId}`)
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "guest_calls", filter: `id=eq.${sessionId}` },
-        (payload) => setSession((prev) => ({ ...(prev as GuestCall), ...(payload.new as GuestCall) })),
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "guest_calls",
+          filter: `id=eq.${sessionId}`,
+        },
+        (payload) =>
+          setSession((prev) => ({
+            ...(prev as GuestCall),
+            ...(payload.new as GuestCall),
+          }))
       )
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "guest_messages", filter: `guest_call_id=eq.${sessionId}` },
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "guest_messages",
+          filter: `guest_call_id=eq.${sessionId}`,
+        },
         (payload) => {
           const m = payload.new as GuestMessage;
           // The realtime payload only carries the parent row. If the
           // message has attachments, the child rows were inserted in a
           // follow-up batch — pull them so the bubble renders correctly.
-          setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]));
+          setMessages((prev) =>
+            prev.some((x) => x.id === m.id) ? prev : [...prev, m]
+          );
           void (async () => {
             const { data } = await sb
               .from("guest_message_attachments")
@@ -359,11 +436,11 @@ export function useCustomerSession(): CustomerSessionState {
               prev.map((x) =>
                 x.id === m.id
                   ? { ...x, attachments: data as GuestMessage["attachments"] }
-                  : x,
-              ),
+                  : x
+              )
             );
           })();
-        },
+        }
       )
       .subscribe();
 
@@ -378,7 +455,9 @@ export function useCustomerSession(): CustomerSessionState {
   const recall = useCallback(async () => {
     if (!session) return;
     const sb = supabaseRef.current;
-    const { error: e } = await sb.rpc("recall_engineer", { _session_id: session.id });
+    const { error: e } = await sb.rpc("recall_engineer", {
+      _session_id: session.id,
+    });
     if (e) {
       // Friendly mapping for known errors
       const code = e.message ?? "";
@@ -398,20 +477,35 @@ export function useCustomerSession(): CustomerSessionState {
   const cancel = useCallback(async () => {
     if (!session) return;
     const sb = supabaseRef.current;
-    const { error: e } = await sb.rpc("cancel_customer_session", { _session_id: session.id });
+    const { error: e } = await sb.rpc("cancel_customer_session", {
+      _session_id: session.id,
+    });
     if (e) setError(e.message);
   }, [session]);
 
-  const end = useCallback(async (reason: string = "customer_ended") => {
-    if (!session) return;
-    const sb = supabaseRef.current;
-    const { error: e } = await sb.rpc("end_session", { _session_id: session.id, _reason: reason });
-    if (e) { setError(e.message); return; }
-    // Fire-and-forget: hang up Zoom (idempotent — returns ok:noop if no
-    // meeting was ever minted) AND kick off the AI summary.
-    void sb.functions.invoke("end-zoom-meeting",   { body: { session_id: session.id } });
-    void sb.functions.invoke("summarize-guest-call", { body: { guest_call_id: session.id } });
-  }, [session]);
+  const end = useCallback(
+    async (reason: string = "customer_ended") => {
+      if (!session) return;
+      const sb = supabaseRef.current;
+      const { error: e } = await sb.rpc("end_session", {
+        _session_id: session.id,
+        _reason: reason,
+      });
+      if (e) {
+        setError(e.message);
+        return;
+      }
+      // Fire-and-forget: hang up Zoom (idempotent — returns ok:noop if no
+      // meeting was ever minted) AND kick off the AI summary.
+      void sb.functions.invoke("end-zoom-meeting", {
+        body: { session_id: session.id },
+      });
+      void sb.functions.invoke("summarize-guest-call", {
+        body: { guest_call_id: session.id },
+      });
+    },
+    [session]
+  );
 
   const markJoined = useCallback(async () => {
     if (!session) return;
@@ -430,66 +524,81 @@ export function useCustomerSession(): CustomerSessionState {
   // name, so derive one from the email local-part. This is what the
   // ENGINEER sees as the chat author, so it must not say "Guest" for a
   // known customer.
-  const resolveSenderName = useCallback((s: GuestCall | null): string => {
-    // 1. Profile display name (what the customer typed in settings) wins.
-    if (profileName && profileName.trim()) return profileName.trim();
-    // 2. A real (non-generic) guest_name on the session.
-    const gn = (s?.guest_name ?? "").trim();
-    const generic = gn === "" || gn.toLowerCase() === "guest" || gn.toLowerCase() === "customer";
-    if (!generic) return gn;
-    // 3. Email handle as a last resort.
-    if (auth.kind === "authed" && auth.email) {
-      const local = auth.email.split("@")[0]?.trim();
-      if (local) return local;
-    }
-    return gn || "Customer";
-  }, [auth, profileName]);
+  const resolveSenderName = useCallback(
+    (s: GuestCall | null): string => {
+      // 1. Profile display name (what the customer typed in settings) wins.
+      if (profileName && profileName.trim()) return profileName.trim();
+      // 2. A real (non-generic) guest_name on the session.
+      const gn = (s?.guest_name ?? "").trim();
+      const generic =
+        gn === "" ||
+        gn.toLowerCase() === "guest" ||
+        gn.toLowerCase() === "customer";
+      if (!generic) return gn;
+      // 3. Email handle as a last resort.
+      if (auth.kind === "authed" && auth.email) {
+        const local = auth.email.split("@")[0]?.trim();
+        if (local) return local;
+      }
+      return gn || "Customer";
+    },
+    [auth, profileName]
+  );
 
-  const sendMessage = useCallback(async (body: string) => {
-    if (!session || !body.trim()) return;
-    if (TERMINAL_STATES.includes(session.status)) {
-      setError("This session has ended.");
-      return;
-    }
-    const sb = supabaseRef.current;
-    const { error: e } = await sb.from("guest_messages").insert({
-      guest_call_id: session.id,
-      sender_kind: "guest",
-      sender_name: resolveSenderName(session),
-      body: body.trim(),
-    });
-    if (e) setError(e.message);
-  }, [session, resolveSenderName]);
+  const sendMessage = useCallback(
+    async (body: string) => {
+      if (!session || !body.trim()) return;
+      if (TERMINAL_STATES.includes(session.status)) {
+        setError("This session has ended.");
+        return;
+      }
+      const sb = supabaseRef.current;
+      const { error: e } = await sb.from("guest_messages").insert({
+        guest_call_id: session.id,
+        sender_kind: "guest",
+        sender_name: resolveSenderName(session),
+        body: body.trim(),
+      });
+      if (e) setError(e.message);
+    },
+    [session, resolveSenderName]
+  );
 
-  const startNewSession = useCallback(async (projectId?: string): Promise<GuestCall | null> => {
-    // Clear local state so the user sees a "loading" beat instead of the
-    // stale terminal-state session, then re-call the RPC which will
-    // happily create a fresh queued row (the previous one is terminal).
-    setSession(null);
-    setMessages([]);
-    return await loadSession(projectId);
-  }, [loadSession]);
+  const startNewSession = useCallback(
+    async (projectId?: string): Promise<GuestCall | null> => {
+      // Clear local state so the user sees a "loading" beat instead of the
+      // stale terminal-state session, then re-call the RPC which will
+      // happily create a fresh queued row (the previous one is terminal).
+      setSession(null);
+      setMessages([]);
+      return await loadSession(projectId);
+    },
+    [loadSession]
+  );
 
   /** Composer-friendly action: if there's no active session (or the current
    *  one is terminal), start a new one, then insert the message into that
    *  brand-new session row.  Side-steps the React state-flush race where
    *  state.session is stale immediately after startNewSession. */
-  const sendOrStart = useCallback(async (body: string, projectId?: string) => {
-    if (!body.trim()) return;
-    const sb = supabaseRef.current;
-    let s = session;
-    if (!s || TERMINAL_STATES.includes(s.status)) {
-      s = await startNewSession(projectId);
-    }
-    if (!s) return;
-    const { error: e } = await sb.from("guest_messages").insert({
-      guest_call_id: s.id,
-      sender_kind: "guest",
-      sender_name: resolveSenderName(s),
-      body: body.trim(),
-    });
-    if (e) setError(e.message);
-  }, [session, startNewSession, resolveSenderName]);
+  const sendOrStart = useCallback(
+    async (body: string, projectId?: string) => {
+      if (!body.trim()) return;
+      const sb = supabaseRef.current;
+      let s = session;
+      if (!s || TERMINAL_STATES.includes(s.status)) {
+        s = await startNewSession(projectId);
+      }
+      if (!s) return;
+      const { error: e } = await sb.from("guest_messages").insert({
+        guest_call_id: s.id,
+        sender_kind: "guest",
+        sender_name: resolveSenderName(s),
+        body: body.trim(),
+      });
+      if (e) setError(e.message);
+    },
+    [session, startNewSession, resolveSenderName]
+  );
 
   /** Bundled send: text + 0..N attachments arrive as a single chat bubble.
    *  Bootstraps a session if needed (mirrors sendOrStart), uploads each
@@ -517,8 +626,8 @@ export function useCustomerSession(): CustomerSessionState {
       try {
         const uploaded = await Promise.all(
           validation.classified.map((c) =>
-            uploadOne({ sb, sessionId: s!.id, file: c.file, kind: c.kind }),
-          ),
+            uploadOne({ sb, sessionId: s!.id, file: c.file, kind: c.kind })
+          )
         );
 
         const { data: msgRow, error: mErr } = await sb
@@ -556,12 +665,14 @@ export function useCustomerSession(): CustomerSessionState {
         setError(e instanceof Error ? e.message : "Send failed.");
       }
     },
-    [session, startNewSession, resolveSenderName],
+    [session, startNewSession, resolveSenderName]
   );
 
   // Memoize the refresh closure so its identity stays stable across renders
   // (loadExisting is stable thanks to its own useCallback).
-  const refresh = useCallback(async () => { await loadExisting(); }, [loadExisting]);
+  const refresh = useCallback(async () => {
+    await loadExisting();
+  }, [loadExisting]);
 
   // Memoize the return object so consumers that wrap with React.memo don't
   // see a new reference on every render. Every entry below is already
@@ -570,25 +681,42 @@ export function useCustomerSession(): CustomerSessionState {
   // flush). Profile name → real guest_name → email handle.
   const customerName = resolveSenderName(session);
 
-  return useMemo(() => ({
-    auth,
-    session,
-    messages,
-    entitlement,
-    loading,
-    error,
-    customerName,
-    recall,
-    cancel,
-    end,
-    markJoined,
-    sendMessage,
-    refresh,
-    startNewSession,
-    sendOrStart,
-    sendBundle,
-  }), [
-    auth, session, messages, entitlement, loading, error, customerName,
-    recall, cancel, end, markJoined, sendMessage, refresh, startNewSession, sendOrStart, sendBundle,
-  ]);
+  return useMemo(
+    () => ({
+      auth,
+      session,
+      messages,
+      entitlement,
+      loading,
+      error,
+      customerName,
+      recall,
+      cancel,
+      end,
+      markJoined,
+      sendMessage,
+      refresh,
+      startNewSession,
+      sendOrStart,
+      sendBundle,
+    }),
+    [
+      auth,
+      session,
+      messages,
+      entitlement,
+      loading,
+      error,
+      customerName,
+      recall,
+      cancel,
+      end,
+      markJoined,
+      sendMessage,
+      refresh,
+      startNewSession,
+      sendOrStart,
+      sendBundle,
+    ]
+  );
 }

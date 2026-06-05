@@ -22,19 +22,39 @@ import { Briefcase, Eye, EyeOff, ShieldCheck, Building2 } from "lucide-react";
 type Mode = "password" | "otp-email" | "otp-code";
 
 type DevRole = {
-  label:    string;
-  devRole:  string;
-  icon:     React.ComponentType<{ size?: number }>;
-  hint:     string;
+  label: string;
+  devRole: string;
+  icon: React.ComponentType<{ size?: number }>;
+  hint: string;
 };
 
 const BRAND_GREEN = "#3f5c2e";
 
 const DEV_ROLES: DevRole[] = [
-  { label: "Engineer",         devRole: "engineer",   icon: Briefcase,   hint: "Take calls and run sessions" },
-  { label: "Supervisor",       devRole: "supervisor", icon: Eye,         hint: "Monitor live sessions" },
-  { label: "Internal Admin",   devRole: "internal",   icon: ShieldCheck, hint: "Platform configuration" },
-  { label: "Enterprise Admin", devRole: "enterprise", icon: Building2,   hint: "Org-level controls" },
+  {
+    label: "Engineer",
+    devRole: "engineer",
+    icon: Briefcase,
+    hint: "Take calls and run sessions",
+  },
+  {
+    label: "Supervisor",
+    devRole: "supervisor",
+    icon: Eye,
+    hint: "Monitor live sessions",
+  },
+  {
+    label: "Internal Admin",
+    devRole: "internal",
+    icon: ShieldCheck,
+    hint: "Platform configuration",
+  },
+  {
+    label: "Enterprise Admin",
+    devRole: "enterprise",
+    icon: Building2,
+    hint: "Org-level controls",
+  },
 ];
 
 import type { LoginSurface } from "@/lib/relay/loginSurface";
@@ -52,22 +72,23 @@ export function StaffLoginForm({
   const search = useSearchParams();
   const initialEmail = search?.get("email") ?? "";
 
-  const [mode, setMode]           = useState<Mode>("password");
-  const [email, setEmail]         = useState(initialEmail);
-  const [password, setPwd]        = useState("");
+  const [mode, setMode] = useState<Mode>("password");
+  const [email, setEmail] = useState(initialEmail);
+  const [password, setPwd] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [code, setCode]           = useState("");
-  const [loading, setLoading]     = useState(false);
+  const [code, setCode] = useState("");
+  const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
-  const [error, setError]         = useState<string | null>(null);
-  const [info, setInfo]           = useState<string | null>(null);
-  const codeRef     = useRef<HTMLInputElement>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const codeRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
 
   const resetCopy = {
-    title:  "Reset your password",
-    blurb:  "Enter your work email and we'll send you an 8-digit code. After verifying you can choose a new password.",
-    cta:    "Email me a reset code",
+    title: "Reset your password",
+    blurb:
+      "Enter your work email and we'll send you an 8-digit code. After verifying you can choose a new password.",
+    cta: "Email me a reset code",
   } as const;
 
   // Focus password input when mounting in password mode so the form is
@@ -87,12 +108,14 @@ export function StaffLoginForm({
   // unconditionally so a real user can pick a new password.
   const sendCode = async (target: string): Promise<boolean> => {
     const prepRes = await fetch("/api/auth/prepare", {
-      method:  "POST",
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ email: target, purpose: "forgot" }),
+      body: JSON.stringify({ email: target, purpose: "forgot" }),
     });
     if (!prepRes.ok) {
-      const body = (await prepRes.json().catch(() => ({}))) as { error?: string };
+      const body = (await prepRes.json().catch(() => ({}))) as {
+        error?: string;
+      };
       // Enumeration-safe: prepare no longer returns email_not_found, so we
       // must not tell the user whether the account exists (SEC-API-ENUM-1).
       // Only state-independent conditions are surfaced.
@@ -102,12 +125,14 @@ export function StaffLoginForm({
       }
     }
     const sendRes = await fetch("/api/auth/send-otp", {
-      method:  "POST",
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ email: target }),
+      body: JSON.stringify({ email: target }),
     });
     if (!sendRes.ok) {
-      const body = (await sendRes.json().catch(() => ({}))) as { error?: string };
+      const body = (await sendRes.json().catch(() => ({}))) as {
+        error?: string;
+      };
       setError(body.error ?? "Could not send code.");
       return false;
     }
@@ -124,14 +149,14 @@ export function StaffLoginForm({
     setInfo(null);
     try {
       const res = await fetch("/api/auth/signin-password", {
-        method:  "POST",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ email: em, password, surface }),
+        body: JSON.stringify({ email: em, password, surface }),
       });
       const body = (await res.json().catch(() => ({}))) as {
-        ok?:                  boolean;
-        next?:                string;
-        error?:               string;
+        ok?: boolean;
+        next?: string;
+        error?: string;
         allowed_surface_url?: string;
       };
       if (!res.ok || !body.ok) {
@@ -139,7 +164,9 @@ export function StaffLoginForm({
         // with the email prefilled so the user just types their password
         // again. Avoids the "wait, where do I go now?" confusion.
         if (body.error === "wrong_login_surface" && body.allowed_surface_url) {
-          window.location.assign(`${body.allowed_surface_url}?wrong_surface=1&email=${encodeURIComponent(em)}`);
+          window.location.assign(
+            `${body.allowed_surface_url}?wrong_surface=1&email=${encodeURIComponent(em)}`
+          );
           return;
         }
         setError(body.error ?? "Couldn't sign in.");
@@ -199,16 +226,26 @@ export function StaffLoginForm({
     setInfo(null);
     try {
       const res = await fetch("/api/auth/verify-otp", {
-        method:  "POST",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ email, code: trimmed, surface, purpose: "forgot" }),
+        body: JSON.stringify({
+          email,
+          code: trimmed,
+          surface,
+          purpose: "forgot",
+        }),
       });
       const body = (await res.json().catch(() => ({}))) as {
-        ok?: boolean; next?: string; error?: string; allowed_surface_url?: string;
+        ok?: boolean;
+        next?: string;
+        error?: string;
+        allowed_surface_url?: string;
       };
       if (!res.ok) {
         if (body.error === "wrong_login_surface" && body.allowed_surface_url) {
-          window.location.assign(`${body.allowed_surface_url}?wrong_surface=1&email=${encodeURIComponent(email)}`);
+          window.location.assign(
+            `${body.allowed_surface_url}?wrong_surface=1&email=${encodeURIComponent(email)}`
+          );
           return;
         }
         setError(body.error ?? "Couldn't verify code.");
@@ -229,26 +266,43 @@ export function StaffLoginForm({
         <div
           className="flex items-start gap-3 rounded-md border px-4 py-3"
           style={{
-            borderColor: "color-mix(in srgb, " + BRAND_GREEN + " 30%, transparent)",
-            backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 7%, transparent)",
+            borderColor:
+              "color-mix(in srgb, " + BRAND_GREEN + " 30%, transparent)",
+            backgroundColor:
+              "color-mix(in srgb, " + BRAND_GREEN + " 7%, transparent)",
           }}
         >
           <svg
-            width="16" height="16" viewBox="0 0 24 24" fill="none"
-            stroke={BRAND_GREEN} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-            aria-hidden="true" style={{ marginTop: 2 }}
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={BRAND_GREEN}
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+            style={{ marginTop: 2 }}
           >
             <polyline points="20 6 9 17 4 12" />
           </svg>
-          <p className="text-sm leading-relaxed" style={{ color: "var(--text)" }}>
+          <p
+            className="text-sm leading-relaxed"
+            style={{ color: "var(--text)" }}
+          >
             If an account exists for{" "}
-            <span style={{ fontWeight: 500 }}>{email}</span>, we&apos;ve sent an 8-digit code.
+            <span style={{ fontWeight: 500 }}>{email}</span>, we&apos;ve sent an
+            8-digit code.
           </p>
         </div>
 
         <form onSubmit={handleVerify} className="flex flex-col gap-3">
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="code" className="text-sm font-medium" style={{ color: "var(--text)" }}>
+            <label
+              htmlFor="code"
+              className="text-sm font-medium"
+              style={{ color: "var(--text)" }}
+            >
               8-digit code
             </label>
             <input
@@ -261,9 +315,11 @@ export function StaffLoginForm({
               required
               placeholder="••••••••"
               value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 8))}
+              onChange={(e) =>
+                setCode(e.target.value.replace(/\D/g, "").slice(0, 8))
+              }
               disabled={loading}
-              className="w-full rounded-md border px-3.5 py-3 text-center text-xl tracking-[0.4em] outline-none transition-colors"
+              className="w-full rounded-md border px-3.5 py-3 text-center text-xl tracking-[0.4em] transition-colors outline-none"
               style={{
                 borderColor: "var(--border)",
                 backgroundColor: "var(--surface)",
@@ -276,7 +332,7 @@ export function StaffLoginForm({
           </div>
 
           {error && <ErrorBanner message={error} />}
-          {info  && <InfoBanner  message={info}  />}
+          {info && <InfoBanner message={info} />}
 
           <button
             type="submit"
@@ -321,16 +377,27 @@ export function StaffLoginForm({
     return (
       <div className="flex flex-col gap-4">
         <div>
-          <h2 className="text-sm font-semibold" style={{ color: "var(--text)" }}>
+          <h2
+            className="text-sm font-semibold"
+            style={{ color: "var(--text)" }}
+          >
             {resetCopy.title}
           </h2>
-          <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>
+          <p
+            className="mt-1 text-xs leading-relaxed"
+            style={{ color: "var(--text-muted)" }}
+          >
             {resetCopy.blurb}
           </p>
         </div>
 
         <form onSubmit={handleSendCode} className="flex flex-col gap-3">
-          <FieldEmail email={email} onChange={setEmail} disabled={loading} autoFocus />
+          <FieldEmail
+            email={email}
+            onChange={setEmail}
+            disabled={loading}
+            autoFocus
+          />
 
           {error && <ErrorBanner message={error} />}
 
@@ -366,10 +433,19 @@ export function StaffLoginForm({
   return (
     <div className="flex flex-col gap-4">
       <form onSubmit={handlePasswordSubmit} className="flex flex-col gap-3">
-        <FieldEmail email={email} onChange={setEmail} disabled={loading} autoFocus={!initialEmail} />
+        <FieldEmail
+          email={email}
+          onChange={setEmail}
+          disabled={loading}
+          autoFocus={!initialEmail}
+        />
 
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="password" className="text-sm font-medium" style={{ color: "var(--text)" }}>
+          <label
+            htmlFor="password"
+            className="text-sm font-medium"
+            style={{ color: "var(--text)" }}
+          >
             Password
           </label>
           <div className="relative">
@@ -383,7 +459,7 @@ export function StaffLoginForm({
               value={password}
               onChange={(e) => setPwd(e.target.value)}
               disabled={loading}
-              className="w-full rounded-md border py-2.5 pr-11 pl-3.5 text-sm outline-none transition-colors"
+              className="w-full rounded-md border py-2.5 pr-11 pl-3.5 text-sm transition-colors outline-none"
               style={{
                 borderColor: "var(--border)",
                 backgroundColor: "var(--surface)",
@@ -400,7 +476,11 @@ export function StaffLoginForm({
               aria-pressed={showPassword}
               className="absolute top-1/2 right-2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-raised)] hover:text-[var(--text)] focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--primary)_45%,transparent)] focus-visible:outline-none"
             >
-              {showPassword ? <EyeOff size={16} aria-hidden /> : <Eye size={16} aria-hidden />}
+              {showPassword ? (
+                <EyeOff size={16} aria-hidden />
+              ) : (
+                <Eye size={16} aria-hidden />
+              )}
             </button>
           </div>
         </div>
@@ -448,14 +528,18 @@ function FieldEmail({
   disabled,
   autoFocus,
 }: {
-  email:     string;
-  onChange:  (next: string) => void;
+  email: string;
+  onChange: (next: string) => void;
   disabled?: boolean;
   autoFocus?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor="email" className="text-sm font-medium" style={{ color: "var(--text)" }}>
+      <label
+        htmlFor="email"
+        className="text-sm font-medium"
+        style={{ color: "var(--text)" }}
+      >
         Work email
       </label>
       <input
@@ -468,7 +552,7 @@ function FieldEmail({
         value={email}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
-        className="w-full rounded-md border px-3.5 py-2.5 text-sm outline-none transition-colors"
+        className="w-full rounded-md border px-3.5 py-2.5 text-sm transition-colors outline-none"
         style={{
           borderColor: "var(--border)",
           backgroundColor: "var(--surface)",
@@ -492,12 +576,18 @@ function DevModePanel() {
         style={{ color: "var(--text-muted)" }}
       >
         <span>Developer shortcuts</span>
-        <span className="transition-transform group-open:rotate-90" aria-hidden="true">
+        <span
+          className="transition-transform group-open:rotate-90"
+          aria-hidden="true"
+        >
           ›
         </span>
       </summary>
       <div className="border-t p-3" style={{ borderColor: "var(--border)" }}>
-        <p className="mb-2.5 text-[11px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
+        <p
+          className="mb-2.5 text-[11px] leading-relaxed"
+          style={{ color: "var(--text-muted)" }}
+        >
           Skips auth. Signs in as a seeded demo account. Dev only.
         </p>
         <div className="grid gap-1.5">
@@ -513,23 +603,33 @@ function DevModePanel() {
                 className="flex items-center gap-3 rounded-md border px-3 py-2 text-left transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
                 style={{
                   borderColor: "var(--border)",
-                  backgroundColor: "color-mix(in srgb, var(--text) 2%, transparent)",
+                  backgroundColor:
+                    "color-mix(in srgb, var(--text) 2%, transparent)",
                 }}
               >
                 <span
                   className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md"
                   style={{
-                    backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 12%, transparent)",
+                    backgroundColor:
+                      "color-mix(in srgb, " +
+                      BRAND_GREEN +
+                      " 12%, transparent)",
                     color: BRAND_GREEN,
                   }}
                 >
                   <Icon size={13} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[13px] font-medium" style={{ color: "var(--text)" }}>
+                  <div
+                    className="text-[13px] font-medium"
+                    style={{ color: "var(--text)" }}
+                  >
                     {r.label}
                   </div>
-                  <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                  <div
+                    className="text-[11px]"
+                    style={{ color: "var(--text-muted)" }}
+                  >
                     {r.hint}
                   </div>
                 </div>
@@ -548,9 +648,11 @@ function ErrorBanner({ message }: { message: string }) {
     <p
       className="rounded-md px-3 py-2 text-sm"
       style={{
-        backgroundColor: "color-mix(in srgb, var(--accent-red) 8%, transparent)",
+        backgroundColor:
+          "color-mix(in srgb, var(--accent-red) 8%, transparent)",
         color: "var(--accent-red)",
-        border: "1px solid color-mix(in srgb, var(--accent-red) 20%, transparent)",
+        border:
+          "1px solid color-mix(in srgb, var(--accent-red) 20%, transparent)",
       }}
     >
       {message}
@@ -563,9 +665,11 @@ function InfoBanner({ message }: { message: string }) {
     <p
       className="rounded-md px-3 py-2 text-sm"
       style={{
-        backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 8%, transparent)",
+        backgroundColor:
+          "color-mix(in srgb, " + BRAND_GREEN + " 8%, transparent)",
         color: BRAND_GREEN,
-        border: "1px solid color-mix(in srgb, " + BRAND_GREEN + " 25%, transparent)",
+        border:
+          "1px solid color-mix(in srgb, " + BRAND_GREEN + " 25%, transparent)",
       }}
     >
       {message}

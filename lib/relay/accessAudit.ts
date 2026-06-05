@@ -26,16 +26,16 @@ export interface AccessAuditEntry {
 
 export async function writeAccessAudit(
   admin: SupabaseClient,
-  entry: AccessAuditEntry,
+  entry: AccessAuditEntry
 ): Promise<void> {
   try {
     const { error } = await admin.from("access_audit_log").insert({
       actor_user_id: entry.actorUserId,
-      actor_role:    entry.actorRole,
-      tenant_scope:  entry.tenantScope ?? null,
-      resource:      entry.resource,
-      member_ids:    entry.memberIds,
-      member_count:  entry.memberIds.length,
+      actor_role: entry.actorRole,
+      tenant_scope: entry.tenantScope ?? null,
+      resource: entry.resource,
+      member_ids: entry.memberIds,
+      member_count: entry.memberIds.length,
     });
     if (error) console.warn("[access-audit] insert failed:", error.message);
   } catch (e) {

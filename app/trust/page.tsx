@@ -333,8 +333,8 @@ export default function TrustIndex() {
                     lineHeight: 1.55,
                   }}
                 >
-                  How we train, segment, and govern a bench of engineers
-                  to handle protected health information at the moment a builder
+                  How we train, segment, and govern a bench of engineers to
+                  handle protected health information at the moment a builder
                   presses for help.
                 </span>
               </Link>

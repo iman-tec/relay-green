@@ -40,14 +40,18 @@ type Intake = {
 
 type Unsubscribe = () => void;
 type RelayBridge = {
-  notify:            (opts: { title: string; body: string }) => Promise<void>;
-  setTrayRinging:    (on: boolean) => void;
-  flashFrame:        (on: boolean) => void;
-  showIncomingCall:  (data: { sessionId: string; guestName: string; urgency: "normal" | "urgent" | "critical" }) => void;
-  hideIncomingCall:  () => void;
+  notify: (opts: { title: string; body: string }) => Promise<void>;
+  setTrayRinging: (on: boolean) => void;
+  flashFrame: (on: boolean) => void;
+  showIncomingCall: (data: {
+    sessionId: string;
+    guestName: string;
+    urgency: "normal" | "urgent" | "critical";
+  }) => void;
+  hideIncomingCall: () => void;
   reportClaimResult: (sessionId: string, success: boolean) => void;
-  onClaimTrigger:    (cb: (sessionId: string) => void) => Unsubscribe;
-  onDeclineTrigger:  (cb: (sessionId: string) => void) => Unsubscribe;
+  onClaimTrigger: (cb: (sessionId: string) => void) => Unsubscribe;
+  onDeclineTrigger: (cb: (sessionId: string) => void) => Unsubscribe;
 };
 
 function getRelayBridge(): RelayBridge | null {
@@ -58,7 +62,7 @@ function getRelayBridge(): RelayBridge | null {
 export function MatchOfferBridge() {
   const supabaseRef = useRef(createClient());
   const myIdRef = useRef<string | null>(null);
-  const [offer, setOffer]   = useState<Offer | null>(null);
+  const [offer, setOffer] = useState<Offer | null>(null);
   const [intake, setIntake] = useState<Intake | null>(null);
 
   const fetchLatest = useCallback(async () => {
@@ -103,7 +107,7 @@ export function MatchOfferBridge() {
   useEffect(() => {
     let cancelled = false;
     let channel: ReturnType<typeof supabaseRef.current.channel> | null = null;
-    let poll:    ReturnType<typeof setInterval> | null = null;
+    let poll: ReturnType<typeof setInterval> | null = null;
     const sb = supabaseRef.current;
     void (async () => {
       // Auth may not be ready immediately (partitioned cookies still
@@ -124,15 +128,19 @@ export function MatchOfferBridge() {
         .on(
           "postgres_changes",
           {
-            event:  "*",
+            event: "*",
             schema: "public",
-            table:  "engineer_match_offers",
+            table: "engineer_match_offers",
             filter: `engineer_user_id=eq.${myIdRef.current}`,
           },
-          () => { void fetchLatest(); },
+          () => {
+            void fetchLatest();
+          }
         )
         .subscribe();
-      poll = setInterval(() => { void fetchLatest(); }, 2000);
+      poll = setInterval(() => {
+        void fetchLatest();
+      }, 2000);
     })();
     return () => {
       cancelled = true;
@@ -163,7 +171,7 @@ export function MatchOfferBridge() {
 
     const ipcSessionId = guestCallId ?? offerId;
     const title = "Incoming Relay call";
-    const body  = developing
+    const body = developing
       ? `New ${developing} call ringing for you`
       : "A customer is calling you";
 
@@ -172,8 +180,10 @@ export function MatchOfferBridge() {
     relay.flashFrame?.(true);
     relay.showIncomingCall?.({
       sessionId: ipcSessionId,
-      guestName: developing ? `New ${developing.toLowerCase()} call` : "Incoming call",
-      urgency:   "normal",
+      guestName: developing
+        ? `New ${developing.toLowerCase()} call`
+        : "Incoming call",
+      urgency: "normal",
     });
 
     const unsubClaim = relay.onClaimTrigger?.((triggeredId) => {
