@@ -584,6 +584,7 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
                     onClose={() => setCallOpen(false)}
                     onJoined={() => void state.markJoined()}
                     wideTiles
+                    fillTiles
                   />
                 </div>
               </div>
