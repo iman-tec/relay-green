@@ -29,6 +29,20 @@ export function assistantChannelName(sessionId: string): string {
   return `relay-assistant-${sessionId}`;
 }
 
+// Standalone WINDOW (not a tab): passing size features makes window.open
+// spawn a separate popup window the engineer can place beside the call.
+// NB: never add "noopener" here — it makes window.open return null and we
+// need the handle for refocus/adopt.
+function popupFeatures(): string {
+  const availW = window.screen?.availWidth ?? 1280;
+  const availH = window.screen?.availHeight ?? 900;
+  const w = Math.min(960, availW);
+  const h = Math.min(1000, availH - 40);
+  const left = Math.max(0, Math.round((availW - w) / 2));
+  const top = Math.max(0, Math.round((availH - h) / 3));
+  return `popup=yes,width=${w},height=${h},left=${left},top=${top}`;
+}
+
 /**
  * Open (or refocus) the assistant tab for a session. Call ONLY from a user
  * gesture. Returns true when a tab is open/focused, false when blocked.
@@ -44,7 +58,8 @@ export function openAssistantTab(
   }
   const w = window.open(
     assistantTabUrl(sessionId, projectId),
-    assistantChannelName(sessionId)
+    assistantChannelName(sessionId),
+    popupFeatures()
   );
   if (!w) {
     try {
@@ -69,7 +84,10 @@ export function prepareAssistantTab(): {
   adopt: (sessionId: string, projectId: string | null) => void;
   discard: () => void;
 } {
-  const w = typeof window !== "undefined" ? window.open("about:blank") : null;
+  const w =
+    typeof window !== "undefined"
+      ? window.open("about:blank", "_blank", popupFeatures())
+      : null;
   if (!w) {
     try {
       sessionStorage.setItem(POPUP_BLOCKED_KEY, "pending");
