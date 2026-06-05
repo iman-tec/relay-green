@@ -41,6 +41,10 @@ type Props = {
    *  engineer session view where the call pane has the whole side column and
    *  the centred tiles leave weird empty margins. See CallSurface.tsx. */
   wideTiles?: boolean;
+  /** With wideTiles: stretch the tile row to the pane's FULL height instead
+   *  of the fixed 340px row. Engineer-only (their call owns the whole
+   *  stage); the customer keeps the original fixed-height row. */
+  fillTiles?: boolean;
 };
 
 export function CallSurfaceInner({
@@ -53,6 +57,7 @@ export function CallSurfaceInner({
   tilesPortalTarget = null,
   onShareStateChange,
   wideTiles = false,
+  fillTiles = false,
 }: Props) {
   // Share elements are hoisted here so both the local sharer
   // (startShareScreen) and remote viewer (startShareView) can target them.
@@ -311,16 +316,18 @@ export function CallSurfaceInner({
         {call.activeShareUserId === null && (
           <div className="absolute inset-0">
             {wideTiles ? (
-              // Engineer session view: tiles fill the full width as one
-              // equal-width row at a fixed height — no centred-with-margins
-              // gallery, and height stays put (width-only).
+              // Wide row of equal-width tiles. fillTiles (engineer — the
+              // call owns the whole stage) stretches the row to the pane's
+              // full height; otherwise (customer) the original behavior:
+              // solo fills, 2+ sit in a fixed 340px row.
               <TileGrid
                 self={call.self}
                 participants={call.participants}
                 client={call.client}
                 forceSideBySide
-                // Solo → fill the whole pane; 2+ → fixed-height row.
-                tileHeightPx={inlineTileCount <= 1 ? undefined : 340}
+                tileHeightPx={
+                  fillTiles || inlineTileCount <= 1 ? undefined : 340
+                }
               />
             ) : (
               <TileGrid

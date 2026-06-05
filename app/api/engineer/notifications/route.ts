@@ -1,8 +1,9 @@
 /*
  * Engineer / staff notification inbox — feeds the dashboard bell.
  *
- * Scoped to the four event kinds the dashboard surfaces:
- *   call_scheduled · call_rescheduled · leave_accepted · leave_rejected
+ * Scoped to the event kinds the dashboard surfaces:
+ *   call_scheduled · call_rescheduled · leave_accepted · leave_rejected ·
+ *   bid_request (a customer asked for a quote — fanned out to every engineer)
  *
  * GET  /api/engineer/notifications  → 50 latest of those kinds + unread count.
  * POST /api/engineer/notifications  → mark all unread (of those kinds) read.
@@ -21,6 +22,7 @@ export const NOTIFICATION_KINDS = [
   "call_rescheduled",
   "leave_accepted",
   "leave_rejected",
+  "bid_request",
 ] as const;
 
 export async function GET() {

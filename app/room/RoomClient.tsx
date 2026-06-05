@@ -2849,11 +2849,15 @@ function HeaderPill({
   label,
   count,
   onClick,
+  blinkDot = false,
 }: {
   icon: React.ReactNode;
   label: string;
   count: number;
   onClick: () => void;
+  /** Blinking attention dot when unseen items exist — reserved for the
+   *  surfaces we want the customer to prioritise (bids/contracts). */
+  blinkDot?: boolean;
 }) {
   return (
     <button
@@ -2886,6 +2890,7 @@ function HeaderPill({
             {count > 99 ? "99+" : count}
           </span>
           {/* Blinking attention dot — pinned to the pill's corner. */}
+          {blinkDot && (
           <span
             aria-hidden
             className="absolute -top-0.5 -right-0.5 inline-flex size-2"
@@ -2902,6 +2907,7 @@ function HeaderPill({
               }}
             />
           </span>
+          )}
         </>
       )}
     </button>
@@ -3000,15 +3006,18 @@ function CenterHeaderActions({
           .eq("customer_user_id", customerUserId)
           .eq("status", "booked")
           .gt("created_at", schedSeen),
-        // A bid counts as "new" when it was created OR responded-to
-        // (quoted/declined) after the last review.
+        // A bid counts as "new" ONLY when the TEAM responded (quoted /
+        // declined → responded_at) after the last review. The customer's
+        // own actions — submitting a request (created_at), booking an
+        // appointment off a bid — must NOT light this counter; counting
+        // created_at made Contracts mirror unrelated activity (e.g. it
+        // bumped alongside Scheduled when nothing new arrived from the
+        // team). Strictly decoupled now.
         sb
           .from("project_quote_requests")
           .select("id", { count: "exact", head: true })
           .eq("customer_user_id", customerUserId)
-          .or(
-            `created_at.gt.${contractsSeen},responded_at.gt.${contractsSeen}`
-          ),
+          .gt("responded_at", contractsSeen),
       ]);
       if (!alive) return;
       setScheduledCount((eng.count ?? 0) + (sup.count ?? 0));
@@ -3055,6 +3064,8 @@ function CenterHeaderActions({
             icon={<FileText size={14} />}
             label="Contracts"
             count={contractCount}
+            // Bids are the priority surface — only Contracts blinks.
+            blinkDot
             onClick={() => {
               markSeen(contractsSeenKey);
               setContractCount(0);
@@ -3064,7 +3075,12 @@ function CenterHeaderActions({
           {divider}
         </>
       )}
-      <NotificationBell customerUserId={customerUserId} />
+      <NotificationBell
+        customerUserId={customerUserId}
+        onOpenView={(view) =>
+          view === "contracts" ? onOpenContracts() : onOpenScheduled()
+        }
+      />
       {/* Chat drawer trigger — <lg only (the chat stub is an in-flow rail
           on desktop). Far right, separated by the same thin rule. */}
       {onOpenChat && (

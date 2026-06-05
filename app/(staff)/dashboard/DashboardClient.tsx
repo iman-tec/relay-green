@@ -7,8 +7,8 @@ import { useRequireEngineerProfile } from "@/lib/relay/useRequireEngineerProfile
 import { createClient } from "@/lib/supabase/browser";
 import {
   Calendar as CalendarIcon,
-  LifeBuoy,
   Loader2,
+  MoreVertical,
   PhoneIncoming,
   X,
 } from "lucide-react";
@@ -222,12 +222,12 @@ export function DashboardClient() {
       notes: string | null;
     }): Promise<IncomingBooking> => {
       const sb = sbRef.current;
-      const [custRes, projRes] = await Promise.all([
-        sb
-          .from("customer_profiles")
-          .select("display_name, email")
-          .eq("user_id", row.customer_user_id)
-          .maybeSingle(),
+      // Name comes from the customer_display_name RPC (SECURITY DEFINER), the
+      // same path the booking notification uses — so it resolves regardless of
+      // the engineer's RLS. (customer_profiles has no email column, so there's
+      // no email to surface here.)
+      const [nameRes, projRes] = await Promise.all([
+        sb.rpc("customer_display_name", { _user_id: row.customer_user_id }),
         row.project_id
           ? sb
               .from("projects")
@@ -236,10 +236,6 @@ export function DashboardClient() {
               .maybeSingle()
           : Promise.resolve({ data: null }),
       ]);
-      const cust = (custRes.data ?? null) as {
-        display_name: string | null;
-        email: string | null;
-      } | null;
       const proj = (projRes.data ?? null) as { name: string | null } | null;
       return {
         id: row.id,
@@ -248,8 +244,8 @@ export function DashboardClient() {
         customerUserId: row.customer_user_id,
         projectId: row.project_id,
         notes: row.notes,
-        customerName: cust?.display_name ?? null,
-        customerEmail: cust?.email ?? null,
+        customerName: (nameRes.data as string | null) ?? null,
+        customerEmail: null,
         projectName: proj?.name ?? null,
       };
     },
@@ -493,26 +489,49 @@ export function DashboardClient() {
 
   const stats = useDashboardStats();
 
-  // Today + tomorrow buckets for the left-column ScheduledCallsBox.
-  // "Today" = the calendar date; "Tomorrow" = the next calendar date.
-  // Past slots (ended >15 min ago) are filtered out by the parent fetch.
-  const { todayBookings, tomorrowBookings } = useMemo(() => {
+  // ALL upcoming customer bookings, grouped by calendar day, soonest day first
+  // (and soonest slot first within a day) for the left-column ScheduledCallsBox.
+  // Past slots (ended >15 min ago) are already filtered out by the parent fetch;
+  // the fetch horizon is 30 days ahead. Day labels read "Today" / "Tomorrow" /
+  // "Mon, Jun 8" so the spanning dates stay legible in the narrow column.
+  const bookingDayGroups = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const dayAfter = new Date(tomorrow);
-    dayAfter.setDate(dayAfter.getDate() + 1);
-    const inDay = (d: Date, ref: Date, next: Date) =>
-      d.getTime() >= ref.getTime() && d.getTime() < next.getTime();
-    const t: IncomingBooking[] = [];
-    const tm: IncomingBooking[] = [];
+    const dayKey = (d: Date) => {
+      const x = new Date(d);
+      x.setHours(0, 0, 0, 0);
+      return x.getTime();
+    };
+    const labelFor = (ms: number) => {
+      const diffDays = Math.round((ms - today.getTime()) / 86_400_000);
+      if (diffDays === 0) return "Today";
+      if (diffDays === 1) return "Tomorrow";
+      return new Date(ms).toLocaleDateString([], {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      });
+    };
+    const byDay = new Map<number, IncomingBooking[]>();
     for (const b of incomingBookings) {
-      const start = new Date(b.slotStart);
-      if (inDay(start, today, tomorrow)) t.push(b);
-      else if (inDay(start, tomorrow, dayAfter)) tm.push(b);
+      const k = dayKey(new Date(b.slotStart));
+      const arr = byDay.get(k);
+      if (arr) arr.push(b);
+      else byDay.set(k, [b]);
     }
-    return { todayBookings: t, tomorrowBookings: tm };
+    return [...byDay.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([ms, list]) => ({
+        key: ms,
+        label: labelFor(ms),
+        bookings: list
+          .slice()
+          .sort(
+            (a, b) =>
+              new Date(a.slotStart).getTime() -
+              new Date(b.slotStart).getTime()
+          ),
+      }));
   }, [incomingBookings]);
 
   return (
@@ -545,27 +564,18 @@ export function DashboardClient() {
       )}
 
       {/* ── Two-column workspace.
-          Left col (1/3): scheduled + waiting boxes share the column
-          horizontally at 50/50, each with a min-height so they fill the
-          vertical space alongside the calendar. Internal overflow-y-auto
-          handles busy days. On narrow screens they stack instead.
-          Right col (2/3): calendar. */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:col-span-1">
+          Left col (1/4): the Scheduled-upcoming box — a fixed-height card that
+          scrolls internally rather than growing with the booking count.
+          Right col (3/4): calendar, stretched to the same height as the box. */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-4 lg:items-stretch">
+        <div className="lg:col-span-1">
           <ScheduledCallsBox
-            todayBookings={todayBookings}
-            tomorrowBookings={tomorrowBookings}
+            groups={bookingDayGroups}
             actionBusyId={actionBusyId}
             onCancel={onCancelBooking}
           />
-          <CallsWaitingBox
-            requests={incomingRequests}
-            actionBusyId={actionBusyId}
-            onAccept={onAcceptRequest}
-            onDecline={onDeclineRequest}
-          />
         </div>
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-3">
           <FourWeekCalendar
             bookings={incomingBookings}
             actionBusyId={actionBusyId}
@@ -591,9 +601,6 @@ export function DashboardClient() {
         </div>
       )}
 
-      {/* Footer — supervisor escalation demoted from a card to a quiet
-          link, since it's a rarely-used emergency action. */}
-      <DashboardFooterEscalate />
     </div>
   );
 }
@@ -698,37 +705,35 @@ function capitalize(s: string): string {
 
 // ──────────────────────────────────────────────────────────────────────────
 // ScheduledCallsBox — left-column box #1.
-// Customer-PREBOOKED calls for today + tomorrow. The engineer wants to
-// see two things at a glance:
-//   1. What's left to do TODAY (current bookings, sorted by start time).
-//   2. What lands TOMORROW so they can plan their evening / morning.
-// Bookings further out live in the right-side MonthCalendar.
+// ALL upcoming customer-PREBOOKED calls, grouped by day with the soonest day
+// (and soonest slot) on top so the engineer's very next call is always at the
+// top of the list. Bookings also live on the right-side MonthCalendar.
 //
 // Always renders even when empty — the engineer's mental model includes
-// "is my today empty?" as a useful answer, not a hidden component.
+// "is anything booked?" as a useful answer, not a hidden component.
 // ──────────────────────────────────────────────────────────────────────────
 function ScheduledCallsBox({
-  todayBookings,
-  tomorrowBookings,
+  groups,
   actionBusyId,
   onCancel,
 }: {
-  todayBookings: IncomingBooking[];
-  tomorrowBookings: IncomingBooking[];
+  groups: { key: number; label: string; bookings: IncomingBooking[] }[];
   actionBusyId: string | null;
   onCancel: (b: IncomingBooking) => Promise<void>;
 }) {
-  const total = todayBookings.length + tomorrowBookings.length;
+  const total = groups.reduce((n, g) => n + g.bookings.length, 0);
   return (
     <section
-      className="flex min-h-[420px] flex-col overflow-hidden rounded-xl border"
+      // Fixed height so the card never grows with the booking count — the list
+      // below scrolls internally instead.
+      className="flex h-[460px] flex-col overflow-hidden rounded-xl border"
       style={{
         borderColor: "var(--border)",
         backgroundColor: "var(--surface)",
       }}
     >
       <header
-        className="flex items-center gap-2 border-b px-4 py-3"
+        className="flex shrink-0 items-center gap-2 border-b px-4 py-3"
         style={{ borderColor: "var(--border)" }}
       >
         <CalendarIcon size={14} style={{ color: "#0ea5e9" }} />
@@ -736,7 +741,7 @@ function ScheduledCallsBox({
           className="flex-1 text-[12px] font-semibold tracking-[0.08em] uppercase"
           style={{ color: "var(--text)" }}
         >
-          Scheduled · today + tomorrow
+          Scheduled · upcoming
         </h2>
         <span
           className="text-[11px] tabular-nums"
@@ -751,25 +756,19 @@ function ScheduledCallsBox({
             className="flex h-full items-center justify-center px-4 py-6 text-center text-[12px]"
             style={{ color: "var(--text-faint)" }}
           >
-            No customer bookings today or tomorrow.
+            No upcoming customer bookings.
           </div>
         ) : (
-          <>
+          groups.map((g) => (
             <ScheduledDayGroup
-              label="Today"
-              bookings={todayBookings}
+              key={g.key}
+              label={g.label}
+              bookings={g.bookings}
               actionBusyId={actionBusyId}
               onCancel={onCancel}
-              emptyText="Nothing today."
+              emptyText=""
             />
-            <ScheduledDayGroup
-              label="Tomorrow"
-              bookings={tomorrowBookings}
-              actionBusyId={actionBusyId}
-              onCancel={onCancel}
-              emptyText="Nothing tomorrow."
-            />
-          </>
+          ))
         )}
       </div>
     </section>
@@ -843,6 +842,19 @@ function ScheduledRow({
   const start = new Date(booking.slotStart);
   const end = new Date(booking.slotEnd);
   const name = booking.customerName ?? booking.customerEmail ?? "Customer";
+  // Per-row actions live behind a small dropdown ("⋮") instead of a bare ×, so
+  // the narrow column stays uncluttered and cancel can't be hit by accident.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node))
+        setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [menuOpen]);
   return (
     <div className="flex items-start gap-2">
       <span
@@ -889,17 +901,48 @@ function ScheduledRow({
           </div>
         )}
       </div>
-      <button
-        type="button"
-        onClick={onCancel}
-        disabled={busy}
-        title="Cancel booking"
-        aria-label="Cancel booking"
-        className="rounded-md p-1 transition-colors hover:bg-black/[0.04] disabled:opacity-50 dark:hover:bg-white/[0.04]"
-        style={{ color: "var(--text-faint)" }}
-      >
-        <X size={12} />
-      </button>
+      <div className="relative shrink-0" ref={menuRef}>
+        <button
+          type="button"
+          onClick={() => setMenuOpen((v) => !v)}
+          disabled={busy}
+          title="Booking actions"
+          aria-label="Booking actions"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          className="rounded-md p-1 transition-colors hover:bg-black/[0.04] disabled:opacity-50 dark:hover:bg-white/[0.04]"
+          style={{ color: "var(--text-faint)" }}
+        >
+          {busy ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : (
+            <MoreVertical size={14} />
+          )}
+        </button>
+        {menuOpen && (
+          <div
+            role="menu"
+            className="absolute right-0 z-20 mt-1 min-w-[150px] overflow-hidden rounded-md border shadow-lg"
+            style={{
+              borderColor: "var(--border)",
+              backgroundColor: "var(--surface)",
+            }}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setMenuOpen(false);
+                onCancel();
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
+              style={{ color: "var(--accent-red)" }}
+            >
+              <X size={12} /> Cancel booking
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1251,14 +1294,17 @@ function FourWeekCalendar({
   return (
     <>
       <section
-        className="overflow-hidden rounded-xl border"
+        // On lg the card is pinned to the same height as the Scheduled box and
+        // lays out as a column so the date grid below grows to fill — keeping
+        // both cards the same height.
+        className="overflow-hidden rounded-xl border lg:flex lg:h-[460px] lg:flex-col"
         style={{
           borderColor: "var(--border)",
           backgroundColor: "var(--surface)",
         }}
       >
         <header
-          className="flex flex-wrap items-center gap-2 border-b px-4 py-2.5"
+          className="flex flex-wrap items-center gap-2 border-b px-4 py-2.5 lg:shrink-0"
           style={{ borderColor: "var(--border)" }}
         >
           <CalendarIcon size={13} style={{ color: BRAND_GREEN }} />
@@ -1278,7 +1324,7 @@ function FourWeekCalendar({
 
         {/* Weekday header */}
         <div
-          className="grid grid-cols-7 border-b px-2 py-1.5 text-[9px] font-semibold tracking-wider uppercase"
+          className="grid grid-cols-7 border-b px-2 py-1.5 text-[9px] font-semibold tracking-wider uppercase lg:shrink-0"
           style={{ borderColor: "var(--border)", color: "var(--text-faint)" }}
         >
           {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
@@ -1297,7 +1343,7 @@ function FourWeekCalendar({
           </div>
         ) : (
           <div
-            className="grid grid-cols-7 gap-px p-2"
+            className="grid grid-cols-7 gap-px p-2 lg:min-h-0 lg:flex-1 lg:grid-rows-4"
             style={{ backgroundColor: "var(--border)" }}
           >
             {cells.map((c) => {
@@ -1742,93 +1788,6 @@ function MonthStatsRow({ stats }: { stats: DashStats }) {
         </div>
       ))}
     </div>
-  );
-}
-
-// ──────────────────────────────────────────────────────────────────────────
-// DashboardFooterEscalate — supervisor escalation demoted from a full
-// card to a quiet footer link. Opens the same modal as the prior card
-// but lives at page-bottom where engineers expect to find "help" links.
-// ──────────────────────────────────────────────────────────────────────────
-function DashboardFooterEscalate() {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <div
-        className="mt-2 flex items-center justify-center gap-2 border-t pt-4 text-[12px]"
-        style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
-      >
-        <LifeBuoy size={11} />
-        <span>Need to escalate?</span>
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="font-medium underline-offset-2 hover:underline"
-          style={{ color: URGENT_AMBER }}
-        >
-          Contact supervisor
-        </button>
-      </div>
-      {open && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center px-6"
-          style={{
-            backgroundColor: "rgba(0,0,0,0.55)",
-            backdropFilter: "blur(4px)",
-          }}
-        >
-          <div
-            className="relative w-full max-w-md rounded-2xl border p-6 shadow-xl"
-            style={{
-              backgroundColor: "var(--surface)",
-              borderColor: "var(--border)",
-            }}
-          >
-            <h3
-              className="mb-2 text-base font-semibold"
-              style={{ color: "var(--text)" }}
-            >
-              Contact your supervisor
-            </h3>
-            <p
-              className="text-[13px] leading-relaxed"
-              style={{ color: "var(--text-muted)" }}
-            >
-              In-app chat + 1-click Zoom with your assigned supervisor is coming
-              in a follow-up. For now:
-            </p>
-            <ul
-              className="mt-3 flex flex-col gap-1.5 text-[13px]"
-              style={{ color: "var(--text)" }}
-            >
-              <li>
-                📧 Email{" "}
-                <a
-                  href="mailto:ops@relay.green"
-                  className="underline"
-                  style={{ color: "var(--primary)" }}
-                >
-                  ops@relay.green
-                </a>{" "}
-                for non-urgent matters
-              </li>
-              <li>
-                📱 Use your usual emergency Slack/WhatsApp channel for live
-                incidents
-              </li>
-            </ul>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="mt-5 w-full rounded-md border px-4 py-2 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-              style={{ borderColor: "var(--border)", color: "var(--text)" }}
-            >
-              Got it
-            </button>
-          </div>
-        </div>
-      )}
-    </>
   );
 }
 

@@ -56,8 +56,13 @@ const fmtAgo = (ms: number) => {
 
 export function NotificationBell({
   customerUserId,
+  onOpenView,
 }: {
   customerUserId: string | null;
+  /** Selecting a notification routes to the matching surface — booking /
+   *  appointment items open the Scheduled view, bid items open Contract
+   *  management. Optional: without it items stay non-navigating. */
+  onOpenView?: (view: "scheduled" | "contracts") => void;
 }) {
   const [items, setItems] = useState<Notif[]>([]);
   const [open, setOpen] = useState(false);
@@ -470,10 +475,46 @@ export function NotificationBell({
               <ul>
                 {visibleItems.map((n) => {
                   const Icon = KIND_ICON[n.kind];
+                  // Route by item type: bids → Contracts; bookings /
+                  // appointments (incl. their cancellations) → Scheduled.
+                  // Cancelled sessions (sess-*) have no center view.
+                  const view: "scheduled" | "contracts" | null = n.id.startsWith(
+                    "bid-"
+                  )
+                    ? "contracts"
+                    : n.id.startsWith("sess-")
+                      ? null
+                      : "scheduled";
+                  const clickable = !!onOpenView && view !== null;
                   return (
                     <li
                       key={n.id}
-                      className="flex items-start gap-2.5 border-t px-4 py-2.5 first:border-t-0"
+                      role={clickable ? "button" : undefined}
+                      tabIndex={clickable ? 0 : undefined}
+                      onClick={
+                        clickable
+                          ? () => {
+                              setOpen(false);
+                              onOpenView(view);
+                            }
+                          : undefined
+                      }
+                      onKeyDown={
+                        clickable
+                          ? (e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                setOpen(false);
+                                onOpenView(view);
+                              }
+                            }
+                          : undefined
+                      }
+                      className={`flex items-start gap-2.5 border-t px-4 py-2.5 first:border-t-0 ${
+                        clickable
+                          ? "cursor-pointer transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.05]"
+                          : ""
+                      }`}
                       style={{ borderColor: "var(--border)" }}
                     >
                       <span

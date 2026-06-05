@@ -45,6 +45,9 @@ type CallSurfaceProps = {
    *  fixed height, instead of the capped/centred 4:3 gallery. Use in the
    *  engineer session view where the call pane owns the whole side column. */
   wideTiles?: boolean;
+  /** With wideTiles: stretch the row to the pane's FULL height (engineer —
+   *  the call owns the whole stage). Customer keeps the fixed 340px row. */
+  fillTiles?: boolean;
 };
 
 export const CallSurface = dynamic<CallSurfaceProps>(
