@@ -8477,7 +8477,7 @@ const Sidebar = memo(function Sidebar({
           centring only centred it within the leftover space between the
           wordmark and the right icons, which sat visibly off-axis from
           the green orb below (also centred on the full width). */}
-      <div className="relative flex h-12 min-w-0 items-center px-3">
+      <div className="relative mb-2 flex h-12 min-w-0 items-center px-3">
         <button
           type="button"
           onClick={onGoHome}
@@ -8637,37 +8637,68 @@ const Sidebar = memo(function Sidebar({
             }
             /* Elegant lub-dub: a primary swell with a soft secondary echo,
                then a long settle — reads as a real heartbeat, with a
-               breathing green glow synced to the beat. */
+               breathing green glow synced to the beat.
+
+               NB: every frame REPEATS the ball's resting shadow stack
+               (the inset matte shading + the under-ball depth shadows from
+               the inline style) before appending the glow — an animated
+               box-shadow REPLACES the inline one, and earlier versions
+               wiped the depth shadow whenever the beat played. */
             @keyframes rk-orb-heartbeat {
               0% {
                 transform: scale(1);
                 filter: brightness(1);
-                box-shadow: 0 0 0
-                  color-mix(in srgb, var(--primary) 0%, transparent);
+                box-shadow:
+                  inset -12px -18px 28px rgba(0, 0, 0, 0.32),
+                  inset 9px 12px 22px rgba(255, 255, 255, 0.22),
+                  0 18px 36px
+                    color-mix(in srgb, var(--primary) 26%, transparent),
+                  0 5px 9px color-mix(in srgb, var(--primary) 18%, transparent),
+                  0 0 0 color-mix(in srgb, var(--primary) 0%, transparent);
               }
               28% {
                 transform: scale(1.045);
                 filter: brightness(1.09);
-                box-shadow: 0 0 26px
-                  color-mix(in srgb, var(--primary) 38%, transparent);
+                box-shadow:
+                  inset -12px -18px 28px rgba(0, 0, 0, 0.32),
+                  inset 9px 12px 22px rgba(255, 255, 255, 0.22),
+                  0 18px 36px
+                    color-mix(in srgb, var(--primary) 26%, transparent),
+                  0 5px 9px color-mix(in srgb, var(--primary) 18%, transparent),
+                  0 0 26px color-mix(in srgb, var(--primary) 38%, transparent);
               }
               44% {
                 transform: scale(1.012);
                 filter: brightness(1.02);
-                box-shadow: 0 0 10px
-                  color-mix(in srgb, var(--primary) 16%, transparent);
+                box-shadow:
+                  inset -12px -18px 28px rgba(0, 0, 0, 0.32),
+                  inset 9px 12px 22px rgba(255, 255, 255, 0.22),
+                  0 18px 36px
+                    color-mix(in srgb, var(--primary) 26%, transparent),
+                  0 5px 9px color-mix(in srgb, var(--primary) 18%, transparent),
+                  0 0 10px color-mix(in srgb, var(--primary) 16%, transparent);
               }
               58% {
                 transform: scale(1.03);
                 filter: brightness(1.05);
-                box-shadow: 0 0 18px
-                  color-mix(in srgb, var(--primary) 26%, transparent);
+                box-shadow:
+                  inset -12px -18px 28px rgba(0, 0, 0, 0.32),
+                  inset 9px 12px 22px rgba(255, 255, 255, 0.22),
+                  0 18px 36px
+                    color-mix(in srgb, var(--primary) 26%, transparent),
+                  0 5px 9px color-mix(in srgb, var(--primary) 18%, transparent),
+                  0 0 18px color-mix(in srgb, var(--primary) 26%, transparent);
               }
               100% {
                 transform: scale(1);
                 filter: brightness(1);
-                box-shadow: 0 0 0
-                  color-mix(in srgb, var(--primary) 0%, transparent);
+                box-shadow:
+                  inset -12px -18px 28px rgba(0, 0, 0, 0.32),
+                  inset 9px 12px 22px rgba(255, 255, 255, 0.22),
+                  0 18px 36px
+                    color-mix(in srgb, var(--primary) 26%, transparent),
+                  0 5px 9px color-mix(in srgb, var(--primary) 18%, transparent),
+                  0 0 0 color-mix(in srgb, var(--primary) 0%, transparent);
               }
             }
             @keyframes rk-press-squish {
