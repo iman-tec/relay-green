@@ -21,8 +21,20 @@ import {
   Check,
   FileText,
   CalendarClock,
+  ChevronDown,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
+import { ProjectAIAssistant } from "@/app/_components/ProjectAIAssistant";
+
+// Phone-width viewport. On mobile the right-hand AI panel is awkward (it
+// overlays the screen), so the bid card falls back to the older inline
+// "Review project history (AI)" box and we don't auto-open the right panel.
+function isMobileViewport(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    window.matchMedia("(max-width: 1023px)").matches
+  );
+}
 
 type Sentiment = { score: number; summary: string; messageCount: number };
 type Estimation = {
@@ -203,6 +215,10 @@ export function ActNowRail({
       onCloseHistory?.();
       return;
     }
+    // Desktop auto-opens the project history in the right panel. On mobile we
+    // DON'T — the bid card shows its own inline "Review project history (AI)"
+    // box instead, opened on demand.
+    if (isMobileViewport()) return;
     const q = feed.estimationRequests.find((e) => e.id === expandedId);
     if (q) onOpenHistory?.(q.projectId, q.project);
     else onCloseHistory?.();
@@ -365,6 +381,8 @@ function DiveInForm({
   const [termsUrl, setTermsUrl] = useState("/legal/contracting-terms");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Mobile-only: in-card project-history AI box (desktop uses the right panel).
+  const [showAi, setShowAi] = useState(false);
 
   const s = q.liveSentiment;
   const tone =
@@ -510,8 +528,36 @@ function DiveInForm({
         </div>
       )}
 
-      {/* (Project-history review lives in the page's right-hand panel, which
-          auto-opens when the bid is expanded — no in-card button needed.) */}
+      {/* Project-history review. DESKTOP: opens in the page's right-hand panel
+          (auto on bid expand) — no in-card UI. MOBILE (< lg): the right panel is
+          awkward as an overlay, so we keep the older in-card box, opened on
+          demand from this button (never auto). */}
+      <div
+        className="rounded-lg border lg:hidden"
+        style={{ borderColor: "var(--border)" }}
+      >
+        <button
+          type="button"
+          onClick={() => setShowAi((v) => !v)}
+          aria-expanded={showAi}
+          className="flex w-full items-center gap-1.5 px-3 py-2 text-[11px] font-semibold tracking-wide uppercase"
+          style={{ color: "var(--text-muted)" }}
+        >
+          <FileText size={12} /> Review project history (AI)
+          <ChevronDown
+            size={13}
+            className={`ml-auto transition-transform ${showAi ? "rotate-180" : ""}`}
+          />
+        </button>
+        {showAi && (
+          <div
+            className="h-80 overflow-hidden border-t"
+            style={{ borderColor: "var(--border)" }}
+          >
+            <ProjectAIAssistant projectId={q.projectId} projectName={q.project} />
+          </div>
+        )}
+      </div>
 
       {/* Bid — same one-page bid the engineer prepares. */}
       <div

@@ -317,9 +317,19 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
     };
   }, [guard.kind, meEmail]);
 
-  // Restore sidebar state from localStorage on mount.
+  // On mount: phones always start collapsed (the expanded nav doesn't fit),
+  // regardless of any saved desktop preference. On wider screens, restore the
+  // saved preference.
   useEffect(() => {
     try {
+      const mobile =
+        typeof window !== "undefined" &&
+        window.matchMedia("(max-width: 767px)").matches;
+      if (mobile) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setCollapsed(true);
+        return;
+      }
       const v = localStorage.getItem(COLLAPSED_KEY);
       // eslint-disable-next-line react-hooks/set-state-in-effect
       if (v === "1") setCollapsed(true);
@@ -495,20 +505,24 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
     // (dashboard, inbox, supervise) fit perfectly because <main>'s height
     // equals the viewport.
     <div
-      className="flex h-screen overflow-hidden"
+      className="relative flex h-screen overflow-hidden"
       style={{ backgroundColor: "var(--background)" }}
     >
       <aside
-        className={`flex h-full shrink-0 flex-col border-r ${sidebarDragging ? "" : "transition-[width] duration-200 ease-out"}`}
+        // On phones the aside is pulled OUT of flow (`absolute`) so expanding
+        // it overlays the page instead of pushing <main> rightwards — a
+        // standard mobile drawer. <main> reserves the collapsed-rail width
+        // (pl) so the always-visible icon rail never sits on top of content.
+        // From `lg` up it returns to an in-flow flex sibling (`lg:relative`)
+        // and the push-to-resize behaviour is unchanged.
+        className={`absolute inset-y-0 left-0 z-40 flex h-full shrink-0 flex-col border-r lg:relative lg:inset-auto lg:z-auto ${sidebarDragging ? "" : "transition-[width] duration-200 ease-out"}`}
         style={{
           width: collapsed ? SIDEBAR_CLOSED_W : sidebarWidth,
           borderColor: "var(--border)",
           backgroundColor: "var(--surface)",
-          // `relative` so the drag-resize handle (absolutely positioned
-          // child below) anchors here. We no longer need `sticky top-0`
-          // because the parent wrapper is locked at viewport height with
-          // overflow-hidden — nothing scrolls past the aside.
-          position: "relative",
+          // Both `absolute` (mobile) and `lg:relative` (desktop) make this a
+          // positioned ancestor, so the drag-resize handle below anchors here
+          // in either mode.
         }}
       >
         {/* Drag-to-resize handle on the right edge. Hidden when the
@@ -598,6 +612,16 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
                 key={item.href}
                 href={item.href}
                 title={collapsed ? item.label : undefined}
+                onClick={() => {
+                  // On mobile, collapse the nav after picking a destination so
+                  // the page content takes over (matches the inbox People rail).
+                  if (
+                    typeof window !== "undefined" &&
+                    window.matchMedia("(max-width: 767px)").matches
+                  ) {
+                    setCollapsed(true);
+                  }
+                }}
                 className="flex items-center gap-3 rounded-md px-2.5 py-2 text-sm transition-colors"
                 style={{
                   fontWeight: active ? 600 : 500,
@@ -672,6 +696,18 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
+      {/* Mobile-only scrim: when the drawer is expanded on a phone it sits at
+          z-40 over the page; this dims the rest and taps-to-close. Hidden from
+          `lg` up where the sidebar is in-flow and pushes instead of overlays. */}
+      {!collapsed && (
+        <button
+          type="button"
+          aria-label="Close navigation"
+          onClick={() => setCollapsed(true)}
+          className="absolute inset-0 z-30 bg-black/30 lg:hidden"
+        />
+      )}
+
       {/* Sole scroll region. flex-1 + min-w-0 + h-full + overflow-y-auto
           is the canonical "fills remaining row width, full row height,
           scrolls own content" pattern. Routes with internal h-screen flex
@@ -680,7 +716,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
           DOM (calendar, settings, admin tables) scroll here instead of
           taking the document with them — which is exactly what kept the
           sidebar moving in the original bug. */}
-      <main className="h-full min-w-0 flex-1 overflow-y-auto">
+      <main className="h-full min-w-0 flex-1 overflow-y-auto pl-[60px] lg:pl-0">
         {profilePaneOpen && engineer && guard.kind === "staff" ? (
           <EngineerProfilePane
             userId={guard.userId}

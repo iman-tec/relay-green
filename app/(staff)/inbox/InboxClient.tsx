@@ -45,6 +45,16 @@ const BRAND_GREEN_SOFT = "rgba(63, 92, 46, 0.12)";
 const URGENT_AMBER_SOFT = "rgba(212, 160, 23, 0.14)";
 const URGENT_AMBER      = "#d4a017";
 
+// True on a phone-width viewport — drives the inbox's mobile defaults
+// (People + Call-log rails start collapsed so the session/project pane is the
+// main view; picking a customer re-collapses People).
+function isMobileViewport(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    window.matchMedia("(max-width: 767px)").matches
+  );
+}
+
 // "Guest" is the legacy DB default for customer rows that haven't set a
 // display name. Engineers asked us to surface these as "Customer" instead
 // — better mental model since these ARE customers, not anonymous guests.
@@ -387,6 +397,30 @@ function InboxView({
   const [logSearchMode, setLogSearchMode] = useState<"customer" | "project">("customer");
   const [logSort, setLogSort] = useState<"newest" | "oldest" | "name" | "status">("newest");
   const [logCollapsed, setLogCollapsed] = useState(false);
+  // People / "Customer name" left rail — collapsible like the call log.
+  const [peopleCollapsed, setPeopleCollapsed] = useState(false);
+  // On phones, start both side rails collapsed so the session/project pane is
+  // the main view. Done in an effect (not a lazy initializer) to avoid an SSR
+  // hydration mismatch; runs once on mount.
+  useEffect(() => {
+    if (isMobileViewport()) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPeopleCollapsed(true);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLogCollapsed(true);
+    }
+  }, []);
+  // Reactive mobile flag — on phones the Call log rail is removed entirely
+  // (not just collapsed), so the session/project pane gets the full width.
+  // Kept in sync on resize/rotation.
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const sync = () => setIsMobile(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
   const [logFromDate, setLogFromDate] = useState<string>("");
   const [logToDate, setLogToDate] = useState<string>("");
   const [logShowAll, setLogShowAll] = useState(false);  // toggle: 30 default → all
@@ -482,7 +516,9 @@ function InboxView({
     <div
       className="grid h-screen transition-[grid-template-columns] duration-200"
       style={{
-        gridTemplateColumns: `280px ${DIVIDER_W}px 1fr ${DIVIDER_W}px ${logCollapsed ? 40 : 320}px`,
+        gridTemplateColumns: isMobile
+          ? `${peopleCollapsed ? 40 : 280}px ${DIVIDER_W}px 1fr`
+          : `${peopleCollapsed ? 40 : 280}px ${DIVIDER_W}px 1fr ${DIVIDER_W}px ${logCollapsed ? 40 : 320}px`,
         backgroundColor: "var(--surface)",
       }}
     >
@@ -491,10 +527,40 @@ function InboxView({
         className="flex min-h-0 flex-col overflow-hidden"
         style={{ backgroundColor: COL_PEOPLE_BG }}
       >
+        {peopleCollapsed ? (
+          /* Collapsed rail — narrow vertical strip with a toggle. */
+          <button
+            type="button"
+            onClick={() => setPeopleCollapsed(false)}
+            title="Expand customers"
+            className="flex h-full w-full flex-col items-center justify-start gap-3 px-2 py-3 transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <ChevronRight size={14} />
+            <span
+              className="select-none text-[10px] font-semibold uppercase tracking-[0.18em]"
+              style={{ writingMode: "vertical-rl" }}
+            >
+              Customer name
+            </span>
+          </button>
+        ) : (
+          <>
         <div className="border-b p-3" style={{ borderColor: "var(--border)" }}>
-          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--text-muted)" }}>
-            Customer name
-          </h3>
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--text-muted)" }}>
+              Customer name
+            </h3>
+            <button
+              type="button"
+              onClick={() => setPeopleCollapsed(true)}
+              title="Collapse customers"
+              className="rounded-md p-0.5"
+              style={{ color: "var(--text-muted)" }}
+            >
+              <ChevronLeft size={12} />
+            </button>
+          </div>
           <div
             className="flex items-center gap-2 rounded-md border px-3 py-2"
             style={{ borderColor: "var(--border)", backgroundColor: "var(--background)" }}
@@ -523,7 +589,12 @@ function InboxView({
               return (
                 <button
                   key={p.key}
-                  onClick={() => setSelectedKey(p.key)}
+                  onClick={() => {
+                    setSelectedKey(p.key);
+                    // On mobile, picking a customer collapses the list so the
+                    // session/project pane takes over.
+                    if (isMobileViewport()) setPeopleCollapsed(true);
+                  }}
                   className="relative flex w-full items-start gap-3 border-b px-4 py-3 text-left transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
                   style={{
                     borderColor: "var(--border)",
@@ -585,6 +656,8 @@ function InboxView({
             })
           )}
         </div>
+          </>
+        )}
       </aside>
 
       {/* ── Tramline divider (People → Sessions) ──────────────────── */}
@@ -644,7 +717,12 @@ function InboxView({
         ) : null}
       </section>
 
-      {/* ── Tramline divider (Sessions → Call log) ────────────────── */}
+      {/* ── Tramline divider + Call log rail ──────────────────────────
+          Removed entirely on phones (not just collapsed) so the session /
+          project pane owns the full width; the grid above also drops these
+          two columns when isMobile. */}
+      {!isMobile && (
+      <>
       <div aria-hidden style={dividerStyle} />
 
       {/* ── Right rail: Call log (dark, matches StaffShell sidebar) ── */}
@@ -830,6 +908,8 @@ function InboxView({
           </>
         )}
       </aside>
+      </>
+      )}
     </div>
   );
 }

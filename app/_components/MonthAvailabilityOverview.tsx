@@ -143,8 +143,8 @@ export function MonthAvailabilityOverview() {
       <section className="overflow-hidden rounded-2xl border shadow-sm" style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}>
         <header className="flex flex-wrap items-center gap-2 border-b px-4 py-2.5" style={{ borderColor: "var(--border)" }}>
           <CalendarIcon size={13} style={{ color: BRAND_GREEN }} />
-          <h2 className="text-[13px] font-semibold" style={{ color: "var(--text)", fontFamily: "var(--font-source-serif)" }}>Next 4 weeks</h2>
-          <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>· {rangeLabel}</span>
+          <h2 className="text-[13px] font-semibold whitespace-nowrap" style={{ color: "var(--text)", fontFamily: "var(--font-source-serif)" }}>Next 4 weeks</h2>
+          <span className="text-[11px] whitespace-nowrap" style={{ color: "var(--text-muted)" }}>· {rangeLabel}</span>
         </header>
 
         <div className="grid grid-cols-7 border-b px-2 py-1.5 text-[9px] font-semibold uppercase tracking-wider" style={{ borderColor: "var(--border)", color: "var(--text-faint)" }}>
@@ -176,7 +176,7 @@ export function MonthAvailabilityOverview() {
                     : c.hasWindow ? `Available · ${c.bookings.length} booking${c.bookings.length === 1 ? "" : "s"}`
                     : "Off day"
                   }
-                  className="flex min-h-[72px] flex-col items-stretch gap-1 rounded-md border-2 p-2 text-left transition-colors hover:brightness-110 disabled:cursor-not-allowed"
+                  className="flex min-h-[56px] flex-col items-stretch gap-1 rounded-md border-2 p-1.5 text-left transition-colors hover:brightness-110 disabled:cursor-not-allowed sm:min-h-[72px] sm:p-2"
                   style={{ backgroundColor: bg, borderColor: c.isToday ? BRAND_GREEN : "transparent", opacity: c.isPast ? 0.32 : 1 }}
                 >
                   <div className="flex items-baseline justify-between gap-1">
@@ -189,7 +189,11 @@ export function MonthAvailabilityOverview() {
                       </span>
                     )}
                   </div>
-                  <div className="text-[10px]" style={{ color: c.isHoliday ? "var(--accent-red)" : "var(--text-muted)" }}>
+                  {/* Cell status word — hidden on phones (the cell colour +
+                      legend already convey it, and ~46px is too narrow to fit
+                      "Available" without breaking mid-word). `truncate` keeps
+                      it on one line on larger screens. */}
+                  <div className="hidden truncate text-[10px] sm:block" style={{ color: c.isHoliday ? "var(--accent-red)" : "var(--text-muted)" }}>
                     {c.isHoliday ? (c.holidayLabel ?? "Off") : c.hasWindow ? "Available" : ""}
                   </div>
                 </button>

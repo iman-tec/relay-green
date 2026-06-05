@@ -1018,7 +1018,7 @@ export function CalendarTab({
       />
 
       {/* ── View toggle + timezone + total hours summary ──── */}
-      <div className="flex items-center justify-between gap-3 text-[12px]">
+      <div className="flex flex-wrap items-center justify-between gap-3 text-[12px]">
         <div className="flex items-center gap-2">
           {/* Weekly / Monthly tab toggle */}
           <div
@@ -1032,7 +1032,7 @@ export function CalendarTab({
               role="tab"
               aria-selected={viewMode === "weekly"}
               onClick={() => setViewMode("weekly")}
-              className="rounded-full px-3 py-1 text-[11px] font-semibold transition-colors"
+              className="rounded-full px-3 py-1 text-[11px] font-semibold whitespace-nowrap transition-colors"
               style={{
                 backgroundColor: viewMode === "weekly" ? "var(--primary)" : "transparent",
                 color: viewMode === "weekly" ? "#fff" : "var(--text-muted)",
@@ -1045,7 +1045,7 @@ export function CalendarTab({
               role="tab"
               aria-selected={viewMode === "monthly"}
               onClick={() => setViewMode("monthly")}
-              className="rounded-full px-3 py-1 text-[11px] font-semibold transition-colors"
+              className="rounded-full px-3 py-1 text-[11px] font-semibold whitespace-nowrap transition-colors"
               style={{
                 backgroundColor: viewMode === "monthly" ? "var(--primary)" : "transparent",
                 color: viewMode === "monthly" ? "#fff" : "var(--text-muted)",
@@ -1054,14 +1054,14 @@ export function CalendarTab({
               Monthly
             </button>
           </div>
-          <span className="flex items-center gap-1.5" style={{ color: "var(--text-muted)" }}>
-            <Globe size={11} />
+          <span className="flex items-center gap-1.5 whitespace-nowrap" style={{ color: "var(--text-muted)" }}>
+            <Globe size={11} className="shrink-0" />
             <span style={{ color: "var(--text)" }}>{tz}</span>
           </span>
         </div>
         {totalMinutes > 0 && (
           <span
-            className="rounded-full px-2 py-0.5 text-[11px] font-medium"
+            className="rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap"
             style={{
               backgroundColor: "color-mix(in srgb, var(--primary) 14%, transparent)",
               color: "var(--primary)",
@@ -1165,7 +1165,7 @@ export function CalendarTab({
         ))}
       </div>
 
-          <p className="text-[11px]" style={{ color: "var(--text-faint)" }}>
+          <p className="hidden text-[11px] sm:block" style={{ color: "var(--text-faint)" }}>
             Customers booking from an Offline state see 30-minute slots inside these windows.
             Existing bookings are never affected when you edit a window.
           </p>
@@ -2498,19 +2498,23 @@ function HolidaysSection({
         </span>
 
         <div className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1 text-[11px]" style={{ color: "var(--text-muted)" }}>
-            From
-            <input type="date" min={todayStr} value={reqFrom} onChange={(e) => setReqFrom(e.target.value)}
-              onClick={(e) => { try { e.currentTarget.showPicker?.(); } catch { /* unsupported */ } }}
-              className="cursor-pointer rounded-md border px-2 py-1 text-[12px] outline-none" style={inputStyle} />
-          </label>
-          <span className="pb-1.5 text-[12px]" style={{ color: "var(--text-muted)" }}>→</span>
-          <label className="flex flex-col gap-1 text-[11px]" style={{ color: "var(--text-muted)" }}>
-            To
-            <input type="date" min={reqFrom || todayStr} value={reqTo} onChange={(e) => setReqTo(e.target.value)}
-              onClick={(e) => { try { e.currentTarget.showPicker?.(); } catch { /* unsupported */ } }}
-              className="cursor-pointer rounded-md border px-2 py-1 text-[12px] outline-none" style={inputStyle} />
-          </label>
+          {/* From → To stay together on one line; on phones this group takes
+              the full width so Total days falls to the next row. */}
+          <div className="flex w-full items-end gap-2 sm:w-auto sm:gap-3">
+            <label className="flex min-w-0 flex-1 flex-col gap-1 text-[11px] sm:flex-initial" style={{ color: "var(--text-muted)" }}>
+              From
+              <input type="date" min={todayStr} value={reqFrom} onChange={(e) => setReqFrom(e.target.value)}
+                onClick={(e) => { try { e.currentTarget.showPicker?.(); } catch { /* unsupported */ } }}
+                className="w-full cursor-pointer rounded-md border px-2 py-1 text-[12px] outline-none sm:w-auto" style={inputStyle} />
+            </label>
+            <span className="shrink-0 pb-1.5 text-[12px]" style={{ color: "var(--text-muted)" }}>→</span>
+            <label className="flex min-w-0 flex-1 flex-col gap-1 text-[11px] sm:flex-initial" style={{ color: "var(--text-muted)" }}>
+              To
+              <input type="date" min={reqFrom || todayStr} value={reqTo} onChange={(e) => setReqTo(e.target.value)}
+                onClick={(e) => { try { e.currentTarget.showPicker?.(); } catch { /* unsupported */ } }}
+                className="w-full cursor-pointer rounded-md border px-2 py-1 text-[12px] outline-none sm:w-auto" style={inputStyle} />
+            </label>
+          </div>
           <label className="flex flex-col gap-1 text-[11px]" style={{ color: "var(--text-muted)" }}>
             Total days
             <div className="flex h-[30px] min-w-[64px] items-center rounded-md border px-2 text-[12px] tabular-nums"
@@ -3138,9 +3142,9 @@ function TimezonePicker({
       }}
     >
       <div className="flex items-center gap-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
-        <Globe size={11} />
+        <Globe size={11} className="shrink-0" />
         <span className="font-semibold uppercase tracking-wider">Show customer times</span>
-        <span style={{ color: "var(--text-faint)" }}>· toggle the zones you serve</span>
+        <span className="hidden sm:inline" style={{ color: "var(--text-faint)" }}>· toggle the zones you serve</span>
       </div>
       <div className="flex flex-wrap gap-1.5">
         {TZ_OPTIONS.map((opt) => {
@@ -3183,7 +3187,7 @@ function TimezonePicker({
           );
         })}
       </div>
-      <p className="text-[10px]" style={{ color: "var(--text-faint)" }}>
+      <p className="hidden text-[10px] sm:block" style={{ color: "var(--text-faint)" }}>
         Your local zone is <span style={{ color: "var(--text-muted)" }}>{sourceTz}</span>. Each window below shows the equivalent time in your picked zones — &ldquo;(prev)&rdquo; / &ldquo;(next)&rdquo; means it spills into the previous or next day there.
       </p>
     </div>
@@ -4147,7 +4151,8 @@ function SectionHead({ title, blurb }: { title: string; blurb: string }) {
       >
         {title}
       </h2>
-      <p className="text-[13px]" style={{ color: "var(--text-muted)" }}>{blurb}</p>
+      {/* Blurb hidden on phones to reduce clutter; shown from sm up. */}
+      <p className="hidden text-[13px] sm:block" style={{ color: "var(--text-muted)" }}>{blurb}</p>
     </div>
   );
 }

@@ -155,13 +155,14 @@ export function ScheduleClient() {
   }, [rows]);
 
   return (
-    <div className="mx-auto flex min-h-full max-w-screen-xl flex-col px-8 py-8">
+    <div className="mx-auto flex min-h-full max-w-screen-xl flex-col px-4 py-6 sm:px-8 sm:py-8">
       <header className="mb-6 flex items-baseline gap-3">
-        <CalendarClock size={16} style={{ color: "var(--primary)" }} />
+        <CalendarClock size={16} className="shrink-0" style={{ color: "var(--primary)" }} />
         <h1 className="text-xl font-semibold" style={{ color: "var(--text)" }}>
           Schedule
         </h1>
-        <span className="text-[12px]" style={{ color: "var(--text-muted)" }}>
+        {/* Subtitle hidden on phones so the title isn't squeezed. */}
+        <span className="hidden text-[12px] sm:inline" style={{ color: "var(--text-muted)" }}>
           Appointments customers booked with you
         </span>
       </header>
@@ -739,7 +740,7 @@ function TeamLeaveCalendar() {
       >
         Team leave calendar
       </h2>
-      <p className="mb-3 text-[12px]" style={{ color: "var(--text-faint)" }}>
+      <p className="mb-3 hidden text-[12px] sm:block" style={{ color: "var(--text-faint)" }}>
         Leave your pod engineers have requested. Reject a pending request (with
         a reason); once the super-admin signs off it shows as Accepted.
       </p>

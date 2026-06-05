@@ -566,17 +566,20 @@ export function SuperviseClient() {
           is a fixed flex row, and ONLY the session list below scrolls. */}
       <div className="flex h-full flex-col">
         <style>{WAITING_GLOW_CSS}</style>
-        <div className="mx-auto flex w-full min-h-0 max-w-screen-2xl flex-1 flex-col px-6 pt-8">
+        <div className="mx-auto flex w-full min-h-0 max-w-screen-2xl flex-1 flex-col px-4 pt-6 sm:px-6 sm:pt-8">
           {/* ── Fixed header — stays put while the list scrolls. Centered
               (mx-auto on the wrapper) so collapsing the sidebar splits the
               extra width evenly left/right. ── */}
           <div className="shrink-0">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h1 className="font-serif text-3xl font-medium tracking-tight text-[var(--text)]">
+            {/* Stacks on phones (title full-width, controls below) so the
+                title never gets squeezed into a mid-word break. */}
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+              <div className="min-w-0">
+                <h1 className="font-serif text-2xl font-medium tracking-tight text-[var(--text)] sm:text-3xl">
                   Live operations
                 </h1>
-                <p className="mt-1.5 text-sm leading-relaxed text-[var(--text-muted)]">
+                {/* Description hidden on phones to save vertical room. */}
+                <p className="mt-1.5 hidden text-sm leading-relaxed text-[var(--text-muted)] sm:block">
                   Every active session, live. The health bar on each card tells
                   you who needs attention — healthy, shaky, or at risk. Use Join
                   to drop into a session.
@@ -585,7 +588,7 @@ export function SuperviseClient() {
               {/* On-duty toggle — drives coverage failover. Only the supervise
               audience (supervisor / super_admin) reaches this client. */}
               {scope.kind !== "loading" && (
-                <div className="flex shrink-0 flex-col items-end gap-2 pt-1">
+                <div className="flex shrink-0 flex-row items-center gap-2 sm:flex-col sm:items-end">
                   {/* Bell sits directly before the On/Off-Duty toggle. */}
                   <div className="flex items-center gap-2">
                     <SupervisorNotificationBell />
@@ -664,7 +667,7 @@ export function SuperviseClient() {
               "color-mix(in srgb, var(--background) 92%, transparent)",
           }}
         >
-          <div className="mx-auto flex w-full max-w-screen-2xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-6 py-3">
+          <div className="mx-auto flex w-full max-w-screen-2xl flex-wrap items-center justify-center gap-x-4 gap-y-2 px-3 py-2.5 sm:justify-between sm:gap-x-6 sm:px-6 sm:py-3">
             <HealthLegend />
             {/* Right-side portal target — each panel's PagerStrip renders here */}
             <div ref={setPagerSlot} className="flex items-center" />
@@ -1994,7 +1997,9 @@ function PastSessionTile({ session }: { session: SessionWithHealth }) {
         >
           <span className="font-semibold tracking-wide uppercase opacity-80">
             Post-completion · {sentimentLabel}
-            {summaryText ? " — " : ""}
+            {/* Separator shows whenever trailing text follows — the summary
+                itself, or the "no summary available" fallback. */}
+            {summaryText || !hasScore ? " — " : ""}
           </span>
           {summaryText ?? (hasScore ? "" : "no summary available")}
         </p>
