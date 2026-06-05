@@ -2860,23 +2860,49 @@ function HeaderPill({
       type="button"
       onClick={onClick}
       title={label}
-      aria-label={`${label}${count > 0 ? ` (${count})` : ""}`}
-      // Icon-only pill (the name lives in title/aria-label) with a green
-      // count badge. <lg the hit area grows to ≥44px for touch.
-      className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1.5 transition-colors hover:bg-black/5 max-lg:min-h-11 max-lg:min-w-11 max-lg:justify-center dark:hover:bg-white/5"
+      aria-label={`${label}${count > 0 ? ` (${count} new)` : ""}`}
+      // Labeled pill (label hides <lg where the header is icon-only) with
+      // a green UNSEEN-count badge + a blinking dot while anything is
+      // unreviewed. Opening the view marks it reviewed and clears both.
+      className="relative inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 transition-colors hover:bg-black/5 max-lg:min-h-11 max-lg:min-w-11 max-lg:justify-center max-lg:px-2.5 dark:hover:bg-white/5"
       style={{
         borderColor: "var(--border)",
         backgroundColor: "var(--surface)",
       }}
     >
       <span style={{ color: "var(--primary)" }}>{icon}</span>
+      <span
+        className="hidden text-[12px] leading-none font-semibold lg:inline"
+        style={{ color: "var(--text)" }}
+      >
+        {label}
+      </span>
       {count > 0 && (
-        <span
-          className="inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-bold tabular-nums"
-          style={{ backgroundColor: "var(--primary)", color: "#fff" }}
-        >
-          {count > 99 ? "99+" : count}
-        </span>
+        <>
+          <span
+            className="inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-bold tabular-nums"
+            style={{ backgroundColor: "var(--primary)", color: "#fff" }}
+          >
+            {count > 99 ? "99+" : count}
+          </span>
+          {/* Blinking attention dot — pinned to the pill's corner. */}
+          <span
+            aria-hidden
+            className="absolute -top-0.5 -right-0.5 inline-flex size-2"
+          >
+            <span
+              className="absolute inset-0 animate-ping rounded-full opacity-70"
+              style={{ backgroundColor: "var(--primary)" }}
+            />
+            <span
+              className="relative inline-flex size-2 rounded-full"
+              style={{
+                backgroundColor: "var(--primary)",
+                boxShadow: "0 0 0 2px var(--background)",
+              }}
+            />
+          </span>
+        </>
       )}
     </button>
   );
@@ -2921,34 +2947,68 @@ function CenterHeaderActions({
   /** <lg only: opens the chat drawer (far-right icon, after the bell). */
   onOpenChat?: () => void;
 }) {
-  // Live counts for the pill badges. Lightweight head-count queries (no row
-  // payloads) + the same in-app refresh events the old sidebar pills used,
-  // so booking/cancelling/quoting updates the badges without a reload.
+  // UNSEEN counts for the pill badges — only items that arrived AFTER the
+  // customer last reviewed each view. Opening a view stamps a per-pill
+  // "reviewed" watermark in localStorage, so the badge (and blinking dot)
+  // clear and stay cleared until something NEW lands. Lightweight
+  // head-count queries + the same in-app refresh events as before.
   const [scheduledCount, setScheduledCount] = useState(0);
   const [contractCount, setContractCount] = useState(0);
+  const [seenTick, setSeenTick] = useState(0);
+  const schedSeenKey = customerUserId
+    ? `relay:scheduled-seen:${customerUserId}`
+    : null;
+  const contractsSeenKey = customerUserId
+    ? `relay:contracts-seen:${customerUserId}`
+    : null;
+  const readSeen = (key: string | null) => {
+    if (!key) return new Date(0).toISOString();
+    try {
+      const v = window.localStorage.getItem(key);
+      if (v && !Number.isNaN(Date.parse(v))) return v;
+    } catch {
+      /* ignore */
+    }
+    return new Date(0).toISOString();
+  };
+  const markSeen = (key: string | null) => {
+    if (!key) return;
+    try {
+      window.localStorage.setItem(key, new Date().toISOString());
+    } catch {
+      /* ignore */
+    }
+    setSeenTick((t) => t + 1);
+  };
   useEffect(() => {
     if (!customerUserId) return;
     const sb = createClient();
     let alive = true;
     const load = async () => {
-      const nowIso = new Date().toISOString();
+      const schedSeen = readSeen(schedSeenKey);
+      const contractsSeen = readSeen(contractsSeenKey);
       const [eng, sup, quotes] = await Promise.all([
         sb
           .from("engineer_bookings")
           .select("id", { count: "exact", head: true })
           .eq("customer_user_id", customerUserId)
           .eq("status", "booked")
-          .gte("slot_end", nowIso),
+          .gt("created_at", schedSeen),
         sb
           .from("supervisor_bookings")
           .select("id", { count: "exact", head: true })
           .eq("customer_user_id", customerUserId)
           .eq("status", "booked")
-          .gte("slot_end", nowIso),
+          .gt("created_at", schedSeen),
+        // A bid counts as "new" when it was created OR responded-to
+        // (quoted/declined) after the last review.
         sb
           .from("project_quote_requests")
           .select("id", { count: "exact", head: true })
-          .eq("customer_user_id", customerUserId),
+          .eq("customer_user_id", customerUserId)
+          .or(
+            `created_at.gt.${contractsSeen},responded_at.gt.${contractsSeen}`
+          ),
       ]);
       if (!alive) return;
       setScheduledCount((eng.count ?? 0) + (sup.count ?? 0));
@@ -2965,7 +3025,8 @@ function CenterHeaderActions({
       window.removeEventListener("relay:scheduled-changed", onChanged);
       window.removeEventListener("relay:quotes-changed", onChanged);
     };
-  }, [customerUserId]);
+    // seenTick re-runs the count query after a markSeen so badges clear.
+  }, [customerUserId, schedSeenKey, contractsSeenKey, seenTick]);
 
   const divider = (
     <span
@@ -2980,7 +3041,12 @@ function CenterHeaderActions({
         icon={<CalendarClock size={14} />}
         label="Scheduled"
         count={scheduledCount}
-        onClick={onOpenScheduled}
+        onClick={() => {
+          // Opening the view IS the review — clear the unseen badge/dot.
+          markSeen(schedSeenKey);
+          setScheduledCount(0);
+          onOpenScheduled();
+        }}
       />
       {divider}
       {showContracts && (
@@ -2989,7 +3055,11 @@ function CenterHeaderActions({
             icon={<FileText size={14} />}
             label="Contracts"
             count={contractCount}
-            onClick={onOpenContracts}
+            onClick={() => {
+              markSeen(contractsSeenKey);
+              setContractCount(0);
+              onOpenContracts();
+            }}
           />
           {divider}
         </>
