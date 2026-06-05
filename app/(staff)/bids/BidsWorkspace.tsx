@@ -12,24 +12,34 @@
 
 import { useState } from "react";
 import { FileText, History as HistoryIcon, Plus, Sparkles, X } from "lucide-react";
-import { ActNowRail } from "../supervise/ActNowRail";
+import { ActNowRail, type ActNowVariant } from "../supervise/ActNowRail";
 import { ProjectAIAssistant } from "@/app/_components/ProjectAIAssistant";
 
 type Selected = { projectId: string; projectName: string | null };
 
-export function BidsWorkspace() {
+// Shared by the supervisor's /bids and the engineer's /quotations. The two
+// surfaces are visually identical; `variant` swaps the rail's data source +
+// action labels, and the title/subtitle are passed in so each reads in its own
+// register ("Bids" vs "Quotation").
+export function BidsWorkspace({
+  variant = "supervisor",
+  title = "Bids",
+  subtitle = "Estimation requests and escalations from your pod awaiting your review. Open a bid and use “Review project history (AI)” — it opens in the panel on the right.",
+}: {
+  variant?: ActNowVariant;
+  title?: string;
+  subtitle?: string;
+} = {}) {
   const [selected, setSelected] = useState<Selected | null>(null);
 
   return (
     <div className="flex h-full w-full flex-col px-4 pt-6 pb-4 sm:px-6 sm:pt-8 sm:pb-6">
       <header className="mb-5 shrink-0">
         <h1 className="font-serif text-2xl font-medium tracking-tight text-[var(--text)] sm:text-3xl">
-          Bids
+          {title}
         </h1>
-        <p className="mt-1.5 text-sm leading-relaxed text-[var(--text-muted)]">
-          Estimation requests and escalations from your pod awaiting your
-          review. Open a bid and use “Review project history (AI)” — it opens in
-          the panel on the right.
+        <p className="mt-1.5 hidden text-sm leading-relaxed text-[var(--text-muted)] sm:block">
+          {subtitle}
         </p>
       </header>
 
@@ -37,6 +47,7 @@ export function BidsWorkspace() {
         {/* Left rail — the bids queue, next to the nav. Full width on mobile. */}
         <div className="min-h-0 w-full lg:w-96 lg:shrink-0">
           <ActNowRail
+            variant={variant}
             onOpenHistory={(projectId, projectName) =>
               setSelected({ projectId, projectName })
             }

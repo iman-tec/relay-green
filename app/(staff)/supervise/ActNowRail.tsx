@@ -10,7 +10,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import {
   Loader2,
@@ -124,25 +124,70 @@ const CATEGORY_META: Record<
   rejected: { label: "Rejected", fill: "var(--risk)", fgVar: "var(--risk)" },
 };
 
-// "needs_bid" is intentionally omitted — those pending-bid requests are the
-// engineer's to action first, so the supervisor's queue never surfaces them.
-const FILTER_ORDER: Category[] = [
-  "appointment",
-  "review",
-  "bid_sent",
-  "accepted",
-  "rejected",
-];
+// The same rail powers two surfaces — the supervisor's /bids and the
+// engineer's /quotations — with identical UI. Only the data source, the
+// visible filter buckets and a handful of action labels differ; everything
+// else (layout, AI history panel, mobile behaviour) is shared.
+//   supervisor: reviews & sends bids the engineer prepared. "needs_bid" is
+//               omitted — those are the engineer's to action first.
+//   engineer:   PREPARES bids, so "Needs bid" is their primary bucket and the
+//               default filter. Their submit lands in 'pending_review' (the
+//               RPC is role-gated), so sent/appointment/accepted are read-only.
+export type ActNowVariant = "supervisor" | "engineer";
+
+const VARIANT_CFG: Record<
+  ActNowVariant,
+  {
+    endpoint: string;
+    filterOrder: Category[];
+    defaultFilter: Category;
+    /** Hide pending ("needs bid") rows entirely (supervisor). */
+    dropNeedsBid: boolean;
+  }
+> = {
+  supervisor: {
+    endpoint: "/api/supervisor/act-now",
+    filterOrder: ["appointment", "review", "bid_sent", "accepted", "rejected"],
+    defaultFilter: "appointment",
+    dropNeedsBid: true,
+  },
+  engineer: {
+    endpoint: "/api/staff/quote-requests",
+    filterOrder: ["needs_bid", "review", "appointment", "bid_sent", "accepted"],
+    defaultFilter: "needs_bid",
+    dropNeedsBid: false,
+  },
+};
+
+// Engineer endpoint (/api/staff/quote-requests) returns `requests` with the
+// same field names as Estimation, minus the supervisor-only enrichments
+// (changeRequestNote, liveSessionId, liveSentiment). Map them to null.
+type RawReq = Omit<
+  Estimation,
+  "changeRequestNote" | "liveSessionId" | "liveSentiment"
+>;
+function reqToEstimation(r: RawReq): Estimation {
+  return {
+    ...r,
+    changeRequestNote: null,
+    liveSessionId: null,
+    liveSentiment: null,
+  };
+}
 
 export function ActNowRail({
+  variant = "supervisor",
   onOpenHistory,
   onCloseHistory,
 }: {
+  /** Which surface this rail powers — drives data source + labels. */
+  variant?: ActNowVariant;
   /** Open a project's AI history in the page's right-hand panel. */
   onOpenHistory?: (projectId: string, projectName: string | null) => void;
   /** Clear the right-hand panel (e.g. when the bid that opened it is hidden). */
   onCloseHistory?: () => void;
 }) {
+  const cfg = VARIANT_CFG[variant];
   const [feed, setFeed] = useState<Feed>({
     estimationRequests: [],
     escalations: [],
@@ -154,15 +199,28 @@ export function ActNowRail({
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch("/api/supervisor/act-now", { cache: "no-store" });
-      if (res.ok) setFeed((await res.json()) as Feed);
+      const res = await fetch(cfg.endpoint, { cache: "no-store" });
+      if (res.ok) {
+        const json = (await res.json()) as
+          | Feed
+          | { requests?: RawReq[] };
+        if (variant === "engineer") {
+          const reqs = (json as { requests?: RawReq[] }).requests ?? [];
+          setFeed({
+            estimationRequests: reqs.map(reqToEstimation),
+            escalations: [],
+          });
+        } else {
+          setFeed(json as Feed);
+        }
+      }
     } catch {
       // Transient network/HMR blip ("Failed to fetch") — realtime + the 5s
       // poll fallback retry. Swallow so it doesn't flood as unhandledRejection.
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [cfg.endpoint, variant]);
 
   useEffect(() => {
     void refresh();
@@ -224,18 +282,41 @@ export function ActNowRail({
     else onCloseHistory?.();
   }, [expandedId, feed.estimationRequests, onOpenHistory, onCloseHistory]);
 
-  // Default to the Appointment bucket on landing (customers who asked to talk
-  // are the supervisor's first priority); null = show all.
-  const [estFilter, setEstFilter] = useState<Category | null>("appointment");
+  // Landing filter: supervisor → Appointment (customers who asked to talk are
+  // their first priority); engineer → Needs bid (their queue of work). null =
+  // show all.
+  const [estFilter, setEstFilter] = useState<Category | null>(
+    cfg.defaultFilter
+  );
+
+  // Deep-link: /quotations?bid=<id> (from the "Create bid" notification toast)
+  // auto-switches to that bid's bucket and expands it so the engineer can fill
+  // it in straight away. Runs once the feed has loaded the row; tracked by id so
+  // a different ?bid= later still fires.
+  const searchParams = useSearchParams();
+  const handledBidRef = useRef<string | null>(null);
+  useEffect(() => {
+    const bidId = searchParams.get("bid");
+    if (!bidId || handledBidRef.current === bidId) return;
+    const q = feed.estimationRequests.find((e) => e.id === bidId);
+    if (!q) return; // wait until the feed has it
+    handledBidRef.current = bidId;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setEstFilter(categorizeEst(q));
+    setExpandedId(bidId);
+  }, [searchParams, feed.estimationRequests]);
 
   // Supervisors don't action "needs bid" (status 'pending') requests — those
-  // are the engineer's to bid on first — so drop them from the queue entirely.
+  // are the engineer's to bid on first — so drop them from the supervisor
+  // queue entirely. The engineer keeps them (it's their primary bucket).
   const baseEstimations = useMemo(
     () =>
-      feed.estimationRequests.filter(
-        (q) => categorizeEst(q) !== "needs_bid"
-      ),
-    [feed.estimationRequests]
+      cfg.dropNeedsBid
+        ? feed.estimationRequests.filter(
+            (q) => categorizeEst(q) !== "needs_bid"
+          )
+        : feed.estimationRequests,
+    [feed.estimationRequests, cfg.dropNeedsBid]
   );
 
   const estCounts = useMemo(() => {
@@ -297,7 +378,7 @@ export function ActNowRail({
             </div>
             {baseEstimations.length > 0 && (
               <div className="flex flex-wrap items-center gap-1.5">
-                {FILTER_ORDER.map((cat) => (
+                {cfg.filterOrder.map((cat) => (
                   <FilterChip
                     key={cat}
                     cat={cat}
@@ -329,6 +410,7 @@ export function ActNowRail({
                 <EstimationRow
                   key={q.id}
                   q={q}
+                  variant={variant}
                   expanded={expandedId === q.id}
                   onToggle={() =>
                     setExpandedId((cur) => (cur === q.id ? null : q.id))
@@ -363,10 +445,12 @@ function ActNowHeading() {
 // the queue rather than floating over the live-operations grid. ──
 function DiveInForm({
   q,
+  variant,
   onClose,
   onDone,
 }: {
   q: Estimation;
+  variant: ActNowVariant;
   onClose: () => void;
   onDone: () => void;
 }) {
@@ -393,22 +477,29 @@ function DiveInForm({
         : s.score > -0.3
           ? "var(--warn)"
           : "var(--risk)";
+  const isEngineer = variant === "engineer";
+  const cat = categorizeEst(q);
   const isQuoted = q.status === "quoted";
-  // Engineer-prepared bid awaiting this supervisor's approval. Gated on the
+  // Engineer-prepared bid awaiting the supervisor's approval. Gated on the
   // CATEGORY, not the raw status: an appointment overrides the review bucket
   // (appointment takes precedence in categorizeEst), so a row showing
-  // "Appointment" must NOT show the "awaiting your review" banner even if its
+  // "Appointment" must NOT show the "awaiting review" banner even if its
   // underlying status is still 'pending_review'.
-  const isReview = categorizeEst(q) === "review";
-  // Accepted/paid bids are terminal — show the bid read-only. The supervisor
-  // can't re-send a committed bid (submit_project_bid rejects it anyway), so we
-  // disable the inputs and hide the send action.
+  const isReview = cat === "review";
+  // Accepted/paid bids are terminal — show the bid read-only. submit_project_bid
+  // rejects a committed bid anyway, so we disable the inputs and hide send.
   const isAccepted = q.status === "committed";
   // Declined bids are likewise terminal here: submit_project_bid only matches
   // pending/pending_review/quoted, so a re-send would silently no-op. Show the
   // bid read-only alongside the customer's decline reason.
   const isDeclined = q.status === "declined";
-  const readOnly = isAccepted || isDeclined;
+  // Engineer can only edit their own pre-send buckets (needs_bid / review);
+  // once the supervisor has sent it (bid_sent), or it's an appointment /
+  // accepted / declined, it's read-only. Supervisor edits everything except the
+  // terminal accepted/declined states.
+  const readOnly = isEngineer
+    ? !(cat === "needs_bid" || cat === "review")
+    : isAccepted || isDeclined;
 
   const submit = async () => {
     const cents = Math.round(parseFloat(amount) * 100);
@@ -573,11 +664,17 @@ function DiveInForm({
             ? "Bid (accepted — read-only)"
             : isDeclined
               ? "Bid (declined — read-only)"
-              : isReview
-                ? "Bid (engineer-prepared — review & send)"
-                : isQuoted
-                  ? "Bid (sent — adjust & resend)"
-                  : "Bid"}
+              : isEngineer
+                ? isReview
+                  ? "Bid (in review with supervisor — edit)"
+                  : isQuoted
+                    ? "Bid (sent — read-only)"
+                    : "Bid"
+                : isReview
+                  ? "Bid (engineer-prepared — review & send)"
+                  : isQuoted
+                    ? "Bid (sent — adjust & resend)"
+                    : "Bid"}
         </div>
         {isDeclined && (
           <p
@@ -604,10 +701,11 @@ function DiveInForm({
             }}
           >
             <span className="font-semibold" style={{ color: "#6366f1" }}>
-              Awaiting your review.
+              {isEngineer ? "In review." : "Awaiting your review."}
             </span>{" "}
-            An engineer prepared this bid — adjust if needed, then send it to
-            the customer.
+            {isEngineer
+              ? "Your supervisor will approve and send this to the customer. You can still edit it until then."
+              : "An engineer prepared this bid — adjust if needed, then send it to the customer."}
           </p>
         )}
         {isAccepted && (
@@ -747,11 +845,15 @@ function DiveInForm({
               ) : (
                 <Check size={13} />
               )}{" "}
-              {isReview
-                ? "Approve & send"
-                : isQuoted
-                  ? "Update bid"
-                  : "Send bid"}
+              {isEngineer
+                ? cat === "needs_bid"
+                  ? "Submit for review"
+                  : "Update bid"
+                : isReview
+                  ? "Approve & send"
+                  : isQuoted
+                    ? "Update bid"
+                    : "Send bid"}
             </button>
           )}
         </div>
@@ -762,11 +864,13 @@ function DiveInForm({
 
 function EstimationRow({
   q,
+  variant,
   expanded,
   onToggle,
   onDone,
 }: {
   q: Estimation;
+  variant: ActNowVariant;
   expanded: boolean;
   onToggle: () => void;
   onDone: () => void;
@@ -883,20 +987,27 @@ function EstimationRow({
       >
         {expanded
           ? "Hide bid"
-          : q.status === "pending"
-            ? "Review & bid"
-            : q.status === "pending_review"
-              ? "Review & send"
-              : q.status === "committed"
-                ? "View bid"
-                : q.status === "declined"
-                  ? "View declined bid"
-                  : "Review bid"}
+          : variant === "engineer"
+            ? q.status === "pending"
+              ? "Prepare bid"
+              : q.status === "pending_review"
+                ? "Edit bid"
+                : "View bid"
+            : q.status === "pending"
+              ? "Review & bid"
+              : q.status === "pending_review"
+                ? "Review & send"
+                : q.status === "committed"
+                  ? "View bid"
+                  : q.status === "declined"
+                    ? "View declined bid"
+                    : "Review bid"}
       </button>
       {expanded && (
         <div onClick={(e) => e.stopPropagation()}>
           <DiveInForm
             q={q}
+            variant={variant}
             onClose={onToggle}
             onDone={onDone}
           />
