@@ -259,27 +259,25 @@ export function EngineerAlerts() {
               >
                 {n.detail}
               </div>
-              {n.kind === "bid" && (
-                // Action sits LEFT-ALIGNED with the text column (not
-                // floated to the centre of the card) so the toast reads
-                // top-to-bottom: title → detail → action.
-                <button
-                  type="button"
-                  onClick={() => createBid(n)}
-                  className="mt-2 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] leading-none font-semibold text-white transition-[filter] hover:brightness-110"
-                  style={{ backgroundColor: "var(--primary)" }}
-                >
-                  <FileText size={11} /> Create bid
-                </button>
-              )}
             </div>
-            {/* Dismiss — anchored to the TITLE row (top-right), matching the
-                customer toast; ghost circle, no border. */}
+            {/* Action — INLINE on the same row, between the text and the
+                dismiss ×, vertically centred. */}
+            {n.kind === "bid" && (
+              <button
+                type="button"
+                onClick={() => createBid(n)}
+                className="inline-flex shrink-0 items-center gap-1.5 self-center rounded-full px-3 py-1.5 text-[11px] leading-none font-semibold whitespace-nowrap text-white transition-[filter] hover:brightness-110"
+                style={{ backgroundColor: "var(--primary)" }}
+              >
+                <FileText size={11} /> Create bid
+              </button>
+            )}
+            {/* Dismiss — ghost circle, vertically centred with the row. */}
             <button
               type="button"
               aria-label="Dismiss notification"
               onClick={() => dismiss(n)}
-              className="-mt-0.5 -mr-1 inline-flex size-6 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-black/10 dark:hover:bg-white/10"
+              className="-mr-1 inline-flex size-6 shrink-0 items-center justify-center self-center rounded-full transition-colors hover:bg-black/10 dark:hover:bg-white/10"
               style={{ color: "var(--text-muted)" }}
             >
               <X size={13} />
