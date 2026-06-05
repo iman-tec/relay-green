@@ -16,8 +16,8 @@
  * button disappeared, locking them out after a hot-reload or unmount.
  * `isCallOpen` reflects the live mount state so the button reappears.
  *
- * Gated by NEXT_PUBLIC_USE_VIDEO_SDK: when the env flag is unset/false,
- * `launchCall` is null and consumers fall back to the legacy popup path.
+ * Gated by NEXT_PUBLIC_USE_VIDEO_SDK: the Video SDK is ON by default;
+ * only an explicit "false" disables it (legacy Meeting-SDK popup path).
  */
 
 import { createContext, useContext } from "react";
@@ -57,5 +57,11 @@ export function useLaunchCallShape(): LaunchCallShape {
 }
 
 export function isVideoSdkEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_USE_VIDEO_SDK === "true";
+  // Video SDK is the DEFAULT call surface. The legacy Meeting-SDK popup
+  // path is scrapped and only reachable by explicitly setting
+  // NEXT_PUBLIC_USE_VIDEO_SDK="false". Defaulting ON matters because
+  // NEXT_PUBLIC_* vars are inlined at BUILD time and .env is gitignored —
+  // the previous `=== "true"` gate silently dropped every deployed build
+  // (flag absent in the deploy env) back to the old Zoom Meeting SDK.
+  return process.env.NEXT_PUBLIC_USE_VIDEO_SDK !== "false";
 }

@@ -9,13 +9,15 @@
  * Main pane is state-driven:
  *   no session / cancelled / abandoned / queued / assigned / joining
  *       → ChatPane full width  (the universal "landing" — composer auto-creates a session)
- *       → overlays: ConnectingModal (while queued), EngineerAssignedModal until engineer joins Zoom (then auto-join)
+ *       → overlays: ConnectingModal (while queued). On accept the customer
+ *         lands straight in chat — chat first, call second.
  *
- *   live (engineer in Zoom) → ChatPane full width. Each Zoom meeting
- *                              renders as its own inline ZoomCallCard in
- *                              the message timeline (WhatsApp-style call
- *                              entries). Zoom opens in a new tab; we no
- *                              longer embed the SDK.
+ *   live (engineer in call)  → ChatPane full width. Each call renders as
+ *                              its own inline MeetingChatEntry card in the
+ *                              message timeline (WhatsApp-style call
+ *                              entries). The engineer starts the call; the
+ *                              customer joins from the card or the header
+ *                              call button.
  *
  *   ended                   → PostCallView (locked chat + AI summary)
  */
@@ -106,6 +108,7 @@ import { useCustomerSession } from "@/lib/relay/useCustomerSession";
 import {
   LaunchCallProvider,
   useLaunchCall,
+  useLaunchCallShape,
   isVideoSdkEnabled,
 } from "@/lib/video/LaunchCallContext";
 import { CallSurface } from "@/app/_components/call/CallSurface";
@@ -537,6 +540,27 @@ export function RoomClient() {
   // exactly once when the engineer's Zoom appears.
   const [accepted, setAccepted] = useState(false);
 
+  // Chat-first call lifecycle: a call EXISTS only after the engineer (or
+  // appointment moderator) starts it from their side — zoom-video-sdk-token /
+  // mint-zoom-for-session post a "📞 Zoom meeting started" system message,
+  // and ending posts "📞 Zoom meeting ended". The customer may JOIN only
+  // while a started message has no ended counterpart (the same pairing rule
+  // the inline MeetingChatEntry card uses), never start one themselves.
+  const callStarted = useMemo(() => {
+    const s = state.session;
+    if (!s || ["ended", "cancelled", "abandoned"].includes(s.status)) {
+      return false;
+    }
+    let open = 0;
+    for (const m of state.messages) {
+      if (m.sender_kind !== "system") continue;
+      const body = m.body ?? "";
+      if (body.includes("Zoom meeting started")) open += 1;
+      else if (body.includes("Zoom meeting ended") && open > 0) open -= 1;
+    }
+    return open > 0;
+  }, [state.session, state.messages]);
+
   // The customer can click a past-session row in the sidebar to review it.
   // When set, we render the split layout with chat + summary for that row.
   const [viewingPastId, setViewingPastId] = useState<string | null>(null);
@@ -894,13 +918,12 @@ export function RoomClient() {
     }
   }, [state.session?.id, state.session?.status]);
 
-  // When the engineer joins Zoom, dismiss the EngineerAssignedModal so the
-  // customer can see the chat + inline Zoom card. We DELIBERATELY do not
-  // call state.markJoined() here — the customer must click the green Join
-  // button in the Zoom card themselves so their customer_joined_at only
-  // stamps once they've actually opened the meeting. Otherwise their chat
-  // card would flip to "Joined" the instant the engineer arrived, even if
-  // they never opened Zoom.
+  // Latch `accepted` once the engineer is actually on the call. We
+  // DELIBERATELY do not call state.markJoined() here — the customer must
+  // click the green Join button in the call card themselves so their
+  // customer_joined_at only stamps once they've actually opened the
+  // meeting. Otherwise their chat card would flip to "Joined" the instant
+  // the engineer arrived, even if they never joined.
   useEffect(() => {
     if (accepted) return;
     if (!state.session) return;
@@ -2169,6 +2192,7 @@ export function RoomClient() {
                   session={state.session}
                   entitlement={state.entitlement}
                   accepted={accepted}
+                  callStarted={callStarted}
                   onEnd={state.end}
                   onJoin={() => void state.markJoined()}
                 />
@@ -2379,21 +2403,13 @@ export function RoomClient() {
           onClose={handleBusyClose}
         />
       )}
-      {/* Chat-first flow: the EngineerAssignedModal's "Engineer found —
-          Connecting…" overlay was designed for the old auto-mount Zoom
-          path. In Video SDK mode the customer lands directly in chat as
-          soon as the engineer accepts, so we skip the modal entirely.
-          The "Live" pill + engineer name in the header give enough
-          signal that the engineer is on the other side. */}
-      {!isVideoSdkEnabled() &&
-        state.session &&
-        shouldShowEngineerAssigned(state.session) &&
-        !accepted && (
-          <EngineerAssignedModal
-            engineerName={state.session.agent_name ?? "Your engineer"}
-            onCancel={state.cancel}
-          />
-        )}
+      {/* Chat-first flow: as soon as the engineer accepts, the customer
+          lands directly in chat — no "Engineer found — you'll be joined
+          automatically" overlay. The engineer starts the call from their
+          side, which posts the "📞 Zoom meeting started" card; the
+          customer joins from that card (or the header call button) like
+          any other call. The old EngineerAssignedModal belonged to the
+          scrapped auto-join-Zoom path and was removed. */}
       {state.error && state.error !== "NO_ENTITLEMENT" && (
         <ErrorToast message={state.error} />
       )}
@@ -2523,27 +2539,6 @@ function shouldShowIncomingCall(s: GuestCall): boolean {
     !!s.zoom_meeting_id &&
     !s.customer_joined_at &&
     ["joining", "live"].includes(s.status)
-  );
-}
-
-// Engineer has accepted the request (assigned) but the Zoom meeting hasn't
-// been minted yet. We briefly show a "{engineer} is connecting with you"
-// card so the customer isn't left with the queue's avg-wait timer ticking
-// after the request was already picked up. As soon as the engineer's auto-
-// mint completes (zoom_meeting_id set), the modal dismisses — the inline
-// ZoomCallCard in the chat takes over as the join surface.
-function shouldShowEngineerAssigned(s: GuestCall): boolean {
-  return (
-    s.status === "assigned" &&
-    // Dismiss as soon as EITHER call surface is provisioned: legacy
-    // Meeting SDK mints zoom_meeting_id, Video SDK stamps video_topic
-    // on first zoom-video-sdk-token call. Without this OR-branch the
-    // modal stays stuck forever in Video SDK mode (no meeting ever gets
-    // minted) and the customer thinks the call is broken.
-    !s.zoom_meeting_id &&
-    !(s as { video_topic?: string | null }).video_topic &&
-    !s.engineer_joined_at &&
-    !s.customer_joined_at
   );
 }
 
@@ -2891,22 +2886,22 @@ function HeaderPill({
           </span>
           {/* Blinking attention dot — pinned to the pill's corner. */}
           {blinkDot && (
-          <span
-            aria-hidden
-            className="absolute -top-0.5 -right-0.5 inline-flex size-2"
-          >
             <span
-              className="absolute inset-0 animate-ping rounded-full opacity-70"
-              style={{ backgroundColor: "var(--primary)" }}
-            />
-            <span
-              className="relative inline-flex size-2 rounded-full"
-              style={{
-                backgroundColor: "var(--primary)",
-                boxShadow: "0 0 0 2px var(--background)",
-              }}
-            />
-          </span>
+              aria-hidden
+              className="absolute -top-0.5 -right-0.5 inline-flex size-2"
+            >
+              <span
+                className="absolute inset-0 animate-ping rounded-full opacity-70"
+                style={{ backgroundColor: "var(--primary)" }}
+              />
+              <span
+                className="relative inline-flex size-2 rounded-full"
+                style={{
+                  backgroundColor: "var(--primary)",
+                  boxShadow: "0 0 0 2px var(--background)",
+                }}
+              />
+            </span>
           )}
         </>
       )}
@@ -3176,35 +3171,53 @@ function SessionPrepView({
   // Hydrate the staged-attachment tray on mount (and when the project changes).
   useEffect(() => {
     let alive = true;
-    void stubListAttachments(attScope).then((items) => { if (alive) setAttachments(items); });
-    return () => { alive = false; };
+    void stubListAttachments(attScope).then((items) => {
+      if (alive) setAttachments(items);
+    });
+    return () => {
+      alive = false;
+    };
   }, [attScope]);
 
-  const handlePickFiles = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    if (files.length === 0) return;
-    e.target.value = ""; // allow re-picking the same file
-    setVoiceMsg(null);
-    const v = validateStagedFiles(files, []);
-    if (!v.ok) { setVoiceMsg(v.error); return; }
-    try {
-      const fresh: StubAttachmentMeta[] = [];
-      for (const c of v.classified) fresh.push(await stubAddAttachment(c.file, attScope));
-      setAttachments((prev) => [...fresh, ...prev]);
-    } catch (err) {
-      setVoiceMsg(err instanceof Error ? err.message : "Couldn't stage the file.");
-    }
-  }, [attScope]);
+  const handlePickFiles = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(e.target.files ?? []);
+      if (files.length === 0) return;
+      e.target.value = ""; // allow re-picking the same file
+      setVoiceMsg(null);
+      const v = validateStagedFiles(files, []);
+      if (!v.ok) {
+        setVoiceMsg(v.error);
+        return;
+      }
+      try {
+        const fresh: StubAttachmentMeta[] = [];
+        for (const c of v.classified)
+          fresh.push(await stubAddAttachment(c.file, attScope));
+        setAttachments((prev) => [...fresh, ...prev]);
+      } catch (err) {
+        setVoiceMsg(
+          err instanceof Error ? err.message : "Couldn't stage the file."
+        );
+      }
+    },
+    [attScope]
+  );
 
   const handleRemoveAttachment = useCallback(async (id: string) => {
     setAttachments((prev) => prev.filter((a) => a.id !== id));
-    try { await stubRemoveAttachment(id); } catch { /* swallow — UI already updated */ }
+    try {
+      await stubRemoveAttachment(id);
+    } catch {
+      /* swallow — UI already updated */
+    }
   }, []);
 
   const startRecording = useCallback(async () => {
     if (recState !== "idle") return;
     if (typeof window === "undefined" || !("MediaRecorder" in window)) {
-      setVoiceMsg("Voice recording isn't supported in this browser."); return;
+      setVoiceMsg("Voice recording isn't supported in this browser.");
+      return;
     }
     setVoiceMsg(null);
     let stream: MediaStream;
@@ -3216,54 +3229,100 @@ function SessionPrepView({
           ? "Microphone access blocked. Allow it in your browser's address bar, then try again."
           : e instanceof Error && e.name === "NotFoundError"
             ? "No microphone detected."
-            : "Couldn't access your microphone.",
+            : "Couldn't access your microphone."
       );
       return;
     }
     recorderStreamRef.current = stream;
-    const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"];
+    const candidates = [
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/mp4",
+      "audio/ogg",
+    ];
     let mime: string | undefined;
     for (const c of candidates) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if ((MediaRecorder as any).isTypeSupported?.(c)) { mime = c; break; }
+      if ((MediaRecorder as any).isTypeSupported?.(c)) {
+        mime = c;
+        break;
+      }
     }
-    const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+    const rec = mime
+      ? new MediaRecorder(stream, { mimeType: mime })
+      : new MediaRecorder(stream);
     recorderChunksRef.current = [];
-    rec.ondataavailable = (ev) => { if (ev.data && ev.data.size > 0) recorderChunksRef.current.push(ev.data); };
+    rec.ondataavailable = (ev) => {
+      if (ev.data && ev.data.size > 0) recorderChunksRef.current.push(ev.data);
+    };
     rec.onstop = async () => {
-      const blob = new Blob(recorderChunksRef.current, { type: rec.mimeType || "audio/webm" });
+      const blob = new Blob(recorderChunksRef.current, {
+        type: rec.mimeType || "audio/webm",
+      });
       recorderChunksRef.current = [];
       recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
-      recorderStreamRef.current = null; recorderRef.current = null; setRecState("idle");
+      recorderStreamRef.current = null;
+      recorderRef.current = null;
+      setRecState("idle");
       const t = rec.mimeType || "audio/webm";
-      const ext = t.includes("webm") ? "webm" : t.includes("mp4") ? "m4a" : t.includes("ogg") ? "ogg" : "webm";
-      const file = new File([blob], `voice-${new Date().toISOString().replace(/[:.]/g, "-")}.${ext}`, { type: blob.type });
+      const ext = t.includes("webm")
+        ? "webm"
+        : t.includes("mp4")
+          ? "m4a"
+          : t.includes("ogg")
+            ? "ogg"
+            : "webm";
+      const file = new File(
+        [blob],
+        `voice-${new Date().toISOString().replace(/[:.]/g, "-")}.${ext}`,
+        { type: blob.type }
+      );
       try {
         const meta = await stubAddAttachment(file, attScope);
         setAttachments((prev) => [meta, ...prev]);
       } catch (err) {
-        setVoiceMsg(err instanceof Error ? err.message : "Couldn't save the recording.");
+        setVoiceMsg(
+          err instanceof Error ? err.message : "Couldn't save the recording."
+        );
       }
     };
     rec.onerror = () => {
-      setVoiceMsg("Recording failed — try again."); setRecState("idle");
+      setVoiceMsg("Recording failed — try again.");
+      setRecState("idle");
       recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
-      recorderStreamRef.current = null; recorderRef.current = null;
+      recorderStreamRef.current = null;
+      recorderRef.current = null;
     };
-    recorderRef.current = rec; setRecState("recording"); rec.start();
+    recorderRef.current = rec;
+    setRecState("recording");
+    rec.start();
   }, [recState, attScope]);
 
   const stopRecording = useCallback(() => {
     const r = recorderRef.current;
-    if (!r) { setRecState("idle"); return; }
-    try { r.stop(); } catch { /* already stopping */ }
+    if (!r) {
+      setRecState("idle");
+      return;
+    }
+    try {
+      r.stop();
+    } catch {
+      /* already stopping */
+    }
   }, []);
 
   // Tear down an abandoned mic stream on unmount.
-  useEffect(() => () => {
-    try { recorderRef.current?.stop(); } catch { /* noop */ }
-    recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
-  }, []);
+  useEffect(
+    () => () => {
+      try {
+        recorderRef.current?.stop();
+      } catch {
+        /* noop */
+      }
+      recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
+    },
+    []
+  );
 
   // Autosave: any time draft text changes and we have a saved id,
   // push the update to localStorage on a 400ms debounce so we don't
@@ -3328,7 +3387,11 @@ function SessionPrepView({
   const handleCall = useCallback(async () => {
     const trimmed = draft.trim();
     if (trimmed) {
-      await ensureDraftMirrored({ id: savedId, projectId: project.id, text: trimmed });
+      await ensureDraftMirrored({
+        id: savedId,
+        projectId: project.id,
+        text: trimmed,
+      });
     }
     if (savedId) {
       deleteSessionDraftLocalOnly(savedId);
@@ -3436,7 +3499,10 @@ function SessionPrepView({
             {/* Staged files / voice notes — travel with the call on ring. */}
             {attachments.length > 0 && (
               <div className="mt-3 flex flex-col gap-1.5">
-                <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+                <div
+                  className="text-[10px] font-semibold tracking-wider uppercase"
+                  style={{ color: "var(--text-muted)" }}
+                >
                   Will travel with the call
                 </div>
                 <ul className="flex flex-wrap gap-1.5">
@@ -3446,9 +3512,15 @@ function SessionPrepView({
                       <li
                         key={a.id}
                         className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px]"
-                        style={{ borderColor: "var(--border)", color: "var(--text)" }}
+                        style={{
+                          borderColor: "var(--border)",
+                          color: "var(--text)",
+                        }}
                       >
-                        <Icon size={12} style={{ color: "var(--text-muted)" }} />
+                        <Icon
+                          size={12}
+                          style={{ color: "var(--text-muted)" }}
+                        />
                         <span className="max-w-[160px] truncate">{a.name}</span>
                         <button
                           type="button"
@@ -3466,7 +3538,12 @@ function SessionPrepView({
             )}
 
             {voiceMsg && (
-              <div className="mt-2 text-[11px]" style={{ color: "var(--accent-red)" }}>{voiceMsg}</div>
+              <div
+                className="mt-2 text-[11px]"
+                style={{ color: "var(--accent-red)" }}
+              >
+                {voiceMsg}
+              </div>
             )}
 
             <input
@@ -3514,7 +3591,12 @@ function SessionPrepView({
                   border: `1px solid ${recState === "recording" ? "var(--accent-red)" : "var(--border)"}`,
                 }}
               >
-                <Mic size={14} className={recState === "recording" ? "animate-pulse" : undefined} />
+                <Mic
+                  size={14}
+                  className={
+                    recState === "recording" ? "animate-pulse" : undefined
+                  }
+                />
               </button>
               <div className="flex-1" />
               {isExisting && (
@@ -6903,6 +6985,7 @@ const FloatingStatus = memo(function FloatingStatus({
   session,
   entitlement,
   accepted,
+  callStarted,
   onEnd,
   onJoin,
 }: {
@@ -6912,6 +6995,10 @@ const FloatingStatus = memo(function FloatingStatus({
     paid_minutes_remaining: number;
   };
   accepted: boolean;
+  /** True while the engineer/moderator has a call running (an open
+   *  "Zoom meeting started" cycle in the chat) — gates the header's
+   *  green Join button so the customer joins rather than starts. */
+  callStarted: boolean;
   onEnd: (reason?: string) => Promise<void>;
   /** Same action as the in-chat "Join Zoom call" button — stamps joined + opens Zoom. */
   onJoin?: () => void | Promise<void>;
@@ -7003,7 +7090,11 @@ const FloatingStatus = memo(function FloatingStatus({
               className="h-5 w-px"
               style={{ backgroundColor: "var(--border)" }}
             />
-            <CallHeaderActions session={session} onJoin={onJoin} />
+            <CallHeaderActions
+              session={session}
+              callStarted={callStarted}
+              onJoin={onJoin}
+            />
           </>
         )}
 
@@ -7034,78 +7125,59 @@ const FloatingStatus = memo(function FloatingStatus({
 
 // CallHeaderActions — the prominent green circular Call button + add-
 // participant + overflow icons in the chat header. Required by the
-// room-w.png mock as the most obvious header control. The call button is
-// enabled the moment the engineer mints a Zoom meeting; before that it's
-// tooltipped as waiting so the user knows what to expect.
+// room-w.png mock as the most obvious header control.
+//
+// Chat-first: the customer NEVER starts the call themselves. The engineer
+// (or the appointment's moderator) starts it from their side — that posts
+// the "📞 Zoom meeting started" system message — and only then does this
+// button enable, joining the SAME call the inline MeetingChatEntry card
+// joins. The old paths that let the customer go straight into Zoom
+// (mint-zoom-for-session popup, and Video SDK join on 'assigned' before
+// the engineer launched — which wedged on "Joining…" because a role_type-0
+// participant can't START a Video SDK session) are removed.
 function CallHeaderActions({
   session,
+  callStarted,
   onJoin,
 }: {
   session: GuestCall;
+  /** True while a "Zoom meeting started" system message has no matching
+   *  "ended" — i.e. the engineer/moderator actually has a call running. */
+  callStarted: boolean;
   onJoin?: () => void | Promise<void>;
 }) {
   const launchCall = useLaunchCall();
-  const [starting, setStarting] = useState(false);
-  // With Video SDK enabled we don't need zoom_meeting_id — the topic is
-  // derived from session.id by zoom-video-sdk-token. Still gate on isLiveish
-  // so the button is only visible/enabled once the matcher has assigned
-  // someone.
-  const hasZoom = !!session.zoom_meeting_id;
+  const { isCallOpen } = useLaunchCallShape();
   const isLiveish = ["assigned", "joining", "live", "grace"].includes(
     session.status
   );
-  // Appointment flow: the call is joinable once the moderator (supervisor) has
-  // joined, even before any engineer is added — so a supervisor + customer can
-  // talk on Zoom. Normal sessions are unchanged (still gated on isLiveish).
+  // Appointment flow: joinable once the moderator (supervisor) has joined,
+  // even before any engineer is added — so a supervisor + customer can talk.
   const apptReady =
     session.is_appointment === true && !!session.supervisor_joined_at;
-  const canJoinVideoSdk = !!launchCall && (isLiveish || apptReady);
-  const canJoinLegacy = hasZoom && (isLiveish || apptReady);
-  const canJoin = canJoinVideoSdk || canJoinLegacy;
-  // "Whoever calls, joins": with no meeting minted yet the customer can
-  // START one themselves (legacy Meeting flow, engineer already assigned,
-  // not an appointment — those wait for the moderator). The engineer gets
-  // the inline ZoomCallCard via the "Zoom meeting started" system message.
-  const canStart =
-    !launchCall &&
-    !hasZoom &&
-    isLiveish &&
-    session.is_appointment !== true &&
-    !!session.claimed_by;
-  const tooltip = canJoin
-    ? "Join the call"
-    : canStart
-      ? "Start the call — you'll join right away"
+  // "The engineer has a call running" — belt and braces. callStarted comes
+  // from the "Zoom meeting started" chat message, but a dropped realtime
+  // event must not strand the customer with a dead button, so we also
+  // trust the session row itself: engineer_joined_at / a joining-live-grace
+  // status only ever happen after someone actually joined the call.
+  const engineerOnCall =
+    callStarted ||
+    !!session.engineer_joined_at ||
+    ["joining", "live", "grace"].includes(session.status);
+  // Stays ENABLED while the customer is on the call (isCallOpen) — the
+  // button reads "You're on the call" and clicking just re-surfaces the
+  // CallSurface (a no-op when it's already mounted). Greying it out
+  // mid-call made the header look broken.
+  const canJoin = engineerOnCall && (isLiveish || apptReady);
+  const tooltip = isCallOpen
+    ? "You're on the call"
+    : canJoin
+      ? "Join the call"
       : session.is_appointment
         ? "Your call opens once the moderator joins"
         : isLiveish
           ? "Waiting for your engineer to start the call"
           : "Call starts once an engineer joins";
-
-  const startCall = async () => {
-    if (starting) return;
-    setStarting(true);
-    // Open synchronously (inside the click gesture) so popup blockers
-    // allow it; point it at the join URL once the mint returns.
-    const popup = window.open("about:blank", "_blank");
-    try {
-      const sb = createClient();
-      const { data, error } = await sb.functions.invoke(
-        "mint-zoom-for-session",
-        { body: { session_id: session.id } }
-      );
-      const joinUrl = (data?.zoom_join_url ?? null) as string | null;
-      if (error || !joinUrl) {
-        popup?.close();
-        return;
-      }
-      if (popup) popup.location.href = joinUrl;
-      else window.open(joinUrl, "_blank", "noopener,noreferrer");
-      void onJoin?.();
-    } finally {
-      setStarting(false);
-    }
-  };
 
   return (
     <div className="flex items-center gap-1.5">
@@ -7114,34 +7186,25 @@ function CallHeaderActions({
         title={tooltip}
         variant="primary"
         size="md"
-        disabled={(!canJoin && !canStart) || starting}
+        disabled={!canJoin}
         onClick={() => {
-          if (starting) return;
-          if (canJoin) {
-            void onJoin?.();
-            if (launchCall) {
-              // Video SDK path: parent mounts <CallSurface> in-window.
-              launchCall();
-              return;
-            }
-            // Legacy Meeting SDK: open Zoom in a new tab.
-            if (session.zoom_join_url) {
-              window.open(
-                session.zoom_join_url,
-                "_blank",
-                "noopener,noreferrer"
-              );
-            }
+          if (!canJoin) return;
+          // Don't re-stamp joined when already on the call — just bring
+          // the call surface back to front.
+          if (!isCallOpen) void onJoin?.();
+          if (launchCall) {
+            // Video SDK path: parent mounts <CallSurface> in-window.
+            launchCall();
             return;
           }
-          if (canStart) void startCall();
+          // Legacy Meeting SDK: open Zoom in a new tab (no-op if the
+          // surface is the in-window one).
+          if (!isCallOpen && session.zoom_join_url) {
+            window.open(session.zoom_join_url, "_blank", "noopener,noreferrer");
+          }
         }}
       >
-        {starting ? (
-          <Loader2 size={16} className="animate-spin" />
-        ) : (
-          <Video size={16} />
-        )}
+        <Video size={16} />
       </IconButton>
       <IconButton
         aria-label="Add participant"
@@ -14090,90 +14153,6 @@ function AllEngineersBusyModal({
           </button>
         </div>
       </div>
-    </div>
-  );
-}
-
-// ── Engineer-assigned modal (engineer accepted the request) ────────────────
-// Shows between engineer-accept (status='assigned') and engineer-joins-Zoom
-// (engineer_joined_at stamped). No timer — the engineer is on it.
-function EngineerAssignedModal({
-  engineerName,
-  onCancel,
-}: {
-  engineerName: string;
-  onCancel: () => Promise<void>;
-}) {
-  return (
-    <div
-      className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center px-6"
-      style={{ backgroundColor: "var(--scrim)", backdropFilter: "blur(4px)" }}
-    >
-      <div
-        className="relative w-full max-w-sm rounded-2xl border p-8 text-center shadow-xl"
-        style={{
-          backgroundColor: "var(--surface)",
-          borderColor: "var(--border)",
-        }}
-      >
-        <button
-          onClick={() => void onCancel()}
-          aria-label="Cancel"
-          className="absolute top-4 right-4 opacity-50 transition-opacity hover:opacity-100"
-          style={{ color: "var(--text-muted)" }}
-        >
-          <X size={16} />
-        </button>
-        <div
-          className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-full"
-          style={{
-            backgroundColor: BRAND_GREEN_SOFT,
-            color: BRAND_GREEN,
-            animation: "relay-pulse 1.6s ease-out infinite",
-          }}
-        >
-          <Sparkles size={28} />
-        </div>
-        <div
-          className="mb-2 text-[10px] font-semibold tracking-[0.18em] uppercase"
-          style={{ color: "var(--text-muted)" }}
-        >
-          Engineer found
-        </div>
-        <h2
-          className="mb-2 text-xl font-medium"
-          style={{
-            fontFamily: "var(--font-source-serif)",
-            color: "var(--text)",
-          }}
-        >
-          {engineerName} is connecting with you
-        </h2>
-        <p
-          className="text-sm leading-relaxed"
-          style={{ color: "var(--text-muted)" }}
-        >
-          You&apos;ll be joined to the call automatically — hold tight.
-        </p>
-        <div
-          className="mt-6 inline-flex items-center gap-2 text-[11px]"
-          style={{ color: "var(--text-muted)" }}
-        >
-          <Loader2
-            size={11}
-            className="animate-spin"
-            style={{ color: BRAND_GREEN }}
-          />
-          Connecting…
-        </div>
-      </div>
-      <style>{`
-        @keyframes relay-pulse {
-          0%   { transform: scale(1);    box-shadow: 0 0 0 0   rgba(63, 92, 46, 0.5); }
-          70%  { transform: scale(1.04); box-shadow: 0 0 0 20px rgba(63, 92, 46, 0);   }
-          100% { transform: scale(1);    box-shadow: 0 0 0 0   rgba(63, 92, 46, 0);   }
-        }
-      `}</style>
     </div>
   );
 }
