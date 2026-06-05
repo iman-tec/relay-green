@@ -7,7 +7,7 @@
  */
 
 import { useState } from "react";
-import { Segmented, type Segment } from "@/app/_components/admin-v2/Segmented";
+import { Segmented, type Segment } from "./_kit";
 import { DashboardTab } from "./DashboardTab";
 import { DepartmentsTab } from "./DepartmentsTab";
 import { MembersTab } from "./MembersTab";

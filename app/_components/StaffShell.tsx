@@ -21,7 +21,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState, useCallback } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Loader2,
   LogOut,
@@ -31,6 +31,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   LayoutDashboard,
+  BarChart3,
   Calendar,
   CalendarClock,
   Eye,
@@ -128,19 +129,15 @@ const NAV: Nav[] = [
   },
   // super_admin's primary surface — the redesigned 4-tab panel
   // (Enterprise / Reseller / Pods / Internal Users).
-  {
-    href: "/admin/v2",
-    label: "Users",
-    icon: UsersIcon,
-    roles: [ROLE.super_admin],
-  },
-  // enterprise_admin's primary surface — the redesigned Departments panel.
-  {
-    href: "/enterprise/v2",
-    label: "Dashboard",
-    icon: LayoutDashboard,
-    roles: [ROLE.enterprise_admin],
-  },
+  { href: "/admin/v2",             label: "Users",     icon: UsersIcon,       roles: [ROLE.super_admin] },
+  // enterprise_admin's console — the panel's tabs surface directly as
+  // sidebar items (the in-page tab strip was removed; ?tab= drives which
+  // tab PanelClient renders, so these are plain links). Active-state for
+  // these query-carrying hrefs is resolved tab-aware in the nav render.
+  { href: "/enterprise/v2?tab=overview", label: "Overview", icon: LayoutDashboard, roles: [ROLE.enterprise_admin] },
+  { href: "/enterprise/v2?tab=usage",    label: "Usage",    icon: BarChart3,       roles: [ROLE.enterprise_admin] },
+  { href: "/enterprise/v2?tab=billing",  label: "Billing",  icon: WalletIcon,      roles: [ROLE.enterprise_admin] },
+  { href: "/enterprise/v2?tab=settings", label: "Settings", icon: Settings,        roles: [ROLE.enterprise_admin] },
   // reseller-owner console — redesigned v2 panel (from rutul-working).
   {
     href: "/reseller/v2",
@@ -211,6 +208,19 @@ function isEngineer(roles: readonly Role[]): boolean {
   return roles.includes(ROLE.engineer);
 }
 
+// Map an ?tab= value (incl. legacy aliases like ?tab=wallet) onto the
+// enterprise panel's four sidebar entries. Mirrors resolveInitial in
+// app/(staff)/enterprise/v2/PanelClient.tsx — keep the two in sync.
+function enterpriseTabOf(param: string | null): string {
+  switch (param) {
+    case "usage":    return "usage";
+    case "wallet":
+    case "billing":  return "billing";
+    case "settings": return "settings";
+    default:         return "overview"; // dashboard / departments / members / null
+  }
+}
+
 function initials(email: string): string {
   const local = email.split("@")[0] ?? "";
   const parts = local.split(/[._-]/);
@@ -222,9 +232,14 @@ function initials(email: string): string {
 
 export function StaffShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
-  const guard = useStaffGuard();
-  const roles = guard.kind === "staff" ? guard.roles : [];
+  // Query string is part of nav identity for the enterprise console items
+  // (/enterprise/v2?tab=…). Safe without a Suspense boundary here: every
+  // (staff) route is dynamically rendered (the group layout reads auth
+  // cookies), so there's no static prerender to bail out of.
+  const searchParams = useSearchParams();
+  const router   = useRouter();
+  const guard    = useStaffGuard();
+  const roles    = guard.kind === "staff" ? guard.roles : [];
   const engineer = isEngineer(roles);
   const isEnterpriseAdmin =
     roles.includes(ROLE.enterprise_admin) && !roles.includes(ROLE.super_admin);
@@ -461,15 +476,13 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   // Used by the v2 panels where each panel owns its own navigation
   // (tab header). The guard still runs above, so auth + role
   // enforcement stays intact.
+  // NOTE: /enterprise/v2 and /department/v2 are intentionally NOT bare
+  // anymore — they render inside this sidebar shell so the enterprise /
+  // department admin consoles share the engineer panel's chrome (their
+  // tab strip moved in-page; see each panel's PanelClient).
   const isBare =
-    pathname === "/admin/v2" ||
-    pathname.startsWith("/admin/v2/") ||
-    pathname === "/enterprise/v2" ||
-    pathname.startsWith("/enterprise/v2/") ||
-    pathname === "/department/v2" ||
-    pathname.startsWith("/department/v2/") ||
-    pathname === "/reseller/v2" ||
-    pathname.startsWith("/reseller/v2/");
+    pathname === "/admin/v2"    || pathname.startsWith("/admin/v2/")    ||
+    pathname === "/reseller/v2" || pathname.startsWith("/reseller/v2/");
   if (isBare) {
     return (
       <div
@@ -502,8 +515,11 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   // can join real sessions, but /operations is a supervisor surface).
   const SUPER_ADMIN_HIDDEN = new Set(["/operations", "/bids"]);
   const isSuperAdmin = roles.includes(ROLE.super_admin);
-  const navItems = NAV.filter((n) => n.roles.some((r) => roles.includes(r)))
-    .filter((n) => !isEnterpriseAdmin || ENT_ADMIN_ALLOW.has(n.href))
+  const navItems = NAV
+    .filter((n) => n.roles.some((r) => roles.includes(r)))
+    // Strip the ?tab=… query before matching — the enterprise console
+    // items all live under the allowed /enterprise/v2 path.
+    .filter((n) => !isEnterpriseAdmin || ENT_ADMIN_ALLOW.has(n.href.split("?")[0]))
     .filter((n) => !isSuperAdmin || !SUPER_ADMIN_HIDDEN.has(n.href));
 
   return (
@@ -615,8 +631,16 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
         <nav className="flex flex-1 flex-col gap-0.5 px-2 pt-3">
           {navItems.map((item) => {
             const Icon = item.icon;
-            const active =
-              pathname === item.href || pathname.startsWith(item.href + "/");
+            // Path match first; for query-carrying hrefs (the enterprise
+            // console tabs) the ?tab= must match too, or all four items
+            // would light up together on /enterprise/v2.
+            const [itemPath, itemQuery] = item.href.split("?");
+            let active =
+              pathname === itemPath || pathname.startsWith(itemPath + "/");
+            if (active && itemQuery) {
+              const want = new URLSearchParams(itemQuery).get("tab");
+              active = enterpriseTabOf(searchParams?.get("tab") ?? null) === want;
+            }
             return (
               <Link
                 key={item.href}

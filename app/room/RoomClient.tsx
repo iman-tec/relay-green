@@ -126,6 +126,8 @@ import {
   readDraft as readSessionDraft,
   saveDraft as saveSessionDraft,
   deleteDraft as deleteSessionDraft,
+  deleteDraftLocalOnly as deleteSessionDraftLocalOnly,
+  ensureDraftMirrored,
   deleteDraftsForProject,
   listDraftsForProject,
   deriveDraftTitle,
@@ -3037,10 +3039,11 @@ function CenterHeaderActions({
 //                   Edits update the row in-place (autosave on debounce);
 //                   "Call engineer" deletes the draft + rings.
 //
-// TODO[engineer-prep-handoff]: when "Call engineer" mints the live
-// session, post the prep text as the opening guest_message so the
-// engineer walks in with the context already in front of them. The
-// draft entry then gets deleted (it's been promoted).
+// Engineer-prep-handoff (wired): "Call engineer" mirrors the prep text to
+// customer_session_drafts (awaited, even for never-saved drafts), then
+// rings. The engineer's session-mount handler fetches that row via
+// engineer_fetch_customer_draft, posts it as the opening guest_message, and
+// consumes (deletes) the server row. See handleCall below.
 function SessionPrepView({
   project,
   draftId,
@@ -3053,9 +3056,9 @@ function SessionPrepView({
    *  fresh new-draft session. */
   draftId: string | null;
   /** Ring the engineer — wires to handleStartInProject(project.id).
-   *  Same routing as the project's sidebar phone button. Caller should
-   *  also delete the underlying draft (we do this in onCallEngineer
-   *  inside the prep view itself so the side effect is local). */
+   *  Same routing as the project's sidebar phone button. handleCall (below)
+   *  first mirrors the prep text to the server for the engineer handoff and
+   *  drops the local sidebar row, then invokes this. */
   onCallEngineer: () => void;
   /** Close the prep view, back to the landing. */
   onClose: () => void;
@@ -3075,6 +3078,112 @@ function SessionPrepView({
     return readSessionDraft(draftId)?.updatedAt ?? null;
   });
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Attachments + voice ──────────────────────────────────────────────
+  // Staged in IndexedDB scoped to THIS project (same store + scope the
+  // draft-chat stub uses), so the parent's auto-flush effect moves them
+  // into the session as `📎 Customer prepared these files before the call:`
+  // when "Call engineer" rings — no extra handoff wiring needed.
+  const attScope = project.id;
+  const [attachments, setAttachments] = useState<StubAttachmentMeta[]>([]);
+  const [voiceMsg, setVoiceMsg] = useState<string | null>(null);
+  const [recState, setRecState] = useState<"idle" | "recording">("idle");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const recorderStreamRef = useRef<MediaStream | null>(null);
+  const recorderChunksRef = useRef<Blob[]>([]);
+
+  // Hydrate the staged-attachment tray on mount (and when the project changes).
+  useEffect(() => {
+    let alive = true;
+    void stubListAttachments(attScope).then((items) => { if (alive) setAttachments(items); });
+    return () => { alive = false; };
+  }, [attScope]);
+
+  const handlePickFiles = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+    e.target.value = ""; // allow re-picking the same file
+    setVoiceMsg(null);
+    const v = validateStagedFiles(files, []);
+    if (!v.ok) { setVoiceMsg(v.error); return; }
+    try {
+      const fresh: StubAttachmentMeta[] = [];
+      for (const c of v.classified) fresh.push(await stubAddAttachment(c.file, attScope));
+      setAttachments((prev) => [...fresh, ...prev]);
+    } catch (err) {
+      setVoiceMsg(err instanceof Error ? err.message : "Couldn't stage the file.");
+    }
+  }, [attScope]);
+
+  const handleRemoveAttachment = useCallback(async (id: string) => {
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+    try { await stubRemoveAttachment(id); } catch { /* swallow — UI already updated */ }
+  }, []);
+
+  const startRecording = useCallback(async () => {
+    if (recState !== "idle") return;
+    if (typeof window === "undefined" || !("MediaRecorder" in window)) {
+      setVoiceMsg("Voice recording isn't supported in this browser."); return;
+    }
+    setVoiceMsg(null);
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      setVoiceMsg(
+        e instanceof Error && e.name === "NotAllowedError"
+          ? "Microphone access blocked. Allow it in your browser's address bar, then try again."
+          : e instanceof Error && e.name === "NotFoundError"
+            ? "No microphone detected."
+            : "Couldn't access your microphone.",
+      );
+      return;
+    }
+    recorderStreamRef.current = stream;
+    const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"];
+    let mime: string | undefined;
+    for (const c of candidates) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if ((MediaRecorder as any).isTypeSupported?.(c)) { mime = c; break; }
+    }
+    const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+    recorderChunksRef.current = [];
+    rec.ondataavailable = (ev) => { if (ev.data && ev.data.size > 0) recorderChunksRef.current.push(ev.data); };
+    rec.onstop = async () => {
+      const blob = new Blob(recorderChunksRef.current, { type: rec.mimeType || "audio/webm" });
+      recorderChunksRef.current = [];
+      recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
+      recorderStreamRef.current = null; recorderRef.current = null; setRecState("idle");
+      const t = rec.mimeType || "audio/webm";
+      const ext = t.includes("webm") ? "webm" : t.includes("mp4") ? "m4a" : t.includes("ogg") ? "ogg" : "webm";
+      const file = new File([blob], `voice-${new Date().toISOString().replace(/[:.]/g, "-")}.${ext}`, { type: blob.type });
+      try {
+        const meta = await stubAddAttachment(file, attScope);
+        setAttachments((prev) => [meta, ...prev]);
+      } catch (err) {
+        setVoiceMsg(err instanceof Error ? err.message : "Couldn't save the recording.");
+      }
+    };
+    rec.onerror = () => {
+      setVoiceMsg("Recording failed — try again."); setRecState("idle");
+      recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
+      recorderStreamRef.current = null; recorderRef.current = null;
+    };
+    recorderRef.current = rec; setRecState("recording"); rec.start();
+  }, [recState, attScope]);
+
+  const stopRecording = useCallback(() => {
+    const r = recorderRef.current;
+    if (!r) { setRecState("idle"); return; }
+    try { r.stop(); } catch { /* already stopping */ }
+  }, []);
+
+  // Tear down an abandoned mic stream on unmount.
+  useEffect(() => () => {
+    try { recorderRef.current?.stop(); } catch { /* noop */ }
+    recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
+  }, []);
 
   // Autosave: any time draft text changes and we have a saved id,
   // push the update to localStorage on a 400ms debounce so we don't
@@ -3115,23 +3224,38 @@ function SessionPrepView({
     setSavedId(row.id);
     setSavedAt(row.updatedAt);
     onDraftsChanged();
-    onClose();
-  }, [draft, savedId, project.id, onDraftsChanged, onClose]);
+    // Don't close on save. Staying in "editing saved draft" mode flips the
+    // header to "Editing draft in {project}", shows the "Saved HH:MM · in
+    // the sidebar" confirmation, and reveals the Delete-draft affordance —
+    // unmistakable feedback that the save landed. (Previously the pane
+    // closed instantly with no trace, which read as "nothing happened.")
+    // The draft is also persisted in the sidebar under its project; the
+    // customer closes via the × or proceeds with Call engineer.
+  }, [draft, savedId, project.id, onDraftsChanged]);
 
-  // Call engineer = ring + consume the draft. We delete the draft row
-  // first (since it's about to become a live session), then trigger
-  // the actual ring via the parent callback. If the parent flow fails
-  // partway, the draft is gone — that's a trade-off for keeping the
-  // sidebar clean and not leaving stale "draft of an active session"
-  // rows behind. TODO: flush the draft text into the live session's
-  // first message in the parent handler (engineer-prep-handoff).
-  const handleCall = useCallback(() => {
+  // Call engineer = mirror the prep text to the server, then ring.
+  //
+  // The engineer's session-mount handler reads the most-recent row in
+  // customer_session_drafts (via engineer_fetch_customer_draft) and posts
+  // it as the opening message, then consumes (deletes) that row itself. So
+  // the prep text MUST be on the server before we ring — including for a
+  // fresh draft that was never "saved for later" — and we must NOT delete
+  // the server mirror here (that's what used to drop the handoff). We await
+  // the mirror so the engineer's fetch doesn't race the write, then remove
+  // only the LOCAL sidebar row so it doesn't linger as a "draft of an
+  // active session". Mirror failure is non-fatal — we still ring; the
+  // engineer just opens without prep text, same as before this flow.
+  const handleCall = useCallback(async () => {
+    const trimmed = draft.trim();
+    if (trimmed) {
+      await ensureDraftMirrored({ id: savedId, projectId: project.id, text: trimmed });
+    }
     if (savedId) {
-      deleteSessionDraft(savedId);
+      deleteSessionDraftLocalOnly(savedId);
       onDraftsChanged();
     }
     onCallEngineer();
-  }, [savedId, onDraftsChanged, onCallEngineer]);
+  }, [draft, savedId, project.id, onDraftsChanged, onCallEngineer]);
 
   const handleDeleteDraft = useCallback(() => {
     if (savedId) {
@@ -3146,7 +3270,7 @@ function SessionPrepView({
 
   const isExisting = !!savedId;
   const lastSavedLabel = savedAt
-    ? `Saved ${new Date(savedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
+    ? `Saved ${new Date(savedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} · find it under this project in the sidebar`
     : "Not saved yet — hit Save for later to keep this draft.";
 
   return (
@@ -3229,13 +3353,58 @@ function SessionPrepView({
               style={{ color: "var(--text)" }}
             />
 
+            {/* Staged files / voice notes — travel with the call on ring. */}
+            {attachments.length > 0 && (
+              <div className="mt-3 flex flex-col gap-1.5">
+                <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+                  Will travel with the call
+                </div>
+                <ul className="flex flex-wrap gap-1.5">
+                  {attachments.map((a) => {
+                    const Icon = a.kind === "audio" ? Music : FileText;
+                    return (
+                      <li
+                        key={a.id}
+                        className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px]"
+                        style={{ borderColor: "var(--border)", color: "var(--text)" }}
+                      >
+                        <Icon size={12} style={{ color: "var(--text-muted)" }} />
+                        <span className="max-w-[160px] truncate">{a.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveAttachment(a.id)}
+                          aria-label={`Remove ${a.name}`}
+                          style={{ color: "var(--text-muted)" }}
+                        >
+                          <X size={11} />
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+
+            {voiceMsg && (
+              <div className="mt-2 text-[11px]" style={{ color: "var(--accent-red)" }}>{voiceMsg}</div>
+            )}
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              hidden
+              onChange={handlePickFiles}
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,image/*,audio/*"
+            />
+
             <div className="mt-3 flex items-center gap-1.5">
               <button
                 type="button"
-                disabled
+                onClick={() => fileInputRef.current?.click()}
                 aria-label="Attach file"
-                title="Attachments will travel with the call (coming soon)"
-                className="flex h-8 w-8 shrink-0 cursor-not-allowed items-center justify-center rounded-full opacity-50"
+                title="Attach files — they'll travel with the call"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/5"
                 style={{
                   color: "var(--text-muted)",
                   border: "1px solid var(--border)",
@@ -3245,16 +3414,27 @@ function SessionPrepView({
               </button>
               <button
                 type="button"
-                disabled
-                aria-label="Record voice"
-                title="Voice notes will travel with the call (coming soon)"
-                className="flex h-8 w-8 shrink-0 cursor-not-allowed items-center justify-center rounded-full opacity-50"
+                onClick={() =>
+                  recState === "recording" ? stopRecording() : startRecording()
+                }
+                aria-label={
+                  recState === "recording" ? "Stop recording" : "Record voice"
+                }
+                title={
+                  recState === "recording"
+                    ? "Stop recording"
+                    : "Record a voice note — it'll travel with the call"
+                }
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/5"
                 style={{
-                  color: "var(--text-muted)",
-                  border: "1px solid var(--border)",
+                  color:
+                    recState === "recording"
+                      ? "var(--accent-red)"
+                      : "var(--text-muted)",
+                  border: `1px solid ${recState === "recording" ? "var(--accent-red)" : "var(--border)"}`,
                 }}
               >
-                <Mic size={14} />
+                <Mic size={14} className={recState === "recording" ? "animate-pulse" : undefined} />
               </button>
               <div className="flex-1" />
               {isExisting && (
@@ -3295,7 +3475,7 @@ function SessionPrepView({
               </button>
               <button
                 type="button"
-                onClick={handleCall}
+                onClick={() => void handleCall()}
                 className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-[13px] font-semibold transition-opacity hover:opacity-90"
                 style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
               >

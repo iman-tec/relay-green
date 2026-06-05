@@ -53,6 +53,13 @@ const MAX_PAST_SESSIONS = 20;
 const MAX_FILES = 100;
 const MAX_CURRENT_SESSION_MESSAGES = 30;
 
+// The fixed system prelude the engineer handoff posts immediately before the
+// customer's pre-call note (see EngineerSessionClient). The AI assembler
+// matches on it to pull the note out of guest_messages durably — so the prep
+// stays available even after it scrolls out of the 30-message tail, with NO
+// schema change. Shared so the two sides can't drift.
+export const CUSTOMER_PREP_PRELUDE = "💡 Customer prepared this before the call:";
+
 // Type shapes for the rows we read. Kept narrow on purpose — only the
 // columns this module actually consumes.
 type ProjectRow = {
@@ -105,47 +112,65 @@ type MessageRow = {
 
 export async function assembleProjectContext(
   sb: SupabaseClient,
-  args: { projectId: string; currentSessionId: string }
+  args: { projectId: string; currentSessionId: string },
 ): Promise<AssembledContext> {
   const { projectId, currentSessionId } = args;
   const citations: Citation[] = [];
 
   // Parallel fan-out — every read is independent.
-  const [projectRes, sessionsRes, currentMsgsRes, currentCapsRes] =
-    await Promise.all([
-      sb
-        .from("projects")
-        .select(
-          "id, name, customer_id, ai_summary_title, ai_summary_overview, ai_next_steps, summary"
-        )
-        .eq("id", projectId)
-        .maybeSingle(),
-      sb
-        .from("guest_calls")
-        .select(
-          "id, ai_summary_title, ai_summary_overview, ai_next_steps, summary, created_at, duration_minutes"
-        )
-        .eq("project_id", projectId)
-        .neq("id", currentSessionId)
-        .order("created_at", { ascending: false })
-        .limit(MAX_PAST_SESSIONS),
-      sb
-        .from("guest_messages")
-        .select("sender_kind, sender_name, body, created_at")
-        .eq("guest_call_id", currentSessionId)
-        .order("created_at", { ascending: false })
-        .limit(MAX_CURRENT_SESSION_MESSAGES),
-      // Live voice transcript for THIS session — Zoom Live Transcription
-      // batches buffered into ~60s windows by useZoomCall. Surfaced here
-      // so the engineer's AI helper can answer questions like "what did
-      // the customer just say about X" from voice, not just typed chat.
-      sb
-        .from("session_captions")
-        .select("speaker, text, window_end")
-        .eq("session_id", currentSessionId)
-        .order("window_end", { ascending: false })
-        .limit(MAX_CURRENT_SESSION_MESSAGES),
-    ]);
+  const [
+    projectRes,
+    sessionsRes,
+    currentMsgsRes,
+    currentCapsRes,
+    prepProbeRes,
+  ] = await Promise.all([
+    sb.from("projects")
+      .select("id, name, customer_id, ai_summary_title, ai_summary_overview, ai_next_steps, summary")
+      .eq("id", projectId)
+      .maybeSingle(),
+    sb.from("guest_calls")
+      .select("id, ai_summary_title, ai_summary_overview, ai_next_steps, summary, created_at, duration_minutes")
+      .eq("project_id", projectId)
+      .neq("id", currentSessionId)
+      .order("created_at", { ascending: false })
+      .limit(MAX_PAST_SESSIONS),
+    sb.from("guest_messages")
+      .select("sender_kind, sender_name, body, created_at")
+      .eq("guest_call_id", currentSessionId)
+      .order("created_at", { ascending: false })
+      .limit(MAX_CURRENT_SESSION_MESSAGES),
+    // Live voice transcript for THIS session — Zoom Live Transcription
+    // batches buffered into ~60s windows by useZoomCall. Surfaced here
+    // so the engineer's AI helper can answer questions like "what did
+    // the customer just say about X" from voice, not just typed chat.
+    sb.from("session_captions")
+      .select("speaker, text, window_end")
+      .eq("session_id", currentSessionId)
+      .order("window_end", { ascending: false })
+      .limit(MAX_CURRENT_SESSION_MESSAGES),
+    // The customer's pre-call note for THIS session. The engineer handoff
+    // posts it as the guest message immediately after CUSTOMER_PREP_PRELUDE,
+    // so we pull the first handful of messages oldest-first and extract it —
+    // always present, independent of the 30-message recency tail above, and
+    // with no extra column.
+    sb.from("guest_messages")
+      .select("sender_kind, body, created_at")
+      .eq("guest_call_id", currentSessionId)
+      .order("created_at", { ascending: true })
+      .limit(8),
+  ]);
+
+  // Locate the prep note: the first `guest` message after the fixed prelude.
+  const customerPrep = (() => {
+    const rows = (prepProbeRes.data ?? []) as Array<{ sender_kind: string; body: string | null }>;
+    const preludeIdx = rows.findIndex(
+      (m) => m.sender_kind === "system" && (m.body ?? "").trim() === CUSTOMER_PREP_PRELUDE,
+    );
+    if (preludeIdx === -1) return "";
+    const note = rows.slice(preludeIdx + 1).find((m) => m.sender_kind === "guest");
+    return (note?.body ?? "").trim();
+  })();
 
   const project = (projectRes.data ?? null) as ProjectRow | null;
 
@@ -153,20 +178,18 @@ export async function assembleProjectContext(
   // can be fetched in parallel with attachments now that we have the
   // pastSessions list.
   const pastSessions = ((sessionsRes.data ?? []) as SessionRow[]).filter(
-    (s) => s.ai_summary_overview || s.summary
+    (s) => s.ai_summary_overview || s.summary,
   );
   const pastSessionIds = pastSessions.map((s) => s.id);
 
   const [customerSummaryRes, intakeRes, attachmentsRes] = await Promise.all([
     project?.customer_id
-      ? sb
-          .from("customer_summaries")
+      ? sb.from("customer_summaries")
           .select("ai_summary_title, ai_summary_overview, summary")
           .eq("customer_id", project.customer_id)
           .maybeSingle()
       : Promise.resolve({ data: null }),
-    sb
-      .from("client_intakes")
+    sb.from("client_intakes")
       .select("intake_summary, familiarity, ai_tools_used, technologies")
       .eq("project_id", projectId)
       .order("created_at", { ascending: false })
@@ -175,51 +198,35 @@ export async function assembleProjectContext(
     // Files across the project — fetched via guest_messages.guest_call_id
     // because guest_message_attachments doesn't carry project_id directly.
     pastSessionIds.length > 0 || currentSessionId
-      ? sb
-          .from("guest_message_attachments")
-          .select(
-            "name, mime, kind, created_at, guest_messages!inner(guest_call_id)"
-          )
-          .in("guest_messages.guest_call_id", [
-            ...pastSessionIds,
-            currentSessionId,
-          ])
+      ? sb.from("guest_message_attachments")
+          .select("name, mime, kind, created_at, guest_messages!inner(guest_call_id)")
+          .in("guest_messages.guest_call_id", [...pastSessionIds, currentSessionId])
           .order("created_at", { ascending: false })
           .limit(MAX_FILES)
       : Promise.resolve({ data: [] }),
   ]);
 
-  const customerSummary = (customerSummaryRes.data ??
-    null) as CustomerSummaryRow | null;
+  const customerSummary = (customerSummaryRes.data ?? null) as CustomerSummaryRow | null;
   const intake = (intakeRes.data ?? null) as IntakeRow | null;
 
   // Normalise attachment shape — the embed returns guest_messages as a
   // nested object whose guest_call_id we need to surface flat.
-  const attachments: AttachmentRow[] = (
-    (attachmentsRes.data ?? []) as Array<{
-      name: string;
-      mime: string;
-      kind: string;
-      created_at: string;
-      guest_messages:
-        | { guest_call_id: string }
-        | { guest_call_id: string }[]
-        | null;
-    }>
-  )
-    .map((r) => {
-      const gm = Array.isArray(r.guest_messages)
-        ? r.guest_messages[0]
-        : r.guest_messages;
-      return {
-        name: r.name,
-        mime: r.mime,
-        kind: r.kind,
-        created_at: r.created_at,
-        guest_call_id: gm?.guest_call_id ?? "",
-      };
-    })
-    .filter((r) => r.guest_call_id);
+  const attachments: AttachmentRow[] = ((attachmentsRes.data ?? []) as Array<{
+    name: string;
+    mime: string;
+    kind: string;
+    created_at: string;
+    guest_messages: { guest_call_id: string } | { guest_call_id: string }[] | null;
+  }>).map((r) => {
+    const gm = Array.isArray(r.guest_messages) ? r.guest_messages[0] : r.guest_messages;
+    return {
+      name: r.name,
+      mime: r.mime,
+      kind: r.kind,
+      created_at: r.created_at,
+      guest_call_id: gm?.guest_call_id ?? "",
+    };
+  }).filter((r) => r.guest_call_id);
 
   // Build session id → [S#] token map up front so file citations can
   // reference the same token as the session summary.
@@ -245,13 +252,20 @@ export async function assembleProjectContext(
     for (const s of projectNextSteps) lines.push(`  - ${s}`);
   }
 
+  // Customer's pre-call prep note — what they typed in the "Tell the engineer
+  // what you're working on" panel before ringing. The customer's own framing
+  // of THIS call's goal/blocker; treat as authoritative and surface it first.
+  if (customerPrep) {
+    lines.push("");
+    lines.push("== Customer's pre-call note (what they're here for, in their words) ==");
+    lines.push(customerPrep);
+  }
+
   // Customer-level rollup
   if (customerSummary?.ai_summary_overview || customerSummary?.summary) {
     lines.push("");
     lines.push("== Customer profile (across all their projects) ==");
-    lines.push(
-      customerSummary.ai_summary_overview ?? customerSummary.summary ?? ""
-    );
+    lines.push(customerSummary.ai_summary_overview ?? customerSummary.summary ?? "");
   }
 
   // Intake brief
@@ -284,10 +298,9 @@ export async function assembleProjectContext(
       const token = sessionToken.get(s.id)!;
       const date = new Date(s.created_at).toISOString().slice(0, 10);
       const title = s.ai_summary_title ?? "(no title)";
-      const mins =
-        s.duration_minutes != null
-          ? ` (${Math.round(Number(s.duration_minutes))} min)`
-          : "";
+      const mins = s.duration_minutes != null
+        ? ` (${Math.round(Number(s.duration_minutes))} min)`
+        : "";
       lines.push("");
       lines.push(`[${token}] ${date} · "${title}"${mins}`);
       const overview = s.ai_summary_overview ?? s.summary;
@@ -335,25 +348,24 @@ export async function assembleProjectContext(
   // the call" vs "typed in chat".
   type CurrentLine = { ts: number; text: string };
   const currentLines: CurrentLine[] = [];
-  const currentMsgs = (currentMsgsRes.data ?? []) as MessageRow[];
+  const currentMsgs = ((currentMsgsRes.data ?? []) as MessageRow[]);
   for (const m of currentMsgs) {
     if (m.sender_kind === "system") continue;
     const body = (m.body ?? "").trim();
     if (!body) continue;
-    const speaker =
-      m.sender_kind === "engineer"
-        ? `Engineer${m.sender_name ? ` (${m.sender_name})` : ""}`
-        : `Customer${m.sender_name ? ` (${m.sender_name})` : ""}`;
+    const speaker = m.sender_kind === "engineer"
+      ? `Engineer${m.sender_name ? ` (${m.sender_name})` : ""}`
+      : `Customer${m.sender_name ? ` (${m.sender_name})` : ""}`;
     currentLines.push({
       ts: new Date(m.created_at).getTime(),
       text: `${speaker} (chat): ${body}`,
     });
   }
-  const currentCaps = (currentCapsRes.data ?? []) as Array<{
+  const currentCaps = ((currentCapsRes.data ?? []) as Array<{
     speaker: string | null;
     text: string;
     window_end: string;
-  }>;
+  }>);
   for (const c of currentCaps) {
     const t = (c.text ?? "").trim();
     if (!t) continue;
@@ -365,9 +377,7 @@ export async function assembleProjectContext(
   currentLines.sort((a, b) => a.ts - b.ts);
   if (currentLines.length > 0) {
     lines.push("");
-    lines.push(
-      "== Current session (live, latest exchange, chronological — chat + voice transcript) =="
-    );
+    lines.push("== Current session (live, latest exchange, chronological — chat + voice transcript) ==");
     for (const l of currentLines) lines.push(l.text);
   }
 

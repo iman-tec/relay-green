@@ -1,18 +1,21 @@
 "use client";
 
 /*
- * Refill drawer for a specific employee. POSTs to
- * /api/department/employees/:id/refill, which calls transfer_to_employee
- * atomically — debits dept.remaining_minutes and credits the employee's
- * allocated + remaining.
+ * Enterprise-scoped refill drawer for a specific employee. POSTs to
+ * /api/enterprise/departments/:deptId/employees/:empId/refill, which calls
+ * transfer_to_employee atomically — debits the employee's DEPARTMENT pool
+ * and credits their allocated + remaining. Mirrors the department panel's
+ * RefillEmployeeDrawer; closes the gap where an employee invited with 0
+ * minutes could never be topped up from the enterprise console.
  */
 
 import { useState } from "react";
 import { Drawer } from "@/app/_components/admin-v2/Drawer";
-import { BRAND_GREEN } from "@/app/(staff)/enterprise/v2/_kit";
+import { BRAND_GREEN } from "../_kit";
 
 export function RefillEmployeeDrawer({
   open,
+  deptId,
   empId,
   empName,
   empCurrent,
@@ -21,6 +24,7 @@ export function RefillEmployeeDrawer({
   onRefilled,
 }: {
   open:           boolean;
+  deptId:         string | null;
   empId:          string | null;
   empName?:       string;
   empCurrent?:    { allocated: number; used: number; remaining: number };
@@ -35,20 +39,20 @@ export function RefillEmployeeDrawer({
   const reset = () => { setAmount(""); setError(null); };
 
   const submit = async () => {
-    if (!empId) { setError("Pick an employee first."); return; }
+    if (!deptId || !empId) { setError("Pick an employee first."); return; }
     const n = Number(amount);
     if (!Number.isFinite(n) || n <= 0) {
       setError("Amount must be a positive number.");
       return;
     }
     if (typeof deptRemaining === "number" && n > deptRemaining) {
-      setError(`Amount exceeds the department's remaining ${deptRemaining.toLocaleString()} min.`);
+      setError(`Amount exceeds the department's remaining ${deptRemaining.toLocaleString()} min. Add minutes to the department first.`);
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/department/employees/${empId}/refill`, {
+      const res = await fetch(`/api/enterprise/departments/${deptId}/employees/${empId}/refill`, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ amount: n }),
