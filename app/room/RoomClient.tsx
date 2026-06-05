@@ -3006,15 +3006,18 @@ function CenterHeaderActions({
           .eq("customer_user_id", customerUserId)
           .eq("status", "booked")
           .gt("created_at", schedSeen),
-        // A bid counts as "new" when it was created OR responded-to
-        // (quoted/declined) after the last review.
+        // A bid counts as "new" ONLY when the TEAM responded (quoted /
+        // declined → responded_at) after the last review. The customer's
+        // own actions — submitting a request (created_at), booking an
+        // appointment off a bid — must NOT light this counter; counting
+        // created_at made Contracts mirror unrelated activity (e.g. it
+        // bumped alongside Scheduled when nothing new arrived from the
+        // team). Strictly decoupled now.
         sb
           .from("project_quote_requests")
           .select("id", { count: "exact", head: true })
           .eq("customer_user_id", customerUserId)
-          .or(
-            `created_at.gt.${contractsSeen},responded_at.gt.${contractsSeen}`
-          ),
+          .gt("responded_at", contractsSeen),
       ]);
       if (!alive) return;
       setScheduledCount((eng.count ?? 0) + (sup.count ?? 0));
