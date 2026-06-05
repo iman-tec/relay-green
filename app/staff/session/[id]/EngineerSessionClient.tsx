@@ -362,11 +362,12 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
     );
   }, []);
 
-  // After a session ends, send the engineer to that session's review page
-  // (summary + transcript + files) rather than dumping them back on /inbox —
-  // they get to look over what just happened. Supervisor monitors still land
-  // on /inbox. (3-second beat gives the summary edge fn a head start writing
-  // the AI summary before we navigate; the review page shows it once ready.)
+  // After a session ends, send the engineer to the PROJECT detail page
+  // (full project context: sessions, files, AI assistant) rather than the
+  // per-session review page — the project view is the richer post-call
+  // surface. Falls back to /inbox when the session carried no project.
+  // Supervisor monitors still land on /supervise. (3-second beat gives the
+  // summary edge fn a head start writing the AI summary before we navigate.)
   const prevStatusRef = useRef<SessionStatus | null>(null);
   useEffect(() => {
     if (
@@ -374,12 +375,22 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
       prevStatusRef.current &&
       prevStatusRef.current !== "ended"
     ) {
-      const dest = isSupervisor ? "/supervise" : `/session-review/${sessionId}`;
+      const projectId = state.session?.project_id ?? null;
+      const dest = isSupervisor
+        ? "/supervise"
+        : projectId
+          ? `/staff/project/${projectId}`
+          : "/inbox";
       const t = setTimeout(() => router.push(dest), 3000);
       return () => clearTimeout(t);
     }
     prevStatusRef.current = state.session?.status ?? null;
-  }, [state.session?.status, router, isSupervisor, sessionId]);
+  }, [
+    state.session?.status,
+    state.session?.project_id,
+    router,
+    isSupervisor,
+  ]);
 
   // Desktop-shell integration: hide the floating orb widget while a Relay
   // session is in flight on the engineer side. Bridge is no-op in the
