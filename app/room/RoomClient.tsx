@@ -7155,7 +7155,11 @@ function CallHeaderActions({
   // even before any engineer is added — so a supervisor + customer can talk.
   const apptReady =
     session.is_appointment === true && !!session.supervisor_joined_at;
-  const canJoin = callStarted && (isLiveish || apptReady) && !isCallOpen;
+  // Stays ENABLED while the customer is on the call (isCallOpen) — the
+  // button reads "You're on the call" and clicking just re-surfaces the
+  // CallSurface (a no-op when it's already mounted). Greying it out
+  // mid-call made the header look broken.
+  const canJoin = callStarted && (isLiveish || apptReady);
   const tooltip = isCallOpen
     ? "You're on the call"
     : canJoin
@@ -7176,14 +7180,17 @@ function CallHeaderActions({
         disabled={!canJoin}
         onClick={() => {
           if (!canJoin) return;
-          void onJoin?.();
+          // Don't re-stamp joined when already on the call — just bring
+          // the call surface back to front.
+          if (!isCallOpen) void onJoin?.();
           if (launchCall) {
             // Video SDK path: parent mounts <CallSurface> in-window.
             launchCall();
             return;
           }
-          // Legacy Meeting SDK: open Zoom in a new tab.
-          if (session.zoom_join_url) {
+          // Legacy Meeting SDK: open Zoom in a new tab (no-op if the
+          // surface is the in-window one).
+          if (!isCallOpen && session.zoom_join_url) {
             window.open(session.zoom_join_url, "_blank", "noopener,noreferrer");
           }
         }}
