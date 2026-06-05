@@ -265,9 +265,14 @@ function Row({
               color: "var(--risk)",
             }}
           >
-            {row.declinedBy.length <= 1
-              ? "Engineer declined"
-              : "All engineers declined"}
+            {/* declinedBy is only populated on an EXPLICIT decline; a 30s ring
+                that nobody answered leaves it empty (offers just expire), so
+                length 0 means "rang out", not "declined". */}
+            {row.declinedBy.length === 0
+              ? "No engineer picked up"
+              : row.declinedBy.length === 1
+                ? "Engineer declined"
+                : "All engineers declined"}
           </span>
         ) : (
           <>

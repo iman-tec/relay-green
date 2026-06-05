@@ -65,6 +65,7 @@ import { ROLE, type Role } from "@/lib/relay/roles";
 // import { EngineerIncomingRequest } from "./EngineerIncomingRequest";
 import { EngineerIncomingMatch } from "./EngineerIncomingMatch";
 import { EngineerAlerts } from "./EngineerAlerts";
+import { SupervisorAppointmentToaster } from "./SupervisorAppointmentToaster";
 import { useEngineerHeartbeat } from "@/lib/relay/useEngineerHeartbeat";
 import { createClient } from "@/lib/supabase/browser";
 import { useEngineerWorkspace } from "@/lib/relay/useEngineerWorkspace";
@@ -498,6 +499,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
             /admin/v2 is notified just like on /supervise. */}
         {isEngineer(roles) && <EngineerIncomingMatch />}
         {!engineer && <SupervisorAlerts roles={roles} />}
+        {!engineer && <SupervisorAppointmentToaster />}
       </div>
     );
   }
@@ -801,6 +803,10 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
 
       {/* Supervisor-only: non-blocking urgent session alerts */}
       {!engineer && <SupervisorAlerts roles={roles} />}
+
+      {/* Supervisor-only: appointment-booked pop-up on every staff screen
+          (auto-dismiss 5s). The notification bell keeps the full history. */}
+      {!engineer && <SupervisorAppointmentToaster />}
     </div>
   );
 }
