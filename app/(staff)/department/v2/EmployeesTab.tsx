@@ -170,7 +170,7 @@ export function EmployeesTab() {
 
         <section className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-[12px] font-semibold tracking-[0.08em] uppercase" style={{ color: "var(--text)" }}>
+            <h2 className="font-serif text-lg font-medium" style={{ color: "var(--text)" }}>
               Invitations
             </h2>
             <OutlineButton size="sm" icon={<Upload size={12} />} onClick={() => setBulkOpen(true)}>Bulk add (CSV)</OutlineButton>
@@ -236,11 +236,11 @@ function EmployeeTable({
 }) {
   return (
     <section
-      className="overflow-hidden rounded-xl border"
+      className="overflow-hidden rounded-2xl border"
       style={{ borderColor: "var(--border)", background: "var(--surface)" }}
     >
-      <header className="flex items-center justify-between border-b px-4 py-2.5" style={{ borderColor: "var(--border)" }}>
-        <span className="text-[12px] font-semibold tracking-[0.08em] uppercase" style={{ color: "var(--text)" }}>
+      <header className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: "var(--border)" }}>
+        <span className="text-sm font-semibold" style={{ color: "var(--text)" }}>
           Employees ({employees.length})
         </span>
         <PrimaryButton size="sm" icon={<Plus className="size-3.5" />} onClick={onAdd}>
@@ -255,7 +255,7 @@ function EmployeeTable({
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-[11px] tracking-wider uppercase" style={{ color: "var(--text-muted)" }}>
+              <tr className="text-left" style={{ color: "var(--text-muted)" }}>
                 <th className="px-4 py-2.5 font-medium">Name</th>
                 <th className="px-4 py-2.5 font-medium">Email</th>
                 <th className="px-4 py-2.5 font-medium">Minutes (used / allocated)</th>

@@ -16,7 +16,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Activity, AlertTriangle, Clock, Loader2 } from "lucide-react";
+import { AlertTriangle, Loader2 } from "lucide-react";
 
 const BRAND_GREEN = "var(--primary)";
 const BRAND_GREEN_SOFT = "var(--primary-soft)";
@@ -143,37 +143,6 @@ export function EnterpriseSuperviseClient() {
     return { live, waiting, past };
   }, [sessions]);
 
-  const metrics = useMemo(() => {
-    const activeSessions = [...live, ...waiting];
-    const urgent = activeSessions.filter((s) => s.urgency !== "normal").length;
-    const queued = waiting.filter((s) => s.status === "queued");
-    const avgWait =
-      queued.length === 0
-        ? 0
-        : Math.floor(
-            queued.reduce(
-              (sum, s) =>
-                sum + (Date.now() - new Date(s.createdAt).getTime()) / 1000,
-              0
-            ) / queued.length
-          );
-    const longestWait =
-      queued.length === 0
-        ? 0
-        : Math.max(
-            ...queued.map((s) =>
-              Math.floor((Date.now() - new Date(s.createdAt).getTime()) / 1000)
-            )
-          );
-    return {
-      active: activeSessions.length,
-      live: live.length,
-      urgent,
-      avgWait,
-      longestWait,
-    };
-  }, [live, waiting]);
-
   const counts = {
     live: live.length,
     waiting: waiting.length,
@@ -192,45 +161,6 @@ export function EnterpriseSuperviseClient() {
           on each card is the session&apos;s health — green is healthy, amber is
           shaky, red is at risk.
         </p>
-      </div>
-
-      {/* Metrics row */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        <Metric
-          icon={Activity}
-          label="Active sessions"
-          value={metrics.active}
-          accent={BRAND_GREEN}
-          bg={BRAND_GREEN_SOFT}
-        />
-        <Metric
-          icon={Activity}
-          label="Live now"
-          value={metrics.live}
-          accent={BRAND_GREEN}
-          bg={BRAND_GREEN_SOFT}
-        />
-        <Metric
-          icon={AlertTriangle}
-          label="Urgent"
-          value={metrics.urgent}
-          accent={URGENT_AMBER}
-          bg={URGENT_AMBER_SOFT}
-        />
-        <Metric
-          icon={Clock}
-          label="Avg wait"
-          value={fmtSecs(metrics.avgWait)}
-          accent="#0284c7"
-          bg="rgba(2, 132, 199, 0.12)"
-        />
-        <Metric
-          icon={Clock}
-          label="Longest wait"
-          value={fmtSecs(metrics.longestWait)}
-          accent="#7c3aed"
-          bg="rgba(124, 58, 237, 0.12)"
-        />
       </div>
 
       {/* Tabs */}
@@ -303,48 +233,6 @@ export function EnterpriseSuperviseClient() {
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-function Metric({
-  icon: Icon,
-  label,
-  value,
-  accent,
-  bg,
-}: {
-  icon: React.ElementType;
-  label: string;
-  value: string | number;
-  accent: string;
-  bg: string;
-}) {
-  return (
-    <div
-      className="flex items-center gap-3 rounded-xl border p-4"
-      style={{
-        borderColor: "var(--border)",
-        backgroundColor: "var(--surface)",
-      }}
-    >
-      <div
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
-        style={{ backgroundColor: bg, color: accent }}
-      >
-        <Icon size={16} />
-      </div>
-      <div>
-        <div
-          className="text-xl font-bold tabular-nums"
-          style={{ color: "var(--text)" }}
-        >
-          {value}
-        </div>
-        <div className="text-[10px]" style={{ color: "var(--text-muted)" }}>
-          {label}
-        </div>
-      </div>
     </div>
   );
 }

@@ -50,7 +50,7 @@ export function DeptUsageTab() {
         </OutlineButton>
       </div>
 
-      <section className="overflow-hidden rounded-xl border" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+      <section className="overflow-hidden rounded-2xl border" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
         <CardHeader icon={<BarChart3 size={14} />} title="Usage by month" />
         {byPeriod.length === 0 ? (
           <div className="p-6"><EmptyState compact title="No usage yet" body="Monthly usage appears once sessions complete." /></div>

@@ -10,10 +10,10 @@
  * not exposed to the client.
  */
 
-import { Download, CreditCard } from "lucide-react";
+import { Download, Receipt, CreditCard } from "lucide-react";
 import { StatusBadge, EmptyState } from "@/app/_components/ui";
 import { useApiData, eur, LoadingState, ErrorState } from "./_shared";
-import { TabTitle, StatCard, CardHeader, BRAND_GREEN, BRAND_GREEN_SOFT } from "./_kit";
+import { TabTitle, StatCard, CardHeader } from "./_kit";
 
 type Billing = {
   currency: string;
@@ -55,17 +55,17 @@ export function BillingTab() {
         sub={`Pay-per-minute · €${(data.revenue.perMinuteCents / 100).toFixed(2)}/min, billed by the second. No subscription.`}
       />
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-        <StatCard value={eur(data.revenue.thisMonthCents)} label="Spend this month" accent={BRAND_GREEN} />
-        <StatCard value={eur(data.revenue.last30DaysCents)} label="Last 30 days" accent="#0ea5e9" />
-        <StatCard value={eur(data.revenue.lifetimeCents)} label="Lifetime" accent="#7c3aed" />
+      <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-3">
+        <StatCard icon={<Receipt size={16} />} value={eur(data.revenue.thisMonthCents)} label="Spend this month" />
+        <StatCard icon={<Receipt size={16} />} value={eur(data.revenue.last30DaysCents)} label="Last 30 days" />
+        <StatCard icon={<Receipt size={16} />} value={eur(data.revenue.lifetimeCents)} label="Lifetime" />
       </div>
 
       {/* Plan */}
-      <section className="mt-4 rounded-xl border p-5" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+      <section className="mt-6 rounded-2xl border p-5" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
-            <span className="inline-flex size-10 items-center justify-center rounded-full" style={{ background: BRAND_GREEN_SOFT, color: BRAND_GREEN }}>
+            <span className="inline-flex size-10 items-center justify-center rounded-xl" style={{ background: "var(--primary-tint)", color: "var(--primary-hover)" }}>
               <CreditCard size={18} />
             </span>
             <div>
@@ -83,7 +83,7 @@ export function BillingTab() {
       </section>
 
       {/* Transactions */}
-      <section className="mt-4 overflow-hidden rounded-xl border" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+      <section className="mt-6 overflow-hidden rounded-2xl border" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
         <CardHeader
           title="Recent transactions"
           right={

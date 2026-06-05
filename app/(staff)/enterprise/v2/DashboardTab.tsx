@@ -7,13 +7,12 @@
  */
 
 import { useState } from "react";
-import { Activity, Sparkles, ArrowRight } from "lucide-react";
+import { Activity, CheckCircle2, Timer, Sparkles, ArrowRight } from "lucide-react";
 import { StatusBadge, EmptyState } from "@/app/_components/ui";
 import { SetupWizard } from "./SetupWizard";
 import { useApiData, eur, num, LoadingState, ErrorState } from "./_shared";
 import {
   TabBody, TabTitle, StatCard, CardHeader, PrimaryButton,
-  BRAND_GREEN, BRAND_GREEN_SOFT,
 } from "./_kit";
 
 type Me = {
@@ -65,10 +64,10 @@ export function DashboardTab() {
       />
 
       {needsSetup && (
-        <div className="mb-6 flex flex-col items-start gap-3 rounded-xl border p-5 sm:flex-row sm:items-center sm:justify-between"
-          style={{ borderColor: BRAND_GREEN, background: BRAND_GREEN_SOFT }}>
+        <div className="mb-6 flex flex-col items-start gap-3 rounded-2xl border p-5 sm:flex-row sm:items-center sm:justify-between"
+          style={{ borderColor: "var(--primary)", background: "var(--primary-tint)" }}>
           <div className="flex items-start gap-3">
-            <span className="inline-flex size-10 items-center justify-center rounded-xl" style={{ background: "var(--surface)", color: BRAND_GREEN }}>
+            <span className="inline-flex size-10 items-center justify-center rounded-xl" style={{ background: "var(--surface)", color: "var(--primary-hover)" }}>
               <Sparkles size={18} />
             </span>
             <div>
@@ -82,17 +81,17 @@ export function DashboardTab() {
 
       <SetupWizard open={wizardOpen} onClose={() => setWizardOpen(false)} orgName={me.data?.org.name ?? "your workspace"} onChanged={reloadAll} />
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatCard value={eur(k?.spendMonthCents)} label="Spend this month" accent={BRAND_GREEN} />
-        <StatCard value={num(k?.liveNow)} label="Live now" accent="#0ea5e9" />
-        <StatCard value={num(k?.sessions30Days)} label="Sessions" hint="last 30 days" accent="#7c3aed" />
-        <StatCard value={`${num(k?.avgDurationMin)}m`} label="Avg duration" accent="#16a34a" />
+      {/* No "Live now" tile (enterprise admins aren't allowed to see live
+          sessions) and no "Avg duration" tile — just spend + session count. */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
+        <StatCard icon={<Timer size={16} />} value={eur(k?.spendMonthCents)} label="Spend this month" />
+        <StatCard icon={<CheckCircle2 size={16} />} value={num(k?.sessions30Days)} label="Sessions" hint="last 30 days" />
       </div>
 
-      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* Recent sessions */}
         <section
-          className="overflow-hidden rounded-xl border lg:col-span-2"
+          className="overflow-hidden rounded-2xl border lg:col-span-2"
           style={{ borderColor: "var(--border)", background: "var(--surface)" }}
         >
           <CardHeader icon={<Activity size={14} />} title="Recent sessions" />
@@ -134,7 +133,7 @@ export function DashboardTab() {
 
         {/* Top departments */}
         <section
-          className="overflow-hidden rounded-xl border"
+          className="overflow-hidden rounded-2xl border"
           style={{ borderColor: "var(--border)", background: "var(--surface)" }}
         >
           <CardHeader title="Top departments" />

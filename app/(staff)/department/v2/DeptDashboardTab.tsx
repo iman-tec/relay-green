@@ -6,13 +6,12 @@
  */
 
 import { useState } from "react";
-import { Activity, Sparkles, ArrowRight } from "lucide-react";
+import { Activity, Users, Timer, Gauge, Sparkles, ArrowRight } from "lucide-react";
 import { StatusBadge, EmptyState } from "@/app/_components/ui";
 import { DeptSetupWizard } from "./DeptSetupWizard";
 import { useApiData, num, LoadingState, ErrorState } from "@/app/(staff)/enterprise/v2/_shared";
 import {
   TabBody, TabTitle, StatCard, CardHeader, PrimaryButton,
-  BRAND_GREEN, BRAND_GREEN_SOFT,
 } from "@/app/(staff)/enterprise/v2/_kit";
 
 type Employees = {
@@ -50,10 +49,10 @@ export function DeptDashboardTab() {
       />
 
       {needsSetup && (
-        <div className="mb-6 flex flex-col items-start gap-3 rounded-xl border p-5 sm:flex-row sm:items-center sm:justify-between"
-          style={{ borderColor: BRAND_GREEN, background: BRAND_GREEN_SOFT }}>
+        <div className="mb-6 flex flex-col items-start gap-3 rounded-2xl border p-5 sm:flex-row sm:items-center sm:justify-between"
+          style={{ borderColor: "var(--primary)", background: "var(--primary-tint)" }}>
           <div className="flex items-start gap-3">
-            <span className="inline-flex size-10 items-center justify-center rounded-xl" style={{ background: "var(--surface)", color: BRAND_GREEN }}>
+            <span className="inline-flex size-10 items-center justify-center rounded-xl" style={{ background: "var(--surface)", color: "var(--primary-hover)" }}>
               <Sparkles size={18} />
             </span>
             <div>
@@ -73,14 +72,14 @@ export function DeptDashboardTab() {
         onChanged={() => { emp.reload(); }}
       />
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatCard value={num(members.length)} label="Members" accent="#0ea5e9" />
-        <StatCard value={`${num(d?.usedMinutes)}m`} label="Minutes used" accent={BRAND_GREEN} />
-        <StatCard value={`${num(d?.remainingMinutes)}m`} label="Remaining" accent="#16a34a" />
-        <StatCard value={`${num(d?.allocatedMinutes)}m`} label="Allocated" accent="#7c3aed" />
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <StatCard icon={<Users size={16} />} value={num(members.length)} label="Members" />
+        <StatCard icon={<Timer size={16} />} value={`${num(d?.usedMinutes)}m`} label="Minutes used" />
+        <StatCard icon={<Gauge size={16} />} value={`${num(d?.remainingMinutes)}m`} label="Remaining" />
+        <StatCard icon={<Gauge size={16} />} value={`${num(d?.allocatedMinutes)}m`} label="Allocated" />
       </div>
 
-      <section className="mt-4 overflow-hidden rounded-xl border" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+      <section className="mt-6 overflow-hidden rounded-2xl border" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
         <CardHeader icon={<Activity size={14} />} title="Recent sessions" />
         {sess.loading ? (
           <LoadingState />

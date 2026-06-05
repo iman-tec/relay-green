@@ -114,10 +114,10 @@ export function MembersTab() {
       ) : members.length === 0 ? (
         <EmptyState icon={<UserPlus size={20} />} title="No members yet" body="Invite your first team member by email." action={<Button onClick={() => setInviteOpen(true)}>Invite a member</Button>} />
       ) : (
-        <div className="overflow-x-auto rounded-xl border" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+        <div className="overflow-x-auto rounded-2xl border" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
           <table className="w-full min-w-[640px] text-sm">
             <thead>
-              <tr className="text-[11px] tracking-wider uppercase" style={{ color: "var(--text-muted)" }}>
+              <tr style={{ color: "var(--text-muted)" }}>
                 <th className="px-4 py-2.5 text-left font-medium">Member</th>
                 <th className="px-4 py-2.5 text-left font-medium">Role</th>
                 <th className="px-4 py-2.5 text-left font-medium">Status</th>
@@ -188,10 +188,7 @@ export function MembersTab() {
       )}
 
       <section className="mt-8">
-        <h2
-          className="mb-3 text-[12px] font-semibold tracking-[0.08em] uppercase"
-          style={{ color: "var(--text)" }}
-        >
+        <h2 className="mb-3 font-serif text-lg font-medium" style={{ color: "var(--text)" }}>
           Invitations
         </h2>
         <InviteStatusTable reloadKey={inviteKey} />

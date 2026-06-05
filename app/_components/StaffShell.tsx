@@ -32,6 +32,7 @@ import {
   PanelLeftOpen,
   LayoutDashboard,
   BarChart3,
+  Activity,
   Calendar,
   CalendarClock,
   Eye,
@@ -147,11 +148,31 @@ const NAV: Nav[] = [
     icon: LayoutDashboard,
     roles: [ROLE.reseller],
   },
-  // department_admin's primary surface — the redesigned Employees panel.
+  // department_admin's console — like the enterprise console above, the
+  // panel's tabs surface directly as sidebar ?tab= links; active-state is
+  // resolved tab-aware in the nav render.
   {
-    href: "/department/v2",
-    label: "Department",
+    href: "/department/v2?tab=overview",
+    label: "Overview",
     icon: LayoutDashboard,
+    roles: [ROLE.department_admin],
+  },
+  {
+    href: "/department/v2?tab=sessions",
+    label: "Sessions",
+    icon: Activity,
+    roles: [ROLE.department_admin],
+  },
+  {
+    href: "/department/v2?tab=usage",
+    label: "Usage",
+    icon: BarChart3,
+    roles: [ROLE.department_admin],
+  },
+  {
+    href: "/department/v2?tab=settings",
+    label: "Settings",
+    icon: Settings,
     roles: [ROLE.department_admin],
   },
   // /finance is the org-level money + feedback console — enterprise_admin
@@ -220,6 +241,17 @@ function enterpriseTabOf(param: string | null): string {
     case "billing":  return "billing";
     case "settings": return "settings";
     default:         return "overview"; // dashboard / departments / members / null
+  }
+}
+
+// Same idea for the department console's sidebar entries. Mirrors
+// resolveInitial in app/(staff)/department/v2/PanelClient.tsx.
+function departmentTabOf(param: string | null): string {
+  switch (param) {
+    case "sessions": return "sessions";
+    case "usage":    return "usage";
+    case "settings": return "settings";
+    default:         return "overview"; // dashboard / members / null
   }
 }
 
@@ -633,15 +665,18 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
         <nav className="flex flex-1 flex-col gap-0.5 px-2 pt-3">
           {navItems.map((item) => {
             const Icon = item.icon;
-            // Path match first; for query-carrying hrefs (the enterprise
-            // console tabs) the ?tab= must match too, or all four items
-            // would light up together on /enterprise/v2.
+            // Path match first; for query-carrying hrefs (the enterprise /
+            // department console tabs) the ?tab= must match too, or all
+            // sibling items would light up together on the shared path.
             const [itemPath, itemQuery] = item.href.split("?");
             let active =
               pathname === itemPath || pathname.startsWith(itemPath + "/");
             if (active && itemQuery) {
               const want = new URLSearchParams(itemQuery).get("tab");
-              active = enterpriseTabOf(searchParams?.get("tab") ?? null) === want;
+              const tabOf = itemPath.startsWith("/department/v2")
+                ? departmentTabOf
+                : enterpriseTabOf;
+              active = tabOf(searchParams?.get("tab") ?? null) === want;
             }
             return (
               <Link
