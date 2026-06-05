@@ -76,6 +76,16 @@ export function AssistantTabClient() {
     };
   }, [sessionId]);
 
+  // Session over → close this assistant window. It was opened via
+  // window.open from the session page, so self-close is permitted. When
+  // the browser refuses (e.g. the engineer opened /staff/assistant as a
+  // regular tab themselves), the "Session ended" banner below stays as
+  // the fallback state.
+  useEffect(() => {
+    if (!ended) return;
+    window.close();
+  }, [ended]);
+
   return (
     <div
       className="relative flex h-dvh flex-col"

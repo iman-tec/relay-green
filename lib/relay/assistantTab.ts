@@ -126,7 +126,25 @@ export function consumePopupBlockedFlag(): boolean {
   return false;
 }
 
-/** Broadcast "session ended" so the assistant tab can show its end state. */
+/** Close the assistant window for a session (no-op if never opened or
+ *  already closed). Belt-and-braces beside broadcastAssistantEnd: the
+ *  broadcast lets a loaded assistant window close itself; this handle
+ *  close also catches a window still navigating (about:blank → adopt)
+ *  that hasn't subscribed to the channel yet. */
+export function closeAssistantTab(sessionId: string): void {
+  const w = handles.get(sessionId);
+  handles.delete(sessionId);
+  if (w && !w.closed) {
+    try {
+      w.close();
+    } catch {
+      /* already gone */
+    }
+  }
+}
+
+/** Broadcast "session ended" so the assistant tab can close itself (or
+ *  show its end state when the browser refuses the close). */
 export function broadcastAssistantEnd(sessionId: string): void {
   try {
     const ch = new BroadcastChannel(assistantChannelName(sessionId));

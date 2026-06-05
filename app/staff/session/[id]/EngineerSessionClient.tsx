@@ -54,6 +54,7 @@ import { EngineerAiAsk } from "@/app/_components/EngineerAiAsk";
 import { AssistantLauncher } from "@/app/_components/AssistantLauncher";
 import {
   broadcastAssistantEnd,
+  closeAssistantTab,
   consumePopupBlockedFlag,
 } from "@/lib/relay/assistantTab";
 import { MessageAttachments } from "@/app/_components/MessageAttachments";
@@ -379,9 +380,11 @@ export function EngineerSessionClient({ sessionId }: { sessionId: string }) {
       prevStatusRef.current &&
       prevStatusRef.current !== "ended"
     ) {
-      // Tell the assistant tab the session is over (it shows a "Session
-      // ended" banner instead of lingering as a live-looking orphan).
+      // Tell the assistant window the session is over so it closes itself,
+      // and close our own handle too (covers a window still navigating that
+      // hasn't subscribed to the broadcast channel yet).
       broadcastAssistantEnd(sessionId);
+      closeAssistantTab(sessionId);
       const projectId = state.session?.project_id ?? null;
       const dest = isSupervisor
         ? "/supervise"
