@@ -4,7 +4,9 @@
 //   {
 //     "app_key":   <SDK key>,
 //     "tpc":       relay-session-<guest_calls.id>,
-//     "role_type": 1 (engineer host) | 0 (customer participant),
+//     "role_type": 1 (host-capable: engineer, appointment supervisor, or
+//                     customer on a regular session — either side may START
+//                     the call) | 0 (participant),
 //     "version":   1,
 //     "iat":       unix(),
 //     "exp":       unix() + 2h,
@@ -178,9 +180,18 @@ Deno.serve(async (req) => {
     const payload = {
       app_key: ZOOM_VIDEO_SDK_KEY,
       tpc: topic,
-      // Host (1) for the engineer, or the appointment's supervisor when they're
-      // hosting the call themselves; customer joins as participant (0).
-      role_type: isEngineer || isAppointmentSupervisor ? 1 : 0,
+      // Host-capable (1) for the engineer, the appointment's hosting
+      // supervisor, AND the customer on a regular session — either side may
+      // START the call (the first role-1 user to join creates the Video SDK
+      // session; later role-1 joiners come in as ordinary participants).
+      // Appointment customers stay participants (0) — their call opens once
+      // the moderator joins. Monitoring supervisors also stay 0.
+      role_type:
+        isEngineer ||
+        isAppointmentSupervisor ||
+        (isCustomer && session.is_appointment !== true)
+          ? 1
+          : 0,
       version: 1,
       iat,
       exp,

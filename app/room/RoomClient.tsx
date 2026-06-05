@@ -540,12 +540,11 @@ export function RoomClient() {
   // exactly once when the engineer's Zoom appears.
   const [accepted, setAccepted] = useState(false);
 
-  // Chat-first call lifecycle: a call EXISTS only after the engineer (or
-  // appointment moderator) starts it from their side — zoom-video-sdk-token /
-  // mint-zoom-for-session post a "📞 Zoom meeting started" system message,
-  // and ending posts "📞 Zoom meeting ended". The customer may JOIN only
-  // while a started message has no ended counterpart (the same pairing rule
-  // the inline MeetingChatEntry card uses), never start one themselves.
+  // Chat-first call lifecycle: a call EXISTS while a "📞 Zoom meeting
+  // started" system message has no ended counterpart (the same pairing rule
+  // the inline MeetingChatEntry card uses). EITHER side may start one —
+  // zoom-video-sdk-token / mint-zoom-for-session post the started message,
+  // and ending posts "📞 Zoom meeting ended".
   const callStarted = useMemo(() => {
     const s = state.session;
     if (!s || ["ended", "cancelled", "abandoned"].includes(s.status)) {
@@ -560,6 +559,26 @@ export function RoomClient() {
     }
     return open > 0;
   }, [state.session, state.messages]);
+
+  // Auto-close the customer's CallSurface when the call CYCLE closes while
+  // it's still mounted. Normally the SDK kicks every participant when the
+  // host ends-for-all — but when the CUSTOMER started the call, THEY hold
+  // SDK host, so the engineer's "end for everyone" can't kick them; the
+  // server still posts "📞 Zoom meeting ended", which flips callStarted
+  // false. Latched on callStarted-true first so the async gap between
+  // clicking Start and the started message landing doesn't instantly close
+  // a freshly opened surface.
+  const callCycleOpenRef = useRef(false);
+  useEffect(() => {
+    if (callStarted) {
+      callCycleOpenRef.current = true;
+      return;
+    }
+    if (callCycleOpenRef.current) {
+      callCycleOpenRef.current = false;
+      setCallOpen(false);
+    }
+  }, [callStarted]);
 
   // The customer can click a past-session row in the sidebar to review it.
   // When set, we render the split layout with chat + summary for that row.
@@ -7127,14 +7146,15 @@ const FloatingStatus = memo(function FloatingStatus({
 // participant + overflow icons in the chat header. Required by the
 // room-w.png mock as the most obvious header control.
 //
-// Chat-first: the customer NEVER starts the call themselves. The engineer
-// (or the appointment's moderator) starts it from their side — that posts
-// the "📞 Zoom meeting started" system message — and only then does this
-// button enable, joining the SAME call the inline MeetingChatEntry card
-// joins. The old paths that let the customer go straight into Zoom
-// (mint-zoom-for-session popup, and Video SDK join on 'assigned' before
-// the engineer launched — which wedged on "Joining…" because a role_type-0
-// participant can't START a Video SDK session) are removed.
+// Chat-first: EITHER side can start the call. Whoever clicks first mounts
+// their CallSurface — zoom-video-sdk-token issues a host-capable
+// (role_type 1) token to the customer too, so a customer-first join
+// CREATES the Video SDK session instead of wedging on "Joining…" (the old
+// role-0 limitation that forced engineer-first). Starting posts the
+// "📞 Zoom meeting started" system message, which flips the other side's
+// inline MeetingChatEntry card + their header button to "Join the call".
+// Appointments keep the moderator-first rule: the customer's call opens
+// once the supervisor has joined.
 function CallHeaderActions({
   session,
   callStarted,
@@ -7169,14 +7189,18 @@ function CallHeaderActions({
   // CallSurface (a no-op when it's already mounted). Greying it out
   // mid-call made the header look broken.
   const canJoin = engineerOnCall && (isLiveish || apptReady);
+  // Customer-initiated start: any live-ish REGULAR session. Appointments
+  // can't be customer-started — the moderator opens the call.
+  const canStart = !session.is_appointment && isLiveish;
+  const enabled = canJoin || canStart;
   const tooltip = isCallOpen
     ? "You're on the call"
     : canJoin
       ? "Join the call"
-      : session.is_appointment
-        ? "Your call opens once the moderator joins"
-        : isLiveish
-          ? "Waiting for your engineer to start the call"
+      : canStart
+        ? "Start the call"
+        : session.is_appointment
+          ? "Your call opens once the moderator joins"
           : "Call starts once an engineer joins";
 
   return (
@@ -7186,9 +7210,9 @@ function CallHeaderActions({
         title={tooltip}
         variant="primary"
         size="md"
-        disabled={!canJoin}
+        disabled={!enabled}
         onClick={() => {
-          if (!canJoin) return;
+          if (!enabled) return;
           // Don't re-stamp joined when already on the call — just bring
           // the call surface back to front.
           if (!isCallOpen) void onJoin?.();
@@ -7998,33 +8022,41 @@ const Sidebar = memo(function Sidebar({
   }, [connectRequest]);
 
   // Distinct engineers for the picker (most-recent first), carrying each
-  // engineer's user_id so Connect can ring exactly that engineer. engineerId
-  // is taken from the most recent session that actually HAS a claimed_by, so a
-  // newer alias-only/legacy row doesn't wipe out a known id.
+  // engineer's user_id so Connect can ring exactly that engineer. Dedupe is
+  // by user_id (claimed_by), NOT display name — the same engineer can appear
+  // under different aliases across sessions (e.g. "Luca" is an alias of
+  // "gtlengineer"), and those must collapse into ONE row. Alias-only/legacy
+  // rows with no claimed_by resolve through a name→id map first; names that
+  // never had an id anywhere fall back to name-keyed dedupe as before.
   const pickerEngineers = useMemo<
     { name: string; lastDate: string; engineerId: string | null }[]
   >(() => {
     if (!pickerProjectId) return [];
+    // Alias resolution: any agent name that EVER appeared on a session with
+    // a claimed_by maps to that user_id, so a legacy id-less row for the
+    // same name doesn't surface as a duplicate engineer.
+    const nameToId = new Map<string, string>();
+    for (const s of past) {
+      if (s.agent && s.engineerId && !nameToId.has(s.agent))
+        nameToId.set(s.agent, s.engineerId);
+    }
     const seen = new Map<
       string,
       { name: string; lastDate: string; engineerId: string | null }
     >();
     const consider = (s: PastSession) => {
       if (!s.agent) return;
-      const existing = seen.get(s.agent);
+      const id = s.engineerId ?? nameToId.get(s.agent) ?? null;
+      const key = id ?? `name:${s.agent}`;
+      const existing = seen.get(key);
       if (!existing) {
-        seen.set(s.agent, {
-          name: s.agent,
-          lastDate: s.date,
-          engineerId: s.engineerId,
-        });
+        // Rows are newest-first, so the first row seen for an engineer
+        // carries their most recent display alias.
+        seen.set(key, { name: s.agent, lastDate: s.date, engineerId: id });
         return;
       }
       if (new Date(s.date) > new Date(existing.lastDate))
         existing.lastDate = s.date;
-      // Keep the first non-null id we encounter (rows are newest-first).
-      if (!existing.engineerId && s.engineerId)
-        existing.engineerId = s.engineerId;
     };
     for (const s of past) if (s.projectId === pickerProjectId) consider(s);
     // Brand-new project with no history yet → fall back to all recent engineers.
@@ -10314,7 +10346,7 @@ function ConnectFlowModal({
                       : "offline";
                   return (
                     <EngineerPickerRow
-                      key={eng.name}
+                      key={eng.engineerId ?? eng.name}
                       engineerName={eng.name}
                       lastSessionDate={eng.lastDate}
                       availability={availability}
