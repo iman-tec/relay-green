@@ -843,6 +843,30 @@ function ProfileButton({
     };
   }, [email, onEmailResolved]);
 
+  // Engineer ALIAS — the customer-facing pseudonym (e.g. "Sky") from
+  // engineer_profiles.display_alias. Shown as the chip's primary name;
+  // the raw email stays in the dropdown header + hover tooltip.
+  const [alias, setAlias] = useState<string | null>(null);
+  useEffect(() => {
+    if (!engineer) return;
+    let cancelled = false;
+    (async () => {
+      const sb = supabaseRef.current;
+      const { data: u } = await sb.auth.getUser();
+      if (cancelled || !u.user) return;
+      const { data } = await sb
+        .from("engineer_profiles")
+        .select("display_alias")
+        .eq("user_id", u.user.id)
+        .maybeSingle();
+      if (!cancelled && data?.display_alias)
+        setAlias(data.display_alias as string);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [engineer]);
+
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
       if (!ref.current?.contains(e.target as Node)) setOpen(false);
@@ -887,7 +911,15 @@ function ProfileButton({
   };
 
   const userEmail = email;
-  const userInitials = initials(userEmail || "??");
+  const displayName = alias || userEmail || "—";
+  const userInitials = alias
+    ? alias
+        .split(/\s+/)
+        .map((w) => w[0])
+        .slice(0, 2)
+        .join("")
+        .toUpperCase()
+    : initials(userEmail || "??");
   // Chip shows the *top* role per the hierarchy with a "+N" hint when the
   // user holds more than one. The full list lives on the hover tooltip
   // (and inside the dropdown) so the chip stays compact.
@@ -920,12 +952,12 @@ function ProfileButton({
           {userInitials}
         </span>
         {!collapsed && (
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1" title={userEmail || undefined}>
             <div
               className="truncate text-[12px] font-medium"
               style={{ color: "var(--text)" }}
             >
-              {userEmail || "—"}
+              {displayName}
             </div>
             <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
               {roleText}
