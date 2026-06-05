@@ -7155,11 +7155,20 @@ function CallHeaderActions({
   // even before any engineer is added — so a supervisor + customer can talk.
   const apptReady =
     session.is_appointment === true && !!session.supervisor_joined_at;
+  // "The engineer has a call running" — belt and braces. callStarted comes
+  // from the "Zoom meeting started" chat message, but a dropped realtime
+  // event must not strand the customer with a dead button, so we also
+  // trust the session row itself: engineer_joined_at / a joining-live-grace
+  // status only ever happen after someone actually joined the call.
+  const engineerOnCall =
+    callStarted ||
+    !!session.engineer_joined_at ||
+    ["joining", "live", "grace"].includes(session.status);
   // Stays ENABLED while the customer is on the call (isCallOpen) — the
   // button reads "You're on the call" and clicking just re-surfaces the
   // CallSurface (a no-op when it's already mounted). Greying it out
   // mid-call made the header look broken.
-  const canJoin = callStarted && (isLiveish || apptReady);
+  const canJoin = engineerOnCall && (isLiveish || apptReady);
   const tooltip = isCallOpen
     ? "You're on the call"
     : canJoin
