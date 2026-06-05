@@ -478,14 +478,18 @@ export function NotificationBell({
         className="relative flex size-9 items-center justify-center rounded-full transition-colors hover:bg-black/5 max-lg:size-11 dark:hover:bg-white/10"
         style={{ color: "var(--text-muted)" }}
       >
-        <Bell size={18} />
+        <Bell size={17} strokeWidth={1.75} />
+        {/* Dot, not a number — consistent with the Scheduled/Contracts
+            cluster; the count lives in the aria-label + panel itself. */}
         {unread > 0 && (
           <span
-            className="absolute -top-0.5 -right-0.5 inline-flex min-w-[16px] items-center justify-center rounded-full px-1 text-[9px] font-bold text-white"
-            style={{ background: "var(--risk)" }}
-          >
-            {unread > 9 ? "9+" : unread}
-          </span>
+            aria-hidden
+            className="absolute top-1 right-1 size-2 rounded-full"
+            style={{
+              background: "var(--risk)",
+              boxShadow: "0 0 0 2px var(--background)",
+            }}
+          />
         )}
       </button>
 
