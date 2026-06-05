@@ -260,27 +260,27 @@ export function EngineerAlerts() {
                 {n.detail}
               </div>
               {n.kind === "bid" && (
-                <div className="mt-1.5 flex justify-center">
-                  <button
-                    type="button"
-                    onClick={() => createBid(n)}
-                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold text-white transition-[filter] hover:brightness-110"
-                    style={{ backgroundColor: "var(--primary)" }}
-                  >
-                    <FileText size={11} /> Create bid
-                  </button>
-                </div>
+                // Action sits LEFT-ALIGNED with the text column (not
+                // floated to the centre of the card) so the toast reads
+                // top-to-bottom: title → detail → action.
+                <button
+                  type="button"
+                  onClick={() => createBid(n)}
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] leading-none font-semibold text-white transition-[filter] hover:brightness-110"
+                  style={{ backgroundColor: "var(--primary)" }}
+                >
+                  <FileText size={11} /> Create bid
+                </button>
               )}
             </div>
+            {/* Dismiss — anchored to the TITLE row (top-right), matching the
+                customer toast; ghost circle, no border. */}
             <button
               type="button"
               aria-label="Dismiss notification"
               onClick={() => dismiss(n)}
-              className="inline-flex size-6 shrink-0 items-center justify-center self-center rounded-md border transition-colors hover:bg-black/[0.06] dark:hover:bg-white/[0.08]"
-              style={{
-                borderColor: "color-mix(in srgb, var(--text) 14%, transparent)",
-                color: "var(--text-muted)",
-              }}
+              className="-mt-0.5 -mr-1 inline-flex size-6 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-black/10 dark:hover:bg-white/10"
+              style={{ color: "var(--text-muted)" }}
             >
               <X size={13} />
             </button>
