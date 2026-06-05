@@ -20,8 +20,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { openAssistantTab } from "@/lib/relay/assistantTab";
 
-const SIZE = 48; // px — ≥44px touch target
-const MARGIN = 8; // viewport clamp margin
+// Sized + positioned to PAIR with the floating chat dock's launcher
+// (FloatingDock: 56px bubble, 12px margin, bottom-right): same diameter,
+// same right edge, stacked one slot ABOVE it with a 10px gap so the two
+// buttons read as a vertical pair and never overlap.
+const SIZE = 56; // px — matches the chat dock launcher
+const MARGIN = 12; // matches the chat dock margin
+const STACK_GAP = 10; // gap between this and the chat launcher below
 const DRAG_THRESHOLD = 5; // px of travel that flips a click into a drag
 
 export function AssistantLauncher({
@@ -52,12 +57,17 @@ export function AssistantLauncher({
     };
   }, []);
 
-  // Default: bottom-right, lifted well above the bottom edge so it clears
-  // call controls; right side is free (End-session lives top-right, far
-  // from this corner). Recomputed fresh on every mount — no persistence.
+  // Default: bottom-right, exactly ONE slot above the chat dock's
+  // launcher (same right edge, same size) so the pair stacks cleanly
+  // without overlap. Recomputed fresh on every mount — no persistence.
   useEffect(() => {
     const place = () =>
-      setPos(clamp(window.innerWidth - SIZE - 20, window.innerHeight - 96));
+      setPos(
+        clamp(
+          window.innerWidth - SIZE - MARGIN,
+          window.innerHeight - SIZE - MARGIN - (SIZE + STACK_GAP)
+        )
+      );
     place();
     const onResize = () => setPos((p) => (p ? clamp(p.x, p.y) : p));
     window.addEventListener("resize", onResize);

@@ -312,15 +312,15 @@ export function CallSurfaceInner({
           <div className="absolute inset-0">
             {wideTiles ? (
               // Engineer session view: tiles fill the full width as one
-              // equal-width row at a fixed height — no centred-with-margins
-              // gallery, and height stays put (width-only).
+              // equal-width row AND stretch to the pane's full height —
+              // the call owns the whole stage now (the inline assistant
+              // panel is gone), so a fixed 340px row left a dead void
+              // under the videos.
               <TileGrid
                 self={call.self}
                 participants={call.participants}
                 client={call.client}
                 forceSideBySide
-                // Solo → fill the whole pane; 2+ → fixed-height row.
-                tileHeightPx={inlineTileCount <= 1 ? undefined : 340}
               />
             ) : (
               <TileGrid
