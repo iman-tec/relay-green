@@ -61,6 +61,8 @@ import {
   Mic,
   Play,
   Pause,
+  SlidersHorizontal,
+  Archive,
   Download,
   Music,
   AudioLines,
@@ -82,7 +84,6 @@ import {
 } from "@/app/_components/MeetingSummaryEntry";
 import { PaywallModal } from "@/app/_components/PaywallModal";
 import { AppointmentPopup } from "@/app/_components/AppointmentPopup";
-import { UpcomingSessionBanner } from "@/app/_components/UpcomingSessionBanner";
 import {
   ChatComposer,
   speechRecognitionErrorMessage,
@@ -1168,6 +1169,8 @@ export function RoomClient() {
       setViewingPastId(null);
       setPendingDraft(null);
       setSelectedProjectId(null);
+      // Starting a session exits any open center view.
+      setCenterView(null);
 
       if (!projectId) {
         // Fresh project → wizard. It creates the project, writes the intake,
@@ -1331,6 +1334,10 @@ export function RoomClient() {
   // can't be selected (handled at the sidebar level).
   const handleSelectProject = useCallback((projectId: string | null) => {
     setSelectedProjectId((prev) => (prev === projectId ? null : projectId));
+    // Sidebar navigation exits any open center view (Contract Management /
+    // Scheduled / Projects) — clicking a project while a center view was
+    // up previously changed state invisibly behind it.
+    setCenterView(null);
     // Selecting a project means the customer wants to see that project's
     // context — auto-close every side-track view so navigation feels
     // natural. Prep is included: clicking a different project's header
@@ -1359,6 +1366,8 @@ export function RoomClient() {
   const handleViewPast = useCallback((id: string | null) => {
     setViewingPastId(id);
     if (id) setProjectFormOpen(false);
+    // Sidebar navigation exits any open center view.
+    setCenterView(null);
     // Opening / closing a past session: leave any side-track view behind.
     setAccountTab(null);
     setLegalView(null);
@@ -1719,6 +1728,10 @@ export function RoomClient() {
     setPendingDraft(null);
     setPreparingProjectId(null);
     setPreparingDraftId(null);
+    // Exit any open center view (Projects / Scheduled / Contracts) —
+    // Home must ALWAYS land on the landing, and previously it didn't
+    // while a center view was up.
+    setCenterView(null);
     // Also dismiss the EndedSessionReview if it's currently up — without
     // this, a customer who just finished a session and clicks Home stays
     // stuck on the "Waiting for Zoom summary…" review until they hard
@@ -2235,8 +2248,9 @@ export function RoomClient() {
       )}
       {callBlockMsg && <ErrorToast message={callBlockMsg} />}
 
-      {/* Upcoming scheduled-session indicator + at-slot-time prompt. */}
-      <UpcomingSessionBanner />
+      {/* At-slot-time appointment prompt. The persistent "Scheduled
+          session · …" banner was removed from the center screen — that
+          information lives in the NotificationBell feed instead. */}
       <AppointmentPopup />
       {paidToast && <SuccessToast message={paidToast} />}
 
@@ -7017,6 +7031,13 @@ const Sidebar = memo(function Sidebar({
   // returning users see the full hierarchy on each fresh /room landing.
   const [collapsed, setCollapsed] = useState<boolean>(false);
   const toggleCollapsed = (next: boolean) => setCollapsed(next);
+  // Connect ball — marketing-style squash-bounce on press (class toggle).
+  const connectBallRef = useRef<HTMLButtonElement>(null);
+  // Exclusive accordion: only ONE project expanded at a time — expanding
+  // another collapses the previous (Claude-style filing cabinet).
+  const [expandedProjectKey, setExpandedProjectKey] = useState<string | null>(
+    null
+  );
   // Drag-to-resize the expanded sidebar (handle on its right edge).
   const leftResize = useResizableWidth({
     storageKey: "relay:room-left-sidebar-width",
@@ -7083,7 +7104,25 @@ const Sidebar = memo(function Sidebar({
   // Session list defaults — the filter/sort popover was removed; the projects
   // view shows all sessions grouped by project, most-recent first.
   const [statusFilter] = useState<"active" | "all" | "completed">("all");
-  const [groupBy] = useState<"project" | "date">("project");
+  // Group-by: "project" (accordions, default) · "date" (flat list bucketed
+  // Today/Yesterday/…) · "none" (flat recent-first list, no buckets).
+  // Driven by the minimal sliders icon in the Projects header (Claude-style).
+  const [groupBy, setGroupBy] = useState<"project" | "date" | "none">(
+    "project"
+  );
+  const [groupMenuOpen, setGroupMenuOpen] = useState(false);
+  useEffect(() => {
+    if (!groupMenuOpen) return;
+    const handler = () => setGroupMenuOpen(false);
+    const t = setTimeout(() => document.addEventListener("click", handler), 0);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener("click", handler);
+    };
+  }, [groupMenuOpen]);
+  // Inline search — collapsed to an icon in the Projects header; clicking
+  // expands a compact input row (the old always-visible bar was removed).
+  const [searchOpen, setSearchOpen] = useState(false);
   const [sortBy] = useState<"recent" | "oldest" | "title">("recent");
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(() => {
     if (typeof window === "undefined") return new Set();
@@ -7113,6 +7152,70 @@ const Sidebar = memo(function Sidebar({
     });
   }, []);
 
+  // PROJECT-level pin + archive (kebab menu actions). Both localStorage-
+  // backed like session pins: pinned projects float to the top of the
+  // accordion list; archived projects move into a collapsed "Archived"
+  // group at the bottom and can be unarchived from the same menu.
+  const [pinnedProjectIds, setPinnedProjectIds] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const stored = window.localStorage.getItem("relay_pinned_project_ids");
+      return new Set<string>(stored ? (JSON.parse(stored) as string[]) : []);
+    } catch {
+      return new Set();
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        "relay_pinned_project_ids",
+        JSON.stringify([...pinnedProjectIds])
+      );
+    } catch {
+      /* silent */
+    }
+  }, [pinnedProjectIds]);
+  const togglePinProject = useCallback((projectId: string) => {
+    setPinnedProjectIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(projectId)) next.delete(projectId);
+      else next.add(projectId);
+      return next;
+    });
+  }, []);
+  const [archivedProjectIds, setArchivedProjectIds] = useState<Set<string>>(
+    () => {
+      if (typeof window === "undefined") return new Set();
+      try {
+        const stored = window.localStorage.getItem(
+          "relay_archived_project_ids"
+        );
+        return new Set<string>(stored ? (JSON.parse(stored) as string[]) : []);
+      } catch {
+        return new Set();
+      }
+    }
+  );
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        "relay_archived_project_ids",
+        JSON.stringify([...archivedProjectIds])
+      );
+    } catch {
+      /* silent */
+    }
+  }, [archivedProjectIds]);
+  const toggleArchiveProject = useCallback((projectId: string) => {
+    setArchivedProjectIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(projectId)) next.delete(projectId);
+      else next.add(projectId);
+      return next;
+    });
+  }, []);
+  const [archivedOpen, setArchivedOpen] = useState(false);
+
   // Engineer presence is now read live per-engineer inside the ConnectFlow
   // picker — each row queries engineer_profiles.presence_state via display
   // alias and renders the right Online / Busy / Offline badge accordingly.
@@ -7125,7 +7228,25 @@ const Sidebar = memo(function Sidebar({
   //   "details"         — compact form: project type + stack (new project)
   //   "name"            — pick a name; submit creates project + (optionally) starts session
   const [connectFlow, setConnectFlow] = useState<
-    null | "choose" | "existing" | "engineerPicker" | "details" | "name"
+    | null
+    | "choose"
+    | "need"
+    | "existing"
+    | "engineerPicker"
+    | "details"
+    | "name"
+  >(null);
+  // Q3 of the new-project wizard — when does the customer need the human?
+  //   now       → ring an engineer immediately (engineer picker)
+  //   this_week → engineer scheduling (matched engineer's calendar)
+  //   planning  → supervisor path (quote → supervisor appointment)
+  const [newProjectUrgency, setNewProjectUrgency] = useState<
+    "now" | "this_week" | "planning"
+  >("now");
+  // When the wizard's launch/support bypass (or the planning urgency)
+  // hands off to the quote modal, preselect the relevant project.
+  const [quoteInitialProjectId, setQuoteInitialProjectId] = useState<
+    string | null
   >(null);
   // The project the user picked in step "existing" (or that came from a
   // per-project phone button shortcut). Drives what the "engineerPicker"
@@ -7168,7 +7289,8 @@ const Sidebar = memo(function Sidebar({
     const projectId = connectRequest.projectId;
     if (!projectId) {
       setConnectFlowMode("connect");
-      setConnectFlow("choose");
+      // First-time customers skip the new-vs-existing chooser.
+      setConnectFlow(projects.length === 0 ? "need" : "choose");
       return;
     }
     const distinctEngineers = new Set<string>();
@@ -7273,6 +7395,7 @@ const Sidebar = memo(function Sidebar({
     setNewProjectFrontend([]);
     setNewProjectName("");
     setNewProjectSubmitting(false);
+    setNewProjectUrgency("now");
   };
 
   useEffect(() => {
@@ -7748,30 +7871,23 @@ const Sidebar = memo(function Sidebar({
         onPointerDown={leftResize.startDrag}
         className={`absolute top-0 right-0 z-30 h-full w-1.5 translate-x-1/2 cursor-col-resize transition-colors hover:bg-[var(--primary)] ${leftResize.dragging ? "bg-[var(--primary)]" : ""}`}
       />
-      {/* Brand row — wordmark (clickable, returns home) + theme
-          triplet + flex spacer + collapse toggle. The wordmark is
-          itself the Home affordance (universal convention), so the
-          previous duplicate Home icon was removed: it stole ~28px
-          of header width and was forcing the wordmark to wrap on
-          narrow sidebars. The wordmark also gets `whitespace-nowrap`
-          + `shrink-0` from Wordmark.tsx so it stays atomic even
-          when squeezed. */}
-      <div className="flex h-12 min-w-0 items-center gap-1.5 px-3">
+      {/* Brand row — three zones: wordmark LEFT (clickable, returns home),
+          theme triplet CENTERED, Home + collapse RIGHT. The standalone
+          "Online" pill that used to sit under this row was removed — the
+          wordmark's green dot already signals liveness. */}
+      <div className="flex h-12 min-w-0 items-center px-3">
         <button
           type="button"
           onClick={onGoHome}
           title="Return to the home landing"
           aria-label="Home"
-          className="min-w-0 shrink overflow-hidden rounded-md transition-opacity hover:opacity-80"
+          className="min-w-0 shrink-0 overflow-hidden rounded-md transition-opacity hover:opacity-80"
         >
           <Wordmark size="md" />
         </button>
-        <ThemeTriplet className="shrink-0" />
-        {/* Explicit Home icon — restored per user request. Sits next to
-            the ThemeTriplet so the two "global affordances" (theme +
-            home) cluster together. The wordmark to the left also
-            navigates home (universal convention), so this is a
-            redundant-but-discoverable second path. */}
+        <div className="flex min-w-0 flex-1 justify-center">
+          <ThemeTriplet className="shrink-0" />
+        </div>
         <button
           type="button"
           onClick={onGoHome}
@@ -7782,7 +7898,6 @@ const Sidebar = memo(function Sidebar({
         >
           <Home size={15} />
         </button>
-        <div className="flex-1" />
         <button
           onClick={() => toggleCollapsed(true)}
           title="Collapse sidebar"
@@ -7791,19 +7906,6 @@ const Sidebar = memo(function Sidebar({
         >
           <PanelLeftClose size={16} />
         </button>
-      </div>
-
-      {/* Online status pill — Order 1: the "Online" indicator the mock shows
-          just below the wordmark. Pulses while we have an active session,
-          calm dot otherwise. */}
-      <div className="px-3 pb-2">
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--primary-tint)] px-2.5 py-1 text-[11px] font-medium text-[var(--primary-hover)]">
-          <span aria-hidden className="relative inline-flex size-1.5">
-            <span className="absolute inset-0 inline-flex animate-ping rounded-full bg-[var(--primary)] opacity-60" />
-            <span className="relative inline-flex size-1.5 rounded-full bg-[var(--primary)]" />
-          </span>
-          Online
-        </span>
       </div>
 
       {/* "Connect to Relay Engineer" — the top entry point into the
@@ -7818,21 +7920,19 @@ const Sidebar = memo(function Sidebar({
           engineers per project, this top button is intentionally
           engineer-agnostic — clicking it always opens the New-vs-Existing
           chooser. */}
-      <div className="flex flex-col gap-2 px-2 pb-1">
-        <div className="relative flex flex-col items-center gap-2 pb-0">
+      <div className="flex flex-col px-2 pb-1">
+        <div className="relative flex flex-col items-center pb-1">
           {/* Pulsing aura — sits behind the ball, scaled larger via inset
             negative + opacity-pulses with the heartbeat rhythm. Color
             derived from var(--primary) via color-mix so the aura
-            matches whichever brand-green the active theme resolves to
-            (was hardcoded rgba(77,200,109) — a muted forest green
-            that didn't match the platform palette). */}
+            matches whichever brand-green the active theme resolves to. */}
           <span
             aria-hidden="true"
             className="rk-connect-aura pointer-events-none absolute"
             style={{
-              top: 4,
-              width: 120,
-              height: 120,
+              top: 2,
+              width: 88,
+              height: 88,
               borderRadius: "50%",
               background:
                 "radial-gradient(circle, " +
@@ -7844,65 +7944,99 @@ const Sidebar = memo(function Sidebar({
             }}
           />
           <button
+            ref={connectBallRef}
             type="button"
-            onClick={() => setConnectFlow("choose")}
+            onClick={() => {
+              // Marketing-site press: squash-bounce on every click. Remove
+              // + reflow + re-add so rapid clicks restart the animation.
+              const el = connectBallRef.current;
+              if (el) {
+                el.classList.remove("is-pressing");
+                void el.offsetWidth;
+                el.classList.add("is-pressing");
+              }
+              // First-time customers (no projects yet) land straight on
+              // Question 1 — no point asking "new or existing?".
+              setConnectFlow(projects.length === 0 ? "need" : "choose");
+            }}
+            onAnimationEnd={() =>
+              connectBallRef.current?.classList.remove("is-pressing")
+            }
             aria-label="Connect to a Relay engineer"
-            className="rk-connect-ball relative flex h-[120px] w-[120px] flex-col items-center justify-center rounded-full text-center transition-transform hover:scale-[1.03] focus-visible:ring-4 focus-visible:outline-none active:scale-[0.97]"
+            className="rk-connect-ball relative h-[88px] w-[88px] rounded-full focus-visible:ring-4 focus-visible:outline-none"
             style={{
-              // Ball gradient now keyed off var(--primary) — same green
-              // family as every other brand element on the page. Was the
-              // muted #4d6b40/#3f5c34 forest pair which read as a
-              // separate, dated color. The two overlay highlight/shadow
-              // gradients stay the same to keep the 3D-button look.
+              // Matte marketing-sphere shading, but keyed off var(--primary)
+              // so the ball wears the SAME green as the rest of the room
+              // (and follows the active theme) instead of the muted
+              // brand-site forest palette.
               background:
-                "radial-gradient(circle at 30% 25%, rgba(255,255,255,0.32) 0%, rgba(255,255,255,0) 38%), " +
-                "radial-gradient(circle at 70% 75%, rgba(0,0,0,0.20) 0%, rgba(0,0,0,0) 55%), " +
-                "radial-gradient(circle at 50% 50%, " +
-                "var(--primary) 30%, " +
-                "color-mix(in srgb, var(--primary) 70%, #000) 100%)",
+                "radial-gradient(circle at 34% 28%, " +
+                "color-mix(in srgb, var(--primary) 40%, #fff) 0%, " +
+                "color-mix(in srgb, var(--primary) 72%, #fff) 16%, " +
+                "var(--primary) 42%, " +
+                "color-mix(in srgb, var(--primary) 78%, #000) 72%, " +
+                "color-mix(in srgb, var(--primary) 55%, #000) 100%)",
               boxShadow:
-                "0 18px 32px color-mix(in srgb, var(--primary) 32%, transparent), " +
-                "0 6px 12px color-mix(in srgb, var(--primary) 22%, transparent), " +
-                "inset 0 -8px 14px rgba(0, 0, 0, 0.22), " +
-                "inset 0 8px 14px rgba(255, 255, 255, 0.12)",
+                "inset -12px -18px 28px rgba(0, 0, 0, 0.32), " +
+                "inset 9px 12px 22px rgba(255, 255, 255, 0.22), " +
+                "0 18px 36px color-mix(in srgb, var(--primary) 26%, transparent), " +
+                "0 5px 9px color-mix(in srgb, var(--primary) 18%, transparent)",
               zIndex: 1,
             }}
+          />
+          <p
+            className="relative z-[1] mt-2.5 text-center text-[10px] font-bold tracking-[0.24em] uppercase select-none"
+            style={{
+              color: "var(--text-muted)",
+              fontFamily: "var(--font-jetbrains)",
+            }}
           >
-            <Phone
-              size={18}
-              style={{ color: "#fff", opacity: 0.9, marginBottom: 5 }}
-            />
-            <span
-              className="px-3 text-[11px] leading-tight font-semibold"
-              style={{
-                color: "#fff",
-                textShadow: "0 1px 2px rgba(0,0,0,0.25)",
-              }}
-            >
-              Connect to
-              <br />
-              Relay Engineer
-            </span>
-          </button>
+            Let&apos;s Relay
+          </p>
           {/* Scoped keyframes for the heartbeat + aura. lub-dub rhythm: two
             beats per 1.6s cycle (14% peak, 28% relax, 42% bigger peak,
             then long rest). Aura scales + opacity in lockstep; ball does
             a more subtle scale to avoid fighting the hover/active
             transforms. Respects prefers-reduced-motion. */}
           <style jsx>{`
+            /* Marketing-site sphere behavior: the BALL itself rests calm
+               (no constant pulsing) with a smooth hover lift + active
+               press; only the AURA breathes (lub-dub heartbeat). Click
+               fires the squash-bounce squish — same keyframe shape as
+               marketing.css r-press-squish, scaled for the 88px ball. */
             .rk-connect-aura {
               animation: rk-connect-aura 1.6s cubic-bezier(0.4, 0, 0.2, 1)
                 infinite;
               transform-origin: center;
             }
             .rk-connect-ball {
-              animation: rk-connect-ball 1.6s cubic-bezier(0.4, 0, 0.2, 1)
-                infinite;
               transform-origin: center;
+              transition:
+                transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+                box-shadow 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
             }
-            .rk-connect-ball:hover,
+            .rk-connect-ball:hover {
+              transform: translateY(-3px) scale(1.03);
+            }
             .rk-connect-ball:active {
-              animation-play-state: paused;
+              transform: translateY(2px) scale(0.97);
+            }
+            .rk-connect-ball.is-pressing {
+              animation: rk-press-squish 460ms cubic-bezier(0.2, 0.8, 0.2, 1);
+            }
+            @keyframes rk-press-squish {
+              0% {
+                transform: translateY(0) scale(1, 1);
+              }
+              35% {
+                transform: translateY(5px) scale(0.92, 0.86);
+              }
+              62% {
+                transform: translateY(-3px) scale(1.04, 1.05);
+              }
+              100% {
+                transform: translateY(0) scale(1, 1);
+              }
             }
             @keyframes rk-connect-aura {
               0% {
@@ -7927,23 +8061,10 @@ const Sidebar = memo(function Sidebar({
                 opacity: 0.45;
               }
             }
-            @keyframes rk-connect-ball {
-              0%,
-              70%,
-              100% {
-                transform: scale(1);
-              }
-              14% {
-                transform: scale(1.04);
-              }
-              42% {
-                transform: scale(1.06);
-              }
-            }
             @media (prefers-reduced-motion: reduce) {
               .rk-connect-aura,
               .rk-connect-ball {
-                animation: none;
+                animation: none !important;
               }
               .rk-connect-aura {
                 opacity: 0.6;
@@ -7951,46 +8072,8 @@ const Sidebar = memo(function Sidebar({
               }
             }
           `}</style>
-          <p
-            className="mt-3 text-center text-[11px]"
-            style={{ color: "var(--text-muted)" }}
-          >
-            {past.some((s) => !!s.agent)
-              ? "Pick a project to see your engineers"
-              : "Your first engineer pairs on this call"}
-          </p>
-        </div>
-
-        {/* Search across all past sessions (title / engineer / project). */}
-        <div
-          className="flex items-center gap-2 rounded-lg border px-2.5 py-1.5"
-          style={{
-            borderColor: "var(--border)",
-            backgroundColor: "var(--background)",
-          }}
-        >
-          <Search
-            size={14}
-            style={{ color: "var(--text-muted)", flexShrink: 0 }}
-          />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search sessions and projects"
-            className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:opacity-60"
-            style={{ color: "var(--text)" }}
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery("")}
-              aria-label="Clear search"
-              className="shrink-0 opacity-60 transition-opacity hover:opacity-100"
-              style={{ color: "var(--text-muted)" }}
-            >
-              <X size={12} />
-            </button>
-          )}
+          {/* (Caption + standalone search bar removed — search now lives
+              as a compact icon in the Projects header below.) */}
         </div>
       </div>
 
@@ -8049,148 +8132,273 @@ const Sidebar = memo(function Sidebar({
             or fill; the header + rows carry their own hover highlight. The
             list scrolls internally (up to ~10 rows) with a stationary header;
             the surrounding flex-1 region keeps the bottom pills pinned. */}
-        <div className="flex flex-col overflow-hidden rounded-xl">
-          {/* Stationary header — shrink-0 keeps it out of the scroll area. */}
-          <div className="flex shrink-0 items-center gap-1.5 px-3 py-2">
-            <Folder size={12} style={{ color: "var(--primary)" }} />
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl">
+          {/* Stationary header — minimal Claude-style: a quiet "Projects"
+              label left, three icon-only actions right (search toggle,
+              new project, group-by). shrink-0 keeps it out of the scroll
+              area. */}
+          <div className="flex shrink-0 items-center px-2 py-1">
             <span
-              className="text-[12px] font-semibold"
-              style={{ color: "var(--text)" }}
+              className="text-[11px] font-semibold"
+              style={{ color: "var(--text-muted)" }}
             >
               Projects
             </span>
-            <button
-              onClick={() => {
-                setConnectFlowMode("create-only");
-                setConnectFlow("details");
-              }}
-              title="Create a new project"
-              aria-label="Create a new project"
-              className="group/cta ml-auto inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-medium transition-colors hover:bg-[var(--surface-raised)]"
-              style={{ color: "var(--primary-hover)" }}
-            >
-              <Plus
-                size={12}
-                className="transition-transform duration-150 ease-out group-hover/cta:rotate-90"
-              />
-              New Project
-            </button>
-          </div>
-          {/* The scrollable list below the header — capped to ~10 project rows
-              (~34.75px each); the rest scroll inside (scrollbar hidden). The
-              static header above never moves (it's OUTSIDE this viewport).
-              The full list lives on the "All projects" route (Phase 2). */}
-          <div
-            className="hide-scrollbar overflow-y-auto"
-            style={{ maxHeight: "21.5rem" }}
-          >
-            {/* Pinned section — sessions the customer is actively working on.
-            Renders BELOW the sticky header so it scrolls with the list
-            (a long pin list shouldn't pin itself). Hidden when nothing is
-            pinned so we don't show an empty header. */}
-            {(() => {
-              const pinnedSessions = past
-                .filter((s) => pinnedIds.has(s.id))
-                // Preserve pin-insertion order via the Set iteration order so a
-                // freshly-pinned session bubbles to the top.
-                .sort((a, b) => {
-                  const ids = [...pinnedIds];
-                  return ids.indexOf(a.id) - ids.indexOf(b.id);
-                });
-              if (pinnedSessions.length === 0) return null;
-              return (
-                <div className="mt-1 mb-1 px-2.5">
+            <div className="ml-auto flex items-center gap-0.5">
+              <button
+                onClick={() => {
+                  setSearchOpen((v) => {
+                    if (v) setSearchQuery("");
+                    return !v;
+                  });
+                }}
+                title="Search sessions and projects"
+                aria-label="Search"
+                aria-pressed={searchOpen}
+                className="flex h-6 w-6 items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-raised)]"
+                style={{
+                  color: searchOpen ? "var(--primary)" : "var(--text-muted)",
+                }}
+              >
+                <Search size={13} />
+              </button>
+              <button
+                onClick={() => {
+                  setConnectFlowMode("create-only");
+                  setConnectFlow("details");
+                }}
+                title="New project"
+                aria-label="Create a new project"
+                className="group/cta flex h-6 w-6 items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-raised)]"
+                style={{ color: "var(--text-muted)" }}
+              >
+                <Plus
+                  size={14}
+                  className="transition-transform duration-150 ease-out group-hover/cta:rotate-90"
+                />
+              </button>
+              <div className="relative">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setGroupMenuOpen((v) => !v);
+                  }}
+                  title="Group by"
+                  aria-label="Group by"
+                  aria-expanded={groupMenuOpen}
+                  className="flex h-6 w-6 items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-raised)]"
+                  style={{
+                    color:
+                      groupBy !== "project"
+                        ? "var(--primary)"
+                        : "var(--text-muted)",
+                  }}
+                >
+                  <SlidersHorizontal size={13} />
+                </button>
+                {groupMenuOpen && (
                   <div
-                    className="mb-1 px-0.5 text-[10px] font-semibold tracking-[0.1em] uppercase"
-                    style={{ color: "var(--primary-hover)" }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute top-full right-0 z-40 mt-1 w-36 overflow-hidden rounded-lg border py-1 shadow-xl"
+                    style={{
+                      borderColor: "var(--border)",
+                      backgroundColor: "var(--surface)",
+                      boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+                    }}
                   >
-                    Pinned
-                  </div>
-                  <div className="flex flex-col gap-0.5">
-                    {pinnedSessions.map((s) => (
-                      <SessionRowFlat
-                        key={s.id}
-                        session={s}
-                        isPinned
-                        isViewing={viewingPastId === s.id}
-                        isCurrent={
-                          !!session &&
-                          s.id === session.id &&
-                          !["ended", "cancelled", "abandoned"].includes(
-                            s.status
-                          )
-                        }
-                        onClick={() => onViewPast(s.id)}
-                        onTogglePin={() => togglePin(s.id)}
-                        showProjectName
-                      />
+                    <div
+                      className="px-3 pt-1 pb-1.5 text-[10px] font-semibold tracking-wider uppercase"
+                      style={{ color: "var(--text-faint)" }}
+                    >
+                      Group by
+                    </div>
+                    {(
+                      [
+                        { key: "project", label: "Project" },
+                        { key: "date", label: "Date" },
+                        { key: "none", label: "None" },
+                      ] as const
+                    ).map((opt) => (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        onClick={() => {
+                          setGroupBy(opt.key);
+                          setGroupMenuOpen(false);
+                        }}
+                        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                        style={{
+                          color:
+                            groupBy === opt.key
+                              ? "var(--text)"
+                              : "var(--text-muted)",
+                        }}
+                      >
+                        <span className="flex-1">{opt.label}</span>
+                        {groupBy === opt.key && (
+                          <Check
+                            size={12}
+                            style={{ color: "var(--primary)" }}
+                          />
+                        )}
+                      </button>
                     ))}
                   </div>
-                </div>
-              );
-            })()}
+                )}
+              </div>
+            </div>
+          </div>
+          {/* Inline search — expands under the header when the icon is on. */}
+          {searchOpen && (
+            <div
+              className="mx-2 mb-1 flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-1"
+              style={{
+                borderColor: "var(--border)",
+                backgroundColor: "var(--background)",
+              }}
+            >
+              <Search
+                size={12}
+                style={{ color: "var(--text-muted)", flexShrink: 0 }}
+              />
+              <input
+                autoFocus
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setSearchQuery("");
+                    setSearchOpen(false);
+                  }
+                }}
+                placeholder="Search…"
+                className="min-w-0 flex-1 bg-transparent text-[12px] outline-none placeholder:opacity-60"
+                style={{ color: "var(--text)" }}
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  aria-label="Clear search"
+                  className="shrink-0 opacity-60 transition-opacity hover:opacity-100"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  <X size={11} />
+                </button>
+              )}
+            </div>
+          )}
+          {/* The scrollable list below the header — fills ALL remaining
+              sidebar height (no fixed cap, no dead space underneath) and
+              scrolls internally when content overflows. The static header
+              above never moves (it's OUTSIDE this viewport). */}
+          <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto">
+            {/* (Pinned-SESSIONS section removed — pinning is project-level
+                now, via the project kebab menu.) */}
 
             {(() => {
-              // ONLY "Group by: Date" flips the sidebar from project
-              // accordions to a flat session list. Status filter operates
-              // at the project level (Active = projects not completed,
-              // Completed = projects marked completed/archived) and keeps
-              // the accordion view. Sort order applies in either view.
-              const isSessionView = groupBy === "date";
+              // "Group by: Date / None" flips the sidebar from project
+              // accordions to a flat session list (Date adds Today/
+              // Yesterday/… buckets; None is one recent-first list).
+              const isSessionView = groupBy !== "project";
 
               if (!isSessionView) {
-                // Default view — project accordions (unchanged behavior).
-                // No inner height cap: the parent body owns the single scroll,
-                // so the header stays fixed and there's no nested scrollbar.
+                // Default view — project accordions. Pinned projects float
+                // to the top (stable sort); archived projects drop into the
+                // collapsed "Archived" group rendered after the list.
+                const visible = projectGroups.filter(
+                  (g) => !archivedProjectIds.has(g.key)
+                );
+                const ordered = [...visible].sort(
+                  (a, b) =>
+                    (pinnedProjectIds.has(b.key) ? 1 : 0) -
+                    (pinnedProjectIds.has(a.key) ? 1 : 0)
+                );
+                const archived = projectGroups.filter((g) =>
+                  archivedProjectIds.has(g.key)
+                );
+                const renderAccordion = (group: ProjectGroup) => (
+                  <ProjectAccordion
+                    key={group.key}
+                    group={group}
+                    viewingPastId={viewingPastId}
+                    currentSessionId={session?.id ?? null}
+                    selectedProjectId={selectedProjectId}
+                    onViewPast={onViewPast}
+                    onStartInProject={(projectId) => {
+                      if (projectId === null) {
+                        onStartInProject(null);
+                        return;
+                      }
+                      // Cold (0 engineers) → skill-match via intake;
+                      // warm (1+) → engineerPicker step.
+                      const distinctEngineers = new Set<string>();
+                      for (const s of past) {
+                        if (s.projectId === projectId && s.agent) {
+                          distinctEngineers.add(s.agent);
+                        }
+                      }
+                      if (distinctEngineers.size >= 1) {
+                        setPickerProjectId(projectId);
+                        setConnectFlow("engineerPicker");
+                      } else {
+                        onStartInProject(projectId);
+                      }
+                    }}
+                    onRenameProject={onRenameProject}
+                    onSelectProject={onSelectProject}
+                    pinnedIds={pinnedIds}
+                    onTogglePin={togglePin}
+                    onPrepareSession={onPrepareSession}
+                    draftsTick={draftsTick}
+                    onDeleteProject={onDeleteProject}
+                    onMarkProjectComplete={onMarkProjectComplete}
+                    isProjectPinned={pinnedProjectIds.has(group.key)}
+                    onTogglePinProject={() => togglePinProject(group.key)}
+                    isProjectArchived={archivedProjectIds.has(group.key)}
+                    onToggleArchiveProject={() =>
+                      toggleArchiveProject(group.key)
+                    }
+                    open={expandedProjectKey === group.key}
+                    onToggleOpen={() =>
+                      setExpandedProjectKey((prev) =>
+                        prev === group.key ? null : group.key
+                      )
+                    }
+                  />
+                );
                 return projectGroups.length > 0 ? (
                   <div className="overflow-x-hidden">
-                    {projectGroups.map((group) => (
-                      <ProjectAccordion
-                        key={group.key}
-                        group={group}
-                        viewingPastId={viewingPastId}
-                        currentSessionId={session?.id ?? null}
-                        selectedProjectId={selectedProjectId}
-                        onViewPast={onViewPast}
-                        onStartInProject={(projectId) => {
-                          if (projectId === null) {
-                            onStartInProject(null);
-                            return;
-                          }
-                          // Count distinct engineers for the project.
-                          //   0 engineers (cold) → skill-match a new engineer
-                          //     via the existing intake flow.
-                          //   1+ engineers (warm) → engineerPicker step, which
-                          //     shows the engineer(s) by name + availability
-                          //     state (Available/Busy/Offline) with state-
-                          //     appropriate actions: Connect / Request /
-                          //     Schedule. The picker also exposes the
-                          //     "Request a different engineer" fallback so
-                          //     the client in a rush can route around a busy
-                          //     or offline engineer.
-                          const distinctEngineers = new Set<string>();
-                          for (const s of past) {
-                            if (s.projectId === projectId && s.agent) {
-                              distinctEngineers.add(s.agent);
-                            }
-                          }
-                          if (distinctEngineers.size >= 1) {
-                            setPickerProjectId(projectId);
-                            setConnectFlow("engineerPicker");
-                          } else {
-                            onStartInProject(projectId);
-                          }
-                        }}
-                        onRenameProject={onRenameProject}
-                        onSelectProject={onSelectProject}
-                        pinnedIds={pinnedIds}
-                        onTogglePin={togglePin}
-                        onPrepareSession={onPrepareSession}
-                        draftsTick={draftsTick}
-                        onDeleteProject={onDeleteProject}
-                        onMarkProjectComplete={onMarkProjectComplete}
-                      />
-                    ))}
+                    {ordered.map(renderAccordion)}
+                    {archived.length > 0 && (
+                      <div className="mt-1">
+                        <button
+                          type="button"
+                          onClick={() => setArchivedOpen((v) => !v)}
+                          aria-expanded={archivedOpen}
+                          className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-[10.5px] font-semibold tracking-wider uppercase transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                          style={{ color: "var(--text-faint)" }}
+                        >
+                          <Archive size={11} />
+                          Archived · {archived.length}
+                          <ChevronRight
+                            size={11}
+                            className="ml-auto"
+                            style={{
+                              transform: archivedOpen
+                                ? "rotate(90deg)"
+                                : "none",
+                              transition: "transform 0.15s ease",
+                            }}
+                          />
+                        </button>
+                        {archivedOpen && (
+                          <div className="opacity-70">
+                            {archived.map(renderAccordion)}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <p
@@ -8227,24 +8435,26 @@ const Sidebar = memo(function Sidebar({
                 );
               }
 
-              // Date-bucketed flat list. Sessions get grouped under
-              // Today / Yesterday / This week / Earlier headers. Project
-              // names are hidden from each row (showProjectName=false)
-              // because the bucket header is doing the temporal work and
-              // the per-row project chip becomes noise in this view —
-              // the user picked Date specifically to see sessions across
-              // projects ordered by when they happened.
-              const bucketed = bucketSessionsByDate(allSessions);
+              // Flat list. "Date" buckets sessions under Today / Yesterday /
+              // This week / Earlier headers; "None" is one recent-first
+              // list with no headers. Project names shown per-row in None
+              // mode (no bucket header to carry the context).
+              const bucketed =
+                groupBy === "date"
+                  ? bucketSessionsByDate(allSessions)
+                  : [{ label: "", sessions: allSessions }];
               return (
                 <div className="flex flex-col gap-3">
                   {bucketed.map((bucket) => (
-                    <div key={bucket.label}>
-                      <div
-                        className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] uppercase"
-                        style={{ color: "var(--text-faint)" }}
-                      >
-                        {bucket.label}
-                      </div>
+                    <div key={bucket.label || "all"}>
+                      {bucket.label && (
+                        <div
+                          className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] uppercase"
+                          style={{ color: "var(--text-faint)" }}
+                        >
+                          {bucket.label}
+                        </div>
+                      )}
                       <div className="flex flex-col gap-0.5">
                         {bucket.sessions.map((s) => (
                           <SessionRowFlat
@@ -8261,7 +8471,7 @@ const Sidebar = memo(function Sidebar({
                             }
                             onClick={() => onViewPast(s.id)}
                             onTogglePin={() => togglePin(s.id)}
-                            showProjectName={false}
+                            showProjectName={groupBy === "none"}
                           />
                         ))}
                       </div>
@@ -8271,20 +8481,8 @@ const Sidebar = memo(function Sidebar({
               );
             })()}
           </div>
-          {/* All-projects footer — opens the full Projects view in the center
-              pane (search + sort over every project). */}
-          {projectGroups.length > 0 && (
-            <button
-              type="button"
-              onClick={() => onOpenCenter("projects")}
-              className="mt-0.5 flex w-full items-center gap-1.5 rounded-md px-3 py-1.5 text-[11.5px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-              style={{ color: "var(--primary-hover)" }}
-            >
-              <Folder size={12} />
-              All projects
-              <ChevronRight size={13} className="ml-auto" />
-            </button>
-          )}
+          {/* ("All projects" footer removed — the sidebar list IS the
+              projects surface now.) */}
         </div>
       </div>
 
@@ -8375,11 +8573,10 @@ const Sidebar = memo(function Sidebar({
         </div>
       )}
 
-      {/* Profile (bottom) — extra bottom padding lifts the user pill +
-          quote shortcuts off the very edge of the viewport so the
-          eye doesn't read them as "stuck at the bottom." */}
+      {/* Profile (bottom) — flush with the viewport edge, no dead space
+          under the pill. */}
       <div
-        className="relative border-t p-2 pb-6"
+        className="relative border-t p-1.5"
         style={{ borderColor: "var(--border)" }}
       >
         <button
@@ -8455,8 +8652,11 @@ const Sidebar = memo(function Sidebar({
         <QuoteRequestModal
           kind={quoteFlow}
           projects={projects.map((p) => ({ id: p.id, name: p.name }))}
-          initialProjectId={selectedProjectId}
-          onClose={() => setQuoteFlow(null)}
+          initialProjectId={quoteInitialProjectId ?? selectedProjectId}
+          onClose={() => {
+            setQuoteFlow(null);
+            setQuoteInitialProjectId(null);
+          }}
           onCreateProject={() => {
             // Empty-state CTA: close this modal, hop into the connect
             // flow in "create-only" mode. The new-project wizard collects
@@ -8501,8 +8701,30 @@ const Sidebar = memo(function Sidebar({
           newProjectName={newProjectName}
           setNewProjectName={setNewProjectName}
           submitting={newProjectSubmitting}
-          onChooseNew={() => setConnectFlow("details")}
+          onChooseNew={() =>
+            // Connect mode runs the full 3-question wizard (need → stack →
+            // name+timing); create-only skips Q1 — it exists purely to
+            // capture project metadata.
+            setConnectFlow(connectFlowMode === "connect" ? "need" : "details")
+          }
           onChooseExisting={() => setConnectFlow("existing")}
+          onNeed={(need) => {
+            if (need === "building") {
+              // Building → continue the wizard (stack question next).
+              setConnectFlow("details");
+              return;
+            }
+            // Launch / Support BYPASS — straight into the quote flow
+            // (golive = ship it, maintain = ongoing support). The quote
+            // modal owns project pick + comments from here.
+            setConnectFlow(null);
+            setConnectFlowMode("connect");
+            resetNewProjectForm();
+            setQuoteInitialProjectId(selectedProjectId);
+            setQuoteFlow(need === "launch" ? "golive" : "maintain");
+          }}
+          urgency={newProjectUrgency}
+          onUrgencyChange={setNewProjectUrgency}
           onPickProject={(projectId) => {
             // Route into engineerPicker for that project. If the
             // project has zero engineer history, jump straight into
@@ -8608,25 +8830,41 @@ const Sidebar = memo(function Sidebar({
                 setConnectFlowMode("connect");
                 resetNewProjectForm();
               } else {
-                // Connect mode — used to ring immediately. New behaviour:
-                // create the project (no session yet), then transition to
-                // the engineerPicker step so the customer picks WHICH
-                // engineer to ring. Picking one starts the actual call.
-                // This makes the new-project ringing flow consistent with
-                // the existing-project flow, where engineerPicker is
-                // always the last step before the ring.
+                // Connect mode — create the project, then route by the
+                // customer's Q3 timing answer:
+                //   now       → engineerPicker (Connect = instant ring)
+                //   this_week → engineerPicker, Schedule emphasized (the
+                //               matched engineer's calendar lives on each
+                //               row's Schedule button)
+                //   planning  → supervisor path: quote modal preselected
+                //               on the new project (quote → supervisor
+                //               appointment is the existing pipeline)
+                const urgency = newProjectUrgency;
                 const newId = await onCreateProjectWithMetadata(payload);
                 resetNewProjectForm();
                 setConnectFlowMode("connect");
-                if (newId) {
-                  setPickerProjectId(newId);
-                  setConnectFlow("engineerPicker");
-                  setNewProjectSubmitting(false);
-                } else {
+                if (!newId) {
                   // Project create failed silently — close the modal so
                   // the customer doesn't get stuck on a spinner.
                   setConnectFlow(null);
                   setNewProjectSubmitting(false);
+                } else if (urgency === "planning") {
+                  setConnectFlow(null);
+                  setNewProjectSubmitting(false);
+                  setQuoteInitialProjectId(newId);
+                  setQuoteFlow("maintain");
+                  onPickerToast(
+                    "Project created — request the quote and a supervisor appointment follows within 24h."
+                  );
+                } else {
+                  setPickerProjectId(newId);
+                  setConnectFlow("engineerPicker");
+                  setNewProjectSubmitting(false);
+                  if (urgency === "this_week") {
+                    onPickerToast(
+                      "Pick an engineer and hit Schedule to grab a slot on their calendar."
+                    );
+                  }
                 }
               }
             } catch (err) {
@@ -8634,7 +8872,15 @@ const Sidebar = memo(function Sidebar({
               setNewProjectSubmitting(false);
             }
           }}
-          onBack={() => setConnectFlow("choose")}
+          onBack={() =>
+            // From the stack question, Back returns to Q1 (need) in the
+            // full wizard; everywhere else it returns to the chooser.
+            setConnectFlow(
+              connectFlow === "details" && connectFlowMode === "connect"
+                ? "need"
+                : "choose"
+            )
+          }
           onClose={() => {
             setConnectFlow(null);
             setConnectFlowMode("connect");
@@ -8725,40 +8971,106 @@ function mapProjectTypeToDeveloping(
   return "Website";
 }
 
-// AI tools the customer might be building with. Aligned with the homepage
-// "AI tools we support" pill row + the lib/relay/profile STACK_OPTIONS.
+// Stack options — EXACT lists from the relay.green brand-site wizard
+// ("What are you building with?", Question 2 of 3).
 const NEW_PROJECT_AI_TOOLS: ReadonlyArray<string> = [
   "Claude",
   "ChatGPT",
   "Cursor",
+  "Copilot",
+  "Gemini",
   "Lovable",
-  "v0",
   "Replit",
-  "Bolt",
-  "Windsurf",
   "Other",
 ];
 const NEW_PROJECT_BACKENDS: ReadonlyArray<string> = [
-  "Supabase",
-  "Firebase",
-  "Vercel",
   "AWS",
-  "Postgres",
-  "MongoDB",
+  "Vercel",
+  "GCP",
+  "Cloudflare",
   "Node.js",
   "Python",
-  "Not sure",
+  "Postgres",
+  "Supabase",
+  "Other",
 ];
 const NEW_PROJECT_FRONTENDS: ReadonlyArray<string> = [
   "React",
   "Next.js",
   "Vue",
-  "Plain HTML/CSS",
   "Tailwind",
-  "React Native",
-  "Flutter",
-  "Not sure",
+  "Figma",
+  "Other",
 ];
+
+// Marketing-wizard heading — mirrors the relay.green brand-site question
+// modals: a "QUESTION N OF 3" pill, a serif heading with an italic
+// brand-green accent word, a muted sub-line, and a 3-segment progress bar.
+function WizardHeading({
+  q,
+  title,
+  sub,
+  onBack,
+}: {
+  q: 1 | 2 | 3;
+  title: React.ReactNode;
+  sub: string;
+  onBack?: () => void;
+}) {
+  return (
+    <>
+      <div className="flex items-center gap-2">
+        {onBack && (
+          <button
+            onClick={onBack}
+            aria-label="Back"
+            className="-ml-1 rounded-md p-1 transition-opacity hover:opacity-80"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <ChevronRight size={14} style={{ transform: "rotate(180deg)" }} />
+          </button>
+        )}
+        <span
+          className="inline-flex rounded-full border px-2.5 py-0.5 text-[9.5px] font-semibold tracking-[0.14em] uppercase"
+          style={{
+            borderColor: "var(--border)",
+            color: "var(--text-muted)",
+            backgroundColor: "var(--surface-raised)",
+          }}
+        >
+          Question {q} of 3
+        </span>
+      </div>
+      <h2
+        className="mt-3 text-[22px] leading-snug font-semibold"
+        style={{
+          color: "var(--text)",
+          fontFamily: "var(--font-source-serif)",
+        }}
+      >
+        {title}
+      </h2>
+      <p
+        className="mt-1.5 text-[13px] leading-relaxed"
+        style={{ color: "var(--text-muted)" }}
+      >
+        {sub}
+      </p>
+      <div className="mt-3 flex gap-1.5">
+        {[1, 2, 3].map((i) => (
+          <span
+            key={i}
+            className="h-1 w-9 rounded-full"
+            style={{
+              backgroundColor:
+                i <= q ? "var(--primary)" : "var(--surface-raised)",
+            }}
+          />
+        ))}
+      </div>
+    </>
+  );
+}
 
 function ConnectFlowModal({
   step,
@@ -8783,6 +9095,9 @@ function ConnectFlowModal({
   submitting,
   onChooseNew,
   onChooseExisting,
+  onNeed,
+  urgency,
+  onUrgencyChange,
   onPickProject,
   onEngineerConnect,
   onEngineerRequest,
@@ -8795,8 +9110,15 @@ function ConnectFlowModal({
   onBack,
   onClose,
 }: {
-  step: "choose" | "existing" | "engineerPicker" | "details" | "name";
+  step: "choose" | "need" | "existing" | "engineerPicker" | "details" | "name";
   mode: "connect" | "create-only";
+  /** Q1 answer — building continues the wizard; launch/support bypass
+   *  straight into the GoLive / Maintain quote flows. */
+  onNeed: (need: "building" | "launch" | "support") => void;
+  /** Q3 — when the customer needs the human (drives the post-create
+   *  routing: ring now / engineer calendar / supervisor path). */
+  urgency: "now" | "this_week" | "planning";
+  onUrgencyChange: (u: "now" | "this_week" | "planning") => void;
   projects: ProjectGroup[];
   pickerProjectId: string | null;
   pickerProjectName: string | null;
@@ -8849,14 +9171,21 @@ function ConnectFlowModal({
     );
   };
 
-  // The "details" step requires ALL four sections to have at least one
-  // selection (project type + AI tool + backend + frontend). "Not sure"
-  // is a valid option in backend/frontend so the user always has a path
-  // forward — they don't need to know the answer, just acknowledge the
-  // question. Name step has a hard-required name.
+  // Q1 selection — brand-site behavior: pick a radio card, THEN hit
+  // Continue (not click-to-advance). Local to the modal: resets on close.
+  const [needSel, setNeedSel] = useState<
+    "building" | "launch" | "support" | null
+  >(null);
+
+  // Validation. The brand-site connect wizard collects ONLY the stack
+  // (no project type — that question was dropped from Q2), so project
+  // type is required only in create-only mode. "Other" is a valid pick
+  // everywhere so the user always has a path forward.
   const detailsValid =
-    newProjectType.trim().length > 0 &&
-    (newProjectType !== "Other" || newProjectTypeOther.trim().length > 0) &&
+    (mode !== "create-only" ||
+      (newProjectType.trim().length > 0 &&
+        (newProjectType !== "Other" ||
+          newProjectTypeOther.trim().length > 0))) &&
     newProjectAiTools.length > 0 &&
     newProjectBackend.length > 0 &&
     newProjectFrontend.length > 0;
@@ -8971,6 +9300,120 @@ function ConnectFlowModal({
                   size={16}
                   style={{ color: "var(--text-muted)" }}
                 />
+              </button>
+            </div>
+          </>
+        )}
+
+        {step === "need" && (
+          <>
+            <WizardHeading
+              q={1}
+              title={
+                <>
+                  What do you{" "}
+                  <em style={{ color: "var(--primary)" }}>need</em> right now?
+                </>
+              }
+              sub="We match you with the right engineer based on where you are in your build."
+              onBack={onBack}
+            />
+            <div className="mt-4 flex flex-col gap-2">
+              {(
+                [
+                  {
+                    key: "building" as const,
+                    icon: "🟥",
+                    title: "I'm building — need help getting unstuck",
+                    sub: "You're in the middle of a build with AI. Hit a wall. Need a human to debug, architect, or just point you the right way.",
+                  },
+                  {
+                    key: "launch" as const,
+                    icon: "🚀",
+                    title: "I'm ready to launch — need someone to ship it",
+                    sub: "Your MVP works. Now you need domains, SSL, security, performance, and a production deploy. Someone who's done it before.",
+                  },
+                  {
+                    key: "support" as const,
+                    icon: "🔧",
+                    title: "I need ongoing support — maintenance, scale, reliability",
+                    sub: "Your product is live. APIs change, dependencies break, traffic grows. You need someone who remembers your stack.",
+                  },
+                ]
+              ).map((opt) => {
+                const active = needSel === opt.key;
+                return (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => setNeedSel(opt.key)}
+                    aria-pressed={active}
+                    className="flex w-full items-start gap-3 rounded-lg border px-4 py-3 text-left transition-colors hover:bg-[var(--surface-raised)]"
+                    style={{
+                      borderColor: active
+                        ? "var(--primary)"
+                        : "var(--border)",
+                      backgroundColor: active
+                        ? "var(--primary-tint)"
+                        : "transparent",
+                    }}
+                  >
+                    <span aria-hidden className="mt-0.5 shrink-0 text-[15px]">
+                      {opt.icon}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span
+                        className="block text-[13.5px] font-semibold"
+                        style={{ color: "var(--text)" }}
+                      >
+                        {opt.title}
+                      </span>
+                      <span
+                        className="mt-0.5 block text-[12px] leading-relaxed"
+                        style={{ color: "var(--text-muted)" }}
+                      >
+                        {opt.sub}
+                      </span>
+                    </span>
+                    {/* Radio circle — brand-site right-edge affordance. */}
+                    <span
+                      aria-hidden
+                      className="mt-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border"
+                      style={{
+                        borderColor: active
+                          ? "var(--primary)"
+                          : "var(--border)",
+                      }}
+                    >
+                      {active && (
+                        <span
+                          className="h-2 w-2 rounded-full"
+                          style={{ backgroundColor: "var(--primary)" }}
+                        />
+                      )}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {/* Brand footer: ← Back left · Continue → right. */}
+            <div className="mt-5 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={onBack}
+                className="text-[12.5px] font-medium transition-opacity hover:opacity-80"
+                style={{ color: "var(--text-muted)" }}
+              >
+                ← Back
+              </button>
+              <button
+                type="button"
+                onClick={() => needSel && onNeed(needSel)}
+                disabled={!needSel}
+                className="inline-flex items-center gap-1.5 rounded-full px-5 py-2 text-[13px] font-semibold transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+              >
+                Continue →
               </button>
             </div>
           </>
@@ -9128,6 +9571,7 @@ function ConnectFlowModal({
         {step === "details" && (
           <DetailsStep
             onBack={onBack}
+            variant={mode === "connect" ? "connect" : "create-only"}
             newProjectType={newProjectType}
             setNewProjectType={setNewProjectType}
             newProjectTypeOther={newProjectTypeOther}
@@ -9146,32 +9590,56 @@ function ConnectFlowModal({
 
         {step === "name" && (
           <>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={onNameBack}
-                aria-label="Back"
-                className="rounded-md p-1 transition-opacity hover:opacity-80"
+            {mode === "connect" ? (
+              <WizardHeading
+                q={3}
+                title={
+                  <>
+                    How <em style={{ color: "var(--primary)" }}>soon</em> do
+                    you need someone?
+                  </>
+                }
+                sub="Our engineers are available in seconds. But knowing your timeline helps us match better."
+                onBack={onNameBack}
+              />
+            ) : (
+              <>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={onNameBack}
+                    aria-label="Back"
+                    className="rounded-md p-1 transition-opacity hover:opacity-80"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    <ChevronRight
+                      size={14}
+                      style={{ transform: "rotate(180deg)" }}
+                    />
+                  </button>
+                  <h2
+                    className="text-[18px] font-semibold"
+                    style={{ color: "var(--text)" }}
+                  >
+                    Name this project
+                  </h2>
+                </div>
+                <p
+                  className="mt-2 text-[13px] leading-relaxed"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  Pick a name you'll recognize when you come back. You can
+                  rename it later.
+                </p>
+              </>
+            )}
+            {mode === "connect" && (
+              <div
+                className="mt-4 mb-1.5 text-[11px] font-semibold tracking-[0.1em] uppercase"
                 style={{ color: "var(--text-muted)" }}
               >
-                <ChevronRight
-                  size={14}
-                  style={{ transform: "rotate(180deg)" }}
-                />
-              </button>
-              <h2
-                className="text-[18px] font-semibold"
-                style={{ color: "var(--text)" }}
-              >
-                Name this project
-              </h2>
-            </div>
-            <p
-              className="mt-2 text-[13px] leading-relaxed"
-              style={{ color: "var(--text-muted)" }}
-            >
-              Pick a name you'll recognize when you come back. You can rename it
-              later.
-            </p>
+                Project name
+              </div>
+            )}
             <input
               type="text"
               value={newProjectName}
@@ -9183,37 +9651,155 @@ function ConnectFlowModal({
                 if (e.key === "Enter" && nameValid && !submitting)
                   onSubmitNewProject();
               }}
-              className="mt-5 w-full rounded-md border px-3 py-2.5 text-[14px] outline-none focus:ring-2"
+              className={cn(
+                "w-full rounded-md border px-3 py-2.5 text-[14px] outline-none focus:ring-2",
+                mode === "connect" ? "" : "mt-5"
+              )}
               style={{
                 borderColor: "var(--border)",
                 backgroundColor: "var(--background)",
                 color: "var(--text)",
               }}
             />
-            <button
-              type="button"
-              onClick={onSubmitNewProject}
-              disabled={!nameValid || submitting}
-              className="mt-5 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-[13px] font-semibold transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-              style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
-            >
-              {submitting ? (
-                <>
-                  <Loader2 size={13} className="animate-spin" />
-                  {mode === "create-only" ? "Creating…" : "Starting…"}
-                </>
-              ) : mode === "create-only" ? (
-                <>
-                  <Folder size={13} />
-                  Create project
-                </>
-              ) : (
-                <>
-                  <Phone size={13} />
-                  Create project &amp; connect engineer
-                </>
-              )}
-            </button>
+            {/* Q3 — brand-site "How soon?" radio cards. The pick drives the
+                post-create routing: now → ring, this week → matched
+                engineer's calendar, planning → supervisor pipeline. Only
+                shown in connect mode (create-only just makes the project). */}
+            {mode === "connect" && (
+              <div className="mt-4 flex flex-col gap-2">
+                {(
+                  [
+                    {
+                      key: "now" as const,
+                      icon: "🟢",
+                      title: "Right now — I'm stuck",
+                      sub: "An engineer joins in under 30 seconds. First 10 minutes free.",
+                    },
+                    {
+                      key: "this_week" as const,
+                      icon: "📅",
+                      title: "This week",
+                      sub: "Schedule a session, matched with relevant context.",
+                    },
+                    {
+                      key: "planning" as const,
+                      icon: "💡",
+                      title: "I'm planning ahead",
+                      sub: "Scope it, quote on complexity. No commitment.",
+                    },
+                  ]
+                ).map((opt) => {
+                  const active = urgency === opt.key;
+                  return (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => onUrgencyChange(opt.key)}
+                      aria-pressed={active}
+                      className="flex w-full items-start gap-3 rounded-lg border px-4 py-3 text-left transition-colors hover:bg-[var(--surface-raised)]"
+                      style={{
+                        borderColor: active
+                          ? "var(--primary)"
+                          : "var(--border)",
+                        backgroundColor: active
+                          ? "var(--primary-tint)"
+                          : "transparent",
+                      }}
+                    >
+                      <span
+                        aria-hidden
+                        className="mt-0.5 shrink-0 text-[15px]"
+                      >
+                        {opt.icon}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span
+                          className="block text-[13.5px] font-semibold"
+                          style={{ color: "var(--text)" }}
+                        >
+                          {opt.title}
+                        </span>
+                        <span
+                          className="mt-0.5 block text-[12px] leading-relaxed"
+                          style={{ color: "var(--text-muted)" }}
+                        >
+                          {opt.sub}
+                        </span>
+                      </span>
+                      <span
+                        aria-hidden
+                        className="mt-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border"
+                        style={{
+                          borderColor: active
+                            ? "var(--primary)"
+                            : "var(--border)",
+                        }}
+                      >
+                        {active && (
+                          <span
+                            className="h-2 w-2 rounded-full"
+                            style={{ backgroundColor: "var(--primary)" }}
+                          />
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {mode === "connect" ? (
+              <div
+                className="mt-5 flex items-center justify-between border-t pt-4"
+                style={{ borderColor: "var(--border)" }}
+              >
+                <button
+                  type="button"
+                  onClick={onNameBack}
+                  className="text-[12.5px] font-medium transition-opacity hover:opacity-80"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  ← Back
+                </button>
+                <button
+                  type="button"
+                  onClick={onSubmitNewProject}
+                  disabled={!nameValid || submitting}
+                  className="inline-flex items-center gap-1.5 rounded-full px-5 py-2 text-[13px] font-semibold transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                  style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+                >
+                  {submitting ? (
+                    <>
+                      <Loader2 size={13} className="animate-spin" />
+                      Matching…
+                    </>
+                  ) : urgency === "planning" ? (
+                    <>Scope my project →</>
+                  ) : (
+                    <>Find my engineer →</>
+                  )}
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={onSubmitNewProject}
+                disabled={!nameValid || submitting}
+                className="mt-5 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-[13px] font-semibold transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" />
+                    Creating…
+                  </>
+                ) : (
+                  <>
+                    <Folder size={13} />
+                    Create project
+                  </>
+                )}
+              </button>
+            )}
             {mode === "create-only" && (
               <p
                 className="mt-3 text-center text-[11px]"
@@ -9267,6 +9853,20 @@ function bucketSessionsByDate(
 // (no folder context) and with the project name surfaced in the meta line
 // (so the user doesn't lose project context when viewing across projects).
 // Pin button overlays the top-right just like in the accordion.
+/** Compact right-aligned session timestamp: today → clock time ("3:45 PM"),
+ *  older → short date ("Jun 3"). The one piece of meta a crisp session row
+ *  keeps. */
+function fmtSessionWhen(d: Date): string {
+  const now = new Date();
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+  return sameDay
+    ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    : d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
 function SessionRowFlat({
   session,
   isPinned,
@@ -9282,130 +9882,68 @@ function SessionRowFlat({
   isCurrent: boolean;
   onClick: () => void;
   onTogglePin: () => void;
-  /** Show the first-two-words project chip in the meta line. Hidden
-   *  when groupBy=date (the date bucket headers carry temporal
-   *  context; per-row project chips become noise). Defaults to true
-   *  so existing call sites continue rendering as before. */
+  /** Prefix the title with the project's first word for context in the
+   *  ungrouped ("None") view. */
   showProjectName?: boolean;
 }) {
+  // Session pinning was removed from the UI (projects pin instead);
+  // the props stay for call-site compatibility.
+  void isPinned;
+  void onTogglePin;
   const isActive = !["ended", "abandoned", "cancelled"].includes(
     session.status
   );
-  const fmtRelDate = (d: Date) => {
-    const now = new Date();
-    const t = d.getTime();
-    const today = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate()
-    ).getTime();
-    const diffDays = Math.floor((today - t) / 86_400_000);
-    if (diffDays < 1) return "Today";
-    if (diffDays < 2) return "Yesterday";
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  };
+  // ONE crisp line: status dot · truncated title · right-aligned time.
+  // The badge/agent/duration meta clutter is gone.
   return (
-    <div className="group/session relative">
-      <button
-        onClick={onClick}
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition-colors",
+        isViewing
+          ? "border-[var(--primary)] bg-[var(--primary-tint)]"
+          : isCurrent
+            ? "border-[var(--primary)] bg-[var(--primary-tint)]/60"
+            : "border-transparent hover:border-[var(--border)] hover:bg-[var(--surface-raised)]"
+      )}
+    >
+      <span
         className={cn(
-          "flex w-full items-start gap-2 rounded-lg border px-2.5 py-2 pr-7 text-left transition-colors",
-          isViewing
-            ? "border-[var(--primary)] bg-[var(--primary-tint)]"
-            : isCurrent
-              ? "border-[var(--primary)] bg-[var(--primary-tint)]/60"
-              : "border-transparent hover:border-[var(--border)] hover:bg-[var(--surface-raised)]"
+          "relative flex h-1.5 w-1.5 shrink-0 rounded-full",
+          isActive ? "bg-[var(--primary)]" : "bg-[var(--text-faint)]"
         )}
+        aria-hidden
       >
-        <span
-          className={cn(
-            "relative mt-1.5 flex h-2 w-2 shrink-0 rounded-full",
-            isActive ? "bg-[var(--primary)]" : "bg-[var(--text-faint)]"
-          )}
-          aria-hidden
-        >
-          {isActive && (
-            <span
-              className="absolute inset-0 inline-flex animate-ping rounded-full opacity-70"
-              style={{ backgroundColor: BRAND_GREEN }}
-            />
-          )}
-        </span>
-        <div className="min-w-0 flex-1">
-          {/* Top line: session topic (just the topic, no date suffix —
-              the meta line below carries the date). */}
-          <div
-            className={cn(
-              "truncate text-[13px]",
-              isViewing || isCurrent ? "font-medium" : ""
-            )}
-            style={{ color: "var(--text)" }}
-          >
-            {session.topic}
-          </div>
-          {/* Meta: first two words of the project name (compact context
-              reference), then the relative date, then the status pill
-              when terminal. The agent name was removed to keep the line
-              short — the user is in flat view to see across projects,
-              not to see engineer attributions per row. */}
-          <div
-            className="mt-0.5 flex items-center gap-1 text-[10px]"
-            style={{ color: "var(--text-muted)" }}
-          >
-            {showProjectName && session.projectName && (
-              <>
-                <span className="truncate">
-                  {session.projectName.split(/\s+/).slice(0, 2).join(" ")}
-                </span>
-                <span>·</span>
-              </>
-            )}
-            <span>{fmtRelDate(new Date(session.date))}</span>
-            {!isActive && (
-              <>
-                <span>·</span>
-                <span
-                  className={cn(
-                    "inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-medium tracking-wider uppercase",
-                    session.status === "ended"
-                      ? "bg-[var(--surface-raised)] text-[var(--text-muted)]"
-                      : session.status === "cancelled"
-                        ? "bg-[var(--warn-soft)] text-[var(--warn)]"
-                        : "bg-[var(--risk-soft)] text-[var(--risk)]"
-                  )}
-                >
-                  {session.status}
-                </span>
-              </>
-            )}
-          </div>
-        </div>
-      </button>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onTogglePin();
+        {isActive && (
+          <span
+            className="absolute inset-0 inline-flex animate-ping rounded-full opacity-70"
+            style={{ backgroundColor: BRAND_GREEN }}
+          />
+        )}
+      </span>
+      <span
+        className={cn(
+          "min-w-0 flex-1 truncate text-[12px]",
+          (isViewing || isCurrent) && "font-medium"
+        )}
+        style={{ color: "var(--text)" }}
+        title={session.topic}
+      >
+        {showProjectName && session.projectName
+          ? `${session.projectName.split(/\s+/)[0]} · ${session.topic}`
+          : session.topic}
+      </span>
+      <span
+        className="shrink-0 text-[10px] tabular-nums"
+        style={{
+          color: isActive ? "var(--primary)" : "var(--text-faint)",
         }}
-        title={isPinned ? "Unpin session" : "Pin session"}
-        aria-label={isPinned ? "Unpin session" : "Pin session"}
-        aria-pressed={isPinned}
-        className={cn(
-          "absolute top-1.5 right-1.5 inline-flex h-5 w-5 items-center justify-center rounded-md transition-all",
-          isPinned
-            ? "opacity-100"
-            : "opacity-0 group-hover/session:opacity-60 hover:opacity-100"
-        )}
-        style={{ color: isPinned ? BRAND_GREEN : "var(--text-muted)" }}
       >
-        <Pin
-          size={11}
-          fill={isPinned ? BRAND_GREEN : "none"}
-          strokeWidth={isPinned ? 2 : 1.8}
-        />
-      </button>
-    </div>
+        {isActive
+          ? humanState(session.status)
+          : fmtSessionWhen(new Date(session.date))}
+      </span>
+    </button>
   );
 }
 
@@ -9560,6 +10098,7 @@ function EngineerPickerRow({
 //     for selected.
 function DetailsStep({
   onBack,
+  variant = "create-only",
   newProjectType,
   setNewProjectType,
   newProjectTypeOther,
@@ -9575,6 +10114,10 @@ function DetailsStep({
   onDetailsNext,
 }: {
   onBack: () => void;
+  /** "connect" renders the brand-site Question 2 (flat sections, NO
+   *  project-type block, ← Back / Continue → footer); "create-only"
+   *  keeps the full metadata form incl. project type. */
+  variant?: "connect" | "create-only";
   newProjectType: string;
   setNewProjectType: (s: string) => void;
   newProjectTypeOther: string;
@@ -9597,127 +10140,191 @@ function DetailsStep({
   // — the form now reads as a flat checklist of 4 required panels.
   return (
     <>
-      <div className="flex items-center gap-2">
-        <button
-          onClick={onBack}
-          aria-label="Back"
-          className="rounded-md p-1 transition-opacity hover:opacity-80"
-          style={{ color: "var(--text-muted)" }}
-        >
-          <ChevronRight size={14} style={{ transform: "rotate(180deg)" }} />
-        </button>
-        <h2
-          className="text-[18px] font-semibold"
-          style={{ color: "var(--text)" }}
-        >
-          What are you building?
-        </h2>
-      </div>
-      <p
-        className="mt-2 text-[13px] leading-relaxed"
-        style={{ color: "var(--text-muted)" }}
-      >
-        Your engineer needs the shape of the project + the stack so they can hit
-        the ground running.
-      </p>
+      <WizardHeading
+        q={2}
+        title={
+          <>
+            What are you{" "}
+            <em style={{ color: "var(--primary)" }}>building</em> with?
+          </>
+        }
+        sub="We support 150+ integrations. Pick what matters — we'll match you with an engineer who's shipped on it."
+        onBack={onBack}
+      />
 
-      <div className="mt-4 flex flex-col gap-2.5">
-        {/* Project type */}
-        <FormPanel label="Project type" count={newProjectType ? 1 : 0} required>
-          <div className="flex flex-wrap gap-2">
-            {NEW_PROJECT_TYPES.map((t) => (
-              <ChoiceChip
-                key={t.value}
-                label={t.value}
-                emoji={t.emoji}
-                selected={newProjectType === t.value}
-                onClick={() => setNewProjectType(t.value)}
-              />
-            ))}
+      {variant === "connect" ? (
+        // ── Brand-site Question 2: flat sections, no boxes, no project
+        //    type. Uppercase mini-labels + pill chips, brand footer.
+        <>
+          <div className="mt-5 flex flex-col gap-4">
+            <div>
+              <FormSectionLabel>AI tool you use</FormSectionLabel>
+              <div className="flex flex-wrap gap-2">
+                {NEW_PROJECT_AI_TOOLS.map((t) => (
+                  <ChoiceChip
+                    key={t}
+                    label={t}
+                    selected={newProjectAiTools.includes(t)}
+                    onClick={() => toggleMultiSelect(setNewProjectAiTools, t)}
+                  />
+                ))}
+              </div>
+            </div>
+            <div>
+              <FormSectionLabel>Backend &amp; infrastructure</FormSectionLabel>
+              <div className="flex flex-wrap gap-2">
+                {NEW_PROJECT_BACKENDS.map((t) => (
+                  <ChoiceChip
+                    key={t}
+                    label={t}
+                    selected={newProjectBackend.includes(t)}
+                    onClick={() => toggleMultiSelect(setNewProjectBackend, t)}
+                  />
+                ))}
+              </div>
+            </div>
+            <div>
+              <FormSectionLabel>Frontend &amp; tools</FormSectionLabel>
+              <div className="flex flex-wrap gap-2">
+                {NEW_PROJECT_FRONTENDS.map((t) => (
+                  <ChoiceChip
+                    key={t}
+                    label={t}
+                    selected={newProjectFrontend.includes(t)}
+                    onClick={() => toggleMultiSelect(setNewProjectFrontend, t)}
+                  />
+                ))}
+              </div>
+            </div>
           </div>
-          {newProjectType === "Other" && (
-            <input
-              type="text"
-              value={newProjectTypeOther}
-              onChange={(e) => setNewProjectTypeOther(e.target.value)}
-              placeholder="Describe what you're building"
-              maxLength={120}
-              autoFocus
-              className="mt-3 w-full rounded-md border px-3 py-2 text-[13px] outline-none focus:ring-2"
-              style={{
-                borderColor: "var(--border)",
-                backgroundColor: "var(--background)",
-                color: "var(--text)",
-              }}
-            />
-          )}
-        </FormPanel>
-
-        {/* AI tool */}
-        <FormPanel
-          label="AI tool you're building with"
-          count={newProjectAiTools.length}
-          required
-        >
-          <div className="flex flex-wrap gap-2">
-            {NEW_PROJECT_AI_TOOLS.map((t) => (
-              <ChoiceChip
-                key={t}
-                label={t}
-                selected={newProjectAiTools.includes(t)}
-                onClick={() => toggleMultiSelect(setNewProjectAiTools, t)}
-              />
-            ))}
+          <div
+            className="mt-5 flex items-center justify-between border-t pt-4"
+            style={{ borderColor: "var(--border)" }}
+          >
+            <button
+              type="button"
+              onClick={onBack}
+              className="text-[12.5px] font-medium transition-opacity hover:opacity-80"
+              style={{ color: "var(--text-muted)" }}
+            >
+              ← Back
+            </button>
+            <button
+              type="button"
+              onClick={onDetailsNext}
+              disabled={!detailsValid}
+              className="inline-flex items-center gap-1.5 rounded-full px-5 py-2 text-[13px] font-semibold transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+              style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+            >
+              Continue →
+            </button>
           </div>
-        </FormPanel>
+        </>
+      ) : (
+        <>
+          <div className="mt-4 flex flex-col gap-2.5">
+            {/* Project type */}
+            <FormPanel
+              label="Project type"
+              count={newProjectType ? 1 : 0}
+              required
+            >
+              <div className="flex flex-wrap gap-2">
+                {NEW_PROJECT_TYPES.map((t) => (
+                  <ChoiceChip
+                    key={t.value}
+                    label={t.value}
+                    emoji={t.emoji}
+                    selected={newProjectType === t.value}
+                    onClick={() => setNewProjectType(t.value)}
+                  />
+                ))}
+              </div>
+              {newProjectType === "Other" && (
+                <input
+                  type="text"
+                  value={newProjectTypeOther}
+                  onChange={(e) => setNewProjectTypeOther(e.target.value)}
+                  placeholder="Describe what you're building"
+                  maxLength={120}
+                  autoFocus
+                  className="mt-3 w-full rounded-md border px-3 py-2 text-[13px] outline-none focus:ring-2"
+                  style={{
+                    borderColor: "var(--border)",
+                    backgroundColor: "var(--background)",
+                    color: "var(--text)",
+                  }}
+                />
+              )}
+            </FormPanel>
 
-        {/* Backend & infra — always visible, required */}
-        <FormPanel
-          label="Backend & infra"
-          count={newProjectBackend.length}
-          required
-        >
-          <div className="flex flex-wrap gap-2">
-            {NEW_PROJECT_BACKENDS.map((t) => (
-              <ChoiceChip
-                key={t}
-                label={t}
-                selected={newProjectBackend.includes(t)}
-                onClick={() => toggleMultiSelect(setNewProjectBackend, t)}
-              />
-            ))}
+            {/* AI tool */}
+            <FormPanel
+              label="AI tool you're building with"
+              count={newProjectAiTools.length}
+              required
+            >
+              <div className="flex flex-wrap gap-2">
+                {NEW_PROJECT_AI_TOOLS.map((t) => (
+                  <ChoiceChip
+                    key={t}
+                    label={t}
+                    selected={newProjectAiTools.includes(t)}
+                    onClick={() => toggleMultiSelect(setNewProjectAiTools, t)}
+                  />
+                ))}
+              </div>
+            </FormPanel>
+
+            {/* Backend & infra — always visible, required */}
+            <FormPanel
+              label="Backend & infra"
+              count={newProjectBackend.length}
+              required
+            >
+              <div className="flex flex-wrap gap-2">
+                {NEW_PROJECT_BACKENDS.map((t) => (
+                  <ChoiceChip
+                    key={t}
+                    label={t}
+                    selected={newProjectBackend.includes(t)}
+                    onClick={() => toggleMultiSelect(setNewProjectBackend, t)}
+                  />
+                ))}
+              </div>
+            </FormPanel>
+
+            {/* Frontend & UI — always visible, required */}
+            <FormPanel
+              label="Frontend & UI"
+              count={newProjectFrontend.length}
+              required
+            >
+              <div className="flex flex-wrap gap-2">
+                {NEW_PROJECT_FRONTENDS.map((t) => (
+                  <ChoiceChip
+                    key={t}
+                    label={t}
+                    selected={newProjectFrontend.includes(t)}
+                    onClick={() => toggleMultiSelect(setNewProjectFrontend, t)}
+                  />
+                ))}
+              </div>
+            </FormPanel>
           </div>
-        </FormPanel>
 
-        {/* Frontend & UI — always visible, required */}
-        <FormPanel
-          label="Frontend & UI"
-          count={newProjectFrontend.length}
-          required
-        >
-          <div className="flex flex-wrap gap-2">
-            {NEW_PROJECT_FRONTENDS.map((t) => (
-              <ChoiceChip
-                key={t}
-                label={t}
-                selected={newProjectFrontend.includes(t)}
-                onClick={() => toggleMultiSelect(setNewProjectFrontend, t)}
-              />
-            ))}
-          </div>
-        </FormPanel>
-      </div>
-
-      <button
-        type="button"
-        onClick={onDetailsNext}
-        disabled={!detailsValid}
-        className="mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-[13px] font-semibold transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-        style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
-      >
-        Next: Name your project
-        <ChevronRight size={14} />
-      </button>
+          <button
+            type="button"
+            onClick={onDetailsNext}
+            disabled={!detailsValid}
+            className="mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-[13px] font-semibold transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+          >
+            Next: Name your project
+            <ChevronRight size={14} />
+          </button>
+        </>
+      )}
     </>
   );
 }
@@ -10360,6 +10967,12 @@ const ProjectAccordion = memo(function ProjectAccordion({
   draftsTick,
   onDeleteProject,
   onMarkProjectComplete,
+  isProjectPinned,
+  onTogglePinProject,
+  isProjectArchived,
+  onToggleArchiveProject,
+  open,
+  onToggleOpen,
 }: {
   group: ProjectGroup;
   viewingPastId: string | null;
@@ -10402,13 +11015,19 @@ const ProjectAccordion = memo(function ProjectAccordion({
    *  clock for chat-attachment purge. Reversible via the same menu while
    *  the project is still in 'completed' status. */
   onMarkProjectComplete: (projectId: string, projectName: string) => void;
+  /** Project-level pin (kebab action) — pinned projects float to the top
+   *  of the sidebar list. localStorage-backed in the Sidebar. */
+  isProjectPinned: boolean;
+  onTogglePinProject: () => void;
+  /** Project-level archive (kebab action) — archived projects collapse
+   *  into the "Archived" group at the bottom of the list. */
+  isProjectArchived: boolean;
+  onToggleArchiveProject: () => void;
+  /** CONTROLLED expansion — the Sidebar owns which single project is
+   *  open (exclusive accordion: expanding one collapses the rest). */
+  open: boolean;
+  onToggleOpen: () => void;
 }) {
-  // Accordions start COLLAPSED on initial mount. Customers see the
-  // project list first and drill into any project they want to act on
-  // — either to start a new session or browse past sessions. This is
-  // the "filing cabinet" mental model: the drawers stay closed until
-  // you choose to pull one open.
-  const [open, setOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [draftName, setDraftName] = useState(group.name);
   const [renameBusy, setRenameBusy] = useState(false);
@@ -10452,15 +11071,20 @@ const ProjectAccordion = memo(function ProjectAccordion({
     setOverflowOpen(true);
   }, []);
 
-  // Close on outside-click.
+  // Close on outside-click. NB: the previous version returned the
+  // removeEventListener cleanup from INSIDE the setTimeout callback —
+  // setTimeout ignores return values, so every open leaked a document
+  // click handler. The leaked handlers instantly re-closed the menu on
+  // every subsequent click, which read as "the three-dot button stops
+  // working after the first use" (and made Unpin unreachable).
   useEffect(() => {
     if (!overflowOpen) return;
-    const t = setTimeout(() => {
-      const handler = () => setOverflowOpen(false);
-      document.addEventListener("click", handler);
-      return () => document.removeEventListener("click", handler);
-    }, 0);
-    return () => clearTimeout(t);
+    const handler = () => setOverflowOpen(false);
+    const t = setTimeout(() => document.addEventListener("click", handler), 0);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener("click", handler);
+    };
   }, [overflowOpen]);
 
   const commitRename = async () => {
@@ -10487,12 +11111,12 @@ const ProjectAccordion = memo(function ProjectAccordion({
       <div className="relative flex min-w-0 items-center">
         <button
           onClick={() => {
-            setOpen((v) => !v);
+            onToggleOpen();
             // General has no real project id — clicking it just toggles
             // open/close, no selection state.
             if (!isGeneral) onSelectProject(group.key);
           }}
-          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 text-left transition-all duration-150 ease-out hover:translate-x-0.5 hover:bg-black/5 dark:hover:bg-white/5"
+          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-all duration-150 ease-out hover:translate-x-0.5 hover:bg-black/5 dark:hover:bg-white/5"
           style={isSelected ? { backgroundColor: BRAND_GREEN_SOFT } : undefined}
         >
           <ChevronRight
@@ -10520,7 +11144,7 @@ const ProjectAccordion = memo(function ProjectAccordion({
                   setDraftName(group.name);
                 }
               }}
-              className="min-w-0 flex-1 rounded-sm border px-1 py-0 text-[15px] font-semibold tracking-tight outline-none"
+              className="min-w-0 flex-1 rounded-sm border px-1 py-0 text-[12.5px] font-medium tracking-tight outline-none"
               style={{
                 borderColor: BRAND_GREEN,
                 backgroundColor: "var(--background)",
@@ -10528,16 +11152,24 @@ const ProjectAccordion = memo(function ProjectAccordion({
               }}
             />
           ) : (
-            // text wraps onto multiple lines for long names instead of
-            // truncating + spilling. break-words lets a single absurdly
-            // long token break mid-word. leading-tight keeps the line-
-            // height tight when wrapped.
+            // Single-line truncation — long names get an ellipsis (full
+            // name in the title tooltip) instead of wrapping the row to
+            // 2-3 lines and eating sidebar height.
             <span
-              className="min-w-0 flex-1 text-[15px] leading-tight font-normal tracking-tight break-words"
+              className="min-w-0 flex-1 truncate text-[12.5px] leading-tight font-medium tracking-tight"
               style={{ color: isSelected ? BRAND_GREEN : "var(--text)" }}
+              title={group.name}
             >
               {group.name}
             </span>
+          )}
+          {isProjectPinned && !renaming && (
+            <Pin
+              size={10}
+              className="shrink-0"
+              style={{ color: "var(--primary)", fill: "var(--primary)" }}
+              aria-label="Pinned project"
+            />
           )}
           {/* Lifecycle pill — only renders when non-active, so the default
               project list stays clean. "Completed" signals the 90-day
@@ -10650,11 +11282,44 @@ const ProjectAccordion = memo(function ProjectAccordion({
                       onClick={(e) => {
                         e.stopPropagation();
                         setOverflowOpen(false);
-                        setDraftName(group.name);
-                        setRenaming(true);
+                        onTogglePinProject();
                       }}
                       className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
                       style={{ color: "var(--text)" }}
+                    >
+                      <Pin
+                        size={12}
+                        style={
+                          isProjectPinned
+                            ? { color: "var(--primary)", fill: "var(--primary)" }
+                            : undefined
+                        }
+                      />
+                      {isProjectPinned ? "Unpin project" : "Pin project"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOverflowOpen(false);
+                        onToggleArchiveProject();
+                      }}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                      style={{ color: "var(--text)" }}
+                    >
+                      <Archive size={12} />
+                      {isProjectArchived ? "Unarchive project" : "Archive project"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOverflowOpen(false);
+                        setDraftName(group.name);
+                        setRenaming(true);
+                      }}
+                      className="flex w-full items-center gap-2 border-t px-3 py-2 text-left text-[12px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                      style={{ color: "var(--text)", borderColor: "var(--border)" }}
                     >
                       <Pencil size={12} />
                       Rename project
@@ -10703,7 +11368,7 @@ const ProjectAccordion = memo(function ProjectAccordion({
                   key={d.id}
                   onClick={() => onPrepareSession(group.key, d.id)}
                   title={`Resume draft · last saved ${new Date(d.updatedAt).toLocaleString()}`}
-                  className="flex w-full items-start gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors hover:bg-[color-mix(in_srgb,var(--warn)_8%,transparent)]"
+                  className="flex w-full items-start gap-2 rounded-lg border px-2 py-1.5 text-left transition-colors hover:bg-[color-mix(in_srgb,var(--warn)_8%,transparent)]"
                   style={{
                     // Amber accent — same colour family the rest of the
                     // app uses for the Busy engineer state, intentional
@@ -10766,139 +11431,64 @@ const ProjectAccordion = memo(function ProjectAccordion({
                   ].includes(s.status);
                   const isCurrent = isActive && s.id === currentSessionId;
                   const isPinned = pinnedIds.has(s.id);
+                  // Session pinning removed (projects pin instead) — keep
+                  // the computed flag referenced so TS stays quiet.
+                  void isPinned;
                   return (
-                    // Session row container — relative so the pin button can
-                    // overlay the top-right corner of the row without affecting
-                    // the main button's hit target.
-                    <div key={s.id} className="group/session relative">
-                      <button
-                        onClick={() => onViewPast(isCurrent ? null : s.id)}
+                    // ONE crisp line per session: status dot · truncated
+                    // title · right-aligned time. The Ended/Cancelled badges,
+                    // agent name and duration meta were removed per design.
+                    <button
+                      key={s.id}
+                      onClick={() => onViewPast(isCurrent ? null : s.id)}
+                      className={cn(
+                        "flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition-all duration-150 ease-out hover:translate-x-0.5",
+                        selected
+                          ? "border-[var(--primary)] bg-[var(--primary-tint)]"
+                          : isCurrent
+                            ? "border-[var(--primary)] bg-[var(--primary-tint)]/60"
+                            : "border-transparent hover:border-[var(--border)] hover:bg-[var(--surface-raised)]"
+                      )}
+                    >
+                      <span
                         className={cn(
-                          "flex w-full items-start gap-2 rounded-lg border px-2.5 py-2 pr-7 text-left transition-all duration-150 ease-out hover:translate-x-0.5",
-                          // FIX 3 — selected session card gets a real green border
-                          // + light-green tint (was just a faint fill before),
-                          // matching the room-w.png "CORS error issues" card.
-                          selected
-                            ? "border-[var(--primary)] bg-[var(--primary-tint)]"
-                            : isCurrent
-                              ? "border-[var(--primary)] bg-[var(--primary-tint)]/60"
-                              : "border-transparent hover:border-[var(--border)] hover:bg-[var(--surface-raised)]"
+                          "relative flex h-1.5 w-1.5 shrink-0 rounded-full",
+                          isActive
+                            ? "bg-[var(--primary)]"
+                            : "bg-[var(--text-faint)]"
                         )}
+                        aria-hidden
                       >
-                        <span
-                          className={cn(
-                            "relative mt-1.5 flex h-2 w-2 shrink-0 rounded-full",
-                            isActive
-                              ? "bg-[var(--primary)]"
-                              : s.status === "ended"
-                                ? "bg-[var(--text-faint)]"
-                                : s.status === "cancelled"
-                                  ? "bg-[var(--text-faint)]"
-                                  : "bg-[var(--text-faint)]"
-                          )}
-                          aria-hidden
-                        >
-                          {isActive && (
-                            <span
-                              className="absolute inset-0 inline-flex animate-ping rounded-full opacity-70"
-                              style={{ backgroundColor: BRAND_GREEN }}
-                            />
-                          )}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <div
-                              className={cn(
-                                "truncate text-[13px]",
-                                selected || isCurrent ? "font-medium" : ""
-                              )}
-                              style={{
-                                color:
-                                  selected || isCurrent
-                                    ? "var(--text)"
-                                    : isActive
-                                      ? "var(--text)"
-                                      : "var(--text)",
-                              }}
-                            >
-                              {s.title}
-                            </div>
-                          </div>
-                          <div
-                            className="mt-0.5 flex items-center gap-1 text-[10px]"
-                            style={{ color: "var(--text-muted)" }}
-                          >
-                            {/* FIX 2 — status flows as a small meta tag, never as
-                        the session's name. */}
-                            {!isActive && (
-                              <>
-                                <span
-                                  className={cn(
-                                    "inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-medium tracking-wider uppercase",
-                                    s.status === "ended"
-                                      ? "bg-[var(--surface-raised)] text-[var(--text-muted)]"
-                                      : s.status === "cancelled"
-                                        ? "bg-[var(--warn-soft)] text-[var(--warn)]"
-                                        : "bg-[var(--risk-soft)] text-[var(--risk)]"
-                                  )}
-                                >
-                                  {s.status === "ended"
-                                    ? "Ended"
-                                    : s.status === "cancelled"
-                                      ? "Cancelled"
-                                      : "No engineer"}
-                                </span>
-                              </>
-                            )}
-                            {isActive ? (
-                              <span>{humanState(s.status)}</span>
-                            ) : (
-                              <>
-                                {s.agent && <span>{s.agent}</span>}
-                                {s.agent && <span>·</span>}
-                                <span>{fmtRelDate(new Date(s.date))}</span>
-                                {s.minutes != null && s.minutes > 0 && (
-                                  <>
-                                    <span>·</span>
-                                    <span>{s.minutes}m</span>
-                                  </>
-                                )}
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      </button>
-
-                      {/* Pin toggle — overlays the top-right of the session row.
-                    Pinned sessions show a filled icon always; unpinned ones
-                    only reveal the outline icon on row hover. Click pins or
-                    unpins; localStorage persists the choice. */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onTogglePin(s.id);
-                        }}
-                        title={isPinned ? "Unpin session" : "Pin session"}
-                        aria-label={isPinned ? "Unpin session" : "Pin session"}
-                        aria-pressed={isPinned}
-                        className={cn(
-                          "absolute top-1.5 right-1.5 inline-flex h-5 w-5 items-center justify-center rounded-md transition-all",
-                          isPinned
-                            ? "opacity-100"
-                            : "opacity-0 group-hover/session:opacity-60 hover:opacity-100"
+                        {isActive && (
+                          <span
+                            className="absolute inset-0 inline-flex animate-ping rounded-full opacity-70"
+                            style={{ backgroundColor: BRAND_GREEN }}
+                          />
                         )}
+                      </span>
+                      <span
+                        className={cn(
+                          "min-w-0 flex-1 truncate text-[12px]",
+                          (selected || isCurrent) && "font-medium"
+                        )}
+                        style={{ color: "var(--text)" }}
+                        title={s.title}
+                      >
+                        {s.title}
+                      </span>
+                      <span
+                        className="shrink-0 text-[10px] tabular-nums"
                         style={{
-                          color: isPinned ? BRAND_GREEN : "var(--text-muted)",
+                          color: isActive
+                            ? "var(--primary)"
+                            : "var(--text-faint)",
                         }}
                       >
-                        <Pin
-                          size={11}
-                          fill={isPinned ? BRAND_GREEN : "none"}
-                          strokeWidth={isPinned ? 2 : 1.8}
-                        />
-                      </button>
-                    </div>
+                        {isActive
+                          ? humanState(s.status)
+                          : fmtSessionWhen(new Date(s.date))}
+                      </span>
+                    </button>
                   );
                 })}
         </div>
