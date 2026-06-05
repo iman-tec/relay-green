@@ -593,7 +593,7 @@ export function NotificationBell({
           them on phones); ≥lg it floats at the original top-center. */}
       {toasts.length > 0 && (
         <div
-          className="pointer-events-none fixed inset-x-0 top-[4.5rem] z-[var(--z-toast)] flex flex-col items-center gap-2 px-4"
+          className="pointer-events-none fixed inset-x-0 top-6 z-[var(--z-toast)] flex flex-col items-center gap-2 px-4"
           style={{ paddingTop: "env(safe-area-inset-top)" }}
         >
           {toasts.map((n) => {
