@@ -19,40 +19,51 @@ export function RefillEmployeeDrawer({
   onClose,
   onRefilled,
 }: {
-  open:           boolean;
-  empId:          string | null;
-  empName?:       string;
-  empCurrent?:    { allocated: number; used: number; remaining: number };
+  open: boolean;
+  empId: string | null;
+  empName?: string;
+  empCurrent?: { allocated: number; used: number; remaining: number };
   deptRemaining?: number;
-  onClose:        () => void;
-  onRefilled:     () => void;
+  onClose: () => void;
+  onRefilled: () => void;
 }) {
-  const [amount, setAmount]   = useState("");
-  const [error, setError]     = useState<string | null>(null);
+  const [amount, setAmount] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const reset = () => { setAmount(""); setError(null); };
+  const reset = () => {
+    setAmount("");
+    setError(null);
+  };
 
   const submit = async () => {
-    if (!empId) { setError("Pick an employee first."); return; }
+    if (!empId) {
+      setError("Pick an employee first.");
+      return;
+    }
     const n = Number(amount);
     if (!Number.isFinite(n) || n <= 0) {
       setError("Amount must be a positive number.");
       return;
     }
     if (typeof deptRemaining === "number" && n > deptRemaining) {
-      setError(`Amount exceeds the department's remaining ${deptRemaining.toLocaleString()} min.`);
+      setError(
+        `Amount exceeds the department's remaining ${deptRemaining.toLocaleString()} min.`
+      );
       return;
     }
     setLoading(true);
     setError(null);
     try {
       const res = await fetch(`/api/department/employees/${empId}/refill`, {
-        method:  "POST",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ amount: n }),
+        body: JSON.stringify({ amount: n }),
       });
-      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+      };
       if (!res.ok || !body.ok) {
         setError(body.error ?? "Refill failed.");
         return;
@@ -69,11 +80,22 @@ export function RefillEmployeeDrawer({
   return (
     <Drawer
       open={open}
-      onClose={() => { reset(); onClose(); }}
+      onClose={() => {
+        reset();
+        onClose();
+      }}
       title={empName ? `Refill ${empName}` : "Refill minutes"}
       footer={
         <>
-          <SecondaryBtn onClick={() => { reset(); onClose(); }} disabled={loading}>Cancel</SecondaryBtn>
+          <SecondaryBtn
+            onClick={() => {
+              reset();
+              onClose();
+            }}
+            disabled={loading}
+          >
+            Cancel
+          </SecondaryBtn>
           <PrimaryBtn onClick={submit} disabled={loading}>
             {loading ? "Refilling…" : "Refill"}
           </PrimaryBtn>
@@ -88,23 +110,37 @@ export function RefillEmployeeDrawer({
           >
             <div className="flex justify-between">
               <span>Allocated</span>
-              <span style={{ color: "var(--text)" }}>{empCurrent.allocated.toLocaleString()} min</span>
+              <span style={{ color: "var(--text)" }}>
+                {empCurrent.allocated.toLocaleString()} min
+              </span>
             </div>
             <div className="flex justify-between">
               <span>Used</span>
-              <span style={{ color: "var(--text)" }}>{empCurrent.used.toLocaleString()} min</span>
+              <span style={{ color: "var(--text)" }}>
+                {empCurrent.used.toLocaleString()} min
+              </span>
             </div>
             <div className="flex justify-between">
               <span>Remaining</span>
-              <span style={{ color: "var(--text)" }}>{empCurrent.remaining.toLocaleString()} min</span>
+              <span style={{ color: "var(--text)" }}>
+                {empCurrent.remaining.toLocaleString()} min
+              </span>
             </div>
           </section>
         )}
 
         <Field label="Amount to add">
-          <Input value={amount} onChange={setAmount} placeholder="100" inputMode="numeric" />
+          <Input
+            value={amount}
+            onChange={setAmount}
+            placeholder="100"
+            inputMode="numeric"
+          />
           {typeof deptRemaining === "number" && (
-            <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+            <span
+              className="text-[11px]"
+              style={{ color: "var(--text-muted)" }}
+            >
               Department pool: {deptRemaining.toLocaleString()} min remaining
             </span>
           )}
@@ -116,18 +152,34 @@ export function RefillEmployeeDrawer({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <label className="flex flex-col gap-1.5">
-      <span className="text-xs font-medium" style={{ color: "var(--text)" }}>{label}</span>
+      <span className="text-xs font-medium" style={{ color: "var(--text)" }}>
+        {label}
+      </span>
       {children}
     </label>
   );
 }
 
 function Input({
-  value, onChange, placeholder, inputMode,
-}: { value: string; onChange: (v: string) => void; placeholder?: string; inputMode?: "numeric" | "text" }) {
+  value,
+  onChange,
+  placeholder,
+  inputMode,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  inputMode?: "numeric" | "text";
+}) {
   return (
     <input
       value={value}
@@ -140,12 +192,20 @@ function Input({
   );
 }
 
-function PrimaryBtn({ onClick, disabled, children }: {
-  onClick: () => void; disabled?: boolean; children: React.ReactNode;
+function PrimaryBtn({
+  onClick,
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
 }) {
   return (
     <button
-      type="button" onClick={onClick} disabled={disabled}
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
       className="rounded-md px-3 py-2 text-sm font-medium transition-opacity disabled:opacity-50"
       style={{ background: "var(--primary)", color: "#fff" }}
     >
@@ -154,12 +214,20 @@ function PrimaryBtn({ onClick, disabled, children }: {
   );
 }
 
-function SecondaryBtn({ onClick, disabled, children }: {
-  onClick: () => void; disabled?: boolean; children: React.ReactNode;
+function SecondaryBtn({
+  onClick,
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
 }) {
   return (
     <button
-      type="button" onClick={onClick} disabled={disabled}
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
       className="rounded-md border px-3 py-2 text-sm font-medium transition-opacity disabled:opacity-50"
       style={{ borderColor: "var(--border)", color: "var(--text)" }}
     >
@@ -174,8 +242,8 @@ function ErrorBanner({ message }: { message: string }) {
       className="rounded-md border px-3 py-2 text-xs"
       style={{
         borderColor: "color-mix(in srgb, var(--primary) 30%, transparent)",
-        background:  "color-mix(in srgb, var(--primary) 8%, transparent)",
-        color:       "var(--primary)",
+        background: "color-mix(in srgb, var(--primary) 8%, transparent)",
+        color: "var(--primary)",
       }}
     >
       {message}

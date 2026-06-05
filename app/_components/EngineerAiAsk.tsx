@@ -27,7 +27,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ChevronDown, ExternalLink, Loader2, Mic, Send, Sparkles, X,
+  ChevronDown,
+  ExternalLink,
+  Loader2,
+  Mic,
+  Send,
+  Sparkles,
+  X,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import {
@@ -81,7 +87,9 @@ export function EngineerAiAsk({
   // ── Voice dictation state ─────────────────────────────────────────
   const [voiceMode, setVoiceMode] = useState<"idle" | "transcribing">("idle");
   const [voiceMsg, setVoiceMsg] = useState<string | null>(null);
-  const recognitionRef = useRef<{ abort: () => void; stop: () => void } | null>(null);
+  const recognitionRef = useRef<{ abort: () => void; stop: () => void } | null>(
+    null
+  );
   const transcribeBaseRef = useRef<string>("");
 
   // ── Identify the current user (used to flag "your own" Q&A in the
@@ -94,7 +102,9 @@ export function EngineerAiAsk({
       if (!alive) return;
       setMeUserId(u.user?.id ?? null);
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, []);
 
   // ── Hydrate thread from engineer_ai_queries on mount ──────────────
@@ -107,7 +117,9 @@ export function EngineerAiAsk({
       const sb = sbRef.current;
       const { data, error: qe } = await sb
         .from("engineer_ai_queries")
-        .select("id, question, answer, citations, created_at, asked_by_user_id, answer_completed_at")
+        .select(
+          "id, question, answer, citations, created_at, asked_by_user_id, answer_completed_at"
+        )
         .eq("project_id", projectId)
         .not("answer", "is", null)
         .order("created_at", { ascending: false })
@@ -140,7 +152,9 @@ export function EngineerAiAsk({
         .reverse(); // oldest-first for chronological display
       setThread(entries);
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [projectId, meUserId]);
 
   // Auto-scroll to the latest entry when the thread grows.
@@ -211,8 +225,8 @@ export function EngineerAiAsk({
         acc += chunk;
         setThread((prev) =>
           prev.map((entry) =>
-            entry.id === optimisticId ? { ...entry, answer: acc } : entry,
-          ),
+            entry.id === optimisticId ? { ...entry, answer: acc } : entry
+          )
         );
       }
 
@@ -222,8 +236,8 @@ export function EngineerAiAsk({
         acc += tail;
         setThread((prev) =>
           prev.map((entry) =>
-            entry.id === optimisticId ? { ...entry, answer: acc } : entry,
-          ),
+            entry.id === optimisticId ? { ...entry, answer: acc } : entry
+          )
         );
       }
 
@@ -240,7 +254,11 @@ export function EngineerAiAsk({
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-      const real = (latest ?? null) as { id: string; citations: Citation[] | null; answer: string | null } | null;
+      const real = (latest ?? null) as {
+        id: string;
+        citations: Citation[] | null;
+        answer: string | null;
+      } | null;
       setThread((prev) =>
         prev.map((entry) =>
           entry.id === optimisticId
@@ -250,17 +268,23 @@ export function EngineerAiAsk({
                 citations: real?.citations ?? [],
                 streaming: false,
               }
-            : entry,
-        ),
+            : entry
+        )
       );
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
-      setThread((prev) => prev.map((entry) =>
-        entry.id === optimisticId
-          ? { ...entry, streaming: false, answer: entry.answer || `Error: ${msg}` }
-          : entry,
-      ));
+      setThread((prev) =>
+        prev.map((entry) =>
+          entry.id === optimisticId
+            ? {
+                ...entry,
+                streaming: false,
+                answer: entry.answer || `Error: ${msg}`,
+              }
+            : entry
+        )
+      );
     } finally {
       setSubmitting(false);
     }
@@ -271,24 +295,34 @@ export function EngineerAiAsk({
     if (voiceMode !== "idle") return;
     if (typeof window === "undefined") return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const Ctor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const Ctor =
+      (window as any).SpeechRecognition ||
+      (window as any).webkitSpeechRecognition;
     if (!Ctor) {
-      setVoiceMsg("Voice-to-text isn't supported in this browser. Try Chrome or Edge.");
+      setVoiceMsg(
+        "Voice-to-text isn't supported in this browser. Try Chrome or Edge."
+      );
       return;
     }
     setVoiceMsg(null);
     const permState = await queryMicPermission();
     if (permState === "denied") {
-      setVoiceMsg("Microphone is blocked for this site. Click the lock icon → Site settings → Microphone → Allow → reload.");
+      setVoiceMsg(
+        "Microphone is blocked for this site. Click the lock icon → Site settings → Microphone → Allow → reload."
+      );
       return;
     }
     if (navigator.mediaDevices?.getUserMedia) {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        });
         stream.getTracks().forEach((t) => t.stop());
       } catch (e) {
         if (e instanceof Error && e.name === "NotAllowedError") {
-          setVoiceMsg("You dismissed the microphone prompt. Click the mic again and choose Allow.");
+          setVoiceMsg(
+            "You dismissed the microphone prompt. Click the mic again and choose Allow."
+          );
         } else if (e instanceof Error && e.name === "NotFoundError") {
           setVoiceMsg("No microphone detected.");
         } else {
@@ -302,7 +336,9 @@ export function EngineerAiAsk({
     r.lang = navigator.language || "en-US";
     r.continuous = true;
     r.interimResults = true;
-    r.onresult = (event: { results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }> }) => {
+    r.onresult = (event: {
+      results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }>;
+    }) => {
       let finalText = "";
       let interim = "";
       for (let i = 0; i < event.results.length; i++) {
@@ -311,7 +347,10 @@ export function EngineerAiAsk({
         else interim += res[0].transcript;
       }
       const composed = [transcribeBaseRef.current, finalText, interim]
-        .filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+        .filter(Boolean)
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim();
       setText(composed);
     };
     r.onerror = (e: { error: string }) => {
@@ -326,20 +365,33 @@ export function EngineerAiAsk({
     };
     recognitionRef.current = r;
     setVoiceMode("transcribing");
-    try { r.start(); } catch {
+    try {
+      r.start();
+    } catch {
       setVoiceMsg("Voice recognition couldn't start — try again.");
       setVoiceMode("idle");
     }
   }, [voiceMode, text]);
 
   const stopTranscribe = useCallback(() => {
-    try { recognitionRef.current?.stop(); } catch { /* noop */ }
+    try {
+      recognitionRef.current?.stop();
+    } catch {
+      /* noop */
+    }
   }, []);
 
   // Tear-down on unmount so an abandoned mic stream doesn't keep listening.
-  useEffect(() => () => {
-    try { recognitionRef.current?.abort(); } catch { /* noop */ }
-  }, []);
+  useEffect(
+    () => () => {
+      try {
+        recognitionRef.current?.abort();
+      } catch {
+        /* noop */
+      }
+    },
+    []
+  );
 
   const disabled = !projectId;
   const placeholder = projectId
@@ -351,7 +403,9 @@ export function EngineerAiAsk({
       className="relative mx-auto w-full max-w-3xl"
       // Stop the live ChatComposer above from receiving the same Enter
       // submit by isolating focus events at this boundary.
-      onKeyDownCapture={(e) => { if (e.key === "Enter") e.stopPropagation(); }}
+      onKeyDownCapture={(e) => {
+        if (e.key === "Enter") e.stopPropagation();
+      }}
     >
       {/* Expanded thread panel — only renders when there's at least one
           entry OR the engineer has actively expanded the bar. */}
@@ -360,16 +414,20 @@ export function EngineerAiAsk({
           className="mb-2 overflow-hidden rounded-xl border shadow-sm"
           style={{
             borderColor: "color-mix(in srgb, var(--primary) 25%, transparent)",
-            backgroundColor: "color-mix(in srgb, var(--primary) 4%, var(--surface))",
+            backgroundColor:
+              "color-mix(in srgb, var(--primary) 4%, var(--surface))",
           }}
         >
           <div
             className="flex items-center gap-2 border-b px-4 py-2"
-            style={{ borderColor: "color-mix(in srgb, var(--primary) 18%, transparent)" }}
+            style={{
+              borderColor:
+                "color-mix(in srgb, var(--primary) 18%, transparent)",
+            }}
           >
             <Sparkles size={12} style={{ color: BRAND_GREEN }} />
             <span
-              className="flex-1 text-[11px] font-semibold uppercase tracking-[0.08em]"
+              className="flex-1 text-[11px] font-semibold tracking-[0.08em] uppercase"
               style={{ color: BRAND_GREEN }}
             >
               Project AI · {customerName}
@@ -403,7 +461,10 @@ export function EngineerAiAsk({
               ))}
             </div>
             {error && (
-              <p className="mt-2 text-[11px]" style={{ color: "var(--accent-red)" }}>
+              <p
+                className="mt-2 text-[11px]"
+                style={{ color: "var(--accent-red)" }}
+              >
                 {error}
               </p>
             )}
@@ -445,7 +506,9 @@ export function EngineerAiAsk({
             : "var(--surface-raised)",
           opacity: disabled ? 0.65 : 1,
         }}
-        title={disabled ? "This session isn't linked to a project yet." : undefined}
+        title={
+          disabled ? "This session isn't linked to a project yet." : undefined
+        }
       >
         <Sparkles size={14} style={{ color: BRAND_GREEN }} />
         <input
@@ -453,12 +516,18 @@ export function EngineerAiAsk({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+            if (
+              e.key === "Enter" &&
+              !e.shiftKey &&
+              !e.nativeEvent.isComposing
+            ) {
               e.preventDefault();
               void submit();
             }
           }}
-          onFocus={() => { if (thread.length > 0) setExpanded(true); }}
+          onFocus={() => {
+            if (thread.length > 0) setExpanded(true);
+          }}
           placeholder={placeholder}
           disabled={disabled || submitting}
           className="min-w-0 flex-1 bg-transparent text-[12.5px] outline-none placeholder:opacity-60"
@@ -466,16 +535,28 @@ export function EngineerAiAsk({
         />
         <button
           type="button"
-          onClick={voiceMode === "transcribing" ? stopTranscribe : () => void startTranscribe()}
+          onClick={
+            voiceMode === "transcribing"
+              ? stopTranscribe
+              : () => void startTranscribe()
+          }
           disabled={disabled || submitting}
-          aria-label={voiceMode === "transcribing" ? "Stop dictating" : "Dictate"}
-          title={voiceMode === "transcribing" ? "Stop dictating" : "Dictate — voice to text"}
+          aria-label={
+            voiceMode === "transcribing" ? "Stop dictating" : "Dictate"
+          }
+          title={
+            voiceMode === "transcribing"
+              ? "Stop dictating"
+              : "Dictate — voice to text"
+          }
           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-40"
           style={{
-            color: voiceMode === "transcribing" ? BRAND_GREEN : "var(--text-muted)",
-            backgroundColor: voiceMode === "transcribing"
-              ? "color-mix(in srgb, var(--primary) 14%, transparent)"
-              : "transparent",
+            color:
+              voiceMode === "transcribing" ? BRAND_GREEN : "var(--text-muted)",
+            backgroundColor:
+              voiceMode === "transcribing"
+                ? "color-mix(in srgb, var(--primary) 14%, transparent)"
+                : "transparent",
           }}
         >
           <Mic size={12} />
@@ -488,7 +569,11 @@ export function EngineerAiAsk({
           className="flex h-7 items-center gap-1 rounded-full px-2.5 text-[11px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           style={{ backgroundColor: BRAND_GREEN }}
         >
-          {submitting ? <Loader2 size={11} className="animate-spin" /> : <Send size={11} />}
+          {submitting ? (
+            <Loader2 size={11} className="animate-spin" />
+          ) : (
+            <Send size={11} />
+          )}
           Ask
         </button>
         {thread.length > 0 && !expanded && (
@@ -514,7 +599,12 @@ export function EngineerAiAsk({
 function AiQaBlock({ entry }: { entry: ThreadEntry }) {
   const askedDate = useMemo(() => {
     const d = new Date(entry.askedAt);
-    return d.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    return d.toLocaleString([], {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
   }, [entry.askedAt]);
 
   return (
@@ -522,17 +612,28 @@ function AiQaBlock({ entry }: { entry: ThreadEntry }) {
       {/* Question bubble — right-aligned, brand green like outgoing chat
           bubbles in SessionReviewClient. Subdued when not asked by the
           current engineer (prior engineer's Q is visible but de-emphasised). */}
-      <div className={`flex ${entry.askedByMe ? "justify-end" : "justify-start"}`}>
+      <div
+        className={`flex ${entry.askedByMe ? "justify-end" : "justify-start"}`}
+      >
         <div
           className="max-w-[85%] rounded-2xl px-3 py-1.5 text-[12.5px] whitespace-pre-wrap"
           style={
             entry.askedByMe
-              ? { backgroundColor: BRAND_GREEN, color: "#fff", borderBottomRightRadius: 4 }
-              : { backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)", color: "var(--text)", borderBottomLeftRadius: 4 }
+              ? {
+                  backgroundColor: BRAND_GREEN,
+                  color: "#fff",
+                  borderBottomRightRadius: 4,
+                }
+              : {
+                  backgroundColor:
+                    "color-mix(in srgb, var(--text) 6%, transparent)",
+                  color: "var(--text)",
+                  borderBottomLeftRadius: 4,
+                }
           }
         >
           {!entry.askedByMe && (
-            <div className="mb-0.5 text-[9px] font-semibold uppercase tracking-wider opacity-60">
+            <div className="mb-0.5 text-[9px] font-semibold tracking-wider uppercase opacity-60">
               Asked by a prior engineer
             </div>
           )}
@@ -551,7 +652,10 @@ function AiQaBlock({ entry }: { entry: ThreadEntry }) {
             border: "1px solid var(--border)",
           }}
         >
-          <div className="mb-1 flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-wider" style={{ color: BRAND_GREEN }}>
+          <div
+            className="mb-1 flex items-center gap-1.5 text-[9px] font-semibold tracking-wider uppercase"
+            style={{ color: BRAND_GREEN }}
+          >
             <Sparkles size={9} />
             AI · {askedDate}
             {entry.streaming && <Loader2 size={9} className="animate-spin" />}
@@ -581,7 +685,8 @@ function AiQaBlock({ entry }: { entry: ThreadEntry }) {
 const TOKEN_PATTERN = /\[([A-Z]+\d*)\]/g;
 
 function AnswerWithCitations({
-  answer, citations,
+  answer,
+  citations,
 }: {
   answer: string;
   citations: Citation[];
@@ -610,7 +715,7 @@ function AnswerWithCitations({
   }, [answer]);
 
   return (
-    <span className="whitespace-pre-wrap break-words">
+    <span className="break-words whitespace-pre-wrap">
       {parts.map((p, i) => {
         if (p.kind === "text") return <span key={i}>{p.value}</span>;
         const c = byToken.get(p.value);
@@ -625,14 +730,19 @@ function InlineCitation({ citation }: { citation: Citation }) {
   const href = citation.sessionId
     ? `/session-review/${citation.sessionId}`
     : null;
-  const baseClass = "inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0 text-[10px] font-semibold align-baseline";
+  const baseClass =
+    "inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0 text-[10px] font-semibold align-baseline";
   const style: React.CSSProperties = {
     borderColor: BRAND_GREEN,
     backgroundColor: BRAND_GREEN_SOFT,
     color: BRAND_GREEN,
   };
   if (!href) {
-    return <span className={baseClass} style={style} title={citation.label}>[{citation.token}]</span>;
+    return (
+      <span className={baseClass} style={style} title={citation.label}>
+        [{citation.token}]
+      </span>
+    );
   }
   return (
     <a
@@ -654,21 +764,26 @@ function CitationChip({ citation }: { citation: Citation }) {
     : null;
   const body = (
     <>
-      <span className="text-[9px] font-bold uppercase tracking-wider opacity-70">
+      <span className="text-[9px] font-bold tracking-wider uppercase opacity-70">
         {citation.token}
       </span>
       <span className="truncate">{citation.label}</span>
       {href && <ExternalLink size={9} className="opacity-60" />}
     </>
   );
-  const className = "inline-flex max-w-[200px] items-center gap-1 rounded-full border px-2 py-0.5 text-[10px]";
+  const className =
+    "inline-flex max-w-[200px] items-center gap-1 rounded-full border px-2 py-0.5 text-[10px]";
   const style: React.CSSProperties = {
     borderColor: BRAND_GREEN,
     backgroundColor: "var(--surface)",
     color: BRAND_GREEN,
   };
   if (!href) {
-    return <span className={className} style={style} title={citation.label}>{body}</span>;
+    return (
+      <span className={className} style={style} title={citation.label}>
+        {body}
+      </span>
+    );
   }
   return (
     <a

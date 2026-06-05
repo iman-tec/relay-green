@@ -10,12 +10,27 @@ import { useState } from "react";
 import { Drawer } from "@/app/_components/admin-v2/Drawer";
 import { ROLE } from "@/lib/relay/roles";
 
-type RoleKey = typeof ROLE.engineer | typeof ROLE.supervisor | typeof ROLE.super_admin;
+type RoleKey =
+  | typeof ROLE.engineer
+  | typeof ROLE.supervisor
+  | typeof ROLE.super_admin;
 
 const ROLE_OPTIONS: { value: RoleKey; label: string; hint: string }[] = [
-  { value: ROLE.engineer,    label: "Engineer",   hint: "Handles live customer calls" },
-  { value: ROLE.supervisor,  label: "Supervisor", hint: "Oversees a pod of engineers" },
-  { value: ROLE.super_admin, label: "Superadmin", hint: "Platform-wide administration" },
+  {
+    value: ROLE.engineer,
+    label: "Engineer",
+    hint: "Handles live customer calls",
+  },
+  {
+    value: ROLE.supervisor,
+    label: "Supervisor",
+    hint: "Oversees a pod of engineers",
+  },
+  {
+    value: ROLE.super_admin,
+    label: "Superadmin",
+    hint: "Platform-wide administration",
+  },
 ];
 
 export function AddInternalUserDrawer({
@@ -24,45 +39,61 @@ export function AddInternalUserDrawer({
   onClose,
   onCreated,
 }: {
-  open:        boolean;
+  open: boolean;
   /** Pre-selects the role picker — usually whatever tile the user is on. */
   defaultRole?: RoleKey;
-  onClose:     () => void;
-  onCreated:   (userId: string) => void;
+  onClose: () => void;
+  onCreated: (userId: string) => void;
 }) {
-  const [name, setName]       = useState("");
-  const [email, setEmail]     = useState("");
-  const [role, setRole]       = useState<RoleKey>(defaultRole ?? ROLE.engineer);
-  const [error, setError]     = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<RoleKey>(defaultRole ?? ROLE.engineer);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   // Sync the role picker when the parent opens us for a different tile.
-  if (open && defaultRole && defaultRole !== role && !loading && !error && !name && !email) {
+  if (
+    open &&
+    defaultRole &&
+    defaultRole !== role &&
+    !loading &&
+    !error &&
+    !name &&
+    !email
+  ) {
     // setState in render is safe here because of the guards above; React will
     // bail if the value is unchanged on a re-render.
     setTimeout(() => setRole(defaultRole), 0);
   }
 
   const reset = () => {
-    setName(""); setEmail(""); setError(null);
+    setName("");
+    setEmail("");
+    setError(null);
     setRole(defaultRole ?? ROLE.engineer);
   };
 
   const submit = async () => {
-    if (!name.trim() || !email.trim()) { setError("Name and email are required."); return; }
+    if (!name.trim() || !email.trim()) {
+      setError("Name and email are required.");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
       const res = await fetch("/api/admin/users", {
-        method:  "POST",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email:       email.trim(),
+          email: email.trim(),
           displayName: name.trim(),
           role,
         }),
       });
-      const body = (await res.json().catch(() => ({}))) as { user?: { id: string }; error?: string };
+      const body = (await res.json().catch(() => ({}))) as {
+        user?: { id: string };
+        error?: string;
+      };
       if (!res.ok || !body.user) {
         setError(body.error ?? "Couldn't add user.");
         return;
@@ -79,11 +110,22 @@ export function AddInternalUserDrawer({
   return (
     <Drawer
       open={open}
-      onClose={() => { reset(); onClose(); }}
+      onClose={() => {
+        reset();
+        onClose();
+      }}
       title="Add Internal User"
       footer={
         <>
-          <SecondaryBtn onClick={() => { reset(); onClose(); }} disabled={loading}>Cancel</SecondaryBtn>
+          <SecondaryBtn
+            onClick={() => {
+              reset();
+              onClose();
+            }}
+            disabled={loading}
+          >
+            Cancel
+          </SecondaryBtn>
           <PrimaryBtn onClick={submit} disabled={loading}>
             {loading ? "Inviting…" : "Send invite"}
           </PrimaryBtn>
@@ -95,7 +137,12 @@ export function AddInternalUserDrawer({
           <Input value={name} onChange={setName} placeholder="Pat Lee" />
         </Field>
         <Field label="Email">
-          <Input value={email} onChange={setEmail} placeholder="pat@relay.green" type="email" />
+          <Input
+            value={email}
+            onChange={setEmail}
+            placeholder="pat@relay.green"
+            type="email"
+          />
         </Field>
         <Field label="Role">
           <div className="flex flex-col gap-1.5">
@@ -106,15 +153,22 @@ export function AddInternalUserDrawer({
                 onClick={() => setRole(o.value)}
                 className="flex flex-col items-start gap-0.5 rounded-md border px-3 py-2 text-left transition-colors"
                 style={{
-                  borderColor: role === o.value ? "var(--primary)" : "var(--border)",
-                  background:  role === o.value
-                    ? "color-mix(in srgb, var(--primary) 8%, transparent)"
-                    : "transparent",
+                  borderColor:
+                    role === o.value ? "var(--primary)" : "var(--border)",
+                  background:
+                    role === o.value
+                      ? "color-mix(in srgb, var(--primary) 8%, transparent)"
+                      : "transparent",
                   color: "var(--text)",
                 }}
               >
                 <span className="text-sm font-medium">{o.label}</span>
-                <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>{o.hint}</span>
+                <span
+                  className="text-[11px]"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  {o.hint}
+                </span>
               </button>
             ))}
           </div>
@@ -125,18 +179,34 @@ export function AddInternalUserDrawer({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <label className="flex flex-col gap-1.5">
-      <span className="text-xs font-medium" style={{ color: "var(--text)" }}>{label}</span>
+      <span className="text-xs font-medium" style={{ color: "var(--text)" }}>
+        {label}
+      </span>
       {children}
     </label>
   );
 }
 
 function Input({
-  value, onChange, placeholder, type,
-}: { value: string; onChange: (v: string) => void; placeholder?: string; type?: string }) {
+  value,
+  onChange,
+  placeholder,
+  type,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  type?: string;
+}) {
   return (
     <input
       value={value}
@@ -149,12 +219,20 @@ function Input({
   );
 }
 
-function PrimaryBtn({ onClick, disabled, children }: {
-  onClick: () => void; disabled?: boolean; children: React.ReactNode;
+function PrimaryBtn({
+  onClick,
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
 }) {
   return (
     <button
-      type="button" onClick={onClick} disabled={disabled}
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
       className="rounded-md px-3 py-2 text-sm font-medium transition-opacity disabled:opacity-50"
       style={{ background: "var(--primary)", color: "#fff" }}
     >
@@ -163,12 +241,20 @@ function PrimaryBtn({ onClick, disabled, children }: {
   );
 }
 
-function SecondaryBtn({ onClick, disabled, children }: {
-  onClick: () => void; disabled?: boolean; children: React.ReactNode;
+function SecondaryBtn({
+  onClick,
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
 }) {
   return (
     <button
-      type="button" onClick={onClick} disabled={disabled}
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
       className="rounded-md border px-3 py-2 text-sm font-medium transition-opacity disabled:opacity-50"
       style={{ borderColor: "var(--border)", color: "var(--text)" }}
     >
@@ -183,8 +269,8 @@ function ErrorBanner({ message }: { message: string }) {
       className="rounded-md border px-3 py-2 text-xs"
       style={{
         borderColor: "color-mix(in srgb, var(--primary) 30%, transparent)",
-        background:  "color-mix(in srgb, var(--primary) 8%, transparent)",
-        color:       "var(--primary)",
+        background: "color-mix(in srgb, var(--primary) 8%, transparent)",
+        color: "var(--primary)",
       }}
     >
       {message}

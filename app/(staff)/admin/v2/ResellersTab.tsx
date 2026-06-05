@@ -29,29 +29,47 @@ import { AddResellerDrawer } from "./_drawers/AddResellerDrawer";
 import { AddEnterpriseDrawer } from "./_drawers/AddEnterpriseDrawer";
 import { AddDepartmentDrawer } from "./_drawers/AddDepartmentDrawer";
 import { AddEmployeeDrawer } from "./_drawers/AddEmployeeDrawer";
-import { AdminRefillDrawer, type RefillTarget } from "./_drawers/AdminRefillDrawer";
+import {
+  AdminRefillDrawer,
+  type RefillTarget,
+} from "./_drawers/AdminRefillDrawer";
 import { AssignAdminDrawer } from "./_drawers/AssignAdminDrawer";
 
 // ── Types from the existing endpoints ────────────────────────────────
 type ResellerEnterprise = {
-  id: string; name: string; primaryDomain: string | null;
-  status: string; enterpriseCode: string;
-  allocatedMinutes: number; usedMinutes: number; remainingMinutes: number;
+  id: string;
+  name: string;
+  primaryDomain: string | null;
+  status: string;
+  enterpriseCode: string;
+  allocatedMinutes: number;
+  usedMinutes: number;
+  remainingMinutes: number;
 };
 type Reseller = {
-  id: string; name: string; email: string | null;
-  resellerCode: string; commission: number;
-  allocatedMinutes: number; usedMinutes: number; remainingMinutes: number;
+  id: string;
+  name: string;
+  email: string | null;
+  resellerCode: string;
+  commission: number;
+  allocatedMinutes: number;
+  usedMinutes: number;
+  remainingMinutes: number;
   status: string;
   ownerUserId: string | null;
-  totalEnterprises: number; activeEnterprises: number;
+  totalEnterprises: number;
+  activeEnterprises: number;
   enterprises: ResellerEnterprise[];
 };
 
 type OrgDepartment = {
-  id: string; name: string; departmentCode: string;
+  id: string;
+  name: string;
+  departmentCode: string;
   status: string;
-  allocatedMinutes: number; usedMinutes: number; remainingMinutes: number;
+  allocatedMinutes: number;
+  usedMinutes: number;
+  remainingMinutes: number;
   memberCount: number;
 };
 type Org = {
@@ -61,38 +79,46 @@ type Org = {
 };
 
 type Employee = {
-  id: string; displayName: string; email: string;
-  primaryRole: string | null; clientType: string;
-  allocatedMinutes: number; usedMinutes: number; remainingMinutes: number;
-  status: string; lastSignIn: string | null;
+  id: string;
+  displayName: string;
+  email: string;
+  primaryRole: string | null;
+  clientType: string;
+  allocatedMinutes: number;
+  usedMinutes: number;
+  remainingMinutes: number;
+  status: string;
+  lastSignIn: string | null;
 };
 
 export function ResellersTab() {
   const [resellers, setResellers] = useState<Reseller[]>([]);
-  const [orgsByReseller, setOrgsByReseller] = useState<Map<string, Org[]>>(new Map());
+  const [orgsByReseller, setOrgsByReseller] = useState<Map<string, Org[]>>(
+    new Map()
+  );
   const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const [selResellerId, setResellerId] = useState<string | null>(null);
-  const [selEntId,      setEntId]      = useState<string | null>(null);
-  const [selDeptId,     setDeptId]     = useState<string | null>(null);
+  const [selEntId, setEntId] = useState<string | null>(null);
+  const [selDeptId, setDeptId] = useState<string | null>(null);
 
   const [addReseller, setAddReseller] = useState(false);
-  const [addEnt,      setAddEnt]      = useState(false);
-  const [addDept,     setAddDept]     = useState(false);
-  const [addEmp,      setAddEmp]      = useState(false);
+  const [addEnt, setAddEnt] = useState(false);
+  const [addDept, setAddDept] = useState(false);
+  const [addEmp, setAddEmp] = useState(false);
   const [editReseller, setEditReseller] = useState(false);
-  const [editEnt,      setEditEnt]      = useState(false);
-  const [editDept,     setEditDept]     = useState(false);
+  const [editEnt, setEditEnt] = useState(false);
+  const [editDept, setEditDept] = useState(false);
   const [refillTarget, setRefillTarget] = useState<RefillTarget | null>(null);
   const [assignAdmin, setAssignAdmin] = useState(false);
 
   // Employees for the selected department
-  const [employees, setEmployees]       = useState<Employee[]>([]);
-  const [deptAdmin, setDeptAdmin]       = useState<Employee | null>(null);
-  const [empLoading, setEmpLoading]     = useState(false);
-  const [empError,   setEmpError]       = useState<string | null>(null);
-  const [empTick, bumpEmpTick]          = useState(0);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [deptAdmin, setDeptAdmin] = useState<Employee | null>(null);
+  const [empLoading, setEmpLoading] = useState(false);
+  const [empError, setEmpError] = useState<string | null>(null);
+  const [empTick, bumpEmpTick] = useState(0);
   const refreshEmployees = useCallback(() => bumpEmpTick((t) => t + 1), []);
 
   // ─ Refresh: pull resellers + orgs in parallel ──────────────────────
@@ -102,17 +128,23 @@ export function ResellersTab() {
     try {
       const [rRes, oRes] = await Promise.all([
         fetch("/api/admin/resellers", { cache: "no-store" }),
-        fetch("/api/admin/orgs",      { cache: "no-store" }),
+        fetch("/api/admin/orgs", { cache: "no-store" }),
       ]);
-      const rBody = (await rRes.json().catch(() => ({}))) as { resellers?: Reseller[]; error?: string };
-      const oBody = (await oRes.json().catch(() => ({}))) as { orgs?: Org[]; error?: string };
+      const rBody = (await rRes.json().catch(() => ({}))) as {
+        resellers?: Reseller[];
+        error?: string;
+      };
+      const oBody = (await oRes.json().catch(() => ({}))) as {
+        orgs?: Org[];
+        error?: string;
+      };
       if (!rRes.ok || !rBody.resellers) {
         setError(rBody.error ?? "Couldn't load channel partners.");
         return;
       }
       setResellers(rBody.resellers);
       const map = new Map<string, Org[]>();
-      for (const o of (oBody.orgs ?? [])) {
+      for (const o of oBody.orgs ?? []) {
         if (!o.resellerId) continue;
         const list = map.get(o.resellerId) ?? [];
         list.push(o);
@@ -120,19 +152,26 @@ export function ResellersTab() {
       }
       setOrgsByReseller(map);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't load channel partners.");
+      setError(
+        e instanceof Error ? e.message : "Couldn't load channel partners."
+      );
     } finally {
       setLoading(false);
     }
   }, []);
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
   // ─ Selection lookups ───────────────────────────────────────────────
-  const selReseller   = resellers.find((r) => r.id === selResellerId) ?? null;
-  const resellerOrgs  = selResellerId ? (orgsByReseller.get(selResellerId) ?? []) : [];
-  const selOrg        = resellerOrgs.find((o) => o.id === selEntId) ?? null;
-  const enterpriseRow = selReseller?.enterprises.find((e) => e.id === selEntId) ?? null;
-  const selDept       = selOrg?.departments.find((d) => d.id === selDeptId) ?? null;
+  const selReseller = resellers.find((r) => r.id === selResellerId) ?? null;
+  const resellerOrgs = selResellerId
+    ? (orgsByReseller.get(selResellerId) ?? [])
+    : [];
+  const selOrg = resellerOrgs.find((o) => o.id === selEntId) ?? null;
+  const enterpriseRow =
+    selReseller?.enterprises.find((e) => e.id === selEntId) ?? null;
+  const selDept = selOrg?.departments.find((d) => d.id === selDeptId) ?? null;
 
   // ─ Employees fetch ─────────────────────────────────────────────────
   useEffect(() => {
@@ -146,12 +185,14 @@ export function ResellersTab() {
       setEmpLoading(true);
       setEmpError(null);
       try {
-        const res  = await fetch(
+        const res = await fetch(
           `/api/admin/orgs/${selEntId}/departments/${selDeptId}/employees`,
-          { cache: "no-store" },
+          { cache: "no-store" }
         );
         const body = (await res.json().catch(() => ({}))) as {
-          employees?: Employee[]; admin?: Employee | null; error?: string;
+          employees?: Employee[];
+          admin?: Employee | null;
+          error?: string;
         };
         if (cancelled) return;
         if (!res.ok || !body.employees) {
@@ -161,12 +202,17 @@ export function ResellersTab() {
         setEmployees(body.employees);
         setDeptAdmin(body.admin ?? null);
       } catch (e) {
-        if (!cancelled) setEmpError(e instanceof Error ? e.message : "Couldn't load employees.");
+        if (!cancelled)
+          setEmpError(
+            e instanceof Error ? e.message : "Couldn't load employees."
+          );
       } finally {
         if (!cancelled) setEmpLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [selEntId, selDeptId, empTick]);
 
   // ─ Derived rollups ─────────────────────────────────────────────────
@@ -178,29 +224,33 @@ export function ResellersTab() {
   // undistributed remainder, which is what bit us before.
 
   const empTotals = useMemo(() => {
-    let used = 0, allocated = 0;
+    let used = 0,
+      allocated = 0;
     for (const e of employees) {
-      used      += e.usedMinutes;
+      used += e.usedMinutes;
       allocated += e.allocatedMinutes;
     }
     return { used, allocated };
   }, [employees]);
 
   // ─ Mutations ───────────────────────────────────────────────────────
-  const setResellerStatus = async (id: string, status: "active" | "suspended") => {
+  const setResellerStatus = async (
+    id: string,
+    status: "active" | "suspended"
+  ) => {
     const res = await fetch(`/api/admin/resellers/${id}`, {
-      method:  "PATCH",
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ status }),
+      body: JSON.stringify({ status }),
     });
     if (res.ok) refresh();
     else alert((await res.json().catch(() => ({}))).error ?? "Update failed.");
   };
   const setOrgStatus = async (id: string, status: "active" | "suspended") => {
     const res = await fetch(`/api/admin/orgs/${id}`, {
-      method:  "PATCH",
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ status }),
+      body: JSON.stringify({ status }),
     });
     if (res.ok) refresh();
     else alert((await res.json().catch(() => ({}))).error ?? "Update failed.");
@@ -211,50 +261,64 @@ export function ResellersTab() {
     if (res.ok) {
       setEntId(null);
       refresh();
-    } else alert((await res.json().catch(() => ({}))).error ?? "Delete failed.");
+    } else
+      alert((await res.json().catch(() => ({}))).error ?? "Delete failed.");
   };
-  const setDeptStatus = async (orgId: string, deptId: string, status: "active" | "suspended") => {
+  const setDeptStatus = async (
+    orgId: string,
+    deptId: string,
+    status: "active" | "suspended"
+  ) => {
     const res = await fetch(`/api/admin/orgs/${orgId}/departments/${deptId}`, {
-      method:  "PATCH",
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ status }),
+      body: JSON.stringify({ status }),
     });
     if (res.ok) refresh();
     else alert((await res.json().catch(() => ({}))).error ?? "Update failed.");
   };
   const deleteDept = async (orgId: string, deptId: string) => {
     if (!confirm("Delete this department? Employees will be detached.")) return;
-    const res = await fetch(`/api/admin/orgs/${orgId}/departments/${deptId}`, { method: "DELETE" });
+    const res = await fetch(`/api/admin/orgs/${orgId}/departments/${deptId}`, {
+      method: "DELETE",
+    });
     if (res.ok) {
       setDeptId(null);
       refresh();
-    } else alert((await res.json().catch(() => ({}))).error ?? "Delete failed.");
+    } else
+      alert((await res.json().catch(() => ({}))).error ?? "Delete failed.");
   };
   const detachEmployee = async (empId: string) => {
     if (!selEntId || !selDeptId) return;
     if (!confirm("Remove this employee from the department?")) return;
     const res = await fetch(
       `/api/admin/orgs/${selEntId}/departments/${selDeptId}/employees/${empId}`,
-      { method: "DELETE" },
+      { method: "DELETE" }
     );
     if (res.ok) {
       refreshEmployees();
       refresh();
-    } else alert((await res.json().catch(() => ({}))).error ?? "Remove failed.");
+    } else
+      alert((await res.json().catch(() => ({}))).error ?? "Remove failed.");
   };
   const resendInvite = async (id: string) => {
-    const res = await fetch(`/api/admin/users/${id}/resend-invite`, { method: "POST" });
+    const res = await fetch(`/api/admin/users/${id}/resend-invite`, {
+      method: "POST",
+    });
     if (res.ok) alert("Invite resent.");
     else alert((await res.json().catch(() => ({}))).error ?? "Resend failed.");
   };
-  const toggleEmployeeStatus = async (empId: string, currentlyActive: boolean) => {
+  const toggleEmployeeStatus = async (
+    empId: string,
+    currentlyActive: boolean
+  ) => {
     const next = currentlyActive ? "DEACTIVATED" : "ACTIVE";
     const verb = currentlyActive ? "Deactivate" : "Reactivate";
     if (!confirm(`${verb} this user's sign-in access?`)) return;
     const res = await fetch(`/api/admin/users/${empId}`, {
-      method:  "PATCH",
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ status: next }),
+      body: JSON.stringify({ status: next }),
     });
     if (res.ok) refreshEmployees();
     else alert((await res.json().catch(() => ({}))).error ?? "Update failed.");
@@ -265,190 +329,235 @@ export function ResellersTab() {
   // three-level Reseller drill-down. Lower-level sidebars only render
   // once their parent is selected. The breadcrumb in the main area is
   // still the back-navigation.
-  const showResellersSidebar   = true;
+  const showResellersSidebar = true;
   const showEnterprisesSidebar = selResellerId !== null;
   const showDepartmentsSidebar = selEntId !== null;
 
   return (
     <div className="flex h-full min-h-0">
       {showResellersSidebar && (
-      /* Sidebar 1 — resellers */
-      <Sidebar
-        title="Channel Partners"
-        searchPlaceholder="Search channel partners…"
-        width={240}
-        items={resellers.map((r) => ({
-          id:     r.id,
-          label:  r.name,
-          search: `${r.name} ${r.email ?? ""} ${r.resellerCode}`,
-          _data:  r,
-        }))}
-        selectedId={selResellerId}
-        onSelect={(it) => {
-          // Click any reseller → reset enterprise + dept selections.
-          setEntId(null);
-          setDeptId(null);
-          setEmployees([]);
-          setDeptAdmin(null);
-          setResellerId(it.id);
-        }}
-        emptyMessage={loading ? "Loading…" : (error ?? "No channel partners yet.")}
-        footer={
-          <button
-            type="button"
-            onClick={() => setAddReseller(true)}
-            className="flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium"
-            style={{ background: "var(--primary)", color: "#fff" }}
-          >
-            <Plus className="size-3.5" /> Add Channel Partner
-          </button>
-        }
-        renderRow={(it) => {
-          const r = (it as unknown as { _data: Reseller })._data;
-          return (
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center justify-between gap-2">
-                <span className="truncate text-sm font-medium" style={{ color: "var(--text)" }}>
-                  {r.name}
-                </span>
-                <span
-                  className="size-2 shrink-0 rounded-full"
-                  style={{ background: r.status === "active" ? "#3dcb7e" : "var(--text-muted)" }}
+        /* Sidebar 1 — resellers */
+        <Sidebar
+          title="Channel Partners"
+          searchPlaceholder="Search channel partners…"
+          width={240}
+          items={resellers.map((r) => ({
+            id: r.id,
+            label: r.name,
+            search: `${r.name} ${r.email ?? ""} ${r.resellerCode}`,
+            _data: r,
+          }))}
+          selectedId={selResellerId}
+          onSelect={(it) => {
+            // Click any reseller → reset enterprise + dept selections.
+            setEntId(null);
+            setDeptId(null);
+            setEmployees([]);
+            setDeptAdmin(null);
+            setResellerId(it.id);
+          }}
+          emptyMessage={
+            loading ? "Loading…" : (error ?? "No channel partners yet.")
+          }
+          footer={
+            <button
+              type="button"
+              onClick={() => setAddReseller(true)}
+              className="flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium"
+              style={{ background: "var(--primary)", color: "#fff" }}
+            >
+              <Plus className="size-3.5" /> Add Channel Partner
+            </button>
+          }
+          renderRow={(it) => {
+            const r = (it as unknown as { _data: Reseller })._data;
+            return (
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span
+                    className="truncate text-sm font-medium"
+                    style={{ color: "var(--text)" }}
+                  >
+                    {r.name}
+                  </span>
+                  <span
+                    className="size-2 shrink-0 rounded-full"
+                    style={{
+                      background:
+                        r.status === "active" ? "#3dcb7e" : "var(--text-muted)",
+                    }}
+                  />
+                </div>
+                <div
+                  className="text-[10px] tracking-wider uppercase"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  {r.totalEnterprises} enterprise
+                  {r.totalEnterprises === 1 ? "" : "s"} · {r.commission}% comm
+                </div>
+                <MinutesBar
+                  used={r.usedMinutes}
+                  allocated={r.allocatedMinutes}
+                  size="sm"
                 />
               </div>
-              <div className="text-[10px] tracking-wider uppercase" style={{ color: "var(--text-muted)" }}>
-                {r.totalEnterprises} enterprise{r.totalEnterprises === 1 ? "" : "s"} · {r.commission}% comm
-              </div>
-              <MinutesBar used={r.usedMinutes} allocated={r.allocatedMinutes} size="sm" />
-            </div>
-          );
-        }}
-      />
+            );
+          }}
+        />
       )}
 
       {showEnterprisesSidebar && (
-      /* Sidebar 2 — enterprises under the selected reseller */
-      <Sidebar
-        title="Enterprises"
-        searchPlaceholder="Search enterprises…"
-        width={240}
-        items={(selReseller?.enterprises ?? []).map((e) => ({
-          id:     e.id,
-          label:  e.name,
-          search: `${e.name} ${e.enterpriseCode}`,
-          _data:  e,
-        }))}
-        selectedId={selEntId}
-        onSelect={(it) => {
-          setDeptId(null);
-          setEmployees([]);
-          setDeptAdmin(null);
-          setEntId(it.id);
-        }}
-        emptyMessage={selReseller ? "No enterprises yet." : "Select a channel partner."}
-        footer={
-          selReseller && (
-            <button
-              type="button"
-              onClick={() => setAddEnt(true)}
-              className="flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium"
-              style={{ background: "var(--primary)", color: "#fff" }}
-            >
-              <Plus className="size-3.5" /> Add Enterprise
-            </button>
-          )
-        }
-        renderRow={(it) => {
-          const e = (it as unknown as { _data: ResellerEnterprise })._data;
-          // Show the org's own pool (org.allocated_minutes) — the same
-          // number that appears in the Enterprise detail card. Summing
-          // departments would only show what's been pushed down, hiding
-          // the undistributed remainder.
-          return (
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center justify-between gap-2">
-                <span className="truncate text-sm font-medium" style={{ color: "var(--text)" }}>
-                  {e.name}
-                </span>
-                <span
-                  className="size-2 shrink-0 rounded-full"
-                  style={{ background: e.status === "active" ? "#3dcb7e" : "var(--text-muted)" }}
+        /* Sidebar 2 — enterprises under the selected reseller */
+        <Sidebar
+          title="Enterprises"
+          searchPlaceholder="Search enterprises…"
+          width={240}
+          items={(selReseller?.enterprises ?? []).map((e) => ({
+            id: e.id,
+            label: e.name,
+            search: `${e.name} ${e.enterpriseCode}`,
+            _data: e,
+          }))}
+          selectedId={selEntId}
+          onSelect={(it) => {
+            setDeptId(null);
+            setEmployees([]);
+            setDeptAdmin(null);
+            setEntId(it.id);
+          }}
+          emptyMessage={
+            selReseller ? "No enterprises yet." : "Select a channel partner."
+          }
+          footer={
+            selReseller && (
+              <button
+                type="button"
+                onClick={() => setAddEnt(true)}
+                className="flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium"
+                style={{ background: "var(--primary)", color: "#fff" }}
+              >
+                <Plus className="size-3.5" /> Add Enterprise
+              </button>
+            )
+          }
+          renderRow={(it) => {
+            const e = (it as unknown as { _data: ResellerEnterprise })._data;
+            // Show the org's own pool (org.allocated_minutes) — the same
+            // number that appears in the Enterprise detail card. Summing
+            // departments would only show what's been pushed down, hiding
+            // the undistributed remainder.
+            return (
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span
+                    className="truncate text-sm font-medium"
+                    style={{ color: "var(--text)" }}
+                  >
+                    {e.name}
+                  </span>
+                  <span
+                    className="size-2 shrink-0 rounded-full"
+                    style={{
+                      background:
+                        e.status === "active" ? "#3dcb7e" : "var(--text-muted)",
+                    }}
+                  />
+                </div>
+                <MinutesBar
+                  used={e.usedMinutes}
+                  allocated={e.allocatedMinutes}
+                  size="sm"
                 />
               </div>
-              <MinutesBar used={e.usedMinutes} allocated={e.allocatedMinutes} size="sm" />
-            </div>
-          );
-        }}
-      />
+            );
+          }}
+        />
       )}
 
       {showDepartmentsSidebar && (
-      /* Sidebar 3 — departments under the selected enterprise */
-      <Sidebar
-        title="Departments"
-        searchPlaceholder="Search departments…"
-        width={220}
-        items={(selOrg?.departments ?? []).map((d) => ({
-          id:     d.id,
-          label:  d.name,
-          search: `${d.name} ${d.departmentCode}`,
-          _data:  d,
-        }))}
-        selectedId={selDeptId}
-        onSelect={(it) => setDeptId(it.id)}
-        emptyMessage={selOrg ? "No departments yet." : "Select an enterprise."}
-        footer={
-          selOrg && (
-            <button
-              type="button"
-              onClick={() => setAddDept(true)}
-              className="flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium"
-              style={{ background: "var(--primary)", color: "#fff" }}
-            >
-              <Plus className="size-3.5" /> Add Department
-            </button>
-          )
-        }
-        renderRow={(it) => {
-          const d = (it as unknown as { _data: OrgDepartment })._data;
-          return (
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center justify-between gap-2">
-                <span className="truncate text-sm font-medium" style={{ color: "var(--text)" }}>
-                  {d.name}
-                </span>
-                <span
-                  className="size-2 shrink-0 rounded-full"
-                  style={{ background: d.status === "active" ? "#3dcb7e" : "var(--text-muted)" }}
+        /* Sidebar 3 — departments under the selected enterprise */
+        <Sidebar
+          title="Departments"
+          searchPlaceholder="Search departments…"
+          width={220}
+          items={(selOrg?.departments ?? []).map((d) => ({
+            id: d.id,
+            label: d.name,
+            search: `${d.name} ${d.departmentCode}`,
+            _data: d,
+          }))}
+          selectedId={selDeptId}
+          onSelect={(it) => setDeptId(it.id)}
+          emptyMessage={
+            selOrg ? "No departments yet." : "Select an enterprise."
+          }
+          footer={
+            selOrg && (
+              <button
+                type="button"
+                onClick={() => setAddDept(true)}
+                className="flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium"
+                style={{ background: "var(--primary)", color: "#fff" }}
+              >
+                <Plus className="size-3.5" /> Add Department
+              </button>
+            )
+          }
+          renderRow={(it) => {
+            const d = (it as unknown as { _data: OrgDepartment })._data;
+            return (
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span
+                    className="truncate text-sm font-medium"
+                    style={{ color: "var(--text)" }}
+                  >
+                    {d.name}
+                  </span>
+                  <span
+                    className="size-2 shrink-0 rounded-full"
+                    style={{
+                      background:
+                        d.status === "active" ? "#3dcb7e" : "var(--text-muted)",
+                    }}
+                  />
+                </div>
+                <div
+                  className="text-[10px] tracking-wider uppercase"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  {d.memberCount} member{d.memberCount === 1 ? "" : "s"}
+                </div>
+                <MinutesBar
+                  used={d.usedMinutes}
+                  allocated={d.allocatedMinutes}
+                  size="sm"
                 />
               </div>
-              <div className="text-[10px] tracking-wider uppercase" style={{ color: "var(--text-muted)" }}>
-                {d.memberCount} member{d.memberCount === 1 ? "" : "s"}
-              </div>
-              <MinutesBar used={d.usedMinutes} allocated={d.allocatedMinutes} size="sm" />
-            </div>
-          );
-        }}
-      />
+            );
+          }}
+        />
       )}
 
       {/* Main — stacked details */}
       <main className="min-w-0 flex-1 overflow-y-auto p-6">
         <Breadcrumb
           items={(() => {
-            const crumbs: Crumb[] = [{
-              label:   "Channel Partners",
-              onClick: () => {
-                setEntId(null);
-                setDeptId(null);
-                setEmployees([]);
-                setDeptAdmin(null);
-                setResellerId(null);
+            const crumbs: Crumb[] = [
+              {
+                label: "Channel Partners",
+                onClick: () => {
+                  setEntId(null);
+                  setDeptId(null);
+                  setEmployees([]);
+                  setDeptAdmin(null);
+                  setResellerId(null);
+                },
               },
-            }];
+            ];
             if (selReseller) {
               crumbs.push({
-                label:   selReseller.name,
+                label: selReseller.name,
                 onClick: () => {
                   setDeptId(null);
                   setEmployees([]);
@@ -459,7 +568,7 @@ export function ResellersTab() {
             }
             if (enterpriseRow) {
               crumbs.push({
-                label:   enterpriseRow.name,
+                label: enterpriseRow.name,
                 onClick: () => {
                   setDeptId(null);
                 },
@@ -484,17 +593,25 @@ export function ResellersTab() {
         {selReseller && !selEntId && (
           <ResellerSummary
             reseller={selReseller}
-            distributedAllocated={(orgsByReseller.get(selReseller.id) ?? [])
-              .reduce((sum, o) => sum + o.departments.reduce((s, d) => s + d.allocatedMinutes, 0), 0)}
+            distributedAllocated={(
+              orgsByReseller.get(selReseller.id) ?? []
+            ).reduce(
+              (sum, o) =>
+                sum + o.departments.reduce((s, d) => s + d.allocatedMinutes, 0),
+              0
+            )}
             onEdit={() => setEditReseller(true)}
             onToggle={(s) => setResellerStatus(selReseller.id, s)}
-            onAddMinutes={() => setRefillTarget({
-              title:      `Add minutes — ${selReseller.name}`,
-              endpoint:   `/api/admin/resellers/${selReseller.id}/refill`,
-              allocated:  selReseller.allocatedMinutes,
-              remaining:  selReseller.remainingMinutes,
-              sourceNote: "Minted to this channel partner's pool. From here they distribute minutes to their enterprises.",
-            })}
+            onAddMinutes={() =>
+              setRefillTarget({
+                title: `Add minutes — ${selReseller.name}`,
+                endpoint: `/api/admin/resellers/${selReseller.id}/refill`,
+                allocated: selReseller.allocatedMinutes,
+                remaining: selReseller.remainingMinutes,
+                sourceNote:
+                  "Minted to this channel partner's pool. From here they distribute minutes to their enterprises.",
+              })
+            }
           />
         )}
 
@@ -504,13 +621,18 @@ export function ResellersTab() {
             code={enterpriseRow.enterpriseCode}
             badges={[
               {
-                label: enterpriseRow.status === "active" ? "Active" : "Suspended",
-                tone:  enterpriseRow.status === "active" ? "success" : "warning",
+                label:
+                  enterpriseRow.status === "active" ? "Active" : "Suspended",
+                tone: enterpriseRow.status === "active" ? "success" : "warning",
               },
             ]}
-            description={enterpriseRow.primaryDomain ? `Domain: ${enterpriseRow.primaryDomain}` : undefined}
+            description={
+              enterpriseRow.primaryDomain
+                ? `Domain: ${enterpriseRow.primaryDomain}`
+                : undefined
+            }
             minutes={{
-              used:      enterpriseRow.usedMinutes,
+              used: enterpriseRow.usedMinutes,
               allocated: enterpriseRow.allocatedMinutes,
             }}
             rollupCaption={(() => {
@@ -518,9 +640,14 @@ export function ResellersTab() {
               if (n === 0) {
                 return `${enterpriseRow.allocatedMinutes.toLocaleString(undefined, { maximumFractionDigits: 2 })} min in pool · 0 departments yet · ${enterpriseRow.usedMinutes.toLocaleString(undefined, { maximumFractionDigits: 2 })} used`;
               }
-              const distAlloc = (selOrg?.departments ?? [])
-                .reduce((s, d) => s + d.allocatedMinutes, 0);
-              const remaining = Math.max(0, enterpriseRow.allocatedMinutes - distAlloc);
+              const distAlloc = (selOrg?.departments ?? []).reduce(
+                (s, d) => s + d.allocatedMinutes,
+                0
+              );
+              const remaining = Math.max(
+                0,
+                enterpriseRow.allocatedMinutes - distAlloc
+              );
               return (
                 `${enterpriseRow.allocatedMinutes.toLocaleString(undefined, { maximumFractionDigits: 2 })} allocated · ` +
                 `${distAlloc.toLocaleString(undefined, { maximumFractionDigits: 2 })} distributed to ${n} department${n === 1 ? "" : "s"} · ` +
@@ -532,14 +659,21 @@ export function ResellersTab() {
               <DetailActions
                 statusActive={enterpriseRow.status === "active"}
                 onEdit={() => setEditEnt(true)}
-                onAddMinutes={() => setRefillTarget({
-                  title:      `Add minutes — ${enterpriseRow.name}`,
-                  endpoint:   `/api/admin/orgs/${enterpriseRow.id}/refill`,
-                  allocated:  enterpriseRow.allocatedMinutes,
-                  remaining:  enterpriseRow.remainingMinutes,
-                  sourceNote: `Drawn from ${selReseller?.name ?? "the channel partner"}'s pool — top the partner up first if it's short.`,
-                })}
-                onToggle={() => setOrgStatus(enterpriseRow.id, enterpriseRow.status === "active" ? "suspended" : "active")}
+                onAddMinutes={() =>
+                  setRefillTarget({
+                    title: `Add minutes — ${enterpriseRow.name}`,
+                    endpoint: `/api/admin/orgs/${enterpriseRow.id}/refill`,
+                    allocated: enterpriseRow.allocatedMinutes,
+                    remaining: enterpriseRow.remainingMinutes,
+                    sourceNote: `Drawn from ${selReseller?.name ?? "the channel partner"}'s pool — top the partner up first if it's short.`,
+                  })
+                }
+                onToggle={() =>
+                  setOrgStatus(
+                    enterpriseRow.id,
+                    enterpriseRow.status === "active" ? "suspended" : "active"
+                  )
+                }
                 onDelete={() => deleteOrg(enterpriseRow.id)}
               />
             }
@@ -554,18 +688,21 @@ export function ResellersTab() {
               badges={[
                 {
                   label: selDept.status === "active" ? "Active" : "Suspended",
-                  tone:  selDept.status === "active" ? "success" : "warning",
+                  tone: selDept.status === "active" ? "success" : "warning",
                 },
               ]}
               minutes={{
-                used:      selDept.usedMinutes,
+                used: selDept.usedMinutes,
                 allocated: selDept.allocatedMinutes,
               }}
               rollupCaption={(() => {
                 if (employees.length === 0) {
                   return `${selDept.allocatedMinutes.toLocaleString(undefined, { maximumFractionDigits: 2 })} min in pool · 0 employees yet · ${selDept.usedMinutes.toLocaleString(undefined, { maximumFractionDigits: 2 })} used`;
                 }
-                const remaining = Math.max(0, selDept.allocatedMinutes - empTotals.allocated);
+                const remaining = Math.max(
+                  0,
+                  selDept.allocatedMinutes - empTotals.allocated
+                );
                 return (
                   `${selDept.allocatedMinutes.toLocaleString(undefined, { maximumFractionDigits: 2 })} allocated · ` +
                   `${empTotals.allocated.toLocaleString(undefined, { maximumFractionDigits: 2 })} distributed to ${employees.length} employee${employees.length === 1 ? "" : "s"} · ` +
@@ -577,7 +714,13 @@ export function ResellersTab() {
                 <DetailActions
                   statusActive={selDept.status === "active"}
                   onEdit={() => setEditDept(true)}
-                  onToggle={() => setDeptStatus(selOrg.id, selDept.id, selDept.status === "active" ? "suspended" : "active")}
+                  onToggle={() =>
+                    setDeptStatus(
+                      selOrg.id,
+                      selDept.id,
+                      selDept.status === "active" ? "suspended" : "active"
+                    )
+                  }
                   onDelete={() => deleteDept(selOrg.id, selDept.id)}
                 />
               }
@@ -651,7 +794,10 @@ export function ResellersTab() {
           currentName={selReseller.name}
           endpoint={`/api/admin/resellers/${selReseller.id}`}
           onClose={() => setEditReseller(false)}
-          onSaved={() => { setEditReseller(false); refresh(); }}
+          onSaved={() => {
+            setEditReseller(false);
+            refresh();
+          }}
         />
       )}
       {enterpriseRow && (
@@ -662,7 +808,10 @@ export function ResellersTab() {
           currentName={enterpriseRow.name}
           endpoint={`/api/admin/orgs/${enterpriseRow.id}`}
           onClose={() => setEditEnt(false)}
-          onSaved={() => { setEditEnt(false); refresh(); }}
+          onSaved={() => {
+            setEditEnt(false);
+            refresh();
+          }}
         />
       )}
       {selEntId && selDept && (
@@ -673,21 +822,35 @@ export function ResellersTab() {
           currentName={selDept.name}
           endpoint={`/api/admin/orgs/${selEntId}/departments/${selDept.id}`}
           onClose={() => setEditDept(false)}
-          onSaved={() => { setEditDept(false); refresh(); }}
+          onSaved={() => {
+            setEditDept(false);
+            refresh();
+          }}
         />
       )}
       <AdminRefillDrawer
         target={refillTarget}
         onClose={() => setRefillTarget(null)}
-        onRefilled={() => { setRefillTarget(null); refresh(); }}
+        onRefilled={() => {
+          setRefillTarget(null);
+          refresh();
+        }}
       />
       <AssignAdminDrawer
         open={assignAdmin}
         orgId={selEntId}
         deptId={selDeptId}
-        employees={employees.map((e) => ({ id: e.id, displayName: e.displayName, email: e.email }))}
+        employees={employees.map((e) => ({
+          id: e.id,
+          displayName: e.displayName,
+          email: e.email,
+        }))}
         onClose={() => setAssignAdmin(false)}
-        onAssigned={() => { setAssignAdmin(false); refreshEmployees(); refresh(); }}
+        onAssigned={() => {
+          setAssignAdmin(false);
+          refreshEmployees();
+          refresh();
+        }}
       />
     </div>
   );
@@ -697,30 +860,47 @@ export function ResellersTab() {
 
 function EmptyState({ title, blurb }: { title: string; blurb: string }) {
   return (
-    <div className="rounded-lg border border-dashed py-12 text-center" style={{ borderColor: "var(--border)" }}>
-      <h3 className="text-sm font-semibold" style={{ color: "var(--text)" }}>{title}</h3>
-      <p className="mt-1.5 text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>{blurb}</p>
+    <div
+      className="rounded-lg border border-dashed py-12 text-center"
+      style={{ borderColor: "var(--border)" }}
+    >
+      <h3 className="text-sm font-semibold" style={{ color: "var(--text)" }}>
+        {title}
+      </h3>
+      <p
+        className="mt-1.5 text-xs leading-relaxed"
+        style={{ color: "var(--text-muted)" }}
+      >
+        {blurb}
+      </p>
     </div>
   );
 }
 
 function ResellerSummary({
-  reseller, distributedAllocated, onEdit, onToggle, onAddMinutes,
+  reseller,
+  distributedAllocated,
+  onEdit,
+  onToggle,
+  onAddMinutes,
 }: {
   reseller: Reseller;
   distributedAllocated: number;
-  onEdit:   () => void;
+  onEdit: () => void;
   onToggle: (next: "active" | "suspended") => void;
   onAddMinutes: () => void;
 }) {
   const badges: Badge[] = [
     {
       label: reseller.status === "active" ? "Active" : "Suspended",
-      tone:  reseller.status === "active" ? "success" : "warning",
+      tone: reseller.status === "active" ? "success" : "warning",
     },
     { label: `${reseller.commission}% commission`, tone: "neutral" },
   ];
-  const pool = { used: reseller.usedMinutes, allocated: reseller.allocatedMinutes };
+  const pool = {
+    used: reseller.usedMinutes,
+    allocated: reseller.allocatedMinutes,
+  };
   const remaining = Math.max(0, pool.allocated - distributedAllocated);
   const caption =
     reseller.totalEnterprises === 0
@@ -759,7 +939,9 @@ function ResellerSummary({
           </button>
           <button
             type="button"
-            onClick={() => onToggle(reseller.status === "active" ? "suspended" : "active")}
+            onClick={() =>
+              onToggle(reseller.status === "active" ? "suspended" : "active")
+            }
             className="rounded-md border px-2.5 py-1.5 text-xs font-medium"
             style={{ borderColor: "var(--border)", color: "var(--text)" }}
           >
@@ -773,10 +955,14 @@ function ResellerSummary({
 }
 
 function DetailActions({
-  statusActive, onEdit, onToggle, onDelete, onAddMinutes,
+  statusActive,
+  onEdit,
+  onToggle,
+  onDelete,
+  onAddMinutes,
 }: {
   statusActive: boolean;
-  onEdit?:  () => void;
+  onEdit?: () => void;
   onToggle: () => void;
   onDelete: () => void;
   onAddMinutes?: () => void;
@@ -817,7 +1003,7 @@ function DetailActions({
         className="rounded-md border px-2.5 py-1.5 text-xs font-medium"
         style={{
           borderColor: "color-mix(in srgb, var(--primary) 50%, transparent)",
-          color:       "var(--primary)",
+          color: "var(--primary)",
         }}
       >
         Delete
@@ -827,7 +1013,12 @@ function DetailActions({
 }
 
 function DepartmentAdminCard({
-  admin, deptActive, onResend, onToggleStatus, onRemove, onAssign,
+  admin,
+  deptActive,
+  onResend,
+  onToggleStatus,
+  onRemove,
+  onAssign,
 }: {
   admin: Employee | null;
   deptActive: boolean;
@@ -841,9 +1032,14 @@ function DepartmentAdminCard({
       className="overflow-hidden rounded-lg border"
       style={{ borderColor: "var(--border)", background: "var(--surface)" }}
     >
-      <header className="flex items-center justify-between border-b px-4 py-2.5"
-        style={{ borderColor: "var(--border)" }}>
-        <span className="text-xs font-semibold tracking-wide uppercase" style={{ color: "var(--text-muted)" }}>
+      <header
+        className="flex items-center justify-between border-b px-4 py-2.5"
+        style={{ borderColor: "var(--border)" }}
+      >
+        <span
+          className="text-xs font-semibold tracking-wide uppercase"
+          style={{ color: "var(--text-muted)" }}
+        >
           Department admin
         </span>
         {!admin && (
@@ -851,7 +1047,11 @@ function DepartmentAdminCard({
             type="button"
             onClick={onAssign}
             disabled={!deptActive}
-            title={deptActive ? "Assign a department admin" : "Reactivate the department first"}
+            title={
+              deptActive
+                ? "Assign a department admin"
+                : "Reactivate the department first"
+            }
             className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
             style={{ background: "var(--primary)", color: "#fff" }}
           >
@@ -861,49 +1061,83 @@ function DepartmentAdminCard({
       </header>
       {!admin ? (
         <p className="px-4 py-4 text-xs" style={{ color: "var(--text-muted)" }}>
-          No admin assigned. Promote an existing employee or invite someone by email with{" "}
-          <span style={{ color: "var(--text)" }}>Assign admin</span> above.
+          No admin assigned. Promote an existing employee or invite someone by
+          email with <span style={{ color: "var(--text)" }}>Assign admin</span>{" "}
+          above.
         </p>
       ) : (
         <div className="flex items-center gap-3 px-4 py-3">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
-            style={{ background: "color-mix(in srgb, var(--primary) 16%, transparent)", color: "var(--primary)" }}>
+          <div
+            className="flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
+            style={{
+              background: "color-mix(in srgb, var(--primary) 16%, transparent)",
+              color: "var(--primary)",
+            }}
+          >
             {initialsFor(admin)}
           </div>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium" style={{ color: "var(--text)" }}>
+            <div
+              className="truncate text-sm font-medium"
+              style={{ color: "var(--text)" }}
+            >
               {admin.displayName || "—"}
             </div>
-            <div className="truncate text-xs" style={{ color: "var(--text-muted)" }}>
+            <div
+              className="truncate text-xs"
+              style={{ color: "var(--text-muted)" }}
+            >
               {admin.email}
             </div>
           </div>
-          <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wider uppercase"
-            style={{ color: "var(--primary)", background: "color-mix(in srgb, var(--primary) 14%, transparent)" }}>
+          <span
+            className="rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wider uppercase"
+            style={{
+              color: "var(--primary)",
+              background: "color-mix(in srgb, var(--primary) 14%, transparent)",
+            }}
+          >
             DEPT ADMIN
           </span>
-          <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wider uppercase"
+          <span
+            className="rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wider uppercase"
             style={{
-              color: admin.status === "active" ? "#3dcb7e" : "var(--text-muted)",
-              background: admin.status === "active"
-                ? "color-mix(in srgb, #3dcb7e 14%, transparent)"
-                : "color-mix(in srgb, var(--text-muted) 14%, transparent)",
-            }}>
+              color:
+                admin.status === "active" ? "#3dcb7e" : "var(--text-muted)",
+              background:
+                admin.status === "active"
+                  ? "color-mix(in srgb, #3dcb7e 14%, transparent)"
+                  : "color-mix(in srgb, var(--text-muted) 14%, transparent)",
+            }}
+          >
             {admin.status}
           </span>
           <div className="flex items-center gap-1">
             {admin.status === "invited" && (
-              <RowIcon title="Resend invite email" onClick={() => onResend(admin.id)}>
+              <RowIcon
+                title="Resend invite email"
+                onClick={() => onResend(admin.id)}
+              >
                 <Mail className="size-3.5" />
               </RowIcon>
             )}
             <RowIcon
               title={admin.status === "active" ? "Deactivate" : "Reactivate"}
-              onClick={() => onToggleStatus(admin.id, admin.status === "active")}
+              onClick={() =>
+                onToggleStatus(admin.id, admin.status === "active")
+              }
             >
-              {admin.status === "active" ? <PowerOff className="size-3.5" /> : <Power className="size-3.5" />}
+              {admin.status === "active" ? (
+                <PowerOff className="size-3.5" />
+              ) : (
+                <Power className="size-3.5" />
+              )}
             </RowIcon>
-            <RowIcon title="Remove as department admin" danger onClick={() => onRemove(admin.id)}>
+            <RowIcon
+              title="Remove as department admin"
+              danger
+              onClick={() => onRemove(admin.id)}
+            >
               <Trash2 className="size-3.5" />
             </RowIcon>
           </div>
@@ -914,7 +1148,14 @@ function DepartmentAdminCard({
 }
 
 function EmployeeTable({
-  loading, error, employees, totals, onAdd, onResend, onToggleStatus, onRemove,
+  loading,
+  error,
+  employees,
+  totals,
+  onAdd,
+  onResend,
+  onToggleStatus,
+  onRemove,
 }: {
   loading: boolean;
   error: string | null;
@@ -930,8 +1171,14 @@ function EmployeeTable({
       className="overflow-hidden rounded-lg border"
       style={{ borderColor: "var(--border)", background: "var(--surface)" }}
     >
-      <header className="flex items-center justify-between border-b px-4 py-2.5" style={{ borderColor: "var(--border)" }}>
-        <span className="text-xs font-semibold tracking-wide uppercase" style={{ color: "var(--text-muted)" }}>
+      <header
+        className="flex items-center justify-between border-b px-4 py-2.5"
+        style={{ borderColor: "var(--border)" }}
+      >
+        <span
+          className="text-xs font-semibold tracking-wide uppercase"
+          style={{ color: "var(--text-muted)" }}
+        >
           Employees ({employees.length})
         </span>
         <button
@@ -944,13 +1191,26 @@ function EmployeeTable({
         </button>
       </header>
       {loading && (
-        <p className="px-4 py-6 text-center text-xs" style={{ color: "var(--text-muted)" }}>Loading…</p>
+        <p
+          className="px-4 py-6 text-center text-xs"
+          style={{ color: "var(--text-muted)" }}
+        >
+          Loading…
+        </p>
       )}
       {!loading && error && (
-        <p className="px-4 py-6 text-center text-xs" style={{ color: "var(--primary)" }}>{error}</p>
+        <p
+          className="px-4 py-6 text-center text-xs"
+          style={{ color: "var(--primary)" }}
+        >
+          {error}
+        </p>
       )}
       {!loading && !error && employees.length === 0 && (
-        <p className="px-4 py-6 text-center text-xs" style={{ color: "var(--text-muted)" }}>
+        <p
+          className="px-4 py-6 text-center text-xs"
+          style={{ color: "var(--text-muted)" }}
+        >
           No employees in this department.
         </p>
       )}
@@ -958,47 +1218,90 @@ function EmployeeTable({
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-[11px] tracking-wider uppercase" style={{ color: "var(--text-muted)" }}>
+              <tr
+                className="text-left text-[11px] tracking-wider uppercase"
+                style={{ color: "var(--text-muted)" }}
+              >
                 <th className="px-4 py-2.5 font-medium">Name</th>
                 <th className="px-4 py-2.5 font-medium">Email</th>
-                <th className="px-4 py-2.5 font-medium">Minutes (used / allocated)</th>
+                <th className="px-4 py-2.5 font-medium">
+                  Minutes (used / allocated)
+                </th>
                 <th className="px-4 py-2.5 font-medium">Status</th>
-                <th className="px-4 py-2.5 font-medium text-right">Actions</th>
+                <th className="px-4 py-2.5 text-right font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
               {employees.map((e) => (
-                <tr key={e.id} className="border-t" style={{ borderColor: "var(--border)" }}>
-                  <td className="px-4 py-2.5" style={{ color: "var(--text)" }}>{e.displayName || "—"}</td>
-                  <td className="px-4 py-2.5" style={{ color: "var(--text-muted)" }}>{e.email}</td>
+                <tr
+                  key={e.id}
+                  className="border-t"
+                  style={{ borderColor: "var(--border)" }}
+                >
                   <td className="px-4 py-2.5" style={{ color: "var(--text)" }}>
-                    {e.usedMinutes.toLocaleString(undefined, { maximumFractionDigits: 2 })} / {e.allocatedMinutes.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    {e.displayName || "—"}
+                  </td>
+                  <td
+                    className="px-4 py-2.5"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {e.email}
+                  </td>
+                  <td className="px-4 py-2.5" style={{ color: "var(--text)" }}>
+                    {e.usedMinutes.toLocaleString(undefined, {
+                      maximumFractionDigits: 2,
+                    })}{" "}
+                    /{" "}
+                    {e.allocatedMinutes.toLocaleString(undefined, {
+                      maximumFractionDigits: 2,
+                    })}
                   </td>
                   <td className="px-4 py-2.5">
-                    <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wider uppercase"
+                    <span
+                      className="rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wider uppercase"
                       style={{
-                        color: e.status === "active" ? "#3dcb7e" : "var(--text-muted)",
-                        background: e.status === "active"
-                          ? "color-mix(in srgb, #3dcb7e 14%, transparent)"
-                          : "color-mix(in srgb, var(--text-muted) 14%, transparent)",
-                      }}>
+                        color:
+                          e.status === "active"
+                            ? "#3dcb7e"
+                            : "var(--text-muted)",
+                        background:
+                          e.status === "active"
+                            ? "color-mix(in srgb, #3dcb7e 14%, transparent)"
+                            : "color-mix(in srgb, var(--text-muted) 14%, transparent)",
+                      }}
+                    >
                       {e.status}
                     </span>
                   </td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center justify-end gap-1">
                       {e.status === "invited" && (
-                        <RowIcon title="Resend invite email" onClick={() => onResend(e.id)}>
+                        <RowIcon
+                          title="Resend invite email"
+                          onClick={() => onResend(e.id)}
+                        >
                           <Mail className="size-3.5" />
                         </RowIcon>
                       )}
                       <RowIcon
-                        title={e.status === "active" ? "Deactivate" : "Reactivate"}
-                        onClick={() => onToggleStatus(e.id, e.status === "active")}
+                        title={
+                          e.status === "active" ? "Deactivate" : "Reactivate"
+                        }
+                        onClick={() =>
+                          onToggleStatus(e.id, e.status === "active")
+                        }
                       >
-                        {e.status === "active" ? <PowerOff className="size-3.5" /> : <Power className="size-3.5" />}
+                        {e.status === "active" ? (
+                          <PowerOff className="size-3.5" />
+                        ) : (
+                          <Power className="size-3.5" />
+                        )}
                       </RowIcon>
-                      <RowIcon title="Remove from department" danger onClick={() => onRemove(e.id)}>
+                      <RowIcon
+                        title="Remove from department"
+                        danger
+                        onClick={() => onRemove(e.id)}
+                      >
                         <Trash2 className="size-3.5" />
                       </RowIcon>
                     </div>
@@ -1006,11 +1309,24 @@ function EmployeeTable({
                 </tr>
               ))}
               <tr className="border-t" style={{ borderColor: "var(--border)" }}>
-                <td colSpan={2} className="px-4 py-2.5 text-right text-xs" style={{ color: "var(--text-muted)" }}>
+                <td
+                  colSpan={2}
+                  className="px-4 py-2.5 text-right text-xs"
+                  style={{ color: "var(--text-muted)" }}
+                >
                   Total
                 </td>
-                <td className="px-4 py-2.5 text-sm font-medium" style={{ color: "var(--text)" }}>
-                  {totals.used.toLocaleString(undefined, { maximumFractionDigits: 2 })} / {totals.allocated.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                <td
+                  className="px-4 py-2.5 text-sm font-medium"
+                  style={{ color: "var(--text)" }}
+                >
+                  {totals.used.toLocaleString(undefined, {
+                    maximumFractionDigits: 2,
+                  })}{" "}
+                  /{" "}
+                  {totals.allocated.toLocaleString(undefined, {
+                    maximumFractionDigits: 2,
+                  })}
                 </td>
                 <td />
                 <td />
@@ -1024,9 +1340,15 @@ function EmployeeTable({
 }
 
 function RowIcon({
-  title, onClick, children, danger,
+  title,
+  onClick,
+  children,
+  danger,
 }: {
-  title: string; onClick: () => void; children: React.ReactNode; danger?: boolean;
+  title: string;
+  onClick: () => void;
+  children: React.ReactNode;
+  danger?: boolean;
 }) {
   return (
     <button

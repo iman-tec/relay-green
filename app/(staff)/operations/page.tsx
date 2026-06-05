@@ -12,7 +12,9 @@ export const metadata: Metadata = {
 // pod with current customer + last call. Read-only, table format.
 export default async function OperationsPage() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) redirect("/staff");
 
   const { data: roleRows } = await supabase

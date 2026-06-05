@@ -31,21 +31,28 @@ function experienceYears(level: EngineerRow["experience_level"]): number {
   return 2;
 }
 
-function pseudonymize(fullName: string | null, fallback: string): {
+function pseudonymize(
+  fullName: string | null,
+  fallback: string
+): {
   pseudoName: string;
   initials: string;
 } {
   const raw = (fullName ?? "").trim();
   if (!raw) {
-    return { pseudoName: "Engineer", initials: fallback.slice(0, 2).toUpperCase() };
+    return {
+      pseudoName: "Engineer",
+      initials: fallback.slice(0, 2).toUpperCase(),
+    };
   }
   const parts = raw.split(/\s+/);
   const first = parts[0];
   const lastInitial = parts.length > 1 ? `${parts[parts.length - 1][0]}.` : "";
   const pseudoName = lastInitial ? `${first} ${lastInitial}` : first;
-  const initials = parts.length > 1
-    ? `${first[0]}${parts[parts.length - 1][0]}`.toUpperCase()
-    : first.slice(0, 2).toUpperCase();
+  const initials =
+    parts.length > 1
+      ? `${first[0]}${parts[parts.length - 1][0]}`.toUpperCase()
+      : first.slice(0, 2).toUpperCase();
   return { pseudoName, initials };
 }
 
@@ -55,7 +62,7 @@ export async function GET(req: NextRequest) {
   if (!supabaseUrl || !serviceKey) {
     return NextResponse.json(
       { engineer: null, error: "supabase_unconfigured" },
-      { status: 200 },
+      { status: 200 }
     );
   }
 
@@ -98,8 +105,12 @@ export async function GET(req: NextRequest) {
       "ending",
       "expired_free",
     ]);
-  const busySet = new Set(((busy as { claimed_by: string }[]) ?? []).map((r) => r.claimed_by));
-  const available = (pool as EngineerRow[]).filter((r) => !busySet.has(r.user_id));
+  const busySet = new Set(
+    ((busy as { claimed_by: string }[]) ?? []).map((r) => r.claimed_by)
+  );
+  const available = (pool as EngineerRow[]).filter(
+    (r) => !busySet.has(r.user_id)
+  );
 
   if (available.length === 0) {
     return NextResponse.json({ engineer: null }, { status: 200 });
@@ -110,7 +121,7 @@ export async function GET(req: NextRequest) {
     .map((row) => {
       const techs = (row.technologies ?? []).filter(Boolean);
       const overlap = techs.filter((t) =>
-        requested.includes(String(t).toLowerCase()),
+        requested.includes(String(t).toLowerCase())
       );
       const expBonus =
         row.experience_level === "Experienced"
@@ -133,7 +144,7 @@ export async function GET(req: NextRequest) {
 
   const { pseudoName, initials } = pseudonymize(
     (prof as ProfileRow | null)?.full_name ?? null,
-    top.row.user_id,
+    top.row.user_id
   );
 
   return NextResponse.json(
@@ -149,6 +160,6 @@ export async function GET(req: NextRequest) {
         etaSeconds: 25,
       },
     },
-    { status: 200 },
+    { status: 200 }
   );
 }

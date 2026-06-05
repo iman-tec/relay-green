@@ -46,7 +46,7 @@ export function Chip({
     active
       ? "bg-[var(--primary-soft)] border-[var(--primary)] text-[var(--text)]"
       : "bg-transparent border-[var(--border)] text-[var(--text)] hover:border-[var(--border-strong)] hover:bg-[color-mix(in_srgb,var(--text)_4%,transparent)]",
-    disabled && "opacity-50 cursor-not-allowed",
+    disabled && "opacity-50 cursor-not-allowed"
   );
 
   if (isStatic) {
@@ -103,7 +103,7 @@ export function ChipGroup({
         onChange(selected ? [] : [opt]);
       }
     },
-    [value, multi, onChange, disabled],
+    [value, multi, onChange, disabled]
   );
 
   return (

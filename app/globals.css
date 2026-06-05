@@ -22,11 +22,11 @@
  */
 :root {
   /* Surfaces — white app canvas, near-white card differentiation, soft rail */
-  --background: #f7f9f8;        /* app canvas */
-  --surface: #ffffff;            /* cards, sheets, composer */
-  --surface-raised: #f1f4f3;     /* hover bg, sidebar rail, bot bubble */
-  --border: #e6eae8;             /* hairline */
-  --border-strong: #d4dad7;      /* focused input, divider on white */
+  --background: #f7f9f8; /* app canvas */
+  --surface: #ffffff; /* cards, sheets, composer */
+  --surface-raised: #f1f4f3; /* hover bg, sidebar rail, bot bubble */
+  --border: #e6eae8; /* hairline */
+  --border-strong: #d4dad7; /* focused input, divider on white */
 
   /* Text — near-black headings, gray body */
   --text: #14171a;
@@ -37,7 +37,7 @@
   --primary: #16a34a;
   --primary-hover: #15803d;
   --primary-soft: color-mix(in srgb, var(--primary) 12%, transparent);
-  --primary-tint: #e7f6ee;       /* selected card tint, sent-bubble fill */
+  --primary-tint: #e7f6ee; /* selected card tint, sent-bubble fill */
 
   /* Green dot kept as an alias — many call-sites reference --green-dot.
    * Aliasing to --primary keeps the brand consistent without a sweep. */
@@ -68,14 +68,14 @@
    * (ui/Modal = 100, route bar = 1000, Zoom pop-out = 9999) so a partial
    * migration never floats a migrated overlay above a not-yet-migrated one.
    * Theme-independent (defined once). */
-  --z-sticky: 30;       /* sticky headers / footers */
-  --z-dropdown: 40;     /* menus, popovers, selects */
-  --z-drawer: 50;       /* side drawers + sheets + their scrim */
-  --z-modal: 100;       /* dialogs + their scrim (matches ui/Modal) */
-  --z-ring: 110;        /* incoming-call ring — must sit above an open modal */
-  --z-toast: 120;       /* transient toasts */
-  --z-progress: 1000;   /* top route-progress bar */
-  --z-popout: 9999;     /* Zoom pop-out (OS-window-like surface) */
+  --z-sticky: 30; /* sticky headers / footers */
+  --z-dropdown: 40; /* menus, popovers, selects */
+  --z-drawer: 50; /* side drawers + sheets + their scrim */
+  --z-modal: 100; /* dialogs + their scrim (matches ui/Modal) */
+  --z-ring: 110; /* incoming-call ring — must sit above an open modal */
+  --z-toast: 120; /* transient toasts */
+  --z-progress: 1000; /* top route-progress bar */
+  --z-popout: 9999; /* Zoom pop-out (OS-window-like surface) */
 
   /* Motion timings (brief: 150-200ms micro-interactions) */
   --motion-fast: 150ms;
@@ -202,8 +202,7 @@
      marketing KLM theme's canvas. background-attachment: fixed keeps it
      anchored to the viewport so scrolling doesn't reveal a hard cut at
      the bottom of long pages. */
-  background:
-    linear-gradient(
+  background: linear-gradient(
       180deg,
       #001340 0%,
       #002b6b 24%,
@@ -399,12 +398,14 @@ select:focus-visible {
   }
 }
 
-main, [data-route-fade] {
+main,
+[data-route-fade] {
   animation: relay-page-in 180ms ease-out;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  main, [data-route-fade] {
+  main,
+  [data-route-fade] {
     animation: none;
   }
 }
@@ -412,10 +413,12 @@ main, [data-route-fade] {
 /* Hide native scrollbar while keeping scroll behavior. Used on Inbox
    columns and other surfaces where the scrollbar is visual noise. */
 .hide-scrollbar {
-  scrollbar-width: none;          /* Firefox */
-  -ms-overflow-style: none;       /* old Edge */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* old Edge */
 }
-.hide-scrollbar::-webkit-scrollbar { display: none; }
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
 
 /* ──────── Interactive cursor + hover polish ─────────────────────────
    Anything the user can click should look clickable. We default `<button>`,
@@ -457,7 +460,12 @@ textarea {
 
 /* Smooth tiny hover lift on cards/links that opt in via [data-hover-lift].
    Lightweight motion — translate, no shadow churn. */
-@keyframes _relay-noop { from {} to {} }
+@keyframes _relay-noop {
+  from {
+  }
+  to {
+  }
+}
 
 [data-hover-lift] {
   transition:
@@ -469,8 +477,16 @@ textarea {
 /* Three-dot typing indicator used by the intake assistant while it
    waits on /api/intake/turn. */
 @keyframes relay-typing {
-  0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
-  40%           { transform: translateY(-2px); opacity: 1; }
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  40% {
+    transform: translateY(-2px);
+    opacity: 1;
+  }
 }
 [data-hover-lift]:hover:not([disabled]) {
   transform: translateY(-1px);
@@ -486,12 +502,53 @@ textarea {
 }
 
 @keyframes relay-fade-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 @keyframes relay-toast-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Off-canvas drawer entries (room home dashboard, <lg). Used behind the
+ * motion-safe: variant so prefers-reduced-motion users get an instant
+ * appearance instead of the slide. */
+@keyframes relay-drawer-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes relay-drawer-in-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* Touch devices can't hover — keep the project-row action cluster (green
+ * call button + ⋯ menu) visible there. Gated on POINTER CAPABILITY, not
+ * viewport width, so a touch laptop shows them too while desktop pointer
+ * users keep the hover-reveal. */
+@media (hover: none) {
+  .projrow-actions {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
 }
 
 /* WhatsApp-style bubble entry — small slide-up + fade so a newly-sent
@@ -499,8 +556,14 @@ textarea {
  * (180ms) keeps the chat list responsive when the user pastes a wall of
  * messages. Respects reduced-motion via the global override below. */
 @keyframes relay-bubble-in {
-  from { opacity: 0; transform: translateY(4px) scale(0.98); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 /* ──────── Brand tagline glow underline ────────────────────────────────
@@ -535,7 +598,8 @@ textarea {
    tuned to read as "incoming call" without strobing. `currentColor`
    inherits from the ball's fill so it adapts to the presence state. */
 @keyframes relay-heartbeat {
-  0%, 100% {
+  0%,
+  100% {
     transform: scale(1);
     box-shadow: 0 0 0 0 currentColor;
   }
@@ -562,7 +626,8 @@ textarea {
    Calming, slow (1.8s), respects reduced-motion. Used by Button variant
    `launcher` and the ringing screen's living motion. */
 @keyframes relay-pulse-ok {
-  0%, 100% {
+  0%,
+  100% {
     box-shadow: 0 0 0 0 color-mix(in srgb, var(--green-dot) 55%, transparent);
   }
   50% {
@@ -580,9 +645,18 @@ textarea {
    pages engineers; the animations are deliberately slow + soft so the
    wait feels like meditation, not a slot machine. */
 @keyframes relay-ringing-halo {
-  0%   { transform: scale(0.9); opacity: 0.55; }
-  80%  { transform: scale(1.7); opacity: 0;    }
-  100% { transform: scale(1.7); opacity: 0;    }
+  0% {
+    transform: scale(0.9);
+    opacity: 0.55;
+  }
+  80% {
+    transform: scale(1.7);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.7);
+    opacity: 0;
+  }
 }
 .relay-ringing-halo {
   background: radial-gradient(
@@ -596,11 +670,22 @@ textarea {
 }
 
 @keyframes relay-ringing-ball {
-  0%, 100% { transform: scale(1);    }
-  20%      { transform: scale(1.06); }
-  40%      { transform: scale(1);    }
-  60%      { transform: scale(1.06); }
-  80%      { transform: scale(1);    }
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  20% {
+    transform: scale(1.06);
+  }
+  40% {
+    transform: scale(1);
+  }
+  60% {
+    transform: scale(1.06);
+  }
+  80% {
+    transform: scale(1);
+  }
 }
 .relay-ringing-ball {
   animation: relay-ringing-ball 1800ms cubic-bezier(0.4, 0, 0.2, 1) infinite;
@@ -610,11 +695,22 @@ textarea {
 /* Phone icon mirrors the ball's heartbeat with a subtler 3% scale so it
    reads as part of the same beat without competing visually. */
 @keyframes relay-ringing-icon {
-  0%, 100% { transform: scale(1);    }
-  20%      { transform: scale(1.03); }
-  40%      { transform: scale(1);    }
-  60%      { transform: scale(1.03); }
-  80%      { transform: scale(1);    }
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  20% {
+    transform: scale(1.03);
+  }
+  40% {
+    transform: scale(1);
+  }
+  60% {
+    transform: scale(1.03);
+  }
+  80% {
+    transform: scale(1);
+  }
 }
 .relay-ringing-icon {
   animation: relay-ringing-icon 1800ms cubic-bezier(0.4, 0, 0.2, 1) infinite;
@@ -635,8 +731,14 @@ textarea {
  * outer down to 220×220 / inner ball to 160×160 below 360px so the
  * halos still have room to bloom outward. */
 @media (max-width: 360px) {
-  .relay-ringing-hero { width: 220px !important; height: 220px !important; }
-  .relay-ringing-ball-wrap { width: 160px !important; height: 160px !important; }
+  .relay-ringing-hero {
+    width: 220px !important;
+    height: 220px !important;
+  }
+  .relay-ringing-ball-wrap {
+    width: 160px !important;
+    height: 160px !important;
+  }
 }
 
 /* Reduced-motion: kill every keyframe animation introduced for the
@@ -666,24 +768,57 @@ textarea {
   color: var(--text);
   word-break: break-word;
 }
-.assistant-md > *:first-child { margin-top: 0; }
-.assistant-md > *:last-child { margin-bottom: 0; }
-.assistant-md p { margin: 0 0 0.5rem; }
+.assistant-md > *:first-child {
+  margin-top: 0;
+}
+.assistant-md > *:last-child {
+  margin-bottom: 0;
+}
+.assistant-md p {
+  margin: 0 0 0.5rem;
+}
 .assistant-md ul,
-.assistant-md ol { margin: 0.2rem 0 0.6rem; padding-left: 1.15rem; }
-.assistant-md ul { list-style: disc; }
-.assistant-md ol { list-style: decimal; }
-.assistant-md li { margin: 0.12rem 0; }
-.assistant-md li::marker { color: var(--primary); }
+.assistant-md ol {
+  margin: 0.2rem 0 0.6rem;
+  padding-left: 1.15rem;
+}
+.assistant-md ul {
+  list-style: disc;
+}
+.assistant-md ol {
+  list-style: decimal;
+}
+.assistant-md li {
+  margin: 0.12rem 0;
+}
+.assistant-md li::marker {
+  color: var(--primary);
+}
 .assistant-md h1,
 .assistant-md h2,
 .assistant-md h3,
-.assistant-md h4 { font-weight: 600; line-height: 1.3; margin: 0.6rem 0 0.3rem; }
-.assistant-md h1 { font-size: 1.05rem; }
-.assistant-md h2 { font-size: 1rem; }
-.assistant-md h3 { font-size: 0.92rem; }
-.assistant-md strong { font-weight: 600; }
-.assistant-md a { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; }
+.assistant-md h4 {
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 0.6rem 0 0.3rem;
+}
+.assistant-md h1 {
+  font-size: 1.05rem;
+}
+.assistant-md h2 {
+  font-size: 1rem;
+}
+.assistant-md h3 {
+  font-size: 0.92rem;
+}
+.assistant-md strong {
+  font-weight: 600;
+}
+.assistant-md a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 .assistant-md code {
   font-family: ui-monospace, "JetBrains Mono", monospace;
   font-size: 0.84em;
@@ -698,14 +833,30 @@ textarea {
   overflow-x: auto;
   margin: 0.4rem 0 0.6rem;
 }
-.assistant-md pre code { background: none; padding: 0; font-size: 0.82em; }
+.assistant-md pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.82em;
+}
 .assistant-md blockquote {
   border-left: 2px solid color-mix(in srgb, var(--primary) 40%, transparent);
   padding-left: 0.6rem;
   margin: 0.4rem 0;
   color: var(--text-muted);
 }
-.assistant-md table { border-collapse: collapse; margin: 0.4rem 0; font-size: 0.85em; }
+.assistant-md table {
+  border-collapse: collapse;
+  margin: 0.4rem 0;
+  font-size: 0.85em;
+}
 .assistant-md th,
-.assistant-md td { border: 1px solid var(--border); padding: 0.25rem 0.5rem; text-align: left; }
-.assistant-md hr { border: none; border-top: 1px solid var(--border); margin: 0.6rem 0; }
+.assistant-md td {
+  border: 1px solid var(--border);
+  padding: 0.25rem 0.5rem;
+  text-align: left;
+}
+.assistant-md hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 0.6rem 0;
+}

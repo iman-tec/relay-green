@@ -1,23 +1,25 @@
 "use client";
 
 /*
- * Three-icon theme switcher — Sun (light) / Moon (dark) / Coffee (espresso).
+ * Theme switcher — Sun (light) / Moon (dark) / Coffee (espresso).
  *
- * Click any icon to switch to that theme directly (no cycling — each
- * icon is its own destination). The currently-active theme gets a
- * filled-pill background; inactive icons are quiet outlines.
+ * COLLAPSED by default: only the currently-active theme's icon shows.
+ * Hovering (or keyboard-focusing) the pill expands it to reveal the
+ * other theme options; click any icon to switch to that theme directly
+ * (no cycling — each icon is its own destination). The active theme
+ * keeps its filled-pill background while expanded.
  *
  * Designed to sit next to the Relay wordmark at the top of the customer
- * room sidebar. Compact enough (3 icons × ~20px) to share that row
- * without competing for visual attention.
+ * room sidebar. Collapsed it's a single ~24px icon, so it shares that
+ * row without competing for visual attention.
  */
 
 import { Sun, Moon, Coffee } from "lucide-react";
 import { useTheme, type Theme } from "./ThemeProvider";
 
 const OPTIONS: { value: Theme; label: string; Icon: typeof Sun }[] = [
-  { value: "light",    label: "Light",    Icon: Sun },
-  { value: "dark",     label: "Dark",     Icon: Moon },
+  { value: "light", label: "Light", Icon: Sun },
+  { value: "dark", label: "Dark", Icon: Moon },
   { value: "espresso", label: "Espresso", Icon: Coffee },
 ];
 
@@ -27,7 +29,7 @@ export function ThemeTriplet({ className = "" }: { className?: string }) {
     <div
       role="radiogroup"
       aria-label="Color theme"
-      className={`inline-flex items-center gap-0.5 rounded-full border p-0.5 ${className}`}
+      className={`group/theme inline-flex items-center gap-0.5 rounded-full border p-0.5 ${className}`}
       style={{
         borderColor: "var(--border)",
         backgroundColor: "var(--surface)",
@@ -44,7 +46,13 @@ export function ThemeTriplet({ className = "" }: { className?: string }) {
             onClick={() => setTheme(value)}
             title={label}
             aria-label={`Switch to ${label.toLowerCase()} theme`}
-            className="flex h-6 w-6 items-center justify-center rounded-full transition-colors"
+            // Inactive options are hidden until the pill is hovered or
+            // focused — collapsed, only the current theme is visible.
+            className={`${
+              isActive
+                ? "flex"
+                : "hidden group-focus-within/theme:flex group-hover/theme:flex"
+            } h-6 w-6 items-center justify-center rounded-full transition-colors`}
             style={{
               backgroundColor: isActive
                 ? value === "light"

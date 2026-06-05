@@ -126,9 +126,15 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
   useEffect(() => {
     if (phase.kind !== "ringing") return;
     const start = ringStartRef.current ?? Date.now();
-    const fire = () => { timedOutRef.current = true; setPhase({ kind: "busy" }); };
+    const fire = () => {
+      timedOutRef.current = true;
+      setPhase({ kind: "busy" });
+    };
     const ms = start + 90_000 - Date.now();
-    if (ms <= 0) { fire(); return; }
+    if (ms <= 0) {
+      fire();
+      return;
+    }
     const id = setTimeout(fire, ms);
     return () => clearTimeout(id);
   }, [phase.kind]);
@@ -156,7 +162,9 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
       if (cancelled) return;
       setIsFirstTimeGuest(!count || count <= 0);
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Intake chat reveal — fades the chat panel in below the ringing ball
@@ -200,7 +208,8 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
         .eq("id", intakeId)
         .maybeSingle();
       const gcid =
-        (intakeRow as { guest_call_id?: string | null } | null)?.guest_call_id ?? null;
+        (intakeRow as { guest_call_id?: string | null } | null)
+          ?.guest_call_id ?? null;
       if (gcid) guestCallIdRef.current = gcid;
     }
     const gcid = guestCallIdRef.current;
@@ -211,7 +220,8 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
       .select("status")
       .eq("id", gcid)
       .maybeSingle();
-    const sessionStatus = (sessionRow as { status?: string } | null)?.status ?? null;
+    const sessionStatus =
+      (sessionRow as { status?: string } | null)?.status ?? null;
 
     if (sessionStatus && ACCEPTED_SESSION_STATES.has(sessionStatus)) {
       setPhase({ kind: "accepted", guestCallId: gcid });
@@ -242,19 +252,15 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
     const livePending = offers
       .filter(
         (o) =>
-          o.status === "pending" &&
-          new Date(o.expires_at).getTime() > nowMs,
+          o.status === "pending" && new Date(o.expires_at).getTime() > nowMs
       )
       .sort(
         (a, b) =>
-          new Date(b.expires_at).getTime() -
-          new Date(a.expires_at).getTime(),
+          new Date(b.expires_at).getTime() - new Date(a.expires_at).getTime()
       );
 
     const sweepNeeded = offers.some(
-      (o) =>
-        o.status === "pending" &&
-        new Date(o.expires_at).getTime() <= nowMs,
+      (o) => o.status === "pending" && new Date(o.expires_at).getTime() <= nowMs
     );
     setPhase({
       kind: "ringing",
@@ -265,7 +271,9 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
 
   useEffect(() => {
     if (phase.kind !== "ringing" || !phase.sweepNeeded) return;
-    void supabaseRef.current.rpc("expire_stale_offers").then(() => fetchLatest());
+    void supabaseRef.current
+      .rpc("expire_stale_offers")
+      .then(() => fetchLatest());
   }, [phase, fetchLatest]);
 
   useEffect(() => {
@@ -283,7 +291,7 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
         },
         () => {
           void fetchLatest();
-        },
+        }
       )
       .subscribe();
     const sessionChannel = sb
@@ -293,7 +301,7 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
         { event: "UPDATE", schema: "public", table: "guest_calls" },
         () => {
           void fetchLatest();
-        },
+        }
       )
       .subscribe();
     const poll = setInterval(() => {
@@ -327,7 +335,11 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
     // recent engineer heartbeat. Otherwise those engineers look "in a session"
     // to the matcher and get filtered out, even though they're actually gone.
     // Cheap UPDATE WHERE NOT EXISTS; no-op if nothing is stuck.
-    try { await sb.rpc("reap_stale_assigned_sessions"); } catch { /* helper may not be deployed yet */ }
+    try {
+      await sb.rpc("reap_stale_assigned_sessions");
+    } catch {
+      /* helper may not be deployed yet */
+    }
     // "Try again" → broadcast to EVERY online engineer at once, including ones
     // who already declined (retry_broadcast_match clears the decline memory +
     // prior offers first). Never rings offline engineers.
@@ -390,7 +402,7 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
         }}
       />
 
-      <div className="relative z-10 flex w-full max-w-5xl flex-1 min-h-0 flex-col items-center gap-6">
+      <div className="relative z-10 flex min-h-0 w-full max-w-5xl flex-1 flex-col items-center gap-6">
         <Wordmark />
 
         {phase.kind === "loading" && (
@@ -422,7 +434,9 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
             >
               <RingingHero
                 elapsedMs={
-                  ringStartRef.current !== null ? Date.now() - ringStartRef.current : 0
+                  ringStartRef.current !== null
+                    ? Date.now() - ringStartRef.current
+                    : 0
                 }
                 soundOn={soundOn}
                 soundAvailable={ringtone.available}
@@ -441,7 +455,7 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
                 accept.                                                */}
             <div
               aria-hidden={!chatVisible}
-              className="flex w-full flex-1 min-h-0 flex-col items-center transition-all duration-500 ease-out"
+              className="flex min-h-0 w-full flex-1 flex-col items-center transition-all duration-500 ease-out"
               style={{
                 opacity: chatVisible ? 1 : 0,
                 transform: chatVisible ? "translateY(0)" : "translateY(12px)",
@@ -450,7 +464,9 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
             >
               <CompactRingingPill
                 elapsedMs={
-                  ringStartRef.current !== null ? Date.now() - ringStartRef.current : 0
+                  ringStartRef.current !== null
+                    ? Date.now() - ringStartRef.current
+                    : 0
                 }
                 soundOn={soundOn}
                 soundAvailable={ringtone.available}
@@ -458,7 +474,7 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
                 onCancel={skip}
               />
 
-              <div className="mt-6 flex w-full max-w-2xl flex-1 min-h-[480px] flex-col">
+              <div className="mt-6 flex min-h-[480px] w-full max-w-2xl flex-1 flex-col">
                 <IntakeAssistant
                   intakeId={intakeId}
                   greeting="While we line up an engineer — tell me what you're building. A sentence or two is plenty: the kind of product, who it's for, and how far along you are."
@@ -478,7 +494,8 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
                 No engineers are online right now
               </h1>
               <p className="max-w-sm text-sm leading-relaxed text-[var(--text-muted)]">
-                Try again in a moment — engineers come online throughout the day.
+                Try again in a moment — engineers come online throughout the
+                day.
               </p>
               <div className="flex gap-3 pt-3">
                 <Button loading={retrying} onClick={findAnother}>
@@ -523,8 +540,12 @@ export function MatchingClient({ intakeId }: { intakeId: string }) {
         {phase.kind === "cancelled" && (
           <Card variant="surface" className="w-full max-w-md">
             <CardBody className="flex flex-col items-center gap-2 py-10 text-center">
-              <h1 className="font-serif text-xl text-[var(--text)]">Call ended</h1>
-              <p className="text-sm text-[var(--text-muted)]">Taking you back home…</p>
+              <h1 className="font-serif text-xl text-[var(--text)]">
+                Call ended
+              </h1>
+              <p className="text-sm text-[var(--text-muted)]">
+                Taking you back home…
+              </p>
               <BounceHome router={router} />
             </CardBody>
           </Card>
@@ -604,7 +625,7 @@ function RingingHero({
           want to fake-promise "X seconds until next ring" anymore —
           honest waiting clock instead. */}
       <div
-        className="font-mono text-4xl tabular-nums tracking-[0.05em]"
+        className="font-mono text-4xl tracking-[0.05em] tabular-nums"
         style={{ color: "var(--text)", fontFeatureSettings: '"tnum"' }}
         aria-live="polite"
       >
@@ -615,7 +636,10 @@ function RingingHero({
           reassurance ("we'll connect you the moment…"). Spelled out
           so the customer never wonders whether the system is stuck. */}
       <div className="max-w-md space-y-1.5">
-        <p className="font-serif text-2xl text-[var(--text)]" style={{ letterSpacing: "-0.01em" }}>
+        <p
+          className="font-serif text-2xl text-[var(--text)]"
+          style={{ letterSpacing: "-0.01em" }}
+        >
           Ringing your engineers
         </p>
         <p className="text-sm text-[var(--text-muted)]">
@@ -633,7 +657,10 @@ function RingingHero({
           className="flex h-9 w-9 items-center justify-center rounded-full border transition-colors hover:bg-black/5 dark:hover:bg-white/5"
           style={{
             borderColor: "var(--border)",
-            color: soundOn && soundAvailable ? "var(--primary)" : "var(--text-muted)",
+            color:
+              soundOn && soundAvailable
+                ? "var(--primary)"
+                : "var(--text-muted)",
           }}
         >
           {soundOn ? <Volume2 size={14} /> : <VolumeX size={14} />}
@@ -673,7 +700,10 @@ function CompactRingingPill({
   return (
     <div
       className="flex w-full max-w-md items-center gap-3 rounded-full border px-3 py-2 shadow-sm"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface)",
+      }}
       role="status"
       aria-live="polite"
     >
@@ -684,7 +714,10 @@ function CompactRingingPill({
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col text-left">
-        <div className="truncate text-[13px] font-medium" style={{ color: "var(--text)" }}>
+        <div
+          className="truncate text-[13px] font-medium"
+          style={{ color: "var(--text)" }}
+        >
           Ringing your engineers
         </div>
         <div
@@ -702,7 +735,8 @@ function CompactRingingPill({
         className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-colors hover:bg-black/5 dark:hover:bg-white/5"
         style={{
           borderColor: "var(--border)",
-          color: soundOn && soundAvailable ? "var(--primary)" : "var(--text-muted)",
+          color:
+            soundOn && soundAvailable ? "var(--primary)" : "var(--text-muted)",
         }}
       >
         {soundOn ? <Volume2 size={12} /> : <VolumeX size={12} />}

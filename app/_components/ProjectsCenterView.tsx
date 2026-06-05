@@ -176,7 +176,7 @@ export function ProjectsCenterView({
             <button
               type="button"
               onClick={() => setSortOpen((o) => !o)}
-              className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-1.5 text-[13px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-medium whitespace-nowrap transition-colors hover:bg-black/5 dark:hover:bg-white/5"
               style={{ borderColor: "var(--border)", color: "var(--text)" }}
             >
               {SORTS.find((s) => s.key === sort)?.label}
@@ -191,7 +191,7 @@ export function ProjectsCenterView({
             </button>
             {sortOpen && (
               <div
-                className="absolute right-0 top-full z-10 mt-1 w-36 overflow-hidden rounded-lg border shadow-xl"
+                className="absolute top-full right-0 z-10 mt-1 w-36 overflow-hidden rounded-lg border shadow-xl"
                 style={{
                   background: "var(--surface)",
                   borderColor: "var(--border)",
@@ -222,7 +222,7 @@ export function ProjectsCenterView({
           <button
             type="button"
             onClick={onNewProject}
-            className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3.5 py-1.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[13px] font-semibold whitespace-nowrap text-white transition-opacity hover:opacity-90"
             style={{ background: "var(--primary)" }}
           >
             <Plus size={14} /> New project
@@ -387,7 +387,10 @@ function ProjectDetail({
         <h1 className="font-serif text-3xl" style={{ color: "var(--text)" }}>
           {project.name}
         </h1>
-        <p className="mt-0.5 text-[13px]" style={{ color: "var(--text-muted)" }}>
+        <p
+          className="mt-0.5 text-[13px]"
+          style={{ color: "var(--text-muted)" }}
+        >
           {sessions.length} session{sessions.length === 1 ? "" : "s"}
         </p>
       </div>

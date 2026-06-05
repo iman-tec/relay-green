@@ -33,7 +33,10 @@ export const K_ANON_THRESHOLD: Record<KAnonContext, number> = {
 export const SUPPRESSED_LABEL = "Insufficient data to display";
 
 /** True when a figure backed by `memberCount` distinct members must be hidden. */
-export function isSuppressed(memberCount: number, context: KAnonContext): boolean {
+export function isSuppressed(
+  memberCount: number,
+  context: KAnonContext
+): boolean {
   return memberCount < K_ANON_THRESHOLD[context];
 }
 
@@ -55,7 +58,7 @@ export interface MaybeSuppressed<T> {
 export function suppressValue<T>(
   value: T,
   memberCount: number,
-  context: KAnonContext,
+  context: KAnonContext
 ): MaybeSuppressed<T> {
   if (isSuppressed(memberCount, context)) {
     return { suppressed: true, memberCount, value: null };
@@ -74,7 +77,7 @@ export function suppressRows<Row, Kept>(
   rows: readonly Row[],
   context: KAnonContext,
   getMemberCount: (row: Row) => number,
-  keep: (row: Row) => Kept,
+  keep: (row: Row) => Kept
 ): Array<Kept & { suppressed: boolean; memberCount: number }> {
   return rows.map((row) => {
     const memberCount = getMemberCount(row);

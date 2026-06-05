@@ -51,7 +51,8 @@ export function Toast({
   className,
 }: ToastProps) {
   // ok messages are non-critical; everything else is alert-level.
-  const liveLevel = tone === "ok" || tone === "neutral" ? "polite" : "assertive";
+  const liveLevel =
+    tone === "ok" || tone === "neutral" ? "polite" : "assertive";
   return (
     <div
       role={tone === "risk" || tone === "warn" ? "alert" : "status"}
@@ -60,17 +61,24 @@ export function Toast({
         "flex items-start gap-3 rounded-xl border px-4 py-3",
         "animate-[relay-toast-in_var(--motion-med)_ease-out]",
         TONE_RING[tone],
-        className,
+        className
       )}
     >
-      <div className="flex-1 min-w-0">
+      <div className="min-w-0 flex-1">
         {title && (
-          <p className={cn("text-sm font-medium leading-tight", TONE_TEXT[tone])}>
+          <p
+            className={cn("text-sm leading-tight font-medium", TONE_TEXT[tone])}
+          >
             {title}
           </p>
         )}
         {children && (
-          <p className={cn("text-sm leading-snug", title ? "mt-1 text-[var(--text)]" : TONE_TEXT[tone])}>
+          <p
+            className={cn(
+              "text-sm leading-snug",
+              title ? "mt-1 text-[var(--text)]" : TONE_TEXT[tone]
+            )}
+          >
             {children}
           </p>
         )}
@@ -80,7 +88,7 @@ export function Toast({
           type="button"
           onClick={onClose}
           aria-label="Dismiss"
-          className="size-8 -mr-1 -mt-1 inline-flex items-center justify-center rounded-full text-[var(--text-muted)] hover:bg-[color-mix(in_srgb,var(--text)_8%,transparent)] hover:text-[var(--text)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--green-dot)]"
+          className="-mt-1 -mr-1 inline-flex size-8 items-center justify-center rounded-full text-[var(--text-muted)] hover:bg-[color-mix(in_srgb,var(--text)_8%,transparent)] hover:text-[var(--text)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--green-dot)]"
         >
           ×
         </button>

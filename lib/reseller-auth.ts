@@ -28,16 +28,22 @@ export type ResellerGate =
 
 export async function requireReseller(): Promise<ResellerGate> {
   const supabase = await createServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) return { ok: false, status: 401, error: "not_signed_in" };
 
   const [{ data: roles }, { data: profile }] = await Promise.all([
     supabase.from("user_role_names").select("role").eq("user_id", user.id),
-    supabase.from("profiles").select("reseller_id").eq("id", user.id).maybeSingle(),
+    supabase
+      .from("profiles")
+      .select("reseller_id")
+      .eq("id", user.id)
+      .maybeSingle(),
   ]);
 
   const isReseller = (roles ?? []).some(
-    (r: { role: string }) => r.role === ROLE.reseller,
+    (r: { role: string }) => r.role === ROLE.reseller
   );
   if (!isReseller) return { ok: false, status: 403, error: "forbidden" };
 

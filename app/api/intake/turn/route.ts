@@ -22,8 +22,8 @@
 
 import { NextResponse } from "next/server";
 
-export const runtime  = "nodejs";
-export const dynamic  = "force-dynamic";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const MODEL = "gpt-4o-mini";
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
@@ -34,27 +34,27 @@ type Field = "building" | "problem" | "stack" | "aiTools";
 type ChatMessage = { role: "assistant" | "user"; body: string };
 
 type ReqBody = {
-  messages:        ChatMessage[];
-  context:         Partial<Record<Field, string>>;
+  messages: ChatMessage[];
+  context: Partial<Record<Field, string>>;
   profile?: {
-    isReturning?:  boolean;
-    knownStack?:   string[];   // technologies the customer has already declared
+    isReturning?: boolean;
+    knownStack?: string[]; // technologies the customer has already declared
     knownProblem?: string;
   };
   resumeContext?: {
-    mode?:             "follow_up" | "continue";
-    aiSummaryTitle?:   string | null;
-    aiSummary?:        string | null;
-    aiNextSteps?:      string | null;
-    projectName?:      string | null;
+    mode?: "follow_up" | "continue";
+    aiSummaryTitle?: string | null;
+    aiSummary?: string | null;
+    aiNextSteps?: string | null;
+    projectName?: string | null;
   } | null;
 };
 
 type AiTurn = {
-  body:            string;
-  quickReplies:    string[];
+  body: string;
+  quickReplies: string[];
   extractedFields: Partial<Record<Field, string>>;
-  intakeDone:      boolean;
+  intakeDone: boolean;
 };
 
 const SYSTEM_PROMPT = `You are Relay's intake assistant. While a customer waits ~90 seconds for a senior engineer to pick up their video call, you collect the few pieces of context the engineer needs to be productive from the moment they say hello.
@@ -102,7 +102,7 @@ export async function POST(req: Request) {
   if (!apiKey) {
     return NextResponse.json(
       { error: "openai_not_configured" },
-      { status: 503 },
+      { status: 503 }
     );
   }
 
@@ -121,22 +121,22 @@ export async function POST(req: Request) {
   // the messages array so multi-turn context stays cheap.
   const stateBlock = JSON.stringify(
     {
-      context:       body.context ?? {},
-      profile:       body.profile ?? null,
+      context: body.context ?? {},
+      profile: body.profile ?? null,
       resumeContext: body.resumeContext ?? null,
     },
     null,
-    2,
+    2
   );
 
   // Build the OpenAI messages array. The first user message holds the
   // current state; subsequent items are the actual transcript so the model
   // sees the order of turns.
   const openaiMessages = [
-    { role: "system",  content: SYSTEM_PROMPT },
-    { role: "user",    content: `CURRENT STATE\n${stateBlock}` },
+    { role: "system", content: SYSTEM_PROMPT },
+    { role: "user", content: `CURRENT STATE\n${stateBlock}` },
     ...body.messages.map((m) => ({
-      role:    m.role === "assistant" ? "assistant" : "user",
+      role: m.role === "assistant" ? "assistant" : "user",
       content: m.body,
     })),
   ];
@@ -146,15 +146,15 @@ export async function POST(req: Request) {
     upstream = await fetch(OPENAI_URL, {
       method: "POST",
       headers: {
-        Authorization:  `Bearer ${apiKey}`,
+        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model:           MODEL,
-        messages:        openaiMessages,
-        temperature:     0.6,
+        model: MODEL,
+        messages: openaiMessages,
+        temperature: 0.6,
         response_format: { type: "json_object" },
-        max_tokens:      400,
+        max_tokens: 400,
       }),
     });
   } catch (err) {
@@ -165,8 +165,12 @@ export async function POST(req: Request) {
   if (!upstream.ok) {
     const text = await upstream.text().catch(() => "");
     return NextResponse.json(
-      { error: "openai_upstream", status: upstream.status, detail: text.slice(0, 500) },
-      { status: 502 },
+      {
+        error: "openai_upstream",
+        status: upstream.status,
+        detail: text.slice(0, 500),
+      },
+      { status: 502 }
     );
   }
 
@@ -188,17 +192,24 @@ export async function POST(req: Request) {
   try {
     turn = JSON.parse(stripJsonFence(content)) as AiTurn;
   } catch {
-    return NextResponse.json({ error: "bad_completion_json", raw: content.slice(0, 400) }, { status: 502 });
+    return NextResponse.json(
+      { error: "bad_completion_json", raw: content.slice(0, 400) },
+      { status: 502 }
+    );
   }
 
   // Defensive normalisation — never trust the model with the UI's shape.
   const normalised: AiTurn = {
-    body:            typeof turn.body === "string" ? turn.body : "",
-    quickReplies:    Array.isArray(turn.quickReplies)
-      ? turn.quickReplies.filter((s): s is string => typeof s === "string" && s.trim().length > 0).slice(0, 8)
+    body: typeof turn.body === "string" ? turn.body : "",
+    quickReplies: Array.isArray(turn.quickReplies)
+      ? turn.quickReplies
+          .filter(
+            (s): s is string => typeof s === "string" && s.trim().length > 0
+          )
+          .slice(0, 8)
       : [],
     extractedFields: extractFields(turn.extractedFields),
-    intakeDone:      Boolean(turn.intakeDone),
+    intakeDone: Boolean(turn.intakeDone),
   };
 
   return NextResponse.json(normalised);
@@ -218,7 +229,10 @@ function stripJsonFence(s: string): string {
   // response_format. Strip a single leading/trailing fence to be safe.
   const trimmed = s.trim();
   if (trimmed.startsWith("```")) {
-    return trimmed.replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
+    return trimmed
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/```$/i, "")
+      .trim();
   }
   return trimmed;
 }

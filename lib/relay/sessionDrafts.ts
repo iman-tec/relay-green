@@ -30,8 +30,8 @@ export interface SessionDraft {
   projectId: string;
   /** The problem write-up. Plain text; markdown / formatting deferred. */
   text: string;
-  createdAt: number;   // ms epoch
-  updatedAt: number;   // ms epoch — bumped on every save
+  createdAt: number; // ms epoch
+  updatedAt: number; // ms epoch — bumped on every save
 }
 
 const STORAGE_KEY = "relay-session-drafts-v1";
@@ -117,9 +117,10 @@ export function saveDraft(args: {
     if (oldest) delete map[oldest.id];
   }
   const created: SessionDraft = {
-    id: typeof crypto !== "undefined" && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `draft-${now}-${Math.random().toString(36).slice(2, 9)}`,
+    id:
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `draft-${now}-${Math.random().toString(36).slice(2, 9)}`,
     projectId: args.projectId,
     text: args.text,
     createdAt: now,
@@ -151,7 +152,7 @@ async function mirrorDraftToServer(draft: SessionDraft): Promise<void> {
         text: draft.text,
         updated_at: new Date(draft.updatedAt).toISOString(),
       },
-      { onConflict: "customer_user_id,project_id,local_id" },
+      { onConflict: "customer_user_id,project_id,local_id" }
     );
   } catch {
     /* best-effort; local copy remains authoritative */
@@ -172,7 +173,9 @@ export function deleteDraft(id: string): void {
     try {
       const sb = createClient();
       await sb.from("customer_session_drafts").delete().eq("local_id", id);
-    } catch { /* swallow */ }
+    } catch {
+      /* swallow */
+    }
   })();
 }
 

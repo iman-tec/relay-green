@@ -60,7 +60,7 @@ export interface CustomerProfileRow {
  * read-only expertise field from the customer's most recent intake.
  */
 export function techComfortFromFamiliarity(
-  familiarity: string | null | undefined,
+  familiarity: string | null | undefined
 ): TechComfort | null {
   switch (familiarity) {
     case "Well Experienced":
@@ -77,11 +77,15 @@ export function techComfortFromFamiliarity(
 /** Human-readable label for the read-only expertise field. */
 export function techComfortLabel(value: TechComfort | null): string {
   if (!value) return "Not set yet";
-  return TECH_COMFORT_OPTIONS.find((o) => o.value === value)?.label ?? "Not set yet";
+  return (
+    TECH_COMFORT_OPTIONS.find((o) => o.value === value)?.label ?? "Not set yet"
+  );
 }
 
 /** Client-side avatar validation — fast feedback before upload. */
-export function validateAvatar(file: File): { ok: true } | { ok: false; error: string } {
+export function validateAvatar(
+  file: File
+): { ok: true } | { ok: false; error: string } {
   if (!AVATAR_ACCEPTED_MIME.has(file.type)) {
     return { ok: false, error: "Please choose a JPG, PNG, or WebP image." };
   }

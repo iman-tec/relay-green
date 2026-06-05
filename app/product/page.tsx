@@ -19,10 +19,7 @@ import { RelayLogo } from "../_marketing/RelayLogo";
 import { BuiltToTrustCenter } from "../_marketing/BuiltToTrustCenter";
 import { ProductHeroOrb } from "./ProductHeroOrb";
 import { JsonLd } from "../_marketing/JsonLd";
-import {
-  breadcrumbSchema,
-  webPageSchema,
-} from "../../lib/seo/schema";
+import { breadcrumbSchema, webPageSchema } from "../../lib/seo/schema";
 
 const SITE_URL = "https://www.relay.green";
 

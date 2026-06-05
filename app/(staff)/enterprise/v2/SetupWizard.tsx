@@ -22,7 +22,10 @@ const ROLE_OPTIONS = [
 ];
 
 export function SetupWizard({
-  open, onClose, orgName, onChanged,
+  open,
+  onClose,
+  orgName,
+  onChanged,
 }: {
   open: boolean;
   onClose: () => void;
@@ -48,48 +51,87 @@ export function SetupWizard({
   const [err, setErr] = useState<string | null>(null);
 
   const close = () => {
-    setStep(1); setDeptName(""); setDeptAdminName(""); setDeptAdminEmail("");
-    setCreatedDepts([]); setEmail(""); setName(""); setRole("client"); setInvited([]);
-    setErr(null); onClose();
+    setStep(1);
+    setDeptName("");
+    setDeptAdminName("");
+    setDeptAdminEmail("");
+    setCreatedDepts([]);
+    setEmail("");
+    setName("");
+    setRole("client");
+    setInvited([]);
+    setErr(null);
+    onClose();
   };
 
   const addDepartment = async () => {
     if (!deptName.trim() || !deptAdminName.trim() || !deptAdminEmail.trim()) {
-      setErr("Department name, admin name and email are required."); return;
+      setErr("Department name, admin name and email are required.");
+      return;
     }
-    setBusy(true); setErr(null);
+    setBusy(true);
+    setErr(null);
     try {
       const res = await fetch("/api/enterprise/departments", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: deptName.trim(), adminDisplayName: deptAdminName.trim(), adminEmail: deptAdminEmail.trim().toLowerCase(), allocatedMinutes: 0 }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: deptName.trim(),
+          adminDisplayName: deptAdminName.trim(),
+          adminEmail: deptAdminEmail.trim().toLowerCase(),
+          allocatedMinutes: 0,
+        }),
       });
       const b = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(b.error || "Couldn't create department.");
       setCreatedDepts((d) => [...d, deptName.trim()]);
-      setDeptName(""); setDeptAdminName(""); setDeptAdminEmail("");
+      setDeptName("");
+      setDeptAdminName("");
+      setDeptAdminEmail("");
       onChanged?.();
-    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't create department."); }
-    finally { setBusy(false); }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Couldn't create department.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const inviteMember = async () => {
-    if (!email.trim() || !name.trim()) { setErr("Name and email are required."); return; }
-    setBusy(true); setErr(null);
+    if (!email.trim() || !name.trim()) {
+      setErr("Name and email are required.");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
     try {
       const res = await fetch("/api/enterprise/users", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim().toLowerCase(), displayName: name.trim(), role }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          displayName: name.trim(),
+          role,
+        }),
       });
       const b = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(b.error || "Invite failed.");
       setInvited((v) => [...v, email.trim().toLowerCase()]);
-      setEmail(""); setName(""); setRole("client");
+      setEmail("");
+      setName("");
+      setRole("client");
       onChanged?.();
-    } catch (e) { setErr(e instanceof Error ? e.message : "Invite failed."); }
-    finally { setBusy(false); }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Invite failed.");
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const titles = ["Welcome to Relay", "Create a department", "Invite your team"];
+  const titles = [
+    "Welcome to Relay",
+    "Create a department",
+    "Invite your team",
+  ];
   const descs = [
     `Let's get ${orgName} set up. Three quick steps — you can change everything later.`,
     "Departments hold their own minute budget and members. Add your first one, or skip and do it later.",
@@ -98,21 +140,58 @@ export function SetupWizard({
 
   const footer = (
     <div className="flex items-center justify-between gap-2">
-      <span className="text-xs" style={{ color: "var(--text-muted)" }}>Step {step} of 3</span>
+      <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+        Step {step} of 3
+      </span>
       <div className="flex gap-2">
-        {step > 1 && <Button variant="ghost" onClick={() => { setErr(null); setStep((s) => s - 1); }} disabled={busy}>Back</Button>}
-        {step < 3
-          ? <Button onClick={() => { setErr(null); setStep((s) => s + 1); }} disabled={busy}>{step === 2 && createdDepts.length === 0 ? "Skip" : "Continue"}</Button>
-          : <Button onClick={close} iconLeft={<Check size={14} />}>Finish</Button>}
+        {step > 1 && (
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setErr(null);
+              setStep((s) => s - 1);
+            }}
+            disabled={busy}
+          >
+            Back
+          </Button>
+        )}
+        {step < 3 ? (
+          <Button
+            onClick={() => {
+              setErr(null);
+              setStep((s) => s + 1);
+            }}
+            disabled={busy}
+          >
+            {step === 2 && createdDepts.length === 0 ? "Skip" : "Continue"}
+          </Button>
+        ) : (
+          <Button onClick={close} iconLeft={<Check size={14} />}>
+            Finish
+          </Button>
+        )}
       </div>
     </div>
   );
 
   return (
-    <Modal open={open} onClose={close} title={titles[step - 1]} description={descs[step - 1]} footer={footer}>
+    <Modal
+      open={open}
+      onClose={close}
+      title={titles[step - 1]}
+      description={descs[step - 1]}
+      footer={footer}
+    >
       {step === 1 && (
         <div className="flex flex-col items-center gap-4 py-2 text-center">
-          <span className="inline-flex size-14 items-center justify-center rounded-2xl" style={{ background: "var(--primary-tint)", color: "var(--primary-hover)" }}>
+          <span
+            className="inline-flex size-14 items-center justify-center rounded-2xl"
+            style={{
+              background: "var(--primary-tint)",
+              color: "var(--primary-hover)",
+            }}
+          >
             <Sparkles size={26} />
           </span>
           <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-3">
@@ -126,35 +205,114 @@ export function SetupWizard({
       {step === 2 && (
         <div className="flex flex-col gap-3">
           {createdDepts.length > 0 && (
-            <div className="rounded-lg border px-3 py-2 text-xs" style={{ borderColor: "var(--primary)", background: "var(--primary-tint)", color: "var(--text)" }}>
+            <div
+              className="rounded-lg border px-3 py-2 text-xs"
+              style={{
+                borderColor: "var(--primary)",
+                background: "var(--primary-tint)",
+                color: "var(--text)",
+              }}
+            >
               Created: {createdDepts.join(", ")}
             </div>
           )}
-          <Input label="Department name" value={deptName} onChange={(e) => setDeptName(e.target.value)} placeholder="Engineering" />
-          <Input label="Department admin name" value={deptAdminName} onChange={(e) => setDeptAdminName(e.target.value)} placeholder="Jordan Reed" />
-          <Input label="Department admin email" type="email" value={deptAdminEmail} onChange={(e) => setDeptAdminEmail(e.target.value)} placeholder="jordan@company.com" />
-          {err && <p className="text-xs" style={{ color: "var(--risk)" }}>{err}</p>}
-          <Button variant="secondary" onClick={() => void addDepartment()} loading={busy} iconLeft={<Plus size={14} />}>Add department</Button>
+          <Input
+            label="Department name"
+            value={deptName}
+            onChange={(e) => setDeptName(e.target.value)}
+            placeholder="Engineering"
+          />
+          <Input
+            label="Department admin name"
+            value={deptAdminName}
+            onChange={(e) => setDeptAdminName(e.target.value)}
+            placeholder="Jordan Reed"
+          />
+          <Input
+            label="Department admin email"
+            type="email"
+            value={deptAdminEmail}
+            onChange={(e) => setDeptAdminEmail(e.target.value)}
+            placeholder="jordan@company.com"
+          />
+          {err && (
+            <p className="text-xs" style={{ color: "var(--risk)" }}>
+              {err}
+            </p>
+          )}
+          <Button
+            variant="secondary"
+            onClick={() => void addDepartment()}
+            loading={busy}
+            iconLeft={<Plus size={14} />}
+          >
+            Add department
+          </Button>
         </div>
       )}
 
       {step === 3 && (
         <div className="flex flex-col gap-3">
           {invited.length > 0 && (
-            <div className="rounded-lg border px-3 py-2 text-xs" style={{ borderColor: "var(--primary)", background: "var(--primary-tint)", color: "var(--text)" }}>
+            <div
+              className="rounded-lg border px-3 py-2 text-xs"
+              style={{
+                borderColor: "var(--primary)",
+                background: "var(--primary-tint)",
+                color: "var(--text)",
+              }}
+            >
               Invited: {invited.join(", ")}
             </div>
           )}
-          <Input label="Full name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Jane Doe" />
-          <Input label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jane@company.com" />
-          <label className="flex flex-col gap-1.5 text-sm" style={{ color: "var(--text)" }}>
+          <Input
+            label="Full name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Jane Doe"
+          />
+          <Input
+            label="Email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="jane@company.com"
+          />
+          <label
+            className="flex flex-col gap-1.5 text-sm"
+            style={{ color: "var(--text)" }}
+          >
             Role
-            <select value={role} onChange={(e) => setRole(e.target.value)} className="h-11 rounded-lg border px-3" style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--text)" }}>
-              {ROLE_OPTIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              className="h-11 rounded-lg border px-3"
+              style={{
+                borderColor: "var(--border)",
+                background: "var(--background)",
+                color: "var(--text)",
+              }}
+            >
+              {ROLE_OPTIONS.map((r) => (
+                <option key={r.value} value={r.value}>
+                  {r.label}
+                </option>
+              ))}
             </select>
           </label>
-          {err && <p className="text-xs" style={{ color: "var(--risk)" }}>{err}</p>}
-          <Button variant="secondary" onClick={() => void inviteMember()} loading={busy} iconLeft={<Mail size={14} />}>Send invite</Button>
+          {err && (
+            <p className="text-xs" style={{ color: "var(--risk)" }}>
+              {err}
+            </p>
+          )}
+          <Button
+            variant="secondary"
+            onClick={() => void inviteMember()}
+            loading={busy}
+            iconLeft={<Mail size={14} />}
+          >
+            Send invite
+          </Button>
         </div>
       )}
     </Modal>
@@ -163,9 +321,14 @@ export function SetupWizard({
 
 function Step({ icon, label }: { icon: React.ReactNode; label: string }) {
   return (
-    <div className="flex flex-col items-center gap-1.5 rounded-xl border p-3" style={{ borderColor: "var(--border)" }}>
+    <div
+      className="flex flex-col items-center gap-1.5 rounded-xl border p-3"
+      style={{ borderColor: "var(--border)" }}
+    >
       <span style={{ color: "var(--primary-hover)" }}>{icon}</span>
-      <span className="text-xs" style={{ color: "var(--text-muted)" }}>{label}</span>
+      <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+        {label}
+      </span>
     </div>
   );
 }

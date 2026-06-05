@@ -12,7 +12,9 @@ export const metadata: Metadata = {
 
 export default async function DepartmentV2Page() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) redirect("/business");
 
   const { data: roleRows } = await supabase
@@ -30,7 +32,9 @@ export default async function DepartmentV2Page() {
 
   return (
     <Suspense fallback={null}>
-      <PanelClient me={{ email: user.email ?? "", roleLabel: highestRoleLabel(roles) }} />
+      <PanelClient
+        me={{ email: user.email ?? "", roleLabel: highestRoleLabel(roles) }}
+      />
     </Suspense>
   );
 }

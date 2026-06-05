@@ -17,7 +17,8 @@ type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function PATCH(_req: Request, { params }: RouteCtx) {
   const gate = await requireReseller();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { supabase, user } = gate;
 
   const { id } = await params;
@@ -29,6 +30,7 @@ export async function PATCH(_req: Request, { params }: RouteCtx) {
     .eq("id", id)
     .eq("user_id", user.id);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error)
+    return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }

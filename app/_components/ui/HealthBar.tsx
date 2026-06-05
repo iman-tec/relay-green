@@ -57,7 +57,11 @@ const TONE_TEXT: Record<"ok" | "warn" | "risk" | "neutral", string> = {
   neutral: "text-[var(--text-faint)]",
 };
 
-export function HealthBar({ score, hideLabel = false, size = "md" }: HealthBarProps) {
+export function HealthBar({
+  score,
+  hideLabel = false,
+  size = "md",
+}: HealthBarProps) {
   const tone = toneFor(score);
   const label = labelFor(score);
   const pct = score == null ? 0 : Math.max(2, Math.min(100, score));
@@ -68,7 +72,10 @@ export function HealthBar({ score, hideLabel = false, size = "md" }: HealthBarPr
       {!hideLabel && (
         <div className="flex items-center justify-between text-[11px] leading-none">
           <span
-            className={cn("inline-flex items-center gap-1.5 font-medium", TONE_TEXT[tone])}
+            className={cn(
+              "inline-flex items-center gap-1.5 font-medium",
+              TONE_TEXT[tone]
+            )}
           >
             <span
               aria-hidden
@@ -78,7 +85,9 @@ export function HealthBar({ score, hideLabel = false, size = "md" }: HealthBarPr
             {label}
           </span>
           {score != null && (
-            <span className="text-[var(--text-muted)] tabular-nums">{score}</span>
+            <span className="text-[var(--text-muted)] tabular-nums">
+              {score}
+            </span>
           )}
         </div>
       )}
@@ -99,7 +108,8 @@ export function HealthBar({ score, hideLabel = false, size = "md" }: HealthBarPr
           style={{
             width: `${pct}%`,
             background: score == null ? "transparent" : TONE_COLOR[tone],
-            borderTop: score == null ? `1px dashed ${TONE_COLOR.neutral}` : undefined,
+            borderTop:
+              score == null ? `1px dashed ${TONE_COLOR.neutral}` : undefined,
           }}
         />
       </div>

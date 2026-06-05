@@ -89,11 +89,7 @@ export const LAUNCH_PLANS = [
     blurb: "Multi-system rollout with compliance review.",
     priceLabel: "€3,000",
     suffix: "fixed",
-    features: [
-      "Multi-system",
-      "Basic compliance review",
-      "~4-week delivery",
-    ],
+    features: ["Multi-system", "Basic compliance review", "~4-week delivery"],
   },
   {
     code: "launch_complex",

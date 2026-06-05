@@ -20,12 +20,7 @@
  */
 
 import { useRef, useState } from "react";
-import {
-  Button,
-  Input,
-  OtpDigitInput,
-  Toast,
-} from "@/app/_components/ui";
+import { Button, Input, OtpDigitInput, Toast } from "@/app/_components/ui";
 import { createClient } from "@/lib/supabase/browser";
 
 type Mode = "password" | "otp-email" | "otp-code";
@@ -118,9 +113,9 @@ export function SignInForm() {
         body: JSON.stringify({ email: em, password, surface: "customer" }),
       });
       const body = (await res.json().catch(() => ({}))) as {
-        ok?:                  boolean;
-        next?:                string;
-        error?:               string;
+        ok?: boolean;
+        next?: string;
+        error?: string;
         allowed_surface_url?: string;
       };
       if (!res.ok || !body.ok) {
@@ -128,7 +123,9 @@ export function SignInForm() {
         // surface. Send them to their correct surface instead of leaking
         // the raw error code into the UI.
         if (body.error === "wrong_login_surface" && body.allowed_surface_url) {
-          window.location.assign(`${body.allowed_surface_url}?wrong_surface=1&email=${encodeURIComponent(em)}`);
+          window.location.assign(
+            `${body.allowed_surface_url}?wrong_surface=1&email=${encodeURIComponent(em)}`
+          );
           return;
         }
         setError(friendlyError(body.error ?? "Couldn't sign in."));
@@ -156,7 +153,10 @@ export function SignInForm() {
         body: JSON.stringify({ email: em, purpose }),
       });
       if (!prepareRes.ok) {
-        const body = (await prepareRes.json().catch(() => ({}))) as Record<string, unknown>;
+        const body = (await prepareRes.json().catch(() => ({}))) as Record<
+          string,
+          unknown
+        >;
         if (body.error === "rate_limited") {
           setError("Too many attempts — wait a minute before trying again.");
           return;
@@ -164,7 +164,11 @@ export function SignInForm() {
         // Note: /api/auth/prepare is enumeration-safe — it never returns
         // email_exists / email_not_found, so we must not branch on account
         // state here (doing so would re-introduce the SEC-API-ENUM-1 oracle).
-        setError(typeof body.error === "string" ? body.error : "Could not start sign-in.");
+        setError(
+          typeof body.error === "string"
+            ? body.error
+            : "Could not start sign-in."
+        );
         return;
       }
       const sendRes = await fetch("/api/auth/send-otp", {
@@ -173,7 +177,9 @@ export function SignInForm() {
         body: JSON.stringify({ email: em }),
       });
       if (!sendRes.ok) {
-        const body = (await sendRes.json().catch(() => ({}))) as { error?: string };
+        const body = (await sendRes.json().catch(() => ({}))) as {
+          error?: string;
+        };
         setError(friendlyError(body.error ?? "Could not send code."));
         return;
       }
@@ -194,17 +200,24 @@ export function SignInForm() {
       const res = await fetch("/api/auth/verify-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, code: full, surface: "customer", purpose }),
+        body: JSON.stringify({
+          email,
+          code: full,
+          surface: "customer",
+          purpose,
+        }),
       });
       const body = (await res.json().catch(() => ({}))) as {
-        ok?:                  boolean;
-        next?:                string;
-        error?:               string;
+        ok?: boolean;
+        next?: string;
+        error?: string;
         allowed_surface_url?: string;
       };
       if (!res.ok || !body.ok) {
         if (body.error === "wrong_login_surface" && body.allowed_surface_url) {
-          window.location.assign(`${body.allowed_surface_url}?wrong_surface=1&email=${encodeURIComponent(email)}`);
+          window.location.assign(
+            `${body.allowed_surface_url}?wrong_surface=1&email=${encodeURIComponent(email)}`
+          );
           return;
         }
         setError(friendlyError(body.error ?? "Couldn't verify code."));
@@ -249,7 +262,7 @@ export function SignInForm() {
                 type="button"
                 disabled={loading}
                 onClick={() => switchToOtp("forgot")}
-                className="text-xs font-normal text-[var(--text-muted)] underline-offset-4 hover:underline hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-60"
+                className="text-xs font-normal text-[var(--text-muted)] underline-offset-4 hover:text-[var(--text)] hover:underline disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Forgot password?
               </button>
@@ -270,7 +283,7 @@ export function SignInForm() {
               onClick={() => setShowPassword((s) => !s)}
               aria-label={showPassword ? "Hide password" : "Show password"}
               aria-pressed={showPassword}
-              className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-raised)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--primary)_45%,transparent)]"
+              className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-raised)] hover:text-[var(--text)] focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--primary)_45%,transparent)] focus-visible:outline-none"
             >
               {showPassword ? (
                 <svg
@@ -317,7 +330,9 @@ export function SignInForm() {
 
         <div className="flex items-center gap-3 py-1" aria-hidden>
           <span className="h-px flex-1 bg-[var(--border)]" />
-          <span className="text-xs text-[var(--text-muted)]">or continue with</span>
+          <span className="text-xs text-[var(--text-muted)]">
+            or continue with
+          </span>
           <span className="h-px flex-1 bg-[var(--border)]" />
         </div>
 
@@ -346,7 +361,9 @@ export function SignInForm() {
                 d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
               />
             </svg>
-            {oauthLoading === "google" ? "Redirecting…" : "Continue with Google"}
+            {oauthLoading === "google"
+              ? "Redirecting…"
+              : "Continue with Google"}
           </button>
           <button
             type="button"
@@ -354,10 +371,18 @@ export function SignInForm() {
             onClick={() => void handleOAuth("github")}
             className={oauthBtn}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              aria-hidden
+            >
               <path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.54-3.88-1.54-.53-1.34-1.3-1.7-1.3-1.7-1.06-.72.08-.71.08-.71 1.17.08 1.79 1.2 1.79 1.2 1.04 1.79 2.73 1.27 3.4.97.1-.76.41-1.27.74-1.56-2.55-.29-5.23-1.27-5.23-5.67 0-1.25.45-2.27 1.19-3.07-.12-.29-.52-1.46.11-3.04 0 0 .97-.31 3.18 1.17a11 11 0 0 1 5.8 0c2.2-1.48 3.17-1.17 3.17-1.17.63 1.58.23 2.75.11 3.04.74.8 1.19 1.82 1.19 3.07 0 4.41-2.69 5.38-5.25 5.66.42.36.8 1.08.8 2.18v3.23c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z" />
             </svg>
-            {oauthLoading === "github" ? "Redirecting…" : "Continue with GitHub"}
+            {oauthLoading === "github"
+              ? "Redirecting…"
+              : "Continue with GitHub"}
           </button>
         </div>
 
@@ -365,7 +390,7 @@ export function SignInForm() {
           <button
             type="button"
             onClick={() => switchToOtp("first-time")}
-            className="text-[var(--text-muted)] underline-offset-4 hover:underline hover:text-[var(--text)]"
+            className="text-[var(--text-muted)] underline-offset-4 hover:text-[var(--text)] hover:underline"
           >
             First time signing in?
           </button>
@@ -380,7 +405,7 @@ export function SignInForm() {
     return (
       <form onSubmit={handleSendCode} className="flex flex-col gap-4">
         <div>
-          <h2 className="font-serif text-lg text-[var(--text)] leading-tight">
+          <h2 className="font-serif text-lg leading-tight text-[var(--text)]">
             {copy.title}
           </h2>
           <p className="mt-1.5 text-sm leading-relaxed text-[var(--text-muted)]">
@@ -413,7 +438,7 @@ export function SignInForm() {
             setMode("password");
             setTimeout(() => passwordRef.current?.focus(), 80);
           }}
-          className="text-center text-sm text-[var(--text-muted)] underline-offset-4 hover:underline hover:text-[var(--text)]"
+          className="text-center text-sm text-[var(--text-muted)] underline-offset-4 hover:text-[var(--text)] hover:underline"
         >
           ← Back to password sign in
         </button>
@@ -425,8 +450,9 @@ export function SignInForm() {
   return (
     <div className="flex flex-col gap-5">
       <Toast tone="ok" title="Check your email">
-        If an account exists for <strong className="text-[var(--text)]">{email}</strong>, we&apos;ve
-        sent an 8-digit code.
+        If an account exists for{" "}
+        <strong className="text-[var(--text)]">{email}</strong>, we&apos;ve sent
+        an 8-digit code.
       </Toast>
 
       <form onSubmit={handleVerifySubmit} className="flex flex-col gap-4">
@@ -459,7 +485,7 @@ export function SignInForm() {
           setCode("");
           setError(null);
         }}
-        className="text-center text-sm text-[var(--text-muted)] underline-offset-4 hover:underline hover:text-[var(--text)]"
+        className="text-center text-sm text-[var(--text-muted)] underline-offset-4 hover:text-[var(--text)] hover:underline"
       >
         Use a different email
       </button>

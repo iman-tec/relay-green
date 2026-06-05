@@ -524,7 +524,7 @@ function TeamSchedule() {
         style={{ borderColor: "var(--border)", background: "var(--surface)" }}
       >
         <div
-          className={`${GRID} border-b px-4 py-2 text-[10px] font-semibold uppercase tracking-wider`}
+          className={`${GRID} border-b px-4 py-2 text-[10px] font-semibold tracking-wider uppercase`}
           style={{ borderColor: "var(--border)", color: "var(--text-faint)" }}
         >
           <span>Engineer</span>
@@ -551,7 +551,7 @@ function TeamSchedule() {
                 </span>
               </div>
               <div
-                className="whitespace-nowrap text-[12px] tabular-nums"
+                className="text-[12px] whitespace-nowrap tabular-nums"
                 style={{ color: "var(--text-muted)" }}
               >
                 {active.label}
@@ -754,14 +754,17 @@ function TeamLeaveCalendar() {
         {months.map((m) => (
           <div key={m.key} className="flex flex-col gap-1.5">
             <span
-              className="px-1 text-[10px] font-semibold uppercase tracking-wider"
+              className="px-1 text-[10px] font-semibold tracking-wider uppercase"
               style={{ color: "var(--text-faint)" }}
             >
               {m.label}
             </span>
             <div
               className="overflow-hidden rounded-xl border"
-              style={{ borderColor: "var(--border)", background: "var(--surface)" }}
+              style={{
+                borderColor: "var(--border)",
+                background: "var(--surface)",
+              }}
             >
               {m.items.map((r) => {
                 const accepted = r.status === "approved";
@@ -778,7 +781,9 @@ function TeamLeaveCalendar() {
                           className="flex items-center gap-2 text-[13px]"
                           style={{ color: "var(--text)" }}
                         >
-                          <span className="truncate font-medium">{r.engineer}</span>
+                          <span className="truncate font-medium">
+                            {r.engineer}
+                          </span>
                         </div>
                         <div
                           className="text-[12px] tabular-nums"
@@ -789,8 +794,14 @@ function TeamLeaveCalendar() {
                             · {r.totalDays} day{r.totalDays === 1 ? "" : "s"}
                           </span>
                         </div>
-                        <div className="text-[12px]" style={{ color: "var(--text)" }}>
-                          <span className="font-medium" style={{ color: "var(--text-muted)" }}>
+                        <div
+                          className="text-[12px]"
+                          style={{ color: "var(--text)" }}
+                        >
+                          <span
+                            className="font-medium"
+                            style={{ color: "var(--text-muted)" }}
+                          >
                             Reason:{" "}
                           </span>
                           {r.reason}
@@ -798,9 +809,10 @@ function TeamLeaveCalendar() {
                       </div>
                       {accepted ? (
                         <span
-                          className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide"
+                          className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold tracking-wide uppercase"
                           style={{
-                            background: "color-mix(in srgb, var(--ok) 15%, transparent)",
+                            background:
+                              "color-mix(in srgb, var(--ok) 15%, transparent)",
                             color: "var(--ok)",
                           }}
                           title="Approved by the super-admin"
@@ -836,7 +848,10 @@ function TeamLeaveCalendar() {
                             "color-mix(in srgb, var(--accent-red) 8%, transparent)",
                         }}
                       >
-                        <AlertTriangle size={14} style={{ color: "var(--accent-red)" }} />
+                        <AlertTriangle
+                          size={14}
+                          style={{ color: "var(--accent-red)" }}
+                        />
                         <input
                           value={reason}
                           onChange={(e) => setReason(e.target.value)}

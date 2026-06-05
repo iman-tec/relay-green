@@ -10,11 +10,13 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY =
-  Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY")!;
+  Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ??
+  Deno.env.get("SUPABASE_ANON_KEY")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method === "OPTIONS")
+    return new Response("ok", { headers: corsHeaders });
 
   try {
     const auth = req.headers.get("Authorization") ?? "";
@@ -43,10 +45,13 @@ Deno.serve(async (req) => {
       body.env === "live" ? "live" : ("sandbox" as StripeEnv);
 
     if (!packageCode || !returnUrl) {
-      return new Response(JSON.stringify({ error: "Missing package_code or return_url" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ error: "Missing package_code or return_url" }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -73,10 +78,13 @@ Deno.serve(async (req) => {
     });
     const stripePrice = prices.data[0];
     if (!stripePrice) {
-      return new Response(JSON.stringify({ error: "Stripe price not found for package" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ error: "Stripe price not found for package" }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     const session = await stripe.checkout.sessions.create({
@@ -101,8 +109,14 @@ Deno.serve(async (req) => {
     });
 
     return new Response(
-      JSON.stringify({ client_secret: session.client_secret, session_id: session.id }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      JSON.stringify({
+        client_secret: session.client_secret,
+        session_id: session.id,
+      }),
+      {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";

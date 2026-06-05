@@ -30,15 +30,15 @@ import {
 } from "@/lib/relay/loginSurface";
 
 type SurfaceCopy = {
-  title:    string;
-  blurb:    string;
+  title: string;
+  blurb: string;
   /** Optional footer line, e.g. "Not invited yet? support@relay.green". */
-  footer?:  React.ReactNode;
+  footer?: React.ReactNode;
 };
 
 type Props = {
   surface: LoginSurface;
-  copy:    SurfaceCopy;
+  copy: SurfaceCopy;
   /** Dev-mode quick-pick is only shown on the /staff surface in development.
    *  Other surfaces get `devMode={false}` regardless of NODE_ENV. */
   showDevQuickPick?: boolean;
@@ -51,7 +51,9 @@ type Props = {
 
 async function bounceSignedInUser(surface: LoginSurface): Promise<void> {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) return;
 
   const { data: roleRows } = await supabase
@@ -88,17 +90,26 @@ export async function SurfaceLoginPage({
     >
       <div
         className="w-full max-w-md rounded-2xl border p-8 shadow-sm"
-        style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}
+        style={{
+          backgroundColor: "var(--surface)",
+          borderColor: "var(--border)",
+        }}
       >
         <div className="mb-7 flex flex-col items-center gap-3 text-center">
           <Link href="/" className="no-underline">
             <Wordmark size="lg" />
           </Link>
           <div className="flex flex-col gap-1.5">
-            <h1 className="text-xl font-semibold" style={{ color: "var(--text)" }}>
+            <h1
+              className="text-xl font-semibold"
+              style={{ color: "var(--text)" }}
+            >
               {copy.title}
             </h1>
-            <p className="text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
+            <p
+              className="text-sm leading-relaxed"
+              style={{ color: "var(--text-muted)" }}
+            >
               {copy.blurb}
             </p>
           </div>
@@ -109,7 +120,8 @@ export async function SurfaceLoginPage({
             className="mb-5 rounded-md border px-4 py-3 text-sm"
             style={{
               borderColor: "color-mix(in srgb, var(--warn) 30%, transparent)",
-              backgroundColor: "color-mix(in srgb, var(--warn) 7%, transparent)",
+              backgroundColor:
+                "color-mix(in srgb, var(--warn) 7%, transparent)",
               color: "var(--text)",
             }}
           >
@@ -124,8 +136,14 @@ export async function SurfaceLoginPage({
 
         {copy.footer && (
           <>
-            <div className="my-6 border-t" style={{ borderColor: "var(--border)" }} />
-            <div className="text-center text-xs" style={{ color: "var(--text-muted)" }}>
+            <div
+              className="my-6 border-t"
+              style={{ borderColor: "var(--border)" }}
+            />
+            <div
+              className="text-center text-xs"
+              style={{ color: "var(--text-muted)" }}
+            >
               {copy.footer}
             </div>
           </>

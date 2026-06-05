@@ -23,11 +23,15 @@ export function SignOutButton() {
       // Flip Offline before the session dies (no-op for non-engineers).
       try {
         await supabase.rpc("engineer_set_online", { _online: false });
-      } catch { /* best-effort */ }
+      } catch {
+        /* best-effort */
+      }
       // Supervisors/super_admins go off duty too so coverage re-routes.
       try {
         await supabase.rpc("supervisor_set_online", { _online: false });
-      } catch { /* best-effort */ }
+      } catch {
+        /* best-effort */
+      }
       await supabase.auth.signOut();
     } finally {
       router.push("/staff");

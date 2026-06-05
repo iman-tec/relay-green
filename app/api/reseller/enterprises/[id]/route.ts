@@ -16,13 +16,14 @@ import { requireReseller } from "@/lib/reseller-auth";
 import { banUsers } from "@/lib/auth-ban";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: Request, { params }: RouteCtx) {
   const gate = await requireReseller();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin, resellerId } = gate;
 
   const { id } = await params;
@@ -32,7 +33,10 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
     .select("id, reseller_id")
     .eq("id", id)
     .maybeSingle();
-  if (!owned || (owned as { reseller_id: string | null }).reseller_id !== resellerId) {
+  if (
+    !owned ||
+    (owned as { reseller_id: string | null }).reseller_id !== resellerId
+  ) {
     return NextResponse.json({ error: "not_owned" }, { status: 404 });
   }
 
@@ -53,8 +57,11 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
         .eq("organization_id", id);
       const memberIds = (members ?? []).map((m: { id: string }) => m.id);
 
-      const { error } = await admin.rpc("deactivate_enterprise", { _org_id: id });
-      if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+      const { error } = await admin.rpc("deactivate_enterprise", {
+        _org_id: id,
+      });
+      if (error)
+        return NextResponse.json({ error: error.message }, { status: 400 });
 
       await banUsers(admin, memberIds);
       return NextResponse.json({ ok: true, status: "suspended" });
@@ -64,7 +71,8 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
         .from("organizations")
         .update({ status: "active" })
         .eq("id", id);
-      if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+      if (error)
+        return NextResponse.json({ error: error.message }, { status: 400 });
       // No automatic cascade reactivation — admins re-enable individual
       // members as needed.
       return NextResponse.json({ ok: true, status: "active" });
@@ -80,7 +88,11 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
   if (!Object.keys(update).length) {
     return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
   }
-  const { error } = await admin.from("organizations").update(update).eq("id", id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  const { error } = await admin
+    .from("organizations")
+    .update(update)
+    .eq("id", id);
+  if (error)
+    return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json({ ok: true });
 }

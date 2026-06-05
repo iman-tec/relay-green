@@ -36,20 +36,31 @@ import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { STAFF_ROLES } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 const HEARTBEAT_FRESH_MS = 90_000; // matches match_engineer's 90s window
 // Sessions a claimed engineer is considered "busy" on — never re-ring them.
-const ACTIVE_CALL_STATUSES = ["assigned", "joining", "live", "grace", "expired_free", "ending"];
+const ACTIVE_CALL_STATUSES = [
+  "assigned",
+  "joining",
+  "live",
+  "grace",
+  "expired_free",
+  "ending",
+];
 
 export async function POST(req: Request) {
   const supabase = await createServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user)
+    return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
 
   const body = (await req.json().catch(() => ({}))) as { intakeId?: string };
   const intakeId = body.intakeId;
-  if (!intakeId) return NextResponse.json({ error: "missing_intake_id" }, { status: 400 });
+  if (!intakeId)
+    return NextResponse.json({ error: "missing_intake_id" }, { status: 400 });
 
   // Caller must be staff (engineer declining, or supervisor on the board).
   const { data: roleRows } = await supabase
@@ -57,14 +68,19 @@ export async function POST(req: Request) {
     .select("role")
     .eq("user_id", user.id);
   const callerRoles = (roleRows ?? []).map((r: { role: string }) => r.role);
-  if (!callerRoles.some((r) => (STAFF_ROLES as readonly string[]).includes(r))) {
+  if (
+    !callerRoles.some((r) => (STAFF_ROLES as readonly string[]).includes(r))
+  ) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
-    return NextResponse.json({ error: "service_role_not_configured" }, { status: 500 });
+    return NextResponse.json(
+      { error: "service_role_not_configured" },
+      { status: 500 }
+    );
   }
   const admin = createAdminClient(url, key, {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -82,15 +98,21 @@ export async function POST(req: Request) {
     customer_user_id: string | null;
     declined_by: string[] | null;
   } | null;
-  if (!intake) return NextResponse.json({ error: "intake_not_found" }, { status: 404 });
-  if (!intake.guest_call_id) return NextResponse.json({ offered: 0, skipped: "no_session" });
+  if (!intake)
+    return NextResponse.json({ error: "intake_not_found" }, { status: 404 });
+  if (!intake.guest_call_id)
+    return NextResponse.json({ offered: 0, skipped: "no_session" });
 
   const { data: callRow } = await admin
     .from("guest_calls")
     .select("id, status, claimed_by")
     .eq("id", intake.guest_call_id)
     .maybeSingle();
-  const call = callRow as { id: string; status: string; claimed_by: string | null } | null;
+  const call = callRow as {
+    id: string;
+    status: string;
+    claimed_by: string | null;
+  } | null;
   // Only broadcast a session that's still waiting and unclaimed.
   if (!call || call.status !== "queued" || call.claimed_by) {
     return NextResponse.json({ offered: 0, skipped: "not_queued" });
@@ -101,50 +123,71 @@ export async function POST(req: Request) {
     admin.from("user_role_names").select("user_id").eq("role", "engineer"),
     admin.from("engineer_presence").select("engineer_id, last_seen_at"),
     admin.from("engineer_profiles").select("user_id, is_available"),
-    admin.from("guest_calls").select("claimed_by, status").in("status", ACTIVE_CALL_STATUSES),
-    admin.from("engineer_match_offers").select("engineer_user_id, status, expires_at").eq("intake_id", intake.id),
+    admin
+      .from("guest_calls")
+      .select("claimed_by, status")
+      .in("status", ACTIVE_CALL_STATUSES),
+    admin
+      .from("engineer_match_offers")
+      .select("engineer_user_id, status, expires_at")
+      .eq("intake_id", intake.id),
   ]);
 
   const engineerIds = new Set(
-    ((engRoleRes.data ?? []) as { user_id: string }[]).map((r) => r.user_id),
+    ((engRoleRes.data ?? []) as { user_id: string }[]).map((r) => r.user_id)
   );
 
   const now = Date.now();
   const freshById = new Map<string, boolean>();
-  for (const p of (presRes.data ?? []) as { engineer_id: string; last_seen_at: string | null }[]) {
-    const fresh = !!p.last_seen_at && now - new Date(p.last_seen_at).getTime() < HEARTBEAT_FRESH_MS;
+  for (const p of (presRes.data ?? []) as {
+    engineer_id: string;
+    last_seen_at: string | null;
+  }[]) {
+    const fresh =
+      !!p.last_seen_at &&
+      now - new Date(p.last_seen_at).getTime() < HEARTBEAT_FRESH_MS;
     freshById.set(p.engineer_id, fresh);
   }
   const availableById = new Map<string, boolean>();
-  for (const p of (profRes.data ?? []) as { user_id: string; is_available: boolean | null }[]) {
+  for (const p of (profRes.data ?? []) as {
+    user_id: string;
+    is_available: boolean | null;
+  }[]) {
     availableById.set(p.user_id, !!p.is_available);
   }
   const busyIds = new Set(
     ((busyRes.data ?? []) as { claimed_by: string | null }[])
       .map((r) => r.claimed_by)
-      .filter((id): id is string => !!id),
+      .filter((id): id is string => !!id)
   );
   // Exclude only engineers who are CURRENTLY ringing (a live pending offer) —
   // NOT everyone who was ever offered. An expired offer means they didn't pick
   // up; a manual / re-broadcast must be able to ring them again. Engineers who
   // explicitly DECLINED are excluded separately via declined_by below.
-  const offerRows = (offersRes.data ?? []) as { engineer_user_id: string; status: string; expires_at: string }[];
+  const offerRows = (offersRes.data ?? []) as {
+    engineer_user_id: string;
+    status: string;
+    expires_at: string;
+  }[];
   const ringingNow = new Set(
     offerRows
-      .filter((o) => o.status === "pending" && new Date(o.expires_at).getTime() > now)
-      .map((o) => o.engineer_user_id),
+      .filter(
+        (o) => o.status === "pending" && new Date(o.expires_at).getTime() > now
+      )
+      .map((o) => o.engineer_user_id)
   );
   const declined = new Set(intake.declined_by ?? []);
 
   // 3. Eligibility — the robust "are they here" rule: heartbeat-fresh OR
   //    explicitly available. is_available alone is NOT trusted (it gets stuck
   //    false on online engineers — the bug this endpoint exists to dodge).
-  const eligible = [...engineerIds].filter((id) =>
-    id !== intake.customer_user_id &&
-    (freshById.get(id) || availableById.get(id)) &&
-    !busyIds.has(id) &&
-    !declined.has(id) &&
-    !ringingNow.has(id),
+  const eligible = [...engineerIds].filter(
+    (id) =>
+      id !== intake.customer_user_id &&
+      (freshById.get(id) || availableById.get(id)) &&
+      !busyIds.has(id) &&
+      !declined.has(id) &&
+      !ringingNow.has(id)
   );
 
   if (eligible.length === 0) {
@@ -179,13 +222,15 @@ export async function POST(req: Request) {
   // 4. Fan out one pending offer per eligible engineer. Table defaults fill
   //    status='pending', offered_at=now(), expires_at=now()+30s.
   const rows = eligible.map((engineerId) => ({
-    intake_id:        intake.id,
-    guest_call_id:    intake.guest_call_id,
+    intake_id: intake.id,
+    guest_call_id: intake.guest_call_id,
     engineer_user_id: engineerId,
     customer_user_id: intake.customer_user_id,
-    match_score:      0,
+    match_score: 0,
   }));
-  const { error: insErr } = await admin.from("engineer_match_offers").insert(rows);
+  const { error: insErr } = await admin
+    .from("engineer_match_offers")
+    .insert(rows);
   if (insErr) {
     return NextResponse.json({ error: insErr.message }, { status: 500 });
   }

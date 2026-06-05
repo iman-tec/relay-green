@@ -28,7 +28,9 @@ export default async function SessionReviewPage({
 }) {
   const { id } = await params;
   const sb = await createClient();
-  const { data: { user } } = await sb.auth.getUser();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
   if (!user) redirect("/staff");
 
   const { data: session } = await sb
@@ -44,11 +46,15 @@ export default async function SessionReviewPage({
         style={{ backgroundColor: "var(--background)" }}
       >
         <div className="max-w-sm text-center">
-          <h2 className="mb-2 text-lg font-semibold" style={{ color: "var(--text)" }}>
+          <h2
+            className="mb-2 text-lg font-semibold"
+            style={{ color: "var(--text)" }}
+          >
             Session not found
           </h2>
           <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-            It may have been deleted, or you don&apos;t have access. Try going back to your inbox.
+            It may have been deleted, or you don&apos;t have access. Try going
+            back to your inbox.
           </p>
         </div>
       </div>

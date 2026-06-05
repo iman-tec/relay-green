@@ -15,13 +15,14 @@ import { requireReseller } from "@/lib/reseller-auth";
 import { suppressValue, SUPPRESSED_LABEL } from "@/lib/relay/kanonymity";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 type RouteCtx = { params: Promise<{ id: string; deptId: string }> };
 
 export async function GET(_request: Request, { params }: RouteCtx) {
   const gate = await requireReseller();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin, resellerId } = gate;
   const { id: orgId, deptId } = await params;
 
@@ -38,15 +39,26 @@ export async function GET(_request: Request, { params }: RouteCtx) {
 
   const { data: deptRow } = await admin
     .from("departments")
-    .select("id, enterprise_id, name, department_code, allocated_minutes, used_minutes, remaining_minutes, status")
+    .select(
+      "id, enterprise_id, name, department_code, allocated_minutes, used_minutes, remaining_minutes, status"
+    )
     .eq("id", deptId)
     .maybeSingle();
   const dept = deptRow as {
-    id: string; enterprise_id: string; name: string; department_code: string;
-    allocated_minutes: number; used_minutes: number; remaining_minutes: number; status: string;
+    id: string;
+    enterprise_id: string;
+    name: string;
+    department_code: string;
+    allocated_minutes: number;
+    used_minutes: number;
+    remaining_minutes: number;
+    status: string;
   } | null;
   if (!dept || dept.enterprise_id !== orgId) {
-    return NextResponse.json({ error: "Department not found in this org." }, { status: 404 });
+    return NextResponse.json(
+      { error: "Department not found in this org." },
+      { status: 404 }
+    );
   }
 
   // Member COUNT only — no profile rows, no auth lookup, no PII.
@@ -60,23 +72,23 @@ export async function GET(_request: Request, { params }: RouteCtx) {
   const usage = suppressValue(
     {
       allocatedMinutes: Number(dept.allocated_minutes ?? 0),
-      usedMinutes:      Number(dept.used_minutes ?? 0),
+      usedMinutes: Number(dept.used_minutes ?? 0),
       remainingMinutes: Number(dept.remaining_minutes ?? 0),
     },
     memberCount,
-    "partnerEnterprise",
+    "partnerEnterprise"
   );
 
   return NextResponse.json({
     department: {
-      id:             dept.id,
-      name:           dept.name,
+      id: dept.id,
+      name: dept.name,
       departmentCode: dept.department_code,
-      status:         dept.status,
+      status: dept.status,
     },
     memberCount,
     usageSuppressed: usage.suppressed,
-    usage:           usage.value,
+    usage: usage.value,
     suppressedLabel: usage.suppressed ? SUPPRESSED_LABEL : null,
     // NO member roster, NO names, NO emails — GDPR data minimization.
   });

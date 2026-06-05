@@ -63,14 +63,18 @@ export function useEngineerHeartbeat(enabled: boolean): void {
     void ping();
 
     const id = window.setInterval(ping, HEARTBEAT_MS);
-    const onVis = () => { void ping(); };
+    const onVis = () => {
+      void ping();
+    };
     const onPagehide = () => {
       // Best-effort final ping with focused=false so the matcher de-prioritises
       // us when the tab is being torn down. Uses sendBeacon-style fire-and-forget;
       // the rpc call may not complete before unload but Supabase handles it.
       try {
         void sb.rpc("engineer_heartbeat", { _focused: false });
-      } catch { /* unload races are fine */ }
+      } catch {
+        /* unload races are fine */
+      }
     };
 
     document.addEventListener("visibilitychange", onVis);

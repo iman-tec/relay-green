@@ -14,16 +14,31 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, Plus, X, Edit2, Check, Save, Undo2, RotateCcw, Search, Mail, Power, Trash2, CheckCircle2 } from "lucide-react";
+import {
+  Loader2,
+  Plus,
+  X,
+  Edit2,
+  Check,
+  Save,
+  Undo2,
+  RotateCcw,
+  Search,
+  Mail,
+  Power,
+  Trash2,
+  CheckCircle2,
+} from "lucide-react";
 import { useConfirmDialog } from "@/app/_components/ConfirmDialog";
 
-const BRAND_GREEN       = "#3f5c2e";
-const BRAND_GREEN_SOFT  = "rgba(63, 92, 46, 0.10)";
+const BRAND_GREEN = "#3f5c2e";
+const BRAND_GREEN_SOFT = "rgba(63, 92, 46, 0.10)";
 // Neutral monogram tint — paired with text-muted so role accents don't
 // shout. Supervisor + engineer use the same calm chip; the section header
 // already disambiguates the role, so the avatar doesn't need to.
-const NEUTRAL_CHIP_BG   = "color-mix(in srgb, var(--text-muted) 14%, transparent)";
-const NEUTRAL_CHIP_FG   = "var(--text-muted)";
+const NEUTRAL_CHIP_BG =
+  "color-mix(in srgb, var(--text-muted) 14%, transparent)";
+const NEUTRAL_CHIP_FG = "var(--text-muted)";
 
 type Member = {
   id: string;
@@ -53,10 +68,10 @@ type EligibleUser = {
 type PodRole = "supervisor" | "engineer";
 
 export function PodsTab() {
-  const [pods, setPods]         = useState<Pod[]>([]);
-  const [selectedId, setSel]    = useState<string | null>(null);
-  const [loading, setLoading]   = useState(true);
-  const [error, setError]       = useState<string | null>(null);
+  const [pods, setPods] = useState<Pod[]>([]);
+  const [selectedId, setSel] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = async () => {
     setLoading(true);
@@ -67,7 +82,7 @@ export function PodsTab() {
       if (!res.ok) throw new Error(body.error ?? "Couldn't load pods.");
       setPods(body.pods as Pod[]);
       // Auto-select first pod if nothing selected
-      setSel((curr) => curr ?? (body.pods?.[0]?.id ?? null));
+      setSel((curr) => curr ?? body.pods?.[0]?.id ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't load pods.");
     } finally {
@@ -75,7 +90,9 @@ export function PodsTab() {
     }
   };
 
-  useEffect(() => { void refresh(); }, []);
+  useEffect(() => {
+    void refresh();
+  }, []);
 
   const selected = pods.find((p) => p.id === selectedId) ?? null;
 
@@ -85,7 +102,9 @@ export function PodsTab() {
         pods={pods}
         selectedId={selectedId}
         onSelect={setSel}
-        onCreated={async () => { await refresh(); }}
+        onCreated={async () => {
+          await refresh();
+        }}
         loading={loading}
         error={error}
       />
@@ -93,10 +112,7 @@ export function PodsTab() {
         {!selected ? (
           <EmptyDetail />
         ) : (
-          <PodDetail
-            pod={selected}
-            onMutated={refresh}
-          />
+          <PodDetail pod={selected} onMutated={refresh} />
         )}
       </div>
     </div>
@@ -106,7 +122,12 @@ export function PodsTab() {
 /* ──────── Left pane: pod list + create ──────── */
 
 function PodList({
-  pods, selectedId, onSelect, onCreated, loading, error,
+  pods,
+  selectedId,
+  onSelect,
+  onCreated,
+  loading,
+  error,
 }: {
   pods: Pod[];
   selectedId: string | null;
@@ -154,7 +175,10 @@ function PodList({
   return (
     <aside
       className="overflow-hidden rounded-xl border"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface)",
+      }}
     >
       <div
         className="flex items-center justify-between gap-2 border-b px-4 py-3"
@@ -164,7 +188,11 @@ function PodList({
           Pods ({pods.length})
         </h3>
         <button
-          onClick={() => { setCreating(true); setNewName(""); setCreateErr(null); }}
+          onClick={() => {
+            setCreating(true);
+            setNewName("");
+            setCreateErr(null);
+          }}
           className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition-opacity hover:opacity-80"
           style={{ borderColor: "var(--border)", color: "var(--text)" }}
         >
@@ -187,7 +215,10 @@ function PodList({
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") void submitCreate();
-              else if (e.key === "Escape") { setCreating(false); setCreateErr(null); }
+              else if (e.key === "Escape") {
+                setCreating(false);
+                setCreateErr(null);
+              }
             }}
             placeholder="Pod name (e.g. Pod Alpha)"
             className="w-full rounded-md border px-2 py-1.5 text-sm outline-none"
@@ -198,11 +229,19 @@ function PodList({
             }}
           />
           {createErr && (
-            <p className="mt-1 text-[11px]" style={{ color: "var(--accent-red)" }}>{createErr}</p>
+            <p
+              className="mt-1 text-[11px]"
+              style={{ color: "var(--accent-red)" }}
+            >
+              {createErr}
+            </p>
           )}
           <div className="mt-2 flex justify-end gap-2">
             <button
-              onClick={() => { setCreating(false); setCreateErr(null); }}
+              onClick={() => {
+                setCreating(false);
+                setCreateErr(null);
+              }}
               disabled={busy}
               className="rounded-md px-2 py-1 text-xs"
               style={{ color: "var(--text-muted)" }}
@@ -222,7 +261,9 @@ function PodList({
       )}
 
       {error && (
-        <p className="px-4 py-3 text-xs" style={{ color: "var(--accent-red)" }}>{error}</p>
+        <p className="px-4 py-3 text-xs" style={{ color: "var(--accent-red)" }}>
+          {error}
+        </p>
       )}
 
       {!loading && pods.length > 0 && (
@@ -232,15 +273,17 @@ function PodList({
         >
           <Search
             size={12}
-            className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2"
+            className="pointer-events-none absolute top-1/2 left-5 -translate-y-1/2"
             style={{ color: "var(--text-muted)" }}
           />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setQuery("");
+            }}
             placeholder="Search pods…"
-            className="w-full rounded-md border py-1.5 pl-7 pr-7 text-xs outline-none"
+            className="w-full rounded-md border py-1.5 pr-7 pl-7 text-xs outline-none"
             style={{
               borderColor: "var(--border)",
               backgroundColor: "var(--background)",
@@ -250,7 +293,7 @@ function PodList({
           {query && (
             <button
               onClick={() => setQuery("")}
-              className="absolute right-5 top-1/2 -translate-y-1/2 rounded-md p-0.5"
+              className="absolute top-1/2 right-5 -translate-y-1/2 rounded-md p-0.5"
               style={{ color: "var(--text-muted)" }}
               title="Clear search"
             >
@@ -262,14 +305,25 @@ function PodList({
 
       {loading ? (
         <div className="flex justify-center py-10">
-          <Loader2 size={16} className="animate-spin" style={{ color: BRAND_GREEN }} />
+          <Loader2
+            size={16}
+            className="animate-spin"
+            style={{ color: BRAND_GREEN }}
+          />
         </div>
       ) : pods.length === 0 ? (
-        <p className="px-4 py-10 text-center text-xs" style={{ color: "var(--text-muted)" }}>
-          No pods yet. Create your first pod to start organizing supervisors and engineers.
+        <p
+          className="px-4 py-10 text-center text-xs"
+          style={{ color: "var(--text-muted)" }}
+        >
+          No pods yet. Create your first pod to start organizing supervisors and
+          engineers.
         </p>
       ) : filteredPods.length === 0 ? (
-        <p className="px-4 py-10 text-center text-xs" style={{ color: "var(--text-muted)" }}>
+        <p
+          className="px-4 py-10 text-center text-xs"
+          style={{ color: "var(--text-muted)" }}
+        >
           No pods match “{query}”.
         </p>
       ) : (
@@ -283,7 +337,9 @@ function PodList({
                 className="relative block w-full border-b px-4 py-3 text-left transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
                 style={{
                   borderColor: "var(--border)",
-                  backgroundColor: active ? "color-mix(in srgb, var(--text) 4%, transparent)" : "transparent",
+                  backgroundColor: active
+                    ? "color-mix(in srgb, var(--text) 4%, transparent)"
+                    : "transparent",
                 }}
               >
                 {active && (
@@ -293,9 +349,19 @@ function PodList({
                     style={{ backgroundColor: BRAND_GREEN }}
                   />
                 )}
-                <div className="text-sm font-medium" style={{ color: "var(--text)" }}>{p.name}</div>
-                <div className="mt-0.5 text-[11px]" style={{ color: "var(--text-muted)" }}>
-                  {p.supervisors.length} supervisor{p.supervisors.length === 1 ? "" : "s"} · {p.engineers.length} engineer{p.engineers.length === 1 ? "" : "s"}
+                <div
+                  className="text-sm font-medium"
+                  style={{ color: "var(--text)" }}
+                >
+                  {p.name}
+                </div>
+                <div
+                  className="mt-0.5 text-[11px]"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  {p.supervisors.length} supervisor
+                  {p.supervisors.length === 1 ? "" : "s"} · {p.engineers.length}{" "}
+                  engineer{p.engineers.length === 1 ? "" : "s"}
                 </div>
               </button>
             );
@@ -326,7 +392,7 @@ function EmptyDetail() {
 // immediate — they're their own discrete confirm gestures.
 type PendingAdd = {
   kind: "add";
-  tempId: string;                 // local-only id for keying
+  tempId: string; // local-only id for keying
   userId: string;
   podRole: PodRole;
   displayName: string;
@@ -334,14 +400,15 @@ type PendingAdd = {
 };
 type PendingRemove = {
   kind: "remove";
-  memberId: string;               // pod_members row id
+  memberId: string; // pod_members row id
   userId: string;
   podRole: PodRole;
 };
 type PendingChange = PendingAdd | PendingRemove;
 
 function PodDetail({
-  pod, onMutated,
+  pod,
+  onMutated,
 }: {
   pod: Pod;
   onMutated: () => Promise<void>;
@@ -389,24 +456,31 @@ function PodDetail({
     setPending((p) => {
       // If this row is a pending-add, clicking X just unstages it.
       const isPendingAdd = p.some(
-        (c) => c.kind === "add" && c.userId === member.userId,
+        (c) => c.kind === "add" && c.userId === member.userId
       );
       if (isPendingAdd) {
-        return p.filter((c) => !(c.kind === "add" && c.userId === member.userId));
+        return p.filter(
+          (c) => !(c.kind === "add" && c.userId === member.userId)
+        );
       }
       // Already staged for removal? toggle off.
       const isPendingRemove = p.some(
-        (c) => c.kind === "remove" && c.memberId === member.id,
+        (c) => c.kind === "remove" && c.memberId === member.id
       );
       if (isPendingRemove) {
-        return p.filter((c) => !(c.kind === "remove" && c.memberId === member.id));
+        return p.filter(
+          (c) => !(c.kind === "remove" && c.memberId === member.id)
+        );
       }
-      return [...p, {
-        kind: "remove",
-        memberId: member.id,
-        userId: member.userId,
-        podRole: member.podRole,
-      }];
+      return [
+        ...p,
+        {
+          kind: "remove",
+          memberId: member.id,
+          userId: member.userId,
+          podRole: member.podRole,
+        },
+      ];
     });
   };
 
@@ -416,9 +490,14 @@ function PodDetail({
   // staff tab). These hit /api/admin/users/:id/* and refresh on success.
   const resendInvite = async (m: Member) => {
     if (!confirm(`Re-send sign-in email to ${m.email}?`)) return;
-    const res = await fetch(`/api/admin/users/${m.userId}/resend-invite`, { method: "POST" });
+    const res = await fetch(`/api/admin/users/${m.userId}/resend-invite`, {
+      method: "POST",
+    });
     const body = (await res.json().catch(() => ({}))) as { error?: string };
-    if (!res.ok) { setBannerErr(body.error ?? "Resend failed."); return; }
+    if (!res.ok) {
+      setBannerErr(body.error ?? "Resend failed.");
+      return;
+    }
     await onMutated();
   };
 
@@ -426,24 +505,40 @@ function PodDetail({
     // The pod-row Member type doesn't carry status; the API patch is a
     // toggle keyed by user_id, so we just confirm and call. Future: pipe
     // status through /api/admin/pods so the chip reflects reality.
-    if (!confirm(`Deactivate ${m.email}? (or reactivate if already deactivated)`)) return;
+    if (
+      !confirm(`Deactivate ${m.email}? (or reactivate if already deactivated)`)
+    )
+      return;
     // Best-effort: try DEACTIVATED first, on collision the next click
     // flips back.
     const res = await fetch(`/api/admin/users/${m.userId}`, {
-      method:  "PATCH",
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ status: "DEACTIVATED" }),
+      body: JSON.stringify({ status: "DEACTIVATED" }),
     });
     const body = (await res.json().catch(() => ({}))) as { error?: string };
-    if (!res.ok) { setBannerErr(body.error ?? "Update failed."); return; }
+    if (!res.ok) {
+      setBannerErr(body.error ?? "Update failed.");
+      return;
+    }
     await onMutated();
   };
 
   const deleteUser = async (m: Member) => {
-    if (!confirm(`Permanently delete ${m.email}? Their auth record, profile, and pod membership will be removed.`)) return;
-    const res = await fetch(`/api/admin/users/${m.userId}`, { method: "DELETE" });
+    if (
+      !confirm(
+        `Permanently delete ${m.email}? Their auth record, profile, and pod membership will be removed.`
+      )
+    )
+      return;
+    const res = await fetch(`/api/admin/users/${m.userId}`, {
+      method: "DELETE",
+    });
     const body = (await res.json().catch(() => ({}))) as { error?: string };
-    if (!res.ok) { setBannerErr(body.error ?? "Delete failed."); return; }
+    if (!res.ok) {
+      setBannerErr(body.error ?? "Delete failed.");
+      return;
+    }
     await onMutated();
   };
 
@@ -454,13 +549,18 @@ function PodDetail({
     // Apply removes first so a user that's being moved between roles
     // (remove engineer, add as supervisor) doesn't hit the
     // UNIQUE(user_id) constraint mid-batch.
-    const removes = pending.filter((c): c is PendingRemove => c.kind === "remove");
-    const adds    = pending.filter((c): c is PendingAdd    => c.kind === "add");
+    const removes = pending.filter(
+      (c): c is PendingRemove => c.kind === "remove"
+    );
+    const adds = pending.filter((c): c is PendingAdd => c.kind === "add");
     try {
       for (const r of removes) {
-        const res = await fetch(`/api/admin/pods/${pod.id}/members/${r.userId}`, {
-          method: "DELETE",
-        });
+        const res = await fetch(
+          `/api/admin/pods/${pod.id}/members/${r.userId}`,
+          {
+            method: "DELETE",
+          }
+        );
         const body = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(body.error ?? "Couldn't remove member.");
       }
@@ -486,11 +586,11 @@ function PodDetail({
   // Compute the displayed lists (members + pending overlay) per role.
   const supervisorsView = useMemo(
     () => mergeForDisplay(pod.supervisors, pending, "supervisor"),
-    [pod.supervisors, pending],
+    [pod.supervisors, pending]
   );
   const engineersView = useMemo(
     () => mergeForDisplay(pod.engineers, pending, "engineer"),
-    [pod.engineers, pending],
+    [pod.engineers, pending]
   );
 
   // Set of user_ids already touched by this pod (real members + pending adds).
@@ -499,14 +599,20 @@ function PodDetail({
     const ids = new Set<string>();
     pod.supervisors.forEach((m) => ids.add(m.userId));
     pod.engineers.forEach((m) => ids.add(m.userId));
-    pending.forEach((c) => { if (c.kind === "add") ids.add(c.userId); });
+    pending.forEach((c) => {
+      if (c.kind === "add") ids.add(c.userId);
+    });
     return ids;
   }, [pod.supervisors, pod.engineers, pending]);
 
   const submitRename = async () => {
     const trimmed = nameDraft.trim();
-    if (!trimmed || trimmed === pod.name) { setRenaming(false); return; }
-    setBusy(true); setBannerErr(null);
+    if (!trimmed || trimmed === pod.name) {
+      setRenaming(false);
+      return;
+    }
+    setBusy(true);
+    setBannerErr(null);
     try {
       const res = await fetch(`/api/admin/pods/${pod.id}`, {
         method: "PATCH",
@@ -526,14 +632,15 @@ function PodDetail({
 
   const archive = async () => {
     const ok = await confirmDialog.ask({
-      title:        `Delete "${pod.name}"?`,
-      message:      "Members will be unassigned and the pod removed from this list.",
+      title: `Delete "${pod.name}"?`,
+      message: "Members will be unassigned and the pod removed from this list.",
       confirmLabel: "Delete pod",
-      tone:         "danger",
+      tone: "danger",
     });
     if (!ok) return;
     const deletedName = pod.name;
-    setBusy(true); setBannerErr(null);
+    setBusy(true);
+    setBannerErr(null);
     try {
       const res = await fetch(`/api/admin/pods/${pod.id}`, {
         method: "PATCH",
@@ -554,7 +661,10 @@ function PodDetail({
   return (
     <div
       className="overflow-hidden rounded-xl border"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface)",
+      }}
     >
       {/* Header */}
       <div
@@ -569,8 +679,11 @@ function PodDetail({
                 value={nameDraft}
                 onChange={(e) => setNameDraft(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter")       void submitRename();
-                  else if (e.key === "Escape") { setRenaming(false); setNameDraft(pod.name); }
+                  if (e.key === "Enter") void submitRename();
+                  else if (e.key === "Escape") {
+                    setRenaming(false);
+                    setNameDraft(pod.name);
+                  }
                 }}
                 className="flex-1 rounded-md border px-2 py-1 text-sm outline-none"
                 style={{
@@ -588,7 +701,10 @@ function PodDetail({
                 <Check size={13} />
               </button>
               <button
-                onClick={() => { setRenaming(false); setNameDraft(pod.name); }}
+                onClick={() => {
+                  setRenaming(false);
+                  setNameDraft(pod.name);
+                }}
                 disabled={busy}
                 className="rounded-md p-1.5"
                 style={{ color: "var(--text-muted)" }}
@@ -598,7 +714,10 @@ function PodDetail({
             </>
           ) : (
             <>
-              <h2 className="truncate text-base font-semibold" style={{ color: "var(--text)" }}>
+              <h2
+                className="truncate text-base font-semibold"
+                style={{ color: "var(--text)" }}
+              >
                 {pod.name}
               </h2>
               <button
@@ -629,7 +748,8 @@ function PodDetail({
           className="border-b px-5 py-2 text-xs"
           style={{
             borderColor: "var(--border)",
-            backgroundColor: "color-mix(in srgb, var(--accent-red) 8%, transparent)",
+            backgroundColor:
+              "color-mix(in srgb, var(--accent-red) 8%, transparent)",
             color: "var(--accent-red)",
           }}
         >
@@ -642,7 +762,8 @@ function PodDetail({
           className="flex items-center gap-2 border-b px-5 py-2 text-xs font-medium"
           style={{
             borderColor: "var(--border)",
-            backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
+            backgroundColor:
+              "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
             color: BRAND_GREEN,
             animation: "relay-toast-in 180ms ease-out",
           }}
@@ -665,12 +786,15 @@ function PodDetail({
         >
           <div className="flex min-w-0 items-center gap-2">
             <span
-              className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
+              className="rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wider uppercase"
               style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
             >
               {pending.length} unsaved
             </span>
-            <span className="truncate text-[11px]" style={{ color: BRAND_GREEN }}>
+            <span
+              className="truncate text-[11px]"
+              style={{ color: BRAND_GREEN }}
+            >
               {pendingSummary(pending)}
             </span>
           </div>
@@ -679,7 +803,11 @@ function PodDetail({
               onClick={discardPending}
               disabled={busy}
               className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs transition-opacity hover:opacity-80 disabled:opacity-50"
-              style={{ borderColor: "var(--border)", color: "var(--text-muted)", backgroundColor: "var(--surface)" }}
+              style={{
+                borderColor: "var(--border)",
+                color: "var(--text-muted)",
+                backgroundColor: "var(--surface)",
+              }}
             >
               <Undo2 size={11} />
               Discard
@@ -690,9 +818,11 @@ function PodDetail({
               className="inline-flex items-center gap-1 rounded-md px-3 py-1 text-xs font-semibold text-white disabled:opacity-50"
               style={{ backgroundColor: BRAND_GREEN }}
             >
-              {busy
-                ? <Loader2 size={11} className="animate-spin" />
-                : <Save size={11} />}
+              {busy ? (
+                <Loader2 size={11} className="animate-spin" />
+              ) : (
+                <Save size={11} />
+              )}
               {busy ? "Saving…" : `Save changes`}
             </button>
           </div>
@@ -739,11 +869,14 @@ type DisplayedMember = Member & {
 function mergeForDisplay(
   real: Member[],
   pending: PendingChange[],
-  role: PodRole,
+  role: PodRole
 ): DisplayedMember[] {
   const pendingRemoves = new Set(
-    pending.filter((c): c is PendingRemove => c.kind === "remove" && c.podRole === role)
-           .map((c) => c.memberId),
+    pending
+      .filter(
+        (c): c is PendingRemove => c.kind === "remove" && c.podRole === role
+      )
+      .map((c) => c.memberId)
   );
 
   const out: DisplayedMember[] = [];
@@ -758,14 +891,14 @@ function mergeForDisplay(
   for (const c of pending) {
     if (c.kind === "add" && c.podRole === role) {
       out.push({
-        id:         c.tempId,
-        userId:     c.userId,
-        podRole:    c.podRole,
-        email:      c.email,
+        id: c.tempId,
+        userId: c.userId,
+        podRole: c.podRole,
+        email: c.email,
         displayName: c.displayName,
-        addedAt:    new Date().toISOString(),
+        addedAt: new Date().toISOString(),
         _pendingKind: "add",
-        _tempKey:   c.tempId,
+        _tempKey: c.tempId,
       });
     }
   }
@@ -773,10 +906,10 @@ function mergeForDisplay(
 }
 
 function pendingSummary(p: PendingChange[]): string {
-  const adds    = p.filter((c) => c.kind === "add").length;
+  const adds = p.filter((c) => c.kind === "add").length;
   const removes = p.filter((c) => c.kind === "remove").length;
   const parts: string[] = [];
-  if (adds)    parts.push(`+${adds} to add`);
+  if (adds) parts.push(`+${adds} to add`);
   if (removes) parts.push(`−${removes} to remove`);
   return parts.join(" · ");
 }
@@ -787,8 +920,15 @@ function pendingSummary(p: PendingChange[]): string {
 // All API work is done at PodDetail level when the supervisor clicks Save.
 
 function MemberSection({
-  title, podRole, members, accent, onStageAdd, onToggleRemove,
-  onResendInvite, onToggleStatus, onDeleteUser,
+  title,
+  podRole,
+  members,
+  accent,
+  onStageAdd,
+  onToggleRemove,
+  onResendInvite,
+  onToggleStatus,
+  onDeleteUser,
 }: {
   title: string;
   podRole: PodRole;
@@ -799,7 +939,7 @@ function MemberSection({
   onToggleRemove: (member: Member) => void;
   onResendInvite: (member: Member) => void;
   onToggleStatus: (member: Member) => void;
-  onDeleteUser:   (member: Member) => void;
+  onDeleteUser: (member: Member) => void;
 }) {
   const [drafting, setDrafting] = useState(false);
 
@@ -809,23 +949,37 @@ function MemberSection({
   // Invite a brand-new supervisor / engineer directly from the pod
   // (Enterprise-style — no picker, no search). Posts to /api/admin/users
   // with the platform role and auto-stages the new user for this pod.
-  const inviteAndStage = async ({ email, displayName }: { email: string; displayName: string }) => {
+  const inviteAndStage = async ({
+    email,
+    displayName,
+  }: {
+    email: string;
+    displayName: string;
+  }) => {
     const platformRole = podRole === "supervisor" ? "supervisor" : "engineer";
     const res = await fetch("/api/admin/users", {
-      method:  "POST",
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ email: email.trim().toLowerCase(), displayName: displayName.trim(), role: platformRole }),
+      body: JSON.stringify({
+        email: email.trim().toLowerCase(),
+        displayName: displayName.trim(),
+        role: platformRole,
+      }),
     });
     const body = (await res.json().catch(() => ({}))) as {
-      user?:    { id: string; email: string; displayName: string };
+      user?: { id: string; email: string; displayName: string };
       invited?: boolean;
-      error?:   string;
+      error?: string;
     };
     if (!res.ok) {
       return { ok: false as const, error: body.error ?? "Invite failed." };
     }
     if (body.user) {
-      onStageAdd({ id: body.user.id, email: body.user.email, displayName: body.user.displayName });
+      onStageAdd({
+        id: body.user.id,
+        email: body.user.email,
+        displayName: body.user.displayName,
+      });
     }
     return { ok: true as const };
   };
@@ -833,7 +987,10 @@ function MemberSection({
   return (
     <section className="border-b" style={{ borderColor: "var(--border)" }}>
       <div className="flex items-center justify-between gap-2 px-5 py-3">
-        <h3 className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--text-muted)" }}>
+        <h3
+          className="text-[10px] font-semibold tracking-[0.12em] uppercase"
+          style={{ color: "var(--text-muted)" }}
+        >
           {title} ({liveCount})
         </h3>
         <button
@@ -861,7 +1018,8 @@ function MemberSection({
 
       {members.length === 0 && !drafting ? (
         <p className="px-5 pb-4 text-xs" style={{ color: "var(--text-muted)" }}>
-          No {podRole === "supervisor" ? "supervisors" : "engineers"} assigned yet.
+          No {podRole === "supervisor" ? "supervisors" : "engineers"} assigned
+          yet.
         </p>
       ) : (
         <ul className="pb-2">
@@ -870,7 +1028,9 @@ function MemberSection({
               key={m._tempKey}
               member={m}
               accent={accent}
-              podRoleLabel={podRole === "supervisor" ? "Supervisor" : "Engineer"}
+              podRoleLabel={
+                podRole === "supervisor" ? "Supervisor" : "Engineer"
+              }
               onToggleRemove={onToggleRemove}
               onResendInvite={onResendInvite}
               onToggleStatus={onToggleStatus}
@@ -884,16 +1044,21 @@ function MemberSection({
 }
 
 function InviteDraft({
-  podRole, cancel, submit,
+  podRole,
+  cancel,
+  submit,
 }: {
   podRole: PodRole;
   cancel: () => void;
-  submit: (input: { email: string; displayName: string }) => Promise<{ ok: true } | { ok: false; error: string }>;
+  submit: (input: {
+    email: string;
+    displayName: string;
+  }) => Promise<{ ok: true } | { ok: false; error: string }>;
 }) {
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
-  const [err, setErr]   = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
   const onSubmit = async () => {
     if (!email.trim() || !displayName.trim()) {
@@ -902,7 +1067,10 @@ function InviteDraft({
     }
     setBusy(true);
     setErr(null);
-    const r = await submit({ email: email.trim(), displayName: displayName.trim() });
+    const r = await submit({
+      email: email.trim(),
+      displayName: displayName.trim(),
+    });
     if (!r.ok) setErr(r.error);
     setBusy(false);
   };
@@ -922,24 +1090,42 @@ function InviteDraft({
           autoFocus
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") void onSubmit(); if (e.key === "Escape") cancel(); }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void onSubmit();
+            if (e.key === "Escape") cancel();
+          }}
           placeholder="Full name"
           disabled={busy}
           className="flex-1 rounded-md border px-2 py-1.5 text-xs outline-none"
-          style={{ borderColor: "var(--border)", backgroundColor: "var(--background)", color: "var(--text)" }}
+          style={{
+            borderColor: "var(--border)",
+            backgroundColor: "var(--background)",
+            color: "var(--text)",
+          }}
         />
         <input
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") void onSubmit(); if (e.key === "Escape") cancel(); }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void onSubmit();
+            if (e.key === "Escape") cancel();
+          }}
           placeholder="email@company.com"
           disabled={busy}
           className="flex-1 rounded-md border px-2 py-1.5 text-xs outline-none"
-          style={{ borderColor: "var(--border)", backgroundColor: "var(--background)", color: "var(--text)" }}
+          style={{
+            borderColor: "var(--border)",
+            backgroundColor: "var(--background)",
+            color: "var(--text)",
+          }}
         />
       </div>
-      {err && <p className="mb-2 text-[11px]" style={{ color: "var(--accent-red)" }}>{err}</p>}
+      {err && (
+        <p className="mb-2 text-[11px]" style={{ color: "var(--accent-red)" }}>
+          {err}
+        </p>
+      )}
       <div className="flex items-center justify-end gap-1.5">
         <button
           onClick={cancel}
@@ -955,7 +1141,11 @@ function InviteDraft({
           className="inline-flex items-center gap-1 rounded-md px-3 py-1 text-[11px] font-semibold text-white disabled:opacity-50"
           style={{ backgroundColor: BRAND_GREEN }}
         >
-          {busy ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />}
+          {busy ? (
+            <Loader2 size={11} className="animate-spin" />
+          ) : (
+            <Plus size={11} />
+          )}
           {busy ? "Sending…" : "Send invite"}
         </button>
       </div>
@@ -964,8 +1154,13 @@ function InviteDraft({
 }
 
 function MemberRow({
-  member, accent, podRoleLabel,
-  onToggleRemove, onResendInvite, onToggleStatus, onDeleteUser,
+  member,
+  accent,
+  podRoleLabel,
+  onToggleRemove,
+  onResendInvite,
+  onToggleStatus,
+  onDeleteUser,
 }: {
   member: DisplayedMember;
   accent: { bg: string; fg: string };
@@ -973,9 +1168,9 @@ function MemberRow({
   onToggleRemove: (member: Member) => void;
   onResendInvite: (member: Member) => void;
   onToggleStatus: (member: Member) => void;
-  onDeleteUser:   (member: Member) => void;
+  onDeleteUser: (member: Member) => void;
 }) {
-  const isAdd    = member._pendingKind === "add";
+  const isAdd = member._pendingKind === "add";
   const isRemove = member._pendingKind === "remove";
 
   return (
@@ -1002,11 +1197,14 @@ function MemberRow({
           }}
         >
           {member.displayName || member.email || member.userId}
-          {isAdd    && <PendingTag kind="add"    />}
+          {isAdd && <PendingTag kind="add" />}
           {isRemove && <PendingTag kind="remove" />}
         </div>
         {member.displayName && member.email && (
-          <div className="mt-0.5 truncate text-[11px]" style={{ color: "var(--text-muted)" }}>
+          <div
+            className="mt-0.5 truncate text-[11px]"
+            style={{ color: "var(--text-muted)" }}
+          >
             {member.email}
           </div>
         )}
@@ -1016,7 +1214,8 @@ function MemberRow({
       <span
         className="inline-flex shrink-0 items-center rounded-md px-2 py-0.5 text-[11px] font-medium"
         style={{
-          backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
+          backgroundColor:
+            "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
           color: BRAND_GREEN,
         }}
       >
@@ -1028,7 +1227,8 @@ function MemberRow({
       <span
         className="inline-flex shrink-0 items-center rounded-md px-2 py-0.5 text-[11px] font-medium"
         style={{
-          backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
+          backgroundColor:
+            "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
           color: BRAND_GREEN,
         }}
       >
@@ -1055,9 +1255,11 @@ function MemberRow({
         <PodIconBtn
           onClick={() => onToggleRemove(member)}
           title={
-            isAdd    ? "Cancel pending add" :
-            isRemove ? "Restore (cancel pending remove)" :
-            "Remove from pod"
+            isAdd
+              ? "Cancel pending add"
+              : isRemove
+                ? "Restore (cancel pending remove)"
+                : "Remove from pod"
           }
           icon={isRemove ? <RotateCcw size={12} /> : <X size={12} />}
         />
@@ -1067,7 +1269,10 @@ function MemberRow({
 }
 
 function PodIconBtn({
-  onClick, title, icon, danger,
+  onClick,
+  title,
+  icon,
+  danger,
 }: {
   onClick: () => void;
   title: string;
@@ -1092,7 +1297,7 @@ function PendingTag({ kind }: { kind: "add" | "remove" }) {
   if (kind === "add") {
     return (
       <span
-        className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider"
+        className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold tracking-wider uppercase"
         style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
       >
         + Pending
@@ -1101,11 +1306,14 @@ function PendingTag({ kind }: { kind: "add" | "remove" }) {
   }
   return (
     <span
-      className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider"
-      style={{ backgroundColor: "color-mix(in srgb, var(--accent-red) 12%, transparent)", color: "var(--accent-red)" }}
+      className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold tracking-wider uppercase"
+      style={{
+        backgroundColor:
+          "color-mix(in srgb, var(--accent-red) 12%, transparent)",
+        color: "var(--accent-red)",
+      }}
     >
       − Will remove
     </span>
   );
 }
-

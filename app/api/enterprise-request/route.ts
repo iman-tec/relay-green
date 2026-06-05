@@ -13,7 +13,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 const NAME_MAX = 120;
 const EMAIL_MAX = 254;
@@ -21,7 +21,8 @@ const COMPANY_MAX = 160;
 const MESSAGE_MAX = 4000;
 const MESSAGE_MIN = 10;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Per-IP rate limit: 5 / 10 min (in-memory; see /api/contact for the note).
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
@@ -69,10 +70,16 @@ type Payload = {
   website: string; // honeypot
 };
 
-async function emailLead(p: Payload, partnerName: string | null): Promise<void> {
+async function emailLead(
+  p: Payload,
+  partnerName: string | null
+): Promise<void> {
   const key = process.env.RESEND_API_KEY;
   if (!key) {
-    console.log("[enterprise-request] RESEND_API_KEY unset — lead logged:", JSON.stringify({ ...p, partnerName }));
+    console.log(
+      "[enterprise-request] RESEND_API_KEY unset — lead logged:",
+      JSON.stringify({ ...p, partnerName })
+    );
     return;
   }
   const to = process.env.CONTACT_INBOX_EMAIL ?? "hello@relay.green";
@@ -81,23 +88,34 @@ async function emailLead(p: Payload, partnerName: string | null): Promise<void> 
     `Name: ${p.name}`,
     `Email: ${p.email}`,
     p.company ? `Company: ${p.company}` : null,
-    partnerName ? `Channel partner: ${partnerName}` : "Channel partner: (none selected)",
+    partnerName
+      ? `Channel partner: ${partnerName}`
+      : "Channel partner: (none selected)",
     "",
     "Need:",
     p.message,
-  ].filter(Boolean).join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({
-      from, to: [to], reply_to: p.email,
+      from,
+      to: [to],
+      reply_to: p.email,
       subject: `Relay enterprise request — ${p.name}${p.company ? ` (${p.company})` : ""}`,
       text,
     }),
   });
   if (!res.ok) {
-    throw new Error(`Resend ${res.status}: ${await res.text().catch(() => "")}`);
+    throw new Error(
+      `Resend ${res.status}: ${await res.text().catch(() => "")}`
+    );
   }
 }
 
@@ -115,13 +133,13 @@ export async function POST(req: NextRequest) {
   const raw = body as Record<string, unknown>;
   const cpRaw = readString(raw.channelPartnerId, 64);
   const payload: Payload = {
-    name:               readString(raw.name, NAME_MAX),
-    email:              readString(raw.email, EMAIL_MAX).toLowerCase(),
-    company:            readString(raw.company, COMPANY_MAX),
-    message:            readString(raw.message, MESSAGE_MAX),
-    channelPartnerId:   UUID_RE.test(cpRaw) ? cpRaw : null,
+    name: readString(raw.name, NAME_MAX),
+    email: readString(raw.email, EMAIL_MAX).toLowerCase(),
+    company: readString(raw.company, COMPANY_MAX),
+    message: readString(raw.message, MESSAGE_MAX),
+    channelPartnerId: UUID_RE.test(cpRaw) ? cpRaw : null,
     channelPartnerName: readString(raw.channelPartnerName, COMPANY_MAX),
-    website:            readString(raw.website, 200),
+    website: readString(raw.website, 200),
   };
 
   // Honeypot — silently accept so bots can't probe.
@@ -172,11 +190,11 @@ export async function POST(req: NextRequest) {
   }
 
   const { error: insertErr } = await admin.from("enterprise_requests").insert({
-    name:                 payload.name,
-    email:                payload.email,
-    company:              payload.company || null,
-    message:              payload.message,
-    channel_partner_id:   payload.channelPartnerId,
+    name: payload.name,
+    email: payload.email,
+    company: payload.company || null,
+    message: payload.message,
+    channel_partner_id: payload.channelPartnerId,
     channel_partner_name: partnerName,
   });
   if (insertErr) {

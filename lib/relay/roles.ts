@@ -19,13 +19,13 @@
  */
 
 export const ROLE = {
-  super_admin:      "super_admin",
-  reseller:         "reseller",
+  super_admin: "super_admin",
+  reseller: "reseller",
   enterprise_admin: "enterprise_admin",
   department_admin: "department_admin",
-  supervisor:       "supervisor",
-  engineer:         "engineer",
-  client:           "client",
+  supervisor: "supervisor",
+  engineer: "engineer",
+  client: "client",
 } as const;
 
 export type Role = (typeof ROLE)[keyof typeof ROLE];
@@ -77,7 +77,10 @@ export const PLATFORM_OPS_ROLES: readonly Role[] = [
 
 /** Type guard. Useful when a value comes in from a DB row or JSON body. */
 export function isRole(value: unknown): value is Role {
-  return typeof value === "string" && (ALL_ROLES as readonly string[]).includes(value);
+  return (
+    typeof value === "string" &&
+    (ALL_ROLES as readonly string[]).includes(value)
+  );
 }
 
 /** Filter an unknown[] down to the recognised role names. */

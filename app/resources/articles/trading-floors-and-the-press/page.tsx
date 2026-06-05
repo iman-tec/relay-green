@@ -74,8 +74,9 @@ export default function Page() {
         drives the morning risk meeting. By the third version, an internal
         stakeholder uses it for a regulatory report. Nobody intended this.
         Nobody architected it. The press is for the moment somebody asks{" "}
-        <em>can we use this for the regulator report?</em> and a software engineer
-        says <em>not in this shape; let&rsquo;s harden it before you do.</em>
+        <em>can we use this for the regulator report?</em> and a software
+        engineer says{" "}
+        <em>not in this shape; let&rsquo;s harden it before you do.</em>
       </Body>
       <Body>
         <b>The vendor-coupling drift.</b> AI tools love third-party APIs. A

@@ -9,11 +9,13 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
 };
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method === "OPTIONS")
+    return new Response(null, { headers: corsHeaders });
 
   try {
     const { customer_id } = await req.json();
@@ -26,13 +28,15 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
     // Pull every project belonging to this customer that has a summary.
     const { data: projects } = await supabase
       .from("projects")
-      .select("id, name, ai_summary_title, ai_summary_overview, ai_next_steps, summary_updated_at")
+      .select(
+        "id, name, ai_summary_title, ai_summary_overview, ai_next_steps, summary_updated_at"
+      )
       .eq("customer_id", customer_id)
       .order("summary_updated_at", { ascending: false, nullsFirst: false });
 
@@ -44,36 +48,46 @@ Deno.serve(async (req) => {
       ai_next_steps: unknown;
     }>;
 
-    const withSummary = rows.filter((p) => p.ai_summary_overview || p.ai_summary_title);
+    const withSummary = rows.filter(
+      (p) => p.ai_summary_overview || p.ai_summary_title
+    );
 
     if (withSummary.length === 0) {
       // No project summaries available — clear any stale roll-up.
-      await supabase
-        .from("customer_summaries")
-        .upsert(
-          {
-            customer_id,
-            ai_summary_title: null,
-            ai_summary_overview: null,
-            ai_next_steps: null,
-            summary: null,
-            summary_updated_at: new Date().toISOString(),
-          },
-          { onConflict: "customer_id" },
-        );
-      return new Response(JSON.stringify({ ok: true, summarized_projects: 0 }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      await supabase.from("customer_summaries").upsert(
+        {
+          customer_id,
+          ai_summary_title: null,
+          ai_summary_overview: null,
+          ai_next_steps: null,
+          summary: null,
+          summary_updated_at: new Date().toISOString(),
+        },
+        { onConflict: "customer_id" }
+      );
+      return new Response(
+        JSON.stringify({ ok: true, summarized_projects: 0 }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     const transcript = withSummary
       .map((p, i) => {
         const parts: string[] = [`Project ${i + 1}: ${p.name}`];
         if (p.ai_summary_title) parts.push(`Title: ${p.ai_summary_title}`);
-        if (p.ai_summary_overview) parts.push(`Overview: ${p.ai_summary_overview}`);
+        if (p.ai_summary_overview)
+          parts.push(`Overview: ${p.ai_summary_overview}`);
         if (Array.isArray(p.ai_next_steps) && p.ai_next_steps.length > 0) {
-          const steps = (p.ai_next_steps as Array<string | { text?: string; description?: string }>)
-            .map((x) => (typeof x === "string" ? x : x?.text ?? x?.description ?? ""))
+          const steps = (
+            p.ai_next_steps as Array<
+              string | { text?: string; description?: string }
+            >
+          )
+            .map((x) =>
+              typeof x === "string" ? x : (x?.text ?? x?.description ?? "")
+            )
             .filter(Boolean);
           if (steps.length > 0) parts.push(`Outstanding: ${steps.join("; ")}`);
         }
@@ -101,8 +115,8 @@ Deno.serve(async (req) => {
             {
               role: "system",
               content:
-                "You roll up multiple project-level summaries that belong to one builder into a single customer-level profile summary. Respond with strict JSON only: {\"title\": string, \"overview\": string, \"recurring_themes\": string, \"next_steps\": string[]}. " +
-                "Rules for `title`: 3-5 words, NO period, describe the *builder's overall focus* across all projects — e.g. \"AI-native SaaS builder\", \"Solo founder Stripe-heavy\". " +
+                'You roll up multiple project-level summaries that belong to one builder into a single customer-level profile summary. Respond with strict JSON only: {"title": string, "overview": string, "recurring_themes": string, "next_steps": string[]}. ' +
+                'Rules for `title`: 3-5 words, NO period, describe the *builder\'s overall focus* across all projects — e.g. "AI-native SaaS builder", "Solo founder Stripe-heavy". ' +
                 "`overview` = 3-5 sentences capturing what this builder works on, what kind of support they tend to need, and recurring patterns across projects. " +
                 "`recurring_themes` = 1-2 sentences naming the persistent themes (tech stack, problem domain, support pattern). " +
                 "`next_steps` = 3-5 short imperative items, deduplicated across projects. Skip steps that look already resolved. No extra prose outside the JSON.",
@@ -126,9 +140,12 @@ Deno.serve(async (req) => {
             : [];
           const parts: string[] = [];
           if (aiOverview) parts.push(`TL;DR: ${aiOverview}`);
-          if (parsed.recurring_themes) parts.push(`Recurring themes: ${parsed.recurring_themes}`);
+          if (parsed.recurring_themes)
+            parts.push(`Recurring themes: ${parsed.recurring_themes}`);
           if (aiNextSteps.length > 0) {
-            parts.push(`Outstanding:\n${aiNextSteps.map((s) => `• ${s}`).join("\n")}`);
+            parts.push(
+              `Outstanding:\n${aiNextSteps.map((s) => `• ${s}`).join("\n")}`
+            );
           }
           summary = parts.join("\n\n") || aiOverview || raw;
         } catch {
@@ -143,23 +160,24 @@ Deno.serve(async (req) => {
       summary = transcript.slice(0, 1500);
     }
 
-    await supabase
-      .from("customer_summaries")
-      .upsert(
-        {
-          customer_id,
-          ai_summary_title: aiTitle || null,
-          ai_summary_overview: aiOverview || null,
-          ai_next_steps: aiNextSteps.length > 0 ? aiNextSteps : null,
-          summary,
-          summary_updated_at: new Date().toISOString(),
-        },
-        { onConflict: "customer_id" },
-      );
+    await supabase.from("customer_summaries").upsert(
+      {
+        customer_id,
+        ai_summary_title: aiTitle || null,
+        ai_summary_overview: aiOverview || null,
+        ai_next_steps: aiNextSteps.length > 0 ? aiNextSteps : null,
+        summary,
+        summary_updated_at: new Date().toISOString(),
+      },
+      { onConflict: "customer_id" }
+    );
 
-    return new Response(JSON.stringify({ ok: true, summarized_projects: withSummary.length }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ ok: true, summarized_projects: withSummary.length }),
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
   } catch (e) {
     return new Response(JSON.stringify({ error: String(e) }), {
       status: 500,

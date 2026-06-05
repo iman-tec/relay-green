@@ -24,28 +24,43 @@ type TabKey = "overview" | "sessions" | "usage" | "settings";
 const TABS: readonly Tab<TabKey>[] = [
   { key: "overview", label: "Overview" },
   { key: "sessions", label: "Sessions" },
-  { key: "usage",    label: "Usage" },
+  { key: "usage", label: "Usage" },
   { key: "settings", label: "Settings" },
 ];
 
 const VALID = new Set<TabKey>(TABS.map((t) => t.key));
 
-function resolveInitial(param: string | null | undefined): { tab: TabKey; view: DeptOverviewView } {
+function resolveInitial(param: string | null | undefined): {
+  tab: TabKey;
+  view: DeptOverviewView;
+} {
   switch (param) {
-    case "members":   return { tab: "overview", view: "members" };
+    case "members":
+      return { tab: "overview", view: "members" };
     case "dashboard":
-    case "overview":  return { tab: "overview", view: "dashboard" };
-    case "sessions":  return { tab: "sessions", view: "dashboard" };
-    case "usage":     return { tab: "usage", view: "dashboard" };
-    case "settings":  return { tab: "settings", view: "dashboard" };
-    default:          return { tab: "overview", view: "dashboard" };
+    case "overview":
+      return { tab: "overview", view: "dashboard" };
+    case "sessions":
+      return { tab: "sessions", view: "dashboard" };
+    case "usage":
+      return { tab: "usage", view: "dashboard" };
+    case "settings":
+      return { tab: "settings", view: "dashboard" };
+    default:
+      return { tab: "overview", view: "dashboard" };
   }
 }
 
-export function PanelClient({ me }: { me: { email: string; roleLabel: string } }) {
+export function PanelClient({
+  me,
+}: {
+  me: { email: string; roleLabel: string };
+}) {
   const params = useSearchParams();
   const initial = resolveInitial(params?.get("tab"));
-  const [active, setActive] = useState<TabKey>(VALID.has(initial.tab) ? initial.tab : "overview");
+  const [active, setActive] = useState<TabKey>(
+    VALID.has(initial.tab) ? initial.tab : "overview"
+  );
 
   return (
     <div className="flex h-screen min-h-0 flex-col">
@@ -56,7 +71,10 @@ export function PanelClient({ me }: { me: { email: string; roleLabel: string } }
         subtitle="Department"
         rightSlot={
           <div className="flex items-center gap-2">
-            <NotificationBell endpoint="/api/department/notifications" channelKey="department" />
+            <NotificationBell
+              endpoint="/api/department/notifications"
+              channelKey="department"
+            />
             <ThemeTriplet />
             <UserChip email={me.email} roleLabel={me.roleLabel} />
             <SignOutButton />
@@ -64,9 +82,11 @@ export function PanelClient({ me }: { me: { email: string; roleLabel: string } }
         }
       />
       <div className="min-h-0 flex-1 overflow-hidden">
-        {active === "overview" && <DeptOverviewTab initialView={initial.view} />}
+        {active === "overview" && (
+          <DeptOverviewTab initialView={initial.view} />
+        )}
         {active === "sessions" && <SessionsTab />}
-        {active === "usage"    && <DeptUsageTab />}
+        {active === "usage" && <DeptUsageTab />}
         {active === "settings" && <DeptSettingsTab />}
       </div>
     </div>

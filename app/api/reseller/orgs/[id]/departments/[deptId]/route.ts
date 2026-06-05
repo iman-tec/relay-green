@@ -12,13 +12,14 @@ import { NextResponse } from "next/server";
 import { requireReseller } from "@/lib/reseller-auth";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 type RouteCtx = { params: Promise<{ id: string; deptId: string }> };
 
 export async function PATCH(request: Request, { params }: RouteCtx) {
   const gate = await requireReseller();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin, resellerId } = gate;
   const { id: orgId, deptId } = await params;
 
@@ -31,19 +32,25 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
     .maybeSingle();
   const d = dept as { id: string; enterprise_id: string } | null;
   if (!d || d.enterprise_id !== orgId) {
-    return NextResponse.json({ error: "Department not found in this org." }, { status: 404 });
+    return NextResponse.json(
+      { error: "Department not found in this org." },
+      { status: 404 }
+    );
   }
   const { data: org } = await admin
     .from("organizations")
     .select("id, reseller_id")
     .eq("id", orgId)
     .maybeSingle();
-  if (!org || (org as { reseller_id: string | null }).reseller_id !== resellerId) {
+  if (
+    !org ||
+    (org as { reseller_id: string | null }).reseller_id !== resellerId
+  ) {
     return NextResponse.json({ error: "not_owned" }, { status: 404 });
   }
 
   const { name, status } = (await request.json().catch(() => ({}))) as {
-    name?:   string;
+    name?: string;
     status?: string;
   };
   const patch: Record<string, unknown> = {};
@@ -61,7 +68,10 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
     .maybeSingle();
   if (error) {
     if ((error as { code?: string }).code === "23505") {
-      return NextResponse.json({ error: "A department with this name already exists." }, { status: 409 });
+      return NextResponse.json(
+        { error: "A department with this name already exists." },
+        { status: 409 }
+      );
     }
     return NextResponse.json({ error: error.message }, { status: 400 });
   }

@@ -18,7 +18,8 @@ type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function DELETE(_req: Request, { params }: RouteCtx) {
   const gate = await requireReseller();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin, resellerId } = gate;
 
   const { id } = await params;
@@ -28,7 +29,12 @@ export async function DELETE(_req: Request, { params }: RouteCtx) {
     .from("reseller_team_members")
     .select("id, reseller_id, user_id, status")
     .eq("id", id)
-    .maybeSingle<{ id: string; reseller_id: string; user_id: string | null; status: string }>();
+    .maybeSingle<{
+      id: string;
+      reseller_id: string;
+      user_id: string | null;
+      status: string;
+    }>();
   if (!existing || existing.reseller_id !== resellerId) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
@@ -40,7 +46,8 @@ export async function DELETE(_req: Request, { params }: RouteCtx) {
     .from("reseller_team_members")
     .update({ status: "removed" })
     .eq("id", id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error)
+    return NextResponse.json({ error: error.message }, { status: 500 });
 
   // Detach the profile so they no longer pass requireReseller().
   if (existing.user_id) {

@@ -38,7 +38,9 @@ export function CalendarPageClient() {
       }
       setUserId(data.user.id);
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [router]);
 
   const showBanner = useCallback((b: NonNullable<Banner>) => {
@@ -49,7 +51,9 @@ export function CalendarPageClient() {
   if (!userId) {
     return (
       <div className="mx-auto max-w-3xl px-6 py-8">
-        <p className="text-sm" style={{ color: "var(--text-muted)" }}>Loading calendar…</p>
+        <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+          Loading calendar…
+        </p>
       </div>
     );
   }

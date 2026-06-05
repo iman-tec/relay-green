@@ -31,14 +31,15 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
-const SUPABASE_URL              = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const PURGE_CRON_SECRET         = Deno.env.get("PURGE_CRON_SECRET") ?? "";
-const STORAGE_BUCKET            = Deno.env.get("STORAGE_BUCKET") ?? "chat-attachments";
+const PURGE_CRON_SECRET = Deno.env.get("PURGE_CRON_SECRET") ?? "";
+const STORAGE_BUCKET = Deno.env.get("STORAGE_BUCKET") ?? "chat-attachments";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-cron-secret",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-cron-secret",
 };
 
 type ProjectRow = {
@@ -74,8 +75,9 @@ Deno.serve(async (req) => {
   });
 
   // 1. List projects whose retention clock has elapsed.
-  const { data: projects, error: listErr } = await admin
-    .rpc("list_projects_ready_for_purge");
+  const { data: projects, error: listErr } = await admin.rpc(
+    "list_projects_ready_for_purge"
+  );
   if (listErr) {
     console.error("[purge] list_projects_ready_for_purge failed", listErr);
     return new Response(JSON.stringify({ error: listErr.message }), {
@@ -90,7 +92,12 @@ Deno.serve(async (req) => {
     });
   }
 
-  const results: { projectId: string; name: string; objectCount: number; storageErr?: string }[] = [];
+  const results: {
+    projectId: string;
+    name: string;
+    objectCount: number;
+    storageErr?: string;
+  }[] = [];
 
   for (const project of ready) {
     // 2. Find every attachment row for this project's sessions.
@@ -102,12 +109,19 @@ Deno.serve(async (req) => {
     // never existed; fixed alongside 20260603120000.
     const { data: attaches, error: aErr } = await admin
       .from("guest_message_attachments")
-      .select("id, path, guest_messages!inner(guest_call_id, guest_calls!inner(project_id))")
+      .select(
+        "id, path, guest_messages!inner(guest_call_id, guest_calls!inner(project_id))"
+      )
       .eq("purged", false)
       .eq("guest_messages.guest_calls.project_id", project.id);
     if (aErr) {
       console.error("[purge] attachment fetch failed", project.id, aErr);
-      results.push({ projectId: project.id, name: project.name, objectCount: 0, storageErr: aErr.message });
+      results.push({
+        projectId: project.id,
+        name: project.name,
+        objectCount: 0,
+        storageErr: aErr.message,
+      });
       continue;
     }
 
@@ -118,9 +132,12 @@ Deno.serve(async (req) => {
       // of 100 to stay below per-request payload limits.
       const paths = rows.map((r) => r.path);
       const chunks: string[][] = [];
-      for (let i = 0; i < paths.length; i += 100) chunks.push(paths.slice(i, i + 100));
+      for (let i = 0; i < paths.length; i += 100)
+        chunks.push(paths.slice(i, i + 100));
       for (const chunk of chunks) {
-        const { error: rmErr } = await admin.storage.from(STORAGE_BUCKET).remove(chunk);
+        const { error: rmErr } = await admin.storage
+          .from(STORAGE_BUCKET)
+          .remove(chunk);
         if (rmErr) {
           // Don't abort — the next chunk might still succeed. We'll surface
           // the error in the response so the operator knows.
@@ -136,17 +153,29 @@ Deno.serve(async (req) => {
     });
     if (archErr) {
       console.error("[purge] archive_project failed", project.id, archErr);
-      results.push({ projectId: project.id, name: project.name, objectCount: rows.length, storageErr: archErr.message });
+      results.push({
+        projectId: project.id,
+        name: project.name,
+        objectCount: rows.length,
+        storageErr: archErr.message,
+      });
       continue;
     }
 
-    results.push({ projectId: project.id, name: project.name, objectCount: rows.length });
+    results.push({
+      projectId: project.id,
+      name: project.name,
+      objectCount: rows.length,
+    });
   }
 
-  return new Response(JSON.stringify({
-    purged: results.length,
-    projects: results,
-  }), {
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
+  return new Response(
+    JSON.stringify({
+      purged: results.length,
+      projects: results,
+    }),
+    {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    }
+  );
 });

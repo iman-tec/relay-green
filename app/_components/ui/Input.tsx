@@ -25,8 +25,10 @@ import {
 } from "react";
 import { cn } from "./cn";
 
-export interface InputProps
-  extends Omit<InputHTMLAttributes<HTMLInputElement>, "size" | "prefix"> {
+export interface InputProps extends Omit<
+  InputHTMLAttributes<HTMLInputElement>,
+  "size" | "prefix"
+> {
   label?: ReactNode;
   /** Screen-reader-only label; supersedes `label` when both passed. */
   srLabel?: string;
@@ -66,7 +68,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
     requiredMark = true,
     ...rest
   },
-  ref,
+  ref
 ) {
   const autoId = useId();
   const id = idProp ?? autoId;
@@ -87,7 +89,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
       ) : label ? (
         <label
           htmlFor={id}
-          className="text-sm font-medium text-[var(--text)] flex items-center gap-1"
+          className="flex items-center gap-1 text-sm font-medium text-[var(--text)]"
         >
           {label}
           {required && requiredMark && (
@@ -102,7 +104,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         className={cn(
           "relative flex items-center",
           prefix && "pl-0",
-          suffix && "pr-0",
+          suffix && "pr-0"
         )}
       >
         {prefix && (
@@ -123,7 +125,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
             suffix && "pr-10",
             error &&
               "border-[var(--risk)] focus-visible:border-[var(--risk)] focus-visible:ring-[color-mix(in_srgb,var(--risk)_35%,transparent)]",
-            className,
+            className
           )}
           {...rest}
         />
@@ -138,12 +140,15 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         <p
           id={errorId}
           role="alert"
-          className="text-xs text-[var(--risk)] leading-snug"
+          className="text-xs leading-snug text-[var(--risk)]"
         >
           {error}
         </p>
       ) : hint ? (
-        <p id={hintId} className="text-xs text-[var(--text-muted)] leading-snug">
+        <p
+          id={hintId}
+          className="text-xs leading-snug text-[var(--text-muted)]"
+        >
           {hint}
         </p>
       ) : null}

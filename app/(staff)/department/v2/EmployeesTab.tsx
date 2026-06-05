@@ -26,51 +26,56 @@ import { AddEmployeeDrawer } from "./_drawers/AddEmployeeDrawer";
 import { RefillEmployeeDrawer } from "./_drawers/RefillEmployeeDrawer";
 
 type Department = {
-  id:               string;
-  name:             string;
-  departmentCode:   string;
-  status:           string;
+  id: string;
+  name: string;
+  departmentCode: string;
+  status: string;
   allocatedMinutes: number;
-  usedMinutes:      number;
+  usedMinutes: number;
   remainingMinutes: number;
 };
 type EnterpriseLite = {
-  id:             string;
-  name:           string;
+  id: string;
+  name: string;
   enterpriseCode: string;
 };
 type Employee = {
-  id:               string;
-  displayName:      string;
-  email:            string;
-  clientType:       string;
-  status:           string;
+  id: string;
+  displayName: string;
+  email: string;
+  clientType: string;
+  status: string;
   allocatedMinutes: number;
-  usedMinutes:      number;
+  usedMinutes: number;
   remainingMinutes: number;
-  createdAt:        string;
+  createdAt: string;
 };
 
 export function EmployeesTab() {
-  const [dept, setDept]               = useState<Department | null>(null);
-  const [ent, setEnt]                 = useState<EnterpriseLite | null>(null);
-  const [employees, setEmployees]     = useState<Employee[]>([]);
-  const [loading, setLoading]         = useState(true);
-  const [error, setError]             = useState<string | null>(null);
+  const [dept, setDept] = useState<Department | null>(null);
+  const [ent, setEnt] = useState<EnterpriseLite | null>(null);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const [addOpen, setAddOpen]         = useState(false);
-  const [bulkOpen, setBulkOpen]       = useState(false);
-  const [inviteKey, setInviteKey]     = useState(0);
+  const [addOpen, setAddOpen] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [inviteKey, setInviteKey] = useState(0);
   const [refillTarget, setRefillTarget] = useState<Employee | null>(null);
-  const [editTarget, setEditTarget]   = useState<Employee | null>(null);
+  const [editTarget, setEditTarget] = useState<Employee | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res  = await fetch("/api/department/employees", { cache: "no-store" });
+      const res = await fetch("/api/department/employees", {
+        cache: "no-store",
+      });
       const body = (await res.json().catch(() => ({}))) as {
-        department?: Department; enterprise?: EnterpriseLite; employees?: Employee[]; error?: string;
+        department?: Department;
+        enterprise?: EnterpriseLite;
+        employees?: Employee[];
+        error?: string;
       };
       if (!res.ok || !body.department || !body.employees) {
         setError(body.error ?? "Couldn't load department.");
@@ -85,12 +90,15 @@ export function EmployeesTab() {
       setLoading(false);
     }
   }, []);
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
   const empTotals = useMemo(() => {
-    let used = 0, allocated = 0;
+    let used = 0,
+      allocated = 0;
     for (const e of employees) {
-      used      += e.usedMinutes;
+      used += e.usedMinutes;
       allocated += e.allocatedMinutes;
     }
     return { used, allocated };
@@ -101,9 +109,9 @@ export function EmployeesTab() {
     const verb = currentlyActive ? "Deactivate" : "Reactivate";
     if (!confirm(`${verb} this employee?`)) return;
     const res = await fetch(`/api/department/employees/${empId}`, {
-      method:  "PATCH",
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ status: next }),
+      body: JSON.stringify({ status: next }),
     });
     if (res.ok) refresh();
     else alert((await res.json().catch(() => ({}))).error ?? "Update failed.");
@@ -111,14 +119,20 @@ export function EmployeesTab() {
 
   if (loading) {
     return (
-      <p className="px-6 py-12 text-center text-xs" style={{ color: "var(--text-muted)" }}>
+      <p
+        className="px-6 py-12 text-center text-xs"
+        style={{ color: "var(--text-muted)" }}
+      >
         Loading…
       </p>
     );
   }
   if (error) {
     return (
-      <p className="px-6 py-12 text-center text-xs" style={{ color: "var(--primary)" }}>
+      <p
+        className="px-6 py-12 text-center text-xs"
+        style={{ color: "var(--primary)" }}
+      >
         {error}
       </p>
     );
@@ -132,10 +146,12 @@ export function EmployeesTab() {
           title={dept.name}
           code={dept.departmentCode}
           subtitle={ent ? ent.name : undefined}
-          badges={[{
-            label: dept.status === "active" ? "Active" : "Suspended",
-            tone:  dept.status === "active" ? "success" : "warning",
-          }]}
+          badges={[
+            {
+              label: dept.status === "active" ? "Active" : "Suspended",
+              tone: dept.status === "active" ? "success" : "warning",
+            },
+          ]}
           minutes={{ used: dept.usedMinutes, allocated: dept.allocatedMinutes }}
           rollupCaption={(() => {
             if (employees.length === 0) {
@@ -164,8 +180,19 @@ export function EmployeesTab() {
 
         <section className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="font-serif text-lg font-medium" style={{ color: "var(--text)" }}>Invitations</h2>
-            <Button variant="secondary" iconLeft={<Upload size={15} />} onClick={() => setBulkOpen(true)}>Bulk add (CSV)</Button>
+            <h2
+              className="font-serif text-lg font-medium"
+              style={{ color: "var(--text)" }}
+            >
+              Invitations
+            </h2>
+            <Button
+              variant="secondary"
+              iconLeft={<Upload size={15} />}
+              onClick={() => setBulkOpen(true)}
+            >
+              Bulk add (CSV)
+            </Button>
           </div>
           <InviteStatusTable reloadKey={inviteKey} />
         </section>
@@ -175,7 +202,11 @@ export function EmployeesTab() {
         open={addOpen}
         deptRemainingMinutes={dept.remainingMinutes}
         onClose={() => setAddOpen(false)}
-        onCreated={() => { setAddOpen(false); refresh(); setInviteKey((k) => k + 1); }}
+        onCreated={() => {
+          setAddOpen(false);
+          refresh();
+          setInviteKey((k) => k + 1);
+        }}
       />
       <InviteFlow
         open={bulkOpen}
@@ -184,20 +215,30 @@ export function EmployeesTab() {
         bulkOnly
         endpoint="/api/department/employees"
         title="Invite employees"
-        onSent={() => { refresh(); setInviteKey((k) => k + 1); }}
+        onSent={() => {
+          refresh();
+          setInviteKey((k) => k + 1);
+        }}
       />
       <RefillEmployeeDrawer
         open={refillTarget !== null}
         empId={refillTarget?.id ?? null}
         empName={refillTarget?.displayName || refillTarget?.email}
-        empCurrent={refillTarget ? {
-          allocated: refillTarget.allocatedMinutes,
-          used:      refillTarget.usedMinutes,
-          remaining: refillTarget.remainingMinutes,
-        } : undefined}
+        empCurrent={
+          refillTarget
+            ? {
+                allocated: refillTarget.allocatedMinutes,
+                used: refillTarget.usedMinutes,
+                remaining: refillTarget.remainingMinutes,
+              }
+            : undefined
+        }
         deptRemaining={dept.remainingMinutes}
         onClose={() => setRefillTarget(null)}
-        onRefilled={() => { setRefillTarget(null); refresh(); }}
+        onRefilled={() => {
+          setRefillTarget(null);
+          refresh();
+        }}
       />
       {editTarget && (
         <EditNameDrawer
@@ -207,7 +248,10 @@ export function EmployeesTab() {
           currentName={editTarget.displayName}
           endpoint={`/api/department/employees/${editTarget.id}`}
           onClose={() => setEditTarget(null)}
-          onSaved={() => { setEditTarget(null); refresh(); }}
+          onSaved={() => {
+            setEditTarget(null);
+            refresh();
+          }}
         />
       )}
     </div>
@@ -217,7 +261,12 @@ export function EmployeesTab() {
 // ── Subcomponents ─────────────────────────────────────────────────────
 
 function EmployeeTable({
-  employees, totals, onAdd, onEdit, onRefill, onToggleStatus,
+  employees,
+  totals,
+  onAdd,
+  onEdit,
+  onRefill,
+  onToggleStatus,
 }: {
   employees: Employee[];
   totals: { used: number; allocated: number };
@@ -231,8 +280,14 @@ function EmployeeTable({
       className="overflow-hidden rounded-lg border"
       style={{ borderColor: "var(--border)", background: "var(--surface)" }}
     >
-      <header className="flex items-center justify-between border-b px-4 py-2.5" style={{ borderColor: "var(--border)" }}>
-        <span className="text-xs font-semibold tracking-wide uppercase" style={{ color: "var(--text-muted)" }}>
+      <header
+        className="flex items-center justify-between border-b px-4 py-2.5"
+        style={{ borderColor: "var(--border)" }}
+      >
+        <span
+          className="text-xs font-semibold tracking-wide uppercase"
+          style={{ color: "var(--text-muted)" }}
+        >
           Employees ({employees.length})
         </span>
         <button
@@ -245,39 +300,67 @@ function EmployeeTable({
         </button>
       </header>
       {employees.length === 0 ? (
-        <p className="px-4 py-6 text-center text-xs" style={{ color: "var(--text-muted)" }}>
+        <p
+          className="px-4 py-6 text-center text-xs"
+          style={{ color: "var(--text-muted)" }}
+        >
           No employees yet. Click <strong>Add Employee</strong> to invite one.
         </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-[11px] tracking-wider uppercase" style={{ color: "var(--text-muted)" }}>
+              <tr
+                className="text-left text-[11px] tracking-wider uppercase"
+                style={{ color: "var(--text-muted)" }}
+              >
                 <th className="px-4 py-2.5 font-medium">Name</th>
                 <th className="px-4 py-2.5 font-medium">Email</th>
-                <th className="px-4 py-2.5 font-medium">Minutes (used / allocated)</th>
+                <th className="px-4 py-2.5 font-medium">
+                  Minutes (used / allocated)
+                </th>
                 <th className="px-4 py-2.5 font-medium">Status</th>
-                <th className="px-4 py-2.5 font-medium text-right">Actions</th>
+                <th className="px-4 py-2.5 text-right font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
               {employees.map((e) => {
                 const active = e.status === "active";
                 return (
-                  <tr key={e.id} className="border-t" style={{ borderColor: "var(--border)" }}>
-                    <td className="px-4 py-2.5" style={{ color: "var(--text)" }}>{e.displayName || "—"}</td>
-                    <td className="px-4 py-2.5" style={{ color: "var(--text-muted)" }}>{e.email}</td>
-                    <td className="px-4 py-2.5" style={{ color: "var(--text)" }}>
-                      {e.usedMinutes.toLocaleString()} / {e.allocatedMinutes.toLocaleString()}
+                  <tr
+                    key={e.id}
+                    className="border-t"
+                    style={{ borderColor: "var(--border)" }}
+                  >
+                    <td
+                      className="px-4 py-2.5"
+                      style={{ color: "var(--text)" }}
+                    >
+                      {e.displayName || "—"}
+                    </td>
+                    <td
+                      className="px-4 py-2.5"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      {e.email}
+                    </td>
+                    <td
+                      className="px-4 py-2.5"
+                      style={{ color: "var(--text)" }}
+                    >
+                      {e.usedMinutes.toLocaleString()} /{" "}
+                      {e.allocatedMinutes.toLocaleString()}
                     </td>
                     <td className="px-4 py-2.5">
-                      <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wider uppercase"
+                      <span
+                        className="rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wider uppercase"
                         style={{
                           color: active ? "#3dcb7e" : "var(--text-muted)",
                           background: active
                             ? "color-mix(in srgb, #3dcb7e 14%, transparent)"
                             : "color-mix(in srgb, var(--text-muted) 14%, transparent)",
-                        }}>
+                        }}
+                      >
                         {e.status}
                       </span>
                     </td>
@@ -286,14 +369,21 @@ function EmployeeTable({
                         <RowIcon title="Edit name" onClick={() => onEdit(e)}>
                           <Pencil className="size-3.5" />
                         </RowIcon>
-                        <RowIcon title="Refill minutes" onClick={() => onRefill(e)}>
+                        <RowIcon
+                          title="Refill minutes"
+                          onClick={() => onRefill(e)}
+                        >
                           <Coins className="size-3.5" />
                         </RowIcon>
                         <RowIcon
                           title={active ? "Deactivate" : "Reactivate"}
                           onClick={() => onToggleStatus(e.id, active)}
                         >
-                          {active ? <PowerOff className="size-3.5" /> : <Power className="size-3.5" />}
+                          {active ? (
+                            <PowerOff className="size-3.5" />
+                          ) : (
+                            <Power className="size-3.5" />
+                          )}
                         </RowIcon>
                       </div>
                     </td>
@@ -301,11 +391,19 @@ function EmployeeTable({
                 );
               })}
               <tr className="border-t" style={{ borderColor: "var(--border)" }}>
-                <td colSpan={2} className="px-4 py-2.5 text-right text-xs" style={{ color: "var(--text-muted)" }}>
+                <td
+                  colSpan={2}
+                  className="px-4 py-2.5 text-right text-xs"
+                  style={{ color: "var(--text-muted)" }}
+                >
                   Total
                 </td>
-                <td className="px-4 py-2.5 text-sm font-medium" style={{ color: "var(--text)" }}>
-                  {totals.used.toLocaleString()} / {totals.allocated.toLocaleString()}
+                <td
+                  className="px-4 py-2.5 text-sm font-medium"
+                  style={{ color: "var(--text)" }}
+                >
+                  {totals.used.toLocaleString()} /{" "}
+                  {totals.allocated.toLocaleString()}
                 </td>
                 <td />
                 <td />
@@ -319,8 +417,14 @@ function EmployeeTable({
 }
 
 function RowIcon({
-  title, onClick, children,
-}: { title: string; onClick: () => void; children: React.ReactNode }) {
+  title,
+  onClick,
+  children,
+}: {
+  title: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
   return (
     <button
       type="button"

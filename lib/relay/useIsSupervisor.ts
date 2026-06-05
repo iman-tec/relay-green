@@ -8,7 +8,10 @@ import { ROLE, type Role } from "@/lib/relay/roles";
 // Roles allowed to see supervisor-tagged chat lines (e.g. Zoom recording
 // URL + passcode). Mirrors the gate in zoom-webhook handleRecordingCompleted
 // and the visibility CHECK on guest_messages.visibility.
-const SUPERVISOR_ROLES: ReadonlySet<Role> = new Set([ROLE.supervisor, ROLE.super_admin]);
+const SUPERVISOR_ROLES: ReadonlySet<Role> = new Set([
+  ROLE.supervisor,
+  ROLE.super_admin,
+]);
 
 /**
  * True when this message should only render for supervisor viewers — either
@@ -19,7 +22,11 @@ const SUPERVISOR_ROLES: ReadonlySet<Role> = new Set([ROLE.supervisor, ROLE.super
  */
 export function isSupervisorOnlyMessage(m: GuestMessage): boolean {
   if (m.visibility === "supervisor") return true;
-  if (m.sender_kind === "system" && (m.body ?? "").includes("Recording available")) return true;
+  if (
+    m.sender_kind === "system" &&
+    (m.body ?? "").includes("Recording available")
+  )
+    return true;
   return false;
 }
 
@@ -44,9 +51,13 @@ export function useIsSupervisor(): boolean {
         .eq("user_id", u.user.id);
       if (cancelled) return;
       const roles = (data ?? []).map((r: { role: string }) => r.role);
-      setIsSupervisor(roles.some((r) => (SUPERVISOR_ROLES as ReadonlySet<string>).has(r)));
+      setIsSupervisor(
+        roles.some((r) => (SUPERVISOR_ROLES as ReadonlySet<string>).has(r))
+      );
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return isSupervisor;

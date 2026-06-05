@@ -100,9 +100,19 @@ const NAV: Nav[] = [
   },
   // People + per-customer session history + call log. Engineers see their own
   // sessions; supervisors get an all-platform view of the same surface.
-  { href: "/inbox", label: "Inbox", icon: InboxIcon, roles: [ROLE.engineer, ROLE.supervisor] },
+  {
+    href: "/inbox",
+    label: "Inbox",
+    icon: InboxIcon,
+    roles: [ROLE.engineer, ROLE.supervisor],
+  },
   // Engineer-only. Global quote-request / bid queue across all customers.
-  { href: "/quotations", label: "Quotation", icon: FileText, roles: [ROLE.engineer] },
+  {
+    href: "/quotations",
+    label: "Quotation",
+    icon: FileText,
+    roles: [ROLE.engineer],
+  },
   // /supervise renders the platform-wide grid for super_admin + supervisor,
   // and the org-scoped grid for enterprise + department admins — see
   // app/(staff)/supervise/page.tsx.

@@ -11,7 +11,7 @@ import { NextResponse } from "next/server";
 import { requireEnterpriseAdmin } from "@/lib/enterprise-auth";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 const CROCKFORD = "23456789ABCDEFGHJKMNPQRSTVWXYZ";
 function randSegment(len: number): string {
@@ -24,7 +24,8 @@ function randSegment(len: number): string {
 
 export async function POST() {
   const gate = await requireEnterpriseAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin, orgId } = gate;
 
   const { data: org } = await admin
@@ -32,7 +33,11 @@ export async function POST() {
     .select("name")
     .eq("id", orgId)
     .single();
-  const slug = (org?.name ?? "ORG").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8) || "ORG";
+  const slug =
+    (org?.name ?? "ORG")
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "")
+      .slice(0, 8) || "ORG";
 
   // Retry on unique-violation. 5 tries is enough for 30^8 keyspace.
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -47,8 +52,14 @@ export async function POST() {
       return NextResponse.json({ enterpriseCode: data.enterprise_code });
     }
     if (error?.code !== "23505") {
-      return NextResponse.json({ error: error?.message ?? "Couldn't rotate code." }, { status: 500 });
+      return NextResponse.json(
+        { error: error?.message ?? "Couldn't rotate code." },
+        { status: 500 }
+      );
     }
   }
-  return NextResponse.json({ error: "Couldn't generate a unique code after 5 tries." }, { status: 500 });
+  return NextResponse.json(
+    { error: "Couldn't generate a unique code after 5 tries." },
+    { status: 500 }
+  );
 }

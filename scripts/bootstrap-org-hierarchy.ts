@@ -28,24 +28,55 @@ loadEnv({ path: ".env" });
 
 const DEMO_PASSWORD = "RelayDev123!";
 
-type SeedUser = { email: string; name: string; role: string; primaryRole: string };
+type SeedUser = {
+  email: string;
+  name: string;
+  role: string;
+  primaryRole: string;
+};
 
 const NEW_USERS: SeedUser[] = [
   // Supervisor for Pod Beta (Sam already exists for Pod Alpha)
-  { email: "supervisor.beta@relay.test",  name: "Beth Supervisor", role: "supervisor", primaryRole: "supervisor" },
+  {
+    email: "supervisor.beta@relay.test",
+    name: "Beth Supervisor",
+    role: "supervisor",
+    primaryRole: "supervisor",
+  },
   // Pod Alpha engineers
-  { email: "engineer.alpha1@relay.test",  name: "Alex Alpha One",  role: "engineer",   primaryRole: "engineer"   },
-  { email: "engineer.alpha2@relay.test",  name: "Aria Alpha Two",  role: "engineer",   primaryRole: "engineer"   },
+  {
+    email: "engineer.alpha1@relay.test",
+    name: "Alex Alpha One",
+    role: "engineer",
+    primaryRole: "engineer",
+  },
+  {
+    email: "engineer.alpha2@relay.test",
+    name: "Aria Alpha Two",
+    role: "engineer",
+    primaryRole: "engineer",
+  },
   // Pod Beta engineers
-  { email: "engineer.beta1@relay.test",   name: "Ben Beta One",    role: "engineer",   primaryRole: "engineer"   },
-  { email: "engineer.beta2@relay.test",   name: "Bree Beta Two",   role: "engineer",   primaryRole: "engineer"   },
+  {
+    email: "engineer.beta1@relay.test",
+    name: "Ben Beta One",
+    role: "engineer",
+    primaryRole: "engineer",
+  },
+  {
+    email: "engineer.beta2@relay.test",
+    name: "Bree Beta Two",
+    role: "engineer",
+    primaryRole: "engineer",
+  },
 ];
 
 async function loadRoleIds(admin: AdminClient): Promise<Map<string, string>> {
   const { data, error } = await admin.from("roles").select("id, name");
   if (error) throw new Error(`Couldn't load roles lookup: ${error.message}`);
   const map = new Map<string, string>();
-  for (const r of (data ?? []) as { id: string; name: string }[]) map.set(r.name, r.id);
+  for (const r of (data ?? []) as { id: string; name: string }[])
+    map.set(r.name, r.id);
   return map;
 }
 
@@ -59,7 +90,10 @@ const PODS: PodSpec[] = [
   {
     name: "Alpha",
     supervisorEmail: "supervisor.demo@relay.test",
-    engineerEmails: ["engineer.alpha1@relay.test", "engineer.alpha2@relay.test"],
+    engineerEmails: [
+      "engineer.alpha1@relay.test",
+      "engineer.alpha2@relay.test",
+    ],
   },
   {
     name: "Beta",
@@ -70,10 +104,15 @@ const PODS: PodSpec[] = [
 
 type AdminClient = SupabaseClient<any, "public", "public", any, any>;
 
-async function findUserByEmail(admin: AdminClient, email: string): Promise<string | null> {
+async function findUserByEmail(
+  admin: AdminClient,
+  email: string
+): Promise<string | null> {
   // listUsers caps at 1000/page — fine for a demo install.
   const { data } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-  const u = data?.users?.find((x) => x.email?.toLowerCase() === email.toLowerCase());
+  const u = data?.users?.find(
+    (x) => x.email?.toLowerCase() === email.toLowerCase()
+  );
   return u?.id ?? null;
 }
 
@@ -88,7 +127,12 @@ async function findOrgId(admin: AdminClient): Promise<string | null> {
   return (data as { id?: string } | null)?.id ?? null;
 }
 
-async function bindUserToOrg(admin: AdminClient, userId: string, orgId: string, label: string) {
+async function bindUserToOrg(
+  admin: AdminClient,
+  userId: string,
+  orgId: string,
+  label: string
+) {
   const { error } = await admin
     .from("profiles")
     .update({ organization_id: orgId })
@@ -100,24 +144,25 @@ async function ensureUser(
   admin: AdminClient,
   u: SeedUser,
   orgId: string | null,
-  roleIds: Map<string, string>,
+  roleIds: Map<string, string>
 ): Promise<string> {
   const primaryRoleId = roleIds.get(u.primaryRole);
-  const roleId        = roleIds.get(u.role);
+  const roleId = roleIds.get(u.role);
   if (!primaryRoleId) throw new Error(`Unknown primary role: ${u.primaryRole}`);
-  if (!roleId)        throw new Error(`Unknown role: ${u.role}`);
+  if (!roleId) throw new Error(`Unknown role: ${u.role}`);
 
   let userId = await findUserByEmail(admin, u.email);
   if (userId) {
     console.log(`  → ${u.email} exists (${userId})`);
   } else {
     const { data, error } = await admin.auth.admin.createUser({
-      email:         u.email,
-      password:      DEMO_PASSWORD,
+      email: u.email,
+      password: DEMO_PASSWORD,
       email_confirm: true,
       user_metadata: { display_name: u.name },
     });
-    if (error || !data.user) throw new Error(`createUser failed for ${u.email}: ${error?.message}`);
+    if (error || !data.user)
+      throw new Error(`createUser failed for ${u.email}: ${error?.message}`);
     userId = data.user.id;
     console.log(`  → ${u.email} created (${userId})`);
   }
@@ -125,28 +170,30 @@ async function ensureUser(
   // Profile upsert — bind supervisor/engineer accounts to the same org as
   // the Internal Admin (Iris) so the enterprise + finance dashboards can
   // scope by organization_id.
-  const { error: profileErr } = await admin
-    .from("profiles")
-    .upsert(
-      {
-        id:              userId,
-        full_name:       u.name,
-        primary_role_id: primaryRoleId,
-        is_onboarded:    true,
-        ...(orgId ? { organization_id: orgId } : {}),
-      },
-      { onConflict: "id" },
+  const { error: profileErr } = await admin.from("profiles").upsert(
+    {
+      id: userId,
+      full_name: u.name,
+      primary_role_id: primaryRoleId,
+      is_onboarded: true,
+      ...(orgId ? { organization_id: orgId } : {}),
+    },
+    { onConflict: "id" }
+  );
+  if (profileErr)
+    throw new Error(
+      `profile upsert failed for ${u.email}: ${profileErr.message}`
     );
-  if (profileErr) throw new Error(`profile upsert failed for ${u.email}: ${profileErr.message}`);
 
   // Role grant — additive.
   const { error: roleErr } = await admin
     .from("user_roles")
     .upsert(
       { user_id: userId, role_id: roleId },
-      { onConflict: "user_id,role_id", ignoreDuplicates: true },
+      { onConflict: "user_id,role_id", ignoreDuplicates: true }
     );
-  if (roleErr) throw new Error(`role grant failed for ${u.email}: ${roleErr.message}`);
+  if (roleErr)
+    throw new Error(`role grant failed for ${u.email}: ${roleErr.message}`);
 
   return userId;
 }
@@ -159,17 +206,23 @@ async function ensurePod(admin: AdminClient, name: string): Promise<string> {
     .is("archived_at", null)
     .maybeSingle();
   if (existing) {
-    console.log(`  → pod "${name}" exists (${(existing as { id: string }).id})`);
+    console.log(
+      `  → pod "${name}" exists (${(existing as { id: string }).id})`
+    );
     return (existing as { id: string }).id;
   }
   // Generate a slug; rely on the unique index to surface collisions.
-  const slug = name.toLowerCase().replace(/[^a-z0-9]/g, "-") + "-" + Math.random().toString(36).slice(2, 6);
+  const slug =
+    name.toLowerCase().replace(/[^a-z0-9]/g, "-") +
+    "-" +
+    Math.random().toString(36).slice(2, 6);
   const { data, error } = await admin
     .from("pods")
     .insert({ name, slug })
     .select("id")
     .single();
-  if (error || !data) throw new Error(`pod create failed for "${name}": ${error?.message}`);
+  if (error || !data)
+    throw new Error(`pod create failed for "${name}": ${error?.message}`);
   console.log(`  → pod "${name}" created (${(data as { id: string }).id})`);
   return (data as { id: string }).id;
 }
@@ -179,7 +232,7 @@ async function ensurePodMember(
   podId: string,
   userId: string,
   podRole: "supervisor" | "engineer",
-  label: string,
+  label: string
 ): Promise<void> {
   // pod_members has UNIQUE(user_id) — one user, one pod. Upsert keyed on
   // user_id so re-running the script just reseats them in the same pod.
@@ -187,25 +240,33 @@ async function ensurePodMember(
     .from("pod_members")
     .upsert(
       { pod_id: podId, user_id: userId, pod_role: podRole },
-      { onConflict: "user_id" },
+      { onConflict: "user_id" }
     );
-  if (error) throw new Error(`pod_member upsert failed for ${label}: ${error.message}`);
+  if (error)
+    throw new Error(`pod_member upsert failed for ${label}: ${error.message}`);
   console.log(`  → ${label} → pod ${podId} (${podRole})`);
 }
 
 async function main() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !key)
+    throw new Error(
+      "Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY"
+    );
 
-  const admin = createClient(url, key, { auth: { persistSession: false } }) as AdminClient;
+  const admin = createClient(url, key, {
+    auth: { persistSession: false },
+  }) as AdminClient;
 
   // 0. Resolve the Demo Enterprise Co org and bind Iris (Internal Admin)
   //    to it so all her pod members can inherit the same organization_id.
   console.log(`→ Resolving "${ORG_NAME}"…`);
   const orgId = await findOrgId(admin);
   if (!orgId) {
-    throw new Error(`Org "${ORG_NAME}" not found. Run bootstrap-enterprise-demo.ts first.`);
+    throw new Error(
+      `Org "${ORG_NAME}" not found. Run bootstrap-enterprise-demo.ts first.`
+    );
   }
   console.log(`  → org ${orgId}`);
 
@@ -214,7 +275,9 @@ async function main() {
     await bindUserToOrg(admin, irisId, orgId, "admin.demo@relay.test (Iris)");
     console.log(`  → Iris bound to org`);
   } else {
-    console.warn("  ⚠ admin.demo@relay.test not found — Internal Admin will be missing.");
+    console.warn(
+      "  ⚠ admin.demo@relay.test not found — Internal Admin will be missing."
+    );
   }
 
   // 0b. Roles lookup (used by ensureUser).
@@ -232,11 +295,16 @@ async function main() {
   console.log("→ Resolving pre-existing supervisor (Sam)…");
   const samId = await findUserByEmail(admin, "supervisor.demo@relay.test");
   if (!samId) {
-    throw new Error("supervisor.demo@relay.test not found. Run `node scripts/reset.mjs` first to seed the base demo accounts.");
+    throw new Error(
+      "supervisor.demo@relay.test not found. Run `node scripts/reset.mjs` first to seed the base demo accounts."
+    );
   }
   userIds.set("supervisor.demo@relay.test", samId);
   if (orgId) {
-    await admin.from("profiles").update({ organization_id: orgId }).eq("id", samId);
+    await admin
+      .from("profiles")
+      .update({ organization_id: orgId })
+      .eq("id", samId);
   }
   console.log(`  → supervisor.demo@relay.test (${samId})`);
 
@@ -247,7 +315,13 @@ async function main() {
     const podId = await ensurePod(admin, pod.name);
     const supId = userIds.get(pod.supervisorEmail);
     if (!supId) throw new Error(`Couldn't resolve ${pod.supervisorEmail}`);
-    await ensurePodMember(admin, podId, supId, "supervisor", pod.supervisorEmail);
+    await ensurePodMember(
+      admin,
+      podId,
+      supId,
+      "supervisor",
+      pod.supervisorEmail
+    );
     for (const engEmail of pod.engineerEmails) {
       const engId = userIds.get(engEmail);
       if (!engId) throw new Error(`Couldn't resolve ${engEmail}`);
@@ -259,16 +333,32 @@ async function main() {
   console.log("✓ Org hierarchy seeded.");
   console.log("");
   console.log("  Super admin       dev.soni@thegatewaycorp.co.in");
-  console.log("  Enterprise admin  enterprise.demo@relay.test     (Eric Enterprise, org=Demo Enterprise Co)");
-  console.log("  Internal admin    admin.demo@relay.test          (Iris Internal)");
+  console.log(
+    "  Enterprise admin  enterprise.demo@relay.test     (Eric Enterprise, org=Demo Enterprise Co)"
+  );
+  console.log(
+    "  Internal admin    admin.demo@relay.test          (Iris Internal)"
+  );
   console.log("    Pod Alpha");
-  console.log("      Supervisor    supervisor.demo@relay.test     (Sam Supervisor)");
-  console.log("      Engineer      engineer.alpha1@relay.test     (Alex Alpha One)");
-  console.log("      Engineer      engineer.alpha2@relay.test     (Aria Alpha Two)");
+  console.log(
+    "      Supervisor    supervisor.demo@relay.test     (Sam Supervisor)"
+  );
+  console.log(
+    "      Engineer      engineer.alpha1@relay.test     (Alex Alpha One)"
+  );
+  console.log(
+    "      Engineer      engineer.alpha2@relay.test     (Aria Alpha Two)"
+  );
   console.log("    Pod Beta");
-  console.log("      Supervisor    supervisor.beta@relay.test     (Beth Supervisor)");
-  console.log("      Engineer      engineer.beta1@relay.test      (Ben Beta One)");
-  console.log("      Engineer      engineer.beta2@relay.test      (Bree Beta Two)");
+  console.log(
+    "      Supervisor    supervisor.beta@relay.test     (Beth Supervisor)"
+  );
+  console.log(
+    "      Engineer      engineer.beta1@relay.test      (Ben Beta One)"
+  );
+  console.log(
+    "      Engineer      engineer.beta2@relay.test      (Bree Beta Two)"
+  );
   console.log("");
   console.log(`  All new users share the demo password: ${DEMO_PASSWORD}`);
   console.log(`  Sign in via /staff (OTP) or the Developer Shortcuts panel.`);

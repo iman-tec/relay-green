@@ -19,20 +19,21 @@ import { findUserInAnotherOrg, crossOrgError } from "@/lib/relay/orgGuard";
 import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 type RouteCtx = { params: Promise<{ id: string; deptId: string }> };
 
 export async function POST(request: Request, { params }: RouteCtx) {
   const gate = await requireSuperAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin, user: actor } = gate;
   const { id: orgId, deptId } = await params;
 
   const body = (await request.json().catch(() => ({}))) as {
     promoteUserId?: string;
-    email?:         string;
-    displayName?:   string;
+    email?: string;
+    displayName?: string;
   };
 
   // Department must live under this org + have no admin + be active.
@@ -42,8 +43,12 @@ export async function POST(request: Request, { params }: RouteCtx) {
     .eq("id", deptId)
     .maybeSingle();
   const dept = deptRow as {
-    id: string; enterprise_id: string; name: string; department_code: string;
-    status: string; admin_user_id: string | null;
+    id: string;
+    enterprise_id: string;
+    name: string;
+    department_code: string;
+    status: string;
+    admin_user_id: string | null;
   } | null;
   if (!dept || dept.enterprise_id !== orgId) {
     return NextResponse.json({ error: "not_owned" }, { status: 404 });
@@ -76,8 +81,10 @@ export async function POST(request: Request, { params }: RouteCtx) {
       .eq("id", body.promoteUserId)
       .maybeSingle();
     const p = prof as {
-      id: string; organization_id: string | null;
-      department_id: string | null; full_name: string | null;
+      id: string;
+      organization_id: string | null;
+      department_id: string | null;
+      full_name: string | null;
     } | null;
     if (!p || p.department_id !== deptId || p.organization_id !== orgId) {
       return NextResponse.json({ error: "not_in_department" }, { status: 404 });
@@ -99,7 +106,10 @@ export async function POST(request: Request, { params }: RouteCtx) {
     // GUARD: don't pull in an email already bound to another enterprise.
     const guard = await findUserInAnotherOrg(admin, trimmedEmail, orgId);
     if (guard.blocked) {
-      return NextResponse.json({ error: crossOrgError(guard.orgName) }, { status: 409 });
+      return NextResponse.json(
+        { error: crossOrgError(guard.orgName) },
+        { status: 409 }
+      );
     }
 
     const { data: orgRow } = await admin
@@ -110,29 +120,38 @@ export async function POST(request: Request, { params }: RouteCtx) {
     const org = orgRow as { name: string; enterprise_code: string } | null;
 
     const invite = await sendInvitationEmail(admin, {
-      email:       trimmedEmail,
+      email: trimmedEmail,
       displayName,
       metadata: {
-        role_label:      "department_admin",
+        role_label: "department_admin",
         organization_id: orgId,
-        org_name:        org?.name,
+        org_name: org?.name,
         enterprise_code: org?.enterprise_code,
-        department_id:   dept.id,
+        department_id: dept.id,
         department_code: dept.department_code,
-        created_by:      actor.id,
+        created_by: actor.id,
       },
     });
-    if (!invite.ok) return NextResponse.json({ error: invite.error }, { status: 400 });
+    if (!invite.ok)
+      return NextResponse.json({ error: invite.error }, { status: 400 });
 
     userId = invite.userId ?? null;
     if (!userId) {
-      const lookup = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-      userId = lookup.data?.users?.find((u) => u.email?.toLowerCase() === trimmedEmail)?.id ?? null;
+      const lookup = await admin.auth.admin.listUsers({
+        page: 1,
+        perPage: 1000,
+      });
+      userId =
+        lookup.data?.users?.find((u) => u.email?.toLowerCase() === trimmedEmail)
+          ?.id ?? null;
     }
     if (!userId) {
       return NextResponse.json(
-        { error: "Admin invited but auth row not yet visible — try again in a moment." },
-        { status: 500 },
+        {
+          error:
+            "Admin invited but auth row not yet visible — try again in a moment.",
+        },
+        { status: 500 }
       );
     }
 
@@ -142,45 +161,55 @@ export async function POST(request: Request, { params }: RouteCtx) {
       .eq("id", userId)
       .maybeSingle();
     const ep = existingProfile as {
-      id: string; department_id: string | null;
-      full_name: string | null; primary_role_id: string | null;
+      id: string;
+      department_id: string | null;
+      full_name: string | null;
+      primary_role_id: string | null;
     } | null;
     if (ep?.department_id && ep.department_id !== deptId) {
-      return NextResponse.json({ error: "user_in_other_department" }, { status: 409 });
+      return NextResponse.json(
+        { error: "user_in_other_department" },
+        { status: 409 }
+      );
     }
 
-    const { error: profErr } = await admin
-      .from("profiles")
-      .upsert(
-        {
-          id:              userId,
-          full_name:       ep?.full_name?.trim() ? ep.full_name : displayName,
-          primary_role_id: roleId,
-          organization_id: orgId,
-          department_id:   dept.id,
-          is_onboarded:    true,
-        },
-        { onConflict: "id" },
-      );
+    const { error: profErr } = await admin.from("profiles").upsert(
+      {
+        id: userId,
+        full_name: ep?.full_name?.trim() ? ep.full_name : displayName,
+        primary_role_id: roleId,
+        organization_id: orgId,
+        department_id: dept.id,
+        is_onboarded: true,
+      },
+      { onConflict: "id" }
+    );
     if (profErr) {
-      return NextResponse.json({ error: `Profile link failed: ${profErr.message}` }, { status: 500 });
+      return NextResponse.json(
+        { error: `Profile link failed: ${profErr.message}` },
+        { status: 500 }
+      );
     }
   } else {
-    return NextResponse.json({ error: "need_promote_or_invite" }, { status: 400 });
+    return NextResponse.json(
+      { error: "need_promote_or_invite" },
+      { status: 400 }
+    );
   }
 
   await admin
     .from("user_roles")
     .upsert(
       { user_id: userId, role_id: roleId },
-      { onConflict: "user_id,role_id", ignoreDuplicates: true },
+      { onConflict: "user_id,role_id", ignoreDuplicates: true }
     );
 
   const { error: updErr } = await admin
     .from("departments")
     .update({ admin_user_id: userId })
     .eq("id", deptId);
-  if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+  if (updErr)
+    return NextResponse.json({ error: updErr.message }, { status: 500 });
 
   return NextResponse.json({ ok: true, admin: { id: userId, displayName } });
 }

@@ -14,11 +14,20 @@
  */
 
 import { useState } from "react";
-import { Video, PhoneOff, ExternalLink, RotateCw, Loader2, Copy, Check } from "lucide-react";
+import {
+  Video,
+  PhoneOff,
+  ExternalLink,
+  RotateCw,
+  Loader2,
+  Copy,
+  Check,
+} from "lucide-react";
 
 const BRAND_GREEN = "var(--primary)";
 const BRAND_GREEN_SOFT = "var(--primary-soft)";
-const BRAND_GREEN_BORDER = "color-mix(in srgb, var(--primary) 32%, transparent)";
+const BRAND_GREEN_BORDER =
+  "color-mix(in srgb, var(--primary) 32%, transparent)";
 export type ZoomCallStartedPayload = {
   type: "zoom_call_started";
   meetingId: string;
@@ -79,12 +88,20 @@ type Props = {
   onRestart?: () => void | Promise<void>;
 };
 
-export function ZoomCallCard({ started, ended, side, onJoin, onRestart }: Props) {
+export function ZoomCallCard({
+  started,
+  ended,
+  side,
+  onJoin,
+  onRestart,
+}: Props) {
   const [copied, setCopied] = useState(false);
   const [restarting, setRestarting] = useState(false);
 
   const isActive = !ended;
-  const prettyId = started.meetingId.replace(/\D/g, "").replace(/(\d{3})(\d{4})(\d+)/, "$1 $2 $3");
+  const prettyId = started.meetingId
+    .replace(/\D/g, "")
+    .replace(/(\d{3})(\d{4})(\d+)/, "$1 $2 $3");
   const duration = ended ? formatDuration(ended.durationSec) : null;
   const joinUrl = started.joinUrl;
 
@@ -94,7 +111,9 @@ export function ZoomCallCard({ started, ended, side, onJoin, onRestart }: Props)
       await navigator.clipboard.writeText(joinUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 1400);
-    } catch { /* clipboard blocked */ }
+    } catch {
+      /* clipboard blocked */
+    }
   };
 
   const handleJoin = () => {
@@ -111,7 +130,9 @@ export function ZoomCallCard({ started, ended, side, onJoin, onRestart }: Props)
       : "Ended";
 
   return (
-    <div className={`flex w-full ${side === "right" ? "justify-end" : "justify-start"}`}>
+    <div
+      className={`flex w-full ${side === "right" ? "justify-end" : "justify-start"}`}
+    >
       <div
         className="w-full max-w-sm rounded-2xl border p-3.5 shadow-sm"
         style={{
@@ -133,10 +154,16 @@ export function ZoomCallCard({ started, ended, side, onJoin, onRestart }: Props)
             {isActive ? <Video size={16} /> : <PhoneOff size={16} />}
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium" style={{ color: "var(--text)" }}>
+            <div
+              className="text-sm font-medium"
+              style={{ color: "var(--text)" }}
+            >
               {headline}
             </div>
-            <div className="mt-0.5 text-[11px]" style={{ color: "var(--text-muted)" }}>
+            <div
+              className="mt-0.5 text-[11px]"
+              style={{ color: "var(--text-muted)" }}
+            >
               {meta}
             </div>
           </div>
@@ -148,10 +175,17 @@ export function ZoomCallCard({ started, ended, side, onJoin, onRestart }: Props)
               className="mt-2.5 flex items-center gap-2 rounded-lg border px-2 py-1.5"
               style={{ borderColor: "var(--border)" }}
             >
-              <span className="text-[10px] uppercase tracking-wider shrink-0" style={{ color: "var(--text-muted)" }}>
+              <span
+                className="shrink-0 text-[10px] tracking-wider uppercase"
+                style={{ color: "var(--text-muted)" }}
+              >
                 ID
               </span>
-              <span className="min-w-0 flex-1 truncate text-xs tabular-nums" style={{ color: "var(--text)" }} title={joinUrl}>
+              <span
+                className="min-w-0 flex-1 truncate text-xs tabular-nums"
+                style={{ color: "var(--text)" }}
+                title={joinUrl}
+              >
                 {prettyId}
               </span>
               <button
@@ -185,14 +219,21 @@ export function ZoomCallCard({ started, ended, side, onJoin, onRestart }: Props)
             onClick={async () => {
               if (restarting) return;
               setRestarting(true);
-              try { await onRestart(); }
-              finally { setRestarting(false); }
+              try {
+                await onRestart();
+              } finally {
+                setRestarting(false);
+              }
             }}
             disabled={restarting}
             className="mt-2.5 inline-flex w-full items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60"
             style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
           >
-            {restarting ? <Loader2 size={13} className="animate-spin" /> : <RotateCw size={13} />}
+            {restarting ? (
+              <Loader2 size={13} className="animate-spin" />
+            ) : (
+              <RotateCw size={13} />
+            )}
             {restarting ? "Starting new meeting…" : "Start new meeting"}
           </button>
         ) : null}

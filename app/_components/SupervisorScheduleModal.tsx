@@ -23,12 +23,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Calendar as CalendarIcon,
+  Clock,
   Loader2,
   X,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Search,
+  Video,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 
@@ -441,6 +443,9 @@ export function SupervisorScheduleModal({
   const [customerTz, setCustomerTz] = useState(
     () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
   );
+  // Calendly-style confirm step (matches ScheduleEngineerModal): clicking a
+  // time arms it; only the green Confirm actually books.
+  const [pendingSlot, setPendingSlot] = useState<Slot | null>(null);
   const [tzOptions, setTzOptions] = useState<TzOption[]>([]);
   const [tzOpen, setTzOpen] = useState(false);
   const [tzQuery, setTzQuery] = useState("");
@@ -713,42 +718,25 @@ export function SupervisorScheduleModal({
       }}
     >
       <div
-        className="relative w-full max-w-2xl rounded-2xl border shadow-xl"
+        className="relative w-full max-w-3xl overflow-hidden rounded-2xl border shadow-xl"
         style={{
           backgroundColor: "var(--surface)",
           borderColor: "var(--border)",
+          maxHeight: "min(90vh, 620px)",
         }}
       >
-        <header
-          className="flex items-center gap-2 border-b px-5 py-4"
-          style={{ borderColor: "var(--border)" }}
+        {/* Calendly-style chrome (matches ScheduleEngineerModal): no
+            full-width header — the left info pane owns the identity;
+            close floats top-right. */}
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="absolute top-3 right-3 z-10 flex h-8 w-8 items-center justify-center rounded-md transition-opacity hover:bg-black/5 dark:hover:bg-white/5"
+          style={{ color: "var(--text-muted)" }}
         >
-          <CalendarIcon size={14} style={{ color: "var(--primary)" }} />
-          <h2
-            className="flex-1 text-[15px] font-semibold"
-            style={{ color: "var(--text)" }}
-          >
-            {replaceBookingId ? "Change appointment" : "Schedule a call"}
-          </h2>
-          <span
-            className="rounded-full px-2 py-0.5 text-[11px] font-semibold"
-            style={{
-              background: "var(--primary-soft)",
-              color: "var(--primary)",
-            }}
-          >
-            30 min
-          </span>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="flex h-8 w-8 items-center justify-center rounded-md transition-opacity hover:bg-black/5 dark:hover:bg-white/5"
-            style={{ color: "var(--text-muted)" }}
-          >
-            <X size={16} />
-          </button>
-        </header>
+          <X size={16} />
+        </button>
 
         {loading ? (
           <div className="flex items-center justify-center px-5 py-16">
@@ -789,18 +777,82 @@ export function SupervisorScheduleModal({
             No open slots available right now.
           </div>
         ) : (
-          <div className="flex flex-col sm:flex-row">
-            {/* LEFT — month calendar */}
+          <div className="flex max-h-full min-h-0 flex-col overflow-y-auto sm:flex-row sm:overflow-hidden">
+            {/* LEFT — supervisor / event info (Calendly's host pane). */}
             <div
-              className="border-b p-5 sm:w-[320px] sm:shrink-0 sm:border-r sm:border-b-0"
+              className="border-b p-4 sm:w-[200px] sm:shrink-0 sm:border-r sm:border-b-0 sm:p-5"
               style={{ borderColor: "var(--border)" }}
             >
-              <div
-                className="mb-3 truncate text-[12px] font-medium"
-                style={{ color: "var(--text-muted)" }}
-              >
-                {projectName}
+              <div className="flex items-center gap-2">
+                <CalendarIcon size={14} style={{ color: "var(--primary)" }} />
+                <span
+                  className="text-[11px] font-semibold tracking-[0.12em] uppercase"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  Relay
+                </span>
               </div>
+              <div className="mt-3 flex items-center gap-3 sm:mt-4 sm:block">
+                <div
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full"
+                  style={{
+                    backgroundColor: "var(--primary-soft)",
+                    color: "var(--primary)",
+                  }}
+                  aria-hidden
+                >
+                  <CalendarIcon size={18} />
+                </div>
+                <div className="min-w-0">
+                  <div
+                    className="truncate text-[12.5px] sm:mt-2"
+                    style={{ color: "var(--text-muted)" }}
+                    title={projectName}
+                  >
+                    {projectName}
+                  </div>
+                  <h2
+                    className="mt-0.5 text-[17px] leading-snug font-semibold"
+                    style={{
+                      color: "var(--text)",
+                      fontFamily: "var(--font-source-serif)",
+                    }}
+                  >
+                    {replaceBookingId
+                      ? "Change appointment"
+                      : "Supervisor call"}
+                  </h2>
+                </div>
+              </div>
+              <div className="mt-3 flex items-center gap-4 sm:block">
+                <div
+                  className="flex items-center gap-2 text-[12px]"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  <Clock size={13} className="shrink-0" />
+                  30 min
+                </div>
+                <div
+                  className="flex items-center gap-2 text-[12px] sm:mt-1.5"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  <Video size={13} className="shrink-0" />
+                  Zoom
+                </div>
+              </div>
+            </div>
+
+            {/* CENTER — "Select a Date & Time" month calendar. */}
+            <div
+              className="min-w-0 flex-1 border-b p-5 sm:border-r sm:border-b-0"
+              style={{ borderColor: "var(--border)" }}
+            >
+              <h3
+                className="mb-3 text-[15px] font-semibold"
+                style={{ color: "var(--text)" }}
+              >
+                Select a Date &amp; Time
+              </h3>
               <div className="mb-3 flex items-center justify-between">
                 <button
                   type="button"
@@ -847,19 +899,26 @@ export function SupervisorScheduleModal({
                       key={`${cell.key}-${i}`}
                       type="button"
                       disabled={!selectable}
-                      onClick={() => setActiveDayKey(cell.key)}
+                      onClick={() => {
+                        setActiveDayKey(cell.key);
+                        setPendingSlot(null);
+                      }}
                       className="flex aspect-square items-center justify-center rounded-full text-[13px] transition-colors"
                       style={{
                         color: selected
                           ? "#fff"
                           : selectable
-                            ? "var(--text)"
+                            ? "var(--primary)"
                             : cell.inMonth
                               ? "var(--text-faint)"
                               : "transparent",
+                        // Calendly treatment: bookable days wear a soft
+                        // tinted circle; the selected day is filled.
                         backgroundColor: selected
                           ? "var(--primary)"
-                          : "transparent",
+                          : selectable
+                            ? "var(--primary-soft)"
+                            : "transparent",
                         fontWeight: selectable ? 600 : 400,
                         cursor: selectable ? "pointer" : "default",
                       }}
@@ -869,27 +928,15 @@ export function SupervisorScheduleModal({
                   );
                 })}
               </div>
-            </div>
 
-            {/* RIGHT — time slots */}
-            <div className="flex min-w-0 flex-1 flex-col p-5">
+              {/* Timezone — bottom of the calendar pane, Calendly-style. */}
               <div
-                className="text-[13px] font-semibold"
-                style={{ color: "var(--text)" }}
+                className="mt-4 text-[10.5px] font-semibold tracking-[0.1em] uppercase"
+                style={{ color: "var(--text-faint)" }}
               >
-                What time works best?
+                Time zone
               </div>
-              {effectiveDayKey && (
-                <div
-                  className="mt-0.5 text-[12px]"
-                  style={{ color: "var(--text-muted)" }}
-                >
-                  {dayLabelFromKey(effectiveDayKey)}
-                </div>
-              )}
-
-              {/* Timezone switcher */}
-              <div ref={tzRef} className="relative mt-2 mb-3">
+              <div ref={tzRef} className="relative mt-1">
                 <button
                   type="button"
                   onClick={() => {
@@ -914,7 +961,10 @@ export function SupervisorScheduleModal({
                   <div
                     role="listbox"
                     aria-label="Timezone"
-                    className="absolute top-full left-0 z-10 mt-1 flex max-h-72 w-72 max-w-[calc(100vw-3rem)] flex-col overflow-hidden rounded-lg border shadow-xl"
+                    // Drops UP: the trigger sits at the bottom of the
+                    // calendar pane, so a downward menu gets clipped by
+                    // the modal's overflow-hidden shell.
+                    className="absolute bottom-full left-0 z-10 mb-1 flex max-h-72 w-72 max-w-[calc(100vw-3rem)] flex-col overflow-hidden rounded-lg border shadow-xl"
                     style={{
                       background: "var(--surface)",
                       borderColor: "var(--border)",
@@ -977,25 +1027,75 @@ export function SupervisorScheduleModal({
                   </div>
                 )}
               </div>
+            </div>
 
-              <div className="max-h-[300px] min-h-[180px] flex-1 overflow-y-auto">
-                <div className="flex flex-col gap-1.5">
-                  {activeSlots.map((s) => (
-                    <button
-                      key={s.start.toISOString()}
-                      type="button"
-                      disabled={booking}
-                      onClick={() => void submitBooking(s)}
-                      className="rounded-lg border px-4 py-2.5 text-center text-[13px] font-medium tabular-nums transition-colors hover:border-[var(--primary)] hover:bg-[var(--primary-soft)] disabled:opacity-50"
-                      style={{
-                        borderColor: "var(--border)",
-                        backgroundColor: "var(--surface-raised)",
-                        color: "var(--text)",
-                      }}
-                    >
-                      {fmtSlot(s.start, customerTz)}
-                    </button>
-                  ))}
+            {/* RIGHT — day label + time slots (Calendly's times rail).
+                Clicking a time arms it; only the green Confirm books. */}
+            <div className="flex min-w-0 flex-col p-5 sm:w-[230px] sm:shrink-0">
+              <div
+                className="mb-3 text-[13px] font-semibold"
+                style={{ color: "var(--text)" }}
+              >
+                {effectiveDayKey
+                  ? dayLabelFromKey(effectiveDayKey)
+                  : "Pick a date"}
+              </div>
+              <div className="min-h-[160px] flex-1 sm:max-h-[420px] sm:overflow-y-auto">
+                <div className="flex flex-col gap-1.5 pr-0.5">
+                  {activeSlots.map((s) => {
+                    const timeLabel = fmtSlot(s.start, customerTz);
+                    const armed =
+                      pendingSlot &&
+                      pendingSlot.start.getTime() === s.start.getTime();
+                    if (armed) {
+                      return (
+                        <div
+                          key={s.start.toISOString()}
+                          className="flex gap-1.5"
+                        >
+                          <span
+                            className="flex flex-1 items-center justify-center rounded-lg px-2 py-2.5 text-center text-[13px] font-semibold tabular-nums"
+                            style={{
+                              backgroundColor:
+                                "color-mix(in srgb, var(--text) 14%, transparent)",
+                              color: "var(--text)",
+                            }}
+                          >
+                            {timeLabel}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={booking}
+                            onClick={() => void submitBooking(s)}
+                            className="flex flex-1 items-center justify-center gap-1 rounded-lg px-2 py-2.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+                            style={{ backgroundColor: "var(--primary)" }}
+                          >
+                            {booking ? (
+                              <Loader2 size={13} className="animate-spin" />
+                            ) : (
+                              "Confirm"
+                            )}
+                          </button>
+                        </div>
+                      );
+                    }
+                    return (
+                      <button
+                        key={s.start.toISOString()}
+                        type="button"
+                        disabled={booking}
+                        onClick={() => setPendingSlot(s)}
+                        className="rounded-lg border px-4 py-2.5 text-center text-[13px] font-semibold tabular-nums transition-colors hover:bg-[var(--primary-soft)] disabled:opacity-50"
+                        style={{
+                          borderColor: "var(--primary)",
+                          backgroundColor: "transparent",
+                          color: "var(--primary)",
+                        }}
+                      >
+                        {timeLabel}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>

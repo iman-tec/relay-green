@@ -18,7 +18,8 @@ export const runtime = "nodejs";
 
 export async function GET() {
   const gate = await requireDepartmentAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { supabase, user } = gate;
 
   const { data, error } = await supabase
@@ -27,15 +28,23 @@ export async function GET() {
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
     .limit(50);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error)
+    return NextResponse.json({ error: error.message }, { status: 500 });
 
-  type Row = { id: string; kind: string; title: string; body: string | null; read_at: string | null; created_at: string };
+  type Row = {
+    id: string;
+    kind: string;
+    title: string;
+    body: string | null;
+    read_at: string | null;
+    created_at: string;
+  };
   const items = ((data ?? []) as Row[]).map((n) => ({
-    id:        n.id,
-    kind:      n.kind,
-    title:     n.title,
-    body:      n.body,
-    readAt:    n.read_at,
+    id: n.id,
+    kind: n.kind,
+    title: n.title,
+    body: n.body,
+    readAt: n.read_at,
     createdAt: n.created_at,
   }));
   const unread = items.filter((i) => i.readAt == null).length;
@@ -45,7 +54,8 @@ export async function GET() {
 
 export async function POST() {
   const gate = await requireDepartmentAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { supabase, user } = gate;
 
   const { error } = await supabase
@@ -53,6 +63,7 @@ export async function POST() {
     .update({ read_at: new Date().toISOString() })
     .eq("user_id", user.id)
     .is("read_at", null);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error)
+    return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }

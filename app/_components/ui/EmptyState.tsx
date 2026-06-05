@@ -39,17 +39,17 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        "flex flex-col items-center justify-center text-center mx-auto",
-        compact ? "py-8 max-w-sm gap-3" : "py-14 max-w-md gap-4",
-        className,
+        "mx-auto flex flex-col items-center justify-center text-center",
+        compact ? "max-w-sm gap-3 py-8" : "max-w-md gap-4 py-14",
+        className
       )}
     >
       {icon && (
         <div
           className={cn(
             "inline-flex items-center justify-center rounded-full",
-            "bg-[var(--surface-raised)] border border-[var(--border)] text-[var(--text-muted)]",
-            compact ? "size-10" : "size-14",
+            "border border-[var(--border)] bg-[var(--surface-raised)] text-[var(--text-muted)]",
+            compact ? "size-10" : "size-14"
           )}
           aria-hidden
         >
@@ -58,8 +58,8 @@ export function EmptyState({
       )}
       <h3
         className={cn(
-          "font-serif text-[var(--text)] leading-tight",
-          compact ? "text-lg" : "text-2xl",
+          "font-serif leading-tight text-[var(--text)]",
+          compact ? "text-lg" : "text-2xl"
         )}
       >
         {title}
@@ -67,8 +67,8 @@ export function EmptyState({
       {body && (
         <p
           className={cn(
-            "text-[var(--text-muted)] leading-relaxed",
-            compact ? "text-sm" : "text-[15px]",
+            "leading-relaxed text-[var(--text-muted)]",
+            compact ? "text-sm" : "text-[15px]"
           )}
         >
           {body}

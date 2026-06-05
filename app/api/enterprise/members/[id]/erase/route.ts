@@ -29,18 +29,25 @@ type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function POST(_req: Request, { params }: RouteCtx) {
   const gate = await requireEnterpriseAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin, orgId, user: actor } = gate;
 
   const { id } = await params;
   if (!id) return NextResponse.json({ error: "missing_id" }, { status: 400 });
-  if (id === actor.id) return NextResponse.json({ error: "cannot_erase_self" }, { status: 400 });
+  if (id === actor.id)
+    return NextResponse.json({ error: "cannot_erase_self" }, { status: 400 });
 
   const { data: target } = await admin
     .from("profiles")
     .select("id, organization_id, full_name, erased_at")
     .eq("id", id)
-    .maybeSingle<{ id: string; organization_id: string | null; full_name: string | null; erased_at: string | null }>();
+    .maybeSingle<{
+      id: string;
+      organization_id: string | null;
+      full_name: string | null;
+      erased_at: string | null;
+    }>();
 
   if (!target || target.organization_id !== orgId) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
@@ -57,16 +64,17 @@ export async function POST(_req: Request, { params }: RouteCtx) {
   const { data: updated, error } = await admin
     .from("profiles")
     .update({
-      full_name:  null,
+      full_name: null,
       avatar_url: null,
-      erased_at:  new Date().toISOString(),
+      erased_at: new Date().toISOString(),
     })
     .eq("id", id)
     .eq("organization_id", orgId)
     .select("id, erased_at")
     .single<{ id: string; erased_at: string }>();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error)
+    return NextResponse.json({ error: error.message }, { status: 500 });
 
   return NextResponse.json({
     ok: true,

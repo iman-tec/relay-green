@@ -51,19 +51,28 @@ export function GuestUpgradeForm({
     setError(null);
     try {
       const sb = createClient();
-      const { error: upErr } = await sb.auth.updateUser({ email: em, password });
+      const { error: upErr } = await sb.auth.updateUser({
+        email: em,
+        password,
+      });
       if (upErr) {
         const msg = upErr.message.toLowerCase();
-        if (msg.includes("already") || msg.includes("registered") || msg.includes("exists")) {
+        if (
+          msg.includes("already") ||
+          msg.includes("registered") ||
+          msg.includes("exists")
+        ) {
           throw new Error(
-            "That email already has an account. Sign in instead to keep your history.",
+            "That email already has an account. Sign in instead to keep your history."
           );
         }
         throw upErr;
       }
       onUpgraded?.(em);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create your account.");
+      setError(
+        err instanceof Error ? err.message : "Could not create your account."
+      );
       setBusy(false);
     }
   };
@@ -71,8 +80,12 @@ export function GuestUpgradeForm({
   return (
     <form onSubmit={submit} className="flex flex-col gap-4">
       <div>
-        <h2 className="font-serif text-lg leading-tight text-[var(--text)]">{heading}</h2>
-        <p className="mt-1.5 text-sm leading-relaxed text-[var(--text-muted)]">{blurb}</p>
+        <h2 className="font-serif text-lg leading-tight text-[var(--text)]">
+          {heading}
+        </h2>
+        <p className="mt-1.5 text-sm leading-relaxed text-[var(--text-muted)]">
+          {blurb}
+        </p>
       </div>
 
       <Input

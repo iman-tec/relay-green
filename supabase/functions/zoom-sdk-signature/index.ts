@@ -14,7 +14,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
 };
 
 async function getZoomAccessToken(): Promise<string | null> {
@@ -25,7 +26,7 @@ async function getZoomAccessToken(): Promise<string | null> {
   const basic = btoa(`${clientId}:${clientSecret}`);
   const r = await fetch(
     `https://zoom.us/oauth/token?grant_type=account_credentials&account_id=${accountId}`,
-    { method: "POST", headers: { Authorization: `Basic ${basic}` } },
+    { method: "POST", headers: { Authorization: `Basic ${basic}` } }
   );
   if (!r.ok) return null;
   const data = await r.json();
@@ -33,8 +34,12 @@ async function getZoomAccessToken(): Promise<string | null> {
 }
 
 async function fetchMeetingInfo(
-  meetingId: string,
-): Promise<{ password: string; hostId: string | null; startUrl: string | null } | null> {
+  meetingId: string
+): Promise<{
+  password: string;
+  hostId: string | null;
+  startUrl: string | null;
+} | null> {
   try {
     const token = await getZoomAccessToken();
     if (!token) return null;
@@ -68,9 +73,12 @@ async function fetchHostZak(hostId: string): Promise<string | null> {
   try {
     const token = await getZoomAccessToken();
     if (!token) return null;
-    const r = await fetch(`https://api.zoom.us/v2/users/${hostId}/token?type=zak`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const r = await fetch(
+      `https://api.zoom.us/v2/users/${hostId}/token?type=zak`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    );
     if (!r.ok) return null;
     const d = await r.json();
     return (d.token as string) ?? null;
@@ -79,7 +87,9 @@ async function fetchHostZak(hostId: string): Promise<string | null> {
   }
 }
 
-async function zakFromDb(meetingNumber: string): Promise<{ zak: string | null; startUrl: string | null }> {
+async function zakFromDb(
+  meetingNumber: string
+): Promise<{ zak: string | null; startUrl: string | null }> {
   try {
     const url = Deno.env.get("SUPABASE_URL");
     const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -92,7 +102,9 @@ async function zakFromDb(meetingNumber: string): Promise<{ zak: string | null; s
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    const startUrl = (data as { zoom_start_url: string | null } | null)?.zoom_start_url ?? null;
+    const startUrl =
+      (data as { zoom_start_url: string | null } | null)?.zoom_start_url ??
+      null;
     return { zak: zakFromStartUrl(startUrl), startUrl };
   } catch {
     return { zak: null, startUrl: null };
@@ -100,7 +112,8 @@ async function zakFromDb(meetingNumber: string): Promise<{ zak: string | null; s
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method === "OPTIONS")
+    return new Response(null, { headers: corsHeaders });
 
   try {
     const { meetingNumber, role } = await req.json();
@@ -114,10 +127,13 @@ Deno.serve(async (req) => {
     const sdkKey = Deno.env.get("ZOOM_SDK_KEY");
     const sdkSecret = Deno.env.get("ZOOM_SDK_SECRET");
     if (!sdkKey || !sdkSecret) {
-      return new Response(JSON.stringify({ error: "ZOOM_SDK_KEY/SECRET not configured" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ error: "ZOOM_SDK_KEY/SECRET not configured" }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     const cleanMn = String(meetingNumber).replace(/\D/g, "");
@@ -139,7 +155,7 @@ Deno.serve(async (req) => {
       new TextEncoder().encode(sdkSecret),
       { name: "HMAC", hash: "SHA-256" },
       false,
-      ["sign", "verify"],
+      ["sign", "verify"]
     );
 
     const signature = await create({ alg: "HS256", typ: "JWT" }, payload, key);
@@ -170,8 +186,13 @@ Deno.serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ signature, sdkKey, password: info?.password ?? "", zak: zak ?? "" }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      JSON.stringify({
+        signature,
+        sdkKey,
+        password: info?.password ?? "",
+        zak: zak ?? "",
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";

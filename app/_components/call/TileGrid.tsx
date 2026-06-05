@@ -38,9 +38,19 @@ type Props = {
 // two tiles side-by-side become too small to recognize faces.
 const NARROW_WIDTH_PX = 200;
 
-export function TileGrid({ self, participants, client, forceStack = false, forceSideBySide = false, tileHeightPx, lockSideBySide = false }: Props) {
+export function TileGrid({
+  self,
+  participants,
+  client,
+  forceStack = false,
+  forceSideBySide = false,
+  tileHeightPx,
+  lockSideBySide = false,
+}: Props) {
   // Include self at the front; SDK's getAllUser sometimes omits the local user.
-  const all = self ? [self, ...participants.filter((p) => p.userId !== self.userId)] : participants;
+  const all = self
+    ? [self, ...participants.filter((p) => p.userId !== self.userId)]
+    : participants;
 
   // Track container width so we can flip to vertical stacking once it gets
   // too narrow for side-by-side tiles. ResizeObserver is cheaper than a
@@ -112,15 +122,21 @@ export function TileGrid({ self, participants, client, forceStack = false, force
   return (
     <div
       ref={wrapperRef}
-      className={stack
-        ? "flex h-full w-full flex-col gap-2 overflow-y-auto p-2"
-        : "grid h-full w-full content-start justify-center gap-3 overflow-y-auto p-3"}
-      style={stack ? undefined : {
-        gridTemplateColumns:
-          all.length <= 2
-            ? `repeat(${Math.max(all.length, 1)}, minmax(0, min(46%, 460px)))`
-            : "repeat(auto-fit, minmax(200px, 280px))",
-      }}
+      className={
+        stack
+          ? "flex h-full w-full flex-col gap-2 overflow-y-auto p-2"
+          : "grid h-full w-full content-start justify-center gap-3 overflow-y-auto p-3"
+      }
+      style={
+        stack
+          ? undefined
+          : {
+              gridTemplateColumns:
+                all.length <= 2
+                  ? `repeat(${Math.max(all.length, 1)}, minmax(0, min(46%, 460px)))`
+                  : "repeat(auto-fit, minmax(200px, 280px))",
+            }
+      }
     >
       {all.map((p) => (
         <div

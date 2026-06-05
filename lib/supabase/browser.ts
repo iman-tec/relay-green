@@ -18,7 +18,7 @@ export function createClient() {
   if (!url || !key) {
     throw new Error(
       "Relay: NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY must be set in .env.local. " +
-      "Restart the dev server after adding them.",
+        "Restart the dev server after adding them."
     );
   }
 
@@ -32,16 +32,20 @@ export function createClient() {
   // bare "Failed to fetch" TypeErrors.
   const proxiedFetch: typeof fetch = async (input, init) => {
     const reqUrl =
-      typeof input === "string"     ? input
-      : input instanceof URL        ? input.toString()
-      : input instanceof Request    ? input.url
-      :                               String(input);
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input instanceof Request
+            ? input.url
+            : String(input);
 
     const doFetch = (): Promise<Response> => {
       if (!reqUrl.startsWith(supabaseHttpPrefix)) {
         return fetch(input as RequestInfo, init);
       }
-      const rewritten = "/api/supabase" + reqUrl.slice(supabaseHttpPrefix.length);
+      const rewritten =
+        "/api/supabase" + reqUrl.slice(supabaseHttpPrefix.length);
       if (input instanceof Request) {
         return fetch(new Request(rewritten, input), init);
       }

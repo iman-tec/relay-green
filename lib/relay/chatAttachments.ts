@@ -16,17 +16,17 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export const MAX_BYTES = 10_485_760;          // 10 MB
-export const MAX_FILES_PER_MESSAGE = 3;       // total files, any kind
-export const MAX_IMAGES_PER_MESSAGE = 3;      // kept ≤ the DB image-cap trigger
+export const MAX_BYTES = 10_485_760; // 10 MB
+export const MAX_FILES_PER_MESSAGE = 3; // total files, any kind
+export const MAX_IMAGES_PER_MESSAGE = 3; // kept ≤ the DB image-cap trigger
 
 export const ACCEPTED_DOC_MIME = new Set<string>([
   "application/pdf",
   "text/plain",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
-  "application/vnd.ms-excel",                                          // .xls (legacy)
+  "application/vnd.ms-excel", // .xls (legacy)
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
-  "application/msword",                                                // .doc (legacy)
+  "application/msword", // .doc (legacy)
 ]);
 
 export const ACCEPTED_DOC_EXT = [".pdf", ".txt", ".xlsx", ".docx"] as const;
@@ -39,7 +39,7 @@ export const ACCEPTED_AUDIO_MIME = new Set<string>([
   "audio/webm",
   "audio/ogg",
   "audio/mp4",
-  "audio/mpeg",      // mp3
+  "audio/mpeg", // mp3
   "audio/wav",
   "audio/x-wav",
   "audio/x-m4a",
@@ -75,13 +75,16 @@ export type ValidationResult =
  */
 export function validateStagedFiles(
   incoming: File[],
-  existing: ClassifiedFile[] = [],
+  existing: ClassifiedFile[] = []
 ): ValidationResult {
   const classified: ClassifiedFile[] = [];
   for (const f of incoming) {
     const kind = classify(f);
     if (!kind) {
-      return { ok: false, error: "PDF, DOCX, XLSX, TXT, images, or audio only." };
+      return {
+        ok: false,
+        error: "PDF, DOCX, XLSX, TXT, images, or audio only.",
+      };
     }
     if (f.size > MAX_BYTES) {
       return { ok: false, error: `${f.name} is over 10 MB.` };
@@ -89,7 +92,10 @@ export function validateStagedFiles(
     classified.push({ file: f, kind });
   }
   if (existing.length + classified.length > MAX_FILES_PER_MESSAGE) {
-    return { ok: false, error: `Up to ${MAX_FILES_PER_MESSAGE} files per message.` };
+    return {
+      ok: false,
+      error: `Up to ${MAX_FILES_PER_MESSAGE} files per message.`,
+    };
   }
   return { ok: true, classified };
 }
@@ -119,7 +125,8 @@ export async function uploadOne(args: {
   return {
     path,
     name: file.name,
-    mime: file.type || (kind === "image" ? "image/*" : "application/octet-stream"),
+    mime:
+      file.type || (kind === "image" ? "image/*" : "application/octet-stream"),
     size: file.size,
     kind,
   };
@@ -136,16 +143,21 @@ export function formatBytes(n: number): string {
 export async function signedDownloadUrl(
   sb: SupabaseClient,
   path: string,
-  downloadAs?: string,
+  downloadAs?: string
 ): Promise<string | null> {
   const { data } = await sb.storage
     .from("chat-attachments")
-    .createSignedUrl(path, 3600, downloadAs ? { download: downloadAs } : undefined);
+    .createSignedUrl(
+      path,
+      3600,
+      downloadAs ? { download: downloadAs } : undefined
+    );
   return data?.signedUrl ?? null;
 }
 
 /** The `accept` attribute strings for the two file-picker variants. */
 export const FILE_INPUT_ACCEPT = {
-  documents: ".pdf,.txt,.xlsx,.docx,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  images:    "image/*",
+  documents:
+    ".pdf,.txt,.xlsx,.docx,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  images: "image/*",
 } as const;

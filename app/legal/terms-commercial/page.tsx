@@ -59,8 +59,8 @@ export default function TermsCommercialPage() {
             <em>Terms (Commercial).</em>
           </h1>
           <p className="r-lede" style={{ marginTop: 24, maxWidth: "60ch" }}>
-            Last updated: June 2026. The master agreement for teams and companies
-            on a paid plan.
+            Last updated: June 2026. The master agreement for teams and
+            companies on a paid plan.
           </p>
         </div>
       </section>

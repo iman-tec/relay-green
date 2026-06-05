@@ -43,7 +43,17 @@ type Props = {
   wideTiles?: boolean;
 };
 
-export function CallSurfaceInner({ sessionId, role, userName, onClose, onJoined, compact = false, tilesPortalTarget = null, onShareStateChange, wideTiles = false }: Props) {
+export function CallSurfaceInner({
+  sessionId,
+  role,
+  userName,
+  onClose,
+  onJoined,
+  compact = false,
+  tilesPortalTarget = null,
+  onShareStateChange,
+  wideTiles = false,
+}: Props) {
   // Share elements are hoisted here so both the local sharer
   // (startShareScreen) and remote viewer (startShareView) can target them.
   // The SDK picks canvas vs video at runtime based on WebCodecs availability;
@@ -54,8 +64,11 @@ export function CallSurfaceInner({ sessionId, role, userName, onClose, onJoined,
   const shareVideoRef = useRef<HTMLVideoElement | null>(null);
   const [shareMode, setShareMode] = useState<"canvas" | "video" | null>(null);
   const call = useZoomCall({
-    sessionId, role, userName,
-    shareCanvasRef, shareVideoRef,
+    sessionId,
+    role,
+    userName,
+    shareCanvasRef,
+    shareVideoRef,
     onShareElementChange: setShareMode,
   });
   // Self-share state comes straight from the hook (which tracks start/stop +
@@ -73,8 +86,11 @@ export function CallSurfaceInner({ sessionId, role, userName, onClose, onJoined,
     call.activeShareUserId !== call.self.userId;
   const sharerName = useMemo(() => {
     if (!call.activeShareUserId) return "";
-    if (call.self?.userId === call.activeShareUserId) return call.self.displayName;
-    const p = call.participants.find((x) => x.userId === call.activeShareUserId);
+    if (call.self?.userId === call.activeShareUserId)
+      return call.self.displayName;
+    const p = call.participants.find(
+      (x) => x.userId === call.activeShareUserId
+    );
     return p?.displayName ?? "Someone";
   }, [call.activeShareUserId, call.self, call.participants]);
 
@@ -98,7 +114,11 @@ export function CallSurfaceInner({ sessionId, role, userName, onClose, onJoined,
   useEffect(() => {
     if (call.status === "joined" && !joinedFiredRef.current) {
       joinedFiredRef.current = true;
-      try { onJoined?.(); } catch { /* host concern */ }
+      try {
+        onJoined?.();
+      } catch {
+        /* host concern */
+      }
     }
     if (call.status === "ended") joinedFiredRef.current = false;
   }, [call.status, onJoined]);
@@ -117,7 +137,9 @@ export function CallSurfaceInner({ sessionId, role, userName, onClose, onJoined,
   const reconnecting = call.status === "reconnecting";
   const fatal = call.status === "error";
   const initialising =
-    call.status === "idle" || call.status === "fetching-token" || call.status === "joining";
+    call.status === "idle" ||
+    call.status === "fetching-token" ||
+    call.status === "joining";
 
   // Distinct participant count. `call.participants` is the SDK's
   // getAllUser() which ALREADY includes the local user, so the old
@@ -131,32 +153,47 @@ export function CallSurfaceInner({ sessionId, role, userName, onClose, onJoined,
     return ids.size;
   }, [call.participants, call.self]);
 
-  const headerBar = useMemo(() => (
-    <div
-      className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-2"
-      style={{ background: "var(--surface)", borderColor: "var(--border)", color: "var(--text)" }}
-    >
-      <div className="flex items-center gap-2 text-sm font-medium">
-        <span
-          className="inline-block h-2.5 w-2.5 rounded-full"
-          style={{
-            background: call.status === "joined" ? "var(--ok)"
-              : reconnecting ? "var(--warn)"
-              : fatal ? "var(--risk)"
-              : "var(--text-muted)",
-          }}
-        />
-        {call.status === "joined" ? "Live"
-          : reconnecting ? "Reconnecting…"
-          : initialising ? "Joining…"
-          : fatal ? "Connection problem"
-          : "Ended"}
+  const headerBar = useMemo(
+    () => (
+      <div
+        className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-2"
+        style={{
+          background: "var(--surface)",
+          borderColor: "var(--border)",
+          color: "var(--text)",
+        }}
+      >
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <span
+            className="inline-block h-2.5 w-2.5 rounded-full"
+            style={{
+              background:
+                call.status === "joined"
+                  ? "var(--ok)"
+                  : reconnecting
+                    ? "var(--warn)"
+                    : fatal
+                      ? "var(--risk)"
+                      : "var(--text-muted)",
+            }}
+          />
+          {call.status === "joined"
+            ? "Live"
+            : reconnecting
+              ? "Reconnecting…"
+              : initialising
+                ? "Joining…"
+                : fatal
+                  ? "Connection problem"
+                  : "Ended"}
+        </div>
+        <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+          {participantCount} participant{participantCount === 1 ? "" : "s"}
+        </div>
       </div>
-      <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-        {participantCount} participant{participantCount === 1 ? "" : "s"}
-      </div>
-    </div>
-  ), [call.status, participantCount, reconnecting, fatal, initialising]);
+    ),
+    [call.status, participantCount, reconnecting, fatal, initialising]
+  );
 
   return (
     <div
@@ -168,45 +205,46 @@ export function CallSurfaceInner({ sessionId, role, userName, onClose, onJoined,
           area stays visible underneath. */}
       {headerBar}
 
-        <div className="relative flex-1 overflow-hidden">
-          {initialising && (
-            <div
-              className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2"
-              style={{ background: "rgba(0,0,0,0.3)", color: "#fff" }}
-            >
-              <Loader2 size={20} className="animate-spin" />
-              <span className="text-sm">Joining the call…</span>
+      <div className="relative flex-1 overflow-hidden">
+        {initialising && (
+          <div
+            className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2"
+            style={{ background: "rgba(0,0,0,0.3)", color: "#fff" }}
+          >
+            <Loader2 size={20} className="animate-spin" />
+            <span className="text-sm">Joining the call…</span>
+          </div>
+        )}
+        {reconnecting && (
+          <div
+            className="pointer-events-none absolute inset-x-0 top-0 z-20 px-4 py-2 text-center text-xs font-medium"
+            style={{ background: "var(--warn)", color: "#fff" }}
+          >
+            Reconnecting…
+          </div>
+        )}
+        {fatal && (
+          <div
+            className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 px-6 text-center"
+            style={{ background: "rgba(0,0,0,0.6)", color: "#fff" }}
+          >
+            <AlertTriangle size={28} />
+            <div className="text-sm">
+              Couldn&apos;t connect to the video session.
+              <br />
+              <span className="text-[12px] opacity-80">{call.error}</span>
             </div>
-          )}
-          {reconnecting && (
-            <div
-              className="pointer-events-none absolute inset-x-0 top-0 z-20 px-4 py-2 text-center text-xs font-medium"
-              style={{ background: "var(--warn)", color: "#fff" }}
+            <button
+              type="button"
+              onClick={onLeave}
+              className="rounded-md px-4 py-2 text-sm"
+              style={{ background: "var(--primary)", color: "#fff" }}
             >
-              Reconnecting…
-            </div>
-          )}
-          {fatal && (
-            <div
-              className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 px-6 text-center"
-              style={{ background: "rgba(0,0,0,0.6)", color: "#fff" }}
-            >
-              <AlertTriangle size={28} />
-              <div className="text-sm">
-                Couldn&apos;t connect to the video session.<br />
-                <span className="text-[12px] opacity-80">{call.error}</span>
-              </div>
-              <button
-                type="button"
-                onClick={onLeave}
-                className="rounded-md px-4 py-2 text-sm"
-                style={{ background: "var(--primary)", color: "#fff" }}
-              >
-                Close
-              </button>
-            </div>
-          )}
-          {/* ShareViewer is mounted in EXACTLY ONE place across all render
+              Close
+            </button>
+          </div>
+        )}
+        {/* ShareViewer is mounted in EXACTLY ONE place across all render
               modes so its <canvas> / <video> DOM elements (which the Zoom
               SDK is told to draw into via startShareView) persist across
               share-state changes. If we re-mounted it inside conditional
@@ -225,90 +263,92 @@ export function CallSurfaceInner({ sessionId, role, userName, onClose, onJoined,
               sit above (z-index ordering via DOM order, no z classes
               needed since the share takes the full area and tiles take a
               positioned subset). */}
-          <div
-            className="absolute"
+        <div
+          className="absolute"
+          style={{
+            top: 0,
+            bottom: 0,
+            left: 0,
+            right:
+              call.activeShareUserId !== null && !tilesPortalTarget
+                ? "clamp(120px, 18%, 180px)"
+                : 0,
+            visibility: call.activeShareUserId !== null ? "visible" : "hidden",
+          }}
+        >
+          <ShareViewer
+            canvasRef={shareCanvasRef}
+            videoRef={shareVideoRef}
+            activeMode={shareMode}
+            sharerName={sharerName}
+            selfSharing={sharing}
+            onStop={sharing ? () => void call.stopShareScreen() : undefined}
+          />
+        </div>
+
+        {/* Tile arrangements layered above the (possibly-hidden) ShareViewer. */}
+        {call.activeShareUserId !== null && !tilesPortalTarget && (
+          <aside
+            className="absolute overflow-hidden border-l"
             style={{
               top: 0,
               bottom: 0,
-              left: 0,
-              right:
-                call.activeShareUserId !== null && !tilesPortalTarget
-                  ? "clamp(120px, 18%, 180px)"
-                  : 0,
-              visibility: call.activeShareUserId !== null ? "visible" : "hidden",
+              right: 0,
+              width: "clamp(120px, 18%, 180px)",
+              borderColor: "var(--border)",
+              background: "var(--surface)",
             }}
+            aria-label="Participants"
           >
-            <ShareViewer
-              canvasRef={shareCanvasRef}
-              videoRef={shareVideoRef}
-              activeMode={shareMode}
-              sharerName={sharerName}
-              selfSharing={sharing}
-              onStop={sharing ? () => void call.stopShareScreen() : undefined}
+            <TileGrid
+              self={call.self}
+              participants={call.participants}
+              client={call.client}
+              forceStack
             />
-          </div>
-
-          {/* Tile arrangements layered above the (possibly-hidden) ShareViewer. */}
-          {call.activeShareUserId !== null && !tilesPortalTarget && (
-            <aside
-              className="absolute overflow-hidden border-l"
-              style={{
-                top: 0,
-                bottom: 0,
-                right: 0,
-                width: "clamp(120px, 18%, 180px)",
-                borderColor: "var(--border)",
-                background: "var(--surface)",
-              }}
-              aria-label="Participants"
-            >
+          </aside>
+        )}
+        {call.activeShareUserId === null && (
+          <div className="absolute inset-0">
+            {wideTiles ? (
+              // Engineer session view: tiles fill the full width as one
+              // equal-width row at a fixed height — no centred-with-margins
+              // gallery, and height stays put (width-only).
               <TileGrid
                 self={call.self}
                 participants={call.participants}
                 client={call.client}
-                forceStack
+                forceSideBySide
+                // Solo → fill the whole pane; 2+ → fixed-height row.
+                tileHeightPx={inlineTileCount <= 1 ? undefined : 340}
               />
-            </aside>
-          )}
-          {call.activeShareUserId === null && (
-            <div className="absolute inset-0">
-              {wideTiles ? (
-                // Engineer session view: tiles fill the full width as one
-                // equal-width row at a fixed height — no centred-with-margins
-                // gallery, and height stays put (width-only).
-                <TileGrid
-                  self={call.self}
-                  participants={call.participants}
-                  client={call.client}
-                  forceSideBySide
-                  // Solo → fill the whole pane; 2+ → fixed-height row.
-                  tileHeightPx={inlineTileCount <= 1 ? undefined : 340}
-                />
-              ) : (
-                <TileGrid
-                  self={call.self}
-                  participants={call.participants}
-                  client={call.client}
-                  forceStack={compact}
-                  // Customer-side plain call: lock to side-by-side so the
-                  // self-tile + engineer-tile are always both visible. The
-                  // host (engineer) keeps the responsive flip because their
-                  // CallSurface mounts in a thin side rail by default and a
-                  // forced two-column layout there would crush tiles too
-                  // small to read. The customer mounts in the main panel
-                  // (52% width) where two equal columns always fit.
-                  lockSideBySide={role === "guest" && !compact}
-                />
-              )}
-            </div>
-          )}
-        </div>
-        {/* Portal — only mounted when a share is active AND the host has
+            ) : (
+              <TileGrid
+                self={call.self}
+                participants={call.participants}
+                client={call.client}
+                forceStack={compact}
+                // Customer-side plain call: lock to side-by-side so the
+                // self-tile + engineer-tile are always both visible. The
+                // host (engineer) keeps the responsive flip because their
+                // CallSurface mounts in a thin side rail by default and a
+                // forced two-column layout there would crush tiles too
+                // small to read. The customer mounts in the main panel
+                // (52% width) where two equal columns always fit.
+                lockSideBySide={role === "guest" && !compact}
+              />
+            )}
+          </div>
+        )}
+      </div>
+      {/* Portal — only mounted when a share is active AND the host has
             provided a target slot. forceSideBySide puts the participants
             in one horizontal row of equal-width tiles so both are visible
             at once without scroll. Height per tile is 140px; slot below
             in RoomClient is sized to match. */}
-        {tilesPortalTarget && call.activeShareUserId !== null && createPortal(
+      {tilesPortalTarget &&
+        call.activeShareUserId !== null &&
+        createPortal(
           <TileGrid
             self={call.self}
             participants={call.participants}
@@ -316,7 +356,7 @@ export function CallSurfaceInner({ sessionId, role, userName, onClose, onJoined,
             forceSideBySide
             tileHeightPx={140}
           />,
-          tilesPortalTarget,
+          tilesPortalTarget
         )}
 
       <ControlBar

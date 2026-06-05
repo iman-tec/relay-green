@@ -92,7 +92,7 @@ export const POD_MAX_ENGINEERS = 15;
 export function getSupervisorForEngineer(
   engineer: AllocationEngineer,
   _pod: Pod,
-  supervisors: AllocationSupervisor[],
+  supervisors: AllocationSupervisor[]
 ): AllocationSupervisor | null {
   if (supervisors.length === 0) return null;
   // Pass-through: first supervisor owns everyone.
@@ -108,7 +108,7 @@ export function getSupervisorForEngineer(
 export function groupEngineersByPod(
   pods: Pod[],
   engineersByPodId: Record<string, AllocationEngineer[]>,
-  supervisorsByPodId: Record<string, AllocationSupervisor[]>,
+  supervisorsByPodId: Record<string, AllocationSupervisor[]>
 ): PodAllocation[] {
   return pods.map((pod) => ({
     pod,
@@ -124,9 +124,9 @@ export function groupEngineersByPod(
  */
 export function podCapacity(engineers: AllocationEngineer[]): {
   total: number;
-  primary: number;     // engineers in slots 1–10
-  secondary: number;   // engineers in slots 11–15
-  overflow: number;    // engineers beyond 15 (shouldn't happen; surfaced loud if it does)
+  primary: number; // engineers in slots 1–10
+  secondary: number; // engineers in slots 11–15
+  overflow: number; // engineers beyond 15 (shouldn't happen; surfaced loud if it does)
   primaryCap: number;
   totalCap: number;
 } {
@@ -134,7 +134,7 @@ export function podCapacity(engineers: AllocationEngineer[]): {
   const primary = Math.min(total, POD_PRIMARY_SUPERVISOR_CAP);
   const secondary = Math.min(
     Math.max(0, total - POD_PRIMARY_SUPERVISOR_CAP),
-    POD_MAX_ENGINEERS - POD_PRIMARY_SUPERVISOR_CAP,
+    POD_MAX_ENGINEERS - POD_PRIMARY_SUPERVISOR_CAP
   );
   const overflow = Math.max(0, total - POD_MAX_ENGINEERS);
   return {
@@ -160,7 +160,7 @@ export const ONLINE_WINDOW_MS = 5 * 60 * 1000;
 
 export function isOnlineFromLastSeen(
   lastSeen: string | null,
-  options?: { onLiveCall?: boolean; now?: number },
+  options?: { onLiveCall?: boolean; now?: number }
 ): boolean {
   if (options?.onLiveCall) return true;
   if (!lastSeen) return false;

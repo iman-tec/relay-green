@@ -16,16 +16,17 @@ import { NextResponse } from "next/server";
 import { requireSuperAdmin } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 const VALID_ROLES = new Set(["supervisor", "engineer"]);
 
 export async function POST(
   request: Request,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const gate = await requireSuperAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin } = gate;
 
   const { id: podId } = await params;
@@ -37,7 +38,7 @@ export async function POST(
   if (!userId || !podRole || !VALID_ROLES.has(podRole)) {
     return NextResponse.json(
       { error: "Need userId and podRole ('supervisor' or 'engineer')." },
-      { status: 400 },
+      { status: 400 }
     );
   }
 
@@ -65,15 +66,17 @@ export async function POST(
         if (pod?.name) existingPodName = pod.name;
       }
       return NextResponse.json(
-        { error: `This user is already in ${existingPodName}. Remove them from there first.` },
-        { status: 409 },
+        {
+          error: `This user is already in ${existingPodName}. Remove them from there first.`,
+        },
+        { status: 409 }
       );
     }
     // check_violation — bad pod_role
     if (error.code === "23514") {
       return NextResponse.json(
         { error: "Invalid pod role. Must be 'supervisor' or 'engineer'." },
-        { status: 400 },
+        { status: 400 }
       );
     }
     return NextResponse.json({ error: error.message }, { status: 500 });

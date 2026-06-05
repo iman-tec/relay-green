@@ -22,7 +22,7 @@ export default function IntakePage() {
 function IntakeFallback() {
   return (
     <div
-      className="min-h-screen flex items-center justify-center text-sm"
+      className="flex min-h-screen items-center justify-center text-sm"
       style={{ color: "var(--text-muted)" }}
     >
       Loading…

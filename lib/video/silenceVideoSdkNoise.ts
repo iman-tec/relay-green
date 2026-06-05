@@ -25,7 +25,9 @@ export function silenceVideoSdkNoise(): void {
 
   const orig = console.error.bind(console);
   console.error = (...args: unknown[]): void => {
-    const text = args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" ");
+    const text = args
+      .map((a) => (typeof a === "string" ? a : JSON.stringify(a)))
+      .join(" ");
     if (NOISY.some((re) => re.test(text))) {
       console.warn("[zoom-video silenced]", ...args);
       return;

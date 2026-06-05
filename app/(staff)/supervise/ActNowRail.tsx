@@ -766,7 +766,10 @@ function ProjectHistoryPopover({
           </button>
         </div>
         <div className="min-h-0 flex-1">
-          <ProjectAIAssistant projectId={projectId} projectName={projectName ?? undefined} />
+          <ProjectAIAssistant
+            projectId={projectId}
+            projectName={projectName ?? undefined}
+          />
         </div>
       </div>
     </>,

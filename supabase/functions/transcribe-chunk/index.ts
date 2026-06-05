@@ -47,7 +47,7 @@ const SILENCE_HALLUCINATIONS = new Set(
     "subtitles by the amara.org community",
     ".",
     "...",
-  ].map((s) => s.toLowerCase()),
+  ].map((s) => s.toLowerCase())
 );
 
 Deno.serve(async (req) => {
@@ -79,7 +79,7 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
     // Cheap guard against junk session ids: the call must exist. (Also lets us
@@ -89,7 +89,8 @@ Deno.serve(async (req) => {
       .select("id, zoom_meeting_id")
       .eq("id", sessionId)
       .maybeSingle();
-    if (callErr) return json({ error: "lookup_failed", detail: callErr.message }, 500);
+    if (callErr)
+      return json({ error: "lookup_failed", detail: callErr.message }, 500);
     if (!call) return json({ error: "session_not_found" }, 404);
 
     // ── Whisper transcription ─────────────────────────────────────────────

@@ -14,12 +14,15 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-const FOREVER = "876000h";   // ~100 years
-const LIFT    = "none";
+const FOREVER = "876000h"; // ~100 years
+const LIFT = "none";
 
 /** Ban a single auth user; swallow per-user errors so a half-failure
  *  doesn't leak the caller's progress. */
-export async function banUser(admin: SupabaseClient, userId: string): Promise<void> {
+export async function banUser(
+  admin: SupabaseClient,
+  userId: string
+): Promise<void> {
   if (!userId) return;
   const { error } = await admin.auth.admin.updateUserById(userId, {
     ban_duration: FOREVER,
@@ -30,12 +33,18 @@ export async function banUser(admin: SupabaseClient, userId: string): Promise<vo
 }
 
 /** Ban many users in parallel. */
-export async function banUsers(admin: SupabaseClient, ids: readonly string[]): Promise<void> {
+export async function banUsers(
+  admin: SupabaseClient,
+  ids: readonly string[]
+): Promise<void> {
   await Promise.all(ids.filter(Boolean).map((id) => banUser(admin, id)));
 }
 
 /** Lift the ban on a single auth user. */
-export async function unbanUser(admin: SupabaseClient, userId: string): Promise<void> {
+export async function unbanUser(
+  admin: SupabaseClient,
+  userId: string
+): Promise<void> {
   if (!userId) return;
   const { error } = await admin.auth.admin.updateUserById(userId, {
     ban_duration: LIFT,

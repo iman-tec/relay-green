@@ -109,11 +109,7 @@ export function HowItWorks() {
                 fill="var(--green)"
                 opacity="0.18"
               />
-              <circle
-                className="mk-journey-dot"
-                r="11"
-                fill="var(--green)"
-              />
+              <circle className="mk-journey-dot" r="11" fill="var(--green)" />
               <text
                 y="-28"
                 textAnchor="middle"

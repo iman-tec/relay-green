@@ -65,7 +65,7 @@ type EditMode =
 /** Flatten the loose array into plain strings — that's what we save back. */
 function normalize(steps: RawNextStep[]): string[] {
   return steps
-    .map((s) => (typeof s === "string" ? s : s.text ?? s.description ?? ""))
+    .map((s) => (typeof s === "string" ? s : (s.text ?? s.description ?? "")))
     .filter((s) => s.trim().length > 0);
 }
 
@@ -104,7 +104,7 @@ export function EditableSummary({
       else if (next.kind === "newStep") setDraft("");
       setError(null);
     },
-    [title, overview, flatSteps],
+    [title, overview, flatSteps]
   );
 
   const commit = useCallback(async () => {
@@ -156,7 +156,7 @@ export function EditableSummary({
         setSaving(false);
       }
     },
-    [saving, flatSteps, onSave],
+    [saving, flatSteps, onSave]
   );
 
   // ── Render ──────────────────────────────────────────────────────────
@@ -185,7 +185,10 @@ export function EditableSummary({
           placeholder="Session title"
         />
       ) : title ? (
-        <HoverBlock canEdit={canEdit && !disabled} onEdit={() => enterMode({ kind: "title" })}>
+        <HoverBlock
+          canEdit={canEdit && !disabled}
+          onEdit={() => enterMode({ kind: "title" })}
+        >
           <h2
             className="text-xl font-medium"
             style={{
@@ -198,7 +201,8 @@ export function EditableSummary({
           </h2>
         </HoverBlock>
       ) : (
-        canEdit && !disabled && (
+        canEdit &&
+        !disabled && (
           <button
             type="button"
             onClick={() => enterMode({ kind: "title" })}
@@ -226,13 +230,20 @@ export function EditableSummary({
           minRows={4}
         />
       ) : overview ? (
-        <HoverBlock canEdit={canEdit && !disabled} onEdit={() => enterMode({ kind: "overview" })}>
-          <p className="whitespace-pre-wrap text-sm leading-relaxed" style={{ color: "var(--text)" }}>
+        <HoverBlock
+          canEdit={canEdit && !disabled}
+          onEdit={() => enterMode({ kind: "overview" })}
+        >
+          <p
+            className="text-sm leading-relaxed whitespace-pre-wrap"
+            style={{ color: "var(--text)" }}
+          >
             {overview}
           </p>
         </HoverBlock>
       ) : (
-        canEdit && !disabled && (
+        canEdit &&
+        !disabled && (
           <button
             type="button"
             onClick={() => enterMode({ kind: "overview" })}
@@ -248,7 +259,7 @@ export function EditableSummary({
       {(flatSteps.length > 0 || (canEdit && !disabled)) && (
         <div>
           <h3
-            className="mb-2 text-[10px] font-semibold uppercase tracking-wider"
+            className="mb-2 text-[10px] font-semibold tracking-wider uppercase"
             style={{ color: "var(--text-muted)" }}
           >
             Next steps
@@ -257,7 +268,9 @@ export function EditableSummary({
             {flatSteps.map((step, i) =>
               mode.kind === "step" && mode.index === i ? (
                 <li key={i} className="flex gap-2">
-                  <span className="pt-1 text-sm" style={{ color: BRAND_GREEN }}>→</span>
+                  <span className="pt-1 text-sm" style={{ color: BRAND_GREEN }}>
+                    →
+                  </span>
                   <div className="flex-1">
                     <EditField
                       autoFocus
@@ -283,11 +296,13 @@ export function EditableSummary({
                   onEdit={() => enterMode({ kind: "step", index: i })}
                   onDelete={() => void deleteStep(i)}
                 />
-              ),
+              )
             )}
             {mode.kind === "newStep" && (
               <li className="flex gap-2">
-                <span className="pt-1 text-sm" style={{ color: BRAND_GREEN }}>→</span>
+                <span className="pt-1 text-sm" style={{ color: BRAND_GREEN }}>
+                  →
+                </span>
                 <div className="flex-1">
                   <EditField
                     autoFocus
@@ -353,7 +368,7 @@ function HoverBlock({
         type="button"
         onClick={onEdit}
         aria-label="Edit"
-        className="absolute right-0 top-0 rounded-md p-1 opacity-0 transition-opacity hover:bg-black/5 group-hover:opacity-100 focus:opacity-100 dark:hover:bg-white/5"
+        className="absolute top-0 right-0 rounded-md p-1 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black/5 focus:opacity-100 dark:hover:bg-white/5"
         style={{ color: "var(--text-muted)" }}
       >
         <Pencil size={12} />
@@ -381,7 +396,10 @@ function StepRow({
   onDelete: () => void;
 }) {
   return (
-    <li className="group flex items-start gap-2 text-sm" style={{ color: "var(--text)" }}>
+    <li
+      className="group flex items-start gap-2 text-sm"
+      style={{ color: "var(--text)" }}
+    >
       <span style={{ color: BRAND_GREEN }}>→</span>
       <span className="flex-1">{text}</span>
       {canEdit && (
@@ -391,7 +409,7 @@ function StepRow({
             onClick={onEdit}
             disabled={busy}
             aria-label="Edit step"
-            className="rounded p-1 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+            className="rounded p-1 hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
             style={{ color: "var(--text-muted)" }}
           >
             <Pencil size={11} />
@@ -401,7 +419,7 @@ function StepRow({
             onClick={onDelete}
             disabled={busy}
             aria-label="Delete step"
-            className="rounded p-1 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+            className="rounded p-1 hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
             style={{ color: "var(--text-muted)" }}
           >
             <Trash2 size={11} />
@@ -459,7 +477,9 @@ function EditField({
     }
   }, [autoFocus]);
 
-  const onKey = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const onKey = (
+    e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => {
     if (e.key === "Escape") {
       e.preventDefault();
       onCancel();
@@ -473,14 +493,17 @@ function EditField({
     "block w-full rounded-md border bg-transparent px-2 py-1.5 outline-none focus:ring-2";
   const inputColors = {
     borderColor: "var(--border)",
-    ["--tw-ring-color" as string]: "color-mix(in srgb, var(--primary) 35%, transparent)",
+    ["--tw-ring-color" as string]:
+      "color-mix(in srgb, var(--primary) 35%, transparent)",
   } as React.CSSProperties;
 
   return (
     <div className="flex flex-col gap-1.5">
       {multiline ? (
         <textarea
-          ref={(el) => { inputRef.current = el; }}
+          ref={(el) => {
+            inputRef.current = el;
+          }}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={onKey}
@@ -492,7 +515,9 @@ function EditField({
         />
       ) : (
         <input
-          ref={(el) => { inputRef.current = el; }}
+          ref={(el) => {
+            inputRef.current = el;
+          }}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={onKey}
@@ -510,21 +535,27 @@ function EditField({
           className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium disabled:opacity-50"
           style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
         >
-          {saving ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />}
+          {saving ? (
+            <Loader2 size={10} className="animate-spin" />
+          ) : (
+            <Check size={10} />
+          )}
           {saving ? "Saving" : "Save"}
         </button>
         <button
           type="button"
           onClick={onCancel}
           disabled={saving}
-          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
           style={{ color: "var(--text-muted)" }}
         >
           <X size={10} />
           Cancel
         </button>
         <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
-          {multiline ? "Cmd/Ctrl+Enter to save · Esc to cancel" : "Enter to save · Esc to cancel"}
+          {multiline
+            ? "Cmd/Ctrl+Enter to save · Esc to cancel"
+            : "Enter to save · Esc to cancel"}
         </span>
       </div>
     </div>

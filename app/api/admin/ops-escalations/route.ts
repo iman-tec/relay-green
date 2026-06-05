@@ -14,29 +14,52 @@ import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 export async function GET() {
   const supabase = await createServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
-  const { data: roleRows } = await supabase.from("user_role_names").select("role").eq("user_id", user.id);
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user)
+    return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
+  const { data: roleRows } = await supabase
+    .from("user_role_names")
+    .select("role")
+    .eq("user_id", user.id);
   const roles = (roleRows ?? []).map((r: { role: string }) => r.role);
-  if (!roles.includes(ROLE.super_admin)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  if (!roles.includes(ROLE.super_admin))
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return NextResponse.json({ error: "service_role_not_configured" }, { status: 500 });
-  const admin = createAdminClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+  if (!url || !key)
+    return NextResponse.json(
+      { error: "service_role_not_configured" },
+      { status: 500 }
+    );
+  const admin = createAdminClient(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 
   const { data: rows } = await admin
     .from("session_escalations")
-    .select("id, session_id, engineer_user_id, reason, note, created_at, ops_escalated_at")
+    .select(
+      "id, session_id, engineer_user_id, reason, note, created_at, ops_escalated_at"
+    )
     .eq("status", "open")
     .not("ops_escalated_at", "is", null)
     .order("ops_escalated_at", { ascending: true })
     .limit(50);
-  const escs = (rows ?? []) as { id: string; session_id: string; engineer_user_id: string; reason: string; note: string | null; created_at: string; ops_escalated_at: string }[];
+  const escs = (rows ?? []) as {
+    id: string;
+    session_id: string;
+    engineer_user_id: string;
+    reason: string;
+    note: string | null;
+    created_at: string;
+    ops_escalated_at: string;
+  }[];
   if (escs.length === 0) return NextResponse.json({ escalations: [] });
 
   const engIds = [...new Set(escs.map((e) => e.engineer_user_id))];
@@ -46,9 +69,11 @@ export async function GET() {
     admin.from("guest_calls").select("id, guest_name").in("id", sessIds),
   ]);
   const nameById = new Map<string, string>();
-  for (const p of (profs ?? []) as { id: string; full_name: string | null }[]) if (p.full_name) nameById.set(p.id, p.full_name);
+  for (const p of (profs ?? []) as { id: string; full_name: string | null }[])
+    if (p.full_name) nameById.set(p.id, p.full_name);
   const custBySession = new Map<string, string>();
-  for (const s of (sess ?? []) as { id: string; guest_name: string | null }[]) if (s.guest_name) custBySession.set(s.id, s.guest_name);
+  for (const s of (sess ?? []) as { id: string; guest_name: string | null }[])
+    if (s.guest_name) custBySession.set(s.id, s.guest_name);
 
   return NextResponse.json({
     escalations: escs.map((e) => ({

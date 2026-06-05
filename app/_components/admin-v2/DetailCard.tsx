@@ -24,12 +24,12 @@ export function DetailCard({
   actions,
   footerHint,
 }: {
-  title:    string;
+  title: string;
   subtitle?: string;
   /** Deprecated: reseller/enterprise/department codes are no longer surfaced
    *  in the UI. Prop kept so existing callers compile; it is not rendered. */
-  code?:    string;
-  badges?:  readonly Badge[];
+  code?: string;
+  badges?: readonly Badge[];
   description?: string;
   minutes?: { used: number; allocated: number } | null;
   /** e.g. "sum of 4 departments" — displayed under the minutes bar. */
@@ -44,13 +44,13 @@ export function DetailCard({
       className="flex flex-col gap-4 rounded-lg border p-5"
       style={{
         borderColor: "var(--border)",
-        background:  "var(--surface)",
+        background: "var(--surface)",
       }}
     >
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <h2
-            className="truncate text-lg font-semibold leading-tight"
+            className="truncate text-lg leading-tight font-semibold"
             style={{ color: "var(--text)" }}
           >
             {title}
@@ -64,18 +64,27 @@ export function DetailCard({
             ))}
           </div>
         </div>
-        {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+        {actions && (
+          <div className="flex shrink-0 items-center gap-2">{actions}</div>
+        )}
       </div>
 
       {description && (
-        <p className="text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
+        <p
+          className="text-sm leading-relaxed"
+          style={{ color: "var(--text-muted)" }}
+        >
           {description}
         </p>
       )}
 
       {minutes && (
         <div className="flex flex-col gap-2">
-          <MinutesBar used={minutes.used} allocated={minutes.allocated} size="md" />
+          <MinutesBar
+            used={minutes.used}
+            allocated={minutes.allocated}
+            size="md"
+          />
           {rollupCaption && (
             <p className="text-xs" style={{ color: "var(--text-muted)" }}>
               {rollupCaption}
@@ -94,11 +103,26 @@ export function DetailCard({
 }
 
 function BadgePill({ label, tone = "neutral" }: Badge) {
-  const tones: Record<NonNullable<Badge["tone"]>, { fg: string; bg: string }> = {
-    neutral: { fg: "var(--text-muted)", bg: "color-mix(in srgb, var(--text-muted) 14%, transparent)" },
-    success: { fg: "#3dcb7e",            bg: "color-mix(in srgb, #3dcb7e 14%, transparent)" },
-    warning: { fg: "#d4a014",            bg: "color-mix(in srgb, #d4a014 14%, transparent)" },
-    danger:  { fg: "var(--primary)",     bg: "color-mix(in srgb, var(--primary) 14%, transparent)" },
+  const tones: Record<
+    NonNullable<Badge["tone"]>,
+    { fg: string; bg: string }
+  > = {
+    neutral: {
+      fg: "var(--text-muted)",
+      bg: "color-mix(in srgb, var(--text-muted) 14%, transparent)",
+    },
+    success: {
+      fg: "#3dcb7e",
+      bg: "color-mix(in srgb, #3dcb7e 14%, transparent)",
+    },
+    warning: {
+      fg: "#d4a014",
+      bg: "color-mix(in srgb, #d4a014 14%, transparent)",
+    },
+    danger: {
+      fg: "var(--primary)",
+      bg: "color-mix(in srgb, var(--primary) 14%, transparent)",
+    },
   };
   const t = tones[tone];
   return (

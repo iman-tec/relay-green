@@ -31,6 +31,7 @@ import {
   Phone,
   X,
   PhoneOff,
+  Menu,
   MessageSquare,
   Lock,
   AlertTriangle,
@@ -134,14 +135,17 @@ import { IntakeAssistant } from "@/app/_components/intake/IntakeAssistant";
 import { GlobalNewChatModal } from "@/app/_components/GlobalNewChatModal";
 import { EditableSummary } from "@/app/_components/EditableSummary";
 import { QuoteRequestModal } from "@/app/_components/QuoteRequestModal";
-import { ContractManagement } from "@/app/_components/ContractManagement";
-import { ScheduledCallsPill } from "@/app/_components/ScheduledCallsPill";
+// (ContractManagement + ScheduledCallsPill imports removed — those sidebar
+// pills were relocated to the center header strip as icon buttons; see
+// CenterHeaderActions.)
 import { ProjectsCenterView } from "@/app/_components/ProjectsCenterView";
 import { CenterPaneShell } from "@/app/_components/CenterPaneShell";
 import { ScheduledCenterView } from "@/app/_components/ScheduledCenterView";
 import { ContractsCenterView } from "@/app/_components/ContractsCenterView";
 import { NotificationBell } from "@/app/_components/NotificationBell";
 import { useRingtone } from "@/lib/relay/useRingtone";
+import { useIsDesktop } from "@/lib/relay/useIsDesktop";
+import { useOverlayDismiss } from "@/lib/relay/useOverlayDismiss";
 import type {
   GuestCall,
   GuestMessage,
@@ -625,35 +629,53 @@ export function RoomClient() {
   const handleBusyClose = useCallback(() => {
     setQueueTimedOut(false);
   }, []);
-  // Mobile-only state. A FAB opens the chat panel as a bottom sheet.
-  // Desktop layout is untouched (md:flex on the in-flow panel).
-  const [mobileChatOpen, setMobileChatOpen] = useState(false);
-
-  // Track the visual viewport so the mobile chat sheet can sit in the space
-  // ABOVE the on-screen keyboard. On iOS a fixed bottom:0 sheet otherwise
-  // hides behind the keyboard, burying the composer + Send button. We
-  // bottom-anchor the sheet to the VISIBLE viewport: normally it's ~85% tall
-  // (leaving a gap at the top), but when the keyboard shrinks the viewport it
-  // fills the available space so the composer stays reachable. Falls back to
-  // a static bottom sheet when the API is unavailable.
-  const [chatSheetVV, setChatSheetVV] = useState<{ top: number; height: number } | null>(null);
-  const [sheetDragY, setSheetDragY] = useState(0);
-  const sheetDragStart = useRef<number | null>(null);
+  // ── Off-canvas drawers (<lg only) ────────────────────────────────────────
+  // Below the lg breakpoint the Sidebar and the chat stub become off-canvas
+  // drawers — BOTH CLOSED BY DEFAULT so the center hero is the landing
+  // surface. Opened from the header's hamburger / chat icons; only one can
+  // be open at a time (opening one replaces the other). Desktop ≥lg is
+  // untouched: the columns render in-flow and this state stays null.
+  const isDesktop = useIsDesktop();
+  const [openDrawer, setOpenDrawer] = useState<null | "sidebar" | "chat">(null);
+  const closeDrawer = useCallback(() => setOpenDrawer(null), []);
+  // Crossing up to desktop dissolves any open drawer so stale drawer state
+  // can never distort the lg layout.
   useEffect(() => {
-    if (!mobileChatOpen) {
+    if (isDesktop) setOpenDrawer(null);
+  }, [isDesktop]);
+  // Focus trap + Esc + body-scroll lock + focus restore — the same overlay
+  // plumbing the app's hand-rolled modals use.
+  const sidebarDrawerRef = useOverlayDismiss<HTMLDivElement>(
+    closeDrawer,
+    !isDesktop && openDrawer === "sidebar"
+  );
+  const chatDrawerRef = useOverlayDismiss<HTMLDivElement>(
+    closeDrawer,
+    !isDesktop && openDrawer === "chat"
+  );
+  // Swipe-to-close (touch): horizontal delta tracked on the drawer itself.
+  const swipeStartX = useRef<number | null>(null);
+
+  // Track the visual viewport so the chat drawer's composer sits in the
+  // space ABOVE the on-screen keyboard. On iOS a fixed full-height panel
+  // otherwise hides the composer behind the keyboard. Falls back to a
+  // static 100dvh drawer when the API is unavailable.
+  const [chatSheetVV, setChatSheetVV] = useState<{
+    top: number;
+    height: number;
+  } | null>(null);
+  useEffect(() => {
+    if (openDrawer !== "chat") {
       setChatSheetVV(null);
-      setSheetDragY(0);
       return;
     }
     const vv = typeof window !== "undefined" ? window.visualViewport : null;
     if (!vv) return;
     const apply = () => {
-      // Desired height leaves a ~15% gap at the top when there's room; the
-      // keyboard-shrunk viewport caps it so nothing spills under the keyboard.
-      const desired = Math.round(window.innerHeight * 0.85);
-      const height = Math.min(desired, vv.height);
-      const top = Math.round(vv.offsetTop + vv.height - height);
-      setChatSheetVV({ top, height });
+      setChatSheetVV({
+        top: Math.round(vv.offsetTop),
+        height: Math.round(vv.height),
+      });
     };
     apply();
     vv.addEventListener("resize", apply);
@@ -662,7 +684,7 @@ export function RoomClient() {
       vv.removeEventListener("resize", apply);
       vv.removeEventListener("scroll", apply);
     };
-  }, [mobileChatOpen]);
+  }, [openDrawer]);
   useEffect(() => {
     if (newChatParam === "1") {
       setAsyncChatMode(true);
@@ -1334,6 +1356,8 @@ export function RoomClient() {
   // can't be selected (handled at the sidebar level).
   const handleSelectProject = useCallback((projectId: string | null) => {
     setSelectedProjectId((prev) => (prev === projectId ? null : projectId));
+    // Mobile: picking a project is a destination — dismiss the drawer.
+    setOpenDrawer(null);
     // Sidebar navigation exits any open center view (Contract Management /
     // Scheduled / Projects) — clicking a project while a center view was
     // up previously changed state invisibly behind it.
@@ -1347,6 +1371,43 @@ export function RoomClient() {
     setPreparingProjectId(null);
     setPreparingDraftId(null);
   }, []);
+
+  // Persist the last project the customer was in (localStorage, client-only
+  // per product decision) so the next landing pre-selects it. Watching
+  // selectedProjectId catches EVERY selection path — sidebar row click,
+  // session start in a project, picker confirm — without touching each
+  // handler. Deselects (null) intentionally don't clear the key: "last
+  // project" should survive a temporary deselect.
+  useEffect(() => {
+    if (!selectedProjectId) return;
+    try {
+      localStorage.setItem("relay:lastProjectId", selectedProjectId);
+    } catch {
+      /* private mode / quota — non-fatal */
+    }
+  }, [selectedProjectId]);
+
+  // Restore on landing: once projects have loaded, pre-select the stored
+  // last project — unless the user already picked one this visit or an
+  // active session owns the context. One-shot per mount; validates the
+  // stored id still exists (project may have been deleted elsewhere).
+  const restoredLastProjectRef = useRef(false);
+  useEffect(() => {
+    if (restoredLastProjectRef.current) return;
+    if (projects.length === 0) return;
+    restoredLastProjectRef.current = true;
+    if (selectedProjectId) return;
+    const s = state.session;
+    if (s && !["ended", "cancelled", "abandoned"].includes(s.status)) return;
+    try {
+      const stored = localStorage.getItem("relay:lastProjectId");
+      if (stored && projects.some((p) => p.id === stored)) {
+        setSelectedProjectId(stored);
+      }
+    } catch {
+      /* unreadable storage — land unselected, same as before */
+    }
+  }, [projects, selectedProjectId, state.session]);
 
   // ── Stable handlers for the Sidebar / MainPane subtrees ──────────────────
   // Wrapping every child-bound callback in useCallback so React.memo on
@@ -1366,6 +1427,8 @@ export function RoomClient() {
   const handleViewPast = useCallback((id: string | null) => {
     setViewingPastId(id);
     if (id) setProjectFormOpen(false);
+    // Mobile: opening a past session is a destination — dismiss the drawer.
+    setOpenDrawer(null);
     // Sidebar navigation exits any open center view.
     setCenterView(null);
     // Opening / closing a past session: leave any side-track view behind.
@@ -1700,6 +1763,15 @@ export function RoomClient() {
       setPreparingProjectId((prev) => (prev === projectId ? null : prev));
       setPreparingDraftId(null);
       setDeleteProjectTarget(null);
+      // Deleted project can't be the "last project" anymore — drop the
+      // landing pre-select key so the next visit doesn't chase a ghost.
+      try {
+        if (localStorage.getItem("relay:lastProjectId") === projectId) {
+          localStorage.removeItem("relay:lastProjectId");
+        }
+      } catch {
+        /* swallow */
+      }
       bumpDrafts();
       await refetchProjects();
       // Force Sidebar to re-fetch its `past` sessions so any rows that
@@ -1724,6 +1796,7 @@ export function RoomClient() {
     setLegalView(null);
     setViewingPastId(null);
     setProjectFormOpen(false);
+    setOpenDrawer(null);
     setSelectedProjectId(null);
     setPendingDraft(null);
     setPreparingProjectId(null);
@@ -1939,11 +2012,67 @@ export function RoomClient() {
       className="flex h-screen w-screen overflow-hidden"
       style={{ backgroundColor: "var(--background)", color: "var(--text)" }}
     >
-      {/* Sidebar — visible at every breakpoint. Its own collapse toggle
-          (the PanelLeft icon in the brand row) shrinks it to a 48px icon
-          rail on narrow screens, which replaces the old below-md hamburger
-          + slide-in drawer (that drawer was the source of the click error). */}
-      <div className="flex">
+      {/* Drawer scrim (<lg) — shared by whichever drawer is open. Sits at
+          the same z layer as the drawers; DOM order keeps it underneath. */}
+      {openDrawer !== null && !isDesktop && (
+        <div
+          aria-hidden
+          onClick={closeDrawer}
+          className="fixed inset-0 z-[var(--z-drawer)] lg:hidden"
+          style={{
+            backgroundColor: "var(--scrim)",
+            backdropFilter: "blur(2px)",
+          }}
+        />
+      )}
+
+      {/* Sidebar — in-flow column at ≥lg (unchanged desktop layout). Below
+          lg it becomes an off-canvas LEFT drawer, CLOSED BY DEFAULT — the
+          hamburger in the center header opens it; backdrop tap, swipe-left,
+          Esc, the floating ×, or selecting a project closes it. ONE mounted
+          instance either way, so its subscriptions/modals never duplicate.
+          (Width override: the aside carries an inline resizable width —
+          the !w-full arbitrary variant beats it inside the drawer.) */}
+      <div
+        ref={sidebarDrawerRef}
+        role={!isDesktop && openDrawer === "sidebar" ? "dialog" : undefined}
+        aria-modal={!isDesktop && openDrawer === "sidebar" ? true : undefined}
+        aria-label="Projects"
+        onTouchStart={(e) => {
+          swipeStartX.current = e.touches[0]?.clientX ?? null;
+        }}
+        onTouchEnd={(e) => {
+          if (swipeStartX.current == null) return;
+          const dx =
+            (e.changedTouches[0]?.clientX ?? swipeStartX.current) -
+            swipeStartX.current;
+          swipeStartX.current = null;
+          if (dx < -60) closeDrawer(); // swipe-left closes the left drawer
+        }}
+        className={cn(
+          "lg:static lg:z-auto lg:flex lg:h-auto lg:w-auto lg:shadow-none",
+          openDrawer === "sidebar"
+            ? "fixed inset-y-0 left-0 z-[var(--z-drawer)] flex h-dvh w-[min(85vw,320px)] shadow-2xl motion-safe:animate-[relay-drawer-in-left_200ms_ease-out] [&>aside]:!w-full"
+            : "hidden lg:flex"
+        )}
+      >
+        {/* Floating close — pinned just outside the drawer's right edge so
+            it never collides with the sidebar's own header controls. */}
+        {!isDesktop && openDrawer === "sidebar" && (
+          <button
+            type="button"
+            onClick={closeDrawer}
+            aria-label="Close projects"
+            className="absolute top-3 -right-13 z-10 flex size-11 items-center justify-center rounded-full border shadow-lg lg:hidden"
+            style={{
+              backgroundColor: "var(--surface)",
+              borderColor: "var(--border)",
+              color: "var(--text-muted)",
+            }}
+          >
+            <X size={18} />
+          </button>
+        )}
         <Sidebar
           email={sidebarEmail}
           customerUserId={sidebarCustomerUserId}
@@ -2065,85 +2194,102 @@ export function RoomClient() {
                 {centerView ? (
                   <div className="flex h-full w-full">
                     <div className="relative min-w-0 flex-1 overflow-hidden">
+                      <div className="absolute top-3 left-4 z-30 lg:hidden">
+                        <HeaderHamburger
+                          onClick={() => setOpenDrawer("sidebar")}
+                        />
+                      </div>
                       <div className="absolute top-3 right-4 z-30">
-                        <NotificationBell
+                        <CenterHeaderActions
                           customerUserId={sidebarCustomerUserId}
+                          showContracts={!employment?.isEmployee}
+                          onOpenScheduled={() => setCenterView("scheduled")}
+                          onOpenContracts={() => setCenterView("contracts")}
+                          onOpenChat={() => setOpenDrawer("chat")}
                         />
                       </div>
                       {centerView === "projects" ? (
-                  <ProjectsCenterView
-                    projects={projects}
-                    customerUserId={sidebarCustomerUserId}
-                    hasActiveSession={
-                      !!state.session &&
-                      !["ended", "cancelled", "abandoned"].includes(
-                        state.session.status
-                      )
-                    }
-                    onSelectProject={(id) => handleSelectProject(id)}
-                    onViewPast={(id) => {
-                      handleViewPast(id);
-                      setCenterView(null);
-                    }}
-                    onNewProject={() => setCenterView(null)}
-                    onReturnToCall={() => {
-                      setCenterView(null);
-                      setCallOpen(true);
-                    }}
-                    onClose={() => setCenterView(null)}
-                  />
-                ) : centerView === "scheduled" ? (
-                  <CenterPaneShell
-                    title="Scheduled Calls"
-                    hasActiveSession={
-                      !!state.session &&
-                      !["ended", "cancelled", "abandoned"].includes(
-                        state.session.status
-                      )
-                    }
-                    onReturnToCall={() => {
-                      setCenterView(null);
-                      setCallOpen(true);
-                    }}
-                    onClose={() => setCenterView(null)}
-                  >
-                    <ScheduledCenterView customerUserId={sidebarCustomerUserId} />
-                  </CenterPaneShell>
-                ) : (
-                  <CenterPaneShell
-                    title="Contract Management"
-                    hasActiveSession={
-                      !!state.session &&
-                      !["ended", "cancelled", "abandoned"].includes(
-                        state.session.status
-                      )
-                    }
-                    onReturnToCall={() => {
-                      setCenterView(null);
-                      setCallOpen(true);
-                    }}
-                    onClose={() => setCenterView(null)}
-                  >
-                    <ContractsCenterView customerUserId={sidebarCustomerUserId} />
-                  </CenterPaneShell>
+                        <ProjectsCenterView
+                          projects={projects}
+                          customerUserId={sidebarCustomerUserId}
+                          hasActiveSession={
+                            !!state.session &&
+                            !["ended", "cancelled", "abandoned"].includes(
+                              state.session.status
+                            )
+                          }
+                          onSelectProject={(id) => handleSelectProject(id)}
+                          onViewPast={(id) => {
+                            handleViewPast(id);
+                            setCenterView(null);
+                          }}
+                          onNewProject={() => setCenterView(null)}
+                          onReturnToCall={() => {
+                            setCenterView(null);
+                            setCallOpen(true);
+                          }}
+                          onClose={() => setCenterView(null)}
+                        />
+                      ) : centerView === "scheduled" ? (
+                        <CenterPaneShell
+                          title="Scheduled Calls"
+                          hasActiveSession={
+                            !!state.session &&
+                            !["ended", "cancelled", "abandoned"].includes(
+                              state.session.status
+                            )
+                          }
+                          onReturnToCall={() => {
+                            setCenterView(null);
+                            setCallOpen(true);
+                          }}
+                          onClose={() => setCenterView(null)}
+                        >
+                          <ScheduledCenterView
+                            customerUserId={sidebarCustomerUserId}
+                          />
+                        </CenterPaneShell>
+                      ) : (
+                        <CenterPaneShell
+                          title="Contract Management"
+                          hasActiveSession={
+                            !!state.session &&
+                            !["ended", "cancelled", "abandoned"].includes(
+                              state.session.status
+                            )
+                          }
+                          onReturnToCall={() => {
+                            setCenterView(null);
+                            setCallOpen(true);
+                          }}
+                          onClose={() => setCenterView(null)}
+                        >
+                          <ContractsCenterView
+                            customerUserId={sidebarCustomerUserId}
+                          />
+                        </CenterPaneShell>
                       )}
                     </div>
-                    <ChatPanelStub
-                      sidebarCollapsed={centerChatCollapsed}
-                      onToggleCollapsed={() =>
-                        setCenterChatCollapsed((v) => !v)
-                      }
-                      session={state.session ?? undefined}
-                      scopeKey={selectedProjectId || "general"}
-                      projects={projects.map((p) => ({
-                        id: p.id,
-                        name: p.name,
-                      }))}
-                      onSelectProject={handleSelectProject}
-                      onStartCall={() =>
-                        handleConnectEngineer(selectedProjectId)
-                      }
-                    />
+                    {/* In-flow chat rail — ≥lg only; below lg the header's
+                        chat icon opens the off-canvas drawer instead. */}
+                    <div className="hidden min-h-0 lg:flex">
+                      <ChatPanelStub
+                        sidebarCollapsed={centerChatCollapsed}
+                        onToggleCollapsed={() =>
+                          setCenterChatCollapsed((v) => !v)
+                        }
+                        session={state.session ?? undefined}
+                        scopeKey={selectedProjectId || "general"}
+                        projects={projects.map((p) => ({
+                          id: p.id,
+                          name: p.name,
+                        }))}
+                        onSelectProject={handleSelectProject}
+                        onStartCall={() =>
+                          handleConnectEngineer(selectedProjectId)
+                        }
+                      />
+                    </div>
                   </div>
                 ) : asyncChatMode ? (
                   <AsyncChatPane
@@ -2180,6 +2326,9 @@ export function RoomClient() {
                     onClosePrepare={handleClosePrepare}
                     onDraftsChanged={bumpDrafts}
                     homeNonce={homeNonce}
+                    onOpenCenter={setCenterView}
+                    onOpenSidebarDrawer={() => setOpenDrawer("sidebar")}
+                    onOpenChatDrawer={() => setOpenDrawer("chat")}
                   />
                 )}
               </main>
@@ -2310,116 +2459,56 @@ export function RoomClient() {
       {/* ScheduleEngineerModal is mounted inside Sidebar since the schedule
           target state lives there (driven by the connect-flow modal). */}
 
-      {/* Mobile chat FAB — bottom-right circular button. Opens the
-          ChatPanelStub as a slide-up sheet (~80vh). Only shown when
-          there's no active live session UI taking over the screen
-          (we don't want to overlap the in-call chrome). Hidden at
-          md+ since the chat panel is already in-flow on desktop. */}
-      {!asyncChatMode && (
-        <button
-          type="button"
-          onClick={() => setMobileChatOpen(true)}
-          aria-label="Open chat"
-          className="fixed right-4 bottom-4 z-30 flex h-12 w-12 items-center justify-center rounded-full shadow-lg transition-transform hover:scale-105 md:hidden"
-          style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+      {/* Chat — off-canvas RIGHT drawer (<lg), opened from the header's
+          chat icon (the old FAB + bottom sheet are retired). Keyboard-aware
+          via VisualViewport so the composer stays above the on-screen
+          keyboard; safe-area padded for the home indicator. Re-uses
+          ChatPanelStub: its outer aside is `hidden md:flex`, so the wrapper
+          force-mounts it with the !flex / !w-full arbitrary variants. */}
+      {openDrawer === "chat" && !isDesktop && (
+        <div
+          ref={chatDrawerRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Chat"
+          onTouchStart={(e) => {
+            swipeStartX.current = e.touches[0]?.clientX ?? null;
+          }}
+          onTouchEnd={(e) => {
+            if (swipeStartX.current == null) return;
+            const dx =
+              (e.changedTouches[0]?.clientX ?? swipeStartX.current) -
+              swipeStartX.current;
+            swipeStartX.current = null;
+            if (dx > 60) closeDrawer(); // swipe-right closes the right drawer
+          }}
+          className="fixed right-0 z-[var(--z-drawer)] flex w-[min(95vw,420px)] flex-col shadow-2xl motion-safe:animate-[relay-drawer-in-right_200ms_ease-out] sm:w-[380px] lg:hidden"
+          style={{
+            backgroundColor: "var(--surface)",
+            paddingBottom: "env(safe-area-inset-bottom)",
+            ...(chatSheetVV
+              ? { top: chatSheetVV.top, height: chatSheetVV.height }
+              : { top: 0, height: "100dvh" }),
+          }}
         >
-          <MessageCircle size={20} />
-        </button>
-      )}
-
-      {/* Mobile chat bottom sheet. Re-uses ChatPanelStub so the stub
-          composer (paperclip + dictate + record + send) gets the
-          same behavior as desktop. The sheet wrapper provides the
-          slide-up affordance + scrim + close handle. */}
-      {mobileChatOpen && (
-        <>
-          <div
-            className="fixed inset-0 z-[var(--z-drawer)] md:hidden"
-            style={{ backgroundColor: "var(--scrim)" }}
-            onClick={() => setMobileChatOpen(false)}
-          />
-          <div
-            className={cn(
-              "fixed inset-x-0 z-[var(--z-drawer)] flex flex-col rounded-t-2xl shadow-2xl md:hidden",
-              sheetDragY === 0 && "transition-transform duration-150"
-            )}
-            style={{
-              backgroundColor: "var(--surface)",
-              transform: sheetDragY ? `translateY(${sheetDragY}px)` : undefined,
-              // Bottom-anchored to the visible viewport (keyboard-aware);
-              // fall back to a static 85vh bottom sheet without the API.
-              ...(chatSheetVV
-                ? { top: chatSheetVV.top, height: chatSheetVV.height, bottom: "auto" }
-                : { bottom: 0, height: "85vh" }),
-            }}
-          >
-            {/* Grab bar — tap OR drag-down to minimise the sheet. Generous
-                hit area so it's easy to catch on touch. No separate X: the
-                grab bar (and the panel toggle inside the chat) close it. */}
-            <button
-              type="button"
-              aria-label="Minimise chat"
-              title="Minimise"
-              className="flex w-full shrink-0 touch-none items-center justify-center border-b py-3"
-              style={{ borderColor: "var(--border)" }}
-              onPointerDown={(e) => {
-                sheetDragStart.current = e.clientY;
-                e.currentTarget.setPointerCapture?.(e.pointerId);
+          <div className="relative flex min-h-0 flex-1 [&>aside]:!flex [&>aside]:!w-full [&>aside]:!border-l-0">
+            <ChatPanelStub
+              sidebarCollapsed={false}
+              onToggleCollapsed={closeDrawer}
+              session={state.session}
+              scopeKey={
+                state.session?.project_id || selectedProjectId || "general"
+              }
+              enableResize={false}
+              projects={projects.map((p) => ({ id: p.id, name: p.name }))}
+              onSelectProject={handleSelectProject}
+              onStartCall={() => {
+                closeDrawer();
+                handleConnectEngineer(selectedProjectId);
               }}
-              onPointerMove={(e) => {
-                if (sheetDragStart.current == null) return;
-                setSheetDragY(Math.max(0, e.clientY - sheetDragStart.current));
-              }}
-              onPointerUp={() => {
-                if (sheetDragStart.current == null) return;
-                const dy = sheetDragY;
-                sheetDragStart.current = null;
-                // A tap (no real movement) or a drag past the threshold both
-                // dismiss; a short drag snaps back.
-                if (dy < 6 || dy > 90) setMobileChatOpen(false);
-                else setSheetDragY(0);
-              }}
-              onPointerCancel={() => {
-                sheetDragStart.current = null;
-                setSheetDragY(0);
-              }}
-            >
-              <span
-                aria-hidden
-                className="h-1 w-10 rounded-full"
-                style={{
-                  backgroundColor: "var(--border-strong, var(--border))",
-                }}
-              />
-            </button>
-            {/* The stub is normally hidden on mobile (via the md:flex
-                class on its own outer aside). We need to FORCE it
-                visible inside the sheet — wrapping with a div that
-                resets the hidden state via an inline className mod
-                isn't possible from outside, so we just bypass the
-                hidden class by mounting ChatPanelStub here in a
-                container that's always-flex. ChatPanelStub's outer
-                aside has `hidden md:flex`; the wrapper class below
-                gives it `flex` via the !flex utility. */}
-            <div className="relative flex min-h-0 flex-1 [&>aside]:!flex">
-              <ChatPanelStub
-                sidebarCollapsed={false}
-                onToggleCollapsed={() => setMobileChatOpen(false)}
-                session={state.session}
-                scopeKey={
-                  state.session?.project_id || selectedProjectId || "general"
-                }
-                enableResize={false}
-                projects={projects.map((p) => ({ id: p.id, name: p.name }))}
-                onSelectProject={handleSelectProject}
-                onStartCall={() => {
-                  setMobileChatOpen(false);
-                  handleConnectEngineer(selectedProjectId);
-                }}
-              />
-            </div>
+            />
           </div>
-        </>
+        </div>
       )}
     </div>
   );
@@ -2486,6 +2575,9 @@ const MainPane = memo(function MainPane({
   onClosePrepare,
   onDraftsChanged,
   homeNonce,
+  onOpenCenter,
+  onOpenSidebarDrawer,
+  onOpenChatDrawer,
 }: {
   state: ReturnType<typeof useCustomerSession>;
   accepted: boolean;
@@ -2549,6 +2641,12 @@ const MainPane = memo(function MainPane({
    *  review state lives inside this component and the parent's
    *  handleGoHome can't reach it directly. */
   homeNonce: number;
+  /** Open a full center-pane view — drives the landing header's
+   *  Scheduled / Contracts icon buttons (relocated from the sidebar). */
+  onOpenCenter: (view: "scheduled" | "contracts") => void;
+  /** <lg drawer triggers for the landing header (hamburger / chat icon). */
+  onOpenSidebarDrawer: () => void;
+  onOpenChatDrawer: () => void;
 }) {
   const session = state.session;
 
@@ -2708,6 +2806,11 @@ const MainPane = memo(function MainPane({
         projects={projects}
         onSelectProject={onSelectProject}
         onConnectEngineer={() => onConnectEngineer(selectedProjectId)}
+        showContracts={!employment?.isEmployee}
+        onOpenScheduled={() => onOpenCenter("scheduled")}
+        onOpenContracts={() => onOpenCenter("contracts")}
+        onOpenSidebarDrawer={onOpenSidebarDrawer}
+        onOpenChatDrawer={onOpenChatDrawer}
       />
     );
   }
@@ -2731,6 +2834,195 @@ const MainPane = memo(function MainPane({
 //  favor of inline, chrome-light rendering directly in BrandedLanding
 //  so the page reads less like a dashboard widget and more like a
 //  polished spec page.)
+
+// ── Center header actions ───────────────────────────────────────────────────
+// Scheduled-calls + Contract-management entry points, relocated from the
+// sidebar's bottom pills into the center column's top strip — right side,
+// before the notification bell. Labeled pills (icon + name + live count
+// badge) matching the reference design; each control is separated by a
+// very thin 1px vertical rule (rgba(255,255,255,0.07), ~18px tall,
+// vertically centered) so the strip reads as one quiet cluster.
+function HeaderPill({
+  icon,
+  label,
+  count,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  count: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={`${label}${count > 0 ? ` (${count})` : ""}`}
+      // <lg the label collapses (icon + count badge only) and the hit area
+      // grows to ≥44px for touch; ≥lg is the unchanged labeled pill.
+      className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 transition-colors hover:bg-black/5 max-lg:min-h-11 max-lg:min-w-11 max-lg:justify-center max-lg:px-2.5 dark:hover:bg-white/5"
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface)",
+      }}
+    >
+      <span style={{ color: "var(--primary)" }}>{icon}</span>
+      <span
+        className="hidden text-[12px] leading-none font-semibold lg:inline"
+        style={{ color: "var(--text)" }}
+      >
+        {label}
+      </span>
+      {count > 0 && (
+        <span
+          className="inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-bold tabular-nums"
+          style={{ backgroundColor: "var(--primary)", color: "#fff" }}
+        >
+          {count > 99 ? "99+" : count}
+        </span>
+      )}
+    </button>
+  );
+}
+
+// Hamburger for the <lg header — opens the sidebar drawer. Rendered by the
+// same surfaces that mount CenterHeaderActions, pinned top-LEFT (the
+// actions cluster owns the top-right). Hidden ≥lg where the sidebar is an
+// in-flow column.
+function HeaderHamburger({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title="Projects"
+      aria-label="Open projects"
+      className="flex size-11 items-center justify-center rounded-full border shadow-sm transition-colors hover:bg-black/5 lg:hidden dark:hover:bg-white/5"
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface)",
+        color: "var(--text)",
+      }}
+    >
+      <Menu size={18} />
+    </button>
+  );
+}
+
+function CenterHeaderActions({
+  customerUserId,
+  showContracts,
+  onOpenScheduled,
+  onOpenContracts,
+  onOpenChat,
+}: {
+  customerUserId: string | null;
+  /** Contract management is hidden for employees (org-billed — the quote
+   *  flow is for direct-billed customers, same gate the sidebar pill had). */
+  showContracts: boolean;
+  onOpenScheduled: () => void;
+  onOpenContracts: () => void;
+  /** <lg only: opens the chat drawer (far-right icon, after the bell). */
+  onOpenChat?: () => void;
+}) {
+  // Live counts for the pill badges. Lightweight head-count queries (no row
+  // payloads) + the same in-app refresh events the old sidebar pills used,
+  // so booking/cancelling/quoting updates the badges without a reload.
+  const [scheduledCount, setScheduledCount] = useState(0);
+  const [contractCount, setContractCount] = useState(0);
+  useEffect(() => {
+    if (!customerUserId) return;
+    const sb = createClient();
+    let alive = true;
+    const load = async () => {
+      const nowIso = new Date().toISOString();
+      const [eng, sup, quotes] = await Promise.all([
+        sb
+          .from("engineer_bookings")
+          .select("id", { count: "exact", head: true })
+          .eq("customer_user_id", customerUserId)
+          .eq("status", "booked")
+          .gte("slot_end", nowIso),
+        sb
+          .from("supervisor_bookings")
+          .select("id", { count: "exact", head: true })
+          .eq("customer_user_id", customerUserId)
+          .eq("status", "booked")
+          .gte("slot_end", nowIso),
+        sb
+          .from("project_quote_requests")
+          .select("id", { count: "exact", head: true })
+          .eq("customer_user_id", customerUserId),
+      ]);
+      if (!alive) return;
+      setScheduledCount((eng.count ?? 0) + (sup.count ?? 0));
+      setContractCount(quotes.count ?? 0);
+    };
+    void load();
+    const onChanged = () => void load();
+    window.addEventListener("relay:appointments-changed", onChanged);
+    window.addEventListener("relay:scheduled-changed", onChanged);
+    window.addEventListener("relay:quotes-changed", onChanged);
+    return () => {
+      alive = false;
+      window.removeEventListener("relay:appointments-changed", onChanged);
+      window.removeEventListener("relay:scheduled-changed", onChanged);
+      window.removeEventListener("relay:quotes-changed", onChanged);
+    };
+  }, [customerUserId]);
+
+  const divider = (
+    <span
+      aria-hidden
+      className="h-[18px] w-px self-center"
+      style={{ backgroundColor: "rgba(255,255,255,0.07)" }}
+    />
+  );
+  return (
+    <div className="flex flex-nowrap items-center gap-2 max-lg:gap-1.5">
+      <HeaderPill
+        icon={<CalendarClock size={13} />}
+        label="Scheduled"
+        count={scheduledCount}
+        onClick={onOpenScheduled}
+      />
+      {divider}
+      {showContracts && (
+        <>
+          <HeaderPill
+            icon={<FileText size={13} />}
+            label="Contracts"
+            count={contractCount}
+            onClick={onOpenContracts}
+          />
+          {divider}
+        </>
+      )}
+      <NotificationBell customerUserId={customerUserId} />
+      {/* Chat drawer trigger — <lg only (the chat stub is an in-flow rail
+          on desktop). Far right, separated by the same thin rule. */}
+      {onOpenChat && (
+        <>
+          <span
+            aria-hidden
+            className="h-[18px] w-px self-center lg:hidden"
+            style={{ backgroundColor: "rgba(255,255,255,0.07)" }}
+          />
+          <button
+            type="button"
+            onClick={onOpenChat}
+            title="Chat"
+            aria-label="Open chat"
+            className="flex size-11 items-center justify-center rounded-full transition-colors hover:bg-black/5 lg:hidden dark:hover:bg-white/5"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <MessageCircle size={18} />
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
 
 // ── Session prep view ─────────────────────────────────────────────────
 // Customer hit the + next to a project in the sidebar. Drafts persist
@@ -3039,6 +3331,11 @@ function BrandedLanding({
   projects,
   onSelectProject,
   onConnectEngineer,
+  showContracts,
+  onOpenScheduled,
+  onOpenContracts,
+  onOpenSidebarDrawer,
+  onOpenChatDrawer,
 }: {
   onStartNewSession: () => void;
   selectedProject: Project | null;
@@ -3053,6 +3350,13 @@ function BrandedLanding({
   /** Green dot = connect to a Relay engineer. Pre-bound to the currently
    *  selected project (null → pick-project flow first). */
   onConnectEngineer: () => void;
+  /** Header strip controls (relocated from the sidebar's bottom pills). */
+  showContracts: boolean;
+  onOpenScheduled: () => void;
+  onOpenContracts: () => void;
+  /** <lg drawer triggers (hamburger top-left / chat icon far right). */
+  onOpenSidebarDrawer: () => void;
+  onOpenChatDrawer: () => void;
 }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const hasProject = !!selectedProject;
@@ -3168,9 +3472,20 @@ function BrandedLanding({
           explainerOpen ? "items-start py-10" : "items-center"
         }`}
       >
-        {/* Notification bell — top-right of the center pane (left of chat). */}
-        <div className="absolute top-3 right-4 z-30">
-          <NotificationBell customerUserId={customerUserId} />
+        {/* Header strip — hamburger top-left (<lg, opens the sidebar
+            drawer); Scheduled + Contracts pills + bell + chat icon
+            top-right of the center pane. */}
+        <div className="absolute top-3 left-4 z-30 lg:hidden">
+          <HeaderHamburger onClick={onOpenSidebarDrawer} />
+        </div>
+        <div className="absolute top-3 right-4 z-30 max-w-[calc(100%-4.5rem)]">
+          <CenterHeaderActions
+            customerUserId={customerUserId}
+            showContracts={showContracts}
+            onOpenScheduled={onOpenScheduled}
+            onOpenContracts={onOpenContracts}
+            onOpenChat={onOpenChatDrawer}
+          />
         </div>
         <div className="flex max-w-3xl flex-col items-center text-center">
           <Wordmark size="xl" />
@@ -3180,7 +3495,7 @@ function BrandedLanding({
               request; tagline now reads as plain text without any
               underline treatment. */}
           <p
-            className="mt-5 text-[24px] leading-snug"
+            className="mt-5 text-xl leading-snug sm:text-[24px]"
             style={{ color: "var(--text-muted)" }}
           >
             The{" "}
@@ -3212,7 +3527,7 @@ function BrandedLanding({
             onClick={() => setExplainerOpen((v) => !v)}
             aria-expanded={explainerOpen}
             aria-controls="relay-landing-explainer"
-            className="group/explainer mt-10 inline-flex items-center gap-2.5 rounded-full border px-4 py-2 text-[11px] font-semibold tracking-[0.12em] uppercase transition-all duration-200 ease-out hover:scale-[1.02] hover:bg-[var(--surface-raised)]"
+            className="group/explainer mt-10 inline-flex min-h-11 items-center gap-2.5 rounded-full border px-4 py-2 text-[11px] font-semibold tracking-[0.12em] uppercase transition-all duration-200 ease-out hover:scale-[1.02] hover:bg-[var(--surface-raised)]"
             style={{
               color: "var(--text-muted)",
               borderColor: "var(--border)",
@@ -3538,14 +3853,18 @@ function BrandedLanding({
           Currently the live path renders ChatPane in place of the whole
           MainPane via the parent switch (see MainPane), so this panel
           only ever shows in the no-session landing. */}
-      <ChatPanelStub
-        sidebarCollapsed={sidebarCollapsed}
-        onToggleCollapsed={() => setSidebarCollapsed((v) => !v)}
-        scopeKey={selectedProject?.id || "general"}
-        projects={projects.map((p) => ({ id: p.id, name: p.name }))}
-        onSelectProject={onSelectProject}
-        onStartCall={onConnectEngineer}
-      />
+      {/* In-flow chat rail — ≥lg only; below lg the header's chat icon
+          opens the off-canvas drawer instead. */}
+      <div className="hidden min-h-0 lg:flex">
+        <ChatPanelStub
+          sidebarCollapsed={sidebarCollapsed}
+          onToggleCollapsed={() => setSidebarCollapsed((v) => !v)}
+          scopeKey={selectedProject?.id || "general"}
+          projects={projects.map((p) => ({ id: p.id, name: p.name }))}
+          onSelectProject={onSelectProject}
+          onStartCall={onConnectEngineer}
+        />
+      </div>
     </div>
   );
 }
@@ -3642,7 +3961,10 @@ function DraftAttachmentView({ att }: { att: LocalDraftAttachment }) {
       >
         {att.name}
       </span>
-      <span className="shrink-0 text-[9.5px]" style={{ color: "var(--text-muted)" }}>
+      <span
+        className="shrink-0 text-[9.5px]"
+        style={{ color: "var(--text-muted)" }}
+      >
         {att.size < 1024 * 1024
           ? `${Math.round(att.size / 1024)} KB`
           : `${(att.size / (1024 * 1024)).toFixed(1)} MB`}
@@ -3727,11 +4049,7 @@ function StubVoiceNote({ url, name }: { url: string | null; name: string }) {
             <Mic size={9} /> Voice note
           </span>
           <span className="tabular-nums">
-            {playing || pos > 0
-              ? fmtClock(pos)
-              : dur > 0
-                ? fmtClock(dur)
-                : "…"}
+            {playing || pos > 0 ? fmtClock(pos) : dur > 0 ? fmtClock(dur) : "…"}
           </span>
         </div>
       </div>
@@ -4464,9 +4782,7 @@ function ChatPanelStub({
       if (target?.attachments?.length) {
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === editingId
-              ? { ...m, text: "", editedAt: Date.now() }
-              : m
+            m.id === editingId ? { ...m, text: "", editedAt: Date.now() } : m
           )
         );
       } else {
@@ -4648,10 +4964,7 @@ function ChatPanelStub({
         // Bank this session's finals before the restart so nothing is
         // lost and nothing duplicates.
         if (sessionFinal.trim()) {
-          transcribeBaseRef.current = [
-            transcribeBaseRef.current,
-            sessionFinal,
-          ]
+          transcribeBaseRef.current = [transcribeBaseRef.current, sessionFinal]
             .filter(Boolean)
             .join(" ")
             .replace(/\s+/g, " ")
@@ -5196,9 +5509,7 @@ function ChatPanelStub({
                               : "var(--text)",
                         }}
                       >
-                        <span className="min-w-0 flex-1 truncate">
-                          General
-                        </span>
+                        <span className="min-w-0 flex-1 truncate">General</span>
                         {scopeKey === "general" && (
                           <Check size={12} className="shrink-0" />
                         )}
@@ -5511,7 +5822,7 @@ function ChatPanelStub({
                   // auto-zoom-on-focus (any input < 16px triggers it, which is
                   // what was magnifying the whole sheet); md:text-[13px] keeps
                   // the desktop panel compact.
-                  className="block w-full resize-none bg-transparent text-base leading-relaxed outline-none md:text-[13px] placeholder:opacity-60"
+                  className="block w-full resize-none bg-transparent text-base leading-relaxed outline-none placeholder:opacity-60 lg:text-[13px]"
                   style={{ color: "var(--text)" }}
                 />
 
@@ -5652,133 +5963,133 @@ function ChatPanelStub({
                     </button>
                   </div>
                 ) : (
-                <div className="mt-2 flex items-center gap-1">
-                  {/* Paperclip — picks files into the IDB-backed staging
+                  <div className="mt-2 flex items-center gap-1">
+                    {/* Paperclip — picks files into the IDB-backed staging
                     queue. They sit there until a session goes live; the
                     parent's auto-flush effect (flushAttachmentsToSession)
                     handles the upload + guest_message_attachments insert
                     once a guest_calls row exists. */}
-                  <input
-                    ref={attachInputRef}
-                    type="file"
-                    multiple
-                    className="hidden"
-                    accept=".pdf,.txt,.xlsx,.docx,image/*,audio/*"
-                    onChange={(e) => void handlePickFiles(e)}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => attachInputRef.current?.click()}
-                    aria-label="Attach file"
-                    title="Attach a file — it'll be delivered when your engineer joins."
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                    style={{
-                      color: "var(--text-muted)",
-                      border: "1px solid var(--border)",
-                    }}
-                  >
-                    <Paperclip size={14} />
-                  </button>
-                  {/* Voice-to-text dictation — an explicit TOGGLE, off by
+                    <input
+                      ref={attachInputRef}
+                      type="file"
+                      multiple
+                      className="hidden"
+                      accept=".pdf,.txt,.xlsx,.docx,image/*,audio/*"
+                      onChange={(e) => void handlePickFiles(e)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => attachInputRef.current?.click()}
+                      aria-label="Attach file"
+                      title="Attach a file — it'll be delivered when your engineer joins."
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                      style={{
+                        color: "var(--text-muted)",
+                        border: "1px solid var(--border)",
+                      }}
+                    >
+                      <Paperclip size={14} />
+                    </button>
+                    {/* Voice-to-text dictation — an explicit TOGGLE, off by
                     default. While ON the button goes solid green with a
                     pulsing halo and a "Listening" pill appears, so it's
                     never ambiguous whether the mic is capturing. */}
-                  <button
-                    type="button"
-                    onClick={
-                      voiceMode === "transcribing"
-                        ? stopTranscribe
-                        : () => void startTranscribe()
-                    }
-                    aria-label="Dictate"
-                    aria-pressed={voiceMode === "transcribing"}
-                    title={
-                      voiceMode === "transcribing"
-                        ? "Mic is ON — tap to stop"
-                        : "Dictate — voice to text"
-                    }
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors"
-                    style={{
-                      color:
+                    <button
+                      type="button"
+                      onClick={
                         voiceMode === "transcribing"
-                          ? "#fff"
-                          : "var(--text-muted)",
-                      backgroundColor:
-                        voiceMode === "transcribing"
-                          ? BRAND_GREEN
-                          : "transparent",
-                      border: "1px solid var(--border)",
-                      animation:
-                        voiceMode === "transcribing"
-                          ? "relay-pulse-ok 1.6s ease-in-out infinite"
-                          : undefined,
-                    }}
-                  >
-                    <Mic
-                      size={14}
-                      className={
-                        voiceMode === "transcribing"
-                          ? "animate-pulse"
-                          : undefined
+                          ? stopTranscribe
+                          : () => void startTranscribe()
                       }
-                    />
-                  </button>
-                  {voiceMode === "transcribing" && (
-                    <span
-                      className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium"
+                      aria-label="Dictate"
+                      aria-pressed={voiceMode === "transcribing"}
+                      title={
+                        voiceMode === "transcribing"
+                          ? "Mic is ON — tap to stop"
+                          : "Dictate — voice to text"
+                      }
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors"
                       style={{
-                        backgroundColor: BRAND_GREEN_SOFT,
-                        color: BRAND_GREEN,
+                        color:
+                          voiceMode === "transcribing"
+                            ? "#fff"
+                            : "var(--text-muted)",
+                        backgroundColor:
+                          voiceMode === "transcribing"
+                            ? BRAND_GREEN
+                            : "transparent",
+                        border: "1px solid var(--border)",
+                        animation:
+                          voiceMode === "transcribing"
+                            ? "relay-pulse-ok 1.6s ease-in-out infinite"
+                            : undefined,
                       }}
                     >
-                      <span className="relative inline-flex h-1.5 w-1.5">
-                        <span
-                          className="absolute inset-0 animate-ping rounded-full opacity-60"
-                          style={{ backgroundColor: BRAND_GREEN }}
-                        />
-                        <span
-                          className="relative h-1.5 w-1.5 rounded-full"
-                          style={{ backgroundColor: BRAND_GREEN }}
-                        />
+                      <Mic
+                        size={14}
+                        className={
+                          voiceMode === "transcribing"
+                            ? "animate-pulse"
+                            : undefined
+                        }
+                      />
+                    </button>
+                    {voiceMode === "transcribing" && (
+                      <span
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium"
+                        style={{
+                          backgroundColor: BRAND_GREEN_SOFT,
+                          color: BRAND_GREEN,
+                        }}
+                      >
+                        <span className="relative inline-flex h-1.5 w-1.5">
+                          <span
+                            className="absolute inset-0 animate-ping rounded-full opacity-60"
+                            style={{ backgroundColor: BRAND_GREEN }}
+                          />
+                          <span
+                            className="relative h-1.5 w-1.5 rounded-full"
+                            style={{ backgroundColor: BRAND_GREEN }}
+                          />
+                        </span>
+                        Listening…
                       </span>
-                      Listening…
-                    </span>
-                  )}
-                  {/* Voice-recording — MediaRecorder writes the blob to
+                    )}
+                    {/* Voice-recording — MediaRecorder writes the blob to
                     IDB. Same flush path as paperclip-staged files. While
                     recording, this whole row is replaced by the recording
                     bar above, so this button only ever starts. */}
-                  <button
-                    type="button"
-                    onClick={() => void startStubRecording()}
-                    aria-label="Record voice message"
-                    title="Record a voice message — it'll be delivered when your engineer joins."
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                    style={{
-                      color: "var(--text-muted)",
-                      border: "1px solid var(--border)",
-                    }}
-                  >
-                    <AudioLines size={14} />
-                  </button>
-                  <div className="flex-1" />
-                  <button
-                    type="button"
-                    onClick={handleSendDraft}
-                    disabled={
-                      !draftText.trim() && pendingAttachments.length === 0
-                    }
-                    aria-label="Send"
-                    className="flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                    style={{
-                      backgroundColor: BRAND_GREEN,
-                      color: "#fff",
-                    }}
-                  >
-                    <Send size={12} />
-                    Send
-                  </button>
-                </div>
+                    <button
+                      type="button"
+                      onClick={() => void startStubRecording()}
+                      aria-label="Record voice message"
+                      title="Record a voice message — it'll be delivered when your engineer joins."
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                      style={{
+                        color: "var(--text-muted)",
+                        border: "1px solid var(--border)",
+                      }}
+                    >
+                      <AudioLines size={14} />
+                    </button>
+                    <div className="flex-1" />
+                    <button
+                      type="button"
+                      onClick={handleSendDraft}
+                      disabled={
+                        !draftText.trim() && pendingAttachments.length === 0
+                      }
+                      aria-label="Send"
+                      className="flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                      style={{
+                        backgroundColor: BRAND_GREEN,
+                        color: "#fff",
+                      }}
+                    >
+                      <Send size={12} />
+                      Send
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -6819,7 +7130,6 @@ type ProjectGroup = {
   completionStatus: "active" | "completed" | "archived";
 };
 
-
 // Drag-to-resize a sidebar by its edge. Persists the chosen width per key in
 // localStorage so a reload keeps it. `edge="right"` for a left sidebar (handle
 // on its right side); `edge="left"` for a right sidebar.
@@ -7222,11 +7532,12 @@ const Sidebar = memo(function Sidebar({
   // (The matcher itself still gates on engineer_profiles.is_available.)
 
   // Connect-flow modal state. null = closed.
-  //   "choose"          — new vs existing
+  //   "choose"          — new vs existing (entry for green dot + sidebar "+")
   //   "existing"        — pick from existing projects (→ "engineerPicker")
+  //   "need"            — Q1 of the brand-site wizard (after picking "New project")
+  //   "details"         — Q2: stack chips (new project)
+  //   "name"            — Q3: name + timing; submit creates project + (optionally) starts session
   //   "engineerPicker"  — choose which engineer to connect with for the picked project
-  //   "details"         — compact form: project type + stack (new project)
-  //   "name"            — pick a name; submit creates project + (optionally) starts session
   const [connectFlow, setConnectFlow] = useState<
     | null
     | "choose"
@@ -7289,7 +7600,9 @@ const Sidebar = memo(function Sidebar({
     const projectId = connectRequest.projectId;
     if (!projectId) {
       setConnectFlowMode("connect");
-      // First-time customers skip the new-vs-existing chooser.
+      // Chooser first ("new or existing?"); the 3-question wizard comes
+      // AFTER picking "New project". First-time customers (no projects)
+      // skip the chooser — nothing to choose between.
       setConnectFlow(projects.length === 0 ? "need" : "choose");
       return;
     }
@@ -7342,6 +7655,15 @@ const Sidebar = memo(function Sidebar({
       (a, b) => new Date(b.lastDate).getTime() - new Date(a.lastDate).getTime()
     );
   }, [past, pickerProjectId]);
+  // True when the picked project has no engineer history of its own — the
+  // picker list (if any) came from the customer's OTHER projects. Drives
+  // the honest "worked with you before on different projects" copy.
+  const pickerCrossProject = useMemo(
+    () =>
+      !!pickerProjectId &&
+      !past.some((s) => s.projectId === pickerProjectId && !!s.agent),
+    [past, pickerProjectId]
+  );
 
   // Poll real presence for the picker engineers while the modal is on the
   // engineerPicker step. Immediate fetch on open, then every 12s.
@@ -7955,8 +8277,9 @@ const Sidebar = memo(function Sidebar({
                 void el.offsetWidth;
                 el.classList.add("is-pressing");
               }
-              // First-time customers (no projects yet) land straight on
-              // Question 1 — no point asking "new or existing?".
+              // Chooser first; first-time customers (no projects yet) land
+              // straight on Question 1 — nothing to choose between.
+              setConnectFlowMode("connect");
               setConnectFlow(projects.length === 0 ? "need" : "choose");
             }}
             onAnimationEnd={() =>
@@ -8164,8 +8487,11 @@ const Sidebar = memo(function Sidebar({
               </button>
               <button
                 onClick={() => {
-                  setConnectFlowMode("create-only");
-                  setConnectFlow("details");
+                  // "+" means NEW project explicitly — skip the
+                  // new-vs-existing chooser and land straight on Q1 of
+                  // the wizard. (The green dot keeps the chooser.)
+                  setConnectFlowMode("connect");
+                  setConnectFlow("need");
                 }}
                 title="New project"
                 aria-label="Create a new project"
@@ -8486,27 +8812,9 @@ const Sidebar = memo(function Sidebar({
         </div>
       </div>
 
-      {/* Pill 1 — Scheduled Calls (→ opens the center pane). Borderless;
-          self-hides when there's nothing scheduled. */}
-      <ScheduledCallsPill
-        customerUserId={customerUserId}
-        onReschedule={(t) => setScheduleTarget(t)}
-        open={openSection === "scheduled"}
-        onToggle={() => toggleSection("scheduled")}
-        onNavigate={() => onOpenCenter("scheduled")}
-      />
-
-      {/* Pill 2 — Contract Management (→ opens the center pane). Borderless;
-          self-hides until a quote exists. */}
-      {!employment?.isEmployee && (
-        <div className="px-2 py-0.5 empty:hidden">
-          <ContractManagement
-            isOpen={openSection === "contracts"}
-            onToggle={() => toggleSection("contracts")}
-            onNavigate={() => onOpenCenter("contracts")}
-          />
-        </div>
-      )}
+      {/* (Scheduled Calls + Contract Management pills relocated to the
+          center column's top header strip — see CenterHeaderActions. The
+          sidebar keeps only project/session navigation + quotes.) */}
 
       {/* Quote-request shortcuts — sit directly above the user pill so
           they're always reachable but visually quieter than the primary
@@ -8648,260 +8956,285 @@ const Sidebar = memo(function Sidebar({
           real projects, not the synthetic "general" bucket). If a
           project was already selected when the customer opened the
           modal, pre-fill it so they skip step 1. */}
-      {quoteFlow !== null && (
-        <QuoteRequestModal
-          kind={quoteFlow}
-          projects={projects.map((p) => ({ id: p.id, name: p.name }))}
-          initialProjectId={quoteInitialProjectId ?? selectedProjectId}
-          onClose={() => {
-            setQuoteFlow(null);
-            setQuoteInitialProjectId(null);
-          }}
-          onCreateProject={() => {
-            // Empty-state CTA: close this modal, hop into the connect
-            // flow in "create-only" mode. The new-project wizard collects
-            // name + project type + stack, creates the project, and
-            // leaves the customer on the landing. They can re-trigger the
-            // quote modal from the sidebar once the project appears.
-            setQuoteFlow(null);
-            resetNewProjectForm();
-            setConnectFlowMode("create-only");
-            setConnectFlow("details");
-          }}
-        />
-      )}
-
-      {/* Connect-flow modal — 5-step micro-flow now. */}
-      {connectFlow !== null && (
-        <ConnectFlowModal
-          step={connectFlow}
-          mode={connectFlowMode}
-          projects={projectGroups.filter((g) => g.key !== "general")}
-          // ── engineerPicker context: which project was picked + the
-          //    engineers who've worked on it (derived from past sessions).
-          pickerProjectId={pickerProjectId}
-          pickerProjectName={
-            pickerProjectId
-              ? (projectGroups.find((g) => g.key === pickerProjectId)?.name ??
-                null)
-              : null
-          }
-          pickerEngineers={pickerEngineers}
-          pickerPresence={pickerPresence}
-          newProjectType={newProjectType}
-          setNewProjectType={setNewProjectType}
-          newProjectTypeOther={newProjectTypeOther}
-          setNewProjectTypeOther={setNewProjectTypeOther}
-          newProjectAiTools={newProjectAiTools}
-          setNewProjectAiTools={setNewProjectAiTools}
-          newProjectBackend={newProjectBackend}
-          setNewProjectBackend={setNewProjectBackend}
-          newProjectFrontend={newProjectFrontend}
-          setNewProjectFrontend={setNewProjectFrontend}
-          newProjectName={newProjectName}
-          setNewProjectName={setNewProjectName}
-          submitting={newProjectSubmitting}
-          onChooseNew={() =>
-            // Connect mode runs the full 3-question wizard (need → stack →
-            // name+timing); create-only skips Q1 — it exists purely to
-            // capture project metadata.
-            setConnectFlow(connectFlowMode === "connect" ? "need" : "details")
-          }
-          onChooseExisting={() => setConnectFlow("existing")}
-          onNeed={(need) => {
-            if (need === "building") {
-              // Building → continue the wizard (stack question next).
+      {/* NB: the Sidebar's modals are PORTALED to <body>. On mobile the
+          sidebar lives in a drawer that's display:none while closed — a
+          modal rendered in-tree would be invisible when triggered from
+          outside (e.g. the chat drawer's green connect dot). */}
+      {quoteFlow !== null &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <QuoteRequestModal
+            kind={quoteFlow}
+            projects={projects.map((p) => ({ id: p.id, name: p.name }))}
+            initialProjectId={quoteInitialProjectId ?? selectedProjectId}
+            onClose={() => {
+              setQuoteFlow(null);
+              setQuoteInitialProjectId(null);
+            }}
+            onCreateProject={() => {
+              // Empty-state CTA: close this modal, hop into the connect
+              // flow in "create-only" mode. The new-project wizard collects
+              // name + project type + stack, creates the project, and
+              // leaves the customer on the landing. They can re-trigger the
+              // quote modal from the sidebar once the project appears.
+              setQuoteFlow(null);
+              resetNewProjectForm();
+              setConnectFlowMode("create-only");
               setConnectFlow("details");
-              return;
+            }}
+          />,
+          document.body
+        )}
+
+      {/* Connect-flow modal — portaled to <body> (see note above). */}
+      {connectFlow !== null &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <ConnectFlowModal
+            step={connectFlow}
+            mode={connectFlowMode}
+            projects={projectGroups.filter((g) => g.key !== "general")}
+            // ── engineerPicker context: which project was picked + the
+            //    engineers who've worked on it (derived from past sessions).
+            pickerProjectId={pickerProjectId}
+            pickerProjectName={
+              pickerProjectId
+                ? (projectGroups.find((g) => g.key === pickerProjectId)?.name ??
+                  null)
+                : null
             }
-            // Launch / Support BYPASS — straight into the quote flow
-            // (golive = ship it, maintain = ongoing support). The quote
-            // modal owns project pick + comments from here.
-            setConnectFlow(null);
-            setConnectFlowMode("connect");
-            resetNewProjectForm();
-            setQuoteInitialProjectId(selectedProjectId);
-            setQuoteFlow(need === "launch" ? "golive" : "maintain");
-          }}
-          urgency={newProjectUrgency}
-          onUrgencyChange={setNewProjectUrgency}
-          onPickProject={(projectId) => {
-            // Route into engineerPicker for that project. If the
-            // project has zero engineer history, jump straight into
-            // intake (no one to pick between).
-            const hasEngineers = past.some(
-              (s) => s.projectId === projectId && !!s.agent
-            );
-            if (hasEngineers) {
-              setPickerProjectId(projectId);
-              setConnectFlow("engineerPicker");
-            } else {
+            pickerEngineers={pickerEngineers}
+            pickerCrossProject={pickerCrossProject}
+            pickerPresence={pickerPresence}
+            newProjectType={newProjectType}
+            setNewProjectType={setNewProjectType}
+            newProjectTypeOther={newProjectTypeOther}
+            setNewProjectTypeOther={setNewProjectTypeOther}
+            newProjectAiTools={newProjectAiTools}
+            setNewProjectAiTools={setNewProjectAiTools}
+            newProjectBackend={newProjectBackend}
+            setNewProjectBackend={setNewProjectBackend}
+            newProjectFrontend={newProjectFrontend}
+            setNewProjectFrontend={setNewProjectFrontend}
+            newProjectName={newProjectName}
+            setNewProjectName={setNewProjectName}
+            submitting={newProjectSubmitting}
+            onChooseNew={() =>
+              // "New project" → the brand-site 3-question wizard (need →
+              // stack → name+timing); create-only skips Q1 — it exists
+              // purely to capture project metadata.
+              setConnectFlow(connectFlowMode === "connect" ? "need" : "details")
+            }
+            onChooseExisting={() => setConnectFlow("existing")}
+            onNeed={(need) => {
+              if (need === "building") {
+                // Building → continue the wizard (stack question next).
+                setConnectFlow("details");
+                return;
+              }
+              // Launch / Support BYPASS — straight into the quote flow
+              // (golive = ship it, maintain = ongoing support). The quote
+              // modal owns project pick + comments from here.
               setConnectFlow(null);
-              onStartInProject(projectId);
-            }
-          }}
-          onEngineerConnect={(_engineerName, engineerId) => {
-            // Directed connect: ring THIS engineer first. We pass their
-            // user_id (claimed_by from a past session) down into the start
-            // flow, which mints the session and places a directed offer at
-            // that engineer via /api/match/directed instead of the generic
-            // matcher. If we don't have an id (legacy session with no
-            // claimed_by) it falls back to the normal match.
-            const pid = pickerProjectId;
-            setConnectFlow(null);
-            setPickerProjectId(null);
-            if (pid) onStartInProject(pid, engineerId ?? undefined);
-          }}
-          onEngineerRequest={(engineerName) => {
-            // Busy-state request flow. The "drop a request, joins after"
-            // experience needs the engineer-side request inbox + the
-            // engineer_connect_requests table + customer_request_engineer
-            // RPC — all tracked in the engineer-parity plan and not yet
-            // shipped. Until then we run the customer through the
-            // standard match flow (mints session + intake + fires
-            // match_engineer) and surface a toast that's honest about
-            // what's happening: their request goes out, the preferred
-            // engineer can pick it up when they wrap up, or any other
-            // matched engineer can take it if the customer is willing.
-            //
-            // Removed the previous engineer_profiles.display_alias
-            // lookup (the column doesn't exist on engineer_profiles —
-            // engineer names live on guest_calls.agent for past
-            // sessions) + the call to customer_request_engineer RPC
-            // (doesn't exist yet). Both were unconditionally falling
-            // into the "Couldn't locate Kai" alert.
-            const pid = pickerProjectId;
-            setConnectFlow(null);
-            setPickerProjectId(null);
-            onPickerToast(
-              `Request sent to ${engineerName} — they'll join when they wrap their current call, or we'll route you to another engineer if you'd rather not wait.`
-            );
-            if (pid) onStartInProject(pid);
-          }}
-          onEngineerSchedule={(engineerName, engineerUserId) => {
-            // Open the calendar booking modal for this engineer. Calendars +
-            // booking RPCs now exist (engineer_availability_windows /
-            // book_engineer_slot / ScheduleEngineerModal), so this no longer
-            // "coming soon"-degrades.
-            const pid = pickerProjectId;
-            setConnectFlow(null);
-            setPickerProjectId(null);
-            if (!engineerUserId) {
-              // Legacy engineer with no resolvable user_id — can't target a
-              // calendar; fall back to the request path so they're never stuck.
+              setConnectFlowMode("connect");
+              resetNewProjectForm();
+              setQuoteInitialProjectId(selectedProjectId);
+              setQuoteFlow(need === "launch" ? "golive" : "maintain");
+            }}
+            urgency={newProjectUrgency}
+            onUrgencyChange={setNewProjectUrgency}
+            onPickProject={(projectId) => {
+              // Route into engineerPicker for that project. If the
+              // project has zero engineer history, jump straight into
+              // intake (no one to pick between).
+              const hasEngineers = past.some(
+                (s) => s.projectId === projectId && !!s.agent
+              );
+              if (hasEngineers) {
+                setPickerProjectId(projectId);
+                setConnectFlow("engineerPicker");
+              } else {
+                setConnectFlow(null);
+                onStartInProject(projectId);
+              }
+            }}
+            onEngineerConnect={(_engineerName, engineerId) => {
+              // Directed connect: ring THIS engineer first. We pass their
+              // user_id (claimed_by from a past session) down into the start
+              // flow, which mints the session and places a directed offer at
+              // that engineer via /api/match/directed instead of the generic
+              // matcher. If we don't have an id (legacy session with no
+              // claimed_by) it falls back to the normal match.
+              const pid = pickerProjectId;
+              setConnectFlow(null);
+              setPickerProjectId(null);
+              if (pid) onStartInProject(pid, engineerId ?? undefined);
+            }}
+            onEngineerRequest={(engineerName) => {
+              // Busy-state request flow. The "drop a request, joins after"
+              // experience needs the engineer-side request inbox + the
+              // engineer_connect_requests table + customer_request_engineer
+              // RPC — all tracked in the engineer-parity plan and not yet
+              // shipped. Until then we run the customer through the
+              // standard match flow (mints session + intake + fires
+              // match_engineer) and surface a toast that's honest about
+              // what's happening: their request goes out, the preferred
+              // engineer can pick it up when they wrap up, or any other
+              // matched engineer can take it if the customer is willing.
+              //
+              // Removed the previous engineer_profiles.display_alias
+              // lookup (the column doesn't exist on engineer_profiles —
+              // engineer names live on guest_calls.agent for past
+              // sessions) + the call to customer_request_engineer RPC
+              // (doesn't exist yet). Both were unconditionally falling
+              // into the "Couldn't locate Kai" alert.
+              const pid = pickerProjectId;
+              setConnectFlow(null);
+              setPickerProjectId(null);
               onPickerToast(
-                `Request sent to ${engineerName} — they'll join when they're back online.`
+                `Request sent to ${engineerName} — they'll join when they wrap their current call, or we'll route you to another engineer if you'd rather not wait.`
               );
               if (pid) onStartInProject(pid);
-              return;
-            }
-            setScheduleTarget({ engineerUserId, engineerName, projectId: pid });
-          }}
-          onPickerRequestDifferent={() => {
-            // "Request a different engineer" — fall through to a fresh
-            // intake on the same project. The match_engineer RPC will
-            // pick any engineer with the right skills, biased away
-            // from the ones already shown.
-            const pid = pickerProjectId;
-            setConnectFlow(null);
-            setPickerProjectId(null);
-            if (pid) onStartInProject(pid);
-          }}
-          onPickerBack={() => setConnectFlow("existing")}
-          onDetailsNext={() => setConnectFlow("name")}
-          onNameBack={() => setConnectFlow("details")}
-          onSubmitNewProject={async () => {
-            setNewProjectSubmitting(true);
-            const projectType =
-              newProjectType === "Other"
-                ? newProjectTypeOther.trim() || "Other"
-                : newProjectType;
-            const payload = {
-              name: newProjectName.trim(),
-              projectType,
-              aiTools: newProjectAiTools,
-              backend: newProjectBackend,
-              frontend: newProjectFrontend,
-            };
-            try {
-              if (connectFlowMode === "create-only") {
-                await onCreateProjectWithMetadata(payload);
-                setConnectFlow(null);
-                setConnectFlowMode("connect");
-                resetNewProjectForm();
-              } else {
-                // Connect mode — create the project, then route by the
-                // customer's Q3 timing answer:
-                //   now       → engineerPicker (Connect = instant ring)
-                //   this_week → engineerPicker, Schedule emphasized (the
-                //               matched engineer's calendar lives on each
-                //               row's Schedule button)
-                //   planning  → supervisor path: quote modal preselected
-                //               on the new project (quote → supervisor
-                //               appointment is the existing pipeline)
-                const urgency = newProjectUrgency;
-                const newId = await onCreateProjectWithMetadata(payload);
-                resetNewProjectForm();
-                setConnectFlowMode("connect");
-                if (!newId) {
-                  // Project create failed silently — close the modal so
-                  // the customer doesn't get stuck on a spinner.
+            }}
+            onEngineerSchedule={(engineerName, engineerUserId) => {
+              // Open the calendar booking modal for this engineer. Calendars +
+              // booking RPCs now exist (engineer_availability_windows /
+              // book_engineer_slot / ScheduleEngineerModal), so this no longer
+              // "coming soon"-degrades.
+              const pid = pickerProjectId;
+              setConnectFlow(null);
+              setPickerProjectId(null);
+              if (!engineerUserId) {
+                // Legacy engineer with no resolvable user_id — can't target a
+                // calendar; fall back to the request path so they're never stuck.
+                onPickerToast(
+                  `Request sent to ${engineerName} — they'll join when they're back online.`
+                );
+                if (pid) onStartInProject(pid);
+                return;
+              }
+              setScheduleTarget({
+                engineerUserId,
+                engineerName,
+                projectId: pid,
+              });
+            }}
+            onPickerRequestDifferent={() => {
+              // "Request a different engineer" — fall through to a fresh
+              // intake on the same project. The match_engineer RPC will
+              // pick any engineer with the right skills, biased away
+              // from the ones already shown.
+              const pid = pickerProjectId;
+              setConnectFlow(null);
+              setPickerProjectId(null);
+              if (pid) onStartInProject(pid);
+            }}
+            onPickerBack={() => setConnectFlow("existing")}
+            onDetailsNext={() => setConnectFlow("name")}
+            onNameBack={() => setConnectFlow("details")}
+            onSubmitNewProject={async () => {
+              setNewProjectSubmitting(true);
+              const projectType =
+                newProjectType === "Other"
+                  ? newProjectTypeOther.trim() || "Other"
+                  : newProjectType;
+              const payload = {
+                name: newProjectName.trim(),
+                projectType,
+                aiTools: newProjectAiTools,
+                backend: newProjectBackend,
+                frontend: newProjectFrontend,
+              };
+              try {
+                if (connectFlowMode === "create-only") {
+                  await onCreateProjectWithMetadata(payload);
                   setConnectFlow(null);
-                  setNewProjectSubmitting(false);
-                } else if (urgency === "planning") {
-                  setConnectFlow(null);
-                  setNewProjectSubmitting(false);
-                  setQuoteInitialProjectId(newId);
-                  setQuoteFlow("maintain");
-                  onPickerToast(
-                    "Project created — request the quote and a supervisor appointment follows within 24h."
-                  );
+                  setConnectFlowMode("connect");
+                  resetNewProjectForm();
                 } else {
-                  setPickerProjectId(newId);
-                  setConnectFlow("engineerPicker");
-                  setNewProjectSubmitting(false);
-                  if (urgency === "this_week") {
+                  // Connect mode — create the project, then route by the
+                  // customer's Q3 timing answer:
+                  //   now       → engineerPicker (Connect = instant ring)
+                  //   this_week → engineerPicker, Schedule emphasized (the
+                  //               matched engineer's calendar lives on each
+                  //               row's Schedule button)
+                  //   planning  → supervisor path: quote modal preselected
+                  //               on the new project (quote → supervisor
+                  //               appointment is the existing pipeline)
+                  const urgency = newProjectUrgency;
+                  const newId = await onCreateProjectWithMetadata(payload);
+                  resetNewProjectForm();
+                  setConnectFlowMode("connect");
+                  if (!newId) {
+                    // Project create failed silently — close the modal so
+                    // the customer doesn't get stuck on a spinner.
+                    setConnectFlow(null);
+                    setNewProjectSubmitting(false);
+                  } else if (urgency === "planning") {
+                    setConnectFlow(null);
+                    setNewProjectSubmitting(false);
+                    setQuoteInitialProjectId(newId);
+                    setQuoteFlow("maintain");
                     onPickerToast(
-                      "Pick an engineer and hit Schedule to grab a slot on their calendar."
+                      "Project created — request the quote and a supervisor appointment follows within 24h."
                     );
+                  } else if (!past.some((s) => !!s.agent)) {
+                    // Literal first project — the customer has NO engineer
+                    // history anywhere, so there's nobody to pick between.
+                    // Skip the picker and go straight to skill-match.
+                    setConnectFlow(null);
+                    setNewProjectSubmitting(false);
+                    onStartInProject(newId);
+                  } else {
+                    setPickerProjectId(newId);
+                    setConnectFlow("engineerPicker");
+                    setNewProjectSubmitting(false);
+                    if (urgency === "this_week") {
+                      onPickerToast(
+                        "Pick an engineer and hit Schedule to grab a slot on their calendar."
+                      );
+                    }
                   }
                 }
+              } catch (err) {
+                console.warn("[connect-flow] submit failed:", err);
+                setNewProjectSubmitting(false);
               }
-            } catch (err) {
-              console.warn("[connect-flow] submit failed:", err);
-              setNewProjectSubmitting(false);
+            }}
+            onBack={() =>
+              // From the stack question, Back returns to Q1 (need) in the
+              // full wizard; everywhere else it returns to the chooser.
+              setConnectFlow(
+                connectFlow === "details" && connectFlowMode === "connect"
+                  ? "need"
+                  : "choose"
+              )
             }
-          }}
-          onBack={() =>
-            // From the stack question, Back returns to Q1 (need) in the
-            // full wizard; everywhere else it returns to the chooser.
-            setConnectFlow(
-              connectFlow === "details" && connectFlowMode === "connect"
-                ? "need"
-                : "choose"
-            )
-          }
-          onClose={() => {
-            setConnectFlow(null);
-            setConnectFlowMode("connect");
-            setPickerProjectId(null);
-            resetNewProjectForm();
-          }}
-        />
-      )}
+            onClose={() => {
+              setConnectFlow(null);
+              setConnectFlowMode("connect");
+              setPickerProjectId(null);
+              resetNewProjectForm();
+            }}
+          />,
+          document.body
+        )}
 
-      {scheduleTarget && (
-        <ScheduleEngineerModal
-          engineerUserId={scheduleTarget.engineerUserId}
-          engineerName={scheduleTarget.engineerName}
-          projectId={scheduleTarget.projectId}
-          onClose={() => setScheduleTarget(null)}
-          onBooked={() => {
-            // The modal shows its own success confirmation and closes via
-            // onClose (the "Done" button). Nothing to do here for now.
-          }}
-        />
-      )}
+      {scheduleTarget &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <ScheduleEngineerModal
+            engineerUserId={scheduleTarget.engineerUserId}
+            engineerName={scheduleTarget.engineerName}
+            projectId={scheduleTarget.projectId}
+            onClose={() => setScheduleTarget(null)}
+            onBooked={() => {
+              // The modal shows its own success confirmation and closes via
+              // onClose (the "Done" button). Nothing to do here for now.
+            }}
+          />,
+          document.body
+        )}
     </aside>
   );
 });
@@ -9079,6 +9412,7 @@ function ConnectFlowModal({
   pickerProjectId,
   pickerProjectName,
   pickerEngineers,
+  pickerCrossProject,
   pickerPresence,
   newProjectType,
   setNewProjectType,
@@ -9129,6 +9463,11 @@ function ConnectFlowModal({
     lastDate: string;
     engineerId: string | null;
   }[];
+  /** True when the listed engineers come from the customer's OTHER
+   *  projects (the picked project has no engineer history of its own —
+   *  e.g. a just-created project). Switches the header copy so we never
+   *  claim they "worked with you on X" when they didn't. */
+  pickerCrossProject: boolean;
   pickerPresence: Record<string, "available" | "busy" | "offline">;
   newProjectType: string;
   setNewProjectType: (s: string) => void;
@@ -9210,117 +9549,117 @@ function ConnectFlowModal({
           justify-center overflow bug) when the form is taller than the
           viewport on short screens. */}
       <div className="flex min-h-full items-center justify-center px-4 py-5">
-      <div
-        className={cn(
-          "relative w-full rounded-2xl border p-5 shadow-2xl",
-          // Wider modal for the details step (form is content-heavy);
-          // narrower for the lighter steps so they don't feel sparse.
-          step === "details" ? "max-w-xl" : "max-w-md"
-        )}
-        style={{
-          backgroundColor: "var(--surface)",
-          borderColor: "var(--border)",
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          onClick={onClose}
-          aria-label="Close"
-          className="absolute top-4 right-4 rounded-full p-1 opacity-60 transition-opacity hover:opacity-100"
-          style={{ color: "var(--text-muted)" }}
+        <div
+          className={cn(
+            "relative w-full rounded-2xl border p-5 shadow-2xl",
+            // Wider modal for the details step (form is content-heavy);
+            // narrower for the lighter steps so they don't feel sparse.
+            step === "details" ? "max-w-xl" : "max-w-md"
+          )}
+          style={{
+            backgroundColor: "var(--surface)",
+            borderColor: "var(--border)",
+          }}
+          onClick={(e) => e.stopPropagation()}
         >
-          <X size={16} />
-        </button>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="absolute top-4 right-4 rounded-full p-1 opacity-60 transition-opacity hover:opacity-100"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <X size={16} />
+          </button>
 
-        {step === "choose" && (
-          <>
-            <h2
-              className="text-[18px] font-semibold"
-              style={{ color: "var(--text)" }}
-            >
-              Is this for a new project or an existing one?
-            </h2>
-            <p
-              className="mt-2 text-[13px] leading-relaxed"
-              style={{ color: "var(--text-muted)" }}
-            >
-              We'll route your session to the right project so the context stays
-              together.
-            </p>
-            <div className="mt-5 flex flex-col gap-2">
-              <button
-                type="button"
-                onClick={onChooseExisting}
-                disabled={projects.length === 0}
-                className="flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left transition-colors hover:bg-[var(--surface-raised)] disabled:cursor-not-allowed disabled:opacity-40"
-                style={{ borderColor: "var(--border)" }}
+          {step === "choose" && (
+            <>
+              <h2
+                className="text-[18px] font-semibold"
+                style={{ color: "var(--text)" }}
               >
-                <div>
-                  <div
-                    className="text-[14px] font-medium"
-                    style={{ color: "var(--text)" }}
-                  >
-                    Existing project
-                  </div>
-                  <div
-                    className="mt-0.5 text-[12px]"
-                    style={{ color: "var(--text-muted)" }}
-                  >
-                    {projects.length === 0
-                      ? "You don't have any projects yet — start a new one."
-                      : `Pick from your ${projects.length} project${projects.length === 1 ? "" : "s"}.`}
-                  </div>
-                </div>
-                <ChevronRight
-                  size={16}
-                  style={{ color: "var(--text-muted)" }}
-                />
-              </button>
-              <button
-                type="button"
-                onClick={onChooseNew}
-                className="flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left transition-colors hover:bg-[var(--surface-raised)]"
-                style={{ borderColor: "var(--border)" }}
+                Is this for a new project or an existing one?
+              </h2>
+              <p
+                className="mt-2 text-[13px] leading-relaxed"
+                style={{ color: "var(--text-muted)" }}
               >
-                <div>
-                  <div
-                    className="text-[14px] font-medium"
-                    style={{ color: "var(--text)" }}
-                  >
-                    New project
+                We&apos;ll route your session to the right project so the
+                context stays together.
+              </p>
+              <div className="mt-5 flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={onChooseExisting}
+                  disabled={projects.length === 0}
+                  className="flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left transition-colors hover:bg-[var(--surface-raised)] disabled:cursor-not-allowed disabled:opacity-40"
+                  style={{ borderColor: "var(--border)" }}
+                >
+                  <div>
+                    <div
+                      className="text-[14px] font-medium"
+                      style={{ color: "var(--text)" }}
+                    >
+                      Existing project
+                    </div>
+                    <div
+                      className="mt-0.5 text-[12px]"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      {projects.length === 0
+                        ? "You don't have any projects yet — start a new one."
+                        : `Pick from your ${projects.length} project${projects.length === 1 ? "" : "s"}.`}
+                    </div>
                   </div>
-                  <div
-                    className="mt-0.5 text-[12px]"
+                  <ChevronRight
+                    size={16}
                     style={{ color: "var(--text-muted)" }}
-                  >
-                    Tell us what you're building, then we'll connect you.
+                  />
+                </button>
+                <button
+                  type="button"
+                  onClick={onChooseNew}
+                  className="flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left transition-colors hover:bg-[var(--surface-raised)]"
+                  style={{ borderColor: "var(--border)" }}
+                >
+                  <div>
+                    <div
+                      className="text-[14px] font-medium"
+                      style={{ color: "var(--text)" }}
+                    >
+                      New project
+                    </div>
+                    <div
+                      className="mt-0.5 text-[12px]"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      Tell us what you&apos;re building, then we&apos;ll connect
+                      you.
+                    </div>
                   </div>
-                </div>
-                <ChevronRight
-                  size={16}
-                  style={{ color: "var(--text-muted)" }}
-                />
-              </button>
-            </div>
-          </>
-        )}
+                  <ChevronRight
+                    size={16}
+                    style={{ color: "var(--text-muted)" }}
+                  />
+                </button>
+              </div>
+            </>
+          )}
 
-        {step === "need" && (
-          <>
-            <WizardHeading
-              q={1}
-              title={
-                <>
-                  What do you{" "}
-                  <em style={{ color: "var(--primary)" }}>need</em> right now?
-                </>
-              }
-              sub="We match you with the right engineer based on where you are in your build."
-              onBack={onBack}
-            />
-            <div className="mt-4 flex flex-col gap-2">
-              {(
-                [
+          {step === "need" && (
+            <>
+              <WizardHeading
+                q={1}
+                title={
+                  <>
+                    What do you{" "}
+                    <em style={{ color: "var(--primary)" }}>need</em> right now?
+                  </>
+                }
+                sub="We match you with the right engineer based on where you are in your build."
+                onBack={onBack}
+              />
+              <div className="mt-4 flex flex-col gap-2">
+                {[
                   {
                     key: "building" as const,
                     icon: "🟥",
@@ -9336,365 +9675,17 @@ function ConnectFlowModal({
                   {
                     key: "support" as const,
                     icon: "🔧",
-                    title: "I need ongoing support — maintenance, scale, reliability",
+                    title:
+                      "I need ongoing support — maintenance, scale, reliability",
                     sub: "Your product is live. APIs change, dependencies break, traffic grows. You need someone who remembers your stack.",
                   },
-                ]
-              ).map((opt) => {
-                const active = needSel === opt.key;
-                return (
-                  <button
-                    key={opt.key}
-                    type="button"
-                    onClick={() => setNeedSel(opt.key)}
-                    aria-pressed={active}
-                    className="flex w-full items-start gap-3 rounded-lg border px-4 py-3 text-left transition-colors hover:bg-[var(--surface-raised)]"
-                    style={{
-                      borderColor: active
-                        ? "var(--primary)"
-                        : "var(--border)",
-                      backgroundColor: active
-                        ? "var(--primary-tint)"
-                        : "transparent",
-                    }}
-                  >
-                    <span aria-hidden className="mt-0.5 shrink-0 text-[15px]">
-                      {opt.icon}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span
-                        className="block text-[13.5px] font-semibold"
-                        style={{ color: "var(--text)" }}
-                      >
-                        {opt.title}
-                      </span>
-                      <span
-                        className="mt-0.5 block text-[12px] leading-relaxed"
-                        style={{ color: "var(--text-muted)" }}
-                      >
-                        {opt.sub}
-                      </span>
-                    </span>
-                    {/* Radio circle — brand-site right-edge affordance. */}
-                    <span
-                      aria-hidden
-                      className="mt-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border"
-                      style={{
-                        borderColor: active
-                          ? "var(--primary)"
-                          : "var(--border)",
-                      }}
-                    >
-                      {active && (
-                        <span
-                          className="h-2 w-2 rounded-full"
-                          style={{ backgroundColor: "var(--primary)" }}
-                        />
-                      )}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-            {/* Brand footer: ← Back left · Continue → right. */}
-            <div className="mt-5 flex items-center justify-between">
-              <button
-                type="button"
-                onClick={onBack}
-                className="text-[12.5px] font-medium transition-opacity hover:opacity-80"
-                style={{ color: "var(--text-muted)" }}
-              >
-                ← Back
-              </button>
-              <button
-                type="button"
-                onClick={() => needSel && onNeed(needSel)}
-                disabled={!needSel}
-                className="inline-flex items-center gap-1.5 rounded-full px-5 py-2 text-[13px] font-semibold transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-                style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
-              >
-                Continue →
-              </button>
-            </div>
-          </>
-        )}
-
-        {step === "existing" && (
-          <>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={onBack}
-                aria-label="Back"
-                className="rounded-md p-1 transition-opacity hover:opacity-80"
-                style={{ color: "var(--text-muted)" }}
-              >
-                <ChevronRight
-                  size={14}
-                  style={{ transform: "rotate(180deg)" }}
-                />
-              </button>
-              <h2
-                className="text-[18px] font-semibold"
-                style={{ color: "var(--text)" }}
-              >
-                Pick a project
-              </h2>
-            </div>
-            <p
-              className="mt-2 text-[13px] leading-relaxed"
-              style={{ color: "var(--text-muted)" }}
-            >
-              The session will be filed under the project you choose.
-            </p>
-            <div className="mt-4 flex max-h-[60vh] flex-col gap-1 overflow-y-auto">
-              {projects.length === 0 ? (
-                <p
-                  className="px-2 py-4 text-[13px]"
-                  style={{ color: "var(--text-muted)" }}
-                >
-                  No projects yet.
-                </p>
-              ) : (
-                projects.map((p) => (
-                  <button
-                    key={p.key}
-                    type="button"
-                    onClick={() => onPickProject(p.key)}
-                    className="flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left transition-colors hover:bg-[var(--surface-raised)]"
-                    style={{ borderColor: "var(--border)" }}
-                  >
-                    <div className="flex min-w-0 items-center gap-2">
-                      <Folder
-                        size={13}
-                        style={{ color: "var(--text-muted)", flexShrink: 0 }}
-                      />
-                      <span
-                        className="truncate text-[13px] font-medium"
-                        style={{ color: "var(--text)" }}
-                      >
-                        {p.name}
-                      </span>
-                    </div>
-                    <span
-                      className="ml-2 shrink-0 text-[11px] tabular-nums"
-                      style={{ color: "var(--text-muted)" }}
-                    >
-                      {p.sessions.length}{" "}
-                      {p.sessions.length === 1 ? "session" : "sessions"}
-                    </span>
-                  </button>
-                ))
-              )}
-            </div>
-          </>
-        )}
-
-        {step === "engineerPicker" && (
-          <>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={onPickerBack}
-                aria-label="Back"
-                className="rounded-md p-1 transition-opacity hover:opacity-80"
-                style={{ color: "var(--text-muted)" }}
-              >
-                <ChevronRight
-                  size={14}
-                  style={{ transform: "rotate(180deg)" }}
-                />
-              </button>
-              <h2
-                className="text-[18px] font-semibold"
-                style={{ color: "var(--text)" }}
-              >
-                Pick your engineer
-              </h2>
-            </div>
-            <p
-              className="mt-2 text-[13px] leading-relaxed"
-              style={{ color: "var(--text-muted)" }}
-            >
-              {pickerProjectName ? (
-                <>
-                  These engineers have worked with you on{" "}
-                  <strong style={{ color: "var(--text)" }}>
-                    {pickerProjectName}
-                  </strong>
-                  . Pick one to continue with — or request a different engineer
-                  if you need fresh eyes.
-                </>
-              ) : (
-                "Choose an engineer to connect with."
-              )}
-            </p>
-
-            <div className="mt-4 flex flex-col gap-2">
-              {pickerEngineers.map((eng) => {
-                // Real availability from the live presence poll, keyed by the
-                // engineer's user_id. Engineers with no resolvable id (legacy
-                // sessions that predate claimed_by) can't be ring-targeted or
-                // presence-checked, so they show Offline → Schedule.
-                const availability: "available" | "busy" | "offline" =
-                  eng.engineerId
-                    ? (pickerPresence[eng.engineerId] ?? "offline")
-                    : "offline";
-                return (
-                  <EngineerPickerRow
-                    key={eng.name}
-                    engineerName={eng.name}
-                    lastSessionDate={eng.lastDate}
-                    availability={availability}
-                    onConnect={() =>
-                      onEngineerConnect(eng.name, eng.engineerId)
-                    }
-                    onRequest={() => onEngineerRequest(eng.name)}
-                    onSchedule={() =>
-                      onEngineerSchedule(eng.name, eng.engineerId ?? null)
-                    }
-                  />
-                );
-              })}
-            </div>
-
-            <button
-              type="button"
-              onClick={onPickerRequestDifferent}
-              className="mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-full border px-4 py-2.5 text-[13px] font-medium transition-colors hover:bg-[var(--surface-raised)]"
-              style={{ borderColor: "var(--border)", color: "var(--text)" }}
-            >
-              <UserPlus size={13} />
-              Request a different engineer
-            </button>
-          </>
-        )}
-
-        {step === "details" && (
-          <DetailsStep
-            onBack={onBack}
-            variant={mode === "connect" ? "connect" : "create-only"}
-            newProjectType={newProjectType}
-            setNewProjectType={setNewProjectType}
-            newProjectTypeOther={newProjectTypeOther}
-            setNewProjectTypeOther={setNewProjectTypeOther}
-            newProjectAiTools={newProjectAiTools}
-            setNewProjectAiTools={setNewProjectAiTools}
-            newProjectBackend={newProjectBackend}
-            setNewProjectBackend={setNewProjectBackend}
-            newProjectFrontend={newProjectFrontend}
-            setNewProjectFrontend={setNewProjectFrontend}
-            toggleMultiSelect={toggleMultiSelect}
-            detailsValid={detailsValid}
-            onDetailsNext={onDetailsNext}
-          />
-        )}
-
-        {step === "name" && (
-          <>
-            {mode === "connect" ? (
-              <WizardHeading
-                q={3}
-                title={
-                  <>
-                    How <em style={{ color: "var(--primary)" }}>soon</em> do
-                    you need someone?
-                  </>
-                }
-                sub="Our engineers are available in seconds. But knowing your timeline helps us match better."
-                onBack={onNameBack}
-              />
-            ) : (
-              <>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={onNameBack}
-                    aria-label="Back"
-                    className="rounded-md p-1 transition-opacity hover:opacity-80"
-                    style={{ color: "var(--text-muted)" }}
-                  >
-                    <ChevronRight
-                      size={14}
-                      style={{ transform: "rotate(180deg)" }}
-                    />
-                  </button>
-                  <h2
-                    className="text-[18px] font-semibold"
-                    style={{ color: "var(--text)" }}
-                  >
-                    Name this project
-                  </h2>
-                </div>
-                <p
-                  className="mt-2 text-[13px] leading-relaxed"
-                  style={{ color: "var(--text-muted)" }}
-                >
-                  Pick a name you'll recognize when you come back. You can
-                  rename it later.
-                </p>
-              </>
-            )}
-            {mode === "connect" && (
-              <div
-                className="mt-4 mb-1.5 text-[11px] font-semibold tracking-[0.1em] uppercase"
-                style={{ color: "var(--text-muted)" }}
-              >
-                Project name
-              </div>
-            )}
-            <input
-              type="text"
-              value={newProjectName}
-              onChange={(e) => setNewProjectName(e.target.value)}
-              placeholder="e.g. ATLAS Project, Acme Landing, Mobile MVP"
-              maxLength={120}
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && nameValid && !submitting)
-                  onSubmitNewProject();
-              }}
-              className={cn(
-                "w-full rounded-md border px-3 py-2.5 text-[14px] outline-none focus:ring-2",
-                mode === "connect" ? "" : "mt-5"
-              )}
-              style={{
-                borderColor: "var(--border)",
-                backgroundColor: "var(--background)",
-                color: "var(--text)",
-              }}
-            />
-            {/* Q3 — brand-site "How soon?" radio cards. The pick drives the
-                post-create routing: now → ring, this week → matched
-                engineer's calendar, planning → supervisor pipeline. Only
-                shown in connect mode (create-only just makes the project). */}
-            {mode === "connect" && (
-              <div className="mt-4 flex flex-col gap-2">
-                {(
-                  [
-                    {
-                      key: "now" as const,
-                      icon: "🟢",
-                      title: "Right now — I'm stuck",
-                      sub: "An engineer joins in under 30 seconds. First 10 minutes free.",
-                    },
-                    {
-                      key: "this_week" as const,
-                      icon: "📅",
-                      title: "This week",
-                      sub: "Schedule a session, matched with relevant context.",
-                    },
-                    {
-                      key: "planning" as const,
-                      icon: "💡",
-                      title: "I'm planning ahead",
-                      sub: "Scope it, quote on complexity. No commitment.",
-                    },
-                  ]
-                ).map((opt) => {
-                  const active = urgency === opt.key;
+                ].map((opt) => {
+                  const active = needSel === opt.key;
                   return (
                     <button
                       key={opt.key}
                       type="button"
-                      onClick={() => onUrgencyChange(opt.key)}
+                      onClick={() => setNeedSel(opt.key)}
                       aria-pressed={active}
                       className="flex w-full items-start gap-3 rounded-lg border px-4 py-3 text-left transition-colors hover:bg-[var(--surface-raised)]"
                       style={{
@@ -9706,10 +9697,7 @@ function ConnectFlowModal({
                           : "transparent",
                       }}
                     >
-                      <span
-                        aria-hidden
-                        className="mt-0.5 shrink-0 text-[15px]"
-                      >
+                      <span aria-hidden className="mt-0.5 shrink-0 text-[15px]">
                         {opt.icon}
                       </span>
                       <span className="min-w-0 flex-1">
@@ -9726,6 +9714,7 @@ function ConnectFlowModal({
                           {opt.sub}
                         </span>
                       </span>
+                      {/* Radio circle — brand-site right-edge affordance. */}
                       <span
                         aria-hidden
                         className="mt-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border"
@@ -9746,15 +9735,11 @@ function ConnectFlowModal({
                   );
                 })}
               </div>
-            )}
-            {mode === "connect" ? (
-              <div
-                className="mt-5 flex items-center justify-between border-t pt-4"
-                style={{ borderColor: "var(--border)" }}
-              >
+              {/* Brand footer: ← Back left · Continue → right. */}
+              <div className="mt-5 flex items-center justify-between">
                 <button
                   type="button"
-                  onClick={onNameBack}
+                  onClick={onBack}
                   className="text-[12.5px] font-medium transition-opacity hover:opacity-80"
                   style={{ color: "var(--text-muted)" }}
                 >
@@ -9762,54 +9747,411 @@ function ConnectFlowModal({
                 </button>
                 <button
                   type="button"
+                  onClick={() => needSel && onNeed(needSel)}
+                  disabled={!needSel}
+                  className="inline-flex items-center gap-1.5 rounded-full px-5 py-2 text-[13px] font-semibold transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                  style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+                >
+                  Continue →
+                </button>
+              </div>
+            </>
+          )}
+
+          {step === "existing" && (
+            <>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={onBack}
+                  aria-label="Back"
+                  className="rounded-md p-1 transition-opacity hover:opacity-80"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  <ChevronRight
+                    size={14}
+                    style={{ transform: "rotate(180deg)" }}
+                  />
+                </button>
+                <h2
+                  className="text-[18px] font-semibold"
+                  style={{ color: "var(--text)" }}
+                >
+                  Pick a project
+                </h2>
+              </div>
+              <p
+                className="mt-2 text-[13px] leading-relaxed"
+                style={{ color: "var(--text-muted)" }}
+              >
+                The session will be filed under the project you choose.
+              </p>
+              <div className="mt-4 flex max-h-[60vh] flex-col gap-1 overflow-y-auto">
+                {projects.length === 0 ? (
+                  <p
+                    className="px-2 py-4 text-[13px]"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    No projects yet.
+                  </p>
+                ) : (
+                  projects.map((p) => (
+                    <button
+                      key={p.key}
+                      type="button"
+                      onClick={() => onPickProject(p.key)}
+                      className="flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left transition-colors hover:bg-[var(--surface-raised)]"
+                      style={{ borderColor: "var(--border)" }}
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        <Folder
+                          size={13}
+                          style={{ color: "var(--text-muted)", flexShrink: 0 }}
+                        />
+                        <span
+                          className="truncate text-[13px] font-medium"
+                          style={{ color: "var(--text)" }}
+                        >
+                          {p.name}
+                        </span>
+                      </div>
+                      <span
+                        className="ml-2 shrink-0 text-[11px] tabular-nums"
+                        style={{ color: "var(--text-muted)" }}
+                      >
+                        {p.sessions.length}{" "}
+                        {p.sessions.length === 1 ? "session" : "sessions"}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </>
+          )}
+
+          {step === "engineerPicker" && (
+            <>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={onPickerBack}
+                  aria-label="Back"
+                  className="rounded-md p-1 transition-opacity hover:opacity-80"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  <ChevronRight
+                    size={14}
+                    style={{ transform: "rotate(180deg)" }}
+                  />
+                </button>
+                <h2
+                  className="text-[18px] font-semibold"
+                  style={{ color: "var(--text)" }}
+                >
+                  Pick your engineer
+                </h2>
+              </div>
+              <p
+                className="mt-2 text-[13px] leading-relaxed"
+                style={{ color: "var(--text-muted)" }}
+              >
+                {pickerCrossProject ? (
+                  // New project (or one with no engineer history yet) — the
+                  // list is the customer's engineers from OTHER projects, so
+                  // don't claim they worked on this one.
+                  "These engineers have worked with you before on different projects. Pick one to continue with — or request a different engineer if you need fresh eyes."
+                ) : pickerProjectName ? (
+                  <>
+                    These engineers have worked with you on{" "}
+                    <strong style={{ color: "var(--text)" }}>
+                      {pickerProjectName}
+                    </strong>
+                    . Pick one to continue with — or request a different
+                    engineer if you need fresh eyes.
+                  </>
+                ) : (
+                  "Choose an engineer to connect with."
+                )}
+              </p>
+
+              <div className="mt-4 flex flex-col gap-2">
+                {pickerEngineers.map((eng) => {
+                  // Real availability from the live presence poll, keyed by the
+                  // engineer's user_id. Engineers with no resolvable id (legacy
+                  // sessions that predate claimed_by) can't be ring-targeted or
+                  // presence-checked, so they show Offline → Schedule.
+                  const availability: "available" | "busy" | "offline" =
+                    eng.engineerId
+                      ? (pickerPresence[eng.engineerId] ?? "offline")
+                      : "offline";
+                  return (
+                    <EngineerPickerRow
+                      key={eng.name}
+                      engineerName={eng.name}
+                      lastSessionDate={eng.lastDate}
+                      availability={availability}
+                      onConnect={() =>
+                        onEngineerConnect(eng.name, eng.engineerId)
+                      }
+                      onRequest={() => onEngineerRequest(eng.name)}
+                      onSchedule={() =>
+                        onEngineerSchedule(eng.name, eng.engineerId ?? null)
+                      }
+                    />
+                  );
+                })}
+              </div>
+
+              <button
+                type="button"
+                onClick={onPickerRequestDifferent}
+                className="mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-full border px-4 py-2.5 text-[13px] font-medium transition-colors hover:bg-[var(--surface-raised)]"
+                style={{ borderColor: "var(--border)", color: "var(--text)" }}
+              >
+                <UserPlus size={13} />
+                Request a different engineer
+              </button>
+            </>
+          )}
+
+          {step === "details" && (
+            <DetailsStep
+              onBack={onBack}
+              variant={mode === "connect" ? "connect" : "create-only"}
+              newProjectType={newProjectType}
+              setNewProjectType={setNewProjectType}
+              newProjectTypeOther={newProjectTypeOther}
+              setNewProjectTypeOther={setNewProjectTypeOther}
+              newProjectAiTools={newProjectAiTools}
+              setNewProjectAiTools={setNewProjectAiTools}
+              newProjectBackend={newProjectBackend}
+              setNewProjectBackend={setNewProjectBackend}
+              newProjectFrontend={newProjectFrontend}
+              setNewProjectFrontend={setNewProjectFrontend}
+              toggleMultiSelect={toggleMultiSelect}
+              detailsValid={detailsValid}
+              onDetailsNext={onDetailsNext}
+            />
+          )}
+
+          {step === "name" && (
+            <>
+              {mode === "connect" ? (
+                <WizardHeading
+                  q={3}
+                  title={
+                    <>
+                      How <em style={{ color: "var(--primary)" }}>soon</em> do
+                      you need someone?
+                    </>
+                  }
+                  sub="Our engineers are available in seconds. But knowing your timeline helps us match better."
+                  onBack={onNameBack}
+                />
+              ) : (
+                <>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={onNameBack}
+                      aria-label="Back"
+                      className="rounded-md p-1 transition-opacity hover:opacity-80"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      <ChevronRight
+                        size={14}
+                        style={{ transform: "rotate(180deg)" }}
+                      />
+                    </button>
+                    <h2
+                      className="text-[18px] font-semibold"
+                      style={{ color: "var(--text)" }}
+                    >
+                      Name this project
+                    </h2>
+                  </div>
+                  <p
+                    className="mt-2 text-[13px] leading-relaxed"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    Pick a name you'll recognize when you come back. You can
+                    rename it later.
+                  </p>
+                </>
+              )}
+              {mode === "connect" && (
+                <div
+                  className="mt-4 mb-1.5 text-[11px] font-semibold tracking-[0.1em] uppercase"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  Project name
+                </div>
+              )}
+              <input
+                type="text"
+                value={newProjectName}
+                onChange={(e) => setNewProjectName(e.target.value)}
+                placeholder="e.g. ATLAS Project, Acme Landing, Mobile MVP"
+                maxLength={120}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && nameValid && !submitting)
+                    onSubmitNewProject();
+                }}
+                className={cn(
+                  "w-full rounded-md border px-3 py-2.5 text-[14px] outline-none focus:ring-2",
+                  mode === "connect" ? "" : "mt-5"
+                )}
+                style={{
+                  borderColor: "var(--border)",
+                  backgroundColor: "var(--background)",
+                  color: "var(--text)",
+                }}
+              />
+              {/* Q3 — brand-site "How soon?" radio cards. The pick drives the
+                post-create routing: now → ring, this week → matched
+                engineer's calendar, planning → supervisor pipeline. Only
+                shown in connect mode (create-only just makes the project). */}
+              {mode === "connect" && (
+                <div className="mt-4 flex flex-col gap-2">
+                  {[
+                    {
+                      key: "now" as const,
+                      icon: "🟢",
+                      title: "Right now — I'm stuck",
+                      sub: "An engineer joins in under 30 seconds. First 10 minutes free.",
+                    },
+                    {
+                      key: "this_week" as const,
+                      icon: "📅",
+                      title: "This week",
+                      sub: "Schedule a session, matched with relevant context.",
+                    },
+                    {
+                      key: "planning" as const,
+                      icon: "💡",
+                      title: "I'm planning ahead",
+                      sub: "Scope it, quote on complexity. No commitment.",
+                    },
+                  ].map((opt) => {
+                    const active = urgency === opt.key;
+                    return (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        onClick={() => onUrgencyChange(opt.key)}
+                        aria-pressed={active}
+                        className="flex w-full items-start gap-3 rounded-lg border px-4 py-3 text-left transition-colors hover:bg-[var(--surface-raised)]"
+                        style={{
+                          borderColor: active
+                            ? "var(--primary)"
+                            : "var(--border)",
+                          backgroundColor: active
+                            ? "var(--primary-tint)"
+                            : "transparent",
+                        }}
+                      >
+                        <span
+                          aria-hidden
+                          className="mt-0.5 shrink-0 text-[15px]"
+                        >
+                          {opt.icon}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span
+                            className="block text-[13.5px] font-semibold"
+                            style={{ color: "var(--text)" }}
+                          >
+                            {opt.title}
+                          </span>
+                          <span
+                            className="mt-0.5 block text-[12px] leading-relaxed"
+                            style={{ color: "var(--text-muted)" }}
+                          >
+                            {opt.sub}
+                          </span>
+                        </span>
+                        <span
+                          aria-hidden
+                          className="mt-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border"
+                          style={{
+                            borderColor: active
+                              ? "var(--primary)"
+                              : "var(--border)",
+                          }}
+                        >
+                          {active && (
+                            <span
+                              className="h-2 w-2 rounded-full"
+                              style={{ backgroundColor: "var(--primary)" }}
+                            />
+                          )}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {mode === "connect" ? (
+                <div
+                  className="mt-5 flex items-center justify-between border-t pt-4"
+                  style={{ borderColor: "var(--border)" }}
+                >
+                  <button
+                    type="button"
+                    onClick={onNameBack}
+                    className="text-[12.5px] font-medium transition-opacity hover:opacity-80"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    ← Back
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onSubmitNewProject}
+                    disabled={!nameValid || submitting}
+                    className="inline-flex items-center gap-1.5 rounded-full px-5 py-2 text-[13px] font-semibold transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                    style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+                  >
+                    {submitting ? (
+                      <>
+                        <Loader2 size={13} className="animate-spin" />
+                        Matching…
+                      </>
+                    ) : urgency === "planning" ? (
+                      <>Scope my project →</>
+                    ) : (
+                      <>Find my engineer →</>
+                    )}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
                   onClick={onSubmitNewProject}
                   disabled={!nameValid || submitting}
-                  className="inline-flex items-center gap-1.5 rounded-full px-5 py-2 text-[13px] font-semibold transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="mt-5 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-[13px] font-semibold transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                   style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
                 >
                   {submitting ? (
                     <>
                       <Loader2 size={13} className="animate-spin" />
-                      Matching…
+                      Creating…
                     </>
-                  ) : urgency === "planning" ? (
-                    <>Scope my project →</>
                   ) : (
-                    <>Find my engineer →</>
+                    <>
+                      <Folder size={13} />
+                      Create project
+                    </>
                   )}
                 </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={onSubmitNewProject}
-                disabled={!nameValid || submitting}
-                className="mt-5 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-[13px] font-semibold transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-                style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
-              >
-                {submitting ? (
-                  <>
-                    <Loader2 size={13} className="animate-spin" />
-                    Creating…
-                  </>
-                ) : (
-                  <>
-                    <Folder size={13} />
-                    Create project
-                  </>
-                )}
-              </button>
-            )}
-            {mode === "create-only" && (
-              <p
-                className="mt-3 text-center text-[11px]"
-                style={{ color: "var(--text-muted)" }}
-              >
-                You can call an engineer later from this project's row.
-              </p>
-            )}
-          </>
-        )}
+              )}
+              {mode === "create-only" && (
+                <p
+                  className="mt-3 text-center text-[11px]"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  You can call an engineer later from this project's row.
+                </p>
+              )}
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -10144,8 +10486,8 @@ function DetailsStep({
         q={2}
         title={
           <>
-            What are you{" "}
-            <em style={{ color: "var(--primary)" }}>building</em> with?
+            What are you <em style={{ color: "var(--primary)" }}>building</em>{" "}
+            with?
           </>
         }
         sub="We support 150+ integrations. Pick what matters — we'll match you with an engineer who's shipped on it."
@@ -11052,7 +11394,9 @@ const ProjectAccordion = memo(function ProjectAccordion({
   // trigger, so it escapes the sidebar's overflow: it no longer drops down
   // over the "All projects" button below, and never adds a sidebar scrollbar.
   const [overflowOpen, setOverflowOpen] = useState(false);
-  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(
+    null
+  );
   const overflowBtnRef = useRef<HTMLButtonElement>(null);
 
   const openOverflowMenu = useCallback(() => {
@@ -11107,8 +11451,11 @@ const ProjectAccordion = memo(function ProjectAccordion({
     <div className="group/proj mb-1">
       {/* Project header. min-w-0 on the wrapper + button lets the long
           name actually shrink/wrap within the flex column instead of
-          pushing the action buttons outside the sidebar's right edge. */}
-      <div className="relative flex min-w-0 items-center">
+          pushing the action buttons outside the sidebar's right edge.
+          group/projrow scopes the hover-reveal of the call + ⋯ controls
+          to THIS row only (group/proj wraps the expanded session list
+          too, which would reveal on hovers far below the header). */}
+      <div className="group/projrow relative flex min-w-0 items-center">
         <button
           onClick={() => {
             onToggleOpen();
@@ -11197,7 +11544,21 @@ const ProjectAccordion = memo(function ProjectAccordion({
               expanding the project to see the sessions directly. */}
         </button>
         {!isGeneral && !renaming && (
-          <>
+          /* Hover-reveal: resting non-active rows hide the call button and
+             the ⋯ menu (only chevron + name show); hovering any row reveals
+             them. The ACTIVE row always shows both — the green call button
+             is brand identity and must stay present for the selected
+             project. Deliberate exception: do NOT simplify to all-hover or
+             all-visible. Also kept visible while the overflow menu is open
+             (so it doesn't vanish under the portal) and on focus-within
+             for keyboard users. */
+          <div
+            className={`projrow-actions flex items-center transition-opacity duration-150 ${
+              isSelected || overflowOpen
+                ? "opacity-100"
+                : "pointer-events-none opacity-0 group-hover/projrow:pointer-events-auto group-hover/projrow:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100"
+            }`}
+          >
             {/* Per-project call button. Color reflects engineer history:
                 BLACK when the project has never had an engineer session
                 (cold start — clicking triggers skill-match to find one);
@@ -11264,7 +11625,9 @@ const ProjectAccordion = memo(function ProjectAccordion({
               >
                 <MoreHorizontal size={14} />
               </button>
-              {overflowOpen && menuPos && typeof document !== "undefined" &&
+              {overflowOpen &&
+                menuPos &&
+                typeof document !== "undefined" &&
                 createPortal(
                   <div
                     className="fixed z-[var(--z-modal)] min-w-[168px] overflow-hidden rounded-lg border shadow-xl"
@@ -11291,7 +11654,10 @@ const ProjectAccordion = memo(function ProjectAccordion({
                         size={12}
                         style={
                           isProjectPinned
-                            ? { color: "var(--primary)", fill: "var(--primary)" }
+                            ? {
+                                color: "var(--primary)",
+                                fill: "var(--primary)",
+                              }
                             : undefined
                         }
                       />
@@ -11308,7 +11674,9 @@ const ProjectAccordion = memo(function ProjectAccordion({
                       style={{ color: "var(--text)" }}
                     >
                       <Archive size={12} />
-                      {isProjectArchived ? "Unarchive project" : "Archive project"}
+                      {isProjectArchived
+                        ? "Unarchive project"
+                        : "Archive project"}
                     </button>
                     <button
                       type="button"
@@ -11319,7 +11687,10 @@ const ProjectAccordion = memo(function ProjectAccordion({
                         setRenaming(true);
                       }}
                       className="flex w-full items-center gap-2 border-t px-3 py-2 text-left text-[12px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                      style={{ color: "var(--text)", borderColor: "var(--border)" }}
+                      style={{
+                        color: "var(--text)",
+                        borderColor: "var(--border)",
+                      }}
                     >
                       <Pencil size={12} />
                       Rename project
@@ -11344,7 +11715,7 @@ const ProjectAccordion = memo(function ProjectAccordion({
                   document.body
                 )}
             </div>
-          </>
+          </div>
         )}
       </div>
 

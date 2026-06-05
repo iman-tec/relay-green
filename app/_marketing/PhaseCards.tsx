@@ -69,9 +69,7 @@ export function PhaseCards({ phases }: Props) {
                     <span className="r-leg-tier-name">{plan.name}</span>
                     <span className="r-leg-tier-detail">{plan.detail}</span>
                   </span>
-                  <span className="r-leg-tier-price">
-                    {plan.priceLabel}
-                  </span>
+                  <span className="r-leg-tier-price">{plan.priceLabel}</span>
                 </div>
               ))}
             </div>

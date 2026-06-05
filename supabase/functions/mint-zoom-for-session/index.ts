@@ -23,7 +23,8 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY =
-  Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY")!;
+  Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ??
+  Deno.env.get("SUPABASE_ANON_KEY")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const ZOOM_ACCOUNT_ID = Deno.env.get("ZOOM_ACCOUNT_ID");
@@ -34,10 +35,11 @@ async function getZoomAccessToken(): Promise<string> {
   const basic = btoa(`${ZOOM_CLIENT_ID}:${ZOOM_CLIENT_SECRET}`);
   const r = await fetch(
     `https://zoom.us/oauth/token?grant_type=account_credentials&account_id=${ZOOM_ACCOUNT_ID}`,
-    { method: "POST", headers: { Authorization: `Basic ${basic}` } },
+    { method: "POST", headers: { Authorization: `Basic ${basic}` } }
   );
   const data = await r.json();
-  if (!r.ok) throw new Error(`Zoom OAuth failed [${r.status}]: ${JSON.stringify(data)}`);
+  if (!r.ok)
+    throw new Error(`Zoom OAuth failed [${r.status}]: ${JSON.stringify(data)}`);
   return data.access_token as string;
 }
 
@@ -47,12 +49,12 @@ async function getZoomAccessToken(): Promise<string> {
 async function endStaleLiveMeetings(
   token: string,
   admin: ReturnType<typeof createClient>,
-  opts: { force?: boolean } = {},
+  opts: { force?: boolean } = {}
 ): Promise<number> {
   try {
     const r = await fetch(
       "https://api.zoom.us/v2/users/me/meetings?type=live&page_size=30",
-      { headers: { Authorization: `Bearer ${token}` } },
+      { headers: { Authorization: `Bearer ${token}` } }
     );
     if (!r.ok) return 0;
     const data = await r.json();
@@ -68,20 +70,29 @@ async function endStaleLiveMeetings(
         .in("zoom_meeting_id", ids)
         .in("status", ["assigned", "joining", "live", "grace", "expired_free"]);
       const protectedIds = new Set(
-        ((active ?? []) as Array<{ zoom_meeting_id: string }>).map((r) => r.zoom_meeting_id),
+        ((active ?? []) as Array<{ zoom_meeting_id: string }>).map(
+          (r) => r.zoom_meeting_id
+        )
       );
       toEnd = live.filter((m) => !protectedIds.has(String(m.id)));
     }
 
-    await Promise.all(toEnd.map((m) =>
-      fetch(`https://api.zoom.us/v2/meetings/${m.id}/status`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "end" }),
-      }).catch(() => undefined),
-    ));
+    await Promise.all(
+      toEnd.map((m) =>
+        fetch(`https://api.zoom.us/v2/meetings/${m.id}/status`, {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ action: "end" }),
+        }).catch(() => undefined)
+      )
+    );
     return toEnd.length;
-  } catch { return 0; }
+  } catch {
+    return 0;
+  }
 }
 
 function sleep(ms: number): Promise<void> {
@@ -94,13 +105,16 @@ async function createMeetingWithRetry(
   token: string,
   admin: ReturnType<typeof createClient>,
   body: unknown,
-  attempts = 3,
+  attempts = 3
 ): Promise<{ ok: boolean; data: Record<string, unknown> }> {
   let lastData: Record<string, unknown> = {};
   for (let i = 0; i < attempts; i++) {
     const r = await fetch("https://api.zoom.us/v2/users/me/meetings", {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify(body),
     });
     const data = await r.json().catch(() => ({}));
@@ -123,16 +137,22 @@ async function addRegistrant(
   token: string,
   meetingId: string,
   displayName: string,
-  email: string,
+  email: string
 ): Promise<string> {
   const tokens = displayName.split(/\s+/).filter(Boolean);
   const first = tokens[0] || "Guest";
   const last = tokens.slice(1).join(" ") || ".";
-  const r = await fetch(`https://api.zoom.us/v2/meetings/${meetingId}/registrants`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ email, first_name: first, last_name: last }),
-  });
+  const r = await fetch(
+    `https://api.zoom.us/v2/meetings/${meetingId}/registrants`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ email, first_name: first, last_name: last }),
+    }
+  );
   const data = await r.json().catch(() => ({}));
   if (!r.ok || !data.join_url) {
     throw new Error(`registrant failed [${r.status}]: ${JSON.stringify(data)}`);
@@ -145,21 +165,29 @@ async function addRegistrant(
 // so the caller can fall back.
 async function mintWithRegistration(
   token: string,
-  opts: { topic: string; engAlias: string; custName: string },
-): Promise<{ meetingId: string; engineerUrl: string; customerUrl: string; observerUrl: string }> {
+  opts: { topic: string; engAlias: string; custName: string }
+): Promise<{
+  meetingId: string;
+  engineerUrl: string;
+  customerUrl: string;
+  observerUrl: string;
+}> {
   const start = new Date(Date.now() + 60_000).toISOString();
   const r = await fetch("https://api.zoom.us/v2/users/me/meetings", {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({
       topic: opts.topic,
-      type: 2,                 // scheduled (required for registration)
+      type: 2, // scheduled (required for registration)
       start_time: start,
       duration: 180,
       settings: {
-        join_before_host: true,           // host account never joins
+        join_before_host: true, // host account never joins
         waiting_room: false,
-        approval_type: 0,                 // auto-approve registrants
+        approval_type: 0, // auto-approve registrants
         registration_type: 1,
         registrants_email_notification: false, // we hand out the link in-app
         auto_recording: "none",
@@ -175,19 +203,38 @@ async function mintWithRegistration(
     throw new Error(`create(type2) failed [${r.status}]: ${JSON.stringify(m)}`);
   }
   const meetingId = String(m.id);
-  const engineerUrl = await addRegistrant(token, meetingId, opts.engAlias, `eng-${meetingId}@relay.invalid`);
-  const customerUrl = await addRegistrant(token, meetingId, opts.custName, `cust-${meetingId}@relay.invalid`);
+  const engineerUrl = await addRegistrant(
+    token,
+    meetingId,
+    opts.engAlias,
+    `eng-${meetingId}@relay.invalid`
+  );
+  const customerUrl = await addRegistrant(
+    token,
+    meetingId,
+    opts.custName,
+    `cust-${meetingId}@relay.invalid`
+  );
   // Anonymous supervisor observer — joins under a generic name so neither the
   // customer nor the engineer learns who is monitoring. Any covering
   // supervisor reuses this single registrant URL.
-  const observerUrl = await addRegistrant(token, meetingId, "Relay Supervisor", `sup-${meetingId}@relay.invalid`);
+  const observerUrl = await addRegistrant(
+    token,
+    meetingId,
+    "Relay Supervisor",
+    `sup-${meetingId}@relay.invalid`
+  );
   return { meetingId, engineerUrl, customerUrl, observerUrl };
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method === "OPTIONS")
+    return new Response("ok", { headers: corsHeaders });
   const json = (obj: unknown, status = 200) =>
-    new Response(JSON.stringify(obj), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    new Response(JSON.stringify(obj), {
+      status,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
 
   try {
     if (!ZOOM_ACCOUNT_ID || !ZOOM_CLIENT_ID || !ZOOM_CLIENT_SECRET) {
@@ -195,7 +242,8 @@ Deno.serve(async (req) => {
     }
 
     const auth = req.headers.get("Authorization") ?? "";
-    if (!auth.startsWith("Bearer ")) return json({ error: "Unauthorized" }, 401);
+    if (!auth.startsWith("Bearer "))
+      return json({ error: "Unauthorized" }, 401);
 
     const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       global: { headers: { Authorization: auth } },
@@ -211,28 +259,41 @@ Deno.serve(async (req) => {
 
     const { data: session, error: sErr } = await admin
       .from("guest_calls")
-      .select("id, claimed_by, zoom_meeting_id, zoom_join_url, zoom_start_url, zoom_observer_url, guest_name, status")
+      .select(
+        "id, claimed_by, zoom_meeting_id, zoom_join_url, zoom_start_url, zoom_observer_url, guest_name, status"
+      )
       .eq("id", sessionId)
       .maybeSingle();
     if (sErr || !session) return json({ error: "Session not found" }, 404);
-    if (session.claimed_by !== u.user.id) return json({ error: "Not assigned to you" }, 403);
+    if (session.claimed_by !== u.user.id)
+      return json({ error: "Not assigned to you" }, 403);
 
     // Idempotency vs restart: reuse the existing meeting unless the latest
     // lifecycle message is an "ended" one (meeting is stale → mint fresh).
     let isStale = false;
     if (session.zoom_meeting_id) {
       const { data: lastEnd } = await admin
-        .from("guest_messages").select("created_at")
-        .eq("guest_call_id", sessionId).eq("sender_kind", "system")
+        .from("guest_messages")
+        .select("created_at")
+        .eq("guest_call_id", sessionId)
+        .eq("sender_kind", "system")
         .ilike("body", "%Zoom meeting ended%")
-        .order("created_at", { ascending: false }).limit(1).maybeSingle();
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
       const { data: lastStart } = await admin
-        .from("guest_messages").select("created_at")
-        .eq("guest_call_id", sessionId).eq("sender_kind", "system")
+        .from("guest_messages")
+        .select("created_at")
+        .eq("guest_call_id", sessionId)
+        .eq("sender_kind", "system")
         .ilike("body", "%Zoom meeting started%")
-        .order("created_at", { ascending: false }).limit(1).maybeSingle();
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
       if (lastEnd) {
-        isStale = !lastStart || new Date(lastEnd.created_at) > new Date(lastStart.created_at);
+        isStale =
+          !lastStart ||
+          new Date(lastEnd.created_at) > new Date(lastStart.created_at);
       }
       if (!isStale) {
         return json({
@@ -256,8 +317,10 @@ Deno.serve(async (req) => {
     let engAlias = "Relay Engineer";
     if (session.claimed_by) {
       const { data: prof } = await admin
-        .from("engineer_profiles").select("display_alias")
-        .eq("user_id", session.claimed_by).maybeSingle();
+        .from("engineer_profiles")
+        .select("display_alias")
+        .eq("user_id", session.claimed_by)
+        .maybeSingle();
       if (prof?.display_alias) engAlias = String(prof.display_alias).trim();
     }
 
@@ -282,7 +345,7 @@ Deno.serve(async (req) => {
       // Fallback — plain instant meeting (no per-person names, but it works).
       console.warn(
         "mint-zoom: registration path failed, falling back to instant:",
-        regErr instanceof Error ? regErr.message : String(regErr),
+        regErr instanceof Error ? regErr.message : String(regErr)
       );
       const createBody = {
         topic: `Relay session — ${custName}`,
@@ -298,7 +361,11 @@ Deno.serve(async (req) => {
           ai_companion_auto_start: true,
         },
       };
-      const { ok, data: z } = await createMeetingWithRetry(token, admin, createBody);
+      const { ok, data: z } = await createMeetingWithRetry(
+        token,
+        admin,
+        createBody
+      );
       if (!ok) {
         console.error("Zoom create failed", z);
         return json({ error: "Zoom create failed", detail: z }, 502);

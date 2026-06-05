@@ -15,7 +15,7 @@ const Inner = dynamic(
   {
     ssr: false,
     loading: () => <Skeleton />,
-  },
+  }
 );
 
 function Skeleton() {

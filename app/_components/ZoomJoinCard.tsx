@@ -11,10 +11,19 @@
  */
 
 import { useState } from "react";
-import { Video, Copy, Check, ExternalLink, PhoneOff, Loader2, RotateCw } from "lucide-react";
+import {
+  Video,
+  Copy,
+  Check,
+  ExternalLink,
+  PhoneOff,
+  Loader2,
+  RotateCw,
+} from "lucide-react";
 
 const BRAND_GREEN = "var(--primary)";
-const BRAND_GREEN_BORDER = "color-mix(in srgb, var(--primary) 32%, transparent)";
+const BRAND_GREEN_BORDER =
+  "color-mix(in srgb, var(--primary) 32%, transparent)";
 const BRAND_GREEN_SOFT = "var(--primary-soft)";
 type Props = {
   meetingId: string;
@@ -35,7 +44,15 @@ type Props = {
   onRestart?: () => void | Promise<void>;
 };
 
-export function ZoomJoinCard({ meetingId, joinUrl, onJoin, title, subtitle, ended, onRestart }: Props) {
+export function ZoomJoinCard({
+  meetingId,
+  joinUrl,
+  onJoin,
+  title,
+  subtitle,
+  ended,
+  onRestart,
+}: Props) {
   const [copied, setCopied] = useState(false);
   const [restarting, setRestarting] = useState(false);
 
@@ -45,7 +62,9 @@ export function ZoomJoinCard({ meetingId, joinUrl, onJoin, title, subtitle, ende
       await navigator.clipboard.writeText(joinUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
-    } catch { /* clipboard blocked — surface nothing */ }
+    } catch {
+      /* clipboard blocked — surface nothing */
+    }
   };
 
   const handleJoin = () => {
@@ -55,7 +74,9 @@ export function ZoomJoinCard({ meetingId, joinUrl, onJoin, title, subtitle, ende
   };
 
   // Format the meeting id as Zoom does in the client: 123 4567 8901
-  const prettyId = meetingId.replace(/\D/g, "").replace(/(\d{3})(\d{4})(\d+)/, "$1 $2 $3");
+  const prettyId = meetingId
+    .replace(/\D/g, "")
+    .replace(/(\d{3})(\d{4})(\d+)/, "$1 $2 $3");
 
   return (
     <div
@@ -79,15 +100,24 @@ export function ZoomJoinCard({ meetingId, joinUrl, onJoin, title, subtitle, ende
           {ended ? <PhoneOff size={18} /> : <Video size={18} />}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold" style={{ color: "var(--text)" }}>
+          <div
+            className="text-sm font-semibold"
+            style={{ color: "var(--text)" }}
+          >
             {ended ? "Meeting ended" : (title ?? "Zoom meeting ready")}
           </div>
           {ended ? (
-            <div className="mt-0.5 text-xs" style={{ color: "var(--text-muted)" }}>
+            <div
+              className="mt-0.5 text-xs"
+              style={{ color: "var(--text-muted)" }}
+            >
               The Zoom call has ended. You can keep chatting here.
             </div>
           ) : subtitle ? (
-            <div className="mt-0.5 text-xs" style={{ color: "var(--text-muted)" }}>
+            <div
+              className="mt-0.5 text-xs"
+              style={{ color: "var(--text-muted)" }}
+            >
               {subtitle}
             </div>
           ) : null}
@@ -96,10 +126,16 @@ export function ZoomJoinCard({ meetingId, joinUrl, onJoin, title, subtitle, ende
 
       <div className="mt-3 space-y-2">
         <div className="flex items-baseline justify-between gap-3">
-          <span className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+          <span
+            className="text-[10px] tracking-wider uppercase"
+            style={{ color: "var(--text-muted)" }}
+          >
             Meeting ID
           </span>
-          <span className="text-sm font-medium tabular-nums" style={{ color: "var(--text)" }}>
+          <span
+            className="text-sm font-medium tabular-nums"
+            style={{ color: "var(--text)" }}
+          >
             {prettyId || "—"}
           </span>
         </div>
@@ -138,7 +174,9 @@ export function ZoomJoinCard({ meetingId, joinUrl, onJoin, title, subtitle, ende
         disabled={ended || !joinUrl}
         className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50"
         style={{
-          backgroundColor: ended ? "color-mix(in srgb, var(--text) 8%, transparent)" : BRAND_GREEN,
+          backgroundColor: ended
+            ? "color-mix(in srgb, var(--text) 8%, transparent)"
+            : BRAND_GREEN,
           color: ended ? "var(--text-muted)" : "#fff",
         }}
       >
@@ -161,14 +199,21 @@ export function ZoomJoinCard({ meetingId, joinUrl, onJoin, title, subtitle, ende
           onClick={async () => {
             if (restarting) return;
             setRestarting(true);
-            try { await onRestart(); }
-            finally { setRestarting(false); }
+            try {
+              await onRestart();
+            } finally {
+              setRestarting(false);
+            }
           }}
           disabled={restarting}
           className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60"
           style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
         >
-          {restarting ? <Loader2 size={14} className="animate-spin" /> : <RotateCw size={14} />}
+          {restarting ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <RotateCw size={14} />
+          )}
           {restarting ? "Starting new meeting…" : "Start new meeting"}
         </button>
       ) : null}

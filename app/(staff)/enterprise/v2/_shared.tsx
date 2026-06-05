@@ -33,14 +33,19 @@ export function useApiData<T>(url: string | null) {
       .finally(() => setLoading(false));
   }, [url]);
 
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    reload();
+  }, [reload]);
 
   return { data, loading, error, reload };
 }
 
 export function eur(cents: number | null | undefined): string {
   if (cents == null) return "—";
-  return new Intl.NumberFormat("en-IE", { style: "currency", currency: "EUR" }).format(cents / 100);
+  return new Intl.NumberFormat("en-IE", {
+    style: "currency",
+    currency: "EUR",
+  }).format(cents / 100);
 }
 
 export function num(n: number | null | undefined): string {
@@ -50,7 +55,10 @@ export function num(n: number | null | undefined): string {
 
 /** Stat card — icon + big number + caption. Matches the dashboard pattern. */
 export function StatCard({
-  icon, value, label, hint,
+  icon,
+  value,
+  label,
+  hint,
 }: {
   icon: ReactNode;
   value: string;
@@ -65,7 +73,10 @@ export function StatCard({
       <div className="flex items-center justify-between">
         <span
           className="inline-flex size-9 items-center justify-center rounded-xl"
-          style={{ background: "var(--primary-tint)", color: "var(--primary-hover)" }}
+          style={{
+            background: "var(--primary-tint)",
+            color: "var(--primary-hover)",
+          }}
         >
           {icon}
         </span>
@@ -78,7 +89,9 @@ export function StatCard({
       </div>
       <div className="text-xs" style={{ color: "var(--text-muted)" }}>
         {label}
-        {hint ? <span style={{ color: "var(--text-faint)" }}> · {hint}</span> : null}
+        {hint ? (
+          <span style={{ color: "var(--text-faint)" }}> · {hint}</span>
+        ) : null}
       </div>
     </div>
   );
@@ -107,7 +120,13 @@ export function LoadingState({ label = "Loading…" }: { label?: string }) {
   );
 }
 
-export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+export function ErrorState({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry?: () => void;
+}) {
   return (
     <EmptyState
       icon={<AlertTriangle size={20} />}

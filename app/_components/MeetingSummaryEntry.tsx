@@ -20,11 +20,23 @@
  */
 
 import { useState } from "react";
-import { Sparkles, Video, KeyRound, Copy, Check, Pencil, Trash2, Loader2, X, ChevronDown } from "lucide-react";
+import {
+  Sparkles,
+  Video,
+  KeyRound,
+  Copy,
+  Check,
+  Pencil,
+  Trash2,
+  Loader2,
+  X,
+  ChevronDown,
+} from "lucide-react";
 
 const BRAND_GREEN = "var(--primary)";
 const BRAND_GREEN_SOFT = "var(--primary-soft)";
-const BRAND_GREEN_BORDER = "color-mix(in srgb, var(--primary) 32%, transparent)";
+const BRAND_GREEN_BORDER =
+  "color-mix(in srgb, var(--primary) 32%, transparent)";
 /** Detect whether a system message body is an AI summary capsule. */
 export function isAiSummaryMessageBody(body: string): boolean {
   return body.includes("AI Companion summary");
@@ -42,7 +54,9 @@ function stripSummaryMarker(body: string): string {
     .replace(/^\s+/, "");
 }
 function ensureSummaryMarker(body: string): string {
-  return /AI Companion summary/i.test(body) ? body : `${SUMMARY_MARKER}\n${body}`;
+  return /AI Companion summary/i.test(body)
+    ? body
+    : `${SUMMARY_MARKER}\n${body}`;
 }
 
 type Parsed = {
@@ -95,7 +109,10 @@ function parseAiSummary(body: string): Parsed {
  *   Passcode: K^8^r0&C
  * The passcode line is optional.
  */
-function parseRecording(body: string): { url: string | null; passcode: string | null } {
+function parseRecording(body: string): {
+  url: string | null;
+  passcode: string | null;
+} {
   const urlMatch = body.match(/Recording available:\s*(\S+)/i);
   const passMatch = body.match(/Passcode:\s*(.+?)\s*$/im);
   return {
@@ -158,7 +175,10 @@ export function MeetingSummaryEntry({
 
   const handleDelete = async () => {
     if (!onDelete || deleting) return;
-    if (typeof window !== "undefined" && !window.confirm("Delete this call summary card?")) {
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm("Delete this call summary card?")
+    ) {
       return;
     }
     setDeleting(true);
@@ -202,7 +222,11 @@ export function MeetingSummaryEntry({
       el.style.opacity = "0";
       document.body.appendChild(el);
       el.select();
-      try { document.execCommand("copy"); } catch { /* nothing more we can do */ }
+      try {
+        document.execCommand("copy");
+      } catch {
+        /* nothing more we can do */
+      }
       el.remove();
     }
     setCopied(which);
@@ -232,7 +256,7 @@ export function MeetingSummaryEntry({
                 <Sparkles size={13} />
               </div>
               <span
-                className="text-[10px] font-semibold uppercase tracking-wider"
+                className="text-[10px] font-semibold tracking-wider uppercase"
                 style={{ color: BRAND_GREEN }}
               >
                 Editing summary
@@ -240,7 +264,11 @@ export function MeetingSummaryEntry({
             </div>
             <button
               type="button"
-              onClick={() => { setEditing(false); setDraft(stripSummaryMarker(body)); setErrMsg(null); }}
+              onClick={() => {
+                setEditing(false);
+                setDraft(stripSummaryMarker(body));
+                setErrMsg(null);
+              }}
               aria-label="Cancel"
               className="rounded-md p-1 transition-opacity hover:bg-black/5 dark:hover:bg-white/5"
               style={{ color: "var(--text-muted)" }}
@@ -257,33 +285,50 @@ export function MeetingSummaryEntry({
             style={{
               borderColor: "var(--border)",
               color: "var(--text)",
-              ["--tw-ring-color" as string]: "color-mix(in srgb, var(--primary) 35%, transparent)",
+              ["--tw-ring-color" as string]:
+                "color-mix(in srgb, var(--primary) 35%, transparent)",
             }}
           />
           {errMsg && (
-            <p className="mt-1.5 text-[11px]" style={{ color: "var(--accent-red)" }}>{errMsg}</p>
+            <p
+              className="mt-1.5 text-[11px]"
+              style={{ color: "var(--accent-red)" }}
+            >
+              {errMsg}
+            </p>
           )}
           <div className="mt-2 flex items-center gap-2">
             <button
               type="button"
               onClick={() => void handleSave()}
               disabled={saving}
-              className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2.5 py-1.5 text-[11px] font-medium disabled:opacity-50"
+              className="inline-flex shrink-0 items-center gap-1 rounded-md px-2.5 py-1.5 text-[11px] font-medium whitespace-nowrap disabled:opacity-50"
               style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
             >
-              {saving ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />}
+              {saving ? (
+                <Loader2 size={10} className="animate-spin" />
+              ) : (
+                <Check size={10} />
+              )}
               {saving ? "Saving" : "Save"}
             </button>
             <button
               type="button"
-              onClick={() => { setEditing(false); setDraft(stripSummaryMarker(body)); setErrMsg(null); }}
+              onClick={() => {
+                setEditing(false);
+                setDraft(stripSummaryMarker(body));
+                setErrMsg(null);
+              }}
               disabled={saving}
-              className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2.5 py-1.5 text-[11px] hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+              className="inline-flex shrink-0 items-center gap-1 rounded-md px-2.5 py-1.5 text-[11px] whitespace-nowrap hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
               style={{ color: "var(--text-muted)" }}
             >
               Cancel
             </button>
-            <span className="min-w-0 flex-1 truncate text-[10px]" style={{ color: "var(--text-muted)" }}>
+            <span
+              className="min-w-0 flex-1 truncate text-[10px]"
+              style={{ color: "var(--text-muted)" }}
+            >
               Free-form text — <code>Next steps:</code> bullets auto-render.
             </span>
           </div>
@@ -297,7 +342,9 @@ export function MeetingSummaryEntry({
   // edit/delete actions. Defaulting collapsed keeps a stack of call summaries
   // scannable and matches "click on it to see the call summary".
   const hasDetail =
-    !!overview || isStubOnly || nextSteps.length > 0 ||
+    !!overview ||
+    isStubOnly ||
+    nextSteps.length > 0 ||
     !!(recording && (recording.url || recording.passcode));
 
   return (
@@ -323,15 +370,18 @@ export function MeetingSummaryEntry({
           </div>
           <div className="min-w-0 flex-1">
             <span
-              className="text-[10px] font-semibold uppercase tracking-wider"
+              className="text-[10px] font-semibold tracking-wider uppercase"
               style={{ color: BRAND_GREEN }}
             >
               Call summary
             </span>
             {title && !isStubOnly ? (
               <h3
-                className="truncate text-sm font-semibold leading-tight"
-                style={{ color: "var(--text)", fontFamily: "var(--font-source-serif)" }}
+                className="truncate text-sm leading-tight font-semibold"
+                style={{
+                  color: "var(--text)",
+                  fontFamily: "var(--font-source-serif)",
+                }}
               >
                 {title}
               </h3>
@@ -353,7 +403,7 @@ export function MeetingSummaryEntry({
           <div className="px-4 pb-4">
             {overview ? (
               <p
-                className="whitespace-pre-wrap text-[13px] leading-relaxed"
+                className="text-[13px] leading-relaxed whitespace-pre-wrap"
                 style={{ color: "var(--text)" }}
               >
                 {overview}
@@ -373,7 +423,7 @@ export function MeetingSummaryEntry({
             {nextSteps.length > 0 ? (
               <div className="mt-3">
                 <div
-                  className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider"
+                  className="mb-1.5 text-[10px] font-semibold tracking-wider uppercase"
                   style={{ color: "var(--text-muted)" }}
                 >
                   Next steps
@@ -399,7 +449,7 @@ export function MeetingSummaryEntry({
                 style={{ borderColor: BRAND_GREEN_BORDER }}
               >
                 <div
-                  className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider"
+                  className="mb-1.5 text-[10px] font-semibold tracking-wider uppercase"
                   style={{ color: "var(--text-muted)" }}
                 >
                   Recording
@@ -428,19 +478,27 @@ export function MeetingSummaryEntry({
                     className="mt-1.5 flex items-center gap-2 text-[12px]"
                     style={{ color: "var(--text)" }}
                   >
-                    <KeyRound size={12} style={{ color: "var(--text-muted)" }} />
-                    <span style={{ color: "var(--text-muted)" }}>Passcode:</span>
+                    <KeyRound
+                      size={12}
+                      style={{ color: "var(--text-muted)" }}
+                    />
+                    <span style={{ color: "var(--text-muted)" }}>
+                      Passcode:
+                    </span>
                     <code
                       className="rounded px-1.5 py-0.5 text-[11px]"
                       style={{
-                        backgroundColor: "color-mix(in srgb, var(--text) 8%, transparent)",
+                        backgroundColor:
+                          "color-mix(in srgb, var(--text) 8%, transparent)",
                         color: "var(--text)",
                       }}
                     >
                       {recording.passcode}
                     </code>
                     <CopyButton
-                      onClick={() => void copyText(recording.passcode!, "passcode")}
+                      onClick={() =>
+                        void copyText(recording.passcode!, "passcode")
+                      }
                       done={copied === "passcode"}
                       label="Copy passcode"
                     />
@@ -450,7 +508,12 @@ export function MeetingSummaryEntry({
             ) : null}
 
             {errMsg ? (
-              <p className="mt-2 text-[11px]" style={{ color: "var(--accent-red)" }}>{errMsg}</p>
+              <p
+                className="mt-2 text-[11px]"
+                style={{ color: "var(--accent-red)" }}
+              >
+                {errMsg}
+              </p>
             ) : null}
 
             {canEdit && (onEdit || onDelete) ? (
@@ -461,7 +524,11 @@ export function MeetingSummaryEntry({
                 {onEdit ? (
                   <button
                     type="button"
-                    onClick={() => { setDraft(stripSummaryMarker(body)); setEditing(true); setErrMsg(null); }}
+                    onClick={() => {
+                      setDraft(stripSummaryMarker(body));
+                      setEditing(true);
+                      setErrMsg(null);
+                    }}
                     className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] hover:bg-black/5 dark:hover:bg-white/5"
                     style={{ color: "var(--text-muted)" }}
                   >
@@ -476,7 +543,12 @@ export function MeetingSummaryEntry({
                     className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
                     style={{ color: "var(--text-muted)" }}
                   >
-                    {deleting ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />} Delete
+                    {deleting ? (
+                      <Loader2 size={11} className="animate-spin" />
+                    ) : (
+                      <Trash2 size={11} />
+                    )}{" "}
+                    Delete
                   </button>
                 ) : null}
               </div>
@@ -488,7 +560,15 @@ export function MeetingSummaryEntry({
   );
 }
 
-function CopyButton({ onClick, done, label }: { onClick: () => void; done: boolean; label: string }) {
+function CopyButton({
+  onClick,
+  done,
+  label,
+}: {
+  onClick: () => void;
+  done: boolean;
+  label: string;
+}) {
   return (
     <button
       type="button"
@@ -498,7 +578,9 @@ function CopyButton({ onClick, done, label }: { onClick: () => void; done: boole
       className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors"
       style={{
         color: done ? BRAND_GREEN : "var(--text-muted)",
-        backgroundColor: done ? "color-mix(in srgb, var(--text) 4%, transparent)" : "transparent",
+        backgroundColor: done
+          ? "color-mix(in srgb, var(--text) 4%, transparent)"
+          : "transparent",
       }}
     >
       {done ? <Check size={12} /> : <Copy size={12} />}

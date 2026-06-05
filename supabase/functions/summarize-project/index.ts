@@ -10,11 +10,13 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
 };
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method === "OPTIONS")
+    return new Response(null, { headers: corsHeaders });
 
   try {
     const { project_id } = await req.json();
@@ -27,7 +29,7 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
     // Confirm the project exists and grab its name + owner (we cascade to
@@ -47,7 +49,9 @@ Deno.serve(async (req) => {
     // Pull every ended session's existing AI summary for this project.
     const { data: sessions } = await supabase
       .from("guest_calls")
-      .select("id, ai_summary_title, ai_summary_overview, ai_next_steps, summary, started_at, ended_at, duration_minutes")
+      .select(
+        "id, ai_summary_title, ai_summary_overview, ai_next_steps, summary, started_at, ended_at, duration_minutes"
+      )
       .eq("project_id", project_id)
       .eq("status", "ended")
       .order("ended_at", { ascending: true });
@@ -74,23 +78,34 @@ Deno.serve(async (req) => {
           summary_updated_at: new Date().toISOString(),
         })
         .eq("id", project_id);
-      return new Response(JSON.stringify({ ok: true, summarized_sessions: 0 }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ ok: true, summarized_sessions: 0 }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     const transcript = rows
       .map((s, i) => {
         const parts: string[] = [`Session ${i + 1}:`];
         if (s.ai_summary_title) parts.push(`Title: ${s.ai_summary_title}`);
-        if (s.ai_summary_overview) parts.push(`Overview: ${s.ai_summary_overview}`);
+        if (s.ai_summary_overview)
+          parts.push(`Overview: ${s.ai_summary_overview}`);
         if (Array.isArray(s.ai_next_steps) && s.ai_next_steps.length > 0) {
-          const steps = (s.ai_next_steps as Array<string | { text?: string; description?: string }>)
-            .map((x) => (typeof x === "string" ? x : x?.text ?? x?.description ?? ""))
+          const steps = (
+            s.ai_next_steps as Array<
+              string | { text?: string; description?: string }
+            >
+          )
+            .map((x) =>
+              typeof x === "string" ? x : (x?.text ?? x?.description ?? "")
+            )
             .filter(Boolean);
           if (steps.length > 0) parts.push(`Next steps: ${steps.join("; ")}`);
         }
-        if (s.duration_minutes) parts.push(`Duration: ${Math.round(Number(s.duration_minutes))} min`);
+        if (s.duration_minutes)
+          parts.push(`Duration: ${Math.round(Number(s.duration_minutes))} min`);
         return parts.join("\n");
       })
       .join("\n\n");
@@ -115,8 +130,8 @@ Deno.serve(async (req) => {
             {
               role: "system",
               content:
-                "You roll up multiple engineer-support session summaries inside one project into a single project-level summary. Respond with strict JSON only: {\"title\": string, \"overview\": string, \"themes\": string, \"next_steps\": string[]}. " +
-                "Rules for `title`: 3-5 words, NO period, describe the *project's recurring focus* — e.g. \"Stripe integration\", \"Supabase RLS hardening\", \"Vite build fixes\". " +
+                'You roll up multiple engineer-support session summaries inside one project into a single project-level summary. Respond with strict JSON only: {"title": string, "overview": string, "themes": string, "next_steps": string[]}. ' +
+                'Rules for `title`: 3-5 words, NO period, describe the *project\'s recurring focus* — e.g. "Stripe integration", "Supabase RLS hardening", "Vite build fixes". ' +
                 "`overview` = 3-5 sentences covering the project's overall arc across sessions. " +
                 "`themes` = 1-2 sentences naming the recurring problems / patterns. " +
                 "`next_steps` = 3-5 short imperative items that aggregate or supersede per-session next steps; deduplicate. No extra prose outside the JSON.",
@@ -142,7 +157,9 @@ Deno.serve(async (req) => {
           if (aiOverview) parts.push(`TL;DR: ${aiOverview}`);
           if (parsed.themes) parts.push(`Themes: ${parsed.themes}`);
           if (aiNextSteps.length > 0) {
-            parts.push(`Next steps:\n${aiNextSteps.map((s) => `• ${s}`).join("\n")}`);
+            parts.push(
+              `Next steps:\n${aiNextSteps.map((s) => `• ${s}`).join("\n")}`
+            );
           }
           summary = parts.join("\n\n") || aiOverview || raw;
         } catch {
@@ -171,16 +188,22 @@ Deno.serve(async (req) => {
     // Cascade up — only when this project is owned by an auth user.
     if (project.customer_id) {
       try {
-        await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/summarize-customer`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
-          },
-          body: JSON.stringify({ customer_id: project.customer_id }),
-        });
+        await fetch(
+          `${Deno.env.get("SUPABASE_URL")}/functions/v1/summarize-customer`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+            },
+            body: JSON.stringify({ customer_id: project.customer_id }),
+          }
+        );
       } catch (e) {
-        console.error("[summarize-project] cascade to summarize-customer failed:", e);
+        console.error(
+          "[summarize-project] cascade to summarize-customer failed:",
+          e
+        );
       }
     }
 
@@ -192,15 +215,23 @@ Deno.serve(async (req) => {
       if (appUrl && indexSecret) {
         void fetch(`${appUrl}/api/staff/index-session`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", "x-index-secret": indexSecret },
+          headers: {
+            "Content-Type": "application/json",
+            "x-index-secret": indexSecret,
+          },
           body: JSON.stringify({ project_id }),
         });
       }
-    } catch { /* best-effort */ }
+    } catch {
+      /* best-effort */
+    }
 
-    return new Response(JSON.stringify({ ok: true, summarized_sessions: rows.length }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ ok: true, summarized_sessions: rows.length }),
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
   } catch (e) {
     return new Response(JSON.stringify({ error: String(e) }), {
       status: 500,

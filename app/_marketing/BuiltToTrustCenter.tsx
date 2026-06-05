@@ -36,7 +36,10 @@ export function BuiltToTrustCenter() {
         }}
       >
         First 10 min,{" "}
-        <em style={{ fontStyle: "italic", color: "var(--text-on-dark)" }}>on us</em>.
+        <em style={{ fontStyle: "italic", color: "var(--text-on-dark)" }}>
+          on us
+        </em>
+        .
       </h3>
       <p
         style={{

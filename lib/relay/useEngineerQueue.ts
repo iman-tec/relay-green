@@ -45,7 +45,9 @@ export function useEngineerQueue(): EngineerQueueState {
   }, []);
 
   // Initial load
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
 
   // Realtime subscription — any guest_calls change triggers refetch
   useEffect(() => {
@@ -55,31 +57,41 @@ export function useEngineerQueue(): EngineerQueueState {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "guest_calls" },
-        () => { void refresh(); },
+        () => {
+          void refresh();
+        }
       )
       .subscribe();
     channelRef.current = ch;
-    return () => { sb.removeChannel(ch); channelRef.current = null; };
+    return () => {
+      sb.removeChannel(ch);
+      channelRef.current = null;
+    };
   }, [refresh]);
 
-  const claim = useCallback(async (sessionId: string): Promise<GuestCall | null> => {
-    const sb = supabaseRef.current;
-    const { data, error: e } = await sb.rpc("claim_session", { _session_id: sessionId });
-    if (e) {
-      const msg = e.message ?? "";
-      if (msg.includes("ALREADY_CLAIMED")) {
-        setError("Another engineer just took this one.");
-      } else if (msg.includes("NOT_AUTHORIZED")) {
-        setError("You don't have engineer access.");
-      } else {
-        setError(msg);
+  const claim = useCallback(
+    async (sessionId: string): Promise<GuestCall | null> => {
+      const sb = supabaseRef.current;
+      const { data, error: e } = await sb.rpc("claim_session", {
+        _session_id: sessionId,
+      });
+      if (e) {
+        const msg = e.message ?? "";
+        if (msg.includes("ALREADY_CLAIMED")) {
+          setError("Another engineer just took this one.");
+        } else if (msg.includes("NOT_AUTHORIZED")) {
+          setError("You don't have engineer access.");
+        } else {
+          setError(msg);
+        }
+        setTimeout(() => setError(null), 4000);
+        return null;
       }
-      setTimeout(() => setError(null), 4000);
-      return null;
-    }
-    const row = (Array.isArray(data) ? data[0] : data) as GuestCall;
-    return row ?? null;
-  }, []);
+      const row = (Array.isArray(data) ? data[0] : data) as GuestCall;
+      return row ?? null;
+    },
+    []
+  );
 
   return { queue, loading, error, claim, refresh };
 }

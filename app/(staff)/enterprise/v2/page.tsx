@@ -12,7 +12,9 @@ export const metadata: Metadata = {
 
 export default async function EnterpriseV2Page() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) redirect("/business");
 
   const { data: roleRows } = await supabase
@@ -22,13 +24,18 @@ export default async function EnterpriseV2Page() {
   const roles = (roleRows ?? []).map((r: { role: string }) => r.role);
   // Allow super_admin to preview the enterprise console as well — same
   // behavior as the legacy /enterprise routes.
-  if (!roles.includes(ROLE.enterprise_admin) && !roles.includes(ROLE.super_admin)) {
+  if (
+    !roles.includes(ROLE.enterprise_admin) &&
+    !roles.includes(ROLE.super_admin)
+  ) {
     redirect("/dashboard");
   }
 
   return (
     <Suspense fallback={null}>
-      <PanelClient me={{ email: user.email ?? "", roleLabel: highestRoleLabel(roles) }} />
+      <PanelClient
+        me={{ email: user.email ?? "", roleLabel: highestRoleLabel(roles) }}
+      />
     </Suspense>
   );
 }

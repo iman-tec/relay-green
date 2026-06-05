@@ -197,8 +197,8 @@ export default async function PaymentPage({
               lineHeight: 1.5,
             }}
           >
-            You will be sent to Stripe to complete payment. We do not store
-            card details.
+            You will be sent to Stripe to complete payment. We do not store card
+            details.
           </p>
 
           <div style={{ marginTop: 32 }}>

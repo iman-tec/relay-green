@@ -12,14 +12,15 @@ import { NextResponse } from "next/server";
 import { requireSuperAdmin } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 export async function PATCH(
   request: Request,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const gate = await requireSuperAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin } = gate;
 
   const { id } = await params;
@@ -28,10 +29,16 @@ export async function PATCH(
     archived?: boolean;
   };
 
-  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  const patch: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  };
   if (typeof body.name === "string") {
     const trimmed = body.name.trim();
-    if (!trimmed) return NextResponse.json({ error: "Pod name cannot be empty." }, { status: 400 });
+    if (!trimmed)
+      return NextResponse.json(
+        { error: "Pod name cannot be empty." },
+        { status: 400 }
+      );
     patch.name = trimmed;
   }
   if (typeof body.archived === "boolean") {
@@ -40,7 +47,10 @@ export async function PATCH(
 
   if (Object.keys(patch).length === 1) {
     // Only updated_at — nothing to actually change.
-    return NextResponse.json({ error: "No changes provided." }, { status: 400 });
+    return NextResponse.json(
+      { error: "No changes provided." },
+      { status: 400 }
+    );
   }
 
   const { data, error } = await admin
@@ -51,7 +61,10 @@ export async function PATCH(
     .single();
 
   if (error || !data) {
-    return NextResponse.json({ error: error?.message ?? "Pod not found." }, { status: 404 });
+    return NextResponse.json(
+      { error: error?.message ?? "Pod not found." },
+      { status: 404 }
+    );
   }
   return NextResponse.json({ pod: data });
 }

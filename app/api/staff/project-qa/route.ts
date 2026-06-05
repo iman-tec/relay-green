@@ -69,7 +69,12 @@ function buildSystemPrompt(context: {
     status: string;
   }>;
   chatLines: string[];
-  files: Array<{ name: string; mime: string; kind: string; size_bytes: number }>;
+  files: Array<{
+    name: string;
+    mime: string;
+    kind: string;
+    size_bytes: number;
+  }>;
   retrieved: string[];
 }): string {
   const parts: string[] = [
@@ -89,7 +94,9 @@ function buildSystemPrompt(context: {
     parts.push("\n── Past sessions (oldest first) ──");
     for (const s of context.sessions) {
       const date = new Date(s.created_at).toISOString().split("T")[0];
-      const dur = s.duration_minutes ? `${Math.round(s.duration_minutes)}min` : "—";
+      const dur = s.duration_minutes
+        ? `${Math.round(s.duration_minutes)}min`
+        : "—";
       const head = `[${date} · ${dur} · ${s.status}${s.agent ? ` · ${s.agent}` : ""}]`;
       const title = s.title ? ` ${s.title}` : "";
       parts.push(`${head}${title}`);
@@ -115,7 +122,7 @@ function buildSystemPrompt(context: {
     parts.push(
       "\n── Most relevant material (semantic search over full transcripts, captions & documents) ──",
       "This is your PRIMARY evidence — it holds the specific details the summaries above omit. Each block is prefixed with its [source · title · date]; cite that when you answer.",
-      ...context.retrieved,
+      ...context.retrieved
     );
   }
 
@@ -126,12 +133,17 @@ export async function POST(req: NextRequest) {
   let body: RequestBody = {};
   try {
     body = (await req.json()) as RequestBody;
-  } catch { /* empty body — treat as bad request */ }
+  } catch {
+    /* empty body — treat as bad request */
+  }
 
   const projectId = (body.projectId ?? "").trim();
   const question = (body.question ?? "").trim();
   if (!projectId || !question) {
-    return NextResponse.json({ error: "projectId and question required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "projectId and question required" },
+      { status: 400 }
+    );
   }
 
   // Auth — must be a signed-in user. We don't restrict further by
@@ -152,7 +164,8 @@ export async function POST(req: NextRequest) {
       .select("display_alias")
       .eq("user_id", userId)
       .maybeSingle();
-    const alias = (prof as { display_alias?: string | null } | null)?.display_alias;
+    const alias = (prof as { display_alias?: string | null } | null)
+      ?.display_alias;
     if (alias) userName = alias;
   } catch {
     /* fall back to email */
@@ -167,8 +180,22 @@ export async function POST(req: NextRequest) {
       try {
         const svc = ragServiceClient();
         await svc.from("project_assistant_messages").insert([
-          { project_id: projectId, thread_id: threadId, role: "user", content: question, user_id: userId, user_name: userName },
-          { project_id: projectId, thread_id: threadId, role: "assistant", content: text, user_id: userId, user_name: userName },
+          {
+            project_id: projectId,
+            thread_id: threadId,
+            role: "user",
+            content: question,
+            user_id: userId,
+            user_name: userName,
+          },
+          {
+            project_id: projectId,
+            thread_id: threadId,
+            role: "assistant",
+            content: text,
+            user_id: userId,
+            user_name: userName,
+          },
         ]);
       } catch (e) {
         console.warn("[project-qa] history persist failed:", e);
@@ -195,7 +222,9 @@ export async function POST(req: NextRequest) {
   //    chronological reading in the prompt.
   const { data: sessionRows } = await sb
     .from("guest_calls")
-    .select("id, ai_summary_title, ai_summary_overview, ai_next_steps, agent_name, duration_minutes, created_at, status")
+    .select(
+      "id, ai_summary_title, ai_summary_overview, ai_next_steps, agent_name, duration_minutes, created_at, status"
+    )
     .eq("project_id", projectId)
     .order("created_at", { ascending: false })
     .limit(MAX_PAST_SESSIONS);
@@ -213,10 +242,16 @@ export async function POST(req: NextRequest) {
   const sessions = rawSessions.map((s) => {
     // ai_next_steps can be a JSON array of strings OR objects with .text/.description
     const steps = Array.isArray(s.ai_next_steps)
-      ? (s.ai_next_steps as Array<string | { text?: string; description?: string }>)
-        .map((x) => (typeof x === "string" ? x : x.text ?? x.description ?? ""))
-        .filter((x) => x.trim().length > 0)
-        .join("; ")
+      ? (
+          s.ai_next_steps as Array<
+            string | { text?: string; description?: string }
+          >
+        )
+          .map((x) =>
+            typeof x === "string" ? x : (x.text ?? x.description ?? "")
+          )
+          .filter((x) => x.trim().length > 0)
+          .join("; ")
       : "";
     return {
       title: s.ai_summary_title,
@@ -246,21 +281,32 @@ export async function POST(req: NextRequest) {
   let chatLines: string[] = [];
   if (sessionIds.length > 0) {
     const liveSessionIds = rawSessions
-      .filter((s) => s.status === "live" || s.status === "grace" || s.status === "joining")
+      .filter(
+        (s) =>
+          s.status === "live" || s.status === "grace" || s.status === "joining"
+      )
       .map((s) => s.id);
     const [chatRowsRes, capRowsRes] = await Promise.all([
-      sb.from("guest_messages")
+      sb
+        .from("guest_messages")
         .select("sender_kind, sender_name, body, created_at")
         .in("guest_call_id", sessionIds)
         .order("created_at", { ascending: true })
         .limit(MAX_CHAT_LINES),
       liveSessionIds.length > 0
-        ? sb.from("session_captions")
+        ? sb
+            .from("session_captions")
             .select("speaker, text, window_end")
             .in("session_id", liveSessionIds)
             .order("window_end", { ascending: true })
             .limit(MAX_CHAT_LINES)
-        : Promise.resolve({ data: [] as Array<{ speaker: string | null; text: string; window_end: string }> }),
+        : Promise.resolve({
+            data: [] as Array<{
+              speaker: string | null;
+              text: string;
+              window_end: string;
+            }>,
+          }),
     ]);
     type Line = { ts: number; line: string };
     const lines: Line[] = [];
@@ -273,7 +319,11 @@ export async function POST(req: NextRequest) {
         line: `[${date}] ${who} (chat): ${m.body.trim().slice(0, 600)}`,
       });
     }
-    for (const c of (capRowsRes.data ?? []) as Array<{ speaker: string | null; text: string; window_end: string }>) {
+    for (const c of (capRowsRes.data ?? []) as Array<{
+      speaker: string | null;
+      text: string;
+      window_end: string;
+    }>) {
       const t = (c.text ?? "").trim();
       if (!t) continue;
       const date = new Date(c.window_end).toISOString().split("T")[0];
@@ -287,16 +337,27 @@ export async function POST(req: NextRequest) {
   }
 
   // 4. File metadata across those sessions.
-  type FileRow = { name: string; mime: string; kind: string; size_bytes: number };
+  type FileRow = {
+    name: string;
+    mime: string;
+    kind: string;
+    size_bytes: number;
+  };
   let files: FileRow[] = [];
   if (sessionIds.length > 0) {
     const { data: fileRows } = await sb
       .from("guest_message_attachments")
-      .select("name, mime, kind, size_bytes, message_id, guest_messages!inner(guest_call_id)")
+      .select(
+        "name, mime, kind, size_bytes, message_id, guest_messages!inner(guest_call_id)"
+      )
       .in("guest_messages.guest_call_id", sessionIds)
       .limit(MAX_FILES);
-    files = ((fileRows ?? []) as unknown as FileRow[])
-      .map((f) => ({ name: f.name, mime: f.mime, kind: f.kind, size_bytes: f.size_bytes }));
+    files = ((fileRows ?? []) as unknown as FileRow[]).map((f) => ({
+      name: f.name,
+      mime: f.mime,
+      kind: f.kind,
+      size_bytes: f.size_bytes,
+    }));
   }
 
   // 5. RAG retrieval — embed the question and pull the most relevant chunks
@@ -315,21 +376,31 @@ export async function POST(req: NextRequest) {
         created_at?: string;
         text?: string;
       };
-      const date = p.created_at ? new Date(p.created_at).toISOString().split("T")[0] : "";
-      const label = [p.source_type ?? "context", p.title, date].filter(Boolean).join(" · ");
+      const date = p.created_at
+        ? new Date(p.created_at).toISOString().split("T")[0]
+        : "";
+      const label = [p.source_type ?? "context", p.title, date]
+        .filter(Boolean)
+        .join(" · ");
       return `[${label}]\n${(p.text ?? "").trim()}`;
     });
   } catch (e) {
-    console.warn("[project-qa] RAG retrieval failed — answering from structured context only:", e);
+    console.warn(
+      "[project-qa] RAG retrieval failed — answering from structured context only:",
+      e
+    );
   }
 
   const hasAny =
-    sessions.length > 0 || chatLines.length > 0 || files.length > 0 || retrieved.length > 0;
+    sessions.length > 0 ||
+    chatLines.length > 0 ||
+    files.length > 0 ||
+    retrieved.length > 0;
   if (!hasAny) {
     return finish(
       "I don't see any past sessions, chat, or files for this project yet — there's nothing to look up. Ask the customer for context once they've explained their situation.",
       "heuristic-fallback",
-      "no_context",
+      "no_context"
     );
   }
 
@@ -340,13 +411,22 @@ export async function POST(req: NextRequest) {
     return finish(
       "AI assistant is offline (no OpenAI key configured). The project context is loaded — ask the customer directly for the specific detail you need.",
       "heuristic-fallback",
-      "no_key",
+      "no_key"
     );
   }
 
-  const system = buildSystemPrompt({ projectName, sessions, chatLines, files, retrieved });
+  const system = buildSystemPrompt({
+    projectName,
+    sessions,
+    chatLines,
+    files,
+    retrieved,
+  });
 
-  const openaiMessages: { role: "system" | "user" | "assistant"; content: string }[] = [
+  const openaiMessages: {
+    role: "system" | "user" | "assistant";
+    content: string;
+  }[] = [
     { role: "system", content: system },
     ...((body.history ?? []).map((m) => ({
       role: m.role,
@@ -376,7 +456,7 @@ export async function POST(req: NextRequest) {
       return finish(
         "Couldn't reach the AI service. The project context is loaded above — refer to the chat history while we get this working again.",
         "heuristic-fallback",
-        "openai_error",
+        "openai_error"
       );
     }
     const json = (await r.json()) as {
@@ -385,11 +465,19 @@ export async function POST(req: NextRequest) {
     };
     const text = json.choices?.[0]?.message?.content?.trim();
     if (!text) {
-      return finish("AI returned an empty response. Try rephrasing the question.", "heuristic-fallback", "openai_error");
+      return finish(
+        "AI returned an empty response. Try rephrasing the question.",
+        "heuristic-fallback",
+        "openai_error"
+      );
     }
     return finish(text, json.model ?? "openai");
   } catch (e) {
     console.warn("[project-qa] OpenAI fetch error", e);
-    return finish("Network error reaching the AI service. Try again in a moment.", "heuristic-fallback", "openai_error");
+    return finish(
+      "Network error reaching the AI service. Try again in a moment.",
+      "heuristic-fallback",
+      "openai_error"
+    );
   }
 }

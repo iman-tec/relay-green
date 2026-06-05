@@ -66,8 +66,12 @@ export async function POST(req: NextRequest) {
 
   // Question: support both useChat (last user message) and the direct
   // { question } shape.
-  const question = (body.question ?? "").trim()
-    || ((body.messages ?? []).filter((m) => m.role === "user").pop()?.content ?? "").trim();
+  const question =
+    (body.question ?? "").trim() ||
+    (
+      (body.messages ?? []).filter((m) => m.role === "user").pop()?.content ??
+      ""
+    ).trim();
   const sessionId = (body.sessionId ?? "").trim();
 
   if (!question) {
@@ -110,15 +114,19 @@ export async function POST(req: NextRequest) {
       .select("role")
       .eq("user_id", userId);
     const roles = (roleRows ?? []).map((r: { role: string }) => r.role);
-    authorized = roles.some((r) =>
-      r === "supervisor" || r === "super_admin" || r === "enterprise_admin" ||
-      r === "department_admin" || r === "reseller",
+    authorized = roles.some(
+      (r) =>
+        r === "supervisor" ||
+        r === "super_admin" ||
+        r === "enterprise_admin" ||
+        r === "department_admin" ||
+        r === "reseller"
     );
   }
   if (!authorized) {
     return NextResponse.json(
       { error: "You don't have access to this session's project." },
-      { status: 403 },
+      { status: 403 }
     );
   }
 
@@ -131,7 +139,7 @@ export async function POST(req: NextRequest) {
       {
         status: 200,
         headers: { "Content-Type": "text/plain; charset=utf-8" },
-      },
+      }
     );
   }
 
@@ -143,7 +151,7 @@ export async function POST(req: NextRequest) {
   if (!serviceUrl || !serviceKey) {
     return NextResponse.json(
       { error: "Server is missing Supabase service credentials" },
-      { status: 503 },
+      { status: 503 }
     );
   }
   const sbService = createServiceClient(serviceUrl, serviceKey, {
@@ -165,7 +173,7 @@ export async function POST(req: NextRequest) {
   if (insertErr || !insertRow) {
     return NextResponse.json(
       { error: insertErr?.message ?? "Couldn't log query." },
-      { status: 500 },
+      { status: 500 }
     );
   }
   const queryId = (insertRow as { id: string }).id;
@@ -187,7 +195,7 @@ export async function POST(req: NextRequest) {
   if (!process.env.OPENAI_API_KEY) {
     return NextResponse.json(
       { error: "Server is missing OPENAI_API_KEY" },
-      { status: 503 },
+      { status: 503 }
     );
   }
 

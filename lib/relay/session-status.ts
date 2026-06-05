@@ -12,15 +12,25 @@ import type { SessionStatus } from "@/lib/supabase/types";
 
 export function humanState(s: SessionStatus): string {
   switch (s) {
-    case "queued":       return "Connecting customer…";
-    case "assigned":     return "Live";
-    case "joining":      return "Joining call";
-    case "live":         return "On call";
-    case "grace":        return "Reconnecting";
-    case "ending":       return "Wrapping up";
-    case "ended":        return "Ended";
-    case "abandoned":    return "Abandoned";
-    case "cancelled":    return "Cancelled";
-    case "expired_free": return "Free expired";
+    case "queued":
+      return "Connecting customer…";
+    case "assigned":
+      return "Live";
+    case "joining":
+      return "Joining call";
+    case "live":
+      return "On call";
+    case "grace":
+      return "Reconnecting";
+    case "ending":
+      return "Wrapping up";
+    case "ended":
+      return "Ended";
+    case "abandoned":
+      return "Abandoned";
+    case "cancelled":
+      return "Cancelled";
+    case "expired_free":
+      return "Free expired";
   }
 }

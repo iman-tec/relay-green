@@ -14,7 +14,7 @@ import { requireSuperAdmin } from "@/lib/admin-auth";
 import { resendInvitationEmail } from "@/lib/admin-invite";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 

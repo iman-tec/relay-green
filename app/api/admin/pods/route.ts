@@ -16,11 +16,12 @@ import { NextResponse } from "next/server";
 import { requireSuperAdmin } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 export async function GET() {
   const gate = await requireSuperAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin } = gate;
 
   const { data: pods, error: podsErr } = await admin
@@ -28,7 +29,8 @@ export async function GET() {
     .select("id, name, slug, description, created_at, archived_at")
     .is("archived_at", null)
     .order("created_at", { ascending: false });
-  if (podsErr) return NextResponse.json({ error: podsErr.message }, { status: 500 });
+  if (podsErr)
+    return NextResponse.json({ error: podsErr.message }, { status: 500 });
 
   if (!pods || pods.length === 0) {
     return NextResponse.json({ pods: [] });
@@ -53,7 +55,10 @@ export async function GET() {
   ]);
 
   const profileMap = new Map<string, string>();
-  for (const p of (profiles ?? []) as { id: string; full_name: string | null }[]) {
+  for (const p of (profiles ?? []) as {
+    id: string;
+    full_name: string | null;
+  }[]) {
     if (p.full_name) profileMap.set(p.id, p.full_name);
   }
   const emailMap = new Map<string, string>();
@@ -72,13 +77,13 @@ export async function GET() {
     pods: pods.map((p) => {
       const members = membersByPod.get(p.id) ?? [];
       return {
-        id:          p.id,
-        name:        p.name,
-        slug:        p.slug,
+        id: p.id,
+        name: p.name,
+        slug: p.slug,
         description: p.description,
-        createdAt:   p.created_at,
+        createdAt: p.created_at,
         supervisors: members.filter((m) => m.podRole === "supervisor"),
-        engineers:   members.filter((m) => m.podRole === "engineer"),
+        engineers: members.filter((m) => m.podRole === "engineer"),
       };
     }),
   });
@@ -87,21 +92,22 @@ export async function GET() {
 function formatMember(
   m: { id: string; user_id: string; pod_role: string; added_at: string },
   profileMap: Map<string, string>,
-  emailMap: Map<string, string>,
+  emailMap: Map<string, string>
 ) {
   return {
-    id:          m.id,
-    userId:      m.user_id,
-    podRole:     m.pod_role,
-    addedAt:     m.added_at,
-    email:       emailMap.get(m.user_id) ?? "",
+    id: m.id,
+    userId: m.user_id,
+    podRole: m.pod_role,
+    addedAt: m.added_at,
+    email: emailMap.get(m.user_id) ?? "",
     displayName: profileMap.get(m.user_id) ?? "",
   };
 }
 
 export async function POST(request: Request) {
   const gate = await requireSuperAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin, user: actor } = gate;
 
   const { name, description } = (await request.json().catch(() => ({}))) as {
@@ -111,17 +117,21 @@ export async function POST(request: Request) {
 
   const trimmedName = name?.trim();
   if (!trimmedName) {
-    return NextResponse.json({ error: "Pod name is required." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Pod name is required." },
+      { status: 400 }
+    );
   }
 
   // Auto-slug from name. We append a short suffix if there's a collision.
-  const baseSlug = trimmedName
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 60) || "pod";
+  const baseSlug =
+    trimmedName
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 60) || "pod";
 
   // Loop until insert succeeds — at most 100 attempts.
   let slug = baseSlug;
@@ -129,10 +139,10 @@ export async function POST(request: Request) {
     const { data: pod, error } = await admin
       .from("pods")
       .insert({
-        name:        trimmedName,
+        name: trimmedName,
         slug,
         description: description?.trim() || null,
-        created_by:  actor.id,
+        created_by: actor.id,
       })
       .select()
       .single();
@@ -147,10 +157,16 @@ export async function POST(request: Request) {
       continue;
     }
 
-    return NextResponse.json({ error: error?.message ?? "Couldn't create pod." }, { status: 400 });
+    return NextResponse.json(
+      { error: error?.message ?? "Couldn't create pod." },
+      { status: 400 }
+    );
   }
 
-  return NextResponse.json({ error: "Couldn't allocate a unique slug." }, { status: 500 });
+  return NextResponse.json(
+    { error: "Couldn't allocate a unique slug." },
+    { status: 500 }
+  );
 }
 
 type PodRow = {
@@ -163,12 +179,12 @@ type PodRow = {
 
 function serialize(p: PodRow) {
   return {
-    id:          p.id,
-    name:        p.name,
-    slug:        p.slug,
+    id: p.id,
+    name: p.name,
+    slug: p.slug,
     description: p.description,
-    createdAt:   p.created_at,
+    createdAt: p.created_at,
     supervisors: [],
-    engineers:   [],
+    engineers: [],
   };
 }

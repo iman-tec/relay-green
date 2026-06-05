@@ -23,23 +23,30 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
 };
 
-const SUPABASE_URL              = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_ANON_KEY         = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY")!;
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_ANON_KEY =
+  Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ??
+  Deno.env.get("SUPABASE_ANON_KEY")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const ZOOM_VIDEO_SDK_KEY        = Deno.env.get("ZOOM_VIDEO_SDK_KEY");
-const ZOOM_VIDEO_SDK_SECRET     = Deno.env.get("ZOOM_VIDEO_SDK_SECRET");
+const ZOOM_VIDEO_SDK_KEY = Deno.env.get("ZOOM_VIDEO_SDK_KEY");
+const ZOOM_VIDEO_SDK_SECRET = Deno.env.get("ZOOM_VIDEO_SDK_SECRET");
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method === "OPTIONS")
+    return new Response(null, { headers: corsHeaders });
 
   try {
     if (!ZOOM_VIDEO_SDK_KEY || !ZOOM_VIDEO_SDK_SECRET) {
       return new Response(
         JSON.stringify({ error: "ZOOM_VIDEO_SDK_KEY/SECRET not configured" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
       );
     }
 
@@ -71,7 +78,9 @@ Deno.serve(async (req) => {
 
     const { data: session, error: sErr } = await admin
       .from("guest_calls")
-      .select("id, claimed_by, customer_user_id, video_topic, supervisor_user_id, is_appointment")
+      .select(
+        "id, claimed_by, customer_user_id, video_topic, supervisor_user_id, is_appointment"
+      )
       .eq("id", session_id)
       .maybeSingle();
     if (sErr || !session) {
@@ -111,7 +120,12 @@ Deno.serve(async (req) => {
       isEscalationSupervisor = !!esc;
     }
 
-    if (!isEngineer && !isCustomer && !isSessionSupervisor && !isEscalationSupervisor) {
+    if (
+      !isEngineer &&
+      !isCustomer &&
+      !isSessionSupervisor &&
+      !isEscalationSupervisor
+    ) {
       return new Response(JSON.stringify({ error: "NOT_AUTHORIZED" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -147,27 +161,31 @@ Deno.serve(async (req) => {
     if (cycleClosed) {
       const { error: insErr } = await admin.from("guest_messages").insert({
         guest_call_id: session.id,
-        sender_kind:   "system",
-        sender_name:   "Relay",
-        body:          "📞 Zoom meeting started",
+        sender_kind: "system",
+        sender_name: "Relay",
+        body: "📞 Zoom meeting started",
       });
-      if (insErr) console.error("[zoom-video-sdk-token] insert started msg failed:", insErr);
+      if (insErr)
+        console.error(
+          "[zoom-video-sdk-token] insert started msg failed:",
+          insErr
+        );
     }
 
     const iat = Math.floor(Date.now() / 1000);
     const exp = iat + 2 * 60 * 60; // 2h
 
     const payload = {
-      app_key:               ZOOM_VIDEO_SDK_KEY,
-      tpc:                   topic,
+      app_key: ZOOM_VIDEO_SDK_KEY,
+      tpc: topic,
       // Host (1) for the engineer, or the appointment's supervisor when they're
       // hosting the call themselves; customer joins as participant (0).
-      role_type:             isEngineer || isAppointmentSupervisor ? 1 : 0,
-      version:               1,
+      role_type: isEngineer || isAppointmentSupervisor ? 1 : 0,
+      version: 1,
       iat,
       exp,
-      user_identity:         userId,
-      session_key:           session.id,
+      user_identity: userId,
+      session_key: session.id,
       cloud_recording_option: 0,
     };
 
@@ -177,28 +195,32 @@ Deno.serve(async (req) => {
       new TextEncoder().encode(ZOOM_VIDEO_SDK_SECRET),
       { name: "HMAC", hash: "SHA-256" },
       false,
-      ["sign", "verify"],
+      ["sign", "verify"]
     );
-    const token = await create({ alg: "HS256", typ: "JWT" }, payload, cryptoKey);
+    const token = await create(
+      { alg: "HS256", typ: "JWT" },
+      payload,
+      cryptoKey
+    );
 
     // Audit row.
     await admin.from("session_video_events").insert({
       guest_call_id: session.id,
-      kind:          "token_issued",
+      kind: "token_issued",
       actor_user_id: userId,
-      payload:       { role_type: payload.role_type, topic },
+      payload: { role_type: payload.role_type, topic },
     });
 
     return new Response(
       JSON.stringify({
         token,
         topic,
-        session_key:   session.id,
+        session_key: session.id,
         user_identity: userId,
-        role_type:     payload.role_type,
-        sdk_key:       ZOOM_VIDEO_SDK_KEY,
+        role_type: payload.role_type,
+        sdk_key: ZOOM_VIDEO_SDK_KEY,
       }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (e) {
     return new Response(JSON.stringify({ error: String(e) }), {

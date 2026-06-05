@@ -4,7 +4,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const ZOOM_WEBHOOK_SECRET_TOKEN = Deno.env.get("ZOOM_WEBHOOK_SECRET_TOKEN") ?? "";
+const ZOOM_WEBHOOK_SECRET_TOKEN =
+  Deno.env.get("ZOOM_WEBHOOK_SECRET_TOKEN") ?? "";
 
 const CREDITS_PER_MINUTE = 1000 / 60; // ≈16.6667
 
@@ -20,15 +21,22 @@ async function hmacHex(secret: string, message: string): Promise<string> {
     new TextEncoder().encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
-    ["sign"],
+    ["sign"]
   );
-  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
+  const sig = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(message)
+  );
   return Array.from(new Uint8Array(sig))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 }
 
-async function verifyZoomSignature(req: Request, body: string): Promise<boolean> {
+async function verifyZoomSignature(
+  req: Request,
+  body: string
+): Promise<boolean> {
   if (!ZOOM_WEBHOOK_SECRET_TOKEN) return true; // allow during local setup
   const ts = req.headers.get("x-zm-request-timestamp") ?? "";
   const sig = req.headers.get("x-zm-signature") ?? "";
@@ -60,26 +68,35 @@ async function handleMeetingStarted(payload: any) {
     .maybeSingle();
   if (!reqRow) return;
 
-  const startedAt = obj.start_time ? new Date(obj.start_time).toISOString() : new Date().toISOString();
+  const startedAt = obj.start_time
+    ? new Date(obj.start_time).toISOString()
+    : new Date().toISOString();
 
-  await admin().from("call_sessions").upsert(
-    {
-      zoom_meeting_id: zoomId,
-      request_id: reqRow.id,
-      message_id: msg.id,
-      builder_id: reqRow.builder_id,
-      engineer_id: reqRow.assigned_engineer_id ?? msg.sender_id,
-      started_at: startedAt,
-      status: "in_progress",
-    },
-    { onConflict: "zoom_meeting_id" },
-  );
+  await admin()
+    .from("call_sessions")
+    .upsert(
+      {
+        zoom_meeting_id: zoomId,
+        request_id: reqRow.id,
+        message_id: msg.id,
+        builder_id: reqRow.builder_id,
+        engineer_id: reqRow.assigned_engineer_id ?? msg.sender_id,
+        started_at: startedAt,
+        status: "in_progress",
+      },
+      { onConflict: "zoom_meeting_id" }
+    );
 }
 
 async function handleMeetingEnded(payload: any) {
   const obj = payload.object ?? {};
   const zoomId = String(obj.id ?? "");
-  console.log("[meeting.ended] received — zoomId:", JSON.stringify(zoomId), "uuid:", obj.uuid);
+  console.log(
+    "[meeting.ended] received — zoomId:",
+    JSON.stringify(zoomId),
+    "uuid:",
+    obj.uuid
+  );
   if (!zoomId) {
     console.log("[meeting.ended] empty zoomId, aborting");
     return;
@@ -120,7 +137,10 @@ async function handleMeetingEnded(payload: any) {
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    const alreadyEnded = !!lastEnd && (!lastStart || new Date(lastEnd.created_at) > new Date(lastStart.created_at));
+    const alreadyEnded =
+      !!lastEnd &&
+      (!lastStart ||
+        new Date(lastEnd.created_at) > new Date(lastStart.created_at));
     if (!alreadyEnded) {
       const { error: insErr } = await admin().from("guest_messages").insert({
         guest_call_id: gc.id,
@@ -128,7 +148,8 @@ async function handleMeetingEnded(payload: any) {
         sender_name: "Relay",
         body: "📞 Zoom meeting ended",
       });
-      if (insErr) console.error("[meeting.ended] insert system message failed:", insErr);
+      if (insErr)
+        console.error("[meeting.ended] insert system message failed:", insErr);
       else console.log("[meeting.ended] system message inserted for gc", gc.id);
     } else {
       console.log("[meeting.ended] already ended since last start, skipping");
@@ -151,7 +172,9 @@ async function handleMeetingEnded(payload: any) {
     return;
   }
 
-  const endedAt = obj.end_time ? new Date(obj.end_time).toISOString() : new Date().toISOString();
+  const endedAt = obj.end_time
+    ? new Date(obj.end_time).toISOString()
+    : new Date().toISOString();
   const startedAt = session.started_at ?? obj.start_time ?? endedAt;
   const ms = new Date(endedAt).getTime() - new Date(startedAt).getTime();
   const minutes = Math.max(0, ms / 60000);
@@ -187,21 +210,28 @@ async function handleMeetingEnded(payload: any) {
 
   // Post a system message in the chat summarizing the call
   const creditsLabel = Math.round(billedCredits).toLocaleString();
-  const summary = billedMinutes > 0
-    ? `📞 Zoom call ended · ${billedMinutes} min · ${creditsLabel} credits used`
-    : `📞 Zoom call ended`;
-  await admin().from("request_messages").insert({
-    request_id: session.request_id,
-    sender_id: session.engineer_id ?? session.builder_id,
-    body: summary,
-    message_type: "system",
-  });
+  const summary =
+    billedMinutes > 0
+      ? `📞 Zoom call ended · ${billedMinutes} min · ${creditsLabel} credits used`
+      : `📞 Zoom call ended`;
+  await admin()
+    .from("request_messages")
+    .insert({
+      request_id: session.request_id,
+      sender_id: session.engineer_id ?? session.builder_id,
+      body: summary,
+      message_type: "system",
+    });
 
-  await admin().from("call_sessions").update({ status: "billed" }).eq("id", session.id);
+  await admin()
+    .from("call_sessions")
+    .update({ status: "billed" })
+    .eq("id", session.id);
 }
 
 Deno.serve(async (req) => {
-  if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
+  if (req.method !== "POST")
+    return new Response("Method not allowed", { status: 405 });
   const body = await req.text();
   let payload: any;
   try {
@@ -214,10 +244,10 @@ Deno.serve(async (req) => {
   if (payload.event === "endpoint.url_validation") {
     const plainToken = payload.payload?.plainToken ?? "";
     const encryptedToken = await hmacHex(ZOOM_WEBHOOK_SECRET_TOKEN, plainToken);
-    return new Response(
-      JSON.stringify({ plainToken, encryptedToken }),
-      { status: 200, headers: { "Content-Type": "application/json" } },
-    );
+    return new Response(JSON.stringify({ plainToken, encryptedToken }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   const valid = await verifyZoomSignature(req, body);
@@ -227,9 +257,12 @@ Deno.serve(async (req) => {
   // confirm whether meeting.summary_completed is arriving from Zoom and what
   // shape it has. Search Supabase edge logs for "[zoom-webhook] event".
   console.log(
-    "[zoom-webhook] event:", payload.event,
-    "objectKeys:", Object.keys(payload?.payload?.object ?? {}),
-    "meetingId:", payload?.payload?.object?.id ?? payload?.payload?.object?.meeting_id ?? null,
+    "[zoom-webhook] event:",
+    payload.event,
+    "objectKeys:",
+    Object.keys(payload?.payload?.object ?? {}),
+    "meetingId:",
+    payload?.payload?.object?.id ?? payload?.payload?.object?.meeting_id ?? null
   );
 
   try {
@@ -262,12 +295,17 @@ async function handleRecordingCompleted(payload: any) {
   const zoomId = String(obj.id ?? "");
   if (!zoomId) return;
 
-  const files: any[] = Array.isArray(obj.recording_files) ? obj.recording_files : [];
+  const files: any[] = Array.isArray(obj.recording_files)
+    ? obj.recording_files
+    : [];
   const videoFile = files.find((f) => f.file_type === "MP4") ?? files[0] ?? {};
   const playUrl: string | null = obj.share_url ?? videoFile.play_url ?? null;
   const downloadUrl: string | null = videoFile.download_url ?? null;
-  const password: string | null = obj.password ?? obj.recording_play_passcode ?? null;
-  const duration: number | null = Number.isFinite(obj.duration) ? Number(obj.duration) : null;
+  const password: string | null =
+    obj.password ?? obj.recording_play_passcode ?? null;
+  const duration: number | null = Number.isFinite(obj.duration)
+    ? Number(obj.duration)
+    : null;
 
   // Path A: anonymous guest sessions. Recording URL / passcode / duration
   // are persisted on guest_calls. We also post a supervisor-only system
@@ -295,23 +333,25 @@ async function handleRecordingCompleted(payload: any) {
       recording_password: password,
       duration_minutes: duration,
     };
-    if ((gcState as { summary_state?: string } | null)?.summary_state === "waiting_for_transcript") {
+    if (
+      (gcState as { summary_state?: string } | null)?.summary_state ===
+      "waiting_for_transcript"
+    ) {
       update.summary_state = "generating_zoom_summary";
       update.summary_state_updated_at = new Date().toISOString();
     }
-    await admin()
-      .from("guest_calls")
-      .update(update)
-      .eq("id", gc.id);
+    await admin().from("guest_calls").update(update).eq("id", gc.id);
     if (playUrl) {
       const passLine = password ? `\nPasscode: ${password}` : "";
-      await admin().from("guest_messages").insert({
-        guest_call_id: gc.id,
-        sender_kind: "system",
-        sender_name: "Relay",
-        body: `🎥 Recording available: ${playUrl}${passLine}`,
-        visibility: "supervisor",
-      });
+      await admin()
+        .from("guest_messages")
+        .insert({
+          guest_call_id: gc.id,
+          sender_kind: "system",
+          sender_name: "Relay",
+          body: `🎥 Recording available: ${playUrl}${passLine}`,
+          visibility: "supervisor",
+        });
     }
     return;
   }
@@ -345,21 +385,23 @@ async function handleRecordingCompleted(payload: any) {
     engineerId = engineerId ?? reqRow?.assigned_engineer_id ?? null;
   }
 
-  await admin().from("call_recordings").upsert(
-    {
-      call_session_id: session?.id ?? null,
-      request_id: msg.request_id,
-      zoom_meeting_id: zoomId,
-      recording_play_url: playUrl,
-      recording_download_url: downloadUrl,
-      recording_password: password,
-      duration_minutes: duration,
-      recording_files: files,
-      builder_id: builderId,
-      engineer_id: engineerId,
-    },
-    { onConflict: "zoom_meeting_id" },
-  );
+  await admin()
+    .from("call_recordings")
+    .upsert(
+      {
+        call_session_id: session?.id ?? null,
+        request_id: msg.request_id,
+        zoom_meeting_id: zoomId,
+        recording_play_url: playUrl,
+        recording_download_url: downloadUrl,
+        recording_password: password,
+        duration_minutes: duration,
+        recording_files: files,
+        builder_id: builderId,
+        engineer_id: engineerId,
+      },
+      { onConflict: "zoom_meeting_id" }
+    );
 }
 
 async function handleSummaryCompleted(payload: any) {
@@ -368,7 +410,8 @@ async function handleSummaryCompleted(payload: any) {
   if (!zoomId) return;
 
   const title: string | null = obj.summary_title ?? obj.meeting_topic ?? null;
-  const overview: string | null = obj.summary_overview ?? obj.summary_content ?? null;
+  const overview: string | null =
+    obj.summary_overview ?? obj.summary_content ?? null;
   const details = obj.summary_details ?? obj.summary ?? null;
   const nextSteps = obj.next_steps ?? null;
 
@@ -392,7 +435,8 @@ async function handleSummaryCompleted(payload: any) {
     if (Array.isArray(nextSteps) && nextSteps.length > 0) {
       lines.push("\nNext steps:");
       for (const step of nextSteps) {
-        const text = typeof step === "string" ? step : step?.text ?? step?.description;
+        const text =
+          typeof step === "string" ? step : (step?.text ?? step?.description);
         if (text) lines.push(`• ${text}`);
       }
     }
@@ -410,7 +454,10 @@ async function handleSummaryCompleted(payload: any) {
       .limit(1)
       .maybeSingle();
     if (existingSummary) {
-      console.log("[meeting.summary_completed] duplicate body, skipping insert for gc", gc.id);
+      console.log(
+        "[meeting.summary_completed] duplicate body, skipping insert for gc",
+        gc.id
+      );
       return;
     }
     await admin().from("guest_messages").insert({
@@ -453,7 +500,10 @@ async function handleSummaryCompleted(payload: any) {
           body: JSON.stringify({ guest_call_id: gc.id }),
         });
       } catch (e) {
-        console.error("[meeting.summary_completed] refresh summarize-guest-call failed:", e);
+        console.error(
+          "[meeting.summary_completed] refresh summarize-guest-call failed:",
+          e
+        );
       }
     }
     return;
@@ -475,18 +525,20 @@ async function handleSummaryCompleted(payload: any) {
     .eq("zoom_meeting_id", zoomId)
     .maybeSingle();
 
-  await admin().from("call_recordings").upsert(
-    {
-      call_session_id: session?.id ?? null,
-      request_id: msg.request_id,
-      zoom_meeting_id: zoomId,
-      ai_summary_title: title,
-      ai_summary_overview: overview,
-      ai_summary_details: details,
-      ai_next_steps: nextSteps,
-    },
-    { onConflict: "zoom_meeting_id" },
-  );
+  await admin()
+    .from("call_recordings")
+    .upsert(
+      {
+        call_session_id: session?.id ?? null,
+        request_id: msg.request_id,
+        zoom_meeting_id: zoomId,
+        ai_summary_title: title,
+        ai_summary_overview: overview,
+        ai_summary_details: details,
+        ai_next_steps: nextSteps,
+      },
+      { onConflict: "zoom_meeting_id" }
+    );
 
   const lines: string[] = ["🤖 **AI Companion summary**"];
   if (title) lines.push(`**${title}**`);
@@ -494,15 +546,17 @@ async function handleSummaryCompleted(payload: any) {
   if (Array.isArray(nextSteps) && nextSteps.length > 0) {
     lines.push("\n**Next steps:**");
     for (const step of nextSteps) {
-      const text = typeof step === "string" ? step : step?.text ?? step?.description;
+      const text =
+        typeof step === "string" ? step : (step?.text ?? step?.description);
       if (text) lines.push(`• ${text}`);
     }
   }
-  await admin().from("request_messages").insert({
-    request_id: msg.request_id,
-    sender_id: null,
-    body: lines.join("\n"),
-    message_type: "system",
-  });
+  await admin()
+    .from("request_messages")
+    .insert({
+      request_id: msg.request_id,
+      sender_id: null,
+      body: lines.join("\n"),
+      message_type: "system",
+    });
 }
-

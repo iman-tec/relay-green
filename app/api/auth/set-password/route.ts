@@ -20,19 +20,24 @@ import { landingForRoles } from "@/lib/relay/role-labels";
 import { passwordIsValid, PASSWORD_RULES_MESSAGE } from "@/lib/password-policy";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   const { password, mode } = (await request.json().catch(() => ({}))) as {
     password?: string;
-    mode?:     string;
+    mode?: string;
   };
   if (!password || typeof password !== "string" || !passwordIsValid(password)) {
-    return NextResponse.json({ error: PASSWORD_RULES_MESSAGE }, { status: 400 });
+    return NextResponse.json(
+      { error: PASSWORD_RULES_MESSAGE },
+      { status: 400 }
+    );
   }
 
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) {
     return NextResponse.json({ error: "not_authenticated" }, { status: 401 });
   }
@@ -50,23 +55,34 @@ export async function POST(request: Request) {
   // admin client because supabase.auth.updateUser can't touch
   // app_metadata.
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey  = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (supabaseUrl && serviceKey) {
     try {
       const admin = createAdminClient(supabaseUrl, serviceKey, {
         auth: { persistSession: false, autoRefreshToken: false },
       });
-      const { error: flagErr } = await admin.auth.admin.updateUserById(user.id, {
-        app_metadata: { ...(user.app_metadata ?? {}), password_set: true },
-      });
+      const { error: flagErr } = await admin.auth.admin.updateUserById(
+        user.id,
+        {
+          app_metadata: { ...(user.app_metadata ?? {}), password_set: true },
+        }
+      );
       if (flagErr) {
-        console.warn("[set-password] password_set flag write failed:", flagErr.message);
+        console.warn(
+          "[set-password] password_set flag write failed:",
+          flagErr.message
+        );
       }
     } catch (e) {
-      console.warn("[set-password] password_set flag write threw:", e instanceof Error ? e.message : e);
+      console.warn(
+        "[set-password] password_set flag write threw:",
+        e instanceof Error ? e.message : e
+      );
     }
   } else {
-    console.warn("[set-password] supabase service-role env missing — skipping password_set flag");
+    console.warn(
+      "[set-password] supabase service-role env missing — skipping password_set flag"
+    );
   }
 
   // Resolve the role-aware landing URL so the caller's navigation lands

@@ -27,22 +27,29 @@ import {
 } from "@/lib/relay/loginSurface";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
-const VALID_SURFACES = new Set<LoginSurface>(["customer", "staff", "partner", "business"]);
+const VALID_SURFACES = new Set<LoginSurface>([
+  "customer",
+  "staff",
+  "partner",
+  "business",
+]);
 
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as {
-    email?:    string;
+    email?: string;
     password?: string;
-    surface?:  string;
+    surface?: string;
     /** Legacy: callers still send `mode: "customer" | "staff"`. */
-    mode?:     string;
+    mode?: string;
   };
   const { email, password } = body;
   if (
-    !email    || typeof email    !== "string" ||
-    !password || typeof password !== "string"
+    !email ||
+    typeof email !== "string" ||
+    !password ||
+    typeof password !== "string"
   ) {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
@@ -60,7 +67,7 @@ export async function POST(request: Request) {
   await supabase.auth.signOut({ scope: "local" }).catch(() => {});
 
   const { data, error } = await supabase.auth.signInWithPassword({
-    email:    email.trim().toLowerCase(),
+    email: email.trim().toLowerCase(),
     password,
   });
   if (error) {
@@ -70,7 +77,10 @@ export async function POST(request: Request) {
   const user = data.user;
   if (!user) {
     await supabase.auth.signOut({ scope: "local" }).catch(() => {});
-    return NextResponse.json({ error: "sign_in_unexpected_state" }, { status: 500 });
+    return NextResponse.json(
+      { error: "sign_in_unexpected_state" },
+      { status: 500 }
+    );
   }
 
   // Pull the authenticated user's roles. Required for every surface so we
@@ -89,12 +99,15 @@ export async function POST(request: Request) {
   if (!isAllowedOnSurface(roles, surface)) {
     await supabase.auth.signOut({ scope: "global" }).catch(() => {});
     const allowed = preferredSurfaceForRoles(roles);
-    return NextResponse.json({
-      error: "wrong_login_surface",
-      allowed_surface: allowed,
-      allowed_surface_url: SURFACE_URL[allowed],
-      allowed_roles_here: SURFACE_ROLES[surface],
-    }, { status: 403 });
+    return NextResponse.json(
+      {
+        error: "wrong_login_surface",
+        allowed_surface: allowed,
+        allowed_surface_url: SURFACE_URL[allowed],
+        allowed_roles_here: SURFACE_ROLES[surface],
+      },
+      { status: 403 }
+    );
   }
 
   // Customer surface: landing is always /room regardless of which other
@@ -107,7 +120,8 @@ export async function POST(request: Request) {
   // app_metadata.password_set = true; subsequent sign-ins skip the
   // divert and land directly on `next`.
   const passwordSet =
-    (user.app_metadata as Record<string, unknown> | undefined)?.password_set === true;
+    (user.app_metadata as Record<string, unknown> | undefined)?.password_set ===
+    true;
   if (!passwordSet) {
     const params = new URLSearchParams({ surface, continue: next });
     return NextResponse.json({ ok: true, next: `/set-password?${params}` });

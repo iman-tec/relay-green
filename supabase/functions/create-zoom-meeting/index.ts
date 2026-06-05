@@ -8,7 +8,9 @@ const corsHeaders = {
 };
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY")!;
+const SUPABASE_ANON_KEY =
+  Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ??
+  Deno.env.get("SUPABASE_ANON_KEY")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const ZOOM_ACCOUNT_ID = Deno.env.get("ZOOM_ACCOUNT_ID");
 const ZOOM_CLIENT_ID = Deno.env.get("ZOOM_CLIENT_ID");
@@ -63,13 +65,18 @@ Deno.serve(async (req) => {
     const requestId: string | undefined = body.request_id;
     const topic: string = (body.topic ?? "").toString().trim();
     const startAtIso: string | undefined = body.start_at;
-    const duration: number = Number.isFinite(body.duration_minutes) ? Number(body.duration_minutes) : 30;
+    const duration: number = Number.isFinite(body.duration_minutes)
+      ? Number(body.duration_minutes)
+      : 30;
 
     if (!requestId || !topic || !startAtIso) {
-      return new Response(JSON.stringify({ error: "Missing request_id, topic, or start_at" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ error: "Missing request_id, topic, or start_at" }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
     const startAt = new Date(startAtIso);
     if (isNaN(startAt.getTime())) {
@@ -91,10 +98,13 @@ Deno.serve(async (req) => {
     const roleSet = new Set((roles ?? []).map((r: { role: string }) => r.role));
     const isStaff = roleSet.has("engineer") || roleSet.has("supervisor");
     if (!isStaff) {
-      return new Response(JSON.stringify({ error: "Only staff can schedule Zoom meetings" }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ error: "Only staff can schedule Zoom meetings" }),
+        {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     // Confirm the request exists
@@ -144,7 +154,9 @@ Deno.serve(async (req) => {
     });
     const zoomData = await zoomRes.json();
     if (!zoomRes.ok) {
-      throw new Error(`Zoom create meeting failed [${zoomRes.status}]: ${JSON.stringify(zoomData)}`);
+      throw new Error(
+        `Zoom create meeting failed [${zoomRes.status}]: ${JSON.stringify(zoomData)}`
+      );
     }
 
     const joinUrl: string = zoomData.join_url;
@@ -177,9 +189,12 @@ Deno.serve(async (req) => {
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : "Unknown error";
     console.error("create-zoom-meeting error:", errorMessage);
-    return new Response(JSON.stringify({ success: false, error: errorMessage }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ success: false, error: errorMessage }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
   }
 });

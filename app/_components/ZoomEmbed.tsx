@@ -113,7 +113,8 @@ function chainOnGate<T>(task: () => Promise<T>): Promise<T> {
 
 function loadZoomSdk(): Promise<void> {
   if (typeof window === "undefined") return Promise.resolve();
-  if ((window as unknown as Record<string, unknown>).ZoomMtgEmbedded) return Promise.resolve();
+  if ((window as unknown as Record<string, unknown>).ZoomMtgEmbedded)
+    return Promise.resolve();
   if (scriptsLoadedPromise) return scriptsLoadedPromise;
 
   scriptsLoadedPromise = (async () => {
@@ -137,7 +138,12 @@ function loadZoomSdk(): Promise<void> {
   return scriptsLoadedPromise;
 }
 
-type SuspensionViewType = "minimized" | "speaker" | "ribbon" | "gallery" | "active";
+type SuspensionViewType =
+  | "minimized"
+  | "speaker"
+  | "ribbon"
+  | "gallery"
+  | "active";
 
 type ZoomClient = {
   init: (opts: unknown) => Promise<void>;
@@ -196,7 +202,9 @@ async function prewarmMediaDevices(): Promise<void> {
     await md.enumerateDevices().catch(() => undefined);
     await new Promise((r) => setTimeout(r, 80));
     await md.enumerateDevices().catch(() => undefined);
-  } catch { /* ignore — best effort */ }
+  } catch {
+    /* ignore — best effort */
+  }
 }
 
 // Retry budget for first-join failures. Total ≈ 30s across 6 attempts:
@@ -209,8 +217,7 @@ const FIRST_JOIN_RETRY_DELAYS_MS = [800, 1500, 2500, 4000, 6000, 8000];
 // fake "in call" placeholder instead of trying to reach Zoom. Useful when
 // testing non-video flows on a flaky network.
 const MOCK_ENABLED =
-  typeof process !== "undefined" &&
-  process.env.NEXT_PUBLIC_ZOOM_MOCK === "1";
+  typeof process !== "undefined" && process.env.NEXT_PUBLIC_ZOOM_MOCK === "1";
 
 export function ZoomEmbed({
   meetingNumber,
@@ -227,11 +234,15 @@ export function ZoomEmbed({
   const wrapRef = useRef<HTMLDivElement>(null);
   const clientRef = useRef<ZoomClient | null>(null);
   const joinedKeyRef = useRef<string | null>(null);
-  const [status, setStatus] = useState<"idle" | "loading" | "joined" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "loading" | "joined" | "error">(
+    "idle"
+  );
   const [error, setError] = useState<string | null>(null);
   // Surfaced during retry loops so the user knows "we're still trying"
   // instead of staring at a frozen spinner. Updates as attempts progress.
-  const [loadingMessage, setLoadingMessage] = useState<string>("Connecting to Zoom…");
+  const [loadingMessage, setLoadingMessage] = useState<string>(
+    "Connecting to Zoom…"
+  );
   // Share view's natural render exceeds the slot at 100% browser zoom. We
   // toggle this on while someone is sharing so the wrapper applies a
   // Chromium-native CSS `zoom` to scale the panel down enough to fit, then
@@ -241,10 +252,12 @@ export function ZoomEmbed({
   // clamped to documented bounds (720×411 min, 1440×720 max). The wrapper
   // flex-centers this so the Zoom embed sits in the middle of the slot with
   // clean black margins around it instead of overflowing or under-sizing.
-  const [panelSize, setPanelSize] = useState<{ width: number; height: number }>({
-    width: 1280,
-    height: 720,
-  });
+  const [panelSize, setPanelSize] = useState<{ width: number; height: number }>(
+    {
+      width: 1280,
+      height: 720,
+    }
+  );
 
   // ── Phase 2: floating draggable camera bubbles during screen share ──
   // When someone shares their screen:
@@ -358,7 +371,9 @@ export function ZoomEmbed({
       draggedRibbon.style.right = "auto";
       draggedRibbon.style.bottom = "auto";
     };
-    const onPointerUp = () => { dragging = false; };
+    const onPointerUp = () => {
+      dragging = false;
+    };
 
     let attachedRibbon: HTMLElement | null = null;
     const attachToRibbon = () => {
@@ -366,7 +381,8 @@ export function ZoomEmbed({
       if (!host) return;
       const ribbon = host.querySelector(RIBBON_SELECTORS) as HTMLElement | null;
       if (!ribbon || ribbon === attachedRibbon) return;
-      if (attachedRibbon) attachedRibbon.removeEventListener("mousedown", onPointerDown);
+      if (attachedRibbon)
+        attachedRibbon.removeEventListener("mousedown", onPointerDown);
       attachedRibbon = ribbon;
       draggedRibbon = ribbon;
       ribbon.addEventListener("mousedown", onPointerDown);
@@ -385,7 +401,8 @@ export function ZoomEmbed({
       mo.disconnect();
       window.removeEventListener("mousemove", onPointerMove);
       window.removeEventListener("mouseup", onPointerUp);
-      if (attachedRibbon) attachedRibbon.removeEventListener("mousedown", onPointerDown);
+      if (attachedRibbon)
+        attachedRibbon.removeEventListener("mousedown", onPointerDown);
       style.remove();
     };
   }, [isSharing]);
@@ -461,8 +478,14 @@ export function ZoomEmbed({
       const ribbonBounds = attached.getBoundingClientRect();
       let left = e.clientX - hostBounds.left - startX;
       let top = e.clientY - hostBounds.top - startY;
-      left = Math.max(8, Math.min(hostBounds.width - ribbonBounds.width - 8, left));
-      top = Math.max(8, Math.min(hostBounds.height - ribbonBounds.height - 8, top));
+      left = Math.max(
+        8,
+        Math.min(hostBounds.width - ribbonBounds.width - 8, left)
+      );
+      top = Math.max(
+        8,
+        Math.min(hostBounds.height - ribbonBounds.height - 8, top)
+      );
       attached.style.left = `${left}px`;
       attached.style.top = `${top}px`;
       attached.style.right = "auto";
@@ -470,7 +493,9 @@ export function ZoomEmbed({
       dragX = left;
       dragY = top;
     };
-    const onPointerUp = () => { dragging = false; };
+    const onPointerUp = () => {
+      dragging = false;
+    };
 
     const attachToSelf = () => {
       const host = rootRef.current;
@@ -496,7 +521,8 @@ export function ZoomEmbed({
       style.remove();
       // Suppress unused-var lints for the running drag offsets — they are
       // tracked in closure for the lifetime of this share session.
-      void dragX; void dragY;
+      void dragX;
+      void dragY;
     };
   }, [isSharing, status]);
 
@@ -536,7 +562,9 @@ export function ZoomEmbed({
             ribbon: { width: 316, height: h },
           },
         });
-      } catch { /* SDK not ready */ }
+      } catch {
+        /* SDK not ready */
+      }
     };
     apply();
     const ro = new ResizeObserver(apply);
@@ -569,14 +597,20 @@ export function ZoomEmbed({
       // Tear down a previous client in this mount
       const prev = clientRef.current;
       if (prev?.leaveMeeting) {
-        try { await prev.leaveMeeting(); } catch { /* ignore */ }
+        try {
+          await prev.leaveMeeting();
+        } catch {
+          /* ignore */
+        }
         clientRef.current = null;
       }
 
       // Polyfill mediaDevices for non-secure-context dev (10.0.1.207 over HTTP)
       if (typeof navigator !== "undefined" && !navigator.mediaDevices) {
         Object.defineProperty(navigator, "mediaDevices", {
-          value: {}, writable: true, configurable: true,
+          value: {},
+          writable: true,
+          configurable: true,
         });
       }
 
@@ -593,7 +627,9 @@ export function ZoomEmbed({
         onError?.("sdk_load_failed");
         return;
       }
-      const ZoomMtgEmbedded = (window as unknown as { ZoomMtgEmbedded?: ZoomMtgEmbeddedNS }).ZoomMtgEmbedded;
+      const ZoomMtgEmbedded = (
+        window as unknown as { ZoomMtgEmbedded?: ZoomMtgEmbeddedNS }
+      ).ZoomMtgEmbedded;
       if (!ZoomMtgEmbedded) {
         if (cancelled) return;
         setError("Zoom SDK not available after load");
@@ -608,13 +644,25 @@ export function ZoomEmbed({
       });
       if (sigRes.error || !sigRes.data?.signature) {
         if (cancelled) return;
-        setError(sigRes.error?.message ?? sigRes.data?.error ?? "Could not get signature");
+        setError(
+          sigRes.error?.message ??
+            sigRes.data?.error ??
+            "Could not get signature"
+        );
         setStatus("error");
         onError?.("signature_failed");
         return;
       }
-      const { signature, sdkKey, password: sigPassword, zak } = sigRes.data as {
-        signature: string; sdkKey: string; password?: string; zak?: string;
+      const {
+        signature,
+        sdkKey,
+        password: sigPassword,
+        zak,
+      } = sigRes.data as {
+        signature: string;
+        sdkKey: string;
+        password?: string;
+        zak?: string;
       };
       const effectivePassword = (sigPassword ?? password ?? "") as string;
 
@@ -626,7 +674,9 @@ export function ZoomEmbed({
       const watchdog = setTimeout(() => {
         if (cancelled) return;
         if (joinedKeyRef.current !== key) {
-          setError("Zoom is taking too long to connect. Try the fallback link below.");
+          setError(
+            "Zoom is taking too long to connect. Try the fallback link below."
+          );
           setStatus("error");
           onError?.("join_timeout");
         }
@@ -689,7 +739,11 @@ export function ZoomEmbed({
         // caps-undefined crash), then inits and joins.
         const initAndJoin = async (): Promise<ZoomClient> => {
           const c = ZoomMtgEmbedded.createClient();
-          try { await c.leaveMeeting(); } catch { /* nothing to leave */ }
+          try {
+            await c.leaveMeeting();
+          } catch {
+            /* nothing to leave */
+          }
           // Pre-warm: the SDK's media-device enumeration races against the
           // browser's device-init on first join, crashing with "reading
           // 'caps'". Forcing enumerateDevices() ourselves first populates
@@ -738,7 +792,11 @@ export function ZoomEmbed({
             // 3000: stale singleton — drop and immediately retry, no backoff.
             if (code === 3000) {
               await chainOnGate(async () => {
-                try { await ZoomMtgEmbedded.createClient().leaveMeeting(); } catch { /* ignore */ }
+                try {
+                  await ZoomMtgEmbedded.createClient().leaveMeeting();
+                } catch {
+                  /* ignore */
+                }
                 await new Promise((r) => setTimeout(r, 500));
               });
               continue;
@@ -749,7 +807,9 @@ export function ZoomEmbed({
               isCapsCrash(err);
 
             if (retryable && attempt < maxAttempts) {
-              await new Promise((r) => setTimeout(r, FIRST_JOIN_RETRY_DELAYS_MS[attempt]));
+              await new Promise((r) =>
+                setTimeout(r, FIRST_JOIN_RETRY_DELAYS_MS[attempt])
+              );
               continue;
             }
 
@@ -767,10 +827,16 @@ export function ZoomEmbed({
         // After rejoin, open browser devtools console and report what you see.
         // eslint-disable-next-line no-console
         console.log("[ZoomEmbed] client API surface:", {
-          hasSetViewType: typeof (client as Record<string, unknown>).setViewType === "function",
-          hasSwitchVideoLayout: typeof (client as Record<string, unknown>).switchVideoLayout === "function",
+          hasSetViewType:
+            typeof (client as Record<string, unknown>).setViewType ===
+            "function",
+          hasSwitchVideoLayout:
+            typeof (client as Record<string, unknown>).switchVideoLayout ===
+            "function",
           hasOn: typeof (client as Record<string, unknown>).on === "function",
-          hasUpdateVideoOptions: typeof (client as Record<string, unknown>).updateVideoOptions === "function",
+          hasUpdateVideoOptions:
+            typeof (client as Record<string, unknown>).updateVideoOptions ===
+            "function",
           allMethods: Object.keys(client),
         });
 
@@ -789,14 +855,19 @@ export function ZoomEmbed({
           if (typeof client.switchVideoLayout === "function") {
             client.switchVideoLayout(view);
             // eslint-disable-next-line no-console
-            console.log(`[ZoomEmbed] switchVideoLayout('${view}') (fallback) called OK`);
+            console.log(
+              `[ZoomEmbed] switchVideoLayout('${view}') (fallback) called OK`
+            );
             return;
           }
           // eslint-disable-next-line no-console
-          console.warn(`[ZoomEmbed] no layout API available — relying on defaultViewType in init`);
+          console.warn(
+            `[ZoomEmbed] no layout API available — relying on defaultViewType in init`
+          );
         };
-        try { await applyLayout("speaker"); }
-        catch (e) {
+        try {
+          await applyLayout("speaker");
+        } catch (e) {
           // eslint-disable-next-line no-console
           console.log("[ZoomEmbed] applyLayout('speaker') failed:", e);
         }
@@ -805,13 +876,23 @@ export function ZoomEmbed({
           const onShareChange = (payload: unknown) => {
             // eslint-disable-next-line no-console
             console.log("[ZoomEmbed] share event payload:", payload);
-            const p = payload as { state?: string; status?: string } | undefined;
-            const state = (p?.state ?? p?.status ?? "").toString().toLowerCase();
-            const sharing = state === "active" || state === "share" || state === "sharing" || state === "started";
+            const p = payload as
+              | { state?: string; status?: string }
+              | undefined;
+            const state = (p?.state ?? p?.status ?? "")
+              .toString()
+              .toLowerCase();
+            const sharing =
+              state === "active" ||
+              state === "share" ||
+              state === "sharing" ||
+              state === "started";
             if (!cancelled) setIsSharing(sharing);
             // Ribbon while someone is sharing (so the shared screen has room);
             // gallery when nobody is sharing so both faces stay visible.
-            void applyLayout(sharing ? "ribbon" : "speaker").catch(() => undefined);
+            void applyLayout(sharing ? "ribbon" : "speaker").catch(
+              () => undefined
+            );
           };
           for (const ev of [
             "active-share-change",
@@ -852,12 +933,17 @@ export function ZoomEmbed({
             for (const k of Object.getOwnPropertyNames(o)) {
               if (seen.has(k) || k === "constructor") continue;
               seen.add(k);
-              try { collected[k] = (err as Record<string, unknown>)[k]; }
-              catch { /* getter threw — skip */ }
+              try {
+                collected[k] = (err as Record<string, unknown>)[k];
+              } catch {
+                /* getter threw — skip */
+              }
             }
             o = Object.getPrototypeOf(o);
           }
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
         const reason =
           (collected.reason as string | undefined) ??
           (collected.message as string | undefined) ??
@@ -871,13 +957,25 @@ export function ZoomEmbed({
         // dev overlay collapses object args to "{}", so without this you
         // see nothing useful in the overlay panel.
         const collectedStr = (() => {
-          try { return JSON.stringify(collected); } catch { return "<unserializable>"; }
+          try {
+            return JSON.stringify(collected);
+          } catch {
+            return "<unserializable>";
+          }
         })();
         console.error(
           `[ZoomEmbed] join failed: ${reason} | typeof=${typeof e} | ctor=${
-            (e as { constructor?: { name?: string } } | null)?.constructor?.name ?? "n/a"
+            (e as { constructor?: { name?: string } } | null)?.constructor
+              ?.name ?? "n/a"
           } | collected=${collectedStr}`,
-          { raw: e, role, meetingNumber, signaturePresent: !!signature, sdkKeyPresent: !!sdkKey, zakPresent: !!zak },
+          {
+            raw: e,
+            role,
+            meetingNumber,
+            signaturePresent: !!signature,
+            sdkKeyPresent: !!sdkKey,
+            zakPresent: !!zak,
+          }
         );
         // Translate raw Zoom messages into human-friendly diagnoses so the
         // user knows whether to retry, switch networks, or click the
@@ -890,8 +988,9 @@ export function ZoomEmbed({
           if (code === 3000) {
             return "Another Zoom meeting is still active in this browser. Close other tabs joined to a Zoom call and refresh.";
           }
-          if (code === 1006) return "Zoom signature was rejected. Check the SDK credentials.";
-          if (code === 200)  return "Zoom rejected the meeting password.";
+          if (code === 1006)
+            return "Zoom signature was rejected. Check the SDK credentials.";
+          if (code === 200) return "Zoom rejected the meeting password.";
           return reason;
         })();
         if (!cancelled) {
@@ -902,7 +1001,9 @@ export function ZoomEmbed({
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meetingNumber, role, userName]);
 
@@ -917,7 +1018,11 @@ export function ZoomEmbed({
         // for it. Also defensively try the singleton-style leave in case
         // the SDK has stashed state outside our reference.
         chainOnGate(async () => {
-          try { await c.leaveMeeting(); } catch { /* ignore */ }
+          try {
+            await c.leaveMeeting();
+          } catch {
+            /* ignore */
+          }
         });
       }
       onLeave?.();
@@ -932,7 +1037,7 @@ export function ZoomEmbed({
   return (
     <div
       ref={wrapRef}
-      className="relative h-full w-full overflow-hidden flex items-center justify-center"
+      className="relative flex h-full w-full items-center justify-center overflow-hidden"
       style={{ backgroundColor: "#000" }}
     >
       <div
@@ -953,8 +1058,12 @@ export function ZoomEmbed({
           <div className="text-center text-white/80">
             <Video size={32} className="mx-auto mb-2 opacity-70" />
             <p className="text-sm font-medium">Zoom mock mode</p>
-            <p className="mt-1 text-[11px] opacity-60">Video is bypassed for testing.</p>
-            <p className="mt-0.5 text-[10px] opacity-50">Unset NEXT_PUBLIC_ZOOM_MOCK to use real Zoom.</p>
+            <p className="mt-1 text-[11px] opacity-60">
+              Video is bypassed for testing.
+            </p>
+            <p className="mt-0.5 text-[10px] opacity-50">
+              Unset NEXT_PUBLIC_ZOOM_MOCK to use real Zoom.
+            </p>
           </div>
         </div>
       )}
@@ -962,8 +1071,12 @@ export function ZoomEmbed({
         <div className="absolute inset-0 flex items-center justify-center bg-black/80 px-6">
           <div className="max-w-sm text-center">
             <Video size={28} className="mx-auto mb-3 text-white/60" />
-            <p className="text-sm font-medium text-white">Couldn&apos;t connect to Zoom</p>
-            <p className="mt-2 text-xs leading-relaxed text-white/70">{error}</p>
+            <p className="text-sm font-medium text-white">
+              Couldn&apos;t connect to Zoom
+            </p>
+            <p className="mt-2 text-xs leading-relaxed text-white/70">
+              {error}
+            </p>
             {fallbackJoinUrl ? (
               <a
                 href={fallbackJoinUrl}
@@ -974,8 +1087,9 @@ export function ZoomEmbed({
                 <ExternalLink size={14} /> Open in Zoom directly
               </a>
             ) : null}
-            <p className="mt-4 text-[10px] uppercase tracking-[0.12em] text-white/40">
-              Or try a different network · disable VPN · use the Zoom desktop app
+            <p className="mt-4 text-[10px] tracking-[0.12em] text-white/40 uppercase">
+              Or try a different network · disable VPN · use the Zoom desktop
+              app
             </p>
           </div>
         </div>

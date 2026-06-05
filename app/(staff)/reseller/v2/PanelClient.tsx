@@ -17,7 +17,10 @@ import { SignOutButton } from "@/app/_components/admin-v2/SignOutButton";
 import { UserChip } from "@/app/_components/admin-v2/UserChip";
 import { NotificationBell } from "@/app/_components/admin-v2/NotificationBell";
 import { ThemeTriplet } from "@/app/_components/ThemeTriplet";
-import { PartnerOverviewTab, type PartnerOverviewView } from "./PartnerOverviewTab";
+import {
+  PartnerOverviewTab,
+  type PartnerOverviewView,
+} from "./PartnerOverviewTab";
 import { ClientsTab } from "./ClientsTab";
 import { PartnerSettingsTab } from "./PartnerSettingsTab";
 
@@ -25,26 +28,39 @@ type TabKey = "dashboard" | "clients" | "settings";
 
 const TABS: readonly Tab<TabKey>[] = [
   { key: "dashboard", label: "Dashboard" },
-  { key: "clients",   label: "Clients" },
-  { key: "settings",  label: "Settings" },
+  { key: "clients", label: "Clients" },
+  { key: "settings", label: "Settings" },
 ];
 
 const VALID = new Set<TabKey>(TABS.map((t) => t.key));
 
-function resolveInitial(param: string | null | undefined): { tab: TabKey; view: PartnerOverviewView } {
+function resolveInitial(param: string | null | undefined): {
+  tab: TabKey;
+  view: PartnerOverviewView;
+} {
   switch (param) {
-    case "sales":     return { tab: "dashboard", view: "sales" };
-    case "clients":   return { tab: "clients", view: "portfolio" };
-    case "settings":  return { tab: "settings", view: "portfolio" };
+    case "sales":
+      return { tab: "dashboard", view: "sales" };
+    case "clients":
+      return { tab: "clients", view: "portfolio" };
+    case "settings":
+      return { tab: "settings", view: "portfolio" };
     case "dashboard":
-    default:          return { tab: "dashboard", view: "portfolio" };
+    default:
+      return { tab: "dashboard", view: "portfolio" };
   }
 }
 
-export function PanelClient({ me }: { me: { email: string; roleLabel: string } }) {
+export function PanelClient({
+  me,
+}: {
+  me: { email: string; roleLabel: string };
+}) {
   const searchParams = useSearchParams();
   const initial = resolveInitial(searchParams?.get("tab"));
-  const [tab, setTab] = useState<TabKey>(VALID.has(initial.tab) ? initial.tab : "dashboard");
+  const [tab, setTab] = useState<TabKey>(
+    VALID.has(initial.tab) ? initial.tab : "dashboard"
+  );
 
   return (
     <div className="flex h-screen min-h-0 flex-col">
@@ -63,9 +79,11 @@ export function PanelClient({ me }: { me: { email: string; roleLabel: string } }
         }
       />
       <div className="min-h-0 flex-1 overflow-hidden">
-        {tab === "dashboard" && <PartnerOverviewTab initialView={initial.view} />}
-        {tab === "clients"   && <ClientsTab />}
-        {tab === "settings"  && <PartnerSettingsTab />}
+        {tab === "dashboard" && (
+          <PartnerOverviewTab initialView={initial.view} />
+        )}
+        {tab === "clients" && <ClientsTab />}
+        {tab === "settings" && <PartnerSettingsTab />}
       </div>
     </div>
   );

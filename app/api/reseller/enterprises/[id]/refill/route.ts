@@ -11,17 +11,20 @@ import { NextResponse } from "next/server";
 import { requireReseller } from "@/lib/reseller-auth";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function POST(request: Request, { params }: RouteCtx) {
   const gate = await requireReseller();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin, resellerId } = gate;
 
   const { id } = await params;
-  const { amount } = (await request.json().catch(() => ({}))) as { amount?: number | string };
+  const { amount } = (await request.json().catch(() => ({}))) as {
+    amount?: number | string;
+  };
   const amt = Number(amount);
   if (!Number.isFinite(amt) || amt <= 0) {
     return NextResponse.json({ error: "amount must be > 0" }, { status: 400 });
@@ -33,7 +36,10 @@ export async function POST(request: Request, { params }: RouteCtx) {
     .select("id, reseller_id, enterprise_type")
     .eq("id", id)
     .maybeSingle();
-  const o = owned as { reseller_id: string | null; enterprise_type: string } | null;
+  const o = owned as {
+    reseller_id: string | null;
+    enterprise_type: string;
+  } | null;
   if (!o || o.reseller_id !== resellerId) {
     return NextResponse.json({ error: "not_owned" }, { status: 404 });
   }
@@ -43,7 +49,8 @@ export async function POST(request: Request, { params }: RouteCtx) {
     _org_id: id,
     _amount: amt,
   });
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  if (error)
+    return NextResponse.json({ error: error.message }, { status: 400 });
 
   const { data: orgAfter } = await admin
     .from("organizations")
@@ -61,13 +68,21 @@ export async function POST(request: Request, { params }: RouteCtx) {
     enterprise: orgAfter
       ? {
           id: (orgAfter as { id: string }).id,
-          allocatedMinutes: Number((orgAfter as { allocated_minutes: number }).allocated_minutes),
-          usedMinutes:      Number((orgAfter as { used_minutes: number }).used_minutes),
-          remainingMinutes: Number((orgAfter as { remaining_minutes: number }).remaining_minutes),
+          allocatedMinutes: Number(
+            (orgAfter as { allocated_minutes: number }).allocated_minutes
+          ),
+          usedMinutes: Number(
+            (orgAfter as { used_minutes: number }).used_minutes
+          ),
+          remainingMinutes: Number(
+            (orgAfter as { remaining_minutes: number }).remaining_minutes
+          ),
         }
       : null,
     resellerRemaining: resellerAfter
-      ? Number((resellerAfter as { remaining_minutes: number }).remaining_minutes)
+      ? Number(
+          (resellerAfter as { remaining_minutes: number }).remaining_minutes
+        )
       : null,
   });
 }

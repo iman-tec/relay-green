@@ -51,14 +51,20 @@ const MUTE_KEY = "relay.engineer.ring.muted.v1";
 
 // Presence → colour. The "saffron" the user asked for reads as warm
 // orange against both light and dark canvases.
-const COLOURS: Record<Presence, { fill: string; ring: string; label: string }> = {
-  online:  { fill: "#3f5c2e", ring: "rgba(63, 92, 46, 0.5)",   label: "Online"  },
-  busy:    { fill: "#e8932b", ring: "rgba(232, 147, 43, 0.5)", label: "Busy"    },
-  offline: { fill: "#94a3b8", ring: "rgba(148, 163, 184, 0.4)", label: "Offline" },
-};
+const COLOURS: Record<Presence, { fill: string; ring: string; label: string }> =
+  {
+    online: { fill: "#3f5c2e", ring: "rgba(63, 92, 46, 0.5)", label: "Online" },
+    busy: { fill: "#e8932b", ring: "rgba(232, 147, 43, 0.5)", label: "Busy" },
+    offline: {
+      fill: "#94a3b8",
+      ring: "rgba(148, 163, 184, 0.4)",
+      label: "Offline",
+    },
+  };
 
 export function EngineerPresenceBall({
-  userId, collapsed,
+  userId,
+  collapsed,
 }: {
   userId: string;
   /** When true (sidebar collapsed in StaffShell), render just the ball
@@ -74,7 +80,9 @@ export function EngineerPresenceBall({
   // presence — we only auto-flip online→offline when going idle, and
   // we never auto-promote anything to online.
   const presenceRef = useRef<Presence | null>(null);
-  useEffect(() => { presenceRef.current = presence; }, [presence]);
+  useEffect(() => {
+    presenceRef.current = presence;
+  }, [presence]);
   const [incoming, setIncoming] = useState<boolean>(false);
   const [muted, setMuted] = useState<boolean>(false);
   const [menuOpen, setMenuOpen] = useState<boolean>(false);
@@ -91,7 +99,9 @@ export function EngineerPresenceBall({
   // Which callback (if any) is the one currently being rung. We hold it
   // in state so the label/click handler can read it even after the FIFO
   // list shifts.
-  const [activeCallback, setActiveCallback] = useState<PendingCallback | null>(null);
+  const [activeCallback, setActiveCallback] = useState<PendingCallback | null>(
+    null
+  );
   // Track previous presence so we can detect the Busy/Offline → Online
   // edge that arms the 30s timer.
   const prevPresenceRef = useRef<Presence | null>(null);
@@ -101,25 +111,33 @@ export function EngineerPresenceBall({
   // Mirror the latest muted flag into a ref so the timer callback reads
   // the most recent value without needing to be re-armed on mute toggle.
   const mutedRef = useRef(false);
-  useEffect(() => { mutedRef.current = muted; }, [muted]);
+  useEffect(() => {
+    mutedRef.current = muted;
+  }, [muted]);
   // Same trick for the callbacks list — the timer fires N seconds in
   // the future and must read the latest queue head at fire time.
   const callbacksRef = useRef<PendingCallback[]>([]);
-  useEffect(() => { callbacksRef.current = callbacks; }, [callbacks]);
+  useEffect(() => {
+    callbacksRef.current = callbacks;
+  }, [callbacks]);
 
   // Restore mute preference from localStorage on mount.
   useEffect(() => {
     try {
       const v = window.localStorage.getItem(MUTE_KEY);
       if (v === "1") setMuted(true);
-    } catch { /* private mode */ }
+    } catch {
+      /* private mode */
+    }
   }, []);
 
   // Persist mute preference whenever it flips.
   const toggleMute = useCallback(() => {
     setMuted((prev) => {
       const next = !prev;
-      try { window.localStorage.setItem(MUTE_KEY, next ? "1" : "0"); } catch {}
+      try {
+        window.localStorage.setItem(MUTE_KEY, next ? "1" : "0");
+      } catch {}
       return next;
     });
   }, []);
@@ -135,32 +153,51 @@ export function EngineerPresenceBall({
         .eq("user_id", userId)
         .maybeSingle();
       if (!alive) return;
-      const row = (data ?? null) as { presence_state: string | null; is_available: boolean | null } | null;
-      if (!row) { setPresence("offline"); return; }
+      const row = (data ?? null) as {
+        presence_state: string | null;
+        is_available: boolean | null;
+      } | null;
+      if (!row) {
+        setPresence("offline");
+        return;
+      }
       if (isPresence(row.presence_state)) setPresence(row.presence_state);
       else setPresence(row.is_available ? "online" : "offline");
     })();
 
     // Per-mount UUID suffix so two open tabs (or a quick remount during
     // route navigation) don't trip Supabase's name-based channel dedupe.
-    const suffix = typeof crypto !== "undefined" && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const suffix =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     const ch = sb
       .channel(`presence-ball-${userId}-${suffix}`)
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "engineer_profiles", filter: `user_id=eq.${userId}` },
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "engineer_profiles",
+          filter: `user_id=eq.${userId}`,
+        },
         (payload) => {
-          const next = payload.new as { presence_state?: string | null; is_available?: boolean | null } | null;
+          const next = payload.new as {
+            presence_state?: string | null;
+            is_available?: boolean | null;
+          } | null;
           if (!next) return;
           if (isPresence(next.presence_state)) setPresence(next.presence_state);
-          else if (typeof next.is_available === "boolean") setPresence(next.is_available ? "online" : "offline");
-        },
+          else if (typeof next.is_available === "boolean")
+            setPresence(next.is_available ? "online" : "offline");
+        }
       )
       .subscribe();
 
-    return () => { alive = false; sb.removeChannel(ch); };
+    return () => {
+      alive = false;
+      sb.removeChannel(ch);
+    };
   }, [userId]);
 
   // Incoming-call detection — listen for engineer_match_offers rows where
@@ -168,9 +205,10 @@ export function EngineerPresenceBall({
   // UPDATEs to accepted/declined/expired clear it.
   useEffect(() => {
     const sb = sbRef.current;
-    const suffix = typeof crypto !== "undefined" && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const suffix =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     const ch = sb
       .channel(`presence-ball-offers-${userId}-${suffix}`)
       .on(
@@ -203,10 +241,12 @@ export function EngineerPresenceBall({
           } else if (payload.eventType === "DELETE") {
             setIncoming(false);
           }
-        },
+        }
       )
       .subscribe();
-    return () => { sb.removeChannel(ch); };
+    return () => {
+      sb.removeChannel(ch);
+    };
     // muted intentionally NOT in deps — we want the latest muted value
     // at callback time, which the closure already captures via ref-free
     // state lookup since playRingtone reads at call time.
@@ -230,7 +270,9 @@ export function EngineerPresenceBall({
       if (!alive) return;
       if (data && data.length > 0) setIncoming(true);
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [userId]);
 
   // ── Auto-presence ─────────────────────────────────────────────────
@@ -278,7 +320,9 @@ export function EngineerPresenceBall({
     lastAutoWriteRef.current = desired;
     try {
       const sb = sbRef.current;
-      const { error } = await sb.rpc("set_engineer_presence", { _state: desired });
+      const { error } = await sb.rpc("set_engineer_presence", {
+        _state: desired,
+      });
       if (error) console.warn("[presence-auto] set failed:", error.message);
     } catch (err) {
       console.warn("[presence-auto] set threw:", err);
@@ -299,7 +343,9 @@ export function EngineerPresenceBall({
         .in("status", ["assigned", "joining", "live", "grace"])
         .limit(1);
       if (!alive) return;
-      if (error) { return; }
+      if (error) {
+        return;
+      }
       const onCall = (data?.length ?? 0) > 0;
       if (onCall !== isOnCallRef.current) {
         isOnCallRef.current = onCall;
@@ -309,19 +355,30 @@ export function EngineerPresenceBall({
 
     void refreshOnCall();
 
-    const suffix = typeof crypto !== "undefined" && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const suffix =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     const ch = sb
       .channel(`presence-auto-call-${userId}-${suffix}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "guest_calls", filter: `claimed_by=eq.${userId}` },
-        () => { void refreshOnCall(); },
+        {
+          event: "*",
+          schema: "public",
+          table: "guest_calls",
+          filter: `claimed_by=eq.${userId}`,
+        },
+        () => {
+          void refreshOnCall();
+        }
       )
       .subscribe();
 
-    return () => { alive = false; sb.removeChannel(ch); };
+    return () => {
+      alive = false;
+      sb.removeChannel(ch);
+    };
   }, [userId, recompute]);
 
   // Idle auto-offline removed — presence is fully manual now. An engineer
@@ -343,10 +400,23 @@ export function EngineerPresenceBall({
       created_at: string;
     }): Promise<PendingCallback> => {
       const [custRes, projRes] = await Promise.all([
-        sb.from("customer_profiles").select("display_name, email").eq("user_id", row.customer_user_id).maybeSingle(),
-        row.project_id ? sb.from("projects").select("name").eq("id", row.project_id).maybeSingle() : Promise.resolve({ data: null }),
+        sb
+          .from("customer_profiles")
+          .select("display_name, email")
+          .eq("user_id", row.customer_user_id)
+          .maybeSingle(),
+        row.project_id
+          ? sb
+              .from("projects")
+              .select("name")
+              .eq("id", row.project_id)
+              .maybeSingle()
+          : Promise.resolve({ data: null }),
       ]);
-      const cust = (custRes.data ?? null) as { display_name: string | null; email: string | null } | null;
+      const cust = (custRes.data ?? null) as {
+        display_name: string | null;
+        email: string | null;
+      } | null;
       const proj = (projRes.data ?? null) as { name: string | null } | null;
       return {
         id: row.id,
@@ -366,16 +436,20 @@ export function EngineerPresenceBall({
         .order("created_at", { ascending: true });
       if (!alive) return;
       const rows = (data ?? []) as Array<{
-        id: string; customer_user_id: string; project_id: string | null; created_at: string;
+        id: string;
+        customer_user_id: string;
+        project_id: string | null;
+        created_at: string;
       }>;
       const enriched = await Promise.all(rows.map(enrich));
       if (!alive) return;
       setCallbacks(enriched);
     })();
 
-    const ringSuffix = typeof crypto !== "undefined" && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const ringSuffix =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     const ch = sb
       .channel(`presence-ball-callbacks-${userId}-${ringSuffix}`)
       .on(
@@ -388,8 +462,11 @@ export function EngineerPresenceBall({
         },
         (payload) => {
           const next = payload.new as {
-            id: string; customer_user_id: string; project_id: string | null;
-            created_at: string; status?: string;
+            id: string;
+            customer_user_id: string;
+            project_id: string | null;
+            created_at: string;
+            status?: string;
           } | null;
           const old = payload.old as { id?: string } | null;
           // DELETE or row no longer pending → drop from list.
@@ -407,15 +484,20 @@ export function EngineerPresenceBall({
             setCallbacks((prev) => {
               const without = prev.filter((c) => c.id !== enriched.id);
               return [...without, enriched].sort(
-                (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+                (a, b) =>
+                  new Date(a.createdAt).getTime() -
+                  new Date(b.createdAt).getTime()
               );
             });
           });
-        },
+        }
       )
       .subscribe();
 
-    return () => { alive = false; sb.removeChannel(ch); };
+    return () => {
+      alive = false;
+      sb.removeChannel(ch);
+    };
   }, [userId]);
 
   // ── 30s auto-ring on Busy/Offline → Online transition ─────────────
@@ -486,12 +568,15 @@ export function EngineerPresenceBall({
   }, [callbacks, activeCallback]);
 
   // Cleanup the pending timer on unmount.
-  useEffect(() => () => {
-    if (ringTimerRef.current) {
-      clearTimeout(ringTimerRef.current);
-      ringTimerRef.current = null;
-    }
-  }, []);
+  useEffect(
+    () => () => {
+      if (ringTimerRef.current) {
+        clearTimeout(ringTimerRef.current);
+        ringTimerRef.current = null;
+      }
+    },
+    []
+  );
 
   // Accept the currently-ringing callback. Uses the same RPC as the
   // dashboard card so the audit trail is identical. After accept, the
@@ -509,7 +594,10 @@ export function EngineerPresenceBall({
     setCallbacks((prev) => prev.filter((c) => c.id !== id));
     const { error } = await sb.rpc("accept_connect_request", { _id: id });
     if (error) {
-      console.warn("[presence-ball] accept_connect_request failed:", error.message);
+      console.warn(
+        "[presence-ball] accept_connect_request failed:",
+        error.message
+      );
     }
   }, [activeCallback]);
 
@@ -517,39 +605,51 @@ export function EngineerPresenceBall({
   useEffect(() => {
     if (!menuOpen) return;
     const onDown = (e: PointerEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setMenuOpen(false);
+      if (rootRef.current && !rootRef.current.contains(e.target as Node))
+        setMenuOpen(false);
     };
     document.addEventListener("pointerdown", onDown);
     return () => document.removeEventListener("pointerdown", onDown);
   }, [menuOpen]);
 
-  const onSet = useCallback(async (next: Presence) => {
-    if (presence === next) { setMenuOpen(false); return; }
-    const previous = presence;
-    setPresence(next);
-    setMenuOpen(false);
-    // Manual override — clear the auto-watcher's memory so the call-end
-    // restore-to-online branch doesn't undo this choice.
-    lastAutoWriteRef.current = null;
-    try {
-      const sb = sbRef.current;
-      const { error } = await sb.rpc("set_engineer_presence", { _state: next });
-      if (error) {
-        setPresence(previous);
-        console.warn("[presence-ball] set failed:", error.message);
+  const onSet = useCallback(
+    async (next: Presence) => {
+      if (presence === next) {
+        setMenuOpen(false);
+        return;
       }
-    } catch (err) {
-      setPresence(previous);
-      console.warn("[presence-ball] set threw:", err);
-    }
-  }, [presence]);
+      const previous = presence;
+      setPresence(next);
+      setMenuOpen(false);
+      // Manual override — clear the auto-watcher's memory so the call-end
+      // restore-to-online branch doesn't undo this choice.
+      lastAutoWriteRef.current = null;
+      try {
+        const sb = sbRef.current;
+        const { error } = await sb.rpc("set_engineer_presence", {
+          _state: next,
+        });
+        if (error) {
+          setPresence(previous);
+          console.warn("[presence-ball] set failed:", error.message);
+        }
+      } catch (err) {
+        setPresence(previous);
+        console.warn("[presence-ball] set threw:", err);
+      }
+    },
+    [presence]
+  );
 
   if (presence === null) {
     // First-paint placeholder so the layout doesn't jump when the row
     // arrives. Stays grey until presence resolves.
     return collapsed ? (
       <div className="flex justify-center py-3">
-        <span className="size-9 rounded-full" style={{ backgroundColor: "#94a3b8", opacity: 0.25 }} />
+        <span
+          className="size-9 rounded-full"
+          style={{ backgroundColor: "#94a3b8", opacity: 0.25 }}
+        />
       </div>
     ) : null;
   }
@@ -581,7 +681,10 @@ export function EngineerPresenceBall({
   };
 
   return (
-    <div ref={rootRef} className="relative flex flex-col items-center gap-2 py-3">
+    <div
+      ref={rootRef}
+      className="relative flex flex-col items-center gap-2 py-3"
+    >
       <button
         type="button"
         onClick={() => {
@@ -621,7 +724,7 @@ export function EngineerPresenceBall({
         />
         {incoming && !collapsed && (
           <span
-            className="absolute -bottom-1 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider"
+            className="absolute -bottom-1 rounded-full px-2 py-0.5 text-[9px] font-bold tracking-wider uppercase"
             style={{
               backgroundColor: c.fill,
               color: "#fff",
@@ -640,14 +743,21 @@ export function EngineerPresenceBall({
             style={{ color: incoming ? c.fill : "var(--text)" }}
           >
             {incoming && activeCallback
-              ? (activeCallback.customerName ?? activeCallback.customerEmail ?? "Customer")
+              ? (activeCallback.customerName ??
+                activeCallback.customerEmail ??
+                "Customer")
               : incoming
                 ? "Incoming call"
                 : c.label}
           </div>
           {incoming && activeCallback ? (
-            <div className="text-[10px] text-center" style={{ color: "var(--text-muted)" }}>
-              {activeCallback.projectName ? `${activeCallback.projectName} · ` : ""}
+            <div
+              className="text-center text-[10px]"
+              style={{ color: "var(--text-muted)" }}
+            >
+              {activeCallback.projectName
+                ? `${activeCallback.projectName} · `
+                : ""}
               Tap to connect
             </div>
           ) : !incoming ? (
@@ -700,11 +810,12 @@ export function EngineerPresenceBall({
           {(["online", "busy", "offline"] as const).map((v) => {
             const m = COLOURS[v];
             const isActive = presence === v;
-            const blurb = v === "online"
-              ? "Matcher rings me — instant call"
-              : v === "busy"
-                ? "Matcher skips me — customer can request"
-                : "Matcher skips me — customer schedules ahead";
+            const blurb =
+              v === "online"
+                ? "Matcher rings me — instant call"
+                : v === "busy"
+                  ? "Matcher skips me — customer can request"
+                  : "Matcher skips me — customer schedules ahead";
             return (
               <button
                 key={v}
@@ -719,12 +830,18 @@ export function EngineerPresenceBall({
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[13px] font-medium" style={{ color: "var(--text)" }}>
+                    <span
+                      className="text-[13px] font-medium"
+                      style={{ color: "var(--text)" }}
+                    >
                       {m.label}
                     </span>
                     {isActive && <Check size={11} style={{ color: m.fill }} />}
                   </div>
-                  <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                  <div
+                    className="text-[11px]"
+                    style={{ color: "var(--text-muted)" }}
+                  >
                     {blurb}
                   </div>
                 </div>
@@ -735,13 +852,17 @@ export function EngineerPresenceBall({
               ringtone fires while the sidebar is collapsed. */}
           <button
             type="button"
-            onClick={() => { toggleMute(); }}
+            onClick={() => {
+              toggleMute();
+            }}
             className="flex w-full items-center gap-2.5 border-t px-3 py-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
             style={{ borderColor: "var(--border)" }}
           >
-            {muted
-              ? <VolumeX size={13} style={{ color: "var(--text-muted)" }} />
-              : <Volume2 size={13} style={{ color: "var(--text-muted)" }} />}
+            {muted ? (
+              <VolumeX size={13} style={{ color: "var(--text-muted)" }} />
+            ) : (
+              <Volume2 size={13} style={{ color: "var(--text-muted)" }} />
+            )}
             <span className="text-[12px]" style={{ color: "var(--text)" }}>
               {muted ? "Unmute ringtone" : "Mute ringtone"}
             </span>
@@ -760,7 +881,8 @@ function playRingtone(muted: boolean) {
   if (typeof window === "undefined") return;
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const Ctor = (window as any).AudioContext ?? (window as any).webkitAudioContext;
+    const Ctor =
+      (window as any).AudioContext ?? (window as any).webkitAudioContext;
     if (!Ctor) return;
     const ctx: AudioContext = new Ctor();
     const now = ctx.currentTime;
@@ -779,12 +901,16 @@ function playRingtone(muted: boolean) {
       osc.stop(now + start + dur + 0.05);
     };
     // Two-tone pattern: high-low-high, three beats.
-    playBeep(0,    880, 0.25);
-    playBeep(0.30, 660, 0.25);
-    playBeep(0.60, 880, 0.25);
+    playBeep(0, 880, 0.25);
+    playBeep(0.3, 660, 0.25);
+    playBeep(0.6, 880, 0.25);
     // Close the context after the pattern finishes so we don't pile up
     // dangling AudioContexts across multiple incoming calls.
-    setTimeout(() => { ctx.close().catch(() => { /* already closing */ }); }, 1200);
+    setTimeout(() => {
+      ctx.close().catch(() => {
+        /* already closing */
+      });
+    }, 1200);
   } catch (err) {
     console.warn("[presence-ball] ringtone failed:", err);
   }

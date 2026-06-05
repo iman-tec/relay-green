@@ -16,14 +16,14 @@
  */
 
 export type ListQuery<F extends string = never> = {
-  q:        string;
-  page:     number;
+  q: string;
+  page: number;
   pageSize: number;
-  sort:     { column: string; dir: "asc" | "desc" } | null;
+  sort: { column: string; dir: "asc" | "desc" } | null;
   /** Extra single-value filters parsed from the query string. */
-  filters:  Record<F, string | undefined>;
+  filters: Record<F, string | undefined>;
   /** Range tuple ready to feed straight into `.range(from, to)`. */
-  range:    [number, number];
+  range: [number, number];
 };
 
 export type ListQuerySpec<S extends string, F extends string = never> = {
@@ -32,7 +32,7 @@ export type ListQuerySpec<S extends string, F extends string = never> = {
   /** Default sort direction when the client omits one. */
   defaultSort?: { column: S; dir: "asc" | "desc" };
   /** Extra named filter params we accept (e.g. ["role"]). */
-  filters?:    readonly F[];
+  filters?: readonly F[];
   /** Hard upper bound on pageSize, to protect against bad clients. */
   maxPageSize?: number;
   /** Default pageSize when the client omits one. */
@@ -41,33 +41,51 @@ export type ListQuerySpec<S extends string, F extends string = never> = {
 
 export function parseListQuery<S extends string, F extends string = never>(
   url: URL | string,
-  spec: ListQuerySpec<S, F>,
+  spec: ListQuerySpec<S, F>
 ): ListQuery<F> {
   const u = typeof url === "string" ? new URL(url) : url;
 
   const q = (u.searchParams.get("q") ?? "").trim();
 
   const defaultPageSize = spec.defaultPageSize ?? 25;
-  const maxPageSize     = spec.maxPageSize     ?? 100;
-  const page     = clampInt(u.searchParams.get("page"),     1, 1, Number.MAX_SAFE_INTEGER);
-  const pageSize = clampInt(u.searchParams.get("pageSize"), defaultPageSize, 1, maxPageSize);
+  const maxPageSize = spec.maxPageSize ?? 100;
+  const page = clampInt(
+    u.searchParams.get("page"),
+    1,
+    1,
+    Number.MAX_SAFE_INTEGER
+  );
+  const pageSize = clampInt(
+    u.searchParams.get("pageSize"),
+    defaultPageSize,
+    1,
+    maxPageSize
+  );
 
-  const sort = parseSort(u.searchParams.get("sort"), spec.sortable as readonly string[])
-    ?? (spec.defaultSort ? { column: spec.defaultSort.column as string, dir: spec.defaultSort.dir } : null);
+  const sort =
+    parseSort(u.searchParams.get("sort"), spec.sortable as readonly string[]) ??
+    (spec.defaultSort
+      ? { column: spec.defaultSort.column as string, dir: spec.defaultSort.dir }
+      : null);
 
   const filters = {} as Record<F, string | undefined>;
-  for (const name of (spec.filters ?? [])) {
+  for (const name of spec.filters ?? []) {
     const v = u.searchParams.get(name as string);
     filters[name] = v && v.trim() ? v.trim() : undefined;
   }
 
   const from = (page - 1) * pageSize;
-  const to   = from + pageSize - 1;
+  const to = from + pageSize - 1;
 
   return { q, page, pageSize, sort, filters, range: [from, to] };
 }
 
-function clampInt(raw: string | null, fallback: number, lo: number, hi: number): number {
+function clampInt(
+  raw: string | null,
+  fallback: number,
+  lo: number,
+  hi: number
+): number {
   const n = raw == null ? NaN : parseInt(raw, 10);
   if (!Number.isFinite(n)) return fallback;
   return Math.max(lo, Math.min(hi, n));
@@ -89,7 +107,7 @@ function parseSort(raw: string | null, allowed: readonly string[]) {
 export function applySearch<B extends { or: (filter: string) => B }>(
   qb: B,
   q: string,
-  columns: readonly string[],
+  columns: readonly string[]
 ): B {
   const trimmed = q.trim();
   if (!trimmed || columns.length === 0) return qb;
@@ -104,7 +122,7 @@ export function listResponse<T>(
   rows: T[],
   total: number,
   page: number,
-  pageSize: number,
+  pageSize: number
 ) {
   return { rows, total, page, pageSize };
 }

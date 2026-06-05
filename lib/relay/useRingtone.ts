@@ -32,10 +32,15 @@ export function useRingtone(enabled: boolean): { available: boolean } {
     if (!enabled || typeof window === "undefined") return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const AC = (window.AudioContext || (window as any).webkitAudioContext) as
-      typeof AudioContext | undefined;
+      | typeof AudioContext
+      | undefined;
     if (!AC) return;
     let ctx: AudioContext;
-    try { ctx = new AC(); } catch { return; }
+    try {
+      ctx = new AC();
+    } catch {
+      return;
+    }
     ctxRef.current = ctx;
     setAvailable(ctx.state === "running");
     if (ctx.state === "suspended") {
@@ -92,7 +97,11 @@ export function useRingtone(enabled: boolean): { available: boolean } {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
       intervalRef.current = null;
-      try { void ctx.close(); } catch { /* noop */ }
+      try {
+        void ctx.close();
+      } catch {
+        /* noop */
+      }
       ctxRef.current = null;
     };
   }, [enabled]);

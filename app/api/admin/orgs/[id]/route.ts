@@ -12,18 +12,19 @@ import { requireSuperAdmin } from "@/lib/admin-auth";
 import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: Request, { params }: RouteCtx) {
   const gate = await requireSuperAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin } = gate;
   const { id } = await params;
 
   const { name, status } = (await request.json().catch(() => ({}))) as {
-    name?:   string;
+    name?: string;
     status?: string;
   };
 
@@ -40,8 +41,10 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
     .eq("id", id)
     .select("id, name, status")
     .maybeSingle();
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-  if (!data)  return NextResponse.json({ error: "Org not found." }, { status: 404 });
+  if (error)
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  if (!data)
+    return NextResponse.json({ error: "Org not found." }, { status: 404 });
 
   return NextResponse.json({ org: data });
 }

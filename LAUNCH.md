@@ -12,19 +12,19 @@
 
 Required in Production:
 
-| Var | Purpose | Notes |
-|---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | Public, ships to the client |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key | Public, ships to the client |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role | Server-only — never expose |
+| Var                             | Purpose               | Notes                       |
+| ------------------------------- | --------------------- | --------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`      | Supabase project URL  | Public, ships to the client |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key     | Public, ships to the client |
+| `SUPABASE_SERVICE_ROLE_KEY`     | Supabase service role | Server-only — never expose  |
 
 Strongly recommended in Production:
 
-| Var | Purpose | If missing |
-|---|---|---|
-| `RESEND_API_KEY` | Sends contact-form inquiries via Resend | Leads are logged to the server console instead — someone must tail logs |
-| `CONTACT_INBOX_EMAIL` | Where `/api/contact` sends inquiries | Defaults to `hello@relay.green` |
-| `CONTACT_FROM_EMAIL` | From: address on contact emails | Defaults to `noreply@relay.green` (must be on a verified Resend domain) |
+| Var                   | Purpose                                 | If missing                                                              |
+| --------------------- | --------------------------------------- | ----------------------------------------------------------------------- |
+| `RESEND_API_KEY`      | Sends contact-form inquiries via Resend | Leads are logged to the server console instead — someone must tail logs |
+| `CONTACT_INBOX_EMAIL` | Where `/api/contact` sends inquiries    | Defaults to `hello@relay.green`                                         |
+| `CONTACT_FROM_EMAIL`  | From: address on contact emails         | Defaults to `noreply@relay.green` (must be on a verified Resend domain) |
 
 Optional for marketing-only launch (wire up when the app behind sign-in goes live):
 
@@ -56,6 +56,7 @@ of the Windows BuildCard. To restore once signed:
    download link.
 
 **Other static checks:**
+
 - [ ] OG cards render correctly: visit `/opengraph-image`, `/twitter-image`, `/pricing/opengraph-image`, `/product/opengraph-image`, `/for-enterprise/opengraph-image` on the preview deploy.
 
 ### 1.4 Legal sign-off
@@ -212,13 +213,13 @@ CSP currently ships as `Content-Security-Policy-Report-Only` so browsers log vio
 
 `npm audit` shows 5 moderate findings, all in Prisma's transitive `@prisma/dev` package:
 
-| Package | Severity | Why it's not blocking |
-|---|---|---|
-| `@hono/node-server` < 1.19.13 | moderate | Inside `@prisma/dev`, which is a dev-only CLI dep. Never imported at runtime. |
-| `@prisma/dev` | moderate | Bundled with `prisma` v7 but never imported by `lib/db.ts` (which is a Proxy stub — see `CLAUDE.md` "Persistence: Supabase is the database, not Prisma"). |
-| `next` (advisory recommends downgrade to v9) | moderate | False positive — `npm audit` suggests a 7-major-version downgrade. Real fix is upstream. |
-| `postcss` < 8.5.10 | moderate | Transitive of `next`. CSS-only XSS vector requires attacker-controlled CSS, which the marketing site does not load. |
-| `prisma` | moderate | Same root cause as `@prisma/dev`. |
+| Package                                      | Severity | Why it's not blocking                                                                                                                                     |
+| -------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@hono/node-server` < 1.19.13                | moderate | Inside `@prisma/dev`, which is a dev-only CLI dep. Never imported at runtime.                                                                             |
+| `@prisma/dev`                                | moderate | Bundled with `prisma` v7 but never imported by `lib/db.ts` (which is a Proxy stub — see `CLAUDE.md` "Persistence: Supabase is the database, not Prisma"). |
+| `next` (advisory recommends downgrade to v9) | moderate | False positive — `npm audit` suggests a 7-major-version downgrade. Real fix is upstream.                                                                  |
+| `postcss` < 8.5.10                           | moderate | Transitive of `next`. CSS-only XSS vector requires attacker-controlled CSS, which the marketing site does not load.                                       |
+| `prisma`                                     | moderate | Same root cause as `@prisma/dev`.                                                                                                                         |
 
 **Re-check this section** after each `next` minor release — most of these clear when the upstream chain bumps `postcss` and `@hono/node-server`.
 
@@ -226,13 +227,13 @@ CSP currently ships as `Content-Security-Policy-Report-Only` so browsers log vio
 
 ## 8. Who to call
 
-| Domain | Owner |
-|---|---|
-| Domain + DNS + Vercel project | _fill in before launch_ |
-| Supabase project | _fill in_ |
-| Resend account + verified domain | _fill in_ |
-| Legal counsel (privacy / terms / cookies) | _fill in_ |
-| On-call rotation for the first 72 hours | _fill in_ |
+| Domain                                    | Owner                   |
+| ----------------------------------------- | ----------------------- |
+| Domain + DNS + Vercel project             | _fill in before launch_ |
+| Supabase project                          | _fill in_               |
+| Resend account + verified domain          | _fill in_               |
+| Legal counsel (privacy / terms / cookies) | _fill in_               |
+| On-call rotation for the first 72 hours   | _fill in_               |
 
 ---
 

@@ -23,30 +23,34 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 export async function GET() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user)
+    return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
 
   const { data: profile, error } = await supabase
     .from("profiles")
     .select(
-      "id, client_type, organization_id, department_id, allocated_minutes, used_minutes, remaining_minutes",
+      "id, client_type, organization_id, department_id, allocated_minutes, used_minutes, remaining_minutes"
     )
     .eq("id", user.id)
     .maybeSingle();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error)
+    return NextResponse.json({ error: error.message }, { status: 500 });
   if (!profile) return NextResponse.json({ isEmployee: false });
 
   const p = profile as {
     id: string;
     client_type: string;
     organization_id: string | null;
-    department_id:   string | null;
+    department_id: string | null;
     allocated_minutes: number;
-    used_minutes:      number;
+    used_minutes: number;
     remaining_minutes: number;
   };
 
@@ -73,11 +77,11 @@ export async function GET() {
   ]);
 
   return NextResponse.json({
-    isEmployee:       true,
-    enterpriseName:   (org as { name: string } | null)?.name ?? "",
-    departmentName:   (dept as { name: string } | null)?.name ?? null,
+    isEmployee: true,
+    enterpriseName: (org as { name: string } | null)?.name ?? "",
+    departmentName: (dept as { name: string } | null)?.name ?? null,
     allocatedMinutes: Number(p.allocated_minutes ?? 0),
-    usedMinutes:      Number(p.used_minutes ?? 0),
+    usedMinutes: Number(p.used_minutes ?? 0),
     remainingMinutes: Number(p.remaining_minutes ?? 0),
   });
 }

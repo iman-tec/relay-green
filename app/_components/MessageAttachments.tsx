@@ -16,7 +16,12 @@
 
 import { useEffect, useState } from "react";
 import {
-  Download, FileText, FileSpreadsheet, FileType, Loader2, Mic,
+  Download,
+  FileText,
+  FileSpreadsheet,
+  FileType,
+  Loader2,
+  Mic,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import type { GuestMessageAttachment } from "@/lib/supabase/types";
@@ -32,7 +37,7 @@ export function MessageAttachments({
 }) {
   if (!attachments || attachments.length === 0) return null;
   const images = attachments.filter((a) => a.kind === "image").slice(0, 3);
-  const docs   = attachments.filter((a) => a.kind === "document");
+  const docs = attachments.filter((a) => a.kind === "document");
   const audios = attachments.filter((a) => a.kind === "audio");
 
   return (
@@ -40,12 +45,16 @@ export function MessageAttachments({
       {images.length > 0 && <ImageGrid items={images} />}
       {audios.length > 0 && (
         <div className="flex flex-col gap-1.5">
-          {audios.map((a) => <AudioCard key={a.id} attachment={a} />)}
+          {audios.map((a) => (
+            <AudioCard key={a.id} attachment={a} />
+          ))}
         </div>
       )}
       {docs.length > 0 && (
         <div className="flex flex-col gap-1.5">
-          {docs.map((a) => <DocumentCard key={a.id} attachment={a} />)}
+          {docs.map((a) => (
+            <DocumentCard key={a.id} attachment={a} />
+          ))}
         </div>
       )}
     </div>
@@ -53,15 +62,28 @@ export function MessageAttachments({
 }
 
 function ImageGrid({ items }: { items: GuestMessageAttachment[] }) {
-  const cols = items.length === 1 ? "grid-cols-1" : items.length === 2 ? "grid-cols-2" : "grid-cols-3";
+  const cols =
+    items.length === 1
+      ? "grid-cols-1"
+      : items.length === 2
+        ? "grid-cols-2"
+        : "grid-cols-3";
   return (
     <div className={`grid ${cols} gap-1.5`} style={{ maxWidth: 320 }}>
-      {items.map((a) => <ImageTile key={a.id} attachment={a} single={items.length === 1} />)}
+      {items.map((a) => (
+        <ImageTile key={a.id} attachment={a} single={items.length === 1} />
+      ))}
     </div>
   );
 }
 
-function ImageTile({ attachment, single }: { attachment: GuestMessageAttachment; single: boolean }) {
+function ImageTile({
+  attachment,
+  single,
+}: {
+  attachment: GuestMessageAttachment;
+  single: boolean;
+}) {
   const [url, setUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
@@ -83,7 +105,11 @@ function ImageTile({ attachment, single }: { attachment: GuestMessageAttachment;
       const sb = createClient();
       // Re-mint with `?download=<name>` so the browser actually saves the
       // file (instead of previewing it inline).
-      const dlUrl = await signedDownloadUrl(sb, attachment.path, attachment.name);
+      const dlUrl = await signedDownloadUrl(
+        sb,
+        attachment.path,
+        attachment.name
+      );
       if (dlUrl) window.location.href = dlUrl;
     } finally {
       setDownloading(false);
@@ -100,7 +126,9 @@ function ImageTile({ attachment, single }: { attachment: GuestMessageAttachment;
         target="_blank"
         rel="noopener noreferrer"
         className="block transition-opacity hover:opacity-95"
-        onClick={(e) => { if (!url) e.preventDefault(); }}
+        onClick={(e) => {
+          if (!url) e.preventDefault();
+        }}
         title={attachment.name}
       >
         {url ? (
@@ -120,7 +148,11 @@ function ImageTile({ attachment, single }: { attachment: GuestMessageAttachment;
               backgroundColor: BRAND_GREEN_SOFT,
             }}
           >
-            <Loader2 size={14} className="animate-spin" style={{ color: BRAND_GREEN }} />
+            <Loader2
+              size={14}
+              className="animate-spin"
+              style={{ color: BRAND_GREEN }}
+            />
           </div>
         )}
       </a>
@@ -131,13 +163,17 @@ function ImageTile({ attachment, single }: { attachment: GuestMessageAttachment;
         disabled={downloading || !url}
         title="Download image"
         aria-label={`Download ${attachment.name}`}
-        className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full backdrop-blur-sm transition-opacity hover:opacity-100 disabled:opacity-40"
+        className="absolute top-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-full backdrop-blur-sm transition-opacity hover:opacity-100 disabled:opacity-40"
         style={{
           backgroundColor: "rgba(0, 0, 0, 0.55)",
           color: "#fff",
         }}
       >
-        {downloading ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+        {downloading ? (
+          <Loader2 size={12} className="animate-spin" />
+        ) : (
+          <Download size={12} />
+        )}
       </button>
     </div>
   );
@@ -167,7 +203,9 @@ function AudioCard({ attachment }: { attachment: GuestMessageAttachment }) {
       if (u) setUrl(u);
       else setErr("Couldn't load audio.");
     });
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [attachment.path]);
 
   return (
@@ -197,13 +235,22 @@ function AudioCard({ attachment }: { attachment: GuestMessageAttachment }) {
             Voice message — your browser doesn&apos;t support inline playback.
           </audio>
         ) : err ? (
-          <p className="text-[11px]" style={{ color: "var(--accent-red)" }}>{err}</p>
+          <p className="text-[11px]" style={{ color: "var(--accent-red)" }}>
+            {err}
+          </p>
         ) : (
-          <div className="flex items-center gap-2 py-1 text-[11px]" style={{ color: "var(--text-muted)" }}>
-            <Loader2 size={11} className="animate-spin" /> Loading voice message…
+          <div
+            className="flex items-center gap-2 py-1 text-[11px]"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <Loader2 size={11} className="animate-spin" /> Loading voice
+            message…
           </div>
         )}
-        <div className="mt-0.5 text-[10px]" style={{ color: "var(--text-muted)" }}>
+        <div
+          className="mt-0.5 text-[10px]"
+          style={{ color: "var(--text-muted)" }}
+        >
           Voice message · {formatBytes(attachment.size_bytes)}
         </div>
       </div>
@@ -241,7 +288,10 @@ function DocumentCard({ attachment }: { attachment: GuestMessageAttachment }) {
         <DocIcon name={attachment.name} size={14} />
       </span>
       <div className="min-w-0 flex-1 leading-tight">
-        <div className="truncate text-[12px] font-medium" style={{ color: "var(--text)" }}>
+        <div
+          className="truncate text-[12px] font-medium"
+          style={{ color: "var(--text)" }}
+        >
           {attachment.name}
         </div>
         <div className="text-[10px]" style={{ color: "var(--text-muted)" }}>
@@ -252,12 +302,16 @@ function DocumentCard({ attachment }: { attachment: GuestMessageAttachment }) {
         type="button"
         onClick={() => void onDownload()}
         disabled={busy}
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
         style={{ color: "var(--text-muted)" }}
         title="Download"
         aria-label={`Download ${attachment.name}`}
       >
-        {busy ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+        {busy ? (
+          <Loader2 size={12} className="animate-spin" />
+        ) : (
+          <Download size={12} />
+        )}
       </button>
     </div>
   );
@@ -265,7 +319,9 @@ function DocumentCard({ attachment }: { attachment: GuestMessageAttachment }) {
 
 function DocIcon({ name, size }: { name: string; size: number }) {
   const lower = name.toLowerCase();
-  if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) return <FileSpreadsheet size={size} />;
-  if (lower.endsWith(".docx") || lower.endsWith(".doc")) return <FileType size={size} />;
+  if (lower.endsWith(".xlsx") || lower.endsWith(".xls"))
+    return <FileSpreadsheet size={size} />;
+  if (lower.endsWith(".docx") || lower.endsWith(".doc"))
+    return <FileType size={size} />;
   return <FileText size={size} />;
 }

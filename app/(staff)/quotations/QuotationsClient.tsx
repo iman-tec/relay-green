@@ -18,7 +18,7 @@ export function QuotationsClient() {
       {/* h-full chains off <main>'s viewport height; the inner flex-1 + min-h-0
           lets QuoteRequestsInbox (h-full, internal scroll) fill and scroll
           without bubbling a second scrollbar onto <main>. */}
-      <div className="mx-auto flex w-full max-w-6xl min-h-0 flex-1 flex-col">
+      <div className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col">
         <QuoteRequestsInbox />
       </div>
     </div>

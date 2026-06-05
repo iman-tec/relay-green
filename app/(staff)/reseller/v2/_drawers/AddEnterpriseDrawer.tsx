@@ -20,21 +20,25 @@ export function AddEnterpriseDrawer({
   onCreated,
   resellerRemaining,
 }: {
-  open:              boolean;
-  onClose:           () => void;
-  onCreated:         (orgId: string) => void;
+  open: boolean;
+  onClose: () => void;
+  onCreated: (orgId: string) => void;
   resellerRemaining: number;
 }) {
-  const [name, setName]                = useState("");
-  const [primaryDomain, setDomain]     = useState("");
-  const [adminEmail, setEmail]         = useState("");
-  const [adminDisplayName, setDisp]    = useState("");
+  const [name, setName] = useState("");
+  const [primaryDomain, setDomain] = useState("");
+  const [adminEmail, setEmail] = useState("");
+  const [adminDisplayName, setDisp] = useState("");
   const [allocatedMinutes, setMinutes] = useState("");
-  const [error, setError]              = useState<string | null>(null);
-  const [loading, setLoading]          = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   const reset = () => {
-    setName(""); setDomain(""); setEmail(""); setDisp(""); setMinutes("");
+    setName("");
+    setDomain("");
+    setEmail("");
+    setDisp("");
+    setMinutes("");
     setError(null);
   };
 
@@ -49,7 +53,9 @@ export function AddEnterpriseDrawer({
       return;
     }
     if (alloc > resellerRemaining) {
-      setError(`Allocation exceeds your remaining minutes (${resellerRemaining}).`);
+      setError(
+        `Allocation exceeds your remaining minutes (${resellerRemaining}).`
+      );
       return;
     }
 
@@ -57,18 +63,19 @@ export function AddEnterpriseDrawer({
     setError(null);
     try {
       const res = await fetch("/api/reseller/enterprises", {
-        method:  "POST",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name:             name.trim(),
-          primaryDomain:    primaryDomain.trim() || undefined,
-          adminEmail:       adminEmail.trim(),
+          name: name.trim(),
+          primaryDomain: primaryDomain.trim() || undefined,
+          adminEmail: adminEmail.trim(),
           adminDisplayName: adminDisplayName.trim(),
           allocatedMinutes: alloc,
         }),
       });
       const body = (await res.json().catch(() => ({}))) as {
-        enterprise?: { id: string }; error?: string;
+        enterprise?: { id: string };
+        error?: string;
       };
       if (!res.ok || !body.enterprise) {
         setError(body.error ?? "Couldn't create enterprise.");
@@ -86,11 +93,20 @@ export function AddEnterpriseDrawer({
   return (
     <Drawer
       open={open}
-      onClose={() => { reset(); onClose(); }}
+      onClose={() => {
+        reset();
+        onClose();
+      }}
       title="Add Enterprise"
       footer={
         <>
-          <SecondaryBtn onClick={() => { reset(); onClose(); }} disabled={loading}>
+          <SecondaryBtn
+            onClick={() => {
+              reset();
+              onClose();
+            }}
+            disabled={loading}
+          >
             Cancel
           </SecondaryBtn>
           <PrimaryBtn onClick={submit} disabled={loading}>
@@ -100,23 +116,45 @@ export function AddEnterpriseDrawer({
       }
     >
       <p className="mb-3 text-xs" style={{ color: "var(--text-muted)" }}>
-        Your remaining pool: <strong style={{ color: "var(--text)" }}>{resellerRemaining.toLocaleString()}</strong> minutes.
+        Your remaining pool:{" "}
+        <strong style={{ color: "var(--text)" }}>
+          {resellerRemaining.toLocaleString()}
+        </strong>{" "}
+        minutes.
       </p>
       <div className="flex flex-col gap-3">
         <Field label="Enterprise name">
           <Input value={name} onChange={setName} placeholder="Acme Corp" />
         </Field>
         <Field label="Primary domain (optional)">
-          <Input value={primaryDomain} onChange={setDomain} placeholder="acme.com" />
+          <Input
+            value={primaryDomain}
+            onChange={setDomain}
+            placeholder="acme.com"
+          />
         </Field>
         <Field label="Enterprise admin email">
-          <Input value={adminEmail} onChange={setEmail} placeholder="admin@acme.com" type="email" />
+          <Input
+            value={adminEmail}
+            onChange={setEmail}
+            placeholder="admin@acme.com"
+            type="email"
+          />
         </Field>
         <Field label="Enterprise admin name">
-          <Input value={adminDisplayName} onChange={setDisp} placeholder="Pat Lee" />
+          <Input
+            value={adminDisplayName}
+            onChange={setDisp}
+            placeholder="Pat Lee"
+          />
         </Field>
         <Field label="Initial minutes allocation">
-          <Input value={allocatedMinutes} onChange={setMinutes} placeholder="0" inputMode="numeric" />
+          <Input
+            value={allocatedMinutes}
+            onChange={setMinutes}
+            placeholder="0"
+            inputMode="numeric"
+          />
         </Field>
         {error && <ErrorBanner message={error} />}
       </div>
@@ -124,20 +162,35 @@ export function AddEnterpriseDrawer({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <label className="flex flex-col gap-1.5">
-      <span className="text-xs font-medium" style={{ color: "var(--text)" }}>{label}</span>
+      <span className="text-xs font-medium" style={{ color: "var(--text)" }}>
+        {label}
+      </span>
       {children}
     </label>
   );
 }
 
 function Input({
-  value, onChange, placeholder, type, inputMode,
+  value,
+  onChange,
+  placeholder,
+  type,
+  inputMode,
 }: {
-  value: string; onChange: (v: string) => void; placeholder?: string;
-  type?: string; inputMode?: "numeric" | "text";
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  type?: string;
+  inputMode?: "numeric" | "text";
 }) {
   return (
     <input
@@ -152,12 +205,20 @@ function Input({
   );
 }
 
-function PrimaryBtn({ onClick, disabled, children }: {
-  onClick: () => void; disabled?: boolean; children: React.ReactNode;
+function PrimaryBtn({
+  onClick,
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
 }) {
   return (
     <button
-      type="button" onClick={onClick} disabled={disabled}
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
       className="rounded-md px-3 py-2 text-sm font-medium transition-opacity disabled:opacity-50"
       style={{ background: "var(--primary)", color: "#fff" }}
     >
@@ -166,12 +227,20 @@ function PrimaryBtn({ onClick, disabled, children }: {
   );
 }
 
-function SecondaryBtn({ onClick, disabled, children }: {
-  onClick: () => void; disabled?: boolean; children: React.ReactNode;
+function SecondaryBtn({
+  onClick,
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
 }) {
   return (
     <button
-      type="button" onClick={onClick} disabled={disabled}
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
       className="rounded-md border px-3 py-2 text-sm font-medium transition-opacity disabled:opacity-50"
       style={{ borderColor: "var(--border)", color: "var(--text)" }}
     >
@@ -186,8 +255,8 @@ function ErrorBanner({ message }: { message: string }) {
       className="rounded-md border px-3 py-2 text-xs"
       style={{
         borderColor: "color-mix(in srgb, var(--primary) 30%, transparent)",
-        background:  "color-mix(in srgb, var(--primary) 8%, transparent)",
-        color:       "var(--primary)",
+        background: "color-mix(in srgb, var(--primary) 8%, transparent)",
+        color: "var(--primary)",
       }}
     >
       {message}

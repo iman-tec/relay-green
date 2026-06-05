@@ -13,13 +13,19 @@ import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 export async function GET(req: Request) {
   const supabase = await createServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
-  const { data: roleRows } = await supabase.from("user_role_names").select("role").eq("user_id", user.id);
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user)
+    return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
+  const { data: roleRows } = await supabase
+    .from("user_role_names")
+    .select("role")
+    .eq("user_id", user.id);
   const roles = (roleRows ?? []).map((r: { role: string }) => r.role);
   if (!roles.includes(ROLE.supervisor) && !roles.includes(ROLE.super_admin)) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
@@ -32,10 +38,19 @@ export async function GET(req: Request) {
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return NextResponse.json({ error: "service_role_not_configured" }, { status: 500 });
-  const admin = createAdminClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+  if (!url || !key)
+    return NextResponse.json(
+      { error: "service_role_not_configured" },
+      { status: 500 }
+    );
+  const admin = createAdminClient(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 
-  const { data: calls } = await admin.from("guest_calls").select("id").eq("project_id", projectId);
+  const { data: calls } = await admin
+    .from("guest_calls")
+    .select("id")
+    .eq("project_id", projectId);
   const callIds = (calls ?? []).map((c: { id: string }) => c.id);
   if (callIds.length === 0) return NextResponse.json({ results: [] });
 
@@ -50,7 +65,15 @@ export async function GET(req: Request) {
     .limit(30);
 
   return NextResponse.json({
-    results: ((msgs ?? []) as { guest_call_id: string; sender_kind: string; sender_name: string | null; body: string; created_at: string }[]).map((m) => ({
+    results: (
+      (msgs ?? []) as {
+        guest_call_id: string;
+        sender_kind: string;
+        sender_name: string | null;
+        body: string;
+        created_at: string;
+      }[]
+    ).map((m) => ({
       sessionId: m.guest_call_id,
       senderName: m.sender_name,
       senderKind: m.sender_kind,

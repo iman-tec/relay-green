@@ -16,8 +16,11 @@ type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function PATCH(_req: Request, { params }: RouteCtx) {
   const supabase = await createServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user)
+    return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
 
   const { id } = await params;
   if (!id) return NextResponse.json({ error: "missing_id" }, { status: 400 });
@@ -28,6 +31,7 @@ export async function PATCH(_req: Request, { params }: RouteCtx) {
     .eq("id", id)
     .eq("user_id", user.id);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error)
+    return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }

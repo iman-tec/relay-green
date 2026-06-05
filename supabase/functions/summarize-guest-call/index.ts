@@ -2,11 +2,13 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
 };
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method === "OPTIONS")
+    return new Response(null, { headers: corsHeaders });
 
   try {
     const { guest_call_id } = await req.json();
@@ -24,7 +26,9 @@ Deno.serve(async (req) => {
 
     const { data: call } = await supabase
       .from("guest_calls")
-      .select("guest_name, started_at, thread_id, project_id, customer_user_id, status, engineer_joined_at, customer_joined_at, recording_play_url, summary_state")
+      .select(
+        "guest_name, started_at, thread_id, project_id, customer_user_id, status, engineer_joined_at, customer_joined_at, recording_play_url, summary_state"
+      )
       .eq("id", guest_call_id)
       .maybeSingle();
 
@@ -33,17 +37,24 @@ Deno.serve(async (req) => {
     // few minutes after end-time. The first run already handled all the
     // one-shot side effects (status flip, duration write, "Session ended"
     // message, sentiment row), so re-runs only refresh the summary fields.
-    const wasAlreadyEnded = (call as { status?: string } | null)?.status === "ended";
+    const wasAlreadyEnded =
+      (call as { status?: string } | null)?.status === "ended";
 
     // Helper: write summary_state with a fresh timestamp. The watchdog
     // (tick_summary_watchdog pg_cron) reads summary_state_updated_at to
     // detect stalls, so every transition stamps it.
-    const writeState = async (state: string, extra: Record<string, unknown> = {}) => {
-      await supabase.from("guest_calls").update({
-        summary_state: state,
-        summary_state_updated_at: new Date().toISOString(),
-        ...extra,
-      }).eq("id", guest_call_id);
+    const writeState = async (
+      state: string,
+      extra: Record<string, unknown> = {}
+    ) => {
+      await supabase
+        .from("guest_calls")
+        .update({
+          summary_state: state,
+          summary_state_updated_at: new Date().toISOString(),
+          ...extra,
+        })
+        .eq("id", guest_call_id);
     };
 
     // Mark "actively generating" so the UI shows a spinner with the right
@@ -59,7 +70,9 @@ Deno.serve(async (req) => {
         .select("free_minutes_used")
         .eq("id", call.thread_id)
         .maybeSingle();
-      threadUsed = Number((t as { free_minutes_used?: number } | null)?.free_minutes_used ?? 0);
+      threadUsed = Number(
+        (t as { free_minutes_used?: number } | null)?.free_minutes_used ?? 0
+      );
     }
 
     // Compute session duration (minutes) for usage tracking
@@ -68,7 +81,8 @@ Deno.serve(async (req) => {
     if (call?.started_at) {
       sessionMinutes = Math.max(
         0,
-        (new Date(endedAtIso).getTime() - new Date(call.started_at).getTime()) / 60000,
+        (new Date(endedAtIso).getTime() - new Date(call.started_at).getTime()) /
+          60000
       );
     }
 
@@ -111,12 +125,16 @@ Deno.serve(async (req) => {
     const lines: Line[] = [];
     for (const m of (msgs ?? []) as any[]) {
       // Drop noise system messages but keep AI Companion blocks.
-      if (m.sender_kind === "system" && (typeof m.body !== "string" || !m.body.includes("AI Companion summary"))) {
+      if (
+        m.sender_kind === "system" &&
+        (typeof m.body !== "string" || !m.body.includes("AI Companion summary"))
+      ) {
         continue;
       }
-      const text = m.sender_kind === "system"
-        ? `[Zoom AI Companion summary from the call]\n${m.body}`
-        : `${m.sender_name ?? m.sender_kind}: ${m.body}`;
+      const text =
+        m.sender_kind === "system"
+          ? `[Zoom AI Companion summary from the call]\n${m.body}`
+          : `${m.sender_name ?? m.sender_kind}: ${m.body}`;
       lines.push({ ts: new Date(m.created_at).getTime(), text });
     }
     for (const c of caps) {
@@ -141,22 +159,25 @@ Deno.serve(async (req) => {
       (m: any) =>
         m.sender_kind !== "system" &&
         typeof m.body === "string" &&
-        m.body.trim().length > 0,
+        m.body.trim().length > 0
     );
     const companionBlocks = (msgs ?? []).filter(
       (m: any) =>
         m.sender_kind === "system" &&
         typeof m.body === "string" &&
-        m.body.includes("AI Companion summary"),
+        m.body.includes("AI Companion summary")
     );
     const humanChars = humanMsgs.reduce(
       (n: number, m: any) => n + m.body.trim().length,
-      0,
+      0
     );
     // Caption substance: total spoken characters across all batches. A
     // voice-only call may have zero chat but plenty of transcript — that
     // should count.
-    const captionChars = caps.reduce((n, c) => n + (c.text?.trim().length ?? 0), 0);
+    const captionChars = caps.reduce(
+      (n, c) => n + (c.text?.trim().length ?? 0),
+      0
+    );
     const hasSubstance =
       companionBlocks.length > 0 ||
       humanMsgs.length >= 3 ||
@@ -176,12 +197,22 @@ Deno.serve(async (req) => {
       //   • Zoom was joined, recording_play_url IS NULL, meeting
       //     ended <= 60s ago (or hasn't ended yet)                → waiting_for_transcript
       //     (give Zoom a beat to deliver the recording webhook)
-      const engineerJoinedAt = (call as { engineer_joined_at?: string | null } | null)?.engineer_joined_at;
-      const customerJoinedAt = (call as { customer_joined_at?: string | null } | null)?.customer_joined_at;
-      const recordingPlayUrl = (call as { recording_play_url?: string | null } | null)?.recording_play_url;
-      const zoomTouched = !!engineerJoinedAt || !!customerJoinedAt || !!recordingPlayUrl;
+      const engineerJoinedAt = (
+        call as { engineer_joined_at?: string | null } | null
+      )?.engineer_joined_at;
+      const customerJoinedAt = (
+        call as { customer_joined_at?: string | null } | null
+      )?.customer_joined_at;
+      const recordingPlayUrl = (
+        call as { recording_play_url?: string | null } | null
+      )?.recording_play_url;
+      const zoomTouched =
+        !!engineerJoinedAt || !!customerJoinedAt || !!recordingPlayUrl;
 
-      let nextState: "no_conversation" | "waiting_for_transcript" | "transcript_unavailable";
+      let nextState:
+        | "no_conversation"
+        | "waiting_for_transcript"
+        | "transcript_unavailable";
       if (!zoomTouched) {
         nextState = "no_conversation";
       } else if (recordingPlayUrl) {
@@ -202,8 +233,14 @@ Deno.serve(async (req) => {
           .limit(1)
           .maybeSingle();
         if (endedMsg) {
-          const ageSec = (Date.now() - new Date((endedMsg as { created_at: string }).created_at).getTime()) / 1000;
-          nextState = ageSec > 60 ? "transcript_unavailable" : "waiting_for_transcript";
+          const ageSec =
+            (Date.now() -
+              new Date(
+                (endedMsg as { created_at: string }).created_at
+              ).getTime()) /
+            1000;
+          nextState =
+            ageSec > 60 ? "transcript_unavailable" : "waiting_for_transcript";
         } else {
           // Zoom still active OR meeting.ended webhook hasn't arrived yet.
           // Either way, give it the watchdog window.
@@ -224,11 +261,17 @@ Deno.serve(async (req) => {
       await supabase.from("guest_calls").update(update).eq("id", guest_call_id);
       if (!wasAlreadyEnded && call?.thread_id && sessionMinutes > 0) {
         const newTotal = threadUsed + sessionMinutes;
-        await supabase.from("guest_threads").update({ free_minutes_used: newTotal }).eq("id", call.thread_id);
+        await supabase
+          .from("guest_threads")
+          .update({ free_minutes_used: newTotal })
+          .eq("id", call.thread_id);
       }
-      return new Response(JSON.stringify({ summary: null, summary_state: nextState }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ summary: null, summary_state: nextState }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     // Session-level summary: one OpenAI call that returns structured JSON
@@ -257,13 +300,13 @@ Deno.serve(async (req) => {
             {
               role: "system",
               content:
-                "You summarize a short engineer↔builder support session. Respond with strict JSON only: {\"title\": string, \"overview\": string, \"problem\": string, \"tried\": string, \"next_steps\": string[]}. " +
+                'You summarize a short engineer↔builder support session. Respond with strict JSON only: {"title": string, "overview": string, "problem": string, "tried": string, "next_steps": string[]}. ' +
                 "The transcript interleaves THREE kinds of lines: " +
                 "(1) `Name: text` — typed chat between customer and engineer. " +
                 "(2) `Speaker (voice): text` — Zoom Live Transcription of what was spoken on the call (this is usually the bulk of the conversation). " +
                 "(3) `[Zoom AI Companion summary from the call]` — Zoom's own post-hoc summary block. " +
                 "All three are evidence of the same session. Voice transcript is typically the richest source; chat is high-signal short bursts; AI Companion blocks are high-confidence summaries. When sources conflict, prefer the more specific and recent evidence. " +
-                "Rules for `title`: 3-5 words, NO period, problem-focused — name the *issue the builder was stuck on*, not the action taken. Examples of good titles: \"Auth redirect loop\", \"Stripe webhook silent fail\", \"Supabase RLS blocking inserts\", \"Vite hot reload broken\". Bad titles: \"Helped a user\", \"Quick chat\", \"Discussion about deploy\". " +
+                'Rules for `title`: 3-5 words, NO period, problem-focused — name the *issue the builder was stuck on*, not the action taken. Examples of good titles: "Auth redirect loop", "Stripe webhook silent fail", "Supabase RLS blocking inserts", "Vite hot reload broken". Bad titles: "Helped a user", "Quick chat", "Discussion about deploy". ' +
                 "`overview` = 2-3 sentence TL;DR covering the whole session (which may include multiple Zoom calls). `problem` = 1-2 sentences naming the root cause. `tried` = 1-2 sentences listing what was attempted. `next_steps` = 3-5 short imperative items. No extra prose outside the JSON.",
             },
             {
@@ -288,7 +331,9 @@ Deno.serve(async (req) => {
           if (parsed.problem) parts.push(`Problem: ${parsed.problem}`);
           if (parsed.tried) parts.push(`What we tried: ${parsed.tried}`);
           if (aiNextSteps.length > 0) {
-            parts.push(`Next steps:\n${aiNextSteps.map((s) => `• ${s}`).join("\n")}`);
+            parts.push(
+              `Next steps:\n${aiNextSteps.map((s) => `• ${s}`).join("\n")}`
+            );
           }
           summary = parts.join("\n\n") || aiOverview || raw;
         } catch {
@@ -296,7 +341,11 @@ Deno.serve(async (req) => {
         }
       } else {
         const errText = await ai.text().catch(() => "");
-        console.error("[summarize-guest-call] OpenAI error", ai.status, errText);
+        console.error(
+          "[summarize-guest-call] OpenAI error",
+          ai.status,
+          errText
+        );
         summary = `Summary unavailable (AI error ${ai.status}).`;
       }
     } else {
@@ -311,7 +360,9 @@ Deno.serve(async (req) => {
     //   2. OpenAI non-2xx response (summary text starts with "Summary unavailable")
     //   3. summary is empty/whitespace
     const openAiFailed =
-      !summary || !summary.trim() || summary.startsWith("Summary unavailable (AI error");
+      !summary ||
+      !summary.trim() ||
+      summary.startsWith("Summary unavailable (AI error");
 
     // Always refresh the summary fields. Duration / status / ended_at are
     // one-shot at first end — re-runs (Zoom AI Companion arriving late) skip
@@ -371,7 +422,11 @@ Deno.serve(async (req) => {
       const capsuleLines = ["🤖 AI Companion summary", aiTitle];
       if (aiOverview) capsuleLines.push(aiOverview);
       if (aiNextSteps.length > 0) {
-        capsuleLines.push("", "Next steps:", ...aiNextSteps.map((s) => `• ${s}`));
+        capsuleLines.push(
+          "",
+          "Next steps:",
+          ...aiNextSteps.map((s) => `• ${s}`)
+        );
       }
       await supabase.from("guest_messages").insert({
         guest_call_id,
@@ -440,7 +495,7 @@ Deno.serve(async (req) => {
                 content:
                   "You rate the sentiment of a completed customer-support session given its summary. " +
                   "The summary may incorporate signals from both chat and the live video call's AI Companion observations — weigh both equally; do not assume chat-only context. " +
-                  "Return STRICT JSON only: {\"score\": number, \"summary\": string}.\n" +
+                  'Return STRICT JSON only: {"score": number, "summary": string}.\n' +
                   "score is a number in [-1.0, +1.0]:\n" +
                   "  +1.0  problem fully resolved AND customer expresses gratitude / clear satisfaction.\n" +
                   "  +0.4  solution delivered, mild positive tone, no friction.\n" +
@@ -473,7 +528,8 @@ Deno.serve(async (req) => {
               score = Math.max(-1, Math.min(1, n));
               scored = true;
             }
-            const blurb = typeof parsed.summary === "string" ? parsed.summary.trim() : "";
+            const blurb =
+              typeof parsed.summary === "string" ? parsed.summary.trim() : "";
             if (blurb) scoreBlurb = blurb.slice(0, 200);
           } catch {
             // Malformed JSON from the model — leave scored=false so we
@@ -483,7 +539,7 @@ Deno.serve(async (req) => {
           console.error(
             "[summarize-guest-call] sentiment OpenAI error",
             ai.status,
-            await ai.text().catch(() => ""),
+            await ai.text().catch(() => "")
           );
         }
       }
@@ -496,19 +552,22 @@ Deno.serve(async (req) => {
       const shouldOverwrite = scored || !existingSentiment;
       if (shouldOverwrite) {
         if (existingSentiment) {
-          await supabase.from("session_health").update({
-            score,
-            summary:      scoreBlurb,
-            computed_at:  new Date().toISOString(),
-            window_end:   endedAtIso,
-          }).eq("id", (existingSentiment as { id: string }).id);
+          await supabase
+            .from("session_health")
+            .update({
+              score,
+              summary: scoreBlurb,
+              computed_at: new Date().toISOString(),
+              window_end: endedAtIso,
+            })
+            .eq("id", (existingSentiment as { id: string }).id);
         } else {
           await supabase.from("session_health").insert({
-            session_id:    guest_call_id,
+            session_id: guest_call_id,
             score,
-            summary:       scoreBlurb,
-            window_start:  null,
-            window_end:    endedAtIso,
+            summary: scoreBlurb,
+            window_start: null,
+            window_end: endedAtIso,
             message_count: 0,
           });
         }
@@ -516,10 +575,13 @@ Deno.serve(async (req) => {
         // supervisor PastSessionTile can render sentiment even if the
         // session_health view ever misses a row. Migration
         // 20260520200000_bugs2_fixes adds these columns.
-        await supabase.from("guest_calls").update({
-          final_sentiment_score:   score,
-          final_sentiment_summary: scoreBlurb,
-        }).eq("id", guest_call_id);
+        await supabase
+          .from("guest_calls")
+          .update({
+            final_sentiment_score: score,
+            final_sentiment_summary: scoreBlurb,
+          })
+          .eq("id", guest_call_id);
         // New supervisor table (20260604100000_sup_sentiment): one
         // phase='final' row holding the post-end sentiment derived from the
         // CUMULATIVE session summary. Written last so it becomes the
@@ -530,12 +592,15 @@ Deno.serve(async (req) => {
           await supabase.from("sup_sentiment").insert({
             session_id: guest_call_id,
             score,
-            summary:    scoreBlurb,
+            summary: scoreBlurb,
             activeness: null,
-            phase:      "final",
+            phase: "final",
           });
         } catch (e) {
-          console.warn("[summarize-guest-call] sup_sentiment final insert failed:", e);
+          console.warn(
+            "[summarize-guest-call] sup_sentiment final insert failed:",
+            e
+          );
         }
       }
     } catch (e) {
@@ -557,8 +622,11 @@ Deno.serve(async (req) => {
     // roll up at higher levels when the session has a parent (project /
     // customer). The General bucket (no project_id) and anonymous guests
     // (no customer_user_id) stop here with just the session summary.
-    const projectId = (call as { project_id?: string | null } | null)?.project_id ?? null;
-    const customerUserId = (call as { customer_user_id?: string | null } | null)?.customer_user_id ?? null;
+    const projectId =
+      (call as { project_id?: string | null } | null)?.project_id ?? null;
+    const customerUserId =
+      (call as { customer_user_id?: string | null } | null)?.customer_user_id ??
+      null;
     if (projectId) {
       try {
         await supabase.functions.invoke("summarize-project", {
@@ -590,11 +658,16 @@ Deno.serve(async (req) => {
       if (appUrl && indexSecret) {
         void fetch(`${appUrl}/api/staff/index-session`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", "x-index-secret": indexSecret },
+          headers: {
+            "Content-Type": "application/json",
+            "x-index-secret": indexSecret,
+          },
           body: JSON.stringify({ session_id: guest_call_id }),
         });
       }
-    } catch { /* best-effort */ }
+    } catch {
+      /* best-effort */
+    }
 
     return new Response(JSON.stringify({ summary }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -605,19 +678,28 @@ Deno.serve(async (req) => {
     // request never had a session id (the early 400 path) or the DB write
     // itself fails, just return the original error.
     try {
-      const { guest_call_id } = (await req.clone().json().catch(() => ({}))) as { guest_call_id?: string };
+      const { guest_call_id } = (await req
+        .clone()
+        .json()
+        .catch(() => ({}))) as { guest_call_id?: string };
       if (guest_call_id) {
         const supabase = createClient(
           Deno.env.get("SUPABASE_URL")!,
-          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
         );
-        await supabase.from("guest_calls").update({
-          summary_state: "summary_failed",
-          summary_state_updated_at: new Date().toISOString(),
-        }).eq("id", guest_call_id);
+        await supabase
+          .from("guest_calls")
+          .update({
+            summary_state: "summary_failed",
+            summary_state_updated_at: new Date().toISOString(),
+          })
+          .eq("id", guest_call_id);
       }
     } catch (e2) {
-      console.error("[summarize-guest-call] state-failed write also failed:", e2);
+      console.error(
+        "[summarize-guest-call] state-failed write also failed:",
+        e2
+      );
     }
     return new Response(JSON.stringify({ error: String(e) }), {
       status: 500,

@@ -28,13 +28,14 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
 };
 
-const SUPABASE_URL              = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const OPENAI_API_KEY            = Deno.env.get("OPENAI_API_KEY") ?? "";
-const OPENAI_MODEL              = Deno.env.get("OPENAI_SENTIMENT_MODEL") ?? "gpt-4o-mini";
+const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") ?? "";
+const OPENAI_MODEL = Deno.env.get("OPENAI_SENTIMENT_MODEL") ?? "gpt-4o-mini";
 
 // Includes assigned/joining, not just live/grace: the status machine only
 // flips to "live" when a participant triggers mark_joined, but chat (and
@@ -109,13 +110,18 @@ type CaptionRow = {
 };
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method === "OPTIONS")
+    return new Response("ok", { headers: corsHeaders });
 
   try {
     if (!OPENAI_API_KEY) {
-      return new Response(JSON.stringify({ error: "OPENAI_API_KEY not configured" }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ error: "OPENAI_API_KEY not configured" }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -164,7 +170,7 @@ Deno.serve(async (req) => {
           (m) =>
             (m.sender_kind === "guest" || m.sender_kind === "engineer") &&
             typeof m.body === "string" &&
-            m.body.trim().length > 0,
+            m.body.trim().length > 0
         );
         const captions = (capsRes.data ?? []) as CaptionRow[];
 
@@ -180,7 +186,9 @@ Deno.serve(async (req) => {
         const lines: Line[] = [];
         for (const m of allMsgs) {
           const who =
-            m.sender_kind === "guest" ? (m.sender_name ?? "Customer") : (m.sender_name ?? "Engineer");
+            m.sender_kind === "guest"
+              ? (m.sender_name ?? "Customer")
+              : (m.sender_name ?? "Engineer");
           lines.push({
             ts: new Date(m.created_at).getTime(),
             line: `${who} (chat): ${(m.body ?? "").trim()}`,
@@ -198,20 +206,28 @@ Deno.serve(async (req) => {
 
         const twoMinAgo = now.getTime() - 2 * 60_000;
         const older = lines.filter((l) => l.ts < twoMinAgo).map((l) => l.line);
-        const recent = lines.filter((l) => l.ts >= twoMinAgo).map((l) => l.line);
+        const recent = lines
+          .filter((l) => l.ts >= twoMinAgo)
+          .map((l) => l.line);
         let transcript = [
           ...older,
           "── LAST 2 MINUTES ──",
-          ...(recent.length > 0 ? recent : ["(no activity in the last 2 minutes)"]),
+          ...(recent.length > 0
+            ? recent
+            : ["(no activity in the last 2 minutes)"]),
         ].join("\n");
         // Over budget → keep the newest chars (the prompt says the start may
         // be truncated).
         if (transcript.length > TRANSCRIPT_CHAR_BUDGET) {
-          transcript = "…(transcript truncated)…\n" + transcript.slice(-TRANSCRIPT_CHAR_BUDGET);
+          transcript =
+            "…(transcript truncated)…\n" +
+            transcript.slice(-TRANSCRIPT_CHAR_BUDGET);
         }
 
         const startedAt = s.joined_at ?? s.created_at;
-        const ageMin = Math.round((now.getTime() - new Date(startedAt).getTime()) / 60_000);
+        const ageMin = Math.round(
+          (now.getTime() - new Date(startedAt).getTime()) / 60_000
+        );
         const userPrompt =
           `Session: ${s.id}\n` +
           `Status: ${s.status}\n` +
@@ -224,14 +240,14 @@ Deno.serve(async (req) => {
         const res = await fetch("https://api.openai.com/v1/chat/completions", {
           method: "POST",
           headers: {
-            "Content-Type":  "application/json",
-            "Authorization": `Bearer ${OPENAI_API_KEY}`,
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${OPENAI_API_KEY}`,
           },
           body: JSON.stringify({
             model: OPENAI_MODEL,
             messages: [
               { role: "system", content: SYSTEM_PROMPT },
-              { role: "user",   content: userPrompt },
+              { role: "user", content: userPrompt },
             ],
             temperature: 0,
             response_format: { type: "json_object" },
@@ -242,78 +258,95 @@ Deno.serve(async (req) => {
           const txt = await res.text().catch(() => "");
           throw new Error(`openai ${res.status}: ${txt.slice(0, 200)}`);
         }
-        const aiRes = await res.json() as {
+        const aiRes = (await res.json()) as {
           choices?: { message?: { content?: string } }[];
         };
         const content = aiRes.choices?.[0]?.message?.content ?? "";
-        let parsed: { score?: unknown; activeness?: unknown; summary?: unknown };
+        let parsed: {
+          score?: unknown;
+          activeness?: unknown;
+          summary?: unknown;
+        };
         try {
           parsed = JSON.parse(content);
         } catch {
           throw new Error(`openai returned non-JSON: ${content.slice(0, 120)}`);
         }
         const rawScore = Number(parsed.score);
-        const score = Number.isFinite(rawScore) ? Math.max(-1, Math.min(1, rawScore)) : 0;
+        const score = Number.isFinite(rawScore)
+          ? Math.max(-1, Math.min(1, rawScore))
+          : 0;
         const rawAct = Number(parsed.activeness);
-        const activeness = Number.isFinite(rawAct) ? Math.max(0, Math.min(1, rawAct)) : null;
-        const summary = String(parsed.summary ?? "").slice(0, 160) || "No summary.";
+        const activeness = Number.isFinite(rawAct)
+          ? Math.max(0, Math.min(1, rawAct))
+          : null;
+        const summary =
+          String(parsed.summary ?? "").slice(0, 160) || "No summary.";
 
         // 4. Persist — new supervisor table + legacy row in parallel.
         const windowStart = new Date(now.getTime() - 60_000);
         const [supIns, legacyIns] = await Promise.all([
           admin.from("sup_sentiment").insert({
-            session_id:    s.id,
+            session_id: s.id,
             score,
             summary,
             activeness,
-            phase:         "live",
-            chat_count:    allMsgs.length,
+            phase: "live",
+            chat_count: allMsgs.length,
             caption_count: captions.length,
           }),
           // Legacy session_health row keeps the roster / act-now / finance /
           // feedback consumers alive until they migrate to sup_sentiment.
           admin.from("session_health").insert({
-            session_id:    s.id,
+            session_id: s.id,
             score,
-            summary:       summary.slice(0, 80),
-            window_start:  windowStart.toISOString(),
-            window_end:    now.toISOString(),
+            summary: summary.slice(0, 80),
+            window_start: windowStart.toISOString(),
+            window_end: now.toISOString(),
             message_count: allMsgs.length + captions.length,
           }),
         ]);
-        if (supIns.error) throw new Error(`sup_sentiment insert: ${supIns.error.message}`);
+        if (supIns.error)
+          throw new Error(`sup_sentiment insert: ${supIns.error.message}`);
         if (legacyIns.error) {
           // Non-fatal — the new table is the source of truth going forward.
-          console.warn(`[score-session-health] legacy insert failed: ${legacyIns.error.message}`);
+          console.warn(
+            `[score-session-health] legacy insert failed: ${legacyIns.error.message}`
+          );
         }
 
         return { session_id: s.id, score, activeness, summary };
-      }),
+      })
     );
 
     for (const r of results) {
       if (r.status === "fulfilled") {
         if (!("skipped" in r.value)) scored++;
       } else {
-        const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
+        const reason =
+          r.reason instanceof Error ? r.reason.message : String(r.reason);
         errors.push({ session_id: "?", error: reason });
         console.warn(`[score-session-health] ${reason}`);
       }
     }
 
-    return new Response(JSON.stringify({
-      sessions: list.length,
-      scored,
-      skipped: list.length - scored - errors.length,
-      errors,
-    }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        sessions: list.length,
+        scored,
+        skipped: list.length - scored - errors.length,
+        errors,
+      }),
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     console.error("[score-session-health]", msg);
     return new Response(JSON.stringify({ error: msg }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });

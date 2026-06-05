@@ -26,11 +26,11 @@ import { Loader2, X } from "lucide-react";
 
 const BRAND_GREEN = "var(--primary)";
 type AskOptions = {
-  title:         string;
-  message?:      string;
+  title: string;
+  message?: string;
   confirmLabel?: string;
-  cancelLabel?:  string;
-  tone?:         "neutral" | "danger";
+  cancelLabel?: string;
+  tone?: "neutral" | "danger";
 };
 
 type PendingResolver = ((ok: boolean) => void) | null;
@@ -38,9 +38,9 @@ type PendingResolver = ((ok: boolean) => void) | null;
 type DialogState = (AskOptions & { open: true }) | { open: false };
 
 export function useConfirmDialog() {
-  const [state,    setState]    = useState<DialogState>({ open: false });
+  const [state, setState] = useState<DialogState>({ open: false });
   const [resolver, setResolver] = useState<PendingResolver>(null);
-  const [busy,     setBusy]     = useState(false);
+  const [busy, setBusy] = useState(false);
 
   const ask = useCallback((opts: AskOptions): Promise<boolean> => {
     setState({ open: true, ...opts });
@@ -50,11 +50,14 @@ export function useConfirmDialog() {
     });
   }, []);
 
-  const close = useCallback((ok: boolean) => {
-    resolver?.(ok);
-    setResolver(null);
-    setState({ open: false });
-  }, [resolver]);
+  const close = useCallback(
+    (ok: boolean) => {
+      resolver?.(ok);
+      setResolver(null);
+      setState({ open: false });
+    },
+    [resolver]
+  );
 
   // Escape closes (cancel).
   useEffect(() => {
@@ -75,7 +78,10 @@ export function useConfirmDialog() {
       tone={state.tone ?? "neutral"}
       busy={busy}
       onCancel={() => !busy && close(false)}
-      onConfirm={() => { setBusy(true); close(true); }}
+      onConfirm={() => {
+        setBusy(true);
+        close(true);
+      }}
     />
   ) : null;
 
@@ -83,7 +89,14 @@ export function useConfirmDialog() {
 }
 
 function ConfirmDialogModal({
-  title, message, confirmLabel, cancelLabel, tone, busy, onCancel, onConfirm,
+  title,
+  message,
+  confirmLabel,
+  cancelLabel,
+  tone,
+  busy,
+  onCancel,
+  onConfirm,
 }: {
   title: string;
   message?: string;
@@ -100,8 +113,8 @@ function ConfirmDialogModal({
       className="fixed inset-0 z-[80] flex items-center justify-center px-4"
       style={{
         backgroundColor: "rgba(0, 0, 0, 0.55)",
-        backdropFilter:  "blur(4px)",
-        animation:       "relay-fade-in 120ms ease-out",
+        backdropFilter: "blur(4px)",
+        animation: "relay-fade-in 120ms ease-out",
       }}
       onClick={onCancel}
     >
@@ -111,13 +124,16 @@ function ConfirmDialogModal({
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-sm rounded-2xl border p-5 shadow-2xl"
         style={{
-          borderColor:     "var(--border)",
+          borderColor: "var(--border)",
           backgroundColor: "var(--surface)",
-          color:           "var(--text)",
+          color: "var(--text)",
         }}
       >
         <div className="flex items-start justify-between gap-3">
-          <h3 className="text-sm font-semibold leading-tight" style={{ color: "var(--text)" }}>
+          <h3
+            className="text-sm leading-tight font-semibold"
+            style={{ color: "var(--text)" }}
+          >
             {title}
           </h3>
           <button
@@ -132,7 +148,10 @@ function ConfirmDialogModal({
           </button>
         </div>
         {message && (
-          <p className="mt-2 text-[13px] leading-snug" style={{ color: "var(--text-muted)" }}>
+          <p
+            className="mt-2 text-[13px] leading-snug"
+            style={{ color: "var(--text-muted)" }}
+          >
             {message}
           </p>
         )}

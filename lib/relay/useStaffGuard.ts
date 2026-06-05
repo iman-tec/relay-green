@@ -59,7 +59,9 @@ export function useStaffGuard(): StaffGuardState {
           setState({ kind: "not-staff" });
           return;
         }
-        const roles = toRoles((rolesData ?? []).map((r: { role: string }) => r.role));
+        const roles = toRoles(
+          (rolesData ?? []).map((r: { role: string }) => r.role)
+        );
         const isStaff = roles.some((r) => STAFF_ROLE_SET.has(r));
         if (!isStaff) {
           setState({ kind: "not-staff" });
@@ -70,11 +72,16 @@ export function useStaffGuard(): StaffGuardState {
         // Swallow network errors (`TypeError: Failed to fetch` etc) — never
         // let this crash the page via an unhandled rejection.
         if (cancelled) return;
-        console.warn("[staff-guard] unhandled:", e instanceof Error ? e.message : String(e));
+        console.warn(
+          "[staff-guard] unhandled:",
+          e instanceof Error ? e.message : String(e)
+        );
         setState({ kind: "anonymous" });
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return state;

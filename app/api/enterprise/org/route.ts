@@ -20,18 +20,20 @@ import { requireEnterpriseAdmin } from "@/lib/enterprise-auth";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const DOMAIN = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$/i;
+const DOMAIN =
+  /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$/i;
 const ALLOWED_RETENTION = new Set([0, 90, 180, 365]);
 
 export async function PATCH(request: Request) {
   const gate = await requireEnterpriseAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin, orgId } = gate;
 
   const body = (await request.json().catch(() => ({}))) as {
-    name?:           string | null;
-    primaryDomain?:  string | null;
-    retentionDays?:  number | null;
+    name?: string | null;
+    primaryDomain?: string | null;
+    retentionDays?: number | null;
   };
 
   const update: Record<string, unknown> = {};
@@ -86,10 +88,10 @@ export async function PATCH(request: Request) {
 
   return NextResponse.json({
     org: {
-      id:             data.id,
-      name:           data.name,
-      primaryDomain:  data.primary_domain,
-      retentionDays:  data.retention_days ?? 0,
+      id: data.id,
+      name: data.name,
+      primaryDomain: data.primary_domain,
+      retentionDays: data.retention_days ?? 0,
     },
   });
 }

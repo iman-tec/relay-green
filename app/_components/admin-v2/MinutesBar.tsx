@@ -26,23 +26,25 @@ export function MinutesBar({
   size = "md",
   showLabel = true,
 }: {
-  used:       number;
-  allocated:  number;
-  size?:      "sm" | "md";
+  used: number;
+  allocated: number;
+  size?: "sm" | "md";
   showLabel?: boolean;
 }) {
   const ratio = allocated > 0 ? used / allocated : 0;
-  const pct   = Math.max(0, Math.min(100, Math.round(ratio * 100)));
-  const over  = ratio > 1;
+  const pct = Math.max(0, Math.min(100, Math.round(ratio * 100)));
+  const over = ratio > 1;
 
-  const fill =
-    over            ? CORAL :
-    ratio >= 0.9    ? CORAL :
-    ratio >= 0.7    ? AMBER :
-                      MUTED;
+  const fill = over
+    ? CORAL
+    : ratio >= 0.9
+      ? CORAL
+      : ratio >= 0.7
+        ? AMBER
+        : MUTED;
 
   const trackHeight = size === "sm" ? 4 : 6;
-  const labelSize   = size === "sm" ? "text-[11px]" : "text-xs";
+  const labelSize = size === "sm" ? "text-[11px]" : "text-xs";
 
   return (
     <div className="flex flex-col gap-1">
@@ -53,11 +55,14 @@ export function MinutesBar({
               ? `${compact(used)}/${compact(allocated)} min`
               : `${used.toLocaleString(undefined, { maximumFractionDigits: 2 })} / ${allocated.toLocaleString(undefined, { maximumFractionDigits: 2 })} min`}
           </span>
-          <span className="flex items-center gap-1.5" style={{ color: "var(--text-muted)" }}>
+          <span
+            className="flex items-center gap-1.5"
+            style={{ color: "var(--text-muted)" }}
+          >
             {pct}%
             {over && (
               <span
-                className="rounded px-1.5 py-px text-[10px] font-semibold uppercase tracking-wider"
+                className="rounded px-1.5 py-px text-[10px] font-semibold tracking-wider uppercase"
                 style={{ background: CORAL, color: "#fff" }}
               >
                 over
@@ -68,7 +73,10 @@ export function MinutesBar({
       )}
       <div
         className="w-full overflow-hidden rounded-full"
-        style={{ background: "color-mix(in srgb, var(--text-muted) 18%, transparent)", height: trackHeight }}
+        style={{
+          background: "color-mix(in srgb, var(--text-muted) 18%, transparent)",
+          height: trackHeight,
+        }}
       >
         <div
           className="h-full rounded-full transition-[width]"

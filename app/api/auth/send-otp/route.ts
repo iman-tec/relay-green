@@ -21,11 +21,15 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   const { email } = await request.json().catch(() => ({}));
-  if (!email || typeof email !== "string" || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+  if (
+    !email ||
+    typeof email !== "string" ||
+    !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)
+  ) {
     return NextResponse.json({ error: "invalid_email" }, { status: 400 });
   }
 

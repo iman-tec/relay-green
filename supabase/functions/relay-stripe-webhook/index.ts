@@ -17,18 +17,26 @@ import { encode } from "https://deno.land/std@0.168.0/encoding/hex.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, stripe-signature",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, stripe-signature",
 };
 
-const SUPABASE_URL              = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const STRIPE_WEBHOOK_SECRET     = Deno.env.get("STRIPE_WEBHOOK_SECRET") ?? "";
+const STRIPE_WEBHOOK_SECRET = Deno.env.get("STRIPE_WEBHOOK_SECRET") ?? "";
 
-async function verifyAndParse(req: Request): Promise<{ id: string; type: string; data: { object: Record<string, unknown> } }> {
+async function verifyAndParse(
+  req: Request
+): Promise<{
+  id: string;
+  type: string;
+  data: { object: Record<string, unknown> };
+}> {
   const signature = req.headers.get("stripe-signature");
   const body = await req.text();
   if (!signature || !body) throw new Error("Missing signature or body");
-  if (!STRIPE_WEBHOOK_SECRET) throw new Error("STRIPE_WEBHOOK_SECRET not configured");
+  if (!STRIPE_WEBHOOK_SECRET)
+    throw new Error("STRIPE_WEBHOOK_SECRET not configured");
 
   let timestamp: string | undefined;
   const v1: string[] = [];
@@ -37,49 +45,70 @@ async function verifyAndParse(req: Request): Promise<{ id: string; type: string;
     if (k === "t") timestamp = v;
     if (k === "v1") v1.push(v);
   }
-  if (!timestamp || v1.length === 0) throw new Error("Invalid signature format");
+  if (!timestamp || v1.length === 0)
+    throw new Error("Invalid signature format");
   const age = Math.abs(Date.now() / 1000 - Number(timestamp));
   if (age > 300) throw new Error("Webhook timestamp too old");
 
   const key = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(STRIPE_WEBHOOK_SECRET),
-    { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
   );
-  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${timestamp}.${body}`));
+  const sig = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(`${timestamp}.${body}`)
+  );
   const expected = new TextDecoder().decode(encode(new Uint8Array(sig)));
   if (!v1.includes(expected)) throw new Error("Invalid webhook signature");
   return JSON.parse(body);
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method === "OPTIONS")
+    return new Response("ok", { headers: corsHeaders });
 
   try {
     const event = await verifyAndParse(req);
     // Accept both event types — PaymentIntent succeeded is the new path,
     // CheckoutSession completed is the legacy path. Same metadata shape
     // on both objects, different id semantics for dedupe.
-    if (event.type !== "payment_intent.succeeded" && event.type !== "checkout.session.completed") {
-      return new Response(JSON.stringify({ received: true, ignored: event.type }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (
+      event.type !== "payment_intent.succeeded" &&
+      event.type !== "checkout.session.completed"
+    ) {
+      return new Response(
+        JSON.stringify({ received: true, ignored: event.type }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     const obj = event.data.object as {
       id: string;
-      metadata?: { relay_user_id?: string; relay_plan?: string; relay_minutes?: string };
-      amount?:       number; // PaymentIntent
+      metadata?: {
+        relay_user_id?: string;
+        relay_plan?: string;
+        relay_minutes?: string;
+      };
+      amount?: number; // PaymentIntent
       amount_total?: number; // CheckoutSession
     };
     const userId = obj.metadata?.relay_user_id;
-    const plan   = obj.metadata?.relay_plan;
+    const plan = obj.metadata?.relay_plan;
     const minutes = Number(obj.metadata?.relay_minutes ?? "0");
     if (!userId || !plan || !Number.isFinite(minutes) || minutes <= 0) {
       console.warn("[relay-stripe-webhook] missing metadata", obj.metadata);
-      return new Response(JSON.stringify({ received: true, note: "missing metadata" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ received: true, note: "missing metadata" }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -142,12 +171,17 @@ Deno.serve(async (req) => {
       .maybeSingle();
     if (ent) {
       const amountCents = Number(obj.amount ?? obj.amount_total ?? 0);
-      await admin.from("customer_entitlements").update({
-        paid_minutes_remaining: Number(ent.paid_minutes_remaining ?? 0) + minutes,
-        paid_minutes_lifetime:  Number(ent.paid_minutes_lifetime ?? 0) + minutes,
-        total_paid_cents:       Number(ent.total_paid_cents ?? 0) + amountCents,
-        updated_at:             new Date().toISOString(),
-      }).eq("customer_user_id", userId);
+      await admin
+        .from("customer_entitlements")
+        .update({
+          paid_minutes_remaining:
+            Number(ent.paid_minutes_remaining ?? 0) + minutes,
+          paid_minutes_lifetime:
+            Number(ent.paid_minutes_lifetime ?? 0) + minutes,
+          total_paid_cents: Number(ent.total_paid_cents ?? 0) + amountCents,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("customer_user_id", userId);
     }
 
     return new Response(JSON.stringify({ received: true, credited: minutes }), {
@@ -157,7 +191,8 @@ Deno.serve(async (req) => {
     const msg = err instanceof Error ? err.message : "Unknown error";
     console.error("[relay-stripe-webhook]", msg);
     return new Response(JSON.stringify({ error: msg }), {
-      status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });

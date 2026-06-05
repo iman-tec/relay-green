@@ -10,17 +10,20 @@ import { NextResponse } from "next/server";
 import { requireEnterpriseAdmin } from "@/lib/enterprise-auth";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function POST(request: Request, { params }: RouteCtx) {
   const gate = await requireEnterpriseAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin, orgId } = gate;
 
   const { id } = await params;
-  const { amount } = (await request.json().catch(() => ({}))) as { amount?: number | string };
+  const { amount } = (await request.json().catch(() => ({}))) as {
+    amount?: number | string;
+  };
   const amt = Number(amount);
   if (!Number.isFinite(amt) || amt <= 0) {
     return NextResponse.json({ error: "amount must be > 0" }, { status: 400 });
@@ -37,9 +40,10 @@ export async function POST(request: Request, { params }: RouteCtx) {
 
   const { error } = await admin.rpc("transfer_to_department", {
     _dept_id: id,
-    _amount:  amt,
+    _amount: amt,
   });
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  if (error)
+    return NextResponse.json({ error: error.message }, { status: 400 });
 
   const { data: deptAfter } = await admin
     .from("departments")
@@ -57,9 +61,15 @@ export async function POST(request: Request, { params }: RouteCtx) {
     department: deptAfter
       ? {
           id: (deptAfter as { id: string }).id,
-          allocatedMinutes: Number((deptAfter as { allocated_minutes: number }).allocated_minutes),
-          usedMinutes:      Number((deptAfter as { used_minutes: number }).used_minutes),
-          remainingMinutes: Number((deptAfter as { remaining_minutes: number }).remaining_minutes),
+          allocatedMinutes: Number(
+            (deptAfter as { allocated_minutes: number }).allocated_minutes
+          ),
+          usedMinutes: Number(
+            (deptAfter as { used_minutes: number }).used_minutes
+          ),
+          remainingMinutes: Number(
+            (deptAfter as { remaining_minutes: number }).remaining_minutes
+          ),
         }
       : null,
     enterpriseRemaining: orgAfter

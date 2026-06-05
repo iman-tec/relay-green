@@ -29,18 +29,31 @@ import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 // Sessions a claimed engineer is considered "busy" on — never re-ring them.
-const ACTIVE_CALL_STATUSES = ["assigned", "joining", "live", "grace", "expired_free", "ending"];
+const ACTIVE_CALL_STATUSES = [
+  "assigned",
+  "joining",
+  "live",
+  "grace",
+  "expired_free",
+  "ending",
+];
 const OFFER_WINDOW_MS = 60_000; // matches supervisor_assign_engineer's 60s
 
 export async function POST(req: Request) {
   const supabase = await createServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user)
+    return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
 
-  const body = (await req.json().catch(() => ({}))) as { intakeId?: string; engineerId?: string };
+  const body = (await req.json().catch(() => ({}))) as {
+    intakeId?: string;
+    engineerId?: string;
+  };
   const intakeId = body.intakeId;
   const engineerId = body.engineerId;
   if (!intakeId || !engineerId) {
@@ -50,7 +63,10 @@ export async function POST(req: Request) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
-    return NextResponse.json({ error: "service_role_not_configured" }, { status: 500 });
+    return NextResponse.json(
+      { error: "service_role_not_configured" },
+      { status: 500 }
+    );
   }
   const admin = createAdminClient(url, key, {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -67,23 +83,38 @@ export async function POST(req: Request) {
     guest_call_id: string | null;
     customer_user_id: string | null;
   } | null;
-  if (!intake) return NextResponse.json({ error: "intake_not_found" }, { status: 404 });
+  if (!intake)
+    return NextResponse.json({ error: "intake_not_found" }, { status: 404 });
   if (intake.customer_user_id !== user.id) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
-  if (!intake.guest_call_id) return NextResponse.json({ offered: 0, skipped: "no_session" });
+  if (!intake.guest_call_id)
+    return NextResponse.json({ offered: 0, skipped: "no_session" });
 
   // 2. Target must be an engineer the caller has genuinely worked with — the
   //    same relationship the picker is built from (a prior claimed session).
   const [roleRes, relRes] = await Promise.all([
-    admin.from("user_role_names").select("user_id").eq("user_id", engineerId).eq("role", "engineer").maybeSingle(),
-    admin.from("guest_calls").select("id").eq("customer_user_id", user.id).eq("claimed_by", engineerId).limit(1),
+    admin
+      .from("user_role_names")
+      .select("user_id")
+      .eq("user_id", engineerId)
+      .eq("role", "engineer")
+      .maybeSingle(),
+    admin
+      .from("guest_calls")
+      .select("id")
+      .eq("customer_user_id", user.id)
+      .eq("claimed_by", engineerId)
+      .limit(1),
   ]);
   if (!roleRes.data) {
     return NextResponse.json({ error: "not_an_engineer" }, { status: 400 });
   }
   if (!relRes.data || relRes.data.length === 0) {
-    return NextResponse.json({ error: "no_prior_relationship" }, { status: 403 });
+    return NextResponse.json(
+      { error: "no_prior_relationship" },
+      { status: 403 }
+    );
   }
 
   // 3. Session must still be ringable (queued + unclaimed).
@@ -92,7 +123,11 @@ export async function POST(req: Request) {
     .select("id, status, claimed_by")
     .eq("id", intake.guest_call_id)
     .maybeSingle();
-  const call = callRow as { id: string; status: string; claimed_by: string | null } | null;
+  const call = callRow as {
+    id: string;
+    status: string;
+    claimed_by: string | null;
+  } | null;
   if (!call || call.status !== "queued" || call.claimed_by) {
     return NextResponse.json({ offered: 0, skipped: "not_queued" });
   }
@@ -130,27 +165,29 @@ export async function POST(req: Request) {
     const { error: updErr } = await admin
       .from("engineer_match_offers")
       .update({
-        status:           "pending",
-        guest_call_id:    intake.guest_call_id,
+        status: "pending",
+        guest_call_id: intake.guest_call_id,
         customer_user_id: intake.customer_user_id,
-        offered_at:       nowIso,
-        expires_at:       expiresIso,
-        responded_at:     null,
+        offered_at: nowIso,
+        expires_at: expiresIso,
+        responded_at: null,
       })
       .eq("id", existing.id);
-    if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+    if (updErr)
+      return NextResponse.json({ error: updErr.message }, { status: 500 });
   } else {
     const { error: insErr } = await admin.from("engineer_match_offers").insert({
-      intake_id:        intake.id,
-      guest_call_id:    intake.guest_call_id,
+      intake_id: intake.id,
+      guest_call_id: intake.guest_call_id,
       engineer_user_id: engineerId,
       customer_user_id: intake.customer_user_id,
-      status:           "pending",
-      match_score:      0,
-      offered_at:       nowIso,
-      expires_at:       expiresIso,
+      status: "pending",
+      match_score: 0,
+      offered_at: nowIso,
+      expires_at: expiresIso,
     });
-    if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
+    if (insErr)
+      return NextResponse.json({ error: insErr.message }, { status: 500 });
   }
 
   // 6. Session is actively ringing again → it no longer needs manual assign.

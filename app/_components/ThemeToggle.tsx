@@ -24,7 +24,7 @@ export function ThemeToggle({
 }) {
   const { theme, toggleTheme } = useTheme();
   const isDark = theme === "dark";
-  const label  = isDark ? "Switch to light mode" : "Switch to dark mode";
+  const label = isDark ? "Switch to light mode" : "Switch to dark mode";
 
   return (
     <button

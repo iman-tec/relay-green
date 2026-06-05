@@ -20,7 +20,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Folder, ChevronRight, Plus } from "lucide-react";
-import { Button, Card, CardBody, EmptyState, Toast, cn } from "@/app/_components/ui";
+import {
+  Button,
+  Card,
+  CardBody,
+  EmptyState,
+  Toast,
+  cn,
+} from "@/app/_components/ui";
 import { Wordmark } from "@/app/_components/Wordmark";
 import { createClient } from "@/lib/supabase/browser";
 import {
@@ -32,7 +39,13 @@ import {
 type Project = { id: string; name: string; created_at: string };
 
 const ACTIVE_SESSION_STATES = [
-  "queued", "assigned", "joining", "live", "grace", "ending", "expired_free",
+  "queued",
+  "assigned",
+  "joining",
+  "live",
+  "grace",
+  "ending",
+  "expired_free",
 ] as const;
 
 export function QuickReturnIntake({
@@ -49,10 +62,12 @@ export function QuickReturnIntake({
 }) {
   const router = useRouter();
   const [projects, setProjects] = useState<Project[] | null>(null);
-  const [picked, setPicked] = useState<string | null>(initialProfile.lastProjectId);
+  const [picked, setPicked] = useState<string | null>(
+    initialProfile.lastProjectId
+  );
   const [newProjectName, setNewProjectName] = useState("");
   const [mode, setMode] = useState<"pick" | "new">(
-    initialProfile.lastProjectId ? "pick" : "new",
+    initialProfile.lastProjectId ? "pick" : "new"
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,9 +96,8 @@ export function QuickReturnIntake({
     return projects.find((p) => p.id === picked) ?? projects[0] ?? null;
   }, [projects, picked]);
 
-  const canSubmit = mode === "pick"
-    ? Boolean(picked)
-    : newProjectName.trim().length > 0;
+  const canSubmit =
+    mode === "pick" ? Boolean(picked) : newProjectName.trim().length > 0;
 
   const submit = useCallback(async () => {
     setBusy(true);
@@ -99,7 +113,7 @@ export function QuickReturnIntake({
       if (mode === "new") {
         const { data: created, error: projErr } = await sb.rpc(
           "create_project",
-          { _name: newProjectName.trim() },
+          { _name: newProjectName.trim() }
         );
         if (projErr) throw projErr;
         const row = Array.isArray(created)
@@ -128,7 +142,7 @@ export function QuickReturnIntake({
 
       const { data: callData, error: rpcErr } = await sb.rpc(
         "get_or_create_active_customer_session",
-        { _project_id: projectId },
+        { _project_id: projectId }
       );
       if (rpcErr) {
         if ((rpcErr.message ?? "").includes("NO_ENTITLEMENT")) {
@@ -195,14 +209,7 @@ export function QuickReturnIntake({
       setError(e instanceof Error ? e.message : "Could not start matching");
       setBusy(false);
     }
-  }, [
-    picked,
-    defaultProject,
-    mode,
-    newProjectName,
-    initialProfile,
-    router,
-  ]);
+  }, [picked, defaultProject, mode, newProjectName, initialProfile, router]);
 
   return (
     <main className="flex min-h-[100dvh] flex-col items-center bg-[var(--background)] px-4 py-10">
@@ -211,16 +218,21 @@ export function QuickReturnIntake({
       <Card variant="surface" className="mt-8 w-full max-w-xl">
         <CardBody className="flex flex-col gap-5 py-8">
           <div className="flex items-center justify-center">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--primary-tint)] px-3 py-1 font-mono text-[11px] uppercase tracking-[0.18em] text-[var(--primary-hover)]">
-              <span aria-hidden className="inline-flex size-1.5 rounded-full bg-[var(--primary)]" />
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--primary-tint)] px-3 py-1 font-mono text-[11px] tracking-[0.18em] text-[var(--primary-hover)] uppercase">
+              <span
+                aria-hidden
+                className="inline-flex size-1.5 rounded-full bg-[var(--primary)]"
+              />
               Welcome back
             </span>
           </div>
 
           <div className="text-center">
-            <h1 className="font-serif text-3xl font-medium leading-tight text-[var(--text)]">
+            <h1 className="font-serif text-3xl leading-tight font-medium text-[var(--text)]">
               Picking up where you{" "}
-              <em className="not-italic text-[var(--primary)] italic">left off</em>
+              <em className="text-[var(--primary)] italic not-italic">
+                left off
+              </em>
               .
             </h1>
             <p className="mt-2 text-sm leading-relaxed text-[var(--text-muted)]">
@@ -231,7 +243,10 @@ export function QuickReturnIntake({
 
           {projects === null ? (
             <div className="flex justify-center py-8">
-              <Loader2 size={20} className="animate-spin text-[var(--text-muted)]" />
+              <Loader2
+                size={20}
+                className="animate-spin text-[var(--text-muted)]"
+              />
             </div>
           ) : projects.length === 0 ? (
             <EmptyState
@@ -241,10 +256,7 @@ export function QuickReturnIntake({
             />
           ) : (
             <div className="flex flex-col gap-4">
-              <ProjectModePicker
-                mode={mode}
-                onChange={setMode}
-              />
+              <ProjectModePicker mode={mode} onChange={setMode} />
 
               {mode === "pick" && (
                 <ul className="flex max-h-72 flex-col gap-2 overflow-y-auto">
@@ -260,7 +272,7 @@ export function QuickReturnIntake({
                             "group flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left transition-colors",
                             selected
                               ? "border-[var(--primary)] bg-[var(--primary-tint)]"
-                              : "border-[var(--border)] bg-[var(--surface)] hover:border-[var(--border-strong)]",
+                              : "border-[var(--border)] bg-[var(--surface)] hover:border-[var(--border-strong)]"
                           )}
                         >
                           <span
@@ -268,7 +280,7 @@ export function QuickReturnIntake({
                               "inline-flex size-9 items-center justify-center rounded-lg",
                               selected
                                 ? "bg-[var(--primary)] text-white"
-                                : "bg-[var(--surface-raised)] text-[var(--text-muted)]",
+                                : "bg-[var(--surface-raised)] text-[var(--text-muted)]"
                             )}
                           >
                             <Folder size={16} />
@@ -278,7 +290,8 @@ export function QuickReturnIntake({
                               {p.name}
                             </span>
                             <span className="text-xs text-[var(--text-muted)]">
-                              Started {new Date(p.created_at).toLocaleDateString()}
+                              Started{" "}
+                              {new Date(p.created_at).toLocaleDateString()}
                             </span>
                           </span>
                           <ChevronRight
@@ -287,7 +300,7 @@ export function QuickReturnIntake({
                               "transition-transform",
                               selected
                                 ? "text-[var(--primary)]"
-                                : "text-[var(--text-faint)] group-hover:text-[var(--text-muted)]",
+                                : "text-[var(--text-faint)] group-hover:text-[var(--text-muted)]"
                             )}
                           />
                         </button>
@@ -299,7 +312,7 @@ export function QuickReturnIntake({
 
               {mode === "new" && (
                 <label className="flex flex-col gap-1">
-                  <span className="text-xs font-medium uppercase tracking-wider text-[var(--text-muted)]">
+                  <span className="text-xs font-medium tracking-wider text-[var(--text-muted)] uppercase">
                     Project name
                   </span>
                   <input
@@ -307,7 +320,7 @@ export function QuickReturnIntake({
                     value={newProjectName}
                     onChange={(e) => setNewProjectName(e.target.value)}
                     placeholder="e.g. Acme CRM redesign"
-                    className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm text-[var(--text)] placeholder:text-[var(--text-faint)] outline-none transition-colors focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-soft)]"
+                    className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm text-[var(--text)] transition-colors outline-none placeholder:text-[var(--text-faint)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-soft)]"
                     autoFocus
                   />
                   <span className="text-[11px] text-[var(--text-muted)]">
@@ -361,12 +374,10 @@ function ProjectModePicker({
       role="tablist"
       className="grid grid-cols-2 gap-1 rounded-xl border border-[var(--border)] bg-[var(--surface-raised)] p-1"
     >
-      {(
-        [
-          { id: "pick" as const, label: "Existing project" },
-          { id: "new" as const, label: "New project" },
-        ]
-      ).map((opt) => (
+      {[
+        { id: "pick" as const, label: "Existing project" },
+        { id: "new" as const, label: "New project" },
+      ].map((opt) => (
         <button
           key={opt.id}
           type="button"
@@ -377,7 +388,7 @@ function ProjectModePicker({
             "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
             mode === opt.id
               ? "bg-[var(--surface)] text-[var(--text)] shadow-sm"
-              : "text-[var(--text-muted)] hover:text-[var(--text)]",
+              : "text-[var(--text-muted)] hover:text-[var(--text)]"
           )}
         >
           {opt.id === "new" && <Plus size={11} className="mr-1 inline-block" />}

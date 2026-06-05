@@ -20,31 +20,37 @@
 
 import type { ReactNode } from "react";
 import {
-  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
-  Loader2, Search, ArrowUp, ArrowDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Loader2,
+  Search,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import type { useListQuery } from "@/lib/hooks/useListQuery";
 
-const BRAND_GREEN      = "#3f5c2e";
+const BRAND_GREEN = "#3f5c2e";
 const BRAND_GREEN_SOFT = "rgba(63, 92, 46, 0.10)";
 
 export type Column<T> = {
   /** Column id. Sortable columns must match the server's sortable allowlist. */
-  key:        string;
-  header:     ReactNode;
+  key: string;
+  header: ReactNode;
   /** Whether the user can sort by this column. */
-  sortable?:  boolean;
+  sortable?: boolean;
   /** Right-align the cell (numbers / actions). */
-  align?:     "left" | "right" | "center";
+  align?: "left" | "right" | "center";
   /** Render the cell. */
-  render:     (row: T) => ReactNode;
+  render: (row: T) => ReactNode;
   /** Width hint (e.g. "260px", "20%"). */
-  width?:     string;
+  width?: string;
 };
 
 export type FilterControl = {
-  key:     string;
-  label:   string;
+  key: string;
+  label: string;
   options: ReadonlyArray<{ value: string; label: string }>;
 };
 
@@ -58,18 +64,19 @@ export function DataTable<T>({
   emptyText = "Nothing here yet.",
   lockPageSize = false,
 }: {
-  list:                ReturnType<typeof useListQuery<T>>;
-  columns:             ReadonlyArray<Column<T>>;
-  getRowKey:           (row: T) => string;
-  searchPlaceholder?:  string;
-  filters?:            ReadonlyArray<FilterControl>;
-  onRowClick?:         (row: T) => void;
-  emptyText?:          string;
+  list: ReturnType<typeof useListQuery<T>>;
+  columns: ReadonlyArray<Column<T>>;
+  getRowKey: (row: T) => string;
+  searchPlaceholder?: string;
+  filters?: ReadonlyArray<FilterControl>;
+  onRowClick?: (row: T) => void;
+  emptyText?: string;
   /** Hide the page-size selector and pin to the hook's pageSize. */
-  lockPageSize?:       boolean;
+  lockPageSize?: boolean;
 }) {
-  const showingFrom = list.total === 0 ? 0 : (list.page - 1) * list.pageSize + 1;
-  const showingTo   = Math.min(list.page * list.pageSize, list.total);
+  const showingFrom =
+    list.total === 0 ? 0 : (list.page - 1) * list.pageSize + 1;
+  const showingTo = Math.min(list.page * list.pageSize, list.total);
 
   return (
     <div className="flex flex-col gap-3">
@@ -78,14 +85,14 @@ export function DataTable<T>({
         <div className="relative">
           <Search
             size={12}
-            className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2"
+            className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2"
             style={{ color: "var(--text-muted)" }}
           />
           <input
             value={list.q}
             onChange={(e) => list.setQ(e.target.value)}
             placeholder={searchPlaceholder}
-            className="rounded-md border py-1.5 pl-7 pr-2 text-xs outline-none"
+            className="rounded-md border py-1.5 pr-2 pl-7 text-xs outline-none"
             style={{
               borderColor: "var(--border)",
               backgroundColor: "var(--background)",
@@ -99,7 +106,9 @@ export function DataTable<T>({
             <select
               key={f.key}
               value={list.filters[f.key] ?? ""}
-              onChange={(e) => list.setFilter(f.key, e.target.value || undefined)}
+              onChange={(e) =>
+                list.setFilter(f.key, e.target.value || undefined)
+              }
               className="rounded-md border px-2 py-1.5 text-xs outline-none"
               style={{
                 borderColor: "var(--border)",
@@ -109,7 +118,9 @@ export function DataTable<T>({
             >
               <option value="">{f.label}</option>
               {f.options.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
               ))}
             </select>
           ))}
@@ -120,8 +131,10 @@ export function DataTable<T>({
         <div
           className="rounded-md border px-3 py-1.5 text-[12px]"
           style={{
-            borderColor: "color-mix(in srgb, var(--accent-red) 30%, transparent)",
-            backgroundColor: "color-mix(in srgb, var(--accent-red) 8%, transparent)",
+            borderColor:
+              "color-mix(in srgb, var(--accent-red) 30%, transparent)",
+            backgroundColor:
+              "color-mix(in srgb, var(--accent-red) 8%, transparent)",
             color: "var(--accent-red)",
           }}
         >
@@ -132,14 +145,20 @@ export function DataTable<T>({
       {/* Table */}
       <div
         className="overflow-hidden rounded-xl border"
-        style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+        style={{
+          borderColor: "var(--border)",
+          backgroundColor: "var(--surface)",
+        }}
       >
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr
                 className="border-b"
-                style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+                style={{
+                  borderColor: "var(--border)",
+                  color: "var(--text-muted)",
+                }}
               >
                 {columns.map((c) => {
                   const active = list.sort?.column === c.key;
@@ -153,15 +172,20 @@ export function DataTable<T>({
                         cursor: isSortable ? "pointer" : "default",
                       }}
                       onClick={() => isSortable && list.toggleSort(c.key)}
-                      className="select-none px-5 py-2 text-[12px] font-semibold uppercase tracking-[0.08em]"
+                      className="px-5 py-2 text-[12px] font-semibold tracking-[0.08em] uppercase select-none"
                     >
                       <span className="inline-flex items-center gap-1">
                         {c.header}
-                        {isSortable && active && (
-                          list.sort!.dir === "asc"
-                            ? <ArrowUp   size={10} style={{ color: BRAND_GREEN }} />
-                            : <ArrowDown size={10} style={{ color: BRAND_GREEN }} />
-                        )}
+                        {isSortable &&
+                          active &&
+                          (list.sort!.dir === "asc" ? (
+                            <ArrowUp size={10} style={{ color: BRAND_GREEN }} />
+                          ) : (
+                            <ArrowDown
+                              size={10}
+                              style={{ color: BRAND_GREEN }}
+                            />
+                          ))}
                       </span>
                     </th>
                   );
@@ -194,10 +218,15 @@ export function DataTable<T>({
                         key={key}
                         onClick={onRowClick ? () => onRowClick(row) : undefined}
                         style={{
-                          borderTop: i === 0 ? undefined : "1px solid var(--border)",
+                          borderTop:
+                            i === 0 ? undefined : "1px solid var(--border)",
                           cursor: onRowClick ? "pointer" : undefined,
                         }}
-                        className={onRowClick ? "transition-colors hover:bg-black/5 dark:hover:bg-white/5" : ""}
+                        className={
+                          onRowClick
+                            ? "transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                            : ""
+                        }
                       >
                         {columns.map((c) => (
                           <td
@@ -213,7 +242,9 @@ export function DataTable<T>({
                   })}
                   {/* Pad to pageSize so every page is the same height —
                      keeps the footer anchored at the bottom of the card. */}
-                  {Array.from({ length: Math.max(0, list.pageSize - list.rows.length) }).map((_, i) => (
+                  {Array.from({
+                    length: Math.max(0, list.pageSize - list.rows.length),
+                  }).map((_, i) => (
                     <tr
                       key={`filler-${i}`}
                       aria-hidden
@@ -235,9 +266,16 @@ export function DataTable<T>({
           className="flex flex-wrap items-center justify-between gap-3 border-t px-5 py-2"
           style={{ borderColor: "var(--border)" }}
         >
-          <div className="flex items-center gap-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
+          <div
+            className="flex items-center gap-2 text-[11px]"
+            style={{ color: "var(--text-muted)" }}
+          >
             {list.loading && (
-              <Loader2 size={11} className="animate-spin" style={{ color: BRAND_GREEN }} />
+              <Loader2
+                size={11}
+                className="animate-spin"
+                style={{ color: BRAND_GREEN }}
+              />
             )}
             <span>
               {list.total > 0
@@ -251,19 +289,24 @@ export function DataTable<T>({
                   <span>Rows per page</span>
                   <select
                     value={list.pageSize}
-                    onChange={(e) => list.setPageSize(parseInt(e.target.value, 10) || 25)}
-                    className="cursor-pointer rounded-md border px-2 py-0.5 text-[11px] font-medium outline-none transition-colors hover:border-[color:var(--text-muted)]"
+                    onChange={(e) =>
+                      list.setPageSize(parseInt(e.target.value, 10) || 25)
+                    }
+                    className="cursor-pointer rounded-md border px-2 py-0.5 text-[11px] font-medium transition-colors outline-none hover:border-[color:var(--text-muted)]"
                     style={{
-                      borderColor:     "var(--border)",
+                      borderColor: "var(--border)",
                       backgroundColor: "var(--background)",
-                      color:           "var(--text)",
+                      color: "var(--text)",
                     }}
                   >
                     {[10, 25, 50, 100].map((n) => (
                       <option
                         key={n}
                         value={n}
-                        style={{ backgroundColor: "var(--surface)", color: "var(--text)" }}
+                        style={{
+                          backgroundColor: "var(--surface)",
+                          color: "var(--text)",
+                        }}
                       >
                         {n}
                       </option>
@@ -289,7 +332,10 @@ export function DataTable<T>({
             >
               <ChevronLeft size={12} />
             </PagerButton>
-            <span className="px-2 text-[11px] tabular-nums" style={{ color: "var(--text-muted)" }}>
+            <span
+              className="px-2 text-[11px] tabular-nums"
+              style={{ color: "var(--text-muted)" }}
+            >
               {list.page} / {list.pageCount}
             </span>
             <PagerButton
@@ -314,7 +360,10 @@ export function DataTable<T>({
 }
 
 function PagerButton({
-  onClick, disabled, aria, children,
+  onClick,
+  disabled,
+  aria,
+  children,
 }: {
   onClick: () => void;
   disabled?: boolean;
@@ -341,7 +390,7 @@ function SkeletonRow({ cols }: { cols: number }) {
       {Array.from({ length: cols }).map((_, j) => (
         <td key={j} className="h-11 px-5 py-2.5">
           <span
-            className="block h-3 w-full rounded animate-pulse"
+            className="block h-3 w-full animate-pulse rounded"
             style={{ backgroundColor: BRAND_GREEN_SOFT }}
           />
         </td>

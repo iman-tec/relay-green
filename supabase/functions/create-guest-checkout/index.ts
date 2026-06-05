@@ -9,7 +9,8 @@ const corsHeaders = {
 };
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method === "OPTIONS")
+    return new Response("ok", { headers: corsHeaders });
 
   try {
     const body = await req.json().catch(() => ({}));
@@ -22,10 +23,15 @@ Deno.serve(async (req) => {
     const env: StripeEnv = body.env === "live" ? "live" : "sandbox";
 
     if (!guestCallId || !email || !returnUrl) {
-      return new Response(JSON.stringify({ error: "Missing guest_call_id, email, or return_url" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({
+          error: "Missing guest_call_id, email, or return_url",
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
     if (!/^\S+@\S+\.\S+$/.test(email)) {
       return new Response(JSON.stringify({ error: "Invalid email" }), {
@@ -76,8 +82,14 @@ Deno.serve(async (req) => {
     });
 
     return new Response(
-      JSON.stringify({ client_secret: session.client_secret, session_id: session.id }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      JSON.stringify({
+        client_secret: session.client_secret,
+        session_id: session.id,
+      }),
+      {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";

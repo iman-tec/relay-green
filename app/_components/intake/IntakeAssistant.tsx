@@ -68,7 +68,11 @@ export function IntakeAssistant({
   const supabaseRef = useRef(createClient());
 
   const persist = useCallback(
-    (role: "assistant" | "user", body: string, attachment?: IntakeMessage["attachment"]) => {
+    (
+      role: "assistant" | "user",
+      body: string,
+      attachment?: IntakeMessage["attachment"]
+    ) => {
       if (!intakeId) return;
       // Strip the blob: previewUrl — non-portable across sessions. Keep the
       // metadata so the engineer at least sees the filename + mime type.
@@ -86,7 +90,7 @@ export function IntakeAssistant({
           if (error) console.warn("[intake] persist failed:", error.message);
         });
     },
-    [intakeId],
+    [intakeId]
   );
   // Bootstrap synchronously via lazy useState initializers so the first
   // paint has a greeting + first prompt on screen.
@@ -120,7 +124,12 @@ export function IntakeAssistant({
           ? `Picking up from "${resumeCtx.aiSummaryTitle ?? resumeCtx.projectName ?? "your last session"}" — what's changed?`
           : `Welcome back — continuing on "${resumeCtx.aiSummaryTitle ?? resumeCtx.projectName ?? "your last session"}".`);
       const seeded: IntakeMessage[] = [
-        { id: nextId(), role: "assistant", body: opener, createdAt: Date.now() },
+        {
+          id: nextId(),
+          role: "assistant",
+          body: opener,
+          createdAt: Date.now(),
+        },
         {
           id: nextId(),
           role: "assistant",
@@ -135,8 +144,7 @@ export function IntakeAssistant({
     // Default: first-time greeting. Async effect below upgrades to
     // returning ONLY if Supabase confirms prior history for this user.
     const opener =
-      greeting ??
-      "Hi! Describe your issue — what do you need help with?";
+      greeting ?? "Hi! Describe your issue — what do you need help with?";
     const first = askNext(emptyContext());
     const seeded: IntakeMessage[] = [
       { id: nextId(), role: "assistant", body: opener, createdAt: Date.now() },
@@ -160,8 +168,12 @@ export function IntakeAssistant({
   const [ctx, setCtx] = useState<IntakeContext>(emptyContext);
   const [messages, setMessages] = useState<IntakeMessage[]>(bootstrap.seeded);
   const [draft, setDraft] = useState("");
-  const [staged, setStaged] = useState<IntakeMessage["attachment"] | null>(null);
-  const [activePrompt, setActivePrompt] = useState<IntakePrompt | null>(bootstrap.first);
+  const [staged, setStaged] = useState<IntakeMessage["attachment"] | null>(
+    null
+  );
+  const [activePrompt, setActivePrompt] = useState<IntakePrompt | null>(
+    bootstrap.first
+  );
   // intakeDone flips true once the assistant signals it has enough
   // context (all four fields captured), either from the AI turn endpoint
   // or — if the API is unavailable — from the local fallback script.
@@ -238,10 +250,22 @@ export function IntakeAssistant({
         quickReplies:
           known.length === 0
             ? undefined
-            : ["No, same setup", "Cursor", "Claude", "ChatGPT", "Supabase", "Next.js"],
+            : [
+                "No, same setup",
+                "Cursor",
+                "Claude",
+                "ChatGPT",
+                "Supabase",
+                "Next.js",
+              ],
       };
       const seeded: IntakeMessage[] = [
-        { id: nextId(), role: "assistant", body: welcomeBody, createdAt: Date.now() },
+        {
+          id: nextId(),
+          role: "assistant",
+          body: welcomeBody,
+          createdAt: Date.now(),
+        },
         {
           id: nextId(),
           role: "assistant",
@@ -304,23 +328,25 @@ export function IntakeAssistant({
             messages: history,
             context: {
               building: ctx.building,
-              problem:  ctx.problem,
-              stack:    ctx.stack,
-              aiTools:  ctx.aiTools,
+              problem: ctx.problem,
+              stack: ctx.stack,
+              aiTools: ctx.aiTools,
             },
             profile: {
-              isReturning:  Boolean(profile.hasFullIntake),
-              knownStack:   flattenStack(profile.stack),
+              isReturning: Boolean(profile.hasFullIntake),
+              knownStack: flattenStack(profile.stack),
             },
             resumeContext: null,
           }),
         });
         if (!res.ok) throw new Error(`turn http ${res.status}`);
         const turn = (await res.json()) as {
-          body:            string;
-          quickReplies:    string[];
-          extractedFields: Partial<Record<"building" | "problem" | "stack" | "aiTools", string>>;
-          intakeDone:      boolean;
+          body: string;
+          quickReplies: string[];
+          extractedFields: Partial<
+            Record<"building" | "problem" | "stack" | "aiTools", string>
+          >;
+          intakeDone: boolean;
         };
         if (!turn.body) throw new Error("empty body");
 
@@ -334,10 +360,15 @@ export function IntakeAssistant({
             ? [...ctx.attachments, userMsg.attachment]
             : ctx.attachments,
         };
-        if (bootstrap.isReturning && (turn.extractedFields.aiTools || turn.extractedFields.stack)) {
+        if (
+          bootstrap.isReturning &&
+          (turn.extractedFields.aiTools || turn.extractedFields.stack)
+        ) {
           patchProfile({
             stack: {
-              aiTools: turn.extractedFields.aiTools ? [turn.extractedFields.aiTools] : undefined,
+              aiTools: turn.extractedFields.aiTools
+                ? [turn.extractedFields.aiTools]
+                : undefined,
             },
           });
         }
@@ -351,10 +382,10 @@ export function IntakeAssistant({
         setMessages((prev) => [...prev, assistantMsg]);
         setCtx(nextCtx);
         setActivePrompt({
-          id:               turn.intakeDone ? "wrap_up" : "wrap_up",
-          body:             turn.body,
-          fieldFromAnswer:  null,
-          quickReplies:     turn.quickReplies,
+          id: turn.intakeDone ? "wrap_up" : "wrap_up",
+          body: turn.body,
+          fieldFromAnswer: null,
+          quickReplies: turn.quickReplies,
         });
         if (turn.intakeDone) setIntakeDone(true);
         persist("assistant", assistantMsg.body);
@@ -363,9 +394,17 @@ export function IntakeAssistant({
         //    so the customer doesn't notice the AI is down.
         const fallbackPrompt = activePrompt
           ? captureAnswer(ctx, activePrompt, userMsg.body, userMsg.attachment)
-          : { ...ctx, attachments: userMsg.attachment ? [...ctx.attachments, userMsg.attachment] : ctx.attachments };
+          : {
+              ...ctx,
+              attachments: userMsg.attachment
+                ? [...ctx.attachments, userMsg.attachment]
+                : ctx.attachments,
+            };
         const wasWrapUp = activePrompt?.id === "wrap_up";
-        const followUp  = wasWrapUp || intakeDone || bootstrap.isReturning ? null : askNext(fallbackPrompt);
+        const followUp =
+          wasWrapUp || intakeDone || bootstrap.isReturning
+            ? null
+            : askNext(fallbackPrompt);
         const reply: IntakeMessage = {
           id: nextId(),
           role: "assistant",
@@ -381,7 +420,15 @@ export function IntakeAssistant({
         setAiPending(false);
       }
     },
-    [messages, ctx, activePrompt, intakeDone, bootstrap.isReturning, persist, pickAck],
+    [
+      messages,
+      ctx,
+      activePrompt,
+      intakeDone,
+      bootstrap.isReturning,
+      persist,
+      pickAck,
+    ]
   );
 
   // Notify parent whenever the running context changes.
@@ -448,7 +495,11 @@ export function IntakeAssistant({
 
   const handleFile = useCallback((file: File) => {
     const url = URL.createObjectURL(file);
-    setStaged({ name: file.name, mime: file.type || "application/octet-stream", previewUrl: url });
+    setStaged({
+      name: file.name,
+      mime: file.type || "application/octet-stream",
+      previewUrl: url,
+    });
     // TODO(api): upload to storage. Today the preview URL is a local
     // blob:// reference; persistence is the backend's job.
   }, []);
@@ -465,7 +516,7 @@ export function IntakeAssistant({
       e.preventDefault();
       handleFile(img);
     },
-    [handleFile],
+    [handleFile]
   );
 
   // Drag-and-drop anywhere on the composer stages the first dropped file.
@@ -475,7 +526,7 @@ export function IntakeAssistant({
       const f = Array.from(e.dataTransfer.files ?? [])[0];
       if (f) handleFile(f);
     },
-    [handleFile],
+    [handleFile]
   );
 
   const handleSubmit = useCallback(
@@ -485,15 +536,15 @@ export function IntakeAssistant({
       const body = draft.trim();
       if (!body && !staged) return;
       const userMsg: IntakeMessage = {
-        id:          nextId(),
-        role:        "user",
-        body:        body || (staged ? `📎 ${staged.name}` : ""),
-        attachment:  staged ?? undefined,
-        createdAt:   Date.now(),
+        id: nextId(),
+        role: "user",
+        body: body || (staged ? `📎 ${staged.name}` : ""),
+        attachment: staged ?? undefined,
+        createdAt: Date.now(),
       };
       void runTurn(userMsg);
     },
-    [draft, staged, aiPending, runTurn],
+    [draft, staged, aiPending, runTurn]
   );
 
   const submitText = useCallback(
@@ -502,21 +553,21 @@ export function IntakeAssistant({
       const cleaned = text.trim();
       if (!cleaned) return;
       const userMsg: IntakeMessage = {
-        id:        nextId(),
-        role:      "user",
-        body:      cleaned,
+        id: nextId(),
+        role: "user",
+        body: cleaned,
         createdAt: Date.now(),
       };
       void runTurn(userMsg);
     },
-    [aiPending, runTurn],
+    [aiPending, runTurn]
   );
 
   return (
     <section
       className={cn(
-        "flex w-full flex-col rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-sm overflow-hidden",
-        compact ? "max-h-[420px]" : "h-full min-h-0 flex-1",
+        "flex w-full flex-col overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-sm",
+        compact ? "max-h-[420px]" : "h-full min-h-0 flex-1"
       )}
       aria-label="Intake assistant"
     >
@@ -536,90 +587,97 @@ export function IntakeAssistant({
           </span>
         </div>
         <span
-          className="ml-auto inline-flex items-center gap-1 rounded-full bg-[var(--primary-tint)] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-[var(--primary-hover)]"
+          className="ml-auto inline-flex items-center gap-1 rounded-full bg-[var(--primary-tint)] px-2 py-0.5 text-[10px] font-medium tracking-wider text-[var(--primary-hover)] uppercase"
           aria-label="AI assistant"
         >
-          <span aria-hidden className="inline-flex size-1.5 rounded-full bg-[var(--primary)]" />
+          <span
+            aria-hidden
+            className="inline-flex size-1.5 rounded-full bg-[var(--primary)]"
+          />
           AI
         </span>
       </header>
 
-      <div className="relative flex-1 min-h-0">
-      <div
-        ref={threadRef}
-        onScroll={onThreadScroll}
-        className="absolute inset-0 overflow-y-auto px-4 py-5 space-y-4 bg-[var(--background)]"
-        role="log"
-        aria-live="polite"
-      >
-        {messages.map((m, i) => {
-          const isLast = i === messages.length - 1;
-          return (
-            <Bubble
-              key={m.id}
-              message={m}
-              showAvatar={!isUserOrSameRoleAsPrev(messages, i)}
-              onImageLoaded={() => {
-                // Recompute pinned status NOW and only scroll if we were
-                // already near the bottom. Avoids yanking the user.
-                const el = threadRef.current;
-                if (el && isNearBottom(el)) scrollToBottom(false);
-              }}
-            >
-              {/* Quick-reply chips render under the LATEST assistant prompt
+      <div className="relative min-h-0 flex-1">
+        <div
+          ref={threadRef}
+          onScroll={onThreadScroll}
+          className="absolute inset-0 space-y-4 overflow-y-auto bg-[var(--background)] px-4 py-5"
+          role="log"
+          aria-live="polite"
+        >
+          {messages.map((m, i) => {
+            const isLast = i === messages.length - 1;
+            return (
+              <Bubble
+                key={m.id}
+                message={m}
+                showAvatar={!isUserOrSameRoleAsPrev(messages, i)}
+                onImageLoaded={() => {
+                  // Recompute pinned status NOW and only scroll if we were
+                  // already near the bottom. Avoids yanking the user.
+                  const el = threadRef.current;
+                  if (el && isNearBottom(el)) scrollToBottom(false);
+                }}
+              >
+                {/* Quick-reply chips render under the LATEST assistant prompt
                   only, and only when the script supplied them. Single-tap
                   selection sends the chip text as the user's answer. */}
-              {isLast &&
-                m.role === "assistant" &&
-                activePrompt?.quickReplies &&
-                activePrompt.quickReplies.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {activePrompt.quickReplies.map((chip) => (
-                      <button
-                        key={chip}
-                        type="button"
-                        onClick={() => submitText(chip)}
-                        disabled={aiPending}
-                        className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-xs text-[var(--text)] transition-colors hover:border-[var(--primary)] hover:bg-[var(--primary-tint)] hover:text-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-[var(--border)] disabled:hover:bg-[var(--surface)] disabled:hover:text-[var(--text)]"
-                      >
-                        {chip}
-                      </button>
-                    ))}
-                  </div>
-                )}
-            </Bubble>
-          );
-        })}
+                {isLast &&
+                  m.role === "assistant" &&
+                  activePrompt?.quickReplies &&
+                  activePrompt.quickReplies.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {activePrompt.quickReplies.map((chip) => (
+                        <button
+                          key={chip}
+                          type="button"
+                          onClick={() => submitText(chip)}
+                          disabled={aiPending}
+                          className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-xs text-[var(--text)] transition-colors hover:border-[var(--primary)] hover:bg-[var(--primary-tint)] hover:text-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-[var(--border)] disabled:hover:bg-[var(--surface)] disabled:hover:text-[var(--text)]"
+                        >
+                          {chip}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+              </Bubble>
+            );
+          })}
 
-        {/* Typing indicator — shown while we wait on /api/intake/turn so
+          {/* Typing indicator — shown while we wait on /api/intake/turn so
             the chat doesn't sit silent for ~1s between message and reply. */}
-        {aiPending && (
-          <div className="flex items-end gap-2 px-3 pb-1" aria-live="polite" aria-label="Assistant is typing">
-            <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-[var(--primary-tint)] text-[var(--primary-hover)]">
-              <Sparkles size={11} />
-            </span>
-            <span className="inline-flex items-center gap-1 rounded-2xl bg-[var(--surface-raised)] px-3 py-2">
-              <span className="inline-block size-1.5 rounded-full bg-[var(--text-faint)] [animation:relay-typing_1.2s_ease-in-out_infinite]" />
-              <span className="inline-block size-1.5 rounded-full bg-[var(--text-faint)] [animation:relay-typing_1.2s_ease-in-out_infinite_0.2s]" />
-              <span className="inline-block size-1.5 rounded-full bg-[var(--text-faint)] [animation:relay-typing_1.2s_ease-in-out_infinite_0.4s]" />
-            </span>
-          </div>
-        )}
-      </div>
+          {aiPending && (
+            <div
+              className="flex items-end gap-2 px-3 pb-1"
+              aria-live="polite"
+              aria-label="Assistant is typing"
+            >
+              <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-[var(--primary-tint)] text-[var(--primary-hover)]">
+                <Sparkles size={11} />
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-2xl bg-[var(--surface-raised)] px-3 py-2">
+                <span className="inline-block size-1.5 [animation:relay-typing_1.2s_ease-in-out_infinite] rounded-full bg-[var(--text-faint)]" />
+                <span className="inline-block size-1.5 [animation:relay-typing_1.2s_ease-in-out_infinite_0.2s] rounded-full bg-[var(--text-faint)]" />
+                <span className="inline-block size-1.5 [animation:relay-typing_1.2s_ease-in-out_infinite_0.4s] rounded-full bg-[var(--text-faint)]" />
+              </span>
+            </div>
+          )}
+        </div>
 
-      {/* "↓ New messages" jump-to-latest pill — only when the user has
+        {/* "↓ New messages" jump-to-latest pill — only when the user has
           scrolled up AND new content has landed since. */}
-      {!pinnedToBottom && hasNewBelow && (
-        <button
-          type="button"
-          onClick={() => scrollToBottom(true)}
-          aria-label="Jump to latest messages"
-          className="absolute bottom-3 left-1/2 -translate-x-1/2 inline-flex items-center gap-1.5 rounded-full bg-[var(--primary)] px-3 py-1.5 text-xs font-medium text-white shadow-lg transition-transform hover:scale-[1.04]"
-        >
-          <span aria-hidden>↓</span>
-          New messages
-        </button>
-      )}
+        {!pinnedToBottom && hasNewBelow && (
+          <button
+            type="button"
+            onClick={() => scrollToBottom(true)}
+            aria-label="Jump to latest messages"
+            className="absolute bottom-3 left-1/2 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-[var(--primary)] px-3 py-1.5 text-xs font-medium text-white shadow-lg transition-transform hover:scale-[1.04]"
+          >
+            <span aria-hidden>↓</span>
+            New messages
+          </button>
+        )}
       </div>
 
       <form
@@ -629,7 +687,7 @@ export function IntakeAssistant({
         {staged && (
           <div className="mb-2 flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--background)] p-2 text-xs text-[var(--text-muted)]">
             <Paperclip size={12} />
-            <span className="truncate flex-1">{staged.name}</span>
+            <span className="flex-1 truncate">{staged.name}</span>
             <button
               type="button"
               onClick={() => setStaged(null)}
@@ -704,7 +762,7 @@ export function IntakeAssistant({
               rows={1}
               disabled={aiPending}
               placeholder={aiPending ? "Thinking…" : placeholder}
-              className="flex-1 resize-none bg-transparent px-2 py-1 text-sm leading-relaxed text-[var(--text)] placeholder:text-[var(--text-faint)] outline-none disabled:cursor-not-allowed"
+              className="flex-1 resize-none bg-transparent px-2 py-1 text-sm leading-relaxed text-[var(--text)] outline-none placeholder:text-[var(--text-faint)] disabled:cursor-not-allowed"
             />
           </div>
 
@@ -760,16 +818,23 @@ function Bubble({
           )}
         </div>
       )}
-      <div className={cn("flex flex-col gap-1", isUser ? "items-end" : "items-start")}>
+      <div
+        className={cn(
+          "flex flex-col gap-1",
+          isUser ? "items-end" : "items-start"
+        )}
+      >
         <div
           className={cn(
             "max-w-[min(640px,72ch)] rounded-2xl px-3.5 py-2 text-sm leading-relaxed shadow-sm",
             isUser
-              ? "bg-[var(--primary-tint)] text-[var(--text)] rounded-br-md"
-              : "bg-[var(--surface)] text-[var(--text)] border border-[var(--border)] rounded-bl-md",
+              ? "rounded-br-md bg-[var(--primary-tint)] text-[var(--text)]"
+              : "rounded-bl-md border border-[var(--border)] bg-[var(--surface)] text-[var(--text)]"
           )}
         >
-          {message.body && <p className="whitespace-pre-wrap break-words">{message.body}</p>}
+          {message.body && (
+            <p className="break-words whitespace-pre-wrap">{message.body}</p>
+          )}
           {hasImage && message.attachment && (
             <button
               type="button"
@@ -862,13 +927,19 @@ function pickResumePrompt(rc: ResumeContext): {
   body: string;
   quickReplies: string[];
 } {
-  const haystack = `${rc.aiSummaryTitle ?? ""} ${rc.aiSummary ?? ""}`.toLowerCase();
+  const haystack =
+    `${rc.aiSummaryTitle ?? ""} ${rc.aiSummary ?? ""}`.toLowerCase();
 
   // Deployment / build / CI signals → re-ring around shipping.
   if (/(deploy|build|ci\/cd|netlify|vercel|render|production)/.test(haystack)) {
     return {
       body: "Do you need more help getting this to production?",
-      quickReplies: ["Yes, deployment", "Build is failing", "New error", "No, something else"],
+      quickReplies: [
+        "Yes, deployment",
+        "Build is failing",
+        "New error",
+        "No, something else",
+      ],
     };
   }
 
@@ -876,7 +947,12 @@ function pickResumePrompt(rc: ResumeContext): {
   if (/(auth|login|permission|rls|jwt|session token)/.test(haystack)) {
     return {
       body: "Still on the auth flow? What's blocked now?",
-      quickReplies: ["New error", "Permissions issue", "Login flow", "Something else"],
+      quickReplies: [
+        "New error",
+        "Permissions issue",
+        "Login flow",
+        "Something else",
+      ],
     };
   }
 
@@ -884,7 +960,12 @@ function pickResumePrompt(rc: ResumeContext): {
   if (/(error|bug|crash|fail|stack trace|exception)/.test(haystack)) {
     return {
       body: "Is there a new error? Paste it or drop a screenshot.",
-      quickReplies: ["Same error", "New error", "Different topic", "I'll paste it"],
+      quickReplies: [
+        "Same error",
+        "New error",
+        "Different topic",
+        "I'll paste it",
+      ],
     };
   }
 

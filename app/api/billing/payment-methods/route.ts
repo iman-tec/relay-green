@@ -43,7 +43,7 @@ type StripeCustomer = {
 async function stripeRequest<T>(
   path: string,
   method: "GET" | "POST" | "DELETE",
-  body?: Record<string, string | number | undefined>,
+  body?: Record<string, string | number | undefined>
 ): Promise<T> {
   const url = `https://api.stripe.com/v1${path}`;
   const init: RequestInit = {
@@ -59,12 +59,15 @@ async function stripeRequest<T>(
       if (v !== undefined && v !== null) form.set(k, String(v));
     }
     init.body = form.toString();
-    (init.headers as Record<string, string>)["Content-Type"] = "application/x-www-form-urlencoded";
+    (init.headers as Record<string, string>)["Content-Type"] =
+      "application/x-www-form-urlencoded";
   }
   const res = await fetch(url, init);
   const json = (await res.json()) as T & { error?: { message?: string } };
   if (!res.ok) {
-    throw new Error(json?.error?.message ?? `Stripe ${method} ${path} failed (${res.status})`);
+    throw new Error(
+      json?.error?.message ?? `Stripe ${method} ${path} failed (${res.status})`
+    );
   }
   return json;
 }
@@ -72,14 +75,23 @@ async function stripeRequest<T>(
 // Resolve the authenticated customer's Stripe Customer id. Returns null
 // if the customer has never added a payment method (no Stripe Customer
 // has been created for them yet — that's the no-op path for the GET).
-async function getStripeCustomerId(): Promise<{ stripeCustomerId: string | null; error?: { status: number; message: string } }> {
+async function getStripeCustomerId(): Promise<{
+  stripeCustomerId: string | null;
+  error?: { status: number; message: string };
+}> {
   if (!STRIPE_KEY) {
-    return { stripeCustomerId: null, error: { status: 500, message: "Stripe is not configured." } };
+    return {
+      stripeCustomerId: null,
+      error: { status: 500, message: "Stripe is not configured." },
+    };
   }
   const sb = await createClient();
   const { data: u, error: uErr } = await sb.auth.getUser();
   if (uErr || !u.user) {
-    return { stripeCustomerId: null, error: { status: 401, message: "Not authenticated." } };
+    return {
+      stripeCustomerId: null,
+      error: { status: 401, message: "Not authenticated." },
+    };
   }
   const { data: row } = await sb
     .from("customer_entitlements")
@@ -88,14 +100,19 @@ async function getStripeCustomerId(): Promise<{ stripeCustomerId: string | null;
     .maybeSingle();
   return {
     stripeCustomerId:
-      (row as { stripe_customer_id?: string | null } | null)?.stripe_customer_id ?? null,
+      (row as { stripe_customer_id?: string | null } | null)
+        ?.stripe_customer_id ?? null,
   };
 }
 
 // ── GET ───────────────────────────────────────────────────────────────
 export async function GET() {
   const { stripeCustomerId, error } = await getStripeCustomerId();
-  if (error) return NextResponse.json({ error: error.message }, { status: error.status });
+  if (error)
+    return NextResponse.json(
+      { error: error.message },
+      { status: error.status }
+    );
   if (!stripeCustomerId) {
     // Customer hasn't added a card yet — empty list is the right shape,
     // not a 404. The client UI distinguishes "no cards yet" from "you
@@ -111,24 +128,27 @@ export async function GET() {
       stripeRequest<StripeCustomer>(`/customers/${stripeCustomerId}`, "GET"),
       stripeRequest<{ data: StripePaymentMethod[] }>(
         `/customers/${stripeCustomerId}/payment_methods?type=card&limit=50`,
-        "GET",
+        "GET"
       ),
     ]);
     const defaultId = customer.invoice_settings?.default_payment_method ?? null;
 
     const paymentMethods = (list.data ?? []).map((pm) => ({
-      id:        pm.id,
-      brand:     pm.card?.brand ?? "card",
-      last4:     pm.card?.last4 ?? "••••",
-      expMonth:  pm.card?.exp_month ?? null,
-      expYear:   pm.card?.exp_year ?? null,
+      id: pm.id,
+      brand: pm.card?.brand ?? "card",
+      last4: pm.card?.last4 ?? "••••",
+      expMonth: pm.card?.exp_month ?? null,
+      expYear: pm.card?.exp_year ?? null,
       isDefault: pm.id === defaultId,
     }));
     return NextResponse.json({ paymentMethods });
   } catch (e) {
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Couldn't list payment methods." },
-      { status: 502 },
+      {
+        error:
+          e instanceof Error ? e.message : "Couldn't list payment methods.",
+      },
+      { status: 502 }
     );
   }
 }
@@ -139,7 +159,11 @@ export async function GET() {
 // through a new SetupIntent.
 export async function DELETE(req: Request) {
   const { stripeCustomerId, error } = await getStripeCustomerId();
-  if (error) return NextResponse.json({ error: error.message }, { status: error.status });
+  if (error)
+    return NextResponse.json(
+      { error: error.message },
+      { status: error.status }
+    );
   if (!stripeCustomerId) {
     return NextResponse.json({ error: "No Stripe customer." }, { status: 404 });
   }
@@ -147,7 +171,10 @@ export async function DELETE(req: Request) {
   const url = new URL(req.url);
   const id = url.searchParams.get("id");
   if (!id || !id.startsWith("pm_")) {
-    return NextResponse.json({ error: "Missing or invalid payment method id." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Missing or invalid payment method id." },
+      { status: 400 }
+    );
   }
 
   // Security check: make sure the PM actually belongs to this customer
@@ -157,17 +184,26 @@ export async function DELETE(req: Request) {
   try {
     const pm = await stripeRequest<{ customer: string | null }>(
       `/payment_methods/${id}`,
-      "GET",
+      "GET"
     );
     if (pm.customer !== stripeCustomerId) {
-      return NextResponse.json({ error: "Not your payment method." }, { status: 403 });
+      return NextResponse.json(
+        { error: "Not your payment method." },
+        { status: 403 }
+      );
     }
-    await stripeRequest<{ id: string }>(`/payment_methods/${id}/detach`, "POST");
+    await stripeRequest<{ id: string }>(
+      `/payment_methods/${id}/detach`,
+      "POST"
+    );
     return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Couldn't remove payment method." },
-      { status: 502 },
+      {
+        error:
+          e instanceof Error ? e.message : "Couldn't remove payment method.",
+      },
+      { status: 502 }
     );
   }
 }

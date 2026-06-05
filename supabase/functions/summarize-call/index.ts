@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
     // Idempotency: if a Call-summary capsule already exists for this call,
@@ -98,12 +98,14 @@ Deno.serve(async (req) => {
       text: string;
       window_end: string;
     }>;
-    const chat = ((msgsRes.data ?? []) as Array<{
-      sender_kind: string;
-      sender_name: string | null;
-      body: string;
-      created_at: string;
-    }>)
+    const chat = (
+      (msgsRes.data ?? []) as Array<{
+        sender_kind: string;
+        sender_name: string | null;
+        body: string;
+        created_at: string;
+      }>
+    )
       .filter((m) => typeof m.body === "string" && m.body.trim().length > 0)
       .filter((m) => {
         if (startMs == null) return true; // no window → take all human chat
@@ -126,7 +128,10 @@ Deno.serve(async (req) => {
       });
     }
     lines.sort((a, b) => a.ts - b.ts);
-    const transcript = lines.map((l) => l.text).join("\n").trim();
+    const transcript = lines
+      .map((l) => l.text)
+      .join("\n")
+      .trim();
 
     const totalChars =
       caps.reduce((n, c) => n + (c.text?.trim().length ?? 0), 0) +
@@ -157,7 +162,7 @@ Deno.serve(async (req) => {
               "You summarize a single short engineer↔builder support call. " +
               "The transcript interleaves what was spoken (`Speaker (voice): text`) and the chat exchanged while the call was live (`Name: text`) — both are part of the same call. " +
               'Respond with strict JSON only: {"title": string, "overview": string, "next_steps": string[]}. ' +
-              "`title`: 3-5 words, NO period, name the issue discussed (e.g. \"Data migration issue\"). " +
+              '`title`: 3-5 words, NO period, name the issue discussed (e.g. "Data migration issue"). ' +
               "`overview`: 2-3 sentence recap of what was covered on the call. " +
               "`next_steps`: up to 5 short imperative items agreed on the call (empty array if none). No prose outside the JSON.",
           },
@@ -208,7 +213,8 @@ Deno.serve(async (req) => {
       sender_name: "Relay",
       body: lines.join("\n"),
     });
-    if (insErr) return json({ error: "insert_failed", detail: insErr.message }, 500);
+    if (insErr)
+      return json({ error: "insert_failed", detail: insErr.message }, 500);
 
     // Keep the RAG index current (fire-and-forget) — re-embed this session +
     // project. No-op unless APP_URL is set (deployed app); local dev uses the
@@ -219,11 +225,16 @@ Deno.serve(async (req) => {
       if (appUrl && indexSecret) {
         void fetch(`${appUrl}/api/staff/index-session`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", "x-index-secret": indexSecret },
+          headers: {
+            "Content-Type": "application/json",
+            "x-index-secret": indexSecret,
+          },
           body: JSON.stringify({ session_id: id }),
         });
       }
-    } catch { /* best-effort */ }
+    } catch {
+      /* best-effort */
+    }
 
     return json({ ok: true, title: aiTitle });
   } catch (e) {

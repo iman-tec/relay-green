@@ -15,20 +15,29 @@ import { MembersTab } from "./MembersTab";
 export type OverviewView = "dashboard" | "departments" | "members";
 
 const SEGMENTS: readonly Segment<OverviewView>[] = [
-  { key: "dashboard",   label: "Dashboard" },
+  { key: "dashboard", label: "Dashboard" },
   { key: "departments", label: "Departments" },
-  { key: "members",     label: "Members" },
+  { key: "members", label: "Members" },
 ];
 
-export function OverviewTab({ initialView = "dashboard" }: { initialView?: OverviewView }) {
+export function OverviewTab({
+  initialView = "dashboard",
+}: {
+  initialView?: OverviewView;
+}) {
   const [view, setView] = useState<OverviewView>(initialView);
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <Segmented ariaLabel="Overview sections" value={view} onChange={setView} options={SEGMENTS} />
+      <Segmented
+        ariaLabel="Overview sections"
+        value={view}
+        onChange={setView}
+        options={SEGMENTS}
+      />
       <div className="min-h-0 flex-1 overflow-hidden">
-        {view === "dashboard"   && <DashboardTab />}
+        {view === "dashboard" && <DashboardTab />}
         {view === "departments" && <DepartmentsTab />}
-        {view === "members"     && <MembersTab />}
+        {view === "members" && <MembersTab />}
       </div>
     </div>
   );

@@ -18,12 +18,18 @@
 import { type NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
-async function forward(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
+async function forward(
+  req: NextRequest,
+  ctx: { params: Promise<{ path: string[] }> }
+) {
   const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
   if (!base) {
-    return NextResponse.json({ error: "supabase_url_missing" }, { status: 500 });
+    return NextResponse.json(
+      { error: "supabase_url_missing" },
+      { status: 500 }
+    );
   }
 
   const { path } = await ctx.params;
@@ -58,9 +64,9 @@ async function forward(req: NextRequest, ctx: { params: Promise<{ path: string[]
 
   const hasBody = !["GET", "HEAD"].includes(req.method);
   const upstream = await fetch(target.toString(), {
-    method:  req.method,
+    method: req.method,
     headers,
-    body:    hasBody ? await req.arrayBuffer() : undefined,
+    body: hasBody ? await req.arrayBuffer() : undefined,
     redirect: "manual",
     // @ts-expect-error — Node fetch accepts this even though it's not in lib.dom
     duplex: hasBody ? "half" : undefined,
@@ -75,16 +81,16 @@ async function forward(req: NextRequest, ctx: { params: Promise<{ path: string[]
   respHeaders.delete("transfer-encoding");
 
   return new NextResponse(upstream.body, {
-    status:     upstream.status,
+    status: upstream.status,
     statusText: upstream.statusText,
-    headers:    respHeaders,
+    headers: respHeaders,
   });
 }
 
-export const GET     = forward;
-export const POST    = forward;
-export const PUT     = forward;
-export const PATCH   = forward;
-export const DELETE  = forward;
+export const GET = forward;
+export const POST = forward;
+export const PUT = forward;
+export const PATCH = forward;
+export const DELETE = forward;
 export const OPTIONS = forward;
-export const HEAD    = forward;
+export const HEAD = forward;

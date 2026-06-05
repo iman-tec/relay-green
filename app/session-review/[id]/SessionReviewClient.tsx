@@ -26,23 +26,52 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft, AudioLines, Check, ChevronDown, ChevronRight, Download, FileText,
-  FileSpreadsheet, FileType, Folder, Image as ImageIcon, Loader2, Lock,
-  MessageSquare, Mic, MoreHorizontal, Paperclip, Pencil, PlayCircle, Send,
-  Sparkles, Video, X,
+  ArrowLeft,
+  AudioLines,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Download,
+  FileText,
+  FileSpreadsheet,
+  FileType,
+  Folder,
+  Image as ImageIcon,
+  Loader2,
+  Lock,
+  MessageSquare,
+  Mic,
+  MoreHorizontal,
+  Paperclip,
+  Pencil,
+  PlayCircle,
+  Send,
+  Sparkles,
+  Video,
+  X,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import {
-  classify, MAX_BYTES, MAX_FILES_PER_MESSAGE,
-  signedDownloadUrl, uploadOne,
+  classify,
+  MAX_BYTES,
+  MAX_FILES_PER_MESSAGE,
+  signedDownloadUrl,
+  uploadOne,
 } from "@/lib/relay/chatAttachments";
 import { isAiSummaryMessageBody } from "@/app/_components/MeetingSummaryEntry";
 import { MessageAttachments } from "@/app/_components/MessageAttachments";
 import { ProjectAIAssistant } from "@/app/_components/ProjectAIAssistant";
-import { queryMicPermission, speechRecognitionErrorMessage } from "@/app/_components/ChatComposer";
-import type { GuestCall, GuestMessage, GuestMessageAttachment } from "@/lib/supabase/types";
+import {
+  queryMicPermission,
+  speechRecognitionErrorMessage,
+} from "@/app/_components/ChatComposer";
+import type {
+  GuestCall,
+  GuestMessage,
+  GuestMessageAttachment,
+} from "@/lib/supabase/types";
 
-const BRAND_GREEN      = "#3f5c2e";
+const BRAND_GREEN = "#3f5c2e";
 const BRAND_GREEN_SOFT = "rgba(63, 92, 46, 0.12)";
 
 // "Guest" is the legacy DB default for un-named customer rows. Surface
@@ -83,14 +112,21 @@ export function SessionReviewClient({
   const [error, setError] = useState<string | null>(null);
 
   // Project tree state (left pane).
-  const [tree, setTree] = useState<Array<ProjectRow & { sessions: SessionRow[] }>>([]);
+  const [tree, setTree] = useState<
+    Array<ProjectRow & { sessions: SessionRow[] }>
+  >([]);
   const [treeLoading, setTreeLoading] = useState(true);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   // Current viewer identity — used by the right-pane composer so inserted
   // rows are stamped with the correct sender_kind / sender_id. Mirrors the
   // pattern used by EngineerSessionClient + RoomClient.
-  const [me, setMe] = useState<{ id: string; email: string | null; name: string | null; kind: "engineer" | "guest" | "system" } | null>(null);
+  const [me, setMe] = useState<{
+    id: string;
+    email: string | null;
+    name: string | null;
+    kind: "engineer" | "guest" | "system";
+  } | null>(null);
 
   // ── Load messages + viewer identity ──────────────────────────────────
   useEffect(() => {
@@ -99,7 +135,8 @@ export function SessionReviewClient({
       const sb = createClient();
       // Embed via the FK on guest_message_attachments.message_id → guest_messages.id.
       const [msgRes, userRes] = await Promise.all([
-        sb.from("guest_messages")
+        sb
+          .from("guest_messages")
           .select("*, attachments:guest_message_attachments(*)")
           .eq("guest_call_id", sessionId)
           .order("created_at", { ascending: true }),
@@ -114,14 +151,17 @@ export function SessionReviewClient({
         // Decide whether this viewer is the engineer or the customer on
         // this call. Anyone else (supervisor/admin) defaults to engineer
         // semantics on send — they're acting in a staff capacity.
-        const isCustomer = !!session.customer_user_id && session.customer_user_id === u.id;
+        const isCustomer =
+          !!session.customer_user_id && session.customer_user_id === u.id;
         const profileRes = await sb
           .from("profiles")
           .select("full_name")
           .eq("id", u.id)
           .maybeSingle();
         if (!alive) return;
-        const full = (profileRes.data as { full_name?: string | null } | null)?.full_name ?? null;
+        const full =
+          (profileRes.data as { full_name?: string | null } | null)
+            ?.full_name ?? null;
         setMe({
           id: u.id,
           email: u.email ?? null,
@@ -131,7 +171,9 @@ export function SessionReviewClient({
       }
       setLoading(false);
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [sessionId, session.customer_user_id]);
 
   // ── Realtime tail on this session's messages ─────────────────────────
@@ -147,9 +189,10 @@ export function SessionReviewClient({
     // /session-review URL don't trip Supabase's name-based dedupe (which
     // would throw "cannot add postgres_changes after subscribe()" on the
     // second tab's .on() call).
-    const suffix = typeof crypto !== "undefined" && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const suffix =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     const ch = sb
       .channel(`session-review-msgs-${sessionId}-${suffix}`)
       .on(
@@ -159,12 +202,18 @@ export function SessionReviewClient({
         // deleted_at), and DELETEs (hard-delete via retention sweeper).
         // The handler routes each event type to the appropriate state
         // transition so both parties see edits + deletes in realtime.
-        { event: "*", schema: "public", table: "guest_messages", filter: `guest_call_id=eq.${sessionId}` },
+        {
+          event: "*",
+          schema: "public",
+          table: "guest_messages",
+          filter: `guest_call_id=eq.${sessionId}`,
+        },
         async (payload) => {
           if (!alive) return;
           if (payload.eventType === "DELETE") {
             const old = payload.old as { id?: string } | null;
-            if (old?.id) setMessages((prev) => prev.filter((m) => m.id !== old.id));
+            if (old?.id)
+              setMessages((prev) => prev.filter((m) => m.id !== old.id));
             return;
           }
           const row = payload.new as GuestMessage;
@@ -173,7 +222,13 @@ export function SessionReviewClient({
             // Edit / soft-delete — merge the new fields into the existing
             // row; attachments don't change on UPDATE so we keep the
             // previously-loaded list.
-            setMessages((prev) => prev.map((m) => (m.id === row.id ? { ...m, ...row, attachments: m.attachments } : m)));
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === row.id
+                  ? { ...m, ...row, attachments: m.attachments }
+                  : m
+              )
+            );
             return;
           }
           // INSERT — fetch attachments for this single row (realtime
@@ -185,13 +240,13 @@ export function SessionReviewClient({
           if (!alive) return;
           const enriched: GuestMessage = {
             ...row,
-            attachments: ((atts ?? []) as GuestMessageAttachment[]),
+            attachments: (atts ?? []) as GuestMessageAttachment[],
           };
           setMessages((prev) => {
             if (prev.some((m) => m.id === enriched.id)) return prev;
             return [...prev, enriched];
           });
-        },
+        }
       )
       .subscribe();
     return () => {
@@ -229,12 +284,16 @@ export function SessionReviewClient({
       if (projIds.length > 0) {
         const { data: sess } = await sb
           .from("guest_calls")
-          .select("id, status, created_at, ai_summary_title, duration_minutes, project_id")
+          .select(
+            "id, status, created_at, ai_summary_title, duration_minutes, project_id"
+          )
           .in("project_id", projIds)
           .order("created_at", { ascending: false });
         if (!alive) return;
         sessionsByProject = new Map();
-        for (const s of (sess ?? []) as Array<SessionRow & { project_id: string | null }>) {
+        for (const s of (sess ?? []) as Array<
+          SessionRow & { project_id: string | null }
+        >) {
           if (!s.project_id) continue;
           const list = sessionsByProject.get(s.project_id) ?? [];
           list.push(s);
@@ -242,14 +301,21 @@ export function SessionReviewClient({
         }
       }
 
-      setTree(projList.map((p) => ({ ...p, sessions: sessionsByProject.get(p.id) ?? [] })));
+      setTree(
+        projList.map((p) => ({
+          ...p,
+          sessions: sessionsByProject.get(p.id) ?? [],
+        }))
+      );
       // Auto-expand the project containing the currently-viewed session
       // so the user can see siblings immediately.
       const myProj = session.project_id;
       if (myProj) setExpanded({ [myProj]: true });
       setTreeLoading(false);
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [session.customer_user_id, session.project_id]);
 
   // Aggregate all attachments across the conversation — deduped by id
@@ -272,11 +338,15 @@ export function SessionReviewClient({
   const downloadTranscript = () => {
     const lines: string[] = [];
     lines.push("Relay session transcript");
-    lines.push(`Customer: ${displayCustomerName(session.guest_name)}${session.project_name ? ` · ${session.project_name}` : ""}`);
+    lines.push(
+      `Customer: ${displayCustomerName(session.guest_name)}${session.project_name ? ` · ${session.project_name}` : ""}`
+    );
     lines.push(`Engineer: ${session.agent_name ?? "—"}`);
     lines.push(`Date: ${new Date(session.created_at).toLocaleString()}`);
     if (session.duration_minutes != null) {
-      lines.push(`Duration: ${Math.round(Number(session.duration_minutes))} min`);
+      lines.push(
+        `Duration: ${Math.round(Number(session.duration_minutes))} min`
+      );
     }
     lines.push(`Status: ${session.status}`);
     lines.push("");
@@ -291,11 +361,12 @@ export function SessionReviewClient({
         if (isAiSummaryMessageBody(body)) continue;
       }
       const ts = new Date(m.created_at).toLocaleString();
-      const who = m.sender_kind === "engineer"
-        ? `Engineer${m.sender_name ? ` (${m.sender_name})` : ""}`
-        : m.sender_kind === "guest"
-          ? `Customer${m.sender_name ? ` (${m.sender_name})` : ""}`
-          : "System";
+      const who =
+        m.sender_kind === "engineer"
+          ? `Engineer${m.sender_name ? ` (${m.sender_name})` : ""}`
+          : m.sender_kind === "guest"
+            ? `Customer${m.sender_name ? ` (${m.sender_name})` : ""}`
+            : "System";
       lines.push(`[${ts}] ${who}:`);
       if (m.body && m.body.trim()) {
         for (const line of m.body.split(/\r?\n/)) lines.push(`  ${line}`);
@@ -311,7 +382,10 @@ export function SessionReviewClient({
     const a = document.createElement("a");
     a.href = url;
     const tsStamp = new Date(session.created_at).toISOString().slice(0, 10);
-    const slug = (session.guest_name ?? "session").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30);
+    const slug = (session.guest_name ?? "session")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .slice(0, 30);
     a.download = `relay-transcript-${tsStamp}-${slug}.txt`;
     document.body.appendChild(a);
     a.click();
@@ -320,16 +394,28 @@ export function SessionReviewClient({
   };
 
   const customerName = displayCustomerName(session.guest_name);
-  const isLive = ["assigned", "joining", "live", "grace", "expired_free"].includes(session.status);
+  const isLive = [
+    "assigned",
+    "joining",
+    "live",
+    "grace",
+    "expired_free",
+  ].includes(session.status);
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: "var(--background)" }}>
+    <div
+      className="min-h-screen"
+      style={{ backgroundColor: "var(--background)" }}
+    >
       {/* Top bar with Back nav + session title — sits above the columns
           so the user always has a return path regardless of which pane
           they're scrolling. */}
       <div
         className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b px-4 py-2.5"
-        style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}
+        style={{
+          backgroundColor: "var(--surface)",
+          borderColor: "var(--border)",
+        }}
       >
         <button
           type="button"
@@ -341,10 +427,19 @@ export function SessionReviewClient({
           Back
         </button>
         <div className="min-w-0 flex-1 text-center">
-          <div className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: BRAND_GREEN }}>
+          <div
+            className="text-[10px] font-bold tracking-[0.12em] uppercase"
+            style={{ color: BRAND_GREEN }}
+          >
             Session review
           </div>
-          <div className="truncate text-[14px] font-semibold" style={{ color: "var(--text)", fontFamily: "var(--font-source-serif)" }}>
+          <div
+            className="truncate text-[14px] font-semibold"
+            style={{
+              color: "var(--text)",
+              fontFamily: "var(--font-source-serif)",
+            }}
+          >
             {session.ai_summary_title ?? session.project_name ?? "Session"}
           </div>
         </div>
@@ -399,7 +494,11 @@ export function SessionReviewClient({
           {session.project_id && (
             <div
               className="mt-5 overflow-hidden rounded-2xl border"
-              style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)", height: 480 }}
+              style={{
+                borderColor: "var(--border)",
+                backgroundColor: "var(--surface)",
+                height: 480,
+              }}
             >
               <ProjectAIAssistant
                 projectId={session.project_id}
@@ -429,7 +528,13 @@ export function SessionReviewClient({
 // this customer had with us" as the customer sees on their side.
 // ─────────────────────────────────────────────────────────────────────────
 function ProjectTreePane({
-  customerName, customerEmail, tree, loading, expanded, onToggleExpand, activeSessionId,
+  customerName,
+  customerEmail,
+  tree,
+  loading,
+  expanded,
+  onToggleExpand,
+  activeSessionId,
 }: {
   customerName: string;
   customerEmail: string | null;
@@ -446,28 +551,48 @@ function ProjectTreePane({
   return (
     <aside
       className="hidden h-[calc(100vh-45px)] w-[280px] shrink-0 flex-col overflow-hidden border-r md:flex"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface)",
+      }}
     >
       {/* Customer header */}
-      <div className="border-b px-4 py-3" style={{ borderColor: "var(--border)" }}>
-        <div className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: BRAND_GREEN }}>
+      <div
+        className="border-b px-4 py-3"
+        style={{ borderColor: "var(--border)" }}
+      >
+        <div
+          className="text-[10px] font-bold tracking-[0.12em] uppercase"
+          style={{ color: BRAND_GREEN }}
+        >
           Customer
         </div>
         <div
-          className="mt-0.5 truncate text-[15px] font-semibold leading-tight"
-          style={{ color: "var(--text)", fontFamily: "var(--font-source-serif)" }}
+          className="mt-0.5 truncate text-[15px] leading-tight font-semibold"
+          style={{
+            color: "var(--text)",
+            fontFamily: "var(--font-source-serif)",
+          }}
           title={customerName}
         >
           {customerName}
         </div>
         {customerEmail && (
-          <div className="mt-0.5 truncate text-[11px]" style={{ color: "var(--text-muted)" }} title={customerEmail}>
+          <div
+            className="mt-0.5 truncate text-[11px]"
+            style={{ color: "var(--text-muted)" }}
+            title={customerEmail}
+          >
             {customerEmail}
           </div>
         )}
         {!loading && (
-          <div className="mt-1.5 text-[10px]" style={{ color: "var(--text-faint)" }}>
-            {tree.length} project{tree.length === 1 ? "" : "s"} · {totalSessions} session{totalSessions === 1 ? "" : "s"}
+          <div
+            className="mt-1.5 text-[10px]"
+            style={{ color: "var(--text-faint)" }}
+          >
+            {tree.length} project{tree.length === 1 ? "" : "s"} ·{" "}
+            {totalSessions} session{totalSessions === 1 ? "" : "s"}
           </div>
         )}
       </div>
@@ -475,11 +600,17 @@ function ProjectTreePane({
       {/* Tree body */}
       <div className="flex-1 overflow-y-auto px-2 py-2">
         {loading ? (
-          <div className="flex items-center gap-2 px-2 py-3 text-[12px]" style={{ color: "var(--text-muted)" }}>
+          <div
+            className="flex items-center gap-2 px-2 py-3 text-[12px]"
+            style={{ color: "var(--text-muted)" }}
+          >
             <Loader2 size={12} className="animate-spin" /> Loading projects…
           </div>
         ) : tree.length === 0 ? (
-          <p className="px-2 py-3 text-[12px]" style={{ color: "var(--text-faint)" }}>
+          <p
+            className="px-2 py-3 text-[12px]"
+            style={{ color: "var(--text-faint)" }}
+          >
             No projects on file for this customer yet.
           </p>
         ) : (
@@ -492,23 +623,43 @@ function ProjectTreePane({
                   onClick={() => onToggleExpand(p.id)}
                   className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
                 >
-                  {isOpen
-                    ? <ChevronDown size={12} style={{ color: "var(--text-muted)" }} />
-                    : <ChevronRight size={12} style={{ color: "var(--text-muted)" }} />}
+                  {isOpen ? (
+                    <ChevronDown
+                      size={12}
+                      style={{ color: "var(--text-muted)" }}
+                    />
+                  ) : (
+                    <ChevronRight
+                      size={12}
+                      style={{ color: "var(--text-muted)" }}
+                    />
+                  )}
                   <Folder size={12} style={{ color: BRAND_GREEN }} />
-                  <span className="min-w-0 flex-1 truncate font-medium" style={{ color: "var(--text)" }}>
+                  <span
+                    className="min-w-0 flex-1 truncate font-medium"
+                    style={{ color: "var(--text)" }}
+                  >
                     {p.name}
                   </span>
                   {p.sessions.length > 0 && (
-                    <span className="text-[10px] tabular-nums" style={{ color: "var(--text-muted)" }}>
+                    <span
+                      className="text-[10px] tabular-nums"
+                      style={{ color: "var(--text-muted)" }}
+                    >
                       {p.sessions.length}
                     </span>
                   )}
                 </button>
                 {isOpen && (
-                  <ul className="ml-3 mt-0.5 border-l pl-2" style={{ borderColor: "var(--border)" }}>
+                  <ul
+                    className="mt-0.5 ml-3 border-l pl-2"
+                    style={{ borderColor: "var(--border)" }}
+                  >
                     {p.sessions.length === 0 ? (
-                      <li className="px-2 py-1 text-[10px]" style={{ color: "var(--text-faint)" }}>
+                      <li
+                        className="px-2 py-1 text-[10px]"
+                        style={{ color: "var(--text-faint)" }}
+                      >
                         No sessions yet.
                       </li>
                     ) : (
@@ -522,11 +673,14 @@ function ProjectTreePane({
                             <button
                               type="button"
                               onClick={() => {
-                                if (!isActive) router.push(`/session-review/${s.id}`);
+                                if (!isActive)
+                                  router.push(`/session-review/${s.id}`);
                               }}
                               className="flex w-full items-start gap-1.5 rounded-md px-2 py-1 text-left text-[11px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
                               style={{
-                                backgroundColor: isActive ? BRAND_GREEN_SOFT : "transparent",
+                                backgroundColor: isActive
+                                  ? BRAND_GREEN_SOFT
+                                  : "transparent",
                                 color: isActive ? BRAND_GREEN : "var(--text)",
                                 fontWeight: isActive ? 600 : 400,
                               }}
@@ -543,10 +697,18 @@ function ProjectTreePane({
                               />
                               <div className="min-w-0 flex-1">
                                 <div className="truncate">{label}</div>
-                                <div className="text-[9px]" style={{ color: "var(--text-muted)" }}>
-                                  {new Date(s.created_at).toLocaleDateString([], { month: "short", day: "numeric" })}
-                                  {s.duration_minutes != null && ` · ${Math.round(Number(s.duration_minutes))}m`}
-                                  {" · "}{s.status}
+                                <div
+                                  className="text-[9px]"
+                                  style={{ color: "var(--text-muted)" }}
+                                >
+                                  {new Date(s.created_at).toLocaleDateString(
+                                    [],
+                                    { month: "short", day: "numeric" }
+                                  )}
+                                  {s.duration_minutes != null &&
+                                    ` · ${Math.round(Number(s.duration_minutes))}m`}
+                                  {" · "}
+                                  {s.status}
                                 </div>
                               </div>
                             </button>
@@ -572,19 +734,31 @@ function ProjectTreePane({
 // + size caps) so the wire format matches the in-call composer.
 // ─────────────────────────────────────────────────────────────────────────
 function ChatPane({
-  sessionId, messages, loading, me, customerName, sessionStatus,
+  sessionId,
+  messages,
+  loading,
+  me,
+  customerName,
+  sessionStatus,
 }: {
   sessionId: string;
   messages: GuestMessage[];
   loading: boolean;
-  me: { id: string; email: string | null; name: string | null; kind: "engineer" | "guest" | "system" } | null;
+  me: {
+    id: string;
+    email: string | null;
+    name: string | null;
+    kind: "engineer" | "guest" | "system";
+  } | null;
   customerName: string;
   /** Session status — drives the read-only lock. An ended/cancelled/
    *  abandoned session is a closed record: viewable, but no new follow-up
    *  chat (the composer is replaced with a read-only notice). */
   sessionStatus: string;
 }) {
-  const isEndedSession = ["ended", "cancelled", "abandoned"].includes(sessionStatus);
+  const isEndedSession = ["ended", "cancelled", "abandoned"].includes(
+    sessionStatus
+  );
   // Filter out system noise from the chat view (Zoom started/ended/recording
   // stubs and AI summary bubbles) and soft-deleted messages (deleted_at set
   // by the author via the kebab → Delete action). Those belong in the
@@ -616,7 +790,9 @@ function ChatPane({
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false; };
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   // ── Voice dictation (Web Speech API) ───────────────────────────────
@@ -627,7 +803,9 @@ function ChatPane({
   // replace.
   const [voiceMode, setVoiceMode] = useState<"idle" | "transcribing">("idle");
   const [voiceMsg, setVoiceMsg] = useState<string | null>(null);
-  const recognitionRef = useRef<{ abort: () => void; stop: () => void } | null>(null);
+  const recognitionRef = useRef<{ abort: () => void; stop: () => void } | null>(
+    null
+  );
   const transcribeBaseRef = useRef<string>("");
 
   // ── Voice recording (MediaRecorder) ────────────────────────────────
@@ -643,9 +821,13 @@ function ChatPane({
     if (voiceMode !== "idle") return;
     if (typeof window === "undefined") return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const Ctor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const Ctor =
+      (window as any).SpeechRecognition ||
+      (window as any).webkitSpeechRecognition;
     if (!Ctor) {
-      setVoiceMsg("Voice-to-text isn't supported in this browser. Try Chrome or Edge.");
+      setVoiceMsg(
+        "Voice-to-text isn't supported in this browser. Try Chrome or Edge."
+      );
       return;
     }
     setVoiceMsg(null);
@@ -653,18 +835,26 @@ function ChatPane({
     // Detect a previous "denied" before getUserMedia silently fails.
     const permState = await queryMicPermission();
     if (permState === "denied") {
-      setVoiceMsg("Microphone is blocked for this site. Click the lock / info icon at the very left of the address bar → Site settings → Microphone → Allow → reload the page.");
+      setVoiceMsg(
+        "Microphone is blocked for this site. Click the lock / info icon at the very left of the address bar → Site settings → Microphone → Allow → reload the page."
+      );
       return;
     }
     if (navigator.mediaDevices?.getUserMedia) {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        });
         stream.getTracks().forEach((t) => t.stop());
       } catch (e) {
         if (e instanceof Error && e.name === "NotAllowedError") {
-          setVoiceMsg("You dismissed the microphone prompt. Click the mic icon again and choose Allow when your browser asks.");
+          setVoiceMsg(
+            "You dismissed the microphone prompt. Click the mic icon again and choose Allow when your browser asks."
+          );
         } else if (e instanceof Error && e.name === "NotFoundError") {
-          setVoiceMsg("No microphone detected. Check that one is plugged in and not being used by another app.");
+          setVoiceMsg(
+            "No microphone detected. Check that one is plugged in and not being used by another app."
+          );
         } else {
           setVoiceMsg("Couldn't access your microphone.");
         }
@@ -677,7 +867,9 @@ function ChatPane({
     r.lang = navigator.language || "en-US";
     r.continuous = true;
     r.interimResults = true;
-    r.onresult = (event: { results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }> }) => {
+    r.onresult = (event: {
+      results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }>;
+    }) => {
       let finalText = "";
       let interim = "";
       for (let i = 0; i < event.results.length; i++) {
@@ -686,7 +878,10 @@ function ChatPane({
         else interim += res[0].transcript;
       }
       const composed = [transcribeBaseRef.current, finalText, interim]
-        .filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+        .filter(Boolean)
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim();
       setText(composed);
     };
     r.onerror = (e: { error: string }) => {
@@ -701,14 +896,20 @@ function ChatPane({
     };
     recognitionRef.current = r;
     setVoiceMode("transcribing");
-    try { r.start(); } catch {
+    try {
+      r.start();
+    } catch {
       setVoiceMsg("Voice recognition couldn't start — try again in a moment.");
       setVoiceMode("idle");
     }
   }, [voiceMode, text]);
 
   const stopTranscribe = useCallback(() => {
-    try { recognitionRef.current?.stop(); } catch { /* noop */ }
+    try {
+      recognitionRef.current?.stop();
+    } catch {
+      /* noop */
+    }
   }, []);
 
   const startRecording = useCallback(async () => {
@@ -723,9 +924,13 @@ function ChatPane({
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (e) {
       if (e instanceof Error && e.name === "NotAllowedError") {
-        setVoiceMsg("Microphone access blocked. Click the lock icon in your browser's address bar, allow microphone, then try again.");
+        setVoiceMsg(
+          "Microphone access blocked. Click the lock icon in your browser's address bar, allow microphone, then try again."
+        );
       } else if (e instanceof Error && e.name === "NotFoundError") {
-        setVoiceMsg("No microphone detected. Check that one is plugged in and not being used by another app.");
+        setVoiceMsg(
+          "No microphone detected. Check that one is plugged in and not being used by another app."
+        );
       } else {
         setVoiceMsg("Couldn't access your microphone.");
       }
@@ -734,20 +939,32 @@ function ChatPane({
     recorderStreamRef.current = stream;
 
     // MIME pick — Chrome/Firefox produce webm/opus, Safari produces mp4.
-    const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"];
+    const candidates = [
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/mp4",
+      "audio/ogg",
+    ];
     let mime: string | undefined;
     for (const c of candidates) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if ((MediaRecorder as any).isTypeSupported?.(c)) { mime = c; break; }
+      if ((MediaRecorder as any).isTypeSupported?.(c)) {
+        mime = c;
+        break;
+      }
     }
-    const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+    const rec = mime
+      ? new MediaRecorder(stream, { mimeType: mime })
+      : new MediaRecorder(stream);
 
     recorderChunksRef.current = [];
     rec.ondataavailable = (e) => {
       if (e.data && e.data.size > 0) recorderChunksRef.current.push(e.data);
     };
     rec.onstop = () => {
-      const blob = new Blob(recorderChunksRef.current, { type: rec.mimeType || "audio/webm" });
+      const blob = new Blob(recorderChunksRef.current, {
+        type: rec.mimeType || "audio/webm",
+      });
       recorderChunksRef.current = [];
       recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
       recorderStreamRef.current = null;
@@ -759,7 +976,13 @@ function ChatPane({
       if (!mountedRef.current) return;
       setRecState("idle");
       const t = rec.mimeType || "audio/webm";
-      const ext = t.includes("webm") ? "webm" : t.includes("mp4") ? "m4a" : t.includes("ogg") ? "ogg" : "webm";
+      const ext = t.includes("webm")
+        ? "webm"
+        : t.includes("mp4")
+          ? "m4a"
+          : t.includes("ogg")
+            ? "ogg"
+            : "webm";
       const name = `voice-${new Date().toISOString().replace(/[:.]/g, "-")}.${ext}`;
       const file = new File([blob], name, { type: blob.type });
       // Stage the recording into pendingFiles so it ships on the next Send.
@@ -782,16 +1005,34 @@ function ChatPane({
 
   const stopRecording = useCallback(() => {
     const r = recorderRef.current;
-    if (!r) { setRecState("idle"); return; }
-    try { r.stop(); } catch { /* already stopping */ }
+    if (!r) {
+      setRecState("idle");
+      return;
+    }
+    try {
+      r.stop();
+    } catch {
+      /* already stopping */
+    }
   }, []);
 
   // Tear-down on unmount so an abandoned mic stream doesn't keep listening.
-  useEffect(() => () => {
-    try { recognitionRef.current?.abort(); } catch { /* noop */ }
-    try { recorderRef.current?.stop(); } catch { /* noop */ }
-    recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
-  }, []);
+  useEffect(
+    () => () => {
+      try {
+        recognitionRef.current?.abort();
+      } catch {
+        /* noop */
+      }
+      try {
+        recorderRef.current?.stop();
+      } catch {
+        /* noop */
+      }
+      recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
+    },
+    []
+  );
 
   // ── Per-bubble menu + inline edit state ───────────────────────────
   // Matches customer-side ChatPanelStub: only one bubble can have its
@@ -872,29 +1113,38 @@ function ChatPane({
     }
   }, [visible.length]);
 
-  const addFiles = useCallback((files: FileList | null) => {
-    if (!files || files.length === 0) return;
-    const all = Array.from(files);
-    // Pre-flight: enforce the same caps the live composer does
-    // (10 MB per file, 3 files total per message — any kind).
-    let total = pendingFiles.length;
-    const accepted: File[] = [];
-    for (const f of all) {
-      const kind = classify(f);
-      if (!kind) { setSendError(`Unsupported file: ${f.name}`); continue; }
-      if (f.size > MAX_BYTES) { setSendError(`${f.name} is larger than 10 MB.`); continue; }
-      if (total >= MAX_FILES_PER_MESSAGE) {
-        setSendError(`At most ${MAX_FILES_PER_MESSAGE} files per message.`);
-        continue;
+  const addFiles = useCallback(
+    (files: FileList | null) => {
+      if (!files || files.length === 0) return;
+      const all = Array.from(files);
+      // Pre-flight: enforce the same caps the live composer does
+      // (10 MB per file, 3 files total per message — any kind).
+      let total = pendingFiles.length;
+      const accepted: File[] = [];
+      for (const f of all) {
+        const kind = classify(f);
+        if (!kind) {
+          setSendError(`Unsupported file: ${f.name}`);
+          continue;
+        }
+        if (f.size > MAX_BYTES) {
+          setSendError(`${f.name} is larger than 10 MB.`);
+          continue;
+        }
+        if (total >= MAX_FILES_PER_MESSAGE) {
+          setSendError(`At most ${MAX_FILES_PER_MESSAGE} files per message.`);
+          continue;
+        }
+        total += 1;
+        accepted.push(f);
       }
-      total += 1;
-      accepted.push(f);
-    }
-    if (accepted.length > 0) {
-      setPendingFiles((prev) => [...prev, ...accepted]);
-      setSendError(null);
-    }
-  }, [pendingFiles]);
+      if (accepted.length > 0) {
+        setPendingFiles((prev) => [...prev, ...accepted]);
+        setSendError(null);
+      }
+    },
+    [pendingFiles]
+  );
 
   const removePending = (idx: number) => {
     setPendingFiles((prev) => prev.filter((_, i) => i !== idx));
@@ -904,7 +1154,10 @@ function ChatPane({
     const body = text.trim();
     if (sending) return;
     if (!body && pendingFiles.length === 0) return;
-    if (!me) { setSendError("Not signed in."); return; }
+    if (!me) {
+      setSendError("Not signed in.");
+      return;
+    }
 
     setSending(true);
     setSendError(null);
@@ -916,9 +1169,14 @@ function ChatPane({
       //    the live-session composer flow in useEngineerSession.
       const classified = pendingFiles
         .map((f) => ({ file: f, kind: classify(f) }))
-        .filter((c): c is { file: File; kind: "image" | "document" | "audio" } => c.kind != null);
+        .filter(
+          (c): c is { file: File; kind: "image" | "document" | "audio" } =>
+            c.kind != null
+        );
       const uploaded = await Promise.all(
-        classified.map((c) => uploadOne({ sb, sessionId, file: c.file, kind: c.kind })),
+        classified.map((c) =>
+          uploadOne({ sb, sessionId, file: c.file, kind: c.kind })
+        )
       );
 
       // 2. Insert the message row.
@@ -949,7 +1207,9 @@ function ChatPane({
           size_bytes: u.size,
           kind: u.kind,
         }));
-        const { error: aErr } = await sb.from("guest_message_attachments").insert(rows);
+        const { error: aErr } = await sb
+          .from("guest_message_attachments")
+          .insert(rows);
         if (aErr) setSendError(aErr.message);
       }
 
@@ -968,9 +1228,7 @@ function ChatPane({
   // customer's POV reads "chatting with <engineer>" if we ever wire
   // the customer's session-review through this same component.
   const isCustomerViewer = me?.kind === "guest";
-  const otherPartyName = isCustomerViewer
-    ? "your engineer"
-    : customerName;
+  const otherPartyName = isCustomerViewer ? "your engineer" : customerName;
   const headerTitle = isEndedSession
     ? "Conversation"
     : isCustomerViewer
@@ -990,12 +1248,16 @@ function ChatPane({
 
   // Initial-letter avatar used in the header. Falls back to the chat
   // bubble icon when we don't have a name yet (e.g. anonymous guest).
-  const avatarInitial = customerName !== "Customer" ? customerName[0]?.toUpperCase() : null;
+  const avatarInitial =
+    customerName !== "Customer" ? customerName[0]?.toUpperCase() : null;
 
   return (
     <aside
       className="hidden h-[calc(100vh-45px)] w-[360px] shrink-0 flex-col overflow-hidden border-l md:flex"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface)",
+      }}
     >
       {/* Header — mirrors RoomClient.ChatPanelStub: avatar circle on the
           left, title + subtitle stacked, no collapse toggle (the
@@ -1006,7 +1268,10 @@ function ChatPane({
       >
         <div
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold"
-          style={{ backgroundColor: "var(--surface-raised)", color: "var(--text-muted)" }}
+          style={{
+            backgroundColor: "var(--surface-raised)",
+            color: "var(--text-muted)",
+          }}
         >
           {avatarInitial ?? <MessageSquare size={14} />}
         </div>
@@ -1040,7 +1305,10 @@ function ChatPane({
           }}
         >
           {loading ? (
-            <div className="flex items-center gap-2 py-4 text-[12px]" style={{ color: "var(--text-muted)" }}>
+            <div
+              className="flex items-center gap-2 py-4 text-[12px]"
+              style={{ color: "var(--text-muted)" }}
+            >
               <Loader2 size={12} className="animate-spin" /> Loading messages…
             </div>
           ) : visible.length === 0 ? (
@@ -1048,7 +1316,8 @@ function ChatPane({
               <div
                 className="mb-3 flex h-10 w-10 items-center justify-center rounded-full"
                 style={{
-                  backgroundColor: "color-mix(in srgb, var(--text) 5%, transparent)",
+                  backgroundColor:
+                    "color-mix(in srgb, var(--text) 5%, transparent)",
                   color: "var(--text-muted)",
                 }}
               >
@@ -1067,8 +1336,10 @@ function ChatPane({
                 <div
                   className="mx-auto rounded-full border px-2.5 py-1 text-[10px]"
                   style={{
-                    borderColor: "color-mix(in srgb, var(--accent-red) 30%, transparent)",
-                    backgroundColor: "color-mix(in srgb, var(--accent-red) 8%, transparent)",
+                    borderColor:
+                      "color-mix(in srgb, var(--accent-red) 30%, transparent)",
+                    backgroundColor:
+                      "color-mix(in srgb, var(--accent-red) 8%, transparent)",
                     color: "var(--accent-red)",
                   }}
                 >
@@ -1081,12 +1352,14 @@ function ChatPane({
                   !prev ||
                   !sameDay(
                     new Date(prev.created_at).getTime(),
-                    new Date(m.created_at).getTime(),
+                    new Date(m.created_at).getTime()
                   );
                 return (
                   <div key={m.id}>
                     {showSeparator && (
-                      <DateSeparatorPill ts={new Date(m.created_at).getTime()} />
+                      <DateSeparatorPill
+                        ts={new Date(m.created_at).getTime()}
+                      />
                     )}
                     <ChatBubble
                       message={m}
@@ -1116,7 +1389,10 @@ function ChatPane({
       {isEndedSession && (
         <div
           className="shrink-0 border-t px-3 py-4"
-          style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+          style={{
+            borderColor: "var(--border)",
+            backgroundColor: "var(--surface)",
+          }}
         >
           <div
             className="flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-[11px] font-medium"
@@ -1134,208 +1410,288 @@ function ChatPane({
           message placeholder), and a labelled Send pill on the right.
           Hidden once the session has ended (read-only notice above). */}
       {!isEndedSession && (
-      <div
-        className="shrink-0 border-t px-3 py-5"
-        style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
-      >
         <div
-          className="rounded-2xl border p-5"
+          className="shrink-0 border-t px-3 py-5"
           style={{
             borderColor: "var(--border)",
-            backgroundColor: "var(--surface-raised)",
-            boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+            backgroundColor: "var(--surface)",
           }}
         >
-          <textarea
-            rows={14}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              // Plain Enter sends — matches the customer composer and
-              // the live in-call ChatComposer so engineers build the
-              // same muscle memory across surfaces. Shift+Enter for
-              // newlines. IME composition passes through untouched.
-              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                e.preventDefault();
-                void send();
-              }
+          <div
+            className="rounded-2xl border p-5"
+            style={{
+              borderColor: "var(--border)",
+              backgroundColor: "var(--surface-raised)",
+              boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
             }}
-            placeholder={placeholder}
-            // rows={14} matches the customer-side ChatPanelStub composer
-            // size — large empty area that invites a substantive message
-            // rather than a Twitter-length quick reply.
-            className="block w-full resize-none bg-transparent text-[13px] leading-relaxed outline-none placeholder:opacity-60"
-            style={{ color: "var(--text)" }}
-          />
+          >
+            <textarea
+              rows={14}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => {
+                // Plain Enter sends — matches the customer composer and
+                // the live in-call ChatComposer so engineers build the
+                // same muscle memory across surfaces. Shift+Enter for
+                // newlines. IME composition passes through untouched.
+                if (
+                  e.key === "Enter" &&
+                  !e.shiftKey &&
+                  !e.nativeEvent.isComposing
+                ) {
+                  e.preventDefault();
+                  void send();
+                }
+              }}
+              placeholder={placeholder}
+              // rows={14} matches the customer-side ChatPanelStub composer
+              // size — large empty area that invites a substantive message
+              // rather than a Twitter-length quick reply.
+              className="block w-full resize-none bg-transparent text-[13px] leading-relaxed outline-none placeholder:opacity-60"
+              style={{ color: "var(--text)" }}
+            />
 
-          {/* Pending-attachments tray — each staged file shown as a chip
+            {/* Pending-attachments tray — each staged file shown as a chip
               with a remove-X. Layout matches the customer's pre-flush
               tray so the engineer's mental model carries over. */}
-          {pendingFiles.length > 0 && (
-            <div className="mt-2 flex flex-col gap-1.5">
-              <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-                Will be delivered with your next send
+            {pendingFiles.length > 0 && (
+              <div className="mt-2 flex flex-col gap-1.5">
+                <div
+                  className="text-[10px] font-semibold tracking-wider uppercase"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  Will be delivered with your next send
+                </div>
+                <ul className="flex flex-col gap-1">
+                  {pendingFiles.map((f, i) => {
+                    const kind = classify(f);
+                    const Icon =
+                      kind === "audio"
+                        ? PlayCircle
+                        : kind === "image"
+                          ? ImageIcon
+                          : FileText;
+                    return (
+                      <li
+                        key={i}
+                        className="flex items-center gap-2 rounded-md border px-2 py-1.5 text-[11.5px]"
+                        style={{
+                          borderColor: "var(--border)",
+                          backgroundColor: "var(--surface)",
+                        }}
+                      >
+                        <span
+                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md"
+                          style={{
+                            backgroundColor: BRAND_GREEN_SOFT,
+                            color: BRAND_GREEN,
+                          }}
+                        >
+                          <Icon size={11} />
+                        </span>
+                        <span
+                          className="min-w-0 flex-1 truncate"
+                          style={{ color: "var(--text)" }}
+                        >
+                          {f.name}
+                        </span>
+                        <span
+                          className="text-[10px]"
+                          style={{ color: "var(--text-muted)" }}
+                        >
+                          {f.size < 1024 * 1024
+                            ? `${Math.round(f.size / 1024)} KB`
+                            : `${(f.size / (1024 * 1024)).toFixed(1)} MB`}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removePending(i)}
+                          aria-label={`Remove ${f.name}`}
+                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                          style={{ color: "var(--text-muted)" }}
+                        >
+                          <X size={11} />
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
-              <ul className="flex flex-col gap-1">
-                {pendingFiles.map((f, i) => {
-                  const kind = classify(f);
-                  const Icon = kind === "audio" ? PlayCircle : kind === "image" ? ImageIcon : FileText;
-                  return (
-                    <li
-                      key={i}
-                      className="flex items-center gap-2 rounded-md border px-2 py-1.5 text-[11.5px]"
-                      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
-                    >
-                      <span
-                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md"
-                        style={{ backgroundColor: BRAND_GREEN_SOFT, color: BRAND_GREEN }}
-                      >
-                        <Icon size={11} />
-                      </span>
-                      <span className="min-w-0 flex-1 truncate" style={{ color: "var(--text)" }}>{f.name}</span>
-                      <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
-                        {f.size < 1024 * 1024 ? `${Math.round(f.size / 1024)} KB` : `${(f.size / (1024 * 1024)).toFixed(1)} MB`}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => removePending(i)}
-                        aria-label={`Remove ${f.name}`}
-                        className="flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                        style={{ color: "var(--text-muted)" }}
-                      >
-                        <X size={11} />
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          )}
+            )}
 
-          {sendError && (
-            <p className="mt-2 text-[11px]" style={{ color: "var(--accent-red)" }}>
-              {sendError}
-            </p>
-          )}
+            {sendError && (
+              <p
+                className="mt-2 text-[11px]"
+                style={{ color: "var(--accent-red)" }}
+              >
+                {sendError}
+              </p>
+            )}
 
-          {/* voiceMsg covers mic permission denials + dictation errors +
+            {/* voiceMsg covers mic permission denials + dictation errors +
               recording errors. Acts as a transient banner the user can
               dismiss with the inline X. Same shape as the customer-side
               voice-error toast above the composer. */}
-          {voiceMsg && (
-            <div
-              className="mt-2 flex items-center justify-between gap-2 rounded-md border px-3 py-1.5 text-[11px]"
-              style={{
-                borderColor: "var(--border)",
-                backgroundColor: "var(--surface)",
-                color: "var(--text-muted)",
-              }}
-            >
-              <span>{voiceMsg}</span>
+            {voiceMsg && (
+              <div
+                className="mt-2 flex items-center justify-between gap-2 rounded-md border px-3 py-1.5 text-[11px]"
+                style={{
+                  borderColor: "var(--border)",
+                  backgroundColor: "var(--surface)",
+                  color: "var(--text-muted)",
+                }}
+              >
+                <span>{voiceMsg}</span>
+                <button
+                  type="button"
+                  onClick={() => setVoiceMsg(null)}
+                  className="opacity-60 transition-opacity hover:opacity-100"
+                  aria-label="Dismiss"
+                >
+                  <X size={11} />
+                </button>
+              </div>
+            )}
+
+            {recState === "recording" && (
+              <p
+                className="mt-2 inline-flex items-center gap-1 text-[11px]"
+                style={{ color: BRAND_GREEN }}
+              >
+                <span className="relative inline-flex h-1.5 w-1.5">
+                  <span
+                    className="absolute inset-0 inline-flex animate-ping rounded-full opacity-60"
+                    style={{ backgroundColor: BRAND_GREEN }}
+                  />
+                  <span
+                    className="relative h-1.5 w-1.5 rounded-full"
+                    style={{ backgroundColor: BRAND_GREEN }}
+                  />
+                </span>
+                Recording — tap audio icon again to finish.
+              </p>
+            )}
+
+            <div className="mt-2 flex items-center gap-1">
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                accept=".pdf,.txt,.xlsx,.docx,image/*,audio/*"
+                onChange={(e) => addFiles(e.target.files)}
+              />
               <button
                 type="button"
-                onClick={() => setVoiceMsg(null)}
-                className="opacity-60 transition-opacity hover:opacity-100"
-                aria-label="Dismiss"
+                onClick={() => fileInputRef.current?.click()}
+                aria-label="Attach file"
+                title="Attach a file — sent on Send."
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                style={{
+                  color: "var(--text-muted)",
+                  border: "1px solid var(--border)",
+                }}
               >
-                <X size={11} />
+                <Paperclip size={14} />
               </button>
-            </div>
-          )}
-
-          {recState === "recording" && (
-            <p className="mt-2 inline-flex items-center gap-1 text-[11px]" style={{ color: BRAND_GREEN }}>
-              <span className="relative inline-flex h-1.5 w-1.5">
-                <span className="absolute inset-0 inline-flex animate-ping rounded-full opacity-60" style={{ backgroundColor: BRAND_GREEN }} />
-                <span className="relative h-1.5 w-1.5 rounded-full" style={{ backgroundColor: BRAND_GREEN }} />
-              </span>
-              Recording — tap audio icon again to finish.
-            </p>
-          )}
-
-          <div className="mt-2 flex items-center gap-1">
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              className="hidden"
-              accept=".pdf,.txt,.xlsx,.docx,image/*,audio/*"
-              onChange={(e) => addFiles(e.target.files)}
-            />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              aria-label="Attach file"
-              title="Attach a file — sent on Send."
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-              style={{
-                color: "var(--text-muted)",
-                border: "1px solid var(--border)",
-              }}
-            >
-              <Paperclip size={14} />
-            </button>
-            {/* Mic — voice-to-text dictation via Web Speech API. Tap to
+              {/* Mic — voice-to-text dictation via Web Speech API. Tap to
                 start, tap again to stop. While transcribing the button
                 gets a soft brand-green tint so the active state is
                 obvious. The composer text below picks up interim results
                 in real time. */}
-            <button
-              type="button"
-              onClick={voiceMode === "transcribing" ? stopTranscribe : () => void startTranscribe()}
-              aria-label={voiceMode === "transcribing" ? "Stop dictating" : "Dictate"}
-              title={voiceMode === "transcribing" ? "Stop dictating" : "Dictate — voice to text"}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors"
-              style={{
-                color: voiceMode === "transcribing" ? BRAND_GREEN : "var(--text-muted)",
-                backgroundColor: voiceMode === "transcribing"
-                  ? "color-mix(in srgb, var(--primary) 14%, transparent)"
-                  : "transparent",
-                border: "1px solid var(--border)",
-              }}
-            >
-              <Mic size={14} />
-            </button>
-            {/* Audio-lines — MediaRecorder voice-message capture. Tap to
+              <button
+                type="button"
+                onClick={
+                  voiceMode === "transcribing"
+                    ? stopTranscribe
+                    : () => void startTranscribe()
+                }
+                aria-label={
+                  voiceMode === "transcribing" ? "Stop dictating" : "Dictate"
+                }
+                title={
+                  voiceMode === "transcribing"
+                    ? "Stop dictating"
+                    : "Dictate — voice to text"
+                }
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors"
+                style={{
+                  color:
+                    voiceMode === "transcribing"
+                      ? BRAND_GREEN
+                      : "var(--text-muted)",
+                  backgroundColor:
+                    voiceMode === "transcribing"
+                      ? "color-mix(in srgb, var(--primary) 14%, transparent)"
+                      : "transparent",
+                  border: "1px solid var(--border)",
+                }}
+              >
+                <Mic size={14} />
+              </button>
+              {/* Audio-lines — MediaRecorder voice-message capture. Tap to
                 start, tap again to stop. The resulting blob is staged
                 into pendingFiles and ships on the next Send (same path
                 as paperclip-attached files). Recording state turns the
                 button into a solid brand-green puck with a pulse so the
                 "you're being recorded" affordance is unmissable. */}
-            <button
-              type="button"
-              onClick={recState === "recording" ? stopRecording : () => void startRecording()}
-              aria-label={recState === "recording" ? "Stop recording" : "Record voice message"}
-              title={recState === "recording"
-                ? "Tap to finish recording"
-                : "Record a voice message — sent on Send."}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors"
-              style={{
-                color: recState === "recording" ? "#fff" : "var(--text-muted)",
-                backgroundColor: recState === "recording" ? BRAND_GREEN : "transparent",
-                border: "1px solid var(--border)",
-              }}
-            >
-              <AudioLines size={14} className={recState === "recording" ? "animate-pulse" : undefined} />
-            </button>
-            <div className="flex-1" />
-            <button
-              type="button"
-              onClick={() => void send()}
-              disabled={sending || (!text.trim() && pendingFiles.length === 0)}
-              aria-label="Send"
-              className="flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-              style={{
-                backgroundColor: BRAND_GREEN,
-                color: "#fff",
-              }}
-            >
-              {sending ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
-              Send
-            </button>
+              <button
+                type="button"
+                onClick={
+                  recState === "recording"
+                    ? stopRecording
+                    : () => void startRecording()
+                }
+                aria-label={
+                  recState === "recording"
+                    ? "Stop recording"
+                    : "Record voice message"
+                }
+                title={
+                  recState === "recording"
+                    ? "Tap to finish recording"
+                    : "Record a voice message — sent on Send."
+                }
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors"
+                style={{
+                  color:
+                    recState === "recording" ? "#fff" : "var(--text-muted)",
+                  backgroundColor:
+                    recState === "recording" ? BRAND_GREEN : "transparent",
+                  border: "1px solid var(--border)",
+                }}
+              >
+                <AudioLines
+                  size={14}
+                  className={
+                    recState === "recording" ? "animate-pulse" : undefined
+                  }
+                />
+              </button>
+              <div className="flex-1" />
+              <button
+                type="button"
+                onClick={() => void send()}
+                disabled={
+                  sending || (!text.trim() && pendingFiles.length === 0)
+                }
+                aria-label="Send"
+                className="flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                style={{
+                  backgroundColor: BRAND_GREEN,
+                  color: "#fff",
+                }}
+              >
+                {sending ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : (
+                  <Send size={12} />
+                )}
+                Send
+              </button>
+            </div>
           </div>
         </div>
-      </div>
       )}
     </aside>
   );
@@ -1358,18 +1714,21 @@ function sameDay(a: number, b: number): boolean {
 function DateSeparatorPill({ ts }: { ts: number }) {
   const d = new Date(ts);
   const today = new Date();
-  const yesterday = new Date(); yesterday.setDate(today.getDate() - 1);
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
   let label: string;
   if (sameDay(ts, today.getTime())) label = "Today";
   else if (sameDay(ts, yesterday.getTime())) label = "Yesterday";
-  else label = d.toLocaleDateString("en-US", {
-    month: "short", day: "numeric",
-    year: today.getFullYear() === d.getFullYear() ? undefined : "numeric",
-  });
+  else
+    label = d.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: today.getFullYear() === d.getFullYear() ? undefined : "numeric",
+    });
   return (
     <div className="my-2 flex justify-center">
       <span
-        className="rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
+        className="rounded-full px-2.5 py-0.5 text-[10px] font-semibold tracking-wider uppercase"
         style={{
           backgroundColor: "color-mix(in srgb, var(--text) 8%, transparent)",
           color: "var(--text-muted)",
@@ -1392,9 +1751,18 @@ function DateSeparatorPill({ ts }: { ts: number }) {
 // (declared in globals.css) so a freshly-sent message feels posted rather
 // than spawned in place.
 function ChatBubble({
-  message, viewerKind,
-  menuOpen, editing, editText, onEditTextChange,
-  onOpenMenu, onCloseMenu, onStartEdit, onSaveEdit, onCancelEdit, onDelete,
+  message,
+  viewerKind,
+  menuOpen,
+  editing,
+  editText,
+  onEditTextChange,
+  onOpenMenu,
+  onCloseMenu,
+  onStartEdit,
+  onSaveEdit,
+  onCancelEdit,
+  onDelete,
 }: {
   message: GuestMessage;
   viewerKind: "engineer" | "guest" | "system" | null;
@@ -1426,7 +1794,10 @@ function ChatBubble({
       <div className="flex justify-center">
         <span
           className="inline-block rounded-full px-2 py-0.5 text-[10px]"
-          style={{ backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)", color: "var(--text-muted)" }}
+          style={{
+            backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)",
+            color: "var(--text-muted)",
+          }}
         >
           {message.body}
         </span>
@@ -1438,7 +1809,8 @@ function ChatBubble({
   // party's. WhatsApp model: mine = right, theirs = left.
   const mine = viewerKind != null && message.sender_kind === viewerKind;
   const ts = new Date(message.created_at).toLocaleTimeString("en-US", {
-    hour: "numeric", minute: "2-digit",
+    hour: "numeric",
+    minute: "2-digit",
   });
 
   const startHold = () => {
@@ -1458,7 +1830,9 @@ function ChatBubble({
   return (
     <div
       className={`group relative flex items-start gap-1.5 ${mine ? "justify-end" : "justify-start"}`}
-      style={{ animation: editing ? undefined : "relay-bubble-in 180ms ease-out" }}
+      style={{
+        animation: editing ? undefined : "relay-bubble-in 180ms ease-out",
+      }}
       onTouchStart={startHold}
       onTouchEnd={cancelHold}
       onTouchCancel={cancelHold}
@@ -1480,7 +1854,9 @@ function ChatBubble({
             title="Edit / delete"
             className={
               "flex h-7 w-7 items-center justify-center rounded-full border transition-opacity " +
-              (menuOpen ? "opacity-100" : "opacity-70 group-hover:opacity-100 focus:opacity-100")
+              (menuOpen
+                ? "opacity-100"
+                : "opacity-70 group-hover:opacity-100 focus:opacity-100")
             }
             style={{
               backgroundColor: "var(--surface)",
@@ -1493,7 +1869,7 @@ function ChatBubble({
           {menuOpen && (
             <div
               onClick={(e) => e.stopPropagation()}
-              className="absolute right-0 top-full z-20 mt-1 min-w-[150px] overflow-hidden rounded-lg border shadow-xl"
+              className="absolute top-full right-0 z-20 mt-1 min-w-[150px] overflow-hidden rounded-lg border shadow-xl"
               style={{
                 borderColor: "var(--border)",
                 backgroundColor: "var(--surface)",
@@ -1527,8 +1903,17 @@ function ChatBubble({
         className="relative max-w-[78%] rounded-2xl px-3 py-2 text-[13px] leading-snug whitespace-pre-wrap"
         style={
           mine
-            ? { backgroundColor: BRAND_GREEN, color: "#fff", borderBottomRightRadius: 4 }
-            : { backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)", color: "var(--text)", borderBottomLeftRadius: 4 }
+            ? {
+                backgroundColor: BRAND_GREEN,
+                color: "#fff",
+                borderBottomRightRadius: 4,
+              }
+            : {
+                backgroundColor:
+                  "color-mix(in srgb, var(--text) 6%, transparent)",
+                color: "var(--text)",
+                borderBottomLeftRadius: 4,
+              }
         }
       >
         {editing ? (
@@ -1538,7 +1923,11 @@ function ChatBubble({
               value={editText}
               onChange={(e) => onEditTextChange(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                if (
+                  e.key === "Enter" &&
+                  !e.shiftKey &&
+                  !e.nativeEvent.isComposing
+                ) {
                   e.preventDefault();
                   onSaveEdit();
                 } else if (e.key === "Escape") {
@@ -1562,7 +1951,9 @@ function ChatBubble({
                 type="button"
                 onClick={onCancelEdit}
                 className="rounded-full px-2 py-0.5 text-[11px] font-medium transition-opacity hover:opacity-80"
-                style={{ color: mine ? "rgba(255,255,255,0.8)" : "var(--text-muted)" }}
+                style={{
+                  color: mine ? "rgba(255,255,255,0.8)" : "var(--text-muted)",
+                }}
               >
                 Cancel
               </button>
@@ -1570,7 +1961,10 @@ function ChatBubble({
                 type="button"
                 onClick={onSaveEdit}
                 className="flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-opacity hover:opacity-90"
-                style={{ backgroundColor: mine ? "#fff" : BRAND_GREEN, color: mine ? BRAND_GREEN : "#fff" }}
+                style={{
+                  backgroundColor: mine ? "#fff" : BRAND_GREEN,
+                  color: mine ? BRAND_GREEN : "#fff",
+                }}
               >
                 <Check size={10} /> Save
               </button>
@@ -1584,11 +1978,15 @@ function ChatBubble({
               </div>
             )}
             {message.body && (
-              <div className="whitespace-pre-wrap break-words pr-1">{message.body}</div>
+              <div className="pr-1 break-words whitespace-pre-wrap">
+                {message.body}
+              </div>
             )}
             <div
               className="mt-0.5 flex items-center justify-end gap-1 text-[9px]"
-              style={{ color: mine ? "rgba(255,255,255,0.75)" : "var(--text-muted)" }}
+              style={{
+                color: mine ? "rgba(255,255,255,0.75)" : "var(--text-muted)",
+              }}
             >
               {/* "(edited)" badge — same word + position as WhatsApp.
                   Renders only after the author edits the body, driven by
@@ -1616,38 +2014,58 @@ function ChatBubble({
 function SummaryBlock({ session }: { session: GuestCall }) {
   const overview = session.ai_summary_overview ?? session.summary;
   const nextSteps = Array.isArray(session.ai_next_steps as unknown)
-    ? (session.ai_next_steps as unknown as Array<string | { text?: string; description?: string }>)
+    ? (session.ai_next_steps as unknown as Array<
+        string | { text?: string; description?: string }
+      >)
     : [];
 
   return (
     <section
       className="mb-5 rounded-2xl border p-5"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface)",
+      }}
     >
-      <h2 className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider" style={{ color: BRAND_GREEN }}>
+      <h2
+        className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold tracking-wider uppercase"
+        style={{ color: BRAND_GREEN }}
+      >
         <Sparkles size={11} />
         AI Summary
       </h2>
       {overview ? (
-        <p className="whitespace-pre-wrap text-[14px] leading-relaxed" style={{ color: "var(--text)" }}>
+        <p
+          className="text-[14px] leading-relaxed whitespace-pre-wrap"
+          style={{ color: "var(--text)" }}
+        >
           {overview}
         </p>
       ) : (
         <p className="text-sm" style={{ color: "var(--text-faint)" }}>
-          No summary available for this session yet. If the call just ended, give the AI a minute to write one.
+          No summary available for this session yet. If the call just ended,
+          give the AI a minute to write one.
         </p>
       )}
       {nextSteps.length > 0 && (
         <div className="mt-5">
-          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+          <h3
+            className="mb-2 text-[10px] font-semibold tracking-wider uppercase"
+            style={{ color: "var(--text-muted)" }}
+          >
             Next steps
           </h3>
           <ul className="space-y-1.5">
             {nextSteps.map((s, i) => {
-              const text = typeof s === "string" ? s : (s.text ?? s.description ?? "");
+              const text =
+                typeof s === "string" ? s : (s.text ?? s.description ?? "");
               if (!text) return null;
               return (
-                <li key={i} className="flex gap-2 text-sm" style={{ color: "var(--text)" }}>
+                <li
+                  key={i}
+                  className="flex gap-2 text-sm"
+                  style={{ color: "var(--text)" }}
+                >
                   <span style={{ color: BRAND_GREEN }}>→</span>
                   <span>{text}</span>
                 </li>
@@ -1665,15 +2083,21 @@ function SummaryBlock({ session }: { session: GuestCall }) {
 // ─────────────────────────────────────────────────────────────────────────
 function FilesBlock({ files }: { files: GuestMessageAttachment[] }) {
   const images = files.filter((f) => f.kind === "image");
-  const docs   = files.filter((f) => f.kind === "document");
+  const docs = files.filter((f) => f.kind === "document");
   const audios = files.filter((f) => f.kind === "audio");
 
   return (
     <section
       className="mb-5 rounded-2xl border p-5"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface)",
+      }}
     >
-      <h2 className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+      <h2
+        className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold tracking-wider uppercase"
+        style={{ color: "var(--text-muted)" }}
+      >
         <Paperclip size={11} />
         Files {files.length > 0 && <span>· {files.length}</span>}
       </h2>
@@ -1684,22 +2108,35 @@ function FilesBlock({ files }: { files: GuestMessageAttachment[] }) {
       ) : (
         <div className="flex flex-col gap-4">
           {images.length > 0 && <FileGroup title="Images" files={images} />}
-          {docs.length > 0   && <FileGroup title="Documents" files={docs} />}
-          {audios.length > 0 && <FileGroup title="Voice notes" files={audios} />}
+          {docs.length > 0 && <FileGroup title="Documents" files={docs} />}
+          {audios.length > 0 && (
+            <FileGroup title="Voice notes" files={audios} />
+          )}
         </div>
       )}
     </section>
   );
 }
 
-function FileGroup({ title, files }: { title: string; files: GuestMessageAttachment[] }) {
+function FileGroup({
+  title,
+  files,
+}: {
+  title: string;
+  files: GuestMessageAttachment[];
+}) {
   return (
     <div>
-      <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
+      <h3
+        className="mb-1.5 text-[10px] font-semibold tracking-wider uppercase"
+        style={{ color: "var(--text-faint)" }}
+      >
         {title}
       </h3>
       <div className="flex flex-col gap-1.5">
-        {files.map((f) => <FileRow key={f.id} file={f} />)}
+        {files.map((f) => (
+          <FileRow key={f.id} file={f} />
+        ))}
       </div>
     </div>
   );
@@ -1719,20 +2156,27 @@ function FileRow({ file }: { file: GuestMessageAttachment }) {
     }
   };
 
-  const Icon = file.kind === "image" ? ImageIcon
-    : file.kind === "audio" ? PlayCircle
-    : isSpreadsheet(file.name) ? FileSpreadsheet
-    : isWordDoc(file.name) ? FileType
-    : FileText;
+  const Icon =
+    file.kind === "image"
+      ? ImageIcon
+      : file.kind === "audio"
+        ? PlayCircle
+        : isSpreadsheet(file.name)
+          ? FileSpreadsheet
+          : isWordDoc(file.name)
+            ? FileType
+            : FileText;
 
-  const sizeLabel = file.size_bytes != null
-    ? formatSize(file.size_bytes)
-    : null;
+  const sizeLabel =
+    file.size_bytes != null ? formatSize(file.size_bytes) : null;
 
   return (
     <div
       className="flex items-center gap-3 rounded-lg border px-3 py-2"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)" }}
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface-raised)",
+      }}
     >
       <div
         className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md"
@@ -1754,10 +2198,14 @@ function FileRow({ file }: { file: GuestMessageAttachment }) {
         type="button"
         onClick={() => void onDownload()}
         disabled={busy}
-        className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+        className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
         style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
       >
-        {busy ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
+        {busy ? (
+          <Loader2 size={11} className="animate-spin" />
+        ) : (
+          <Download size={11} />
+        )}
         Download
       </button>
     </div>
@@ -1783,7 +2231,10 @@ function formatSize(bytes: number): string {
 // well alongside the AI summary + files.
 // ─────────────────────────────────────────────────────────────────────────
 function TranscriptBlock({
-  messages, loading, error, onDownload,
+  messages,
+  loading,
+  error,
+  onDownload,
 }: {
   messages: GuestMessage[];
   loading: boolean;
@@ -1804,10 +2255,16 @@ function TranscriptBlock({
   return (
     <section
       className="rounded-2xl border p-5"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface)",
+      }}
     >
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+        <h2
+          className="text-[11px] font-semibold tracking-wider uppercase"
+          style={{ color: "var(--text-muted)" }}
+        >
           Chat transcript
         </h2>
         {visible.length > 0 && (
@@ -1824,18 +2281,25 @@ function TranscriptBlock({
       </div>
 
       {loading ? (
-        <div className="flex items-center gap-2 py-4 text-sm" style={{ color: "var(--text-muted)" }}>
+        <div
+          className="flex items-center gap-2 py-4 text-sm"
+          style={{ color: "var(--text-muted)" }}
+        >
           <Loader2 size={14} className="animate-spin" /> Loading transcript…
         </div>
       ) : error ? (
-        <p className="text-sm" style={{ color: "var(--accent-red)" }}>{error}</p>
+        <p className="text-sm" style={{ color: "var(--accent-red)" }}>
+          {error}
+        </p>
       ) : visible.length === 0 ? (
         <p className="text-sm" style={{ color: "var(--text-faint)" }}>
           No chat messages were exchanged in this session.
         </p>
       ) : (
         <div className="space-y-3">
-          {visible.map((m) => <TranscriptMessage key={m.id} message={m} />)}
+          {visible.map((m) => (
+            <TranscriptMessage key={m.id} message={m} />
+          ))}
         </div>
       )}
     </section>
@@ -1851,7 +2315,10 @@ function TranscriptMessage({ message }: { message: GuestMessage }) {
       <div className="flex flex-col items-center gap-2">
         <span
           className="inline-block rounded-full px-2.5 py-1 text-[11px]"
-          style={{ backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)", color: "var(--text-muted)" }}
+          style={{
+            backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)",
+            color: "var(--text-muted)",
+          }}
         >
           {message.body}
         </span>
@@ -1859,7 +2326,8 @@ function TranscriptMessage({ message }: { message: GuestMessage }) {
           <div
             className="flex max-w-[85%] flex-col gap-2 rounded-2xl px-3.5 py-2.5"
             style={{
-              backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)",
+              backgroundColor:
+                "color-mix(in srgb, var(--text) 6%, transparent)",
               color: "var(--text)",
             }}
           >
@@ -1869,23 +2337,40 @@ function TranscriptMessage({ message }: { message: GuestMessage }) {
       </div>
     );
   }
-  const ts = new Date(message.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const ts = new Date(message.created_at).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
   const isEngineer = message.sender_kind === "engineer";
   const senderLabel = isEngineer
-    ? message.sender_name ?? "Engineer"
-    : message.sender_name ?? "Customer";
+    ? (message.sender_name ?? "Engineer")
+    : (message.sender_name ?? "Customer");
 
   return (
-    <div className={`flex flex-col ${isEngineer ? "items-end" : "items-start"}`}>
-      <div className="mb-0.5 px-1 text-[10px]" style={{ color: "var(--text-muted)" }}>
+    <div
+      className={`flex flex-col ${isEngineer ? "items-end" : "items-start"}`}
+    >
+      <div
+        className="mb-0.5 px-1 text-[10px]"
+        style={{ color: "var(--text-muted)" }}
+      >
         {senderLabel} · {ts}
       </div>
       <div
         className="flex max-w-[85%] flex-col gap-2 rounded-2xl px-3.5 py-2.5 text-sm whitespace-pre-wrap"
         style={
           isEngineer
-            ? { backgroundColor: BRAND_GREEN, color: "#fff", borderBottomRightRadius: 4 }
-            : { backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)", color: "var(--text)", borderBottomLeftRadius: 4 }
+            ? {
+                backgroundColor: BRAND_GREEN,
+                color: "#fff",
+                borderBottomRightRadius: 4,
+              }
+            : {
+                backgroundColor:
+                  "color-mix(in srgb, var(--text) 6%, transparent)",
+                color: "var(--text)",
+                borderBottomLeftRadius: 4,
+              }
         }
       >
         {message.attachments && message.attachments.length > 0 && (

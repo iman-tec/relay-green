@@ -24,13 +24,14 @@ import { banUser, unbanUser } from "@/lib/auth-ban";
 import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: Request, { params }: RouteCtx) {
   const gate = await requireEnterpriseAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin, orgId, user: actor } = gate;
 
   const { id } = await params;
@@ -39,9 +40,14 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: "cannot_modify_self" }, { status: 400 });
   }
 
-  const { status } = (await request.json().catch(() => ({}))) as { status?: string };
+  const { status } = (await request.json().catch(() => ({}))) as {
+    status?: string;
+  };
   if (status !== "ACTIVE" && status !== "DEACTIVATED") {
-    return NextResponse.json({ error: "status must be ACTIVE or DEACTIVATED" }, { status: 400 });
+    return NextResponse.json(
+      { error: "status must be ACTIVE or DEACTIVATED" },
+      { status: 400 }
+    );
   }
 
   // Target must be in the caller's org.
@@ -50,7 +56,10 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
     .select("id, organization_id")
     .eq("id", id)
     .maybeSingle();
-  if (!target || (target as { organization_id: string | null }).organization_id !== orgId) {
+  if (
+    !target ||
+    (target as { organization_id: string | null }).organization_id !== orgId
+  ) {
     return NextResponse.json({ error: "not_in_org" }, { status: 404 });
   }
 
@@ -60,17 +69,17 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
     .select("role")
     .eq("user_id", id);
   const isEntAdmin = (targetRoles ?? []).some(
-    (r: { role: string }) => r.role === ROLE.enterprise_admin,
+    (r: { role: string }) => r.role === ROLE.enterprise_admin
   );
   if (isEntAdmin) {
     return NextResponse.json(
       { error: "Enterprise admins can only be changed by a super admin." },
-      { status: 403 },
+      { status: 403 }
     );
   }
 
   if (status === "DEACTIVATED") await banUser(admin, id);
-  else                          await unbanUser(admin, id);
+  else await unbanUser(admin, id);
 
   return NextResponse.json({ ok: true, status });
 }

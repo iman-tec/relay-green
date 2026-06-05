@@ -36,32 +36,32 @@ import { useOverlayDismiss } from "@/lib/relay/useOverlayDismiss";
 const BRAND_GREEN = "#3f5c2e";
 
 type Enterprise = {
-  id:                string;
-  name:              string;
-  primaryDomain:     string | null;
-  status:            string;
-  enterpriseCode:    string;
-  allocatedMinutes:  number;
-  usedMinutes:       number;
-  remainingMinutes:  number;
-  createdAt:         string;
+  id: string;
+  name: string;
+  primaryDomain: string | null;
+  status: string;
+  enterpriseCode: string;
+  allocatedMinutes: number;
+  usedMinutes: number;
+  remainingMinutes: number;
+  createdAt: string;
 };
 
 type Reseller = {
-  id:                string;
-  name:              string;
-  email:             string | null;
-  resellerCode:      string;
-  commission:        number;
-  allocatedMinutes:  number;
-  usedMinutes:       number;
-  remainingMinutes:  number;
-  status:            "active" | "suspended";
-  ownerUserId:       string | null;
-  totalEnterprises:  number;
+  id: string;
+  name: string;
+  email: string | null;
+  resellerCode: string;
+  commission: number;
+  allocatedMinutes: number;
+  usedMinutes: number;
+  remainingMinutes: number;
+  status: "active" | "suspended";
+  ownerUserId: string | null;
+  totalEnterprises: number;
   activeEnterprises: number;
-  enterprises:       Enterprise[];
-  createdAt:         string;
+  enterprises: Enterprise[];
+  createdAt: string;
 };
 
 export function ResellersTab() {
@@ -84,11 +84,15 @@ export function ResellersTab() {
     try {
       const res = await fetch("/api/admin/resellers", { cache: "no-store" });
       const body = (await res.json().catch(() => ({}))) as {
-        resellers?: Reseller[]; error?: string;
+        resellers?: Reseller[];
+        error?: string;
       };
-      if (!res.ok) { setError(body.error ?? "Couldn't load resellers."); return; }
+      if (!res.ok) {
+        setError(body.error ?? "Couldn't load resellers.");
+        return;
+      }
       setResellers(body.resellers ?? []);
-      setSelectedId((curr) => curr ?? (body.resellers?.[0]?.id ?? null));
+      setSelectedId((curr) => curr ?? body.resellers?.[0]?.id ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't load resellers.");
     } finally {
@@ -96,18 +100,30 @@ export function ResellersTab() {
     }
   };
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    void load();
+  }, []);
 
   const createReseller = async (input: {
-    name: string; email: string; commission: number; allocatedMinutes: number;
+    name: string;
+    email: string;
+    commission: number;
+    allocatedMinutes: number;
   }) => {
     const res = await fetch("/api/admin/resellers", {
-      method:  "POST",
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify(input),
+      body: JSON.stringify(input),
     });
-    const body = (await res.json().catch(() => ({}))) as { reseller?: Reseller; error?: string };
-    if (!res.ok) return { ok: false as const, error: body.error ?? "Couldn't create reseller." };
+    const body = (await res.json().catch(() => ({}))) as {
+      reseller?: Reseller;
+      error?: string;
+    };
+    if (!res.ok)
+      return {
+        ok: false as const,
+        error: body.error ?? "Couldn't create reseller.",
+      };
     await load();
     if (body.reseller?.id) setSelectedId(body.reseller.id);
     setInfo(`Invitation email sent to ${input.email}.`);
@@ -116,12 +132,13 @@ export function ResellersTab() {
 
   const refill = async (r: Reseller, amount: number) => {
     const res = await fetch(`/api/admin/resellers/${r.id}/refill`, {
-      method:  "POST",
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ amount }),
+      body: JSON.stringify({ amount }),
     });
     const body = (await res.json().catch(() => ({}))) as { error?: string };
-    if (!res.ok) return { ok: false as const, error: body.error ?? "Refill failed." };
+    if (!res.ok)
+      return { ok: false as const, error: body.error ?? "Refill failed." };
     setInfo(`Added ${amount} minutes to ${r.name}.`);
     await load();
     return { ok: true as const };
@@ -141,27 +158,33 @@ export function ResellersTab() {
       if (!ok) return;
     }
     const res = await fetch(`/api/admin/resellers/${r.id}`, {
-      method:  "PATCH",
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ status: next }),
+      body: JSON.stringify({ status: next }),
     });
     const body = (await res.json().catch(() => ({}))) as { error?: string };
-    if (!res.ok) { setError(body.error ?? "Update failed."); return; }
-    setInfo(next === "active" ? `Reactivated ${r.name}.` : `Deactivated ${r.name}.`);
+    if (!res.ok) {
+      setError(body.error ?? "Update failed.");
+      return;
+    }
+    setInfo(
+      next === "active" ? `Reactivated ${r.name}.` : `Deactivated ${r.name}.`
+    );
     await load();
   };
 
   const editReseller = async (
     r: Reseller,
-    patch: { name?: string; email?: string; commission?: number },
+    patch: { name?: string; email?: string; commission?: number }
   ) => {
     const res = await fetch(`/api/admin/resellers/${r.id}`, {
-      method:  "PATCH",
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify(patch),
+      body: JSON.stringify(patch),
     });
     const body = (await res.json().catch(() => ({}))) as { error?: string };
-    if (!res.ok) return { ok: false as const, error: body.error ?? "Update failed." };
+    if (!res.ok)
+      return { ok: false as const, error: body.error ?? "Update failed." };
     setInfo(`Updated ${r.name}.`);
     await load();
     return { ok: true as const };
@@ -176,9 +199,11 @@ export function ResellersTab() {
         <div
           className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm font-medium"
           style={{
-            backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
+            backgroundColor:
+              "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
             color: BRAND_GREEN,
-            borderColor: "color-mix(in srgb, " + BRAND_GREEN + " 35%, transparent)",
+            borderColor:
+              "color-mix(in srgb, " + BRAND_GREEN + " 35%, transparent)",
             animation: "relay-toast-in 180ms ease-out",
           }}
         >
@@ -186,7 +211,12 @@ export function ResellersTab() {
             <CheckCircle2 size={14} />
             {info}
           </span>
-          <button type="button" onClick={() => setInfo(null)} aria-label="Dismiss" className="rounded-md p-1">
+          <button
+            type="button"
+            onClick={() => setInfo(null)}
+            aria-label="Dismiss"
+            className="rounded-md p-1"
+          >
             <X size={14} />
           </button>
         </div>
@@ -223,14 +253,21 @@ export function ResellersTab() {
 /* ──────── Left pane: reseller list + create ──────── */
 
 function ResellerList({
-  resellers, selectedId, onSelect, loading, createReseller,
+  resellers,
+  selectedId,
+  onSelect,
+  loading,
+  createReseller,
 }: {
   resellers: Reseller[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   loading: boolean;
   createReseller: (input: {
-    name: string; email: string; commission: number; allocatedMinutes: number;
+    name: string;
+    email: string;
+    commission: number;
+    allocatedMinutes: number;
   }) => Promise<{ ok: true } | { ok: false; error: string }>;
 }) {
   const [creating, setCreating] = useState(false);
@@ -243,14 +280,17 @@ function ResellerList({
       (r) =>
         r.name.toLowerCase().includes(q) ||
         (r.email ?? "").toLowerCase().includes(q) ||
-        r.resellerCode.toLowerCase().includes(q),
+        r.resellerCode.toLowerCase().includes(q)
     );
   }, [resellers, query]);
 
   return (
     <aside
       className="overflow-hidden rounded-xl border"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface)",
+      }}
     >
       <div
         className="flex items-center justify-between gap-2 border-b px-4 py-3"
@@ -287,15 +327,17 @@ function ResellerList({
         >
           <Search
             size={12}
-            className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2"
+            className="pointer-events-none absolute top-1/2 left-5 -translate-y-1/2"
             style={{ color: "var(--text-muted)" }}
           />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setQuery("");
+            }}
             placeholder="Search resellers…"
-            className="w-full rounded-md border py-1.5 pl-7 pr-7 text-xs outline-none"
+            className="w-full rounded-md border py-1.5 pr-7 pl-7 text-xs outline-none"
             style={{
               borderColor: "var(--border)",
               backgroundColor: "var(--background)",
@@ -305,7 +347,7 @@ function ResellerList({
           {query && (
             <button
               onClick={() => setQuery("")}
-              className="absolute right-5 top-1/2 -translate-y-1/2 rounded-md p-0.5"
+              className="absolute top-1/2 right-5 -translate-y-1/2 rounded-md p-0.5"
               style={{ color: "var(--text-muted)" }}
               title="Clear search"
             >
@@ -317,14 +359,25 @@ function ResellerList({
 
       {loading ? (
         <div className="flex justify-center py-10">
-          <Loader2 size={16} className="animate-spin" style={{ color: BRAND_GREEN }} />
+          <Loader2
+            size={16}
+            className="animate-spin"
+            style={{ color: BRAND_GREEN }}
+          />
         </div>
       ) : resellers.length === 0 ? (
-        <p className="px-4 py-10 text-center text-xs" style={{ color: "var(--text-muted)" }}>
-          No resellers yet. Create your first reseller to start onboarding inorganic enterprises.
+        <p
+          className="px-4 py-10 text-center text-xs"
+          style={{ color: "var(--text-muted)" }}
+        >
+          No resellers yet. Create your first reseller to start onboarding
+          inorganic enterprises.
         </p>
       ) : filtered.length === 0 ? (
-        <p className="px-4 py-10 text-center text-xs" style={{ color: "var(--text-muted)" }}>
+        <p
+          className="px-4 py-10 text-center text-xs"
+          style={{ color: "var(--text-muted)" }}
+        >
           No resellers match “{query}”.
         </p>
       ) : (
@@ -338,7 +391,9 @@ function ResellerList({
                 className="relative block w-full border-b px-4 py-3 text-left transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
                 style={{
                   borderColor: "var(--border)",
-                  backgroundColor: active ? "color-mix(in srgb, var(--text) 4%, transparent)" : "transparent",
+                  backgroundColor: active
+                    ? "color-mix(in srgb, var(--text) 4%, transparent)"
+                    : "transparent",
                 }}
               >
                 {active && (
@@ -349,16 +404,30 @@ function ResellerList({
                   />
                 )}
                 <div className="flex items-center justify-between gap-2">
-                  <div className="text-sm font-medium truncate" style={{ color: "var(--text)" }}>
+                  <div
+                    className="truncate text-sm font-medium"
+                    style={{ color: "var(--text)" }}
+                  >
                     {r.name}
                   </div>
                   <StatusChip status={r.status} />
                 </div>
-                <div className="mt-0.5 text-[11px]" style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                <div
+                  className="mt-0.5 text-[11px]"
+                  style={{
+                    color: "var(--text-muted)",
+                    fontFamily: "var(--font-mono)",
+                  }}
+                >
                   {r.resellerCode}
                 </div>
-                <div className="mt-1 text-[11px]" style={{ color: "var(--text-muted)" }}>
-                  {r.totalEnterprises} enterprise{r.totalEnterprises === 1 ? "" : "s"} · {fmt(r.remainingMinutes)} min remaining
+                <div
+                  className="mt-1 text-[11px]"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  {r.totalEnterprises} enterprise
+                  {r.totalEnterprises === 1 ? "" : "s"} ·{" "}
+                  {fmt(r.remainingMinutes)} min remaining
                 </div>
               </button>
             );
@@ -383,10 +452,14 @@ function EmptyDetail() {
 }
 
 function ResellerCreateInline({
-  submit, cancel,
+  submit,
+  cancel,
 }: {
   submit: (input: {
-    name: string; email: string; commission: number; allocatedMinutes: number;
+    name: string;
+    email: string;
+    commission: number;
+    allocatedMinutes: number;
   }) => Promise<{ ok: true } | { ok: false; error: string }>;
   cancel: () => void;
 }) {
@@ -395,7 +468,7 @@ function ResellerCreateInline({
   const [commission, setCommission] = useState("10");
   const [allocatedMinutes, setAllocatedMinutes] = useState("0");
   const [busy, setBusy] = useState(false);
-  const [err, setErr]   = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
   const onSubmit = async () => {
     if (!name.trim() || !email.trim()) {
@@ -412,11 +485,12 @@ function ResellerCreateInline({
       setErr("Allocation must be non-negative.");
       return;
     }
-    setBusy(true); setErr(null);
+    setBusy(true);
+    setErr(null);
     const r = await submit({
-      name:             name.trim(),
-      email:            email.trim(),
-      commission:       comm,
+      name: name.trim(),
+      email: email.trim(),
+      commission: comm,
       allocatedMinutes: alloc,
     });
     if (!r.ok) setErr(r.error);
@@ -432,12 +506,40 @@ function ResellerCreateInline({
       }}
     >
       <div className="grid grid-cols-1 gap-2">
-        <Field label="Reseller name" value={name} onChange={setName} placeholder="Acme Reselling" autoFocus />
-        <Field label="Reseller email" value={email} onChange={setEmail} placeholder="contact@acme.com" type="email" />
-        <Field label="Commission (%)" value={commission} onChange={setCommission} placeholder="10" type="number" />
-        <Field label="Initial minutes" value={allocatedMinutes} onChange={setAllocatedMinutes} placeholder="0" type="number" />
+        <Field
+          label="Reseller name"
+          value={name}
+          onChange={setName}
+          placeholder="Acme Reselling"
+          autoFocus
+        />
+        <Field
+          label="Reseller email"
+          value={email}
+          onChange={setEmail}
+          placeholder="contact@acme.com"
+          type="email"
+        />
+        <Field
+          label="Commission (%)"
+          value={commission}
+          onChange={setCommission}
+          placeholder="10"
+          type="number"
+        />
+        <Field
+          label="Initial minutes"
+          value={allocatedMinutes}
+          onChange={setAllocatedMinutes}
+          placeholder="0"
+          type="number"
+        />
       </div>
-      {err && <p className="mt-1 text-[11px]" style={{ color: "var(--accent-red)" }}>{err}</p>}
+      {err && (
+        <p className="mt-1 text-[11px]" style={{ color: "var(--accent-red)" }}>
+          {err}
+        </p>
+      )}
       <div className="mt-2 flex justify-end gap-2">
         <button
           type="button"
@@ -466,14 +568,20 @@ function ResellerCreateInline({
 /* ──────── Right pane: reseller detail ──────── */
 
 function ResellerDetail({
-  reseller, refill, toggleStatus, edit,
+  reseller,
+  refill,
+  toggleStatus,
+  edit,
 }: {
   reseller: Reseller;
-  refill: (r: Reseller, amount: number) => Promise<{ ok: true } | { ok: false; error: string }>;
+  refill: (
+    r: Reseller,
+    amount: number
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
   toggleStatus: () => void;
   edit: (
     r: Reseller,
-    patch: { name?: string; email?: string; commission?: number },
+    patch: { name?: string; email?: string; commission?: number }
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
 }) {
   const [refillOpen, setRefillOpen] = useState(false);
@@ -486,7 +594,10 @@ function ResellerDetail({
   return (
     <div
       className="overflow-hidden rounded-xl border"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface)",
+      }}
     >
       {/* Header */}
       <div
@@ -494,18 +605,27 @@ function ResellerDetail({
         style={{ borderColor: "var(--border)" }}
       >
         <div className="min-w-0">
-          <div className="text-sm font-semibold" style={{ color: "var(--text)" }}>
+          <div
+            className="text-sm font-semibold"
+            style={{ color: "var(--text)" }}
+          >
             {reseller.name}
           </div>
           <div
             className="mt-0.5 inline-flex items-center gap-1.5 text-[11px]"
-            style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}
+            style={{
+              color: "var(--text-muted)",
+              fontFamily: "var(--font-mono)",
+            }}
           >
             {codeFmt}
             <CopyButton text={codeFmt} />
           </div>
           {reseller.email && (
-            <div className="mt-0.5 text-[11px]" style={{ color: "var(--text-muted)" }}>
+            <div
+              className="mt-0.5 text-[11px]"
+              style={{ color: "var(--text-muted)" }}
+            >
               {reseller.email}
             </div>
           )}
@@ -551,7 +671,8 @@ function ResellerDetail({
           className="border-b px-5 py-2 text-xs"
           style={{
             borderColor: "var(--border)",
-            backgroundColor: "color-mix(in srgb, var(--accent-red) 8%, transparent)",
+            backgroundColor:
+              "color-mix(in srgb, var(--accent-red) 8%, transparent)",
             color: "var(--accent-red)",
           }}
         >
@@ -564,12 +685,25 @@ function ResellerDetail({
         className="grid grid-cols-3 gap-px"
         style={{ backgroundColor: "var(--border)" }}
       >
-        <KpiCell label="Allocated minutes"  value={fmt(reseller.allocatedMinutes)} />
-        <KpiCell label="Used minutes"       value={fmt(reseller.usedMinutes)} />
-        <KpiCell label="Remaining minutes"  value={fmt(reseller.remainingMinutes)} accent />
-        <KpiCell label="Total enterprises"  value={String(reseller.totalEnterprises)} />
-        <KpiCell label="Active enterprises" value={String(reseller.activeEnterprises)} />
-        <KpiCell label="Commission"         value={`${reseller.commission}%`} />
+        <KpiCell
+          label="Allocated minutes"
+          value={fmt(reseller.allocatedMinutes)}
+        />
+        <KpiCell label="Used minutes" value={fmt(reseller.usedMinutes)} />
+        <KpiCell
+          label="Remaining minutes"
+          value={fmt(reseller.remainingMinutes)}
+          accent
+        />
+        <KpiCell
+          label="Total enterprises"
+          value={String(reseller.totalEnterprises)}
+        />
+        <KpiCell
+          label="Active enterprises"
+          value={String(reseller.activeEnterprises)}
+        />
+        <KpiCell label="Commission" value={`${reseller.commission}%`} />
       </div>
 
       {/* Enterprises minted by this reseller — read-only list. Day-to-day
@@ -579,8 +713,16 @@ function ResellerDetail({
       <EnterprisesSection enterprises={reseller.enterprises ?? []} />
 
       {/* Footer meta */}
-      <div className="px-5 py-3 text-[11px]" style={{ color: "var(--text-muted)" }}>
-        Created {new Date(reseller.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+      <div
+        className="px-5 py-3 text-[11px]"
+        style={{ color: "var(--text-muted)" }}
+      >
+        Created{" "}
+        {new Date(reseller.createdAt).toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        })}
       </div>
 
       {refillOpen && (
@@ -612,13 +754,24 @@ function ResellerDetail({
   );
 }
 
-function KpiCell({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+function KpiCell({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+}) {
   return (
     <div
       className="flex flex-col gap-1 px-5 py-4"
       style={{ backgroundColor: "var(--surface)" }}
     >
-      <span className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--text-muted)" }}>
+      <span
+        className="text-[10px] font-semibold tracking-[0.12em] uppercase"
+        style={{ color: "var(--text-muted)" }}
+      >
         {label}
       </span>
       <span
@@ -638,7 +791,7 @@ function EnterprisesSection({ enterprises }: { enterprises: Enterprise[] }) {
     <section className="border-t" style={{ borderColor: "var(--border)" }}>
       <div className="flex items-center justify-between gap-2 px-5 py-3">
         <h3
-          className="text-[10px] font-semibold uppercase tracking-[0.12em]"
+          className="text-[10px] font-semibold tracking-[0.12em] uppercase"
           style={{ color: "var(--text-muted)" }}
         >
           Enterprises ({enterprises.length})
@@ -663,19 +816,26 @@ function EnterprisesSection({ enterprises }: { enterprises: Enterprise[] }) {
               <span
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
                 style={{
-                  backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
+                  backgroundColor:
+                    "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
                   color: BRAND_GREEN,
                 }}
               >
                 <Building2 size={14} />
               </span>
               <div className="min-w-0 flex-1 leading-tight">
-                <div className="truncate text-sm" style={{ color: "var(--text)" }}>
+                <div
+                  className="truncate text-sm"
+                  style={{ color: "var(--text)" }}
+                >
                   {e.name}
                 </div>
                 <div
                   className="mt-0.5 truncate text-[11px]"
-                  style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}
+                  style={{
+                    color: "var(--text-muted)",
+                    fontFamily: "var(--font-mono)",
+                  }}
                 >
                   {e.enterpriseCode}
                   {e.primaryDomain && <> · {e.primaryDomain}</>}
@@ -686,9 +846,12 @@ function EnterprisesSection({ enterprises }: { enterprises: Enterprise[] }) {
                 style={{ color: "var(--text-muted)" }}
                 title={`Allocated ${e.allocatedMinutes}, used ${e.usedMinutes}, remaining ${e.remainingMinutes}`}
               >
-                {Math.round(e.remainingMinutes)} / {Math.round(e.allocatedMinutes)} min
+                {Math.round(e.remainingMinutes)} /{" "}
+                {Math.round(e.allocatedMinutes)} min
               </span>
-              <StatusChip status={e.status === "active" ? "active" : "suspended"} />
+              <StatusChip
+                status={e.status === "active" ? "active" : "suspended"}
+              />
             </li>
           ))}
         </ul>
@@ -698,11 +861,15 @@ function EnterprisesSection({ enterprises }: { enterprises: Enterprise[] }) {
 }
 
 function RefillModal({
-  reseller, cancel, submit,
+  reseller,
+  cancel,
+  submit,
 }: {
   reseller: Reseller;
   cancel: () => void;
-  submit: (amount: number) => Promise<{ ok: true } | { ok: false; error: string }>;
+  submit: (
+    amount: number
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
 }) {
   const [amount, setAmount] = useState("100");
   const [busy, setBusy] = useState(false);
@@ -710,29 +877,58 @@ function RefillModal({
 
   const onSubmit = async () => {
     const n = Number(amount);
-    if (!Number.isFinite(n) || n <= 0) { setErr("Amount must be > 0."); return; }
-    setBusy(true); setErr(null);
+    if (!Number.isFinite(n) || n <= 0) {
+      setErr("Amount must be > 0.");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
     const r = await submit(n);
     if (!r.ok) setErr(r.error);
     setBusy(false);
   };
 
   return (
-    <ModalShell title={`Add minutes — ${reseller.name}`} onClose={busy ? () => undefined : cancel}>
+    <ModalShell
+      title={`Add minutes — ${reseller.name}`}
+      onClose={busy ? () => undefined : cancel}
+    >
       <p className="mb-3 text-xs" style={{ color: "var(--text-muted)" }}>
-        Adds to the reseller's pool. They'll see allocated + remaining bump immediately.
+        Adds to the reseller's pool. They'll see allocated + remaining bump
+        immediately.
       </p>
-      <Field label="Minutes to add" value={amount} onChange={setAmount} type="number" autoFocus />
-      {err && <p className="mt-1 text-[11px]" style={{ color: "var(--accent-red)" }}>{err}</p>}
+      <Field
+        label="Minutes to add"
+        value={amount}
+        onChange={setAmount}
+        type="number"
+        autoFocus
+      />
+      {err && (
+        <p className="mt-1 text-[11px]" style={{ color: "var(--accent-red)" }}>
+          {err}
+        </p>
+      )}
       <div className="mt-3 flex justify-end gap-2">
-        <button onClick={cancel} disabled={busy} className="rounded-md px-2 py-1 text-xs" style={{ color: "var(--text-muted)" }}>Cancel</button>
+        <button
+          onClick={cancel}
+          disabled={busy}
+          className="rounded-md px-2 py-1 text-xs"
+          style={{ color: "var(--text-muted)" }}
+        >
+          Cancel
+        </button>
         <button
           onClick={() => void onSubmit()}
           disabled={busy}
           className="inline-flex items-center gap-1 rounded-md px-3 py-1 text-xs font-medium disabled:opacity-50"
           style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
         >
-          {busy ? <Loader2 size={11} className="animate-spin" /> : <Coins size={11} />}
+          {busy ? (
+            <Loader2 size={11} className="animate-spin" />
+          ) : (
+            <Coins size={11} />
+          )}
           {busy ? "Adding…" : "Add minutes"}
         </button>
       </div>
@@ -741,12 +937,17 @@ function RefillModal({
 }
 
 function EditModal({
-  reseller, cancel, submit,
+  reseller,
+  cancel,
+  submit,
 }: {
   reseller: Reseller;
   cancel: () => void;
-  submit: (patch: { name?: string; email?: string; commission?: number }) =>
-    Promise<{ ok: true } | { ok: false; error: string }>;
+  submit: (patch: {
+    name?: string;
+    email?: string;
+    commission?: number;
+  }) => Promise<{ ok: true } | { ok: false; error: string }>;
 }) {
   const [name, setName] = useState(reseller.name);
   const [email, setEmail] = useState(reseller.email ?? "");
@@ -757,27 +958,63 @@ function EditModal({
   const onSubmit = async () => {
     const patch: { name?: string; email?: string; commission?: number } = {};
     if (name.trim() && name.trim() !== reseller.name) patch.name = name.trim();
-    if (email.trim() && email.trim().toLowerCase() !== (reseller.email ?? "")) patch.email = email.trim();
+    if (email.trim() && email.trim().toLowerCase() !== (reseller.email ?? ""))
+      patch.email = email.trim();
     if (commission.trim()) {
       const n = Number(commission);
-      if (Number.isNaN(n) || n < 0 || n > 100) { setErr("Commission must be 0–100."); return; }
+      if (Number.isNaN(n) || n < 0 || n > 100) {
+        setErr("Commission must be 0–100.");
+        return;
+      }
       if (n !== reseller.commission) patch.commission = n;
     }
-    if (!Object.keys(patch).length) { cancel(); return; }
-    setBusy(true); setErr(null);
+    if (!Object.keys(patch).length) {
+      cancel();
+      return;
+    }
+    setBusy(true);
+    setErr(null);
     const r = await submit(patch);
     if (!r.ok) setErr(r.error);
     setBusy(false);
   };
 
   return (
-    <ModalShell title={`Edit reseller`} onClose={busy ? () => undefined : cancel}>
+    <ModalShell
+      title={`Edit reseller`}
+      onClose={busy ? () => undefined : cancel}
+    >
       <Field label="Reseller name" value={name} onChange={setName} autoFocus />
-      <div className="mt-2"><Field label="Reseller email" value={email} onChange={setEmail} type="email" /></div>
-      <div className="mt-2"><Field label="Commission (%)" value={commission} onChange={setCommission} type="number" /></div>
-      {err && <p className="mt-1 text-[11px]" style={{ color: "var(--accent-red)" }}>{err}</p>}
+      <div className="mt-2">
+        <Field
+          label="Reseller email"
+          value={email}
+          onChange={setEmail}
+          type="email"
+        />
+      </div>
+      <div className="mt-2">
+        <Field
+          label="Commission (%)"
+          value={commission}
+          onChange={setCommission}
+          type="number"
+        />
+      </div>
+      {err && (
+        <p className="mt-1 text-[11px]" style={{ color: "var(--accent-red)" }}>
+          {err}
+        </p>
+      )}
       <div className="mt-3 flex justify-end gap-2">
-        <button onClick={cancel} disabled={busy} className="rounded-md px-2 py-1 text-xs" style={{ color: "var(--text-muted)" }}>Cancel</button>
+        <button
+          onClick={cancel}
+          disabled={busy}
+          className="rounded-md px-2 py-1 text-xs"
+          style={{ color: "var(--text-muted)" }}
+        >
+          Cancel
+        </button>
         <button
           onClick={() => void onSubmit()}
           disabled={busy}
@@ -793,7 +1030,9 @@ function EditModal({
 }
 
 function ModalShell({
-  title, onClose, children,
+  title,
+  onClose,
+  children,
 }: {
   title: string;
   onClose: () => void;
@@ -801,17 +1040,32 @@ function ModalShell({
 }) {
   const dialogRef = useOverlayDismiss<HTMLDivElement>(onClose);
   return (
-    <div className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center" style={{ backgroundColor: "var(--scrim)" }}>
+    <div
+      className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center"
+      style={{ backgroundColor: "var(--scrim)" }}
+    >
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         className="w-full max-w-md rounded-xl border p-4"
-        style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+        style={{
+          borderColor: "var(--border)",
+          backgroundColor: "var(--surface)",
+        }}
       >
         <div className="mb-3 flex items-center justify-between gap-2">
-          <h4 className="text-sm font-semibold" style={{ color: "var(--text)" }}>{title}</h4>
-          <button onClick={onClose} className="rounded-md p-1" style={{ color: "var(--text-muted)" }}>
+          <h4
+            className="text-sm font-semibold"
+            style={{ color: "var(--text)" }}
+          >
+            {title}
+          </h4>
+          <button
+            onClick={onClose}
+            className="rounded-md p-1"
+            style={{ color: "var(--text-muted)" }}
+          >
             <X size={14} />
           </button>
         </div>
@@ -824,7 +1078,12 @@ function ModalShell({
 /* ──────── Small helpers ──────── */
 
 function Field({
-  label, value, onChange, placeholder, type = "text", autoFocus,
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = "text",
+  autoFocus,
 }: {
   label: string;
   value: string;
@@ -835,7 +1094,12 @@ function Field({
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-[11px] font-medium" style={{ color: "var(--text-muted)" }}>{label}</label>
+      <label
+        className="text-[11px] font-medium"
+        style={{ color: "var(--text-muted)" }}
+      >
+        {label}
+      </label>
       <input
         type={type}
         value={value}
@@ -859,7 +1123,8 @@ function StatusChip({ status }: { status: "active" | "suspended" }) {
       <span
         className="inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium"
         style={{
-          backgroundColor: "color-mix(in srgb, var(--text-muted) 14%, transparent)",
+          backgroundColor:
+            "color-mix(in srgb, var(--text-muted) 14%, transparent)",
           color: "var(--text-muted)",
         }}
       >
@@ -871,7 +1136,8 @@ function StatusChip({ status }: { status: "active" | "suspended" }) {
     <span
       className="inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium"
       style={{
-        backgroundColor: "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
+        backgroundColor:
+          "color-mix(in srgb, " + BRAND_GREEN + " 10%, transparent)",
         color: BRAND_GREEN,
       }}
     >
@@ -891,7 +1157,9 @@ function CopyButton({ text }: { text: string }) {
           await navigator.clipboard.writeText(text);
           setCopied(true);
           setTimeout(() => setCopied(false), 1200);
-        } catch { /* clipboard refused — silently ignore */ }
+        } catch {
+          /* clipboard refused — silently ignore */
+        }
       }}
       className="rounded-md p-0.5 transition-colors hover:bg-black/[0.05] dark:hover:bg-white/[0.05]"
       style={{ color: copied ? BRAND_GREEN : "var(--text-muted)" }}
@@ -901,18 +1169,30 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-function ErrorLine({ message, dismiss }: { message: string; dismiss: () => void }) {
+function ErrorLine({
+  message,
+  dismiss,
+}: {
+  message: string;
+  dismiss: () => void;
+}) {
   return (
     <div
       className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
       style={{
-        backgroundColor: "color-mix(in srgb, var(--accent-red) 8%, transparent)",
+        backgroundColor:
+          "color-mix(in srgb, var(--accent-red) 8%, transparent)",
         color: "var(--accent-red)",
         borderColor: "color-mix(in srgb, var(--accent-red) 25%, transparent)",
       }}
     >
       <span>{message}</span>
-      <button type="button" onClick={dismiss} aria-label="Dismiss" className="rounded-md p-1">
+      <button
+        type="button"
+        onClick={dismiss}
+        aria-label="Dismiss"
+        className="rounded-md p-1"
+      >
         <X size={14} />
       </button>
     </div>

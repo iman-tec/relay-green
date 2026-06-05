@@ -21,11 +21,11 @@ import { BenchTab } from "./BenchTab";
 type TabKey = "enterprise" | "reseller" | "pods" | "internal" | "bench";
 
 const TABS: readonly Tab<TabKey>[] = [
-  { key: "reseller",   label: "Channel Partners" },
+  { key: "reseller", label: "Channel Partners" },
   { key: "enterprise", label: "Enterprise" },
-  { key: "pods",       label: "Pods"       },
-  { key: "bench",      label: "Bench"      },
-  { key: "internal",   label: "Internal Users" },
+  { key: "pods", label: "Pods" },
+  { key: "bench", label: "Bench" },
+  { key: "internal", label: "Internal Users" },
 ];
 
 // Landing tab when no ?tab= is present — always the first tab in TABS.
@@ -39,7 +39,7 @@ export function PanelClient({
   const searchParams = useSearchParams();
   const initial = (searchParams?.get("tab") as TabKey) ?? DEFAULT_TAB;
   const [tab, setTab] = useState<TabKey>(
-    TABS.some((t) => t.key === initial) ? initial : DEFAULT_TAB,
+    TABS.some((t) => t.key === initial) ? initial : DEFAULT_TAB
   );
 
   return (
@@ -59,10 +59,10 @@ export function PanelClient({
       />
       <div className="min-h-0 flex-1 overflow-hidden">
         {tab === "enterprise" && <EnterpriseTab />}
-        {tab === "reseller"   && <ResellersTab />}
-        {tab === "pods"       && <PodsTab />}
-        {tab === "bench"      && <BenchTab />}
-        {tab === "internal"   && <InternalUsersTab />}
+        {tab === "reseller" && <ResellersTab />}
+        {tab === "pods" && <PodsTab />}
+        {tab === "bench" && <BenchTab />}
+        {tab === "internal" && <InternalUsersTab />}
       </div>
     </div>
   );

@@ -11,10 +11,10 @@ export function FilterTile({
   selected,
   onClick,
 }: {
-  label:    string;
-  count:    number;
+  label: string;
+  count: number;
   selected: boolean;
-  onClick:  () => void;
+  onClick: () => void;
 }) {
   return (
     <button
@@ -23,10 +23,10 @@ export function FilterTile({
       className="flex flex-col gap-1 rounded-lg border px-4 py-3 text-left transition-colors"
       style={{
         borderColor: selected ? "var(--primary)" : "var(--border)",
-        background:  selected
+        background: selected
           ? "color-mix(in srgb, var(--primary) 10%, transparent)"
           : "transparent",
-        color:       "var(--text)",
+        color: "var(--text)",
       }}
     >
       <span className="text-sm font-medium">{label}</span>

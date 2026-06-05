@@ -12,9 +12,11 @@
 export function isTransientNetworkError(e: unknown): boolean {
   if (!e) return false;
   const msg =
-    typeof e === "string" ? e :
-    e instanceof Error ? e.message :
-    (e as { message?: unknown }).message;
+    typeof e === "string"
+      ? e
+      : e instanceof Error
+        ? e.message
+        : (e as { message?: unknown }).message;
   if (typeof msg !== "string") return false;
   const m = msg.toLowerCase();
   return (
@@ -22,7 +24,7 @@ export function isTransientNetworkError(e: unknown): boolean {
     m.includes("network changed") ||
     m.includes("err_network_changed") ||
     m.includes("networkerror") ||
-    m.includes("load failed") ||              // Safari equivalent
+    m.includes("load failed") || // Safari equivalent
     m.includes("the operation was aborted") ||
     m.includes("net::err_") ||
     m === "abort" ||

@@ -15,7 +15,13 @@
  *    in every theme automatically.
  */
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 import { Minus } from "lucide-react";
 
@@ -28,11 +34,21 @@ function clamp(p: Pos, w: number, h: number): Pos {
   if (typeof window === "undefined") return p;
   const maxX = Math.max(MARGIN, window.innerWidth - w - MARGIN);
   const maxY = Math.max(MARGIN, window.innerHeight - h - MARGIN);
-  return { x: Math.min(Math.max(MARGIN, p.x), maxX), y: Math.min(Math.max(MARGIN, p.y), maxY) };
+  return {
+    x: Math.min(Math.max(MARGIN, p.x), maxX),
+    y: Math.min(Math.max(MARGIN, p.y), maxY),
+  };
 }
 
 export function FloatingDock({
-  storageKey, title, icon, children, width = 380, height = 520, accent = false, cornerOffset = 0,
+  storageKey,
+  title,
+  icon,
+  children,
+  width = 380,
+  height = 520,
+  accent = false,
+  cornerOffset = 0,
 }: {
   storageKey: string;
   title: string;
@@ -48,7 +64,13 @@ export function FloatingDock({
   const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<Pos>({ x: 0, y: 0 });
-  const drag = useRef<{ sx: number; sy: number; px: number; py: number; moved: boolean } | null>(null);
+  const drag = useRef<{
+    sx: number;
+    sy: number;
+    px: number;
+    py: number;
+    moved: boolean;
+  } | null>(null);
 
   // Mount + restore persisted state (or default to bottom-right). Client-only
   // init from localStorage — the setState-in-effect is intentional here.
@@ -61,10 +83,18 @@ export function FloatingDock({
       if (raw) {
         const s = JSON.parse(raw) as { x: number; y: number; open: boolean };
         setOpen(!!s.open);
-        setPos(clamp({ x: s.x, y: s.y }, s.open ? width : LAUNCHER, s.open ? height : LAUNCHER));
+        setPos(
+          clamp(
+            { x: s.x, y: s.y },
+            s.open ? width : LAUNCHER,
+            s.open ? height : LAUNCHER
+          )
+        );
         restored = true;
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     if (!restored && typeof window !== "undefined") {
       setPos({
         x: window.innerWidth - LAUNCHER - MARGIN,
@@ -76,7 +106,14 @@ export function FloatingDock({
   // Persist.
   useEffect(() => {
     if (!mounted) return;
-    try { localStorage.setItem(`floatdock:${storageKey}`, JSON.stringify({ ...pos, open })); } catch { /* ignore */ }
+    try {
+      localStorage.setItem(
+        `floatdock:${storageKey}`,
+        JSON.stringify({ ...pos, open })
+      );
+    } catch {
+      /* ignore */
+    }
   }, [mounted, pos, open, storageKey]);
 
   // Keep in-bounds on open/close + window resize.
@@ -91,25 +128,44 @@ export function FloatingDock({
     return () => window.removeEventListener("resize", onResize);
   }, [mounted, open, width, height]);
 
-  const onDown = useCallback((e: React.PointerEvent) => {
-    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-    drag.current = { sx: e.clientX, sy: e.clientY, px: pos.x, py: pos.y, moved: false };
-  }, [pos]);
+  const onDown = useCallback(
+    (e: React.PointerEvent) => {
+      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+      drag.current = {
+        sx: e.clientX,
+        sy: e.clientY,
+        px: pos.x,
+        py: pos.y,
+        moved: false,
+      };
+    },
+    [pos]
+  );
 
-  const onMove = useCallback((e: React.PointerEvent) => {
-    const d = drag.current; if (!d) return;
-    const dx = e.clientX - d.sx, dy = e.clientY - d.sy;
-    if (!d.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
-    d.moved = true;
-    const w = open ? width : LAUNCHER, h = open ? height : LAUNCHER;
-    setPos(clamp({ x: d.px + dx, y: d.py + dy }, w, h));
-  }, [open, width, height]);
+  const onMove = useCallback(
+    (e: React.PointerEvent) => {
+      const d = drag.current;
+      if (!d) return;
+      const dx = e.clientX - d.sx,
+        dy = e.clientY - d.sy;
+      if (!d.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+      d.moved = true;
+      const w = open ? width : LAUNCHER,
+        h = open ? height : LAUNCHER;
+      setPos(clamp({ x: d.px + dx, y: d.py + dy }, w, h));
+    },
+    [open, width, height]
+  );
 
-  const onUp = useCallback((openOnClick: boolean) => (e: React.PointerEvent) => {
-    const d = drag.current; drag.current = null;
-    (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
-    if (openOnClick && d && !d.moved) setOpen(true);
-  }, []);
+  const onUp = useCallback(
+    (openOnClick: boolean) => (e: React.PointerEvent) => {
+      const d = drag.current;
+      drag.current = null;
+      (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
+      if (openOnClick && d && !d.moved) setOpen(true);
+    },
+    []
+  );
 
   if (!mounted) return null;
 
@@ -118,17 +174,38 @@ export function FloatingDock({
   const node = open ? (
     <div
       className="fixed flex flex-col overflow-hidden rounded-2xl border shadow-2xl"
-      style={{ left: pos.x, top: pos.y, width, height, zIndex: 1000, backgroundColor: "var(--surface)", borderColor: "var(--border)" }}
+      style={{
+        left: pos.x,
+        top: pos.y,
+        width,
+        height,
+        zIndex: 1000,
+        backgroundColor: "var(--surface)",
+        borderColor: "var(--border)",
+      }}
     >
       <div
         onPointerDown={onDown}
         onPointerMove={onMove}
         onPointerUp={onUp(false)}
-        className="flex shrink-0 cursor-grab touch-none select-none items-center gap-2 border-b px-3 py-2 active:cursor-grabbing"
-        style={{ borderColor: "var(--border)", backgroundColor: "var(--surface-raised)" }}
+        className="flex shrink-0 cursor-grab touch-none items-center gap-2 border-b px-3 py-2 select-none active:cursor-grabbing"
+        style={{
+          borderColor: "var(--border)",
+          backgroundColor: "var(--surface-raised)",
+        }}
       >
-        <span className="flex h-5 w-5 items-center justify-center" style={{ color: "var(--primary)" }}>{icon}</span>
-        <span className="flex-1 truncate text-[13px] font-semibold" style={{ color: "var(--text)" }}>{title}</span>
+        <span
+          className="flex h-5 w-5 items-center justify-center"
+          style={{ color: "var(--primary)" }}
+        >
+          {icon}
+        </span>
+        <span
+          className="flex-1 truncate text-[13px] font-semibold"
+          style={{ color: "var(--text)" }}
+        >
+          {title}
+        </span>
         <button
           type="button"
           onPointerDown={(e) => e.stopPropagation()}
@@ -137,13 +214,19 @@ export function FloatingDock({
           aria-label="Minimize"
           className="flex h-6 w-6 items-center justify-center rounded-md"
           style={{ color: "var(--text-muted)" }}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = hoverBg)}
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+          onMouseEnter={(e) =>
+            (e.currentTarget.style.backgroundColor = hoverBg)
+          }
+          onMouseLeave={(e) =>
+            (e.currentTarget.style.backgroundColor = "transparent")
+          }
         >
           <Minus size={15} />
         </button>
       </div>
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {children}
+      </div>
     </div>
   ) : (
     <button
@@ -155,7 +238,11 @@ export function FloatingDock({
       aria-label={`Open ${title}`}
       className="fixed flex cursor-grab touch-none items-center justify-center rounded-full border shadow-xl transition-transform hover:scale-105 active:cursor-grabbing"
       style={{
-        left: pos.x, top: pos.y, height: LAUNCHER, width: LAUNCHER, zIndex: 1000,
+        left: pos.x,
+        top: pos.y,
+        height: LAUNCHER,
+        width: LAUNCHER,
+        zIndex: 1000,
         backgroundColor: accent ? "var(--primary)" : "var(--surface)",
         borderColor: accent ? "transparent" : "var(--border)",
         color: accent ? "#fff" : "var(--primary)",

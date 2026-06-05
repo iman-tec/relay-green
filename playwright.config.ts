@@ -2,10 +2,10 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./tests",
-  fullyParallel: false,           // tests share Supabase state — run sequentially
+  fullyParallel: false, // tests share Supabase state — run sequentially
   forbidOnly: !!process.env.CI,
-  retries: 1,                     // absorb supabase realtime / API jitter under load
-  workers: 1,                     // single worker to avoid auth-cookie races
+  retries: 1, // absorb supabase realtime / API jitter under load
+  workers: 1, // single worker to avoid auth-cookie races
   reporter: [["list"]],
   timeout: 30_000,
   expect: { timeout: 8_000 },

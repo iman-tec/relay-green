@@ -28,10 +28,10 @@ import type { MatchingRow } from "@/app/api/supervisor/matching/route";
 
 const BRAND_GREEN = "#3f5c2e";
 const URGENT_AMBER = "#d4a017";
-const CRIT_RED    = "#c2410c";
+const CRIT_RED = "#c2410c";
 
 const COUNTDOWN_URGENT_S = 12; // amber threshold (25s ring)
-const COUNTDOWN_CRIT_S   = 5;  // red threshold
+const COUNTDOWN_CRIT_S = 5; // red threshold
 
 export function MatchingPanel({
   // Pod supervisors hit the pod-scoped endpoint; super_admin passes the global
@@ -48,7 +48,7 @@ export function MatchingPanel({
   // 1s tick below advances it. Mirrors app/intake/matching/[id]/MatchingClient.
   const [now, setNow] = useState(() => Date.now());
   const supabaseRef = useRef(createClient());
-  const channelRef  = useRef<RealtimeChannel | null>(null);
+  const channelRef = useRef<RealtimeChannel | null>(null);
 
   const refresh = async () => {
     try {
@@ -64,7 +64,9 @@ export function MatchingPanel({
     }
   };
 
-  useEffect(() => { void refresh(); }, []);
+  useEffect(() => {
+    void refresh();
+  }, []);
 
   // Realtime — every offer change pokes a debounced refresh. RLS gates
   // delivery; the super_admin policy added in 20260522110808 lets these
@@ -74,19 +76,28 @@ export function MatchingPanel({
     let pending: ReturnType<typeof setTimeout> | null = null;
     const queueRefresh = () => {
       if (pending) return;
-      pending = setTimeout(() => { pending = null; void refresh(); }, 400);
+      pending = setTimeout(() => {
+        pending = null;
+        void refresh();
+      }, 400);
     };
     const ch = sb
       .channel("relay-matching")
-      .on("postgres_changes",
+      .on(
+        "postgres_changes",
         { event: "*", schema: "public", table: "engineer_match_offers" },
-        queueRefresh)
-      .on("postgres_changes",
+        queueRefresh
+      )
+      .on(
+        "postgres_changes",
         { event: "*", schema: "public", table: "client_intakes" },
-        queueRefresh)
+        queueRefresh
+      )
       .subscribe();
     channelRef.current = ch;
-    const fallback = setInterval(() => { void refresh(); }, 5_000);
+    const fallback = setInterval(() => {
+      void refresh();
+    }, 5_000);
     return () => {
       if (pending) clearTimeout(pending);
       sb.removeChannel(ch);
@@ -105,12 +116,13 @@ export function MatchingPanel({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return rows;
-    return rows.filter((r) =>
-      r.engineer.displayName.toLowerCase().includes(q) ||
-      r.engineer.email.toLowerCase().includes(q) ||
-      r.customer.displayName.toLowerCase().includes(q) ||
-      (r.projectName ?? "").toLowerCase().includes(q) ||
-      r.technologies.some((t) => t.toLowerCase().includes(q)),
+    return rows.filter(
+      (r) =>
+        r.engineer.displayName.toLowerCase().includes(q) ||
+        r.engineer.email.toLowerCase().includes(q) ||
+        r.customer.displayName.toLowerCase().includes(q) ||
+        (r.projectName ?? "").toLowerCase().includes(q) ||
+        r.technologies.some((t) => t.toLowerCase().includes(q))
     );
   }, [rows, query]);
 
@@ -119,20 +131,22 @@ export function MatchingPanel({
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="text-sm" style={{ color: "var(--text-muted)" }}>
           {rows.length === 0
-            ? (isGlobal ? "No one is being matched right now." : "No one in your pod is being matched right now.")
+            ? isGlobal
+              ? "No one is being matched right now."
+              : "No one in your pod is being matched right now."
             : `${rows.length} engineer${rows.length === 1 ? "" : "s"} ${isGlobal ? "" : "in your pod "}being rung. Updates live.`}
         </p>
         <div className="relative">
           <Search
             size={12}
-            className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2"
+            className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2"
             style={{ color: "var(--text-muted)" }}
           />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search customer, engineer, or stack…"
-            className="rounded-md border py-1 pl-7 pr-2 text-xs outline-none"
+            className="rounded-md border py-1 pr-2 pl-7 text-xs outline-none"
             style={{
               borderColor: "var(--border)",
               backgroundColor: "var(--background)",
@@ -145,18 +159,28 @@ export function MatchingPanel({
 
       <div
         className="overflow-hidden rounded-xl border"
-        style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+        style={{
+          borderColor: "var(--border)",
+          backgroundColor: "var(--surface)",
+        }}
       >
         {loading ? (
           <div className="flex justify-center py-10">
-            <Loader2 size={16} className="animate-spin" style={{ color: BRAND_GREEN }} />
+            <Loader2
+              size={16}
+              className="animate-spin"
+              style={{ color: BRAND_GREEN }}
+            />
           </div>
         ) : filtered.length === 0 ? (
-          <p className="px-5 py-10 text-center text-xs" style={{ color: "var(--text-muted)" }}>
+          <p
+            className="px-5 py-10 text-center text-xs"
+            style={{ color: "var(--text-muted)" }}
+          >
             {rows.length === 0
-              ? (isGlobal
-                  ? "No engineers are being rung right now. New offers appear here automatically."
-                  : "No engineers in your pod are being rung right now. New offers appear here automatically.")
+              ? isGlobal
+                ? "No engineers are being rung right now. New offers appear here automatically."
+                : "No engineers in your pod are being rung right now. New offers appear here automatically."
               : `No matches against “${query}”.`}
           </p>
         ) : (
@@ -165,7 +189,10 @@ export function MatchingPanel({
               <thead>
                 <tr
                   className="border-b text-left"
-                  style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+                  style={{
+                    borderColor: "var(--border)",
+                    color: "var(--text-muted)",
+                  }}
                 >
                   <Th>Customer · project</Th>
                   <Th>Engineer being rung</Th>
@@ -179,7 +206,13 @@ export function MatchingPanel({
               </thead>
               <tbody>
                 {filtered.map((r, i) => (
-                  <Row key={r.offerId} row={r} first={i === 0} now={now} onChanged={() => void refresh()} />
+                  <Row
+                    key={r.offerId}
+                    row={r}
+                    first={i === 0}
+                    now={now}
+                    onChanged={() => void refresh()}
+                  />
                 ))}
               </tbody>
             </table>
@@ -190,13 +223,23 @@ export function MatchingPanel({
   );
 }
 
-function Row({ row, first, now, onChanged }: { row: MatchingRow; first: boolean; now: number; onChanged: () => void }) {
+function Row({
+  row,
+  first,
+  now,
+  onChanged,
+}: {
+  row: MatchingRow;
+  first: boolean;
+  now: number;
+  onChanged: () => void;
+}) {
   const ringMs = row.expiresAt ? new Date(row.expiresAt).getTime() - now : 0;
-  const ringS  = Math.max(0, Math.ceil(ringMs / 1000));
+  const ringS = Math.max(0, Math.ceil(ringMs / 1000));
   const queuedMs = row.queuedAt ? now - new Date(row.queuedAt).getTime() : 0;
 
   let ringColor = "var(--text)";
-  if (ringS <= COUNTDOWN_CRIT_S)        ringColor = CRIT_RED;
+  if (ringS <= COUNTDOWN_CRIT_S) ringColor = CRIT_RED;
   else if (ringS <= COUNTDOWN_URGENT_S) ringColor = URGENT_AMBER;
 
   return (
@@ -216,28 +259,41 @@ function Row({ row, first, now, onChanged }: { row: MatchingRow; first: boolean;
         {row.allDeclined ? (
           <span
             className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium"
-            style={{ backgroundColor: "color-mix(in srgb, var(--risk) 14%, transparent)", color: "var(--risk)" }}
+            style={{
+              backgroundColor:
+                "color-mix(in srgb, var(--risk) 14%, transparent)",
+              color: "var(--risk)",
+            }}
           >
-            {row.declinedBy.length <= 1 ? "Engineer declined" : "All engineers declined"}
+            {row.declinedBy.length <= 1
+              ? "Engineer declined"
+              : "All engineers declined"}
           </span>
         ) : (
           <>
             <div className="font-medium">{row.engineer.displayName}</div>
             <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
               {row.engineer.email}
-              {row.engineer.experienceLevel ? ` · ${row.engineer.experienceLevel}` : ""}
+              {row.engineer.experienceLevel
+                ? ` · ${row.engineer.experienceLevel}`
+                : ""}
             </div>
           </>
         )}
       </Td>
       <Td>
-        <span className="tabular-nums">{row.allDeclined ? "—" : row.matchScore.toFixed(1)}</span>
+        <span className="tabular-nums">
+          {row.allDeclined ? "—" : row.matchScore.toFixed(1)}
+        </span>
       </Td>
       <Td>
         {row.allDeclined ? (
           <span style={{ color: "var(--text-muted)" }}>—</span>
         ) : (
-          <span className="tabular-nums font-medium" style={{ color: ringColor }}>
+          <span
+            className="font-medium tabular-nums"
+            style={{ color: ringColor }}
+          >
             {ringS}s
           </span>
         )}
@@ -250,7 +306,8 @@ function Row({ row, first, now, onChanged }: { row: MatchingRow; first: boolean;
             title={row.declinedBy.map((d) => d.displayName).join(", ")}
             className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]"
             style={{
-              backgroundColor: "color-mix(in srgb, var(--text) 8%, transparent)",
+              backgroundColor:
+                "color-mix(in srgb, var(--text) 8%, transparent)",
               color: "var(--text)",
             }}
           >
@@ -273,7 +330,8 @@ function Row({ row, first, now, onChanged }: { row: MatchingRow; first: boolean;
                 key={t}
                 className="rounded-md px-1.5 py-0.5 text-[10px]"
                 style={{
-                  backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)",
+                  backgroundColor:
+                    "color-mix(in srgb, var(--text) 6%, transparent)",
                   color: "var(--text)",
                 }}
               >
@@ -281,7 +339,10 @@ function Row({ row, first, now, onChanged }: { row: MatchingRow; first: boolean;
               </span>
             ))}
             {row.technologies.length > 4 && (
-              <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+              <span
+                className="text-[10px]"
+                style={{ color: "var(--text-muted)" }}
+              >
                 +{row.technologies.length - 4}
               </span>
             )}
@@ -307,7 +368,7 @@ function Row({ row, first, now, onChanged }: { row: MatchingRow; first: boolean;
 
 function Th({ children }: { children: React.ReactNode }) {
   return (
-    <th className="px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide">
+    <th className="px-4 py-2.5 text-[11px] font-medium tracking-wide uppercase">
       {children}
     </th>
   );

@@ -40,7 +40,9 @@ export type TestUser = {
 
 const createdUserIds: string[] = [];
 
-export async function createTestUser(role: "customer" | "engineer" = "customer"): Promise<TestUser> {
+export async function createTestUser(
+  role: "customer" | "engineer" = "customer"
+): Promise<TestUser> {
   const email = `relay-pw-${role}-${Date.now()}-${Math.floor(Math.random() * 9999)}@relaytest.local`;
   const { data, error } = await admin.auth.admin.createUser({
     email,
@@ -52,7 +54,10 @@ export async function createTestUser(role: "customer" | "engineer" = "customer")
 
   // Sign in to mint tokens
   const sb = createClient(SUPABASE_URL, ANON_KEY);
-  const { data: sign, error: signErr } = await sb.auth.signInWithPassword({ email, password: PASSWORD });
+  const { data: sign, error: signErr } = await sb.auth.signInWithPassword({
+    email,
+    password: PASSWORD,
+  });
   if (signErr || !sign.session) throw signErr ?? new Error("sign in failed");
 
   // For engineer role: grant via the service-role admin client.
@@ -62,16 +67,21 @@ export async function createTestUser(role: "customer" | "engineer" = "customer")
   // from the roles lookup).
   if (role === "engineer") {
     const { data: roleRow } = await admin
-      .from("roles").select("id").eq("name", "engineer").maybeSingle();
+      .from("roles")
+      .select("id")
+      .eq("name", "engineer")
+      .maybeSingle();
     const engineerRoleId = (roleRow as { id: string } | null)?.id;
     if (!engineerRoleId) {
-      throw new Error("engineer role not seeded — did you apply 20260521120000_roles_lookup_fk.sql?");
+      throw new Error(
+        "engineer role not seeded — did you apply 20260521120000_roles_lookup_fk.sql?"
+      );
     }
     const { error: e } = await admin
       .from("user_roles")
       .upsert(
         { user_id: data.user.id, role_id: engineerRoleId },
-        { onConflict: "user_id,role_id", ignoreDuplicates: true },
+        { onConflict: "user_id,role_id", ignoreDuplicates: true }
       );
     if (e) throw e;
   }
@@ -108,7 +118,9 @@ export async function authContext(context: BrowserContext, user: TestUser) {
 
 export async function cleanupTestUsers() {
   for (const id of createdUserIds) {
-    try { await admin.auth.admin.deleteUser(id); } catch {}
+    try {
+      await admin.auth.admin.deleteUser(id);
+    } catch {}
   }
   createdUserIds.length = 0;
 }
@@ -129,5 +141,8 @@ export async function deleteUserSessions(userId: string) {
 }
 
 export async function bypassRateLimit(sessionId: string) {
-  await admin.from("guest_calls").update({ last_recall_at: null }).eq("id", sessionId);
+  await admin
+    .from("guest_calls")
+    .update({ last_recall_at: null })
+    .eq("id", sessionId);
 }

@@ -26,7 +26,7 @@ export function createStripeClient(env: StripeEnv): Stripe {
 
 export async function verifyWebhook(
   req: Request,
-  env: StripeEnv,
+  env: StripeEnv
 ): Promise<{ type: string; data: { object: any } }> {
   const signature = req.headers.get("stripe-signature");
   const body = await req.text();
@@ -48,7 +48,8 @@ export async function verifyWebhook(
     if (key === "t") timestamp = value;
     if (key === "v1") v1Signatures.push(value);
   }
-  if (!timestamp || v1Signatures.length === 0) throw new Error("Invalid signature format");
+  if (!timestamp || v1Signatures.length === 0)
+    throw new Error("Invalid signature format");
 
   const age = Math.abs(Date.now() / 1000 - Number(timestamp));
   if (age > 300) throw new Error("Webhook timestamp too old");
@@ -58,16 +59,17 @@ export async function verifyWebhook(
     new TextEncoder().encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
-    ["sign"],
+    ["sign"]
   );
   const signed = await crypto.subtle.sign(
     "HMAC",
     key,
-    new TextEncoder().encode(`${timestamp}.${body}`),
+    new TextEncoder().encode(`${timestamp}.${body}`)
   );
   const expected = new TextDecoder().decode(encode(new Uint8Array(signed)));
 
-  if (!v1Signatures.includes(expected)) throw new Error("Invalid webhook signature");
+  if (!v1Signatures.includes(expected))
+    throw new Error("Invalid webhook signature");
 
   return JSON.parse(body);
 }

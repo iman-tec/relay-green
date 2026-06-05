@@ -26,7 +26,7 @@ export function isParseableDocument(name: string, mime: string): boolean {
 export async function extractDocumentText(
   name: string,
   mime: string,
-  buffer: Buffer,
+  buffer: Buffer
 ): Promise<string | null> {
   const lower = name.toLowerCase();
   try {
@@ -53,7 +53,10 @@ export async function extractDocumentText(
       }
       return parts.join("\n\n") || null;
     }
-    if (mime.startsWith("text/") || /\.(txt|md|markdown|csv|tsv|json|log)$/.test(lower)) {
+    if (
+      mime.startsWith("text/") ||
+      /\.(txt|md|markdown|csv|tsv|json|log)$/.test(lower)
+    ) {
       return buffer.toString("utf8");
     }
   } catch (e) {

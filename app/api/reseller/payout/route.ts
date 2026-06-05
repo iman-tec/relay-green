@@ -21,7 +21,8 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function GET() {
   const gate = await requireReseller();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin, resellerId } = gate;
 
   const { data, error } = await admin
@@ -29,17 +30,21 @@ export async function GET() {
     .select("payout_email")
     .eq("id", resellerId)
     .maybeSingle<{ payout_email: string | null }>();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error)
+    return NextResponse.json({ error: error.message }, { status: 500 });
 
   return NextResponse.json({ payoutEmail: data?.payout_email ?? null });
 }
 
 export async function PUT(request: Request) {
   const gate = await requireReseller();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin, resellerId } = gate;
 
-  const body = (await request.json().catch(() => ({}))) as { payoutEmail?: string | null };
+  const body = (await request.json().catch(() => ({}))) as {
+    payoutEmail?: string | null;
+  };
   const raw = (body.payoutEmail ?? "").trim();
   const next: string | null = raw === "" ? null : raw.toLowerCase();
 
@@ -51,7 +56,8 @@ export async function PUT(request: Request) {
     .from("resellers")
     .update({ payout_email: next })
     .eq("id", resellerId);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error)
+    return NextResponse.json({ error: error.message }, { status: 500 });
 
   return NextResponse.json({ payoutEmail: next });
 }

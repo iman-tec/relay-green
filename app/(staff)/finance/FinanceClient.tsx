@@ -17,35 +17,35 @@ import { Loader2, Wallet, Pencil, Check, X, MessageSquare } from "lucide-react";
 import { formatEur } from "@/lib/billing/plans";
 import { formatRole } from "@/lib/relay/role-labels";
 
-const BRAND_GREEN      = "#3f5c2e";
+const BRAND_GREEN = "#3f5c2e";
 const BRAND_GREEN_SOFT = "rgba(63, 92, 46, 0.10)";
-const URGENT_AMBER     = "#d4a017";
-const CRIT_RED         = "#8b1a1a";
+const URGENT_AMBER = "#d4a017";
+const CRIT_RED = "#8b1a1a";
 
 type BillingResponse = {
   currency: string;
   revenue: {
-    thisMonthCents:  number;
+    thisMonthCents: number;
     last30DaysCents: number;
-    lifetimeCents:   number;
-    perMinuteCents:  number;
+    lifetimeCents: number;
+    perMinuteCents: number;
   };
 };
 
 type CompRow = {
-  userId:        string;
-  displayName:   string;
-  email:         string;
-  role:          string;
-  monthlyCents:  number;
-  updatedAt:     string | null;
+  userId: string;
+  displayName: string;
+  email: string;
+  role: string;
+  monthlyCents: number;
+  updatedAt: string | null;
 };
 
 type FeedbackRow = {
-  sessionId:    string;
-  score:        number;
-  summary:      string;
-  computedAt:   string;
+  sessionId: string;
+  score: number;
+  summary: string;
+  computedAt: string;
   customerName: string;
   engineerName: string;
 };
@@ -54,7 +54,9 @@ export function FinanceClient() {
   return (
     <div className="mx-auto max-w-screen-xl space-y-6 px-6 py-8">
       <div>
-        <h1 className="text-xl font-semibold" style={{ color: "var(--text)" }}>Finance</h1>
+        <h1 className="text-xl font-semibold" style={{ color: "var(--text)" }}>
+          Finance
+        </h1>
         <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
           Money in, money out, and how customers felt.
         </p>
@@ -89,9 +91,16 @@ function RevenueSection() {
     return (
       <div
         className="flex justify-center rounded-xl border py-10"
-        style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+        style={{
+          borderColor: "var(--border)",
+          backgroundColor: "var(--surface)",
+        }}
       >
-        <Loader2 size={16} className="animate-spin" style={{ color: BRAND_GREEN }} />
+        <Loader2
+          size={16}
+          className="animate-spin"
+          style={{ color: BRAND_GREEN }}
+        />
       </div>
     );
   }
@@ -101,7 +110,10 @@ function RevenueSection() {
   return (
     <div
       className="rounded-xl border"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface)",
+      }}
     >
       <div
         className="flex items-center justify-between border-b px-5 py-3"
@@ -109,16 +121,27 @@ function RevenueSection() {
       >
         <div className="flex items-center gap-2">
           <Wallet size={14} style={{ color: "var(--text-muted)" }} />
-          <h2 className="text-sm font-semibold" style={{ color: "var(--text)" }}>Revenue</h2>
+          <h2
+            className="text-sm font-semibold"
+            style={{ color: "var(--text)" }}
+          >
+            Revenue
+          </h2>
         </div>
         <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
           Earned from customer call minutes · €{rateEur}/min
         </span>
       </div>
-      <div className="grid grid-cols-3 divide-x" style={{ borderColor: "var(--border)" }}>
-        <RevenueTile label="This month"   cents={data.revenue.thisMonthCents}  />
-        <RevenueTile label="Last 30 days" cents={data.revenue.last30DaysCents} />
-        <RevenueTile label="Lifetime"     cents={data.revenue.lifetimeCents}   />
+      <div
+        className="grid grid-cols-3 divide-x"
+        style={{ borderColor: "var(--border)" }}
+      >
+        <RevenueTile label="This month" cents={data.revenue.thisMonthCents} />
+        <RevenueTile
+          label="Last 30 days"
+          cents={data.revenue.last30DaysCents}
+        />
+        <RevenueTile label="Lifetime" cents={data.revenue.lifetimeCents} />
       </div>
     </div>
   );
@@ -127,7 +150,10 @@ function RevenueSection() {
 function RevenueTile({ label, cents }: { label: string; cents: number }) {
   return (
     <div className="px-5 py-4">
-      <div className="text-[10px] uppercase tracking-[0.12em]" style={{ color: "var(--text-muted)" }}>
+      <div
+        className="text-[10px] tracking-[0.12em] uppercase"
+        style={{ color: "var(--text-muted)" }}
+      >
         {label}
       </div>
       <div
@@ -143,25 +169,29 @@ function RevenueTile({ label, cents }: { label: string; cents: number }) {
 /* ──────── Salaries ──────── */
 
 function SalariesSection() {
-  const [staff, setStaff]     = useState<CompRow[]>([]);
+  const [staff, setStaff] = useState<CompRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<string | null>(null);
-  const [draft, setDraft]     = useState<string>("");
-  const [busy, setBusy]       = useState(false);
+  const [draft, setDraft] = useState<string>("");
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await fetch("/api/internal/compensation", { cache: "no-store" });
+    const res = await fetch("/api/internal/compensation", {
+      cache: "no-store",
+    });
     const body = await res.json().catch(() => ({ staff: [] }));
     setStaff((body.staff ?? []) as CompRow[]);
     setLoading(false);
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const totalCents = useMemo(
     () => staff.reduce((acc, s) => acc + (s.monthlyCents || 0), 0),
-    [staff],
+    [staff]
   );
 
   const startEdit = (row: CompRow) => {
@@ -169,7 +199,10 @@ function SalariesSection() {
     setDraft(((row.monthlyCents || 0) / 100).toFixed(2));
   };
 
-  const cancelEdit = () => { setEditing(null); setDraft(""); };
+  const cancelEdit = () => {
+    setEditing(null);
+    setDraft("");
+  };
 
   const save = async (userId: string) => {
     const euros = parseFloat(draft);
@@ -198,20 +231,34 @@ function SalariesSection() {
   return (
     <div
       className="rounded-xl border"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface)",
+      }}
     >
       <div
         className="flex items-center justify-between border-b px-5 py-3"
         style={{ borderColor: "var(--border)" }}
       >
         <div>
-          <h2 className="text-sm font-semibold" style={{ color: "var(--text)" }}>Salaries</h2>
-          <p className="mt-0.5 text-[11px]" style={{ color: "var(--text-muted)" }}>
+          <h2
+            className="text-sm font-semibold"
+            style={{ color: "var(--text)" }}
+          >
+            Salaries
+          </h2>
+          <p
+            className="mt-0.5 text-[11px]"
+            style={{ color: "var(--text-muted)" }}
+          >
             Monthly compensation per staff member. Click the pencil to edit.
           </p>
         </div>
         <div className="text-right">
-          <div className="text-[10px] uppercase tracking-[0.12em]" style={{ color: "var(--text-muted)" }}>
+          <div
+            className="text-[10px] tracking-[0.12em] uppercase"
+            style={{ color: "var(--text-muted)" }}
+          >
             Monthly outlay
           </div>
           <div
@@ -224,10 +271,17 @@ function SalariesSection() {
       </div>
       {loading ? (
         <div className="flex justify-center py-10">
-          <Loader2 size={14} className="animate-spin" style={{ color: BRAND_GREEN }} />
+          <Loader2
+            size={14}
+            className="animate-spin"
+            style={{ color: BRAND_GREEN }}
+          />
         </div>
       ) : staff.length === 0 ? (
-        <p className="px-5 py-10 text-center text-xs" style={{ color: "var(--text-muted)" }}>
+        <p
+          className="px-5 py-10 text-center text-xs"
+          style={{ color: "var(--text-muted)" }}
+        >
           No payroll-eligible staff in this org yet.
         </p>
       ) : (
@@ -243,21 +297,35 @@ function SalariesSection() {
                 <span
                   className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold uppercase"
                   style={{
-                    backgroundColor: "color-mix(in srgb, var(--text-muted) 14%, transparent)",
+                    backgroundColor:
+                      "color-mix(in srgb, var(--text-muted) 14%, transparent)",
                     color: "var(--text-muted)",
                   }}
                 >
                   {(s.displayName || s.email || "?")[0]}
                 </span>
                 <div className="min-w-0 flex-1 leading-tight">
-                  <div className="truncate text-sm" style={{ color: "var(--text)" }}>{s.displayName}</div>
-                  <div className="mt-0.5 truncate text-[11px]" style={{ color: "var(--text-muted)" }}>
+                  <div
+                    className="truncate text-sm"
+                    style={{ color: "var(--text)" }}
+                  >
+                    {s.displayName}
+                  </div>
+                  <div
+                    className="mt-0.5 truncate text-[11px]"
+                    style={{ color: "var(--text-muted)" }}
+                  >
                     {s.email || "—"} · {formatRole(s.role)}
                   </div>
                 </div>
                 {isEditing ? (
                   <div className="flex items-center gap-1.5">
-                    <span className="text-xs" style={{ color: "var(--text-muted)" }}>€</span>
+                    <span
+                      className="text-xs"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      €
+                    </span>
                     <input
                       autoFocus
                       type="number"
@@ -276,7 +344,12 @@ function SalariesSection() {
                         color: "var(--text)",
                       }}
                     />
-                    <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>/mo</span>
+                    <span
+                      className="text-[10px]"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      /mo
+                    </span>
                     <button
                       onClick={() => void save(s.userId)}
                       disabled={busy}
@@ -284,7 +357,11 @@ function SalariesSection() {
                       style={{ color: BRAND_GREEN }}
                       title="Save"
                     >
-                      {busy ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                      {busy ? (
+                        <Loader2 size={12} className="animate-spin" />
+                      ) : (
+                        <Check size={12} />
+                      )}
                     </button>
                     <button
                       onClick={cancelEdit}
@@ -300,11 +377,19 @@ function SalariesSection() {
                   <div className="flex items-center gap-3">
                     <span
                       className="text-sm font-semibold tabular-nums"
-                      style={{ color: "var(--text)", fontFeatureSettings: "'tnum' 1" }}
+                      style={{
+                        color: "var(--text)",
+                        fontFeatureSettings: "'tnum' 1",
+                      }}
                     >
                       {formatEur(s.monthlyCents)}
                     </span>
-                    <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>/mo</span>
+                    <span
+                      className="text-[10px]"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      /mo
+                    </span>
                     <button
                       onClick={() => startEdit(s)}
                       className="rounded-md p-1 transition-opacity hover:opacity-80"
@@ -328,11 +413,13 @@ function SalariesSection() {
 
 function FeedbackSection() {
   const [feedback, setFeedback] = useState<FeedbackRow[]>([]);
-  const [loading, setLoading]   = useState(true);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     void (async () => {
-      const res = await fetch("/api/internal/feedback?limit=40", { cache: "no-store" });
+      const res = await fetch("/api/internal/feedback?limit=40", {
+        cache: "no-store",
+      });
       const body = await res.json().catch(() => ({ feedback: [] }));
       setFeedback((body.feedback ?? []) as FeedbackRow[]);
       setLoading(false);
@@ -342,7 +429,10 @@ function FeedbackSection() {
   return (
     <div
       className="rounded-xl border"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface)",
+      }}
     >
       <div
         className="flex items-center justify-between border-b px-5 py-3"
@@ -350,7 +440,12 @@ function FeedbackSection() {
       >
         <div className="flex items-center gap-2">
           <MessageSquare size={14} style={{ color: "var(--text-muted)" }} />
-          <h2 className="text-sm font-semibold" style={{ color: "var(--text)" }}>Feedback</h2>
+          <h2
+            className="text-sm font-semibold"
+            style={{ color: "var(--text)" }}
+          >
+            Feedback
+          </h2>
         </div>
         <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
           AI-derived sentiment per session
@@ -358,11 +453,19 @@ function FeedbackSection() {
       </div>
       {loading ? (
         <div className="flex justify-center py-10">
-          <Loader2 size={14} className="animate-spin" style={{ color: BRAND_GREEN }} />
+          <Loader2
+            size={14}
+            className="animate-spin"
+            style={{ color: BRAND_GREEN }}
+          />
         </div>
       ) : feedback.length === 0 ? (
-        <p className="px-5 py-10 text-center text-xs" style={{ color: "var(--text-muted)" }}>
-          No session feedback yet. Once your engineers complete calls, sentiment summaries will land here.
+        <p
+          className="px-5 py-10 text-center text-xs"
+          style={{ color: "var(--text-muted)" }}
+        >
+          No session feedback yet. Once your engineers complete calls, sentiment
+          summaries will land here.
         </p>
       ) : (
         <ul>
@@ -385,10 +488,19 @@ function FeedbackSection() {
                   {tone.label}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm" style={{ color: "var(--text)" }}>{f.summary}</div>
-                  <div className="mt-0.5 text-[11px]" style={{ color: "var(--text-muted)" }}>
-                    {f.customerName} ↔ {f.engineerName} · {new Date(f.computedAt).toLocaleString(undefined, {
-                      month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+                  <div className="text-sm" style={{ color: "var(--text)" }}>
+                    {f.summary}
+                  </div>
+                  <div
+                    className="mt-0.5 text-[11px]"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {f.customerName} ↔ {f.engineerName} ·{" "}
+                    {new Date(f.computedAt).toLocaleString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
                     })}
                   </div>
                 </div>
@@ -402,7 +514,7 @@ function FeedbackSection() {
 }
 
 function sentimentTone(score: number): { color: string; label: string } {
-  if (score >= 0.25) return { color: BRAND_GREEN,  label: "Positive" };
-  if (score >= -0.1) return { color: URGENT_AMBER, label: "Neutral"  };
-  return                    { color: CRIT_RED,     label: "Negative" };
+  if (score >= 0.25) return { color: BRAND_GREEN, label: "Positive" };
+  if (score >= -0.1) return { color: URGENT_AMBER, label: "Neutral" };
+  return { color: CRIT_RED, label: "Negative" };
 }

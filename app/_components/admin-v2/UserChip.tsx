@@ -12,7 +12,7 @@ export function UserChip({
   email,
   roleLabel,
 }: {
-  email:     string;
+  email: string;
   roleLabel: string;
 }) {
   const init = initials(email);
@@ -22,7 +22,7 @@ export function UserChip({
         className="flex size-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold"
         style={{
           background: "color-mix(in srgb, var(--primary) 16%, transparent)",
-          color:      "var(--primary)",
+          color: "var(--primary)",
         }}
       >
         {init}
@@ -35,7 +35,10 @@ export function UserChip({
         >
           {email}
         </span>
-        <span className="text-[10px] tracking-wider uppercase" style={{ color: "var(--text-muted)" }}>
+        <span
+          className="text-[10px] tracking-wider uppercase"
+          style={{ color: "var(--text-muted)" }}
+        >
           {roleLabel}
         </span>
       </div>

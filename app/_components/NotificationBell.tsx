@@ -16,13 +16,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Bell,
-  CalendarClock,
-  Phone,
-  FileText,
-  XCircle,
-} from "lucide-react";
+import { Bell, CalendarClock, Phone, FileText, XCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 
 type NotifKind = "call" | "appointment" | "bid" | "cancel";
@@ -107,58 +101,60 @@ export function NotificationBell({
     const sinceIso = new Date(Date.now() - 14 * 24 * 60 * 60_000).toISOString();
     const [callRes, callCancelRes, apptRes, apptCancelRes, bidRes, sessRes] =
       await Promise.all([
-      sb
-        .from("engineer_bookings")
-        .select("id, project_id, slot_start, created_at")
-        .eq("customer_user_id", customerUserId)
-        .eq("status", "booked")
-        .gte("slot_end", nowIso)
-        .order("created_at", { ascending: false })
-        .limit(20),
-      // Cancelled scheduled calls — timestamped by cancelled_at (stamped by
-      // the eb_stamp_cancelled trigger) so they surface as FRESH unread
-      // items at cancel time, not back-dated to when they were booked.
-      sb
-        .from("engineer_bookings")
-        .select("id, project_id, slot_start, created_at, cancelled_at")
-        .eq("customer_user_id", customerUserId)
-        .eq("status", "cancelled")
-        .gte("created_at", sinceIso)
-        .order("created_at", { ascending: false })
-        .limit(20),
-      sb
-        .from("supervisor_bookings")
-        .select("id, project_name, slot_start, created_at")
-        .eq("customer_user_id", customerUserId)
-        .eq("status", "booked")
-        .gte("slot_end", nowIso)
-        .order("created_at", { ascending: false })
-        .limit(20),
-      // Cancelled appointments — same cancelled_at treatment.
-      sb
-        .from("supervisor_bookings")
-        .select("id, project_name, slot_start, created_at, cancelled_at")
-        .eq("customer_user_id", customerUserId)
-        .eq("status", "cancelled")
-        .gte("created_at", sinceIso)
-        .order("created_at", { ascending: false })
-        .limit(20),
-      sb
-        .from("project_quote_requests")
-        .select("id, project_id, status, responded_at, committed_at, created_at")
-        .eq("customer_user_id", customerUserId)
-        .in("status", ["quoted", "committed", "declined"])
-        .order("created_at", { ascending: false })
-        .limit(20),
-      sb
-        .from("guest_calls")
-        .select("id, project_id, status, ended_at, created_at")
-        .eq("customer_user_id", customerUserId)
-        .in("status", ["cancelled", "abandoned"])
-        .gte("created_at", sinceIso)
-        .order("created_at", { ascending: false })
-        .limit(20),
-    ]);
+        sb
+          .from("engineer_bookings")
+          .select("id, project_id, slot_start, created_at")
+          .eq("customer_user_id", customerUserId)
+          .eq("status", "booked")
+          .gte("slot_end", nowIso)
+          .order("created_at", { ascending: false })
+          .limit(20),
+        // Cancelled scheduled calls — timestamped by cancelled_at (stamped by
+        // the eb_stamp_cancelled trigger) so they surface as FRESH unread
+        // items at cancel time, not back-dated to when they were booked.
+        sb
+          .from("engineer_bookings")
+          .select("id, project_id, slot_start, created_at, cancelled_at")
+          .eq("customer_user_id", customerUserId)
+          .eq("status", "cancelled")
+          .gte("created_at", sinceIso)
+          .order("created_at", { ascending: false })
+          .limit(20),
+        sb
+          .from("supervisor_bookings")
+          .select("id, project_name, slot_start, created_at")
+          .eq("customer_user_id", customerUserId)
+          .eq("status", "booked")
+          .gte("slot_end", nowIso)
+          .order("created_at", { ascending: false })
+          .limit(20),
+        // Cancelled appointments — same cancelled_at treatment.
+        sb
+          .from("supervisor_bookings")
+          .select("id, project_name, slot_start, created_at, cancelled_at")
+          .eq("customer_user_id", customerUserId)
+          .eq("status", "cancelled")
+          .gte("created_at", sinceIso)
+          .order("created_at", { ascending: false })
+          .limit(20),
+        sb
+          .from("project_quote_requests")
+          .select(
+            "id, project_id, status, responded_at, committed_at, created_at"
+          )
+          .eq("customer_user_id", customerUserId)
+          .in("status", ["quoted", "committed", "declined"])
+          .order("created_at", { ascending: false })
+          .limit(20),
+        sb
+          .from("guest_calls")
+          .select("id, project_id, status, ended_at, created_at")
+          .eq("customer_user_id", customerUserId)
+          .in("status", ["cancelled", "abandoned"])
+          .gte("created_at", sinceIso)
+          .order("created_at", { ascending: false })
+          .limit(20),
+      ]);
 
     // Resolve project names.
     const pids = new Set<string>();
@@ -181,8 +177,7 @@ export function NotificationBell({
       for (const p of (data ?? []) as { id: string; name: string | null }[])
         if (p.name) nameById.set(p.id, p.name);
     }
-    const proj = (id: string | null) =>
-      (id && nameById.get(id)) || "a project";
+    const proj = (id: string | null) => (id && nameById.get(id)) || "a project";
 
     const out: Notif[] = [];
     for (const r of (callRes.data ?? []) as Array<{
@@ -322,7 +317,8 @@ export function NotificationBell({
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
@@ -340,6 +336,104 @@ export function NotificationBell({
     const cutoff = Math.max(clearedBefore, nowTick - 12 * 60 * 60_000);
     return items.filter((i) => i.ts >= cutoff);
   }, [items, clearedBefore, nowTick]);
+
+  // ── Glassmorphism pop toaster (top-center of the home/center panel) ─────
+  // Two tiers:
+  //   • bid/contract — STICKY: any UNREAD bid notification (newer than
+  //     lastSeen, not individually crossed) shows from the moment the page
+  //     loads and stays until the customer crosses it or opens the bell.
+  //     Crossed ids persist in localStorage so a reload doesn't resurrect
+  //     them. Money decisions never vanish on a timer.
+  //   • everything else — pops on live arrival only, auto-dismisses to the
+  //     bell after 5s.
+  const [transientToasts, setTransientToasts] = useState<Notif[]>([]);
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+  const dismissedKey = customerUserId
+    ? `relay:notif-toast-dismissed:${customerUserId}`
+    : null;
+  useEffect(() => {
+    if (!dismissedKey) return;
+    try {
+      const raw = window.localStorage.getItem(dismissedKey);
+      if (raw) setDismissedIds(new Set(JSON.parse(raw) as string[]));
+    } catch {
+      /* ignore */
+    }
+  }, [dismissedKey]);
+  const dismissSticky = useCallback(
+    (id: string) => {
+      setDismissedIds((prev) => {
+        const next = new Set(prev);
+        next.add(id);
+        if (dismissedKey) {
+          try {
+            // Cap the persisted set so it can't grow unbounded.
+            window.localStorage.setItem(
+              dismissedKey,
+              JSON.stringify([...next].slice(-50))
+            );
+          } catch {
+            /* ignore */
+          }
+        }
+        return next;
+      });
+    },
+    [dismissedKey]
+  );
+
+  // Sticky tier — derived, so it survives reloads: unread bid items that
+  // haven't been individually crossed. Opening the bell advances lastSeen,
+  // which clears them naturally ("to the bell").
+  const stickyToasts = useMemo(
+    () =>
+      visibleItems.filter(
+        (i) => i.kind === "bid" && i.ts > lastSeen && !dismissedIds.has(i.id)
+      ),
+    [visibleItems, lastSeen, dismissedIds]
+  );
+
+  // Transient tier — live arrivals of every OTHER kind, 5s lifetime.
+  const toastBaselineRef = useRef<number | null>(null);
+  const toastTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => {
+    if (visibleItems.length === 0) return;
+    const newest = visibleItems[0].ts;
+    if (toastBaselineRef.current === null) {
+      toastBaselineRef.current = newest;
+      return;
+    }
+    const baseline = toastBaselineRef.current;
+    const fresh = visibleItems.filter(
+      (i) => i.ts > baseline && i.kind !== "bid"
+    );
+    if (visibleItems[0].ts > baseline) toastBaselineRef.current = newest;
+    if (fresh.length === 0) return;
+    if (open) return; // panel already open — the list itself shows them
+    const popped = fresh.slice(0, 3);
+    setTransientToasts((prev) => [...popped, ...prev].slice(0, 3));
+    const ids = popped.map((f) => f.id);
+    toastTimersRef.current.push(
+      setTimeout(() => {
+        setTransientToasts((prev) => prev.filter((t) => !ids.includes(t.id)));
+      }, 5000)
+    );
+  }, [visibleItems, open]);
+  useEffect(
+    () => () => {
+      for (const t of toastTimersRef.current) clearTimeout(t);
+    },
+    []
+  );
+
+  // Render order: sticky bids first, then transients; cap the stack.
+  const toasts = useMemo(
+    () =>
+      [...stickyToasts, ...transientToasts]
+        .filter((t, i, arr) => arr.findIndex((x) => x.id === t.id) === i)
+        .slice(0, 3),
+    [stickyToasts, transientToasts]
+  );
 
   const unread = useMemo(
     () => visibleItems.filter((i) => i.ts > lastSeen).length,
@@ -381,7 +475,7 @@ export function NotificationBell({
         type="button"
         onClick={openPanel}
         aria-label={`Notifications${unread ? ` (${unread} new)` : ""}`}
-        className="relative flex size-9 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+        className="relative flex size-9 items-center justify-center rounded-full transition-colors hover:bg-black/5 max-lg:size-11 dark:hover:bg-white/10"
         style={{ color: "var(--text-muted)" }}
       >
         <Bell size={18} />
@@ -487,6 +581,105 @@ export function NotificationBell({
               </ul>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Glassmorphism toasts — frosted, translucent cards dropping in at
+          the TOP-CENTER of the main panel (dynamic-island style) so they
+          can't be missed; the bell keeps the full history for review.
+          Click anywhere on a card to open the panel; × dismisses it. */}
+      {toasts.length > 0 && (
+        <div className="pointer-events-none fixed inset-x-0 top-6 z-[var(--z-toast)] flex flex-col items-center gap-2 px-4">
+          {toasts.map((n) => {
+            const Icon = KIND_ICON[n.kind];
+            return (
+              <div
+                key={`toast-${n.id}`}
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  // Open the bell — that marks everything seen, which clears
+                  // the sticky bids naturally; transients are dropped too.
+                  setTransientToasts([]);
+                  if (!open) openPanel();
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setTransientToasts([]);
+                    if (!open) openPanel();
+                  }
+                }}
+                className="pointer-events-auto flex w-96 max-w-full cursor-pointer items-start gap-2.5 rounded-xl border px-3.5 py-3 shadow-2xl"
+                style={{
+                  animation: "relay-toast-in 220ms ease-out",
+                  background:
+                    "color-mix(in srgb, var(--surface) 62%, transparent)",
+                  borderColor:
+                    "color-mix(in srgb, var(--text) 14%, transparent)",
+                  backdropFilter: "blur(16px) saturate(1.5)",
+                  WebkitBackdropFilter: "blur(16px) saturate(1.5)",
+                  boxShadow: "0 12px 32px rgba(0,0,0,0.35)",
+                }}
+              >
+                <span
+                  className="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-lg"
+                  style={{
+                    background:
+                      n.kind === "cancel"
+                        ? "color-mix(in srgb, var(--risk) 14%, transparent)"
+                        : "var(--primary-soft)",
+                    color:
+                      n.kind === "cancel" ? "var(--risk)" : "var(--primary)",
+                  }}
+                >
+                  <Icon size={14} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div
+                    className="text-[12.5px] font-semibold"
+                    style={{ color: "var(--text)" }}
+                  >
+                    {n.title}
+                  </div>
+                  <div
+                    className="truncate text-[11.5px]"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {n.detail}
+                  </div>
+                </div>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  aria-label="Dismiss notification"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (n.kind === "bid") dismissSticky(n.id);
+                    else
+                      setTransientToasts((prev) =>
+                        prev.filter((t) => t.id !== n.id)
+                      );
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (n.kind === "bid") dismissSticky(n.id);
+                      else
+                        setTransientToasts((prev) =>
+                          prev.filter((t) => t.id !== n.id)
+                        );
+                    }
+                  }}
+                  className="-mt-0.5 -mr-1 inline-flex size-6 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-black/10 dark:hover:bg-white/10"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  <XCircle size={13} />
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

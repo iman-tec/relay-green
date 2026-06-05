@@ -20,16 +20,21 @@
 
 import { NextResponse } from "next/server";
 import { requireEnterpriseAdmin } from "@/lib/enterprise-auth";
-import { suppressValue, isSuppressed, SUPPRESSED_LABEL } from "@/lib/relay/kanonymity";
+import {
+  suppressValue,
+  isSuppressed,
+  SUPPRESSED_LABEL,
+} from "@/lib/relay/kanonymity";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 const CENTS_PER_MINUTE = 300;
 
 export async function GET() {
   const gate = await requireEnterpriseAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin, orgId } = gate;
 
   // Departments in this org + their member counts.
@@ -38,8 +43,11 @@ export async function GET() {
     .select("id, name, status, used_minutes, allocated_minutes")
     .eq("enterprise_id", orgId);
   const departments = (deptRows ?? []) as Array<{
-    id: string; name: string; status: string;
-    used_minutes: number | null; allocated_minutes: number | null;
+    id: string;
+    name: string;
+    status: string;
+    used_minutes: number | null;
+    allocated_minutes: number | null;
   }>;
 
   // Member rosters (count distinct members per department) + org member ids.
@@ -48,12 +56,17 @@ export async function GET() {
     .select("id, department_id, client_type")
     .eq("organization_id", orgId);
   const members = (memberRows ?? []) as Array<{
-    id: string; department_id: string | null; client_type: string | null;
+    id: string;
+    department_id: string | null;
+    client_type: string | null;
   }>;
   const memberCountByDept = new Map<string, number>();
   for (const m of members) {
     if (!m.department_id) continue;
-    memberCountByDept.set(m.department_id, (memberCountByDept.get(m.department_id) ?? 0) + 1);
+    memberCountByDept.set(
+      m.department_id,
+      (memberCountByDept.get(m.department_id) ?? 0) + 1
+    );
   }
   const orgMemberIds = members.map((m) => m.id);
 
@@ -63,20 +76,20 @@ export async function GET() {
     const usedMin = Number(d.used_minutes ?? 0);
     const usage = suppressValue(
       {
-        usedMinutes:  usedMin,
+        usedMinutes: usedMin,
         allocatedMinutes: Number(d.allocated_minutes ?? 0),
-        spendCents:   Math.round(usedMin * CENTS_PER_MINUTE),
+        spendCents: Math.round(usedMin * CENTS_PER_MINUTE),
       },
       memberCount,
-      "department",
+      "department"
     );
     return {
       departmentId: d.id,
-      name:         d.name,        // identity — always shown
-      status:       d.status,      // not member-derived — always shown
-      memberCount,                 // a count, not an individual figure
-      suppressed:   usage.suppressed,
-      usage:        usage.value,   // null when suppressed
+      name: d.name, // identity — always shown
+      status: d.status, // not member-derived — always shown
+      memberCount, // a count, not an individual figure
+      suppressed: usage.suppressed,
+      usage: usage.value, // null when suppressed
       suppressedLabel: usage.suppressed ? SUPPRESSED_LABEL : null,
     };
   });
@@ -88,17 +101,20 @@ export async function GET() {
   since.setDate(1);
   since.setHours(0, 0, 0, 0);
 
-  const orFilter = orgMemberIds.length > 0
-    ? `organization_id.eq.${orgId},customer_user_id.in.(${orgMemberIds.join(",")})`
-    : `organization_id.eq.${orgId}`;
+  const orFilter =
+    orgMemberIds.length > 0
+      ? `organization_id.eq.${orgId},customer_user_id.in.(${orgMemberIds.join(",")})`
+      : `organization_id.eq.${orgId}`;
   const { data: sessRows } = await admin
     .from("guest_calls")
     .select("created_at, duration_minutes, customer_user_id, status")
     .or(orFilter)
     .gte("created_at", since.toISOString());
   const sessions = (sessRows ?? []) as Array<{
-    created_at: string; duration_minutes: number | null;
-    customer_user_id: string | null; status: string;
+    created_at: string;
+    duration_minutes: number | null;
+    customer_user_id: string | null;
+    status: string;
   }>;
 
   type Bucket = { minutes: number; sessions: number; members: Set<string> };
@@ -107,7 +123,11 @@ export async function GET() {
     if (s.status !== "ended" || !s.duration_minutes) continue;
     const d = new Date(s.created_at);
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    const b = byMonthKey.get(key) ?? { minutes: 0, sessions: 0, members: new Set<string>() };
+    const b = byMonthKey.get(key) ?? {
+      minutes: 0,
+      sessions: 0,
+      members: new Set<string>(),
+    };
     b.minutes += Number(s.duration_minutes);
     b.sessions += 1;
     if (s.customer_user_id) b.members.add(s.customer_user_id);
@@ -123,12 +143,18 @@ export async function GET() {
         period,
         memberCount,
         suppressed,
-        minutes:    suppressed ? null : Math.round(b.minutes),
-        sessions:   suppressed ? null : b.sessions,
-        spendCents: suppressed ? null : Math.round(b.minutes * CENTS_PER_MINUTE),
+        minutes: suppressed ? null : Math.round(b.minutes),
+        sessions: suppressed ? null : b.sessions,
+        spendCents: suppressed
+          ? null
+          : Math.round(b.minutes * CENTS_PER_MINUTE),
         suppressedLabel: suppressed ? SUPPRESSED_LABEL : null,
       };
     });
 
-  return NextResponse.json({ byDepartment, byPeriod, perMinuteCents: CENTS_PER_MINUTE });
+  return NextResponse.json({
+    byDepartment,
+    byPeriod,
+    perMinuteCents: CENTS_PER_MINUTE,
+  });
 }

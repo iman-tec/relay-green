@@ -25,15 +25,15 @@ existing components removed.
 
 ### Decisions locked
 
-| # | Decision | Reason |
-|---|---|---|
-| 1 | **Coral primary, green launcher + healthy** | Repo tokens + `CLAUDE.md` already codify this; deletes the 3-greens conflict (`--primary` coral vs `--green-dot` vs hardcoded `BRAND_GREEN`). |
-| 2 | **Keep Source Serif 4 + Inter** | Already next/font-wired. No new font loads. |
-| 3 | **Migrate `BRAND_GREEN = "#3f5c2e"` → `--primary` / `--green-dot`** | Will land per-screen in Phase 3+ as files are touched. |
-| 4 | **Unify PaywallModal palette to tokens** | Conversion moment can't look like a different app. Lands in Phase 7. |
-| 5 | **Intake AI-tool multi-select submit shape**: `aiTools.join(", ")` into existing `ai_tools_used` string column | Preserves DB contract; marked `TODO(api): widen column to text[]`. Lands in Phase 3. |
-| 6 | **Pod presence**: derive online state from `lastCallAt ≤ 5min idle` | No new contract; SEAM comment for later real presence. Lands in Phase 9. |
-| 7 | **Test churn**: fix in-place when CTA labels change in Playwright specs | No upfront sweep. |
+| #   | Decision                                                                                                       | Reason                                                                                                                                        |
+| --- | -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Coral primary, green launcher + healthy**                                                                    | Repo tokens + `CLAUDE.md` already codify this; deletes the 3-greens conflict (`--primary` coral vs `--green-dot` vs hardcoded `BRAND_GREEN`). |
+| 2   | **Keep Source Serif 4 + Inter**                                                                                | Already next/font-wired. No new font loads.                                                                                                   |
+| 3   | **Migrate `BRAND_GREEN = "#3f5c2e"` → `--primary` / `--green-dot`**                                            | Will land per-screen in Phase 3+ as files are touched.                                                                                        |
+| 4   | **Unify PaywallModal palette to tokens**                                                                       | Conversion moment can't look like a different app. Lands in Phase 7.                                                                          |
+| 5   | **Intake AI-tool multi-select submit shape**: `aiTools.join(", ")` into existing `ai_tools_used` string column | Preserves DB contract; marked `TODO(api): widen column to text[]`. Lands in Phase 3.                                                          |
+| 6   | **Pod presence**: derive online state from `lastCallAt ≤ 5min idle`                                            | No new contract; SEAM comment for later real presence. Lands in Phase 9.                                                                      |
+| 7   | **Test churn**: fix in-place when CTA labels change in Playwright specs                                        | No upfront sweep.                                                                                                                             |
 
 ### Added
 
@@ -56,24 +56,24 @@ existing components removed.
 **Primitives** —
 [`app/_components/ui/`](app/_components/ui/):
 
-| File | What |
-|---|---|
-| `cn.ts` | Tiny classnames util (no `clsx` dep). |
-| `Button.tsx` | 5 variants (`primary`/`secondary`/`ghost`/`danger`/`launcher`) × 4 sizes (`sm`/`md`/`lg`/`xl`). `md`+ meet WCAG 44px touch. `launcher` carries the green pulse halo. Loading state, icon slots, full-width. |
-| `Input.tsx` | Real `<label>` (audit fix: kills placeholder-only labels), hint/error wiring, `aria-invalid`, prefix/suffix slots, ≥44px height. |
-| `Textarea.tsx` | Same label/hint/error contract as Input. For forms (ChatComposer keeps its bespoke auto-grow). |
-| `OtpDigitInput.tsx` | Discrete digit boxes for the 8-digit OTP. Auto-advance, backspace-retreat, paste fills, `autoComplete="one-time-code"`, `inputMode="numeric"`. |
-| `Chip.tsx` + `ChipGroup` | Selection chips with `multi` support. Active state: coral-soft tint + coral border + coral dot before label. Drop-in for `wizard/ChipGroup.tsx`. |
-| `StatusBadge.tsx` | 5 tones (`ok`/`warn`/`risk`/`info`/`neutral`). **Icon + label**, never color alone (audit fix). |
-| `HealthBar.tsx` | 0–100 session-health bar with label (`Healthy` / `Shaky` / `At risk` / `No signal`). `role="progressbar"`. For Supervise board. |
-| `Card.tsx` | `Card` + `CardHeader` + `CardBody` + `CardFooter`. 3 variants (`surface` / `raised` / `hollow`). `interactive` for clickable session cards. |
-| `EmptyState.tsx` | Icon + serif title + body + action. Fills "dead pane" surfaces. |
-| `SectionHeader.tsx` | Title + subtitle + right slot. Serif display by default. |
-| `Avatar.tsx` | Initials fallback from name/email; 4 sizes; `tone="ok"` for online state. |
-| `Modal.tsx` | **Single primitive solves all six modal a11y audit findings**: `role="dialog"`, `aria-modal`, focus-trap, ESC-close, scrim-click close, body-scroll lock, focus-restore. |
-| `Toolbar.tsx` | Flex container with `.Group`, `.Spacer`, `.Divider` slots. |
-| `Toast.tsx` | `role="alert"` / `aria-live` set by tone (audit fix: silent-toast). Inline; no global provider yet. |
-| `index.ts` | Barrel. Use `import { Button, … } from "@/app/_components/ui"`. |
+| File                     | What                                                                                                                                                                                                        |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cn.ts`                  | Tiny classnames util (no `clsx` dep).                                                                                                                                                                       |
+| `Button.tsx`             | 5 variants (`primary`/`secondary`/`ghost`/`danger`/`launcher`) × 4 sizes (`sm`/`md`/`lg`/`xl`). `md`+ meet WCAG 44px touch. `launcher` carries the green pulse halo. Loading state, icon slots, full-width. |
+| `Input.tsx`              | Real `<label>` (audit fix: kills placeholder-only labels), hint/error wiring, `aria-invalid`, prefix/suffix slots, ≥44px height.                                                                            |
+| `Textarea.tsx`           | Same label/hint/error contract as Input. For forms (ChatComposer keeps its bespoke auto-grow).                                                                                                              |
+| `OtpDigitInput.tsx`      | Discrete digit boxes for the 8-digit OTP. Auto-advance, backspace-retreat, paste fills, `autoComplete="one-time-code"`, `inputMode="numeric"`.                                                              |
+| `Chip.tsx` + `ChipGroup` | Selection chips with `multi` support. Active state: coral-soft tint + coral border + coral dot before label. Drop-in for `wizard/ChipGroup.tsx`.                                                            |
+| `StatusBadge.tsx`        | 5 tones (`ok`/`warn`/`risk`/`info`/`neutral`). **Icon + label**, never color alone (audit fix).                                                                                                             |
+| `HealthBar.tsx`          | 0–100 session-health bar with label (`Healthy` / `Shaky` / `At risk` / `No signal`). `role="progressbar"`. For Supervise board.                                                                             |
+| `Card.tsx`               | `Card` + `CardHeader` + `CardBody` + `CardFooter`. 3 variants (`surface` / `raised` / `hollow`). `interactive` for clickable session cards.                                                                 |
+| `EmptyState.tsx`         | Icon + serif title + body + action. Fills "dead pane" surfaces.                                                                                                                                             |
+| `SectionHeader.tsx`      | Title + subtitle + right slot. Serif display by default.                                                                                                                                                    |
+| `Avatar.tsx`             | Initials fallback from name/email; 4 sizes; `tone="ok"` for online state.                                                                                                                                   |
+| `Modal.tsx`              | **Single primitive solves all six modal a11y audit findings**: `role="dialog"`, `aria-modal`, focus-trap, ESC-close, scrim-click close, body-scroll lock, focus-restore.                                    |
+| `Toolbar.tsx`            | Flex container with `.Group`, `.Spacer`, `.Divider` slots.                                                                                                                                                  |
+| `Toast.tsx`              | `role="alert"` / `aria-live` set by tone (audit fix: silent-toast). Inline; no global provider yet.                                                                                                         |
+| `index.ts`               | Barrel. Use `import { Button, … } from "@/app/_components/ui"`.                                                                                                                                             |
 
 **Docs** — [`DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md):
 
@@ -145,7 +145,7 @@ targets (`window.location.assign(body.next ?? …)`). Same `?mode` +
   with proper `aria-label`.
 - Dev-mode shortcuts panel (engineer / supervisor / internal /
   enterprise) restyled to coral-soft icon tile, kept its `Briefcase /
-  Eye / ShieldCheck / Building2` glyphs.
+Eye / ShieldCheck / Building2` glyphs.
 
 **Brand-green deletions:** all `BRAND_GREEN = "#3f5c2e"` constants
 gone from these three components. Two callers down, 13+ to go.
@@ -170,7 +170,7 @@ swapped JSX inside existing client components).
   existing `client_intakes.ai_tools_used` text column on Supabase)
   ([`IntakeClient.tsx:172`](app/intake/IntakeClient.tsx:172)).
 - **Seam left for backend:** `// TODO(api): widen
-  client_intakes.ai_tools_used to text[]` immediately above the
+client_intakes.ai_tools_used to text[]` immediately above the
   submit. No UI changes needed at that point.
 - Step 2 passes `multi` to `<ChipGroup>`; the user toggles any
   combination of Claude / ChatGPT (Codex) / Deep Seek / Lovable /
@@ -230,8 +230,8 @@ chat + room come in Phase 7.
 - Atmospheric green radial top-glow framing the dashboard — matches
   the calm control-room mood. Subtle, not noisy.
 - Headline switched from inline `style={{ fontFamily, color,
-  letterSpacing, lineHeight }}` to `font-serif text-3xl … sm:text-4xl
-  tracking-tight` utilities. Tokens for color.
+letterSpacing, lineHeight }}` to `font-serif text-3xl … sm:text-4xl
+tracking-tight` utilities. Tokens for color.
 - "Working in {project}" pill: BRAND_GREEN/SOFT/BORDER inline colors
   replaced with `--surface-raised` chrome + `--primary-soft` icon
   tile + `--primary` text + `--text-muted` eyebrow. Read more
@@ -270,11 +270,11 @@ intake assistant + a "Context for your engineer" summary card.
 
 ### New files
 
-| Path | Purpose |
-|---|---|
-| `lib/intake/intakeAssistant.ts` | Pure script + types. `INTAKE_SCRIPT` (4 questions: building, problem, stack, AI tools + wrap-up), `askNext(ctx)`, `captureAnswer(ctx, prompt, answer, attachment)`, `emptyContext()`, `contextIsUseful(ctx)`. Stable interface so backend can swap to a real Anthropic transport later without touching the UI. |
+| Path                                         | Purpose                                                                                                                                                                                                                                                                                                                                                                              |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `lib/intake/intakeAssistant.ts`              | Pure script + types. `INTAKE_SCRIPT` (4 questions: building, problem, stack, AI tools + wrap-up), `askNext(ctx)`, `captureAnswer(ctx, prompt, answer, attachment)`, `emptyContext()`, `contextIsUseful(ctx)`. Stable interface so backend can swap to a real Anthropic transport later without touching the UI.                                                                      |
 | `app/_components/intake/IntakeAssistant.tsx` | Chat-shell. Local-state messages + draft + staged file. Reads prompts from `INTAKE_SCRIPT`, captures answers into a running `IntakeContext`, emits the context up to the parent via `onContextChange`. Composer is a textarea + paperclip + ui/Button. Bubbles role-distinct (coral-soft for user, surface-raised for assistant). `role="log"` + `aria-live="polite"` on the thread. |
-| `app/_components/intake/ContextCard.tsx` | "Context for your engineer" summary. Reads the `IntakeContext` and renders a tidy field list + attachment thumbnails. Empty-state placeholder when nothing has been captured yet. |
+| `app/_components/intake/ContextCard.tsx`     | "Context for your engineer" summary. Reads the `IntakeContext` and renders a tidy field list + attachment thumbnails. Empty-state placeholder when nothing has been captured yet.                                                                                                                                                                                                    |
 
 ### `MatchingClient.tsx` restyle
 
@@ -300,7 +300,7 @@ intake assistant + a "Context for your engineer" summary card.
 - `lib/intake/intakeAssistant.ts` has a `TODO(api)` block at the
   bottom with the suggested Anthropic wire-up. UI interface stays.
 - `IntakeAssistant.tsx` line in `handleFile`: `// TODO(api): upload
-  to storage.` (today's preview URL is a local `blob://` ref).
+to storage.` (today's preview URL is a local `blob://` ref).
 - The pre-join transcript is intentionally NOT persisted to Supabase.
   When the engineer joins, the customer redirects to `/room` which
   has its own live chat. A future backend job ("persist intake
@@ -347,7 +347,6 @@ two highest-leverage pieces from §5.5 + the audit:
    deleted from this file. 1 more BRAND_GREEN-host file down.
 
 2. **`ConfirmEndModal` migrated to `ui/Modal`.**
-
    - Bundles ESC close, focus-trap, scrim-click close, body-scroll
      lock, focus-restore — **all six modal a11y bugs** the audit
      flagged for this modal solved by the primitive.
@@ -385,16 +384,16 @@ files.
 - **Audit fix: color-only health → label + icon + color.** Live tile
   health surfaces as a `<HealthBar>` (with text label "Healthy /
   Shaky / At risk / No signal" + colored fill + `role="progressbar"`)
-  + a `<StatusBadge tone="ok|warn|risk">` carrying its built-in
-  glyph. Color-blind and SR users get the meaning without seeing
-  hue.
+  - a `<StatusBadge tone="ok|warn|risk">` carrying its built-in
+    glyph. Color-blind and SR users get the meaning without seeing
+    hue.
 - Page title now uses the serif display face. Subtitle copy slightly
   warmer.
 - Tabs strip rewired: `role="tablist"` + `aria-selected`, count
   badge pills inline (not parens), coral active underline (was
   `BRAND_GREEN`), hover state on inactive labels.
 - `SessionTile` and `PastSessionTile` migrated to `<Card
-  variant="surface" interactive>` — proper hover lift via the
+variant="surface" interactive>` — proper hover lift via the
   primitive's transition (no more inline `hover:scale` /
   `hover:shadow-lg` rewrites). Click + Enter/Space still work.
 - The bottom Join CTA is now `<Button full size="sm" iconLeft iconRight>`
@@ -451,7 +450,7 @@ place and reads from the seam module.
     impl will compare `engineer.positionInPod` against the cap.
   - `groupEngineersByPod(pods, engineersByPodId, supervisorsByPodId)`.
   - `podCapacity(engineers)` — returns `{ total, primary, secondary,
-    overflow, primaryCap, totalCap }` for the visual capacity meter.
+overflow, primaryCap, totalCap }` for the visual capacity meter.
   - `isOnlineFromLastSeen(lastSeen, { onLiveCall, now })` —
     derives the heuristic "online if active in the last 5 min OR on
     a live call right now". `ONLINE_WINDOW_MS = 5 * 60 * 1000`.
@@ -509,7 +508,7 @@ place and reads from the seam module.
   did not change** — this is purely a forward-compatible read; the
   fallback path is the default until backend adds the field.
 - Marked `TODO(api): /api/supervisor/team should return supervisors[]
-  …` so the contract change is unambiguous.
+…` so the contract change is unambiguous.
 
 ### Verification
 
@@ -529,7 +528,7 @@ all-caps line. Now:
 
 - `role="status"` + `aria-live="polite"`.
 - Coral-soft Eye icon avatar (`bg-[var(--primary-soft)]
-  text-[var(--primary)]`) instead of a flat text glyph.
+text-[var(--primary)]`) instead of a flat text glyph.
 - Two-line voice: **"Supervisor view"** (bold, brand-tone) ·
   **"Read-only — controls are hidden so you can monitor without
   interrupting."** Brief §5.9's "calm distinct read-only treatment"
@@ -569,18 +568,18 @@ code change required** in this commit.
 
 ### Shipped on `feat/ui-transformation`
 
-| Phase | What landed |
-|---|---|
-| 1 | `UI_ANALYSIS.md` |
-| 2 | Tokens + 15 primitives + `DESIGN_SYSTEM.md` + `TRANSFORMATION_LOG.md` |
-| 3 | Login / staff-login / set-password (OTP digit boxes, real labels) |
-| 4 | Intake wizard + multi-select AI-tool fix (§5.2) |
-| 5 | Dashboard / empty state launcher CTA + summary panel |
-| 6 | Ringing screen with embedded IntakeAssistant + ContextCard (§5.4 + §7) |
-| 7 (partial) | MeetingChatEntry call CTA + ConfirmEndModal a11y |
-| 8 | Supervise board HealthBar + StatusBadge + tabs |
-| 9 | Operations + pod-allocation seam (§6) |
-| 10 + 11 | Read-only supervisor banner + settings |
+| Phase       | What landed                                                            |
+| ----------- | ---------------------------------------------------------------------- |
+| 1           | `UI_ANALYSIS.md`                                                       |
+| 2           | Tokens + 15 primitives + `DESIGN_SYSTEM.md` + `TRANSFORMATION_LOG.md`  |
+| 3           | Login / staff-login / set-password (OTP digit boxes, real labels)      |
+| 4           | Intake wizard + multi-select AI-tool fix (§5.2)                        |
+| 5           | Dashboard / empty state launcher CTA + summary panel                   |
+| 6           | Ringing screen with embedded IntakeAssistant + ContextCard (§5.4 + §7) |
+| 7 (partial) | MeetingChatEntry call CTA + ConfirmEndModal a11y                       |
+| 8           | Supervise board HealthBar + StatusBadge + tabs                         |
+| 9           | Operations + pod-allocation seam (§6)                                  |
+| 10 + 11     | Read-only supervisor banner + settings                                 |
 
 ### Deferred / follow-up (not in this branch)
 

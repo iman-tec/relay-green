@@ -26,13 +26,28 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Image as ImageIcon, FileText, FileSpreadsheet, FileType,
-  Loader2, Paperclip, Plus, SendHorizonal, X, Mic, Music, Square, AudioLines,
+  Image as ImageIcon,
+  FileText,
+  FileSpreadsheet,
+  FileType,
+  Loader2,
+  Paperclip,
+  Plus,
+  SendHorizonal,
+  X,
+  Mic,
+  Music,
+  Square,
+  AudioLines,
 } from "lucide-react";
 import {
-  type ClassifiedFile, type AttachmentKind,
-  FILE_INPUT_ACCEPT, MAX_BYTES, MAX_FILES_PER_MESSAGE,
-  formatBytes, validateStagedFiles,
+  type ClassifiedFile,
+  type AttachmentKind,
+  FILE_INPUT_ACCEPT,
+  MAX_BYTES,
+  MAX_FILES_PER_MESSAGE,
+  formatBytes,
+  validateStagedFiles,
 } from "@/lib/relay/chatAttachments";
 
 // ── Web Speech API type narrowing ────────────────────────────────────────
@@ -47,11 +62,17 @@ type SpeechRecognitionInstance = {
   start: () => void;
   stop: () => void;
   abort: () => void;
-  onresult: ((event: { results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }> }) => void) | null;
+  onresult:
+    | ((event: {
+        results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }>;
+      }) => void)
+    | null;
   onerror: ((event: { error: string }) => void) | null;
   onend: (() => void) | null;
 };
-function getSpeechRecognitionCtor(): (new () => SpeechRecognitionInstance) | null {
+function getSpeechRecognitionCtor():
+  | (new () => SpeechRecognitionInstance)
+  | null {
   if (typeof window === "undefined") return null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const w = window as any;
@@ -62,8 +83,14 @@ function getSpeechRecognitionCtor(): (new () => SpeechRecognitionInstance) | nul
 // with opus; Safari produces audio/mp4 (m4a). We probe in priority order
 // and let the browser pick its default if neither hint is supported.
 function pickRecorderMime(): string | undefined {
-  if (typeof window === "undefined" || !("MediaRecorder" in window)) return undefined;
-  const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"];
+  if (typeof window === "undefined" || !("MediaRecorder" in window))
+    return undefined;
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4",
+    "audio/ogg",
+  ];
   for (const c of candidates) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if ((MediaRecorder as any).isTypeSupported?.(c)) return c;
@@ -73,8 +100,8 @@ function pickRecorderMime(): string | undefined {
 
 function mimeToExt(mime: string): string {
   if (mime.includes("webm")) return "webm";
-  if (mime.includes("mp4"))  return "m4a";
-  if (mime.includes("ogg"))  return "ogg";
+  if (mime.includes("mp4")) return "m4a";
+  if (mime.includes("ogg")) return "ogg";
   if (mime.includes("mpeg")) return "mp3";
   return "webm";
 }
@@ -91,12 +118,16 @@ function mimeToExt(mime: string): string {
 // mic prompt, calling getUserMedia again rejects with NotAllowedError
 // without showing any UI — they think they've never been asked. Detecting
 // the "denied" state upfront lets us show actionable guidance instead.
-export async function queryMicPermission(): Promise<"granted" | "prompt" | "denied" | "unknown"> {
+export async function queryMicPermission(): Promise<
+  "granted" | "prompt" | "denied" | "unknown"
+> {
   if (typeof navigator === "undefined" || !navigator.permissions?.query) {
     return "unknown";
   }
   try {
-    const status = await navigator.permissions.query({ name: "microphone" as PermissionName });
+    const status = await navigator.permissions.query({
+      name: "microphone" as PermissionName,
+    });
     return status.state;
   } catch {
     return "unknown";
@@ -145,13 +176,13 @@ export function ChatComposer({
   placeholder: string;
   onSend: (payload: { text: string; files: File[] }) => Promise<void>;
 }) {
-  const [text,    setText]    = useState("");
-  const [staged,  setStaged]  = useState<ClassifiedFile[]>([]);
-  const [thumbs,  setThumbs]  = useState<Map<string, string>>(new Map());
-  const [busy,    setBusy]    = useState(false);
-  const [error,   setError]   = useState<string | null>(null);
-  const [menu,    setMenu]    = useState(false);
-  const [hover,   setHover]   = useState(false);
+  const [text, setText] = useState("");
+  const [staged, setStaged] = useState<ClassifiedFile[]>([]);
+  const [thumbs, setThumbs] = useState<Map<string, string>>(new Map());
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [menu, setMenu] = useState(false);
+  const [hover, setHover] = useState(false);
 
   // ── Voice state ──────────────────────────────────────────────────────
   // The composer supports two voice modes via a single Mic button:
@@ -167,9 +198,9 @@ export function ChatComposer({
   // We pick by gesture: a quick tap = transcribe, a hold = record.
   type VoiceMode = "idle" | "transcribing" | "recording";
   const [voiceMode, setVoiceMode] = useState<VoiceMode>("idle");
-  const [voiceMsg, setVoiceMsg]   = useState<string | null>(null);
+  const [voiceMsg, setVoiceMsg] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
-  const recorderRef    = useRef<MediaRecorder | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
   const recorderChunksRef = useRef<Blob[]>([]);
   const recorderStreamRef = useRef<MediaStream | null>(null);
   // Tracks the press timer that decides tap-vs-hold; cleared on release.
@@ -184,8 +215,8 @@ export function ChatComposer({
 
   const fileDocsRef = useRef<HTMLInputElement>(null);
   const filePicsRef = useRef<HTMLInputElement>(null);
-  const taRef       = useRef<HTMLTextAreaElement>(null);
-  const wrapRef     = useRef<HTMLDivElement>(null);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
   // Track composer width so we can hide non-essential buttons (mic /
   // audio recorder) when the chat rail gets dragged narrow. Without
   // this the textarea gets squeezed to ~24px and the placeholder
@@ -227,7 +258,8 @@ export function ChatComposer({
   useEffect(() => {
     if (!menu) return;
     const onClick = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setMenu(false);
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node))
+        setMenu(false);
     };
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
@@ -241,7 +273,9 @@ export function ChatComposer({
     if (disabled || voiceMode !== "idle") return;
     const Ctor = getSpeechRecognitionCtor();
     if (!Ctor) {
-      setVoiceMsg("Voice-to-text isn't supported in this browser. Try Chrome or Edge.");
+      setVoiceMsg(
+        "Voice-to-text isn't supported in this browser. Try Chrome or Edge."
+      );
       return;
     }
     setVoiceMsg(null);
@@ -257,12 +291,16 @@ export function ChatComposer({
     // getUserMedia rejects with NotAllowedError but no prompt appears.
     const permState = await queryMicPermission();
     if (permState === "denied") {
-      setVoiceMsg("Microphone is blocked for this site. Click the lock / info icon at the very left of the address bar → Site settings → Microphone → Allow → reload the page.");
+      setVoiceMsg(
+        "Microphone is blocked for this site. Click the lock / info icon at the very left of the address bar → Site settings → Microphone → Allow → reload the page."
+      );
       return;
     }
     if (navigator.mediaDevices?.getUserMedia) {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        });
         stream.getTracks().forEach((t) => t.stop());
       } catch (e) {
         if (e instanceof Error && e.name === "NotAllowedError") {
@@ -270,9 +308,13 @@ export function ChatComposer({
           // typically means the user dismissed the prompt this session.
           // Same fix path but slightly different copy so they know to
           // try again rather than dig through settings.
-          setVoiceMsg("You dismissed the microphone prompt. Click the mic icon again and choose Allow when your browser asks.");
+          setVoiceMsg(
+            "You dismissed the microphone prompt. Click the mic icon again and choose Allow when your browser asks."
+          );
         } else if (e instanceof Error && e.name === "NotFoundError") {
-          setVoiceMsg("No microphone detected. Check that one is plugged in and not being used by another app.");
+          setVoiceMsg(
+            "No microphone detected. Check that one is plugged in and not being used by another app."
+          );
         } else {
           setVoiceMsg("Couldn't access your microphone.");
         }
@@ -385,7 +427,11 @@ export function ChatComposer({
       setVoiceMode("idle");
       return;
     }
-    try { r.stop(); } catch { /* already stopping */ }
+    try {
+      r.stop();
+    } catch {
+      /* already stopping */
+    }
     // onend will flip state back to "idle".
   }, []);
 
@@ -407,9 +453,13 @@ export function ChatComposer({
       // the SpeechRecognition error copy so the customer sees the same
       // fix path regardless of which voice mode they tried.
       if (e instanceof Error && e.name === "NotAllowedError") {
-        setVoiceMsg("Microphone access blocked. Click the lock icon in your browser's address bar, allow microphone, then try again.");
+        setVoiceMsg(
+          "Microphone access blocked. Click the lock icon in your browser's address bar, allow microphone, then try again."
+        );
       } else if (e instanceof Error && e.name === "NotFoundError") {
-        setVoiceMsg("No microphone detected. Check that one is plugged in and not being used by another app.");
+        setVoiceMsg(
+          "No microphone detected. Check that one is plugged in and not being used by another app."
+        );
       } else {
         setVoiceMsg("Couldn't access your microphone.");
       }
@@ -427,10 +477,9 @@ export function ChatComposer({
       if (e.data && e.data.size > 0) recorderChunksRef.current.push(e.data);
     };
     rec.onstop = () => {
-      const blob = new Blob(
-        recorderChunksRef.current,
-        { type: rec.mimeType || "audio/webm" },
-      );
+      const blob = new Blob(recorderChunksRef.current, {
+        type: rec.mimeType || "audio/webm",
+      });
       recorderChunksRef.current = [];
       // Tear down the mic track so the browser indicator turns off.
       recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -469,7 +518,11 @@ export function ChatComposer({
       setVoiceMode("idle");
       return;
     }
-    try { r.stop(); } catch { /* already stopping */ }
+    try {
+      r.stop();
+    } catch {
+      /* already stopping */
+    }
     // onstop handler will stage the blob + flip voiceMode back to "idle".
   }, []);
 
@@ -505,8 +558,16 @@ export function ChatComposer({
       // Kill the dictation keep-alive FIRST or abort's onend would restart
       // recognition on a dead component.
       transcribeKeepAliveRef.current = false;
-      try { recognitionRef.current?.abort(); } catch { /* noop */ }
-      try { recorderRef.current?.stop(); } catch { /* noop */ }
+      try {
+        recognitionRef.current?.abort();
+      } catch {
+        /* noop */
+      }
+      try {
+        recorderRef.current?.stop();
+      } catch {
+        /* noop */
+      }
       recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
     };
   }, []);
@@ -533,7 +594,11 @@ export function ChatComposer({
     // in `text`, so nothing said is lost.
     if (transcribeKeepAliveRef.current || recognitionRef.current) {
       transcribeKeepAliveRef.current = false;
-      try { recognitionRef.current?.stop(); } catch { /* noop */ }
+      try {
+        recognitionRef.current?.stop();
+      } catch {
+        /* noop */
+      }
     }
     const trimmed = text.trim();
     if (!trimmed && staged.length === 0) return;
@@ -616,8 +681,10 @@ export function ChatComposer({
         <div
           className="mb-1.5 rounded-md border px-3 py-1.5 text-[12px]"
           style={{
-            borderColor: "color-mix(in srgb, var(--accent-red) 30%, transparent)",
-            backgroundColor: "color-mix(in srgb, var(--accent-red) 8%, transparent)",
+            borderColor:
+              "color-mix(in srgb, var(--accent-red) 30%, transparent)",
+            backgroundColor:
+              "color-mix(in srgb, var(--accent-red) 8%, transparent)",
             color: "var(--accent-red)",
           }}
         >
@@ -663,7 +730,11 @@ export function ChatComposer({
                 kind={c.kind}
                 name={c.file.name}
                 size={c.file.size}
-                thumb={c.kind === "image" ? thumbs.get(c.file.name + c.file.size) : undefined}
+                thumb={
+                  c.kind === "image"
+                    ? thumbs.get(c.file.name + c.file.size)
+                    : undefined
+                }
                 onRemove={() => remove(i)}
               />
             ))}
@@ -678,7 +749,7 @@ export function ChatComposer({
               type="button"
               onClick={() => !disabled && setMenu((v) => !v)}
               disabled={disabled}
-              className="flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+              className="flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
               style={{ color: "var(--text-muted)" }}
               title="Add files or photos"
               aria-label="Add files or photos"
@@ -726,19 +797,35 @@ export function ChatComposer({
               the textarea isn't squeezed to nothing. The + menu and
               send button remain — voice features are recoverable when
               the rail is widened. */}
-          <div className={`${narrow ? "hidden" : "flex"} shrink-0 items-center gap-1`}>
+          <div
+            className={`${narrow ? "hidden" : "flex"} shrink-0 items-center gap-1`}
+          >
             {/* Voice-to-text */}
             <div className="relative">
               <button
                 type="button"
                 disabled={disabled || voiceMode === "recording"}
-                onClick={voiceMode === "transcribing" ? stopTranscribing : () => void startTranscribing()}
-                className="flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+                onClick={
+                  voiceMode === "transcribing"
+                    ? stopTranscribing
+                    : () => void startTranscribing()
+                }
+                className="flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
                 style={{
-                  color: voiceMode === "transcribing" ? BRAND_GREEN : "var(--text-muted)",
-                  backgroundColor: voiceMode === "transcribing" ? BRAND_GREEN_SOFT : "transparent",
+                  color:
+                    voiceMode === "transcribing"
+                      ? BRAND_GREEN
+                      : "var(--text-muted)",
+                  backgroundColor:
+                    voiceMode === "transcribing"
+                      ? BRAND_GREEN_SOFT
+                      : "transparent",
                 }}
-                title={voiceMode === "transcribing" ? "Stop dictating" : "Dictate — voice to text"}
+                title={
+                  voiceMode === "transcribing"
+                    ? "Stop dictating"
+                    : "Dictate — voice to text"
+                }
                 aria-label="Dictate"
                 aria-pressed={voiceMode === "transcribing"}
               >
@@ -760,17 +847,32 @@ export function ChatComposer({
             <button
               type="button"
               disabled={disabled || voiceMode === "transcribing"}
-              onClick={voiceMode === "recording" ? stopRecording : () => void startRecording()}
-              className="flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+              onClick={
+                voiceMode === "recording"
+                  ? stopRecording
+                  : () => void startRecording()
+              }
+              className="flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
               style={{
                 color: voiceMode === "recording" ? "#fff" : "var(--text-muted)",
-                backgroundColor: voiceMode === "recording" ? "var(--accent-red)" : "transparent",
+                backgroundColor:
+                  voiceMode === "recording"
+                    ? "var(--accent-red)"
+                    : "transparent",
               }}
-              title={voiceMode === "recording" ? "Stop & attach voice message" : "Record voice message"}
+              title={
+                voiceMode === "recording"
+                  ? "Stop & attach voice message"
+                  : "Record voice message"
+              }
               aria-label="Record voice message"
               aria-pressed={voiceMode === "recording"}
             >
-              {voiceMode === "recording" ? <Square size={12} /> : <AudioLines size={14} />}
+              {voiceMode === "recording" ? (
+                <Square size={12} />
+              ) : (
+                <AudioLines size={14} />
+              )}
             </button>
           </div>
 
@@ -788,7 +890,11 @@ export function ChatComposer({
               // composition (Japanese/Chinese/Korean input) gets a
               // pass — pressing Enter to commit a candidate shouldn't
               // accidentally fire the send.
-              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+              if (
+                e.key === "Enter" &&
+                !e.shiftKey &&
+                !e.nativeEvent.isComposing
+              ) {
                 e.preventDefault();
                 void handleSend();
               }
@@ -810,13 +916,18 @@ export function ChatComposer({
             title="Send"
             aria-label="Send"
           >
-            {busy ? <Loader2 size={14} className="animate-spin" /> : <SendHorizonal size={14} />}
+            {busy ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <SendHorizonal size={14} />
+            )}
           </button>
         </div>
       </div>
 
       <p className="mt-1.5 text-[10px]" style={{ color: "var(--text-muted)" }}>
-        Up to {formatBytes(MAX_BYTES)} per file · {MAX_FILES_PER_MESSAGE} files max · PDF, DOCX, XLSX, TXT, or images.
+        Up to {formatBytes(MAX_BYTES)} per file · {MAX_FILES_PER_MESSAGE} files
+        max · PDF, DOCX, XLSX, TXT, or images.
       </p>
 
       {/* Drop overlay */}
@@ -834,7 +945,10 @@ export function ChatComposer({
 }
 
 function MenuItem({
-  icon: Icon, label, sub, onClick,
+  icon: Icon,
+  label,
+  sub,
+  onClick,
 }: {
   icon: React.ElementType;
   label: string;
@@ -849,15 +963,23 @@ function MenuItem({
     >
       <Icon size={14} style={{ color: BRAND_GREEN }} />
       <div className="min-w-0">
-        <div className="text-sm" style={{ color: "var(--text)" }}>{label}</div>
-        <div className="text-[10px]" style={{ color: "var(--text-muted)" }}>{sub}</div>
+        <div className="text-sm" style={{ color: "var(--text)" }}>
+          {label}
+        </div>
+        <div className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+          {sub}
+        </div>
       </div>
     </button>
   );
 }
 
 function StagedChip({
-  kind, name, size, thumb, onRemove,
+  kind,
+  name,
+  size,
+  thumb,
+  onRemove,
 }: {
   kind: AttachmentKind;
   name: string;
@@ -867,8 +989,11 @@ function StagedChip({
 }) {
   return (
     <div
-      className="group relative flex items-center gap-2 rounded-lg border pl-1.5 pr-7 py-1.5"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--background)" }}
+      className="group relative flex items-center gap-2 rounded-lg border py-1.5 pr-7 pl-1.5"
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--background)",
+      }}
     >
       {kind === "image" && thumb ? (
         // eslint-disable-next-line @next/next/no-img-element
@@ -893,16 +1018,21 @@ function StagedChip({
           <DocIcon name={name} size={14} />
         </span>
       )}
-      <div className="min-w-0 max-w-[160px] leading-tight">
-        <div className="truncate text-[12px]" style={{ color: "var(--text)" }}>{name}</div>
-        <div className="truncate text-[10px]" style={{ color: "var(--text-muted)" }}>
+      <div className="max-w-[160px] min-w-0 leading-tight">
+        <div className="truncate text-[12px]" style={{ color: "var(--text)" }}>
+          {name}
+        </div>
+        <div
+          className="truncate text-[10px]"
+          style={{ color: "var(--text-muted)" }}
+        >
           {formatBytes(size)}
         </div>
       </div>
       <button
         type="button"
         onClick={onRemove}
-        className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full transition-colors hover:bg-black/10 dark:hover:bg-white/10"
+        className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full transition-colors hover:bg-black/10 dark:hover:bg-white/10"
         style={{ color: "var(--text-muted)" }}
         aria-label={`Remove ${name}`}
         title="Remove"
@@ -915,7 +1045,9 @@ function StagedChip({
 
 function DocIcon({ name, size }: { name: string; size: number }) {
   const lower = name.toLowerCase();
-  if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) return <FileSpreadsheet size={size} />;
-  if (lower.endsWith(".docx") || lower.endsWith(".doc")) return <FileType size={size} />;
+  if (lower.endsWith(".xlsx") || lower.endsWith(".xls"))
+    return <FileSpreadsheet size={size} />;
+  if (lower.endsWith(".docx") || lower.endsWith(".doc"))
+    return <FileType size={size} />;
   return <FileText size={size} />;
 }

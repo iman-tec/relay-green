@@ -15,13 +15,14 @@ import { requireEnterpriseAdmin } from "@/lib/enterprise-auth";
 import { resendInvitationEmail } from "@/lib/admin-invite";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function POST(_request: Request, { params }: RouteCtx) {
   const gate = await requireEnterpriseAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin, orgId } = gate;
 
   const { id } = await params;
@@ -33,7 +34,10 @@ export async function POST(_request: Request, { params }: RouteCtx) {
     .select("id, organization_id")
     .eq("id", id)
     .maybeSingle();
-  if (!target || (target as { organization_id: string | null }).organization_id !== orgId) {
+  if (
+    !target ||
+    (target as { organization_id: string | null }).organization_id !== orgId
+  ) {
     return NextResponse.json({ error: "not_in_org" }, { status: 404 });
   }
 

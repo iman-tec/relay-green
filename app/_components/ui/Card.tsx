@@ -45,11 +45,11 @@ export function Card({
   return (
     <div
       className={cn(
-        "rounded-2xl overflow-hidden",
+        "overflow-hidden rounded-2xl",
         VARIANT[variant],
         interactive &&
-          "cursor-pointer transition-[transform,border-color,background-color] duration-[var(--motion-fast)] hover:border-[var(--border-strong)] hover:-translate-y-px",
-        className,
+          "cursor-pointer transition-[transform,border-color,background-color] duration-[var(--motion-fast)] hover:-translate-y-px hover:border-[var(--border-strong)]",
+        className
       )}
       data-hover-lift={interactive || undefined}
       {...rest}
@@ -67,8 +67,8 @@ export function CardHeader({
   return (
     <div
       className={cn(
-        "px-5 py-4 border-b border-[var(--border)] flex items-center justify-between gap-3",
-        className,
+        "flex items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4",
+        className
       )}
       {...rest}
     >
@@ -97,8 +97,8 @@ export function CardFooter({
   return (
     <div
       className={cn(
-        "px-5 py-3 border-t border-[var(--border)] flex items-center justify-end gap-2",
-        className,
+        "flex items-center justify-end gap-2 border-t border-[var(--border)] px-5 py-3",
+        className
       )}
       {...rest}
     >

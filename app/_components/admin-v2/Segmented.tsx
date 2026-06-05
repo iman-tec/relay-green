@@ -9,7 +9,10 @@
 export type Segment<K extends string> = { key: K; label: string };
 
 export function Segmented<K extends string>({
-  value, onChange, options, ariaLabel,
+  value,
+  onChange,
+  options,
+  ariaLabel,
 }: {
   value: K;
   onChange: (k: K) => void;

@@ -13,7 +13,9 @@ export const metadata: Metadata = {
 // uses /admin; engineers don't see it at all.
 export default async function FinancePage() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) redirect("/staff");
 
   const { data: roleRows } = await supabase
@@ -23,7 +25,7 @@ export default async function FinancePage() {
   const roles = (roleRows ?? []).map((r: { role: string }) => r.role);
 
   if (!roles.includes(ROLE.enterprise_admin)) {
-    if (roles.includes(ROLE.super_admin))      redirect("/admin");
+    if (roles.includes(ROLE.super_admin)) redirect("/admin");
     if (roles.includes(ROLE.department_admin)) redirect("/department");
     redirect("/supervise");
   }

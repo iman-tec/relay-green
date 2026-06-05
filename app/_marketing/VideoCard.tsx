@@ -102,13 +102,7 @@ export function VideoCard({
           transition: "transform 250ms cubic-bezier(0.22, 1, 0.36, 1)",
         }}
       >
-        <svg
-          width="20"
-          height="22"
-          viewBox="0 0 20 22"
-          fill="none"
-          aria-hidden
-        >
+        <svg width="20" height="22" viewBox="0 0 20 22" fill="none" aria-hidden>
           <path d="M2 1.5L18 11L2 20.5V1.5Z" fill="#06090a" />
         </svg>
       </span>

@@ -25,7 +25,12 @@ import { createClient } from "@/lib/supabase/browser";
 import { GuestUpgradeForm } from "@/app/_components/GuestUpgradeForm";
 import { SUPPORT_PLANS, type SupportPlanCode } from "@/lib/relay/pricing";
 import { loadStripe } from "@stripe/stripe-js";
-import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
+import {
+  Elements,
+  PaymentElement,
+  useStripe,
+  useElements,
+} from "@stripe/react-stripe-js";
 import { buildStripeAppearance } from "@/lib/stripe/appearance";
 import { useTheme } from "@/app/_components/ThemeProvider";
 import { useOverlayDismiss } from "@/lib/relay/useOverlayDismiss";
@@ -33,22 +38,28 @@ import { useOverlayDismiss } from "@/lib/relay/useOverlayDismiss";
 // Single Stripe.js loader for the whole app — Stripe recommends not
 // re-loading on every modal open. Returns null at build time on the server.
 const STRIPE_PUBLISHABLE_KEY =
-  (typeof process !== "undefined" && process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) || "";
-const stripePromise = STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY) : null;
+  (typeof process !== "undefined" &&
+    process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) ||
+  "";
+const stripePromise = STRIPE_PUBLISHABLE_KEY
+  ? loadStripe(STRIPE_PUBLISHABLE_KEY)
+  : null;
 
 // Aligned with the rest of the app: same brand green as supervise/admin,
 // same surface/border/text tokens as ConnectingModal + the customer chat.
 const BRAND_GREEN = "var(--primary)";
-const SURFACE     = "var(--surface)";
-const CARD        = "var(--surface)";
-const CARD_EDGE   = "var(--border)";
-const INK         = "var(--text)";
-const INK_SOFT    = "color-mix(in srgb, var(--text) 78%, transparent)";
-const INK_MUTE    = "var(--text-muted)";
-const BACKDROP    = "rgba(0, 0, 0, 0.55)";
+const SURFACE = "var(--surface)";
+const CARD = "var(--surface)";
+const CARD_EDGE = "var(--border)";
+const INK = "var(--text)";
+const INK_SOFT = "color-mix(in srgb, var(--text) 78%, transparent)";
+const INK_MUTE = "var(--text-muted)";
+const BACKDROP = "rgba(0, 0, 0, 0.55)";
 
 export function PaywallModal({
-  open, reason, onClose,
+  open,
+  reason,
+  onClose,
 }: {
   open: boolean;
   reason: "free_expired" | "no_credits" | "manual";
@@ -87,18 +98,24 @@ export function PaywallModal({
     setError(null);
     try {
       const sb = createClient();
-      const { data, error: e } = await sb.functions.invoke("create-relay-checkout", {
-        body: {
-          plan,
-          return_url: typeof window !== "undefined" ? `${window.location.origin}/room` : "/room",
-        },
-      });
+      const { data, error: e } = await sb.functions.invoke(
+        "create-relay-checkout",
+        {
+          body: {
+            plan,
+            return_url:
+              typeof window !== "undefined"
+                ? `${window.location.origin}/room`
+                : "/room",
+          },
+        }
+      );
       const payload = data as {
         client_secret?: string;
         payment_intent_id?: string;
         amount_cents?: number;
-        plan_name?:    string;
-        minutes?:      number;
+        plan_name?: string;
+        minutes?: number;
       } | null;
       const clientSecret = payload?.client_secret;
       const paymentIntentId = payload?.payment_intent_id;
@@ -106,14 +123,25 @@ export function PaywallModal({
         // supabase-js wraps non-2xx responses; the real Stripe error lives
         // in error.context (the raw Response). Read it so the user sees
         // something actionable instead of "non-2xx status code".
-        let detail = e?.message ?? (data as { error?: string } | null)?.error ?? "Could not start checkout";
+        let detail =
+          e?.message ??
+          (data as { error?: string } | null)?.error ??
+          "Could not start checkout";
         try {
           const ctx = (e as { context?: Response } | null)?.context;
           if (ctx && typeof ctx.json === "function") {
-            const body = await ctx.json() as { error?: string; stripe?: { type?: string; code?: string } };
-            if (body?.error) detail = body.stripe?.code ? `${body.error} [${body.stripe.code}]` : body.error;
+            const body = (await ctx.json()) as {
+              error?: string;
+              stripe?: { type?: string; code?: string };
+            };
+            if (body?.error)
+              detail = body.stripe?.code
+                ? `${body.error} [${body.stripe.code}]`
+                : body.error;
           }
-        } catch { /* swallow parse errors, fall back to outer message */ }
+        } catch {
+          /* swallow parse errors, fall back to outer message */
+        }
         setError(detail);
         return;
       }
@@ -122,8 +150,8 @@ export function PaywallModal({
         clientSecret,
         paymentIntentId,
         amountCents: payload?.amount_cents ?? 0,
-        planName:    payload?.plan_name ?? plan,
-        minutes:     payload?.minutes ?? 0,
+        planName: payload?.plan_name ?? plan,
+        minutes: payload?.minutes ?? 0,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Checkout failed");
@@ -151,9 +179,13 @@ export function PaywallModal({
     const sb = createClient();
     void sb.auth.getUser().then(({ data }) => {
       if (!alive) return;
-      setIsGuest(Boolean(data.user?.is_anonymous) || (!!data.user && !data.user.email));
+      setIsGuest(
+        Boolean(data.user?.is_anonymous) || (!!data.user && !data.user.email)
+      );
     });
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [open]);
 
   if (!open) return null;
@@ -169,11 +201,15 @@ export function PaywallModal({
         <div
           ref={dialogRef}
           className="relative w-full max-w-md rounded-2xl border p-6 shadow-2xl"
-          style={{ backgroundColor: SURFACE, borderColor: CARD_EDGE, color: INK }}
+          style={{
+            backgroundColor: SURFACE,
+            borderColor: CARD_EDGE,
+            color: INK,
+          }}
         >
           <button
             onClick={() => setPendingPlan(null)}
-            className="absolute left-4 top-4 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] transition-opacity hover:opacity-100"
+            className="absolute top-4 left-4 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] transition-opacity hover:opacity-100"
             style={{ color: INK_SOFT, opacity: 0.8 }}
             aria-label="Back to plans"
           >
@@ -183,7 +219,7 @@ export function PaywallModal({
           <button
             onClick={onClose}
             aria-label="Close"
-            className="absolute right-4 top-4 rounded-full p-1 opacity-60 transition-opacity hover:opacity-100"
+            className="absolute top-4 right-4 rounded-full p-1 opacity-60 transition-opacity hover:opacity-100"
             style={{ color: INK_SOFT }}
           >
             <X size={16} />
@@ -207,9 +243,11 @@ export function PaywallModal({
   }
 
   const eyebrow =
-    reason === "free_expired" ? "Pick up where you left off."
-    : reason === "no_credits" ? "Pick a plan to continue"
-    : "Relay plans";
+    reason === "free_expired"
+      ? "Pick up where you left off."
+      : reason === "no_credits"
+        ? "Pick a plan to continue"
+        : "Relay plans";
 
   // When the user has clicked a paid plan, we mount Stripe's embedded
   // Checkout inside the modal instead of the plan grid. Closing the
@@ -223,7 +261,11 @@ export function PaywallModal({
         <div
           ref={dialogRef}
           className="relative w-full max-w-lg overflow-hidden rounded-2xl border shadow-2xl"
-          style={{ backgroundColor: SURFACE, borderColor: CARD_EDGE, color: INK }}
+          style={{
+            backgroundColor: SURFACE,
+            borderColor: CARD_EDGE,
+            color: INK,
+          }}
         >
           {/* Header */}
           <div
@@ -240,7 +282,8 @@ export function PaywallModal({
               Back
             </button>
             <div className="text-[12px] font-medium" style={{ color: INK }}>
-              {activeCheckout.planName}{activeCheckout.minutes ? ` · ${activeCheckout.minutes} min` : ""}
+              {activeCheckout.planName}
+              {activeCheckout.minutes ? ` · ${activeCheckout.minutes} min` : ""}
             </div>
             <button
               onClick={onClose}
@@ -279,23 +322,23 @@ export function PaywallModal({
         <button
           onClick={onClose}
           aria-label="Close"
-          className="absolute right-4 top-4 z-10 rounded-full p-1 opacity-60 transition-opacity hover:opacity-100"
+          className="absolute top-4 right-4 z-10 rounded-full p-1 opacity-60 transition-opacity hover:opacity-100"
           style={{ color: INK_SOFT }}
         >
           <X size={16} />
         </button>
 
-        <div className="px-6 pb-7 pt-7 md:px-10 md:pb-9 md:pt-9">
+        <div className="px-6 pt-7 pb-7 md:px-10 md:pt-9 md:pb-9">
           {/* Eyebrow + title */}
           <div className="mb-7 text-center">
             <div
-              className="mb-2 inline-block text-[10px] font-semibold uppercase tracking-[0.18em]"
+              className="mb-2 inline-block text-[10px] font-semibold tracking-[0.18em] uppercase"
               style={{ color: INK_MUTE }}
             >
               {eyebrow}
             </div>
             <h1
-              className="mx-auto max-w-2xl text-2xl font-medium leading-[1.1] md:text-3xl"
+              className="mx-auto max-w-2xl text-2xl leading-[1.1] font-medium md:text-3xl"
               style={{
                 fontFamily: "var(--font-source-serif)",
                 color: INK,
@@ -304,7 +347,9 @@ export function PaywallModal({
             >
               Keep going with your engineer.
               <br />
-              <span style={{ fontStyle: "italic", color: INK_SOFT }}>Pay only for the time you use.</span>
+              <span style={{ fontStyle: "italic", color: INK_SOFT }}>
+                Pay only for the time you use.
+              </span>
             </h1>
             <p
               className="mx-auto mt-3 max-w-md text-[13px]"
@@ -337,18 +382,16 @@ export function PaywallModal({
               Highlight (Pro) gets the solid-green CTA; other paid cards
               get a quieter outline CTA so the three pricing options
               don't read as three competing shouts. */}
-          <p
-            className="mb-3 text-[12px]"
-            style={{ color: INK_SOFT }}
-          >
+          <p className="mb-3 text-[12px]" style={{ color: INK_SOFT }}>
             Each session is minimum 10 minutes. Use credits across as many
             sessions as you need.
           </p>
           {(() => {
             const visiblePlans = SUPPORT_PLANS.filter(
-              (p) => !(reason === "free_expired" && p.code === "free"),
+              (p) => !(reason === "free_expired" && p.code === "free")
             );
-            const cols = visiblePlans.length === 3 ? "md:grid-cols-3" : "md:grid-cols-4";
+            const cols =
+              visiblePlans.length === 3 ? "md:grid-cols-3" : "md:grid-cols-4";
             return (
               <div className={`grid grid-cols-2 gap-2.5 ${cols}`}>
                 {visiblePlans.map((p) => {
@@ -364,7 +407,9 @@ export function PaywallModal({
                       blurb={p.blurb}
                       features={[...p.features]}
                       highlight={isHighlight}
-                      ctaLabel={isPaid ? `Continue with ${p.cta}` : "Start free"}
+                      ctaLabel={
+                        isPaid ? `Continue with ${p.cta}` : "Start free"
+                      }
                       ctaInteractive={isPaid}
                       ctaSolid={isHighlight || !isPaid}
                       busy={busy}
@@ -389,7 +434,6 @@ export function PaywallModal({
           >
             No subscription &middot; No auto-renew
           </div>
-
         </div>
       </div>
     </div>
@@ -400,7 +444,7 @@ export function PaywallModal({
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div
-      className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em]"
+      className="mb-2 text-[10px] font-semibold tracking-[0.16em] uppercase"
       style={{ color: INK_MUTE }}
     >
       {children}
@@ -419,7 +463,17 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 // pill (highlight card + the free entry) or the quieter outline pill
 // (other paid cards). One strong invitation, several quiet alternates.
 function PlanCard({
-  name, priceLabel, suffix, blurb, features, highlight, ctaLabel, ctaInteractive, ctaSolid, busy, onClick,
+  name,
+  priceLabel,
+  suffix,
+  blurb,
+  features,
+  highlight,
+  ctaLabel,
+  ctaInteractive,
+  ctaSolid,
+  busy,
+  onClick,
 }: {
   name: string;
   priceLabel: string;
@@ -441,7 +495,10 @@ function PlanCard({
         backgroundColor: CARD,
       }}
     >
-      <div className="text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: INK_MUTE }}>
+      <div
+        className="text-[11px] font-semibold tracking-[0.14em] uppercase"
+        style={{ color: INK_MUTE }}
+      >
         {name}
       </div>
 
@@ -480,7 +537,10 @@ function PlanCard({
             className="flex items-start gap-2 text-[13px] leading-snug"
             style={{ color: INK_SOFT }}
           >
-            <Check size={12} style={{ color: BRAND_GREEN, marginTop: 3, flexShrink: 0 }} />
+            <Check
+              size={12}
+              style={{ color: BRAND_GREEN, marginTop: 3, flexShrink: 0 }}
+            />
             <span>{f}</span>
           </li>
         ))}
@@ -493,9 +553,18 @@ function PlanCard({
         style={{
           marginTop: 16,
           padding: "10px 14px",
-          backgroundColor: ctaInteractive && ctaSolid ? BRAND_GREEN : "transparent",
-          color: ctaInteractive && ctaSolid ? "#fff" : ctaInteractive ? BRAND_GREEN : INK,
-          border: ctaInteractive && ctaSolid ? "none" : `1px solid ${ctaInteractive ? BRAND_GREEN : CARD_EDGE}`,
+          backgroundColor:
+            ctaInteractive && ctaSolid ? BRAND_GREEN : "transparent",
+          color:
+            ctaInteractive && ctaSolid
+              ? "#fff"
+              : ctaInteractive
+                ? BRAND_GREEN
+                : INK,
+          border:
+            ctaInteractive && ctaSolid
+              ? "none"
+              : `1px solid ${ctaInteractive ? BRAND_GREEN : CARD_EDGE}`,
         }}
       >
         {busy ? <Loader2 size={13} className="animate-spin" /> : null}
@@ -506,7 +575,6 @@ function PlanCard({
   );
 }
 
-
 // ── Stripe Elements payment form ───────────────────────────────────────────
 // Builds the payment form from Stripe Elements (PaymentElement). Unlike
 // Stripe Checkout (hosted or embedded), Elements accepts a full
@@ -515,7 +583,12 @@ function PlanCard({
 // moment Elements mounts and the parent remounts on theme change.
 
 function PaymentForm({
-  clientSecret, paymentIntentId, amountCents, planName, plan, onCancel,
+  clientSecret,
+  paymentIntentId,
+  amountCents,
+  planName,
+  plan,
+  onCancel,
 }: {
   clientSecret: string;
   paymentIntentId: string;
@@ -529,11 +602,16 @@ function PaymentForm({
       <div className="px-6 py-10 text-center" style={{ color: INK_SOFT }}>
         <div
           className="mx-auto mb-3 inline-flex h-9 w-9 items-center justify-center rounded-full"
-          style={{ backgroundColor: "rgba(139, 26, 26, 0.15)", color: "#e88670" }}
+          style={{
+            backgroundColor: "rgba(139, 26, 26, 0.15)",
+            color: "#e88670",
+          }}
         >
           <X size={16} />
         </div>
-        <p className="mb-4 text-[13px]">Stripe publishable key not configured.</p>
+        <p className="mb-4 text-[13px]">
+          Stripe publishable key not configured.
+        </p>
         <button
           onClick={onCancel}
           className="rounded-md border px-3 py-1.5 text-[12px] transition-opacity hover:opacity-80"
@@ -570,7 +648,10 @@ function PaymentForm({
 }
 
 function PaymentFormInner({
-  paymentIntentId, amountCents, planName, plan,
+  paymentIntentId,
+  amountCents,
+  planName,
+  plan,
 }: {
   paymentIntentId: string;
   amountCents: number;
@@ -610,26 +691,37 @@ function PaymentFormInner({
     // does fire in parallel, it finds the dedupe row and no-ops.
     try {
       const sb = createClient();
-      const { error: creditErr } = await sb.functions.invoke("credit-relay-payment", {
-        body: { payment_intent_id: paymentIntentId },
-      });
+      const { error: creditErr } = await sb.functions.invoke(
+        "credit-relay-payment",
+        {
+          body: { payment_intent_id: paymentIntentId },
+        }
+      );
       if (creditErr) {
         // Surface but don't block — webhook may still credit shortly.
-        console.warn("[paywall] credit-relay-payment failed:", creditErr.message);
+        console.warn(
+          "[paywall] credit-relay-payment failed:",
+          creditErr.message
+        );
       }
     } catch (e) {
       console.warn("[paywall] credit call threw:", e);
     }
 
     if (typeof window !== "undefined") {
-      window.location.assign(`${window.location.origin}/room?relay_paid=${plan}`);
+      window.location.assign(
+        `${window.location.origin}/room?relay_paid=${plan}`
+      );
     }
   };
 
   const priceEuro = (amountCents / 100).toFixed(2);
 
   return (
-    <div className="space-y-4 px-5 pb-5 pt-4" style={{ backgroundColor: SURFACE }}>
+    <div
+      className="space-y-4 px-5 pt-4 pb-5"
+      style={{ backgroundColor: SURFACE }}
+    >
       {/* Card-only — the PaymentIntent was created with payment_method_types:['card'],
        *  so PaymentElement won't even offer Link / wallets / etc. */}
       <PaymentElement options={{ layout: "tabs" }} />

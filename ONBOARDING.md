@@ -19,13 +19,13 @@ the app, plus **enterprise / reseller / department** billing hierarchies.
 
 Five role surfaces:
 
-| Role | Primary route | Notes |
-| --- | --- | --- |
-| Customer | `/room` | live engagement surface (legacy: `/customer`) |
-| Engineer | `/staff/session/[id]`, `/inbox`, `/dashboard` | session + queue |
-| Supervisor | `/supervise` | live monitoring + manual assign |
-| Enterprise / Department admin | `/enterprise`, `/department`, `*/v2` | org wallet, usage |
-| Internal admin (super_admin) | `/admin/v2`, `/supervise` | cross‑tenant ops |
+| Role                          | Primary route                                 | Notes                                         |
+| ----------------------------- | --------------------------------------------- | --------------------------------------------- |
+| Customer                      | `/room`                                       | live engagement surface (legacy: `/customer`) |
+| Engineer                      | `/staff/session/[id]`, `/inbox`, `/dashboard` | session + queue                               |
+| Supervisor                    | `/supervise`                                  | live monitoring + manual assign               |
+| Enterprise / Department admin | `/enterprise`, `/department`, `*/v2`          | org wallet, usage                             |
+| Internal admin (super_admin)  | `/admin/v2`, `/supervise`                     | cross‑tenant ops                              |
 
 ---
 
@@ -56,7 +56,7 @@ reintroduce Fraunces / Instrument Sans.
    ```
    `npm run verify` is affected too — typecheck manually.
 2. **Supabase is the database, not Prisma.** `lib/db.ts` is a Proxy that
-   *throws* `"Prisma is no longer wired in this app"` if any runtime code path
+   _throws_ `"Prisma is no longer wired in this app"` if any runtime code path
    calls it. If you see that error you're on a legacy page — rewrite against
    Supabase. `prisma/schema.prisma` is a **canonical data‑model document**, kept
    in sync with the architecture doc, but never executed at runtime.
@@ -182,18 +182,18 @@ aliases).
 Long‑lived / secret‑bearing work runs here, **not** in `app/api/`. Deploy with
 `supabase functions deploy <name> --project-ref <ref>` (CLI must be logged in).
 
-| Function | Purpose |
-| --- | --- |
-| `start-guest-call` | create a guest session |
-| `mint-zoom-for-session` | create a Zoom registration meeting; register engineer (alias), customer, and an anonymous **supervisor observer**; store join URLs on `guest_calls` |
-| `create-zoom-meeting`, `restart-guest-zoom`, `end-zoom-meeting` | Zoom lifecycle |
-| `zoom-sdk-signature` | mints the Meeting SDK JWT signature (+ zak for host) |
-| `zoom-webhook` | Zoom events (recording/summary land here, post‑call) |
-| `summarize-guest-call` | end‑of‑session OpenAI summary + sentiment (guards against empty/trivial sessions) |
-| `summarize-intake`, `summarize-customer`, `summarize-project`, `regenerate-guest-brief` | rolling AI summaries up the hierarchy |
-| `score-session-health` | per‑window sentiment for the supervise health bar |
-| `create-guest-checkout`, `create-relay-checkout`, `create-credits-checkout`, `create-enterprise-checkout` | Stripe checkout (the app's purchase flow — **embedded**, auth‑gated; see `PaywallModal`) |
-| `relay-stripe-webhook`, `payments-webhook`, `credit-relay-payment` | Stripe webhooks + wallet crediting |
+| Function                                                                                                  | Purpose                                                                                                                                             |
+| --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `start-guest-call`                                                                                        | create a guest session                                                                                                                              |
+| `mint-zoom-for-session`                                                                                   | create a Zoom registration meeting; register engineer (alias), customer, and an anonymous **supervisor observer**; store join URLs on `guest_calls` |
+| `create-zoom-meeting`, `restart-guest-zoom`, `end-zoom-meeting`                                           | Zoom lifecycle                                                                                                                                      |
+| `zoom-sdk-signature`                                                                                      | mints the Meeting SDK JWT signature (+ zak for host)                                                                                                |
+| `zoom-webhook`                                                                                            | Zoom events (recording/summary land here, post‑call)                                                                                                |
+| `summarize-guest-call`                                                                                    | end‑of‑session OpenAI summary + sentiment (guards against empty/trivial sessions)                                                                   |
+| `summarize-intake`, `summarize-customer`, `summarize-project`, `regenerate-guest-brief`                   | rolling AI summaries up the hierarchy                                                                                                               |
+| `score-session-health`                                                                                    | per‑window sentiment for the supervise health bar                                                                                                   |
+| `create-guest-checkout`, `create-relay-checkout`, `create-credits-checkout`, `create-enterprise-checkout` | Stripe checkout (the app's purchase flow — **embedded**, auth‑gated; see `PaywallModal`)                                                            |
+| `relay-stripe-webhook`, `payments-webhook`, `credit-relay-payment`                                        | Stripe webhooks + wallet crediting                                                                                                                  |
 
 > The Next `app/api/` has only `me` and `whoami`. There is **no** `/api/checkout`
 > or `/api/contact` in this repo — purchases go through the edge functions +
@@ -204,7 +204,7 @@ Long‑lived / secret‑bearing work runs here, **not** in `app/api/`. Deploy wi
 ## 9. Domain model — key tables
 
 - **`guest_calls`** — the session/"call" row. Lifecycle `status`: `queued →
-  assigned → joining → live → grace → ending → ended` (+ `abandoned`,
+assigned → joining → live → grace → ending → ended` (+ `abandoned`,
   `cancelled`, `expired_free`). Key timestamps: `created_at`, `assigned_at`
   (engineer accepted — **the billing anchor**), `engineer_joined_at` /
   `customer_joined_at` (Zoom joins), `paid_extension_at`, `ended_at`. Money:
@@ -236,6 +236,7 @@ Long‑lived / secret‑bearing work runs here, **not** in `app/api/`. Deploy wi
 ## 10. Core flows (how the important things actually work)
 
 **Matching / ring (sequential push‑ring):**
+
 - `match_engineer(intake)` picks the single best available engineer (tech
   overlap + experience bonus, `random()` tiebreak; excludes busy, declined, and
   already‑offered) and inserts ONE pending `engineer_match_offers` row.
@@ -248,6 +249,7 @@ Long‑lived / secret‑bearing work runs here, **not** in `app/api/`. Deploy wi
   pending offer exists.
 
 **Manual (supervisor/admin) assignment — `supervisor_assign_engineer`:**
+
 - Creates a **directed** pending offer (a ring) to a specific engineer — it does
   NOT force‑claim. The engineer gets the same popup; billing starts only on
   accept. Manual assign **stops the auto‑matcher** (expires other pending
@@ -260,6 +262,7 @@ Long‑lived / secret‑bearing work runs here, **not** in `app/api/`. Deploy wi
   to auto‑matching so the customer isn't stranded.)
 
 **Billing / time — single source of truth = `lib/relay/sessionClock.ts`:**
+
 - The clock anchors on **`assigned_at`** (when the engineer accepts and chat
   starts) — **NOT** the Zoom join. Every surface (customer countdown, wallet
   chip, engineer room, supervise card) uses the same anchor so they agree.
@@ -275,6 +278,7 @@ Long‑lived / secret‑bearing work runs here, **not** in `app/api/`. Deploy wi
   by switching anchors without checking `end_session` first.
 
 **Supervisor coverage failover:**
+
 - `guest_calls.supervisor_user_id` is auto‑assigned at claim by a trigger
   (`pick_supervisor_for_session`): the pod's own supervisor if on‑duty, else the
   least‑loaded on‑duty supervisor. `supervisor_set_online(false)` re‑routes that
@@ -304,6 +308,7 @@ no hallucinated summary).
 handing‑over machine was logged in (`supabase projects list` worked).
 
 **Apply a migration** (how it's been done this project — Management API):
+
 ```bash
 # needs a Supabase Management token (sbp_...) in $SUPABASE_ACCESS_TOKEN
 jq -Rs '{query: .}' supabase/migrations/<file>.sql \
@@ -312,6 +317,7 @@ jq -Rs '{query: .}' supabase/migrations/<file>.sql \
      -H "Content-Type: application/json" --data @-
 # success returns a JSON array; an error returns a JSON object {message,...}
 ```
+
 Alternatively `supabase db push` (needs the DB password). **Either way, the
 `supabase/migrations/` folder is the source of truth and can drift from the live
 DB** — verify with a `SELECT` against `information_schema` / `pg_get_functiondef`
@@ -319,6 +325,7 @@ after applying. Migrations are timestamp‑named; keep them ordered and additive
 (`IF NOT EXISTS`, `CREATE OR REPLACE`).
 
 **Deploy an edge function:**
+
 ```bash
 supabase functions deploy <name> --project-ref vdduelvjrzeczmakxgpn
 ```
@@ -381,7 +388,7 @@ calls/payments.
 4. `RelayGreen_Implementation_Backlog_v1.md` — build tickets (RG‑0001+).
 
 When schema/behavior in code disagrees with these, the closeout doc wins for
-*intended* behavior; this file + the code win for *current* behavior.
+_intended_ behavior; this file + the code win for _current_ behavior.
 
 ---
 
@@ -394,7 +401,7 @@ import on `landing-from-claude`):
   failover** (`supervisor_user_id`).
 - Manual assignment became a **directed ring** (popup + bill‑on‑accept) that
   **stops the auto‑matcher**; **decline → supervisor reassign** (toast + control
-  for supervisor *and* super_admin; reassign to any engineer).
+  for supervisor _and_ super_admin; reassign to any engineer).
 - **Centralized billing clock** (`lib/relay/sessionClock.ts`, anchor =
   `assigned_at`); enforce **paid‑balance exhaustion** (end at 0).
 - Engineer aliases simplified to a **single first name**; staff surfaces show
@@ -436,7 +443,7 @@ Migrations from this pass: `20260524100000`…`20260524180000`.
 - **Touch Zoom:** `supabase/functions/mint-zoom-for-session` +
   `zoom-sdk-signature` + `app/_components/ZoomCall.tsx`.
 - **Before pushing:** `npm run lint` + `node_modules/typescript/bin/tsc
-  --noEmit` + `npm run build`. Pre‑existing lint debt exists (some `Date.now`
+--noEmit` + `npm run build`. Pre‑existing lint debt exists (some `Date.now`
   purity + set‑state‑in‑effect warnings) — don't add new ones.
 
 ---

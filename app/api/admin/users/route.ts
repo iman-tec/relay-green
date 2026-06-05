@@ -18,12 +18,16 @@
 
 import { NextResponse } from "next/server";
 import { requireSuperAdmin } from "@/lib/admin-auth";
-import { applySearch, listResponse, parseListQuery } from "@/lib/api/list-query";
+import {
+  applySearch,
+  listResponse,
+  parseListQuery,
+} from "@/lib/api/list-query";
 import { sendInvitationEmail } from "@/lib/admin-invite";
 import { ROLE, STAFF_ROLES as ALL_STAFF_ROLES } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 const STAFF_ROLE_SET: ReadonlySet<string> = new Set(ALL_STAFF_ROLES);
 const CREATABLE_ROLES: ReadonlySet<string> = new Set([
@@ -39,7 +43,7 @@ const SORTABLE = ["displayName", "createdAt", "primaryRole"] as const;
 type SortKey = (typeof SORTABLE)[number];
 const SORT_COLUMN_MAP: Record<SortKey, string> = {
   displayName: "full_name",
-  createdAt:   "created_at",
+  createdAt: "created_at",
   primaryRole: "primary_role",
 };
 
@@ -50,12 +54,12 @@ export async function GET(request: Request) {
   }
   const { admin } = gate;
 
-  const url   = new URL(request.url);
+  const url = new URL(request.url);
   const scope = url.searchParams.get("scope") ?? "staff";
-  const list  = parseListQuery(url, {
-    sortable:    SORTABLE,
+  const list = parseListQuery(url, {
+    sortable: SORTABLE,
     defaultSort: { column: "createdAt", dir: "desc" },
-    filters:     ["role"] as const,
+    filters: ["role"] as const,
     defaultPageSize: 25,
   });
 
@@ -73,7 +77,9 @@ export async function GET(request: Request) {
     if (roleErr) {
       return NextResponse.json({ error: roleErr.message }, { status: 500 });
     }
-    staffUserIds = Array.from(new Set((roleScope ?? []).map((r: { user_id: string }) => r.user_id)));
+    staffUserIds = Array.from(
+      new Set((roleScope ?? []).map((r: { user_id: string }) => r.user_id))
+    );
   }
 
   // 2. Paginated profiles query — pulls just the page slice (≤ pageSize).
@@ -94,7 +100,9 @@ export async function GET(request: Request) {
       .from("user_role_names")
       .select("user_id")
       .in("role", Array.from(STAFF_ROLE_SET));
-    const excludeIds = Array.from(new Set((staffOnly ?? []).map((r: { user_id: string }) => r.user_id)));
+    const excludeIds = Array.from(
+      new Set((staffOnly ?? []).map((r: { user_id: string }) => r.user_id))
+    );
     if (excludeIds.length > 0) {
       pq = pq.not("id", "in", `(${excludeIds.join(",")})`);
     }
@@ -104,7 +112,10 @@ export async function GET(request: Request) {
 
   if (list.sort) {
     const col = SORT_COLUMN_MAP[list.sort.column as SortKey];
-    pq = pq.order(col, { ascending: list.sort.dir === "asc", nullsFirst: false });
+    pq = pq.order(col, {
+      ascending: list.sort.dir === "asc",
+      nullsFirst: false,
+    });
   }
   pq = pq.range(list.range[0], list.range[1]);
 
@@ -115,14 +126,19 @@ export async function GET(request: Request) {
   const pageIds = (profiles ?? []).map((p: { id: string }) => p.id);
 
   if (pageIds.length === 0) {
-    return NextResponse.json(listResponse([], count ?? 0, list.page, list.pageSize));
+    return NextResponse.json(
+      listResponse([], count ?? 0, list.page, list.pageSize)
+    );
   }
 
   // 3. Roles + auth-side meta (email, banned_until, email_confirmed_at)
   //    for JUST the page slice. user_meta_for_admin RPC joins auth.users
   //    by id — far cheaper than listUsers({ perPage: 1000 }).
   const [{ data: roleRows }, { data: metaRows }] = await Promise.all([
-    admin.from("user_role_names").select("user_id, role").in("user_id", pageIds),
+    admin
+      .from("user_role_names")
+      .select("user_id, role")
+      .in("user_id", pageIds),
     admin.rpc("user_meta_for_admin", { _ids: pageIds }),
   ]);
 
@@ -132,29 +148,45 @@ export async function GET(request: Request) {
     arr.push(r.role);
     rolesByUser.set(r.user_id, arr);
   }
-  type Meta = { id: string; email: string | null; banned_until: string | null; email_confirmed_at: string | null };
+  type Meta = {
+    id: string;
+    email: string | null;
+    banned_until: string | null;
+    email_confirmed_at: string | null;
+  };
   const metaById = new Map<string, Meta>();
   for (const m of (metaRows ?? []) as Meta[]) {
     metaById.set(m.id, m);
   }
 
   const now = Date.now();
-  const rows = (profiles ?? []).map((p: { id: string; full_name: string | null; primary_role: string | null; created_at: string }) => {
-    const m = metaById.get(p.id);
-    const banned = !!(m?.banned_until && new Date(m.banned_until).getTime() > now);
-    return {
-      id:                  p.id,
-      email:               m?.email ?? "",
-      displayName:         p.full_name ?? "",
-      roles:               rolesByUser.get(p.id) ?? [],
-      primaryRole:         p.primary_role ?? null,
-      status:              banned ? "DEACTIVATED" : "ACTIVE",
-      awaitingFirstSignIn: !m?.email_confirmed_at,
-      createdAt:           p.created_at,
-    };
-  });
+  const rows = (profiles ?? []).map(
+    (p: {
+      id: string;
+      full_name: string | null;
+      primary_role: string | null;
+      created_at: string;
+    }) => {
+      const m = metaById.get(p.id);
+      const banned = !!(
+        m?.banned_until && new Date(m.banned_until).getTime() > now
+      );
+      return {
+        id: p.id,
+        email: m?.email ?? "",
+        displayName: p.full_name ?? "",
+        roles: rolesByUser.get(p.id) ?? [],
+        primaryRole: p.primary_role ?? null,
+        status: banned ? "DEACTIVATED" : "ACTIVE",
+        awaitingFirstSignIn: !m?.email_confirmed_at,
+        createdAt: p.created_at,
+      };
+    }
+  );
 
-  return NextResponse.json(listResponse(rows, count ?? 0, list.page, list.pageSize));
+  return NextResponse.json(
+    listResponse(rows, count ?? 0, list.page, list.pageSize)
+  );
 }
 
 export async function POST(request: Request) {
@@ -165,30 +197,33 @@ export async function POST(request: Request) {
   const { admin, user: actor } = gate;
 
   const body = (await request.json().catch(() => ({}))) as {
-    email?:      string;
+    email?: string;
     displayName?: string;
-    role?:       string;
-    podName?:    string;
-    podRole?:    "supervisor" | "engineer" | null;
+    role?: string;
+    podName?: string;
+    podRole?: "supervisor" | "engineer" | null;
   };
   const { email, displayName, role, podName, podRole } = body;
 
   if (
-    typeof email !== "string" || !email.trim() ||
-    typeof displayName !== "string" || !displayName.trim() ||
-    typeof role !== "string" || !CREATABLE_ROLES.has(role)
+    typeof email !== "string" ||
+    !email.trim() ||
+    typeof displayName !== "string" ||
+    !displayName.trim() ||
+    typeof role !== "string" ||
+    !CREATABLE_ROLES.has(role)
   ) {
     return NextResponse.json(
       {
         error:
           "Need email, displayName, and role ∈ {engineer, supervisor, super_admin}.",
       },
-      { status: 400 },
+      { status: 400 }
     );
   }
 
   const trimmedEmail = email.trim().toLowerCase();
-  const trimmedName  = displayName.trim();
+  const trimmedName = displayName.trim();
 
   // Invite-only mode (bugs2.txt #1) — admin-driven pod additions must
   // send a proper "Invite User" email (so the recipient sees role + pod
@@ -199,12 +234,12 @@ export async function POST(request: Request) {
   // Pod context is forwarded into user_metadata so the Supabase invite
   // template can reference {{ .Data.invited_role }} / {{ .Data.pod_name }}.
   const invite = await sendInvitationEmail(admin, {
-    email:       trimmedEmail,
+    email: trimmedEmail,
     displayName: trimmedName,
-    inviteOnly:  true,
-    metadata:    {
-      role_label:    role,
-      created_by:    actor.id,
+    inviteOnly: true,
+    metadata: {
+      role_label: role,
+      created_by: actor.id,
       ...(podName ? { pod_name: podName } : {}),
       ...(podRole ? { pod_role: podRole } : {}),
     },
@@ -218,14 +253,17 @@ export async function POST(request: Request) {
   let userId = invite.userId ?? null;
   if (!userId) {
     const lookup = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-    userId = lookup.data?.users?.find(
-      (u) => u.email?.toLowerCase() === trimmedEmail,
-    )?.id ?? null;
+    userId =
+      lookup.data?.users?.find((u) => u.email?.toLowerCase() === trimmedEmail)
+        ?.id ?? null;
   }
   if (!userId) {
     return NextResponse.json(
-      { error: "User invited but auth row not yet visible — try again in a moment." },
-      { status: 500 },
+      {
+        error:
+          "User invited but auth row not yet visible — try again in a moment.",
+      },
+      { status: 500 }
     );
   }
 
@@ -238,7 +276,10 @@ export async function POST(request: Request) {
     .maybeSingle();
   const roleId = (roleRow as { id: string } | null)?.id;
   if (!roleId) {
-    return NextResponse.json({ error: `Unknown role: ${role}` }, { status: 500 });
+    return NextResponse.json(
+      { error: `Unknown role: ${role}` },
+      { status: 500 }
+    );
   }
 
   // Upsert profile. For brand-new accounts this writes name/role; for
@@ -248,19 +289,20 @@ export async function POST(request: Request) {
     .select("full_name, primary_role_id")
     .eq("id", userId)
     .maybeSingle();
-  const cp = currentProfile as { full_name: string | null; primary_role_id: string | null } | null;
+  const cp = currentProfile as {
+    full_name: string | null;
+    primary_role_id: string | null;
+  } | null;
 
-  const { error: profileErr } = await admin
-    .from("profiles")
-    .upsert(
-      {
-        id:              userId,
-        full_name:       cp?.full_name?.trim() ? cp.full_name : trimmedName,
-        primary_role_id: cp?.primary_role_id ?? roleId,
-        is_onboarded:    true,
-      },
-      { onConflict: "id" },
-    );
+  const { error: profileErr } = await admin.from("profiles").upsert(
+    {
+      id: userId,
+      full_name: cp?.full_name?.trim() ? cp.full_name : trimmedName,
+      primary_role_id: cp?.primary_role_id ?? roleId,
+      is_onboarded: true,
+    },
+    { onConflict: "id" }
+  );
   if (profileErr) {
     return NextResponse.json({ error: profileErr.message }, { status: 500 });
   }
@@ -271,7 +313,7 @@ export async function POST(request: Request) {
     .from("user_roles")
     .upsert(
       { user_id: userId, role_id: roleId },
-      { onConflict: "user_id,role_id", ignoreDuplicates: true },
+      { onConflict: "user_id,role_id", ignoreDuplicates: true }
     );
   if (roleErr) {
     // Only delete the auth user if we just created them in this request.
@@ -281,18 +323,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: roleErr.message }, { status: 500 });
   }
 
-  console.log(
-    `[admin/users] ${mode} ${trimmedEmail} (${role})`,
-  );
+  console.log(`[admin/users] ${mode} ${trimmedEmail} (${role})`);
 
   return NextResponse.json({
     user: {
-      id:           userId,
-      email:        trimmedEmail,
-      displayName:  trimmedName,
+      id: userId,
+      email: trimmedEmail,
+      displayName: trimmedName,
       role,
     },
-    invited:          mode === "invited",
+    invited: mode === "invited",
     attachedExisting: mode === "attached_existing",
   });
 }

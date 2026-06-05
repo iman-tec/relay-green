@@ -24,9 +24,9 @@ import { MatchingActions } from "@/app/_components/MatchingActions";
 import type { AdminMatchingRow } from "@/app/api/admin/matching/route";
 
 const URGENT_AMBER = "#d4a017";
-const CRIT_RED     = "#c2410c";
+const CRIT_RED = "#c2410c";
 const COUNTDOWN_URGENT_S = 12; // amber (25s ring)
-const COUNTDOWN_CRIT_S   = 5;  // red
+const COUNTDOWN_CRIT_S = 5; // red
 
 const COL_COUNT = 9; // Customer · Engineer · Pod · Score · Ring · Declined · Queued · Stack · Override
 
@@ -38,7 +38,7 @@ export function MatchingInline() {
   // 1s tick below advances it. Mirrors app/intake/matching/[id]/MatchingClient.
   const [now, setNow] = useState(() => Date.now());
   const supabaseRef = useRef(createClient());
-  const channelRef  = useRef<RealtimeChannel | null>(null);
+  const channelRef = useRef<RealtimeChannel | null>(null);
 
   const refresh = async () => {
     try {
@@ -50,26 +50,37 @@ export function MatchingInline() {
     }
   };
 
-  useEffect(() => { void refresh(); }, []);
+  useEffect(() => {
+    void refresh();
+  }, []);
 
   useEffect(() => {
     const sb = supabaseRef.current;
     let pending: ReturnType<typeof setTimeout> | null = null;
     const queueRefresh = () => {
       if (pending) return;
-      pending = setTimeout(() => { pending = null; void refresh(); }, 400);
+      pending = setTimeout(() => {
+        pending = null;
+        void refresh();
+      }, 400);
     };
     const ch = sb
       .channel("relay-admin-matching")
-      .on("postgres_changes",
+      .on(
+        "postgres_changes",
         { event: "*", schema: "public", table: "engineer_match_offers" },
-        queueRefresh)
-      .on("postgres_changes",
+        queueRefresh
+      )
+      .on(
+        "postgres_changes",
         { event: "*", schema: "public", table: "client_intakes" },
-        queueRefresh)
+        queueRefresh
+      )
       .subscribe();
     channelRef.current = ch;
-    const fallback = setInterval(() => { void refresh(); }, 5_000);
+    const fallback = setInterval(() => {
+      void refresh();
+    }, 5_000);
     return () => {
       if (pending) clearTimeout(pending);
       sb.removeChannel(ch);
@@ -86,13 +97,14 @@ export function MatchingInline() {
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return rows;
-    return rows.filter((r) =>
-      r.engineer.displayName.toLowerCase().includes(q) ||
-      r.engineer.email.toLowerCase().includes(q) ||
-      r.customer.displayName.toLowerCase().includes(q) ||
-      (r.projectName ?? "").toLowerCase().includes(q) ||
-      (r.pod?.name ?? "").toLowerCase().includes(q) ||
-      r.technologies.some((t) => t.toLowerCase().includes(q)),
+    return rows.filter(
+      (r) =>
+        r.engineer.displayName.toLowerCase().includes(q) ||
+        r.engineer.email.toLowerCase().includes(q) ||
+        r.customer.displayName.toLowerCase().includes(q) ||
+        (r.projectName ?? "").toLowerCase().includes(q) ||
+        (r.pod?.name ?? "").toLowerCase().includes(q) ||
+        r.technologies.some((t) => t.toLowerCase().includes(q))
     );
   }, [rows, query]);
 
@@ -152,7 +164,11 @@ export function MatchingInline() {
             <tbody>
               {loading ? (
                 <EmptyRow>
-                  <Loader2 size={14} className="inline animate-spin" style={{ color: "var(--primary)" }} />
+                  <Loader2
+                    size={14}
+                    className="inline animate-spin"
+                    style={{ color: "var(--primary)" }}
+                  />
                 </EmptyRow>
               ) : visible.length === 0 ? (
                 <EmptyRow>
@@ -163,7 +179,14 @@ export function MatchingInline() {
                       : "No live matching."}
                 </EmptyRow>
               ) : (
-                visible.map((r) => <Row key={r.offerId} row={r} now={now} onChanged={() => void refresh()} />)
+                visible.map((r) => (
+                  <Row
+                    key={r.offerId}
+                    row={r}
+                    now={now}
+                    onChanged={() => void refresh()}
+                  />
+                ))
               )}
             </tbody>
           </table>
@@ -187,13 +210,21 @@ function EmptyRow({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Row({ row, now, onChanged }: { row: AdminMatchingRow; now: number; onChanged: () => void }) {
+function Row({
+  row,
+  now,
+  onChanged,
+}: {
+  row: AdminMatchingRow;
+  now: number;
+  onChanged: () => void;
+}) {
   const ringMs = new Date(row.expiresAt).getTime() - now;
-  const ringS  = Math.max(0, Math.ceil(ringMs / 1000));
+  const ringS = Math.max(0, Math.ceil(ringMs / 1000));
   const queuedMs = row.queuedAt ? now - new Date(row.queuedAt).getTime() : 0;
 
   let ringColor = "var(--text)";
-  if (ringS <= COUNTDOWN_CRIT_S)        ringColor = CRIT_RED;
+  if (ringS <= COUNTDOWN_CRIT_S) ringColor = CRIT_RED;
   else if (ringS <= COUNTDOWN_URGENT_S) ringColor = URGENT_AMBER;
 
   return (
@@ -211,7 +242,9 @@ function Row({ row, now, onChanged }: { row: AdminMatchingRow; now: number; onCh
         <div className="font-medium">{row.engineer.displayName}</div>
         <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
           {row.engineer.email}
-          {row.engineer.experienceLevel ? ` · ${row.engineer.experienceLevel}` : ""}
+          {row.engineer.experienceLevel
+            ? ` · ${row.engineer.experienceLevel}`
+            : ""}
         </div>
       </Td>
       <Td>
@@ -219,7 +252,8 @@ function Row({ row, now, onChanged }: { row: AdminMatchingRow; now: number; onCh
           <span
             className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px]"
             style={{
-              backgroundColor: "color-mix(in srgb, var(--text) 8%, transparent)",
+              backgroundColor:
+                "color-mix(in srgb, var(--text) 8%, transparent)",
               color: "var(--text)",
             }}
           >
@@ -233,7 +267,7 @@ function Row({ row, now, onChanged }: { row: AdminMatchingRow; now: number; onCh
         <span className="tabular-nums">{row.matchScore.toFixed(1)}</span>
       </Td>
       <Td>
-        <span className="tabular-nums font-medium" style={{ color: ringColor }}>
+        <span className="font-medium tabular-nums" style={{ color: ringColor }}>
           {ringS}s
         </span>
       </Td>
@@ -245,7 +279,8 @@ function Row({ row, now, onChanged }: { row: AdminMatchingRow; now: number; onCh
             title={row.declinedBy.map((d) => d.displayName).join(", ")}
             className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px]"
             style={{
-              backgroundColor: "color-mix(in srgb, var(--text) 8%, transparent)",
+              backgroundColor:
+                "color-mix(in srgb, var(--text) 8%, transparent)",
               color: "var(--text)",
             }}
           >
@@ -268,7 +303,8 @@ function Row({ row, now, onChanged }: { row: AdminMatchingRow; now: number; onCh
                 key={t}
                 className="rounded-md px-1.5 py-0.5 text-[10px]"
                 style={{
-                  backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)",
+                  backgroundColor:
+                    "color-mix(in srgb, var(--text) 6%, transparent)",
                   color: "var(--text)",
                 }}
               >
@@ -276,7 +312,10 @@ function Row({ row, now, onChanged }: { row: AdminMatchingRow; now: number; onCh
               </span>
             ))}
             {row.technologies.length > 3 && (
-              <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+              <span
+                className="text-[10px]"
+                style={{ color: "var(--text-muted)" }}
+              >
                 +{row.technologies.length - 3}
               </span>
             )}

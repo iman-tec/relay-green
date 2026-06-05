@@ -22,7 +22,11 @@ export function ChatDock({ client }: { client: any }) {
     // chat-on-message is emitted on the main client per the SDK docs:
     //   client.on('chat-on-message', payload => { payload.sender.name; payload.message })
     // The chat client itself is only the send-side handle.
-    try { chatRef.current = client.getChatClient?.(); } catch { chatRef.current = null; }
+    try {
+      chatRef.current = client.getChatClient?.();
+    } catch {
+      chatRef.current = null;
+    }
 
     const handler = (m: any) => {
       const me = client.getCurrentUserInfo?.();
@@ -39,12 +43,25 @@ export function ChatDock({ client }: { client: any }) {
         },
       ]);
     };
-    try { client.on?.("chat-on-message", handler); } catch { /* ignore */ }
-    return () => { try { client.off?.("chat-on-message", handler); } catch { /* ignore */ } };
+    try {
+      client.on?.("chat-on-message", handler);
+    } catch {
+      /* ignore */
+    }
+    return () => {
+      try {
+        client.off?.("chat-on-message", handler);
+      } catch {
+        /* ignore */
+      }
+    };
   }, [client]);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    scrollRef.current?.scrollTo({
+      top: scrollRef.current.scrollHeight,
+      behavior: "smooth",
+    });
   }, [messages.length]);
 
   const send = async () => {
@@ -57,17 +74,27 @@ export function ChatDock({ client }: { client: any }) {
       // own message locally so single-side typing still shows up.
       const me = client?.getCurrentUserInfo?.();
       if (me) {
-        setMessages((prev) => [...prev, {
-          id: `local-${Date.now()}`,
-          from: String(me.displayName ?? "You"),
-          text,
-          mine: true,
-        }]);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `local-${Date.now()}`,
+            from: String(me.displayName ?? "You"),
+            text,
+            mine: true,
+          },
+        ]);
       }
-      if (res && typeof res === "object" && "type" in (res as any) && (res as any).type === "ERROR") {
+      if (
+        res &&
+        typeof res === "object" &&
+        "type" in (res as any) &&
+        (res as any).type === "ERROR"
+      ) {
         console.warn("[ChatDock] send returned error:", res);
       }
-    } catch (e) { console.warn("[ChatDock] send threw", e); }
+    } catch (e) {
+      console.warn("[ChatDock] send threw", e);
+    }
   };
 
   return (
@@ -75,23 +102,40 @@ export function ChatDock({ client }: { client: any }) {
       className="flex h-full w-full flex-col"
       style={{ background: "var(--surface)", color: "var(--text)" }}
     >
-      <div className="border-b px-3 py-2 text-[12px] font-medium" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
+      <div
+        className="border-b px-3 py-2 text-[12px] font-medium"
+        style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+      >
         In-call chat
         <span className="ml-2 text-[11px] opacity-70">(call-scoped)</span>
       </div>
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-2">
         {messages.length === 0 ? (
-          <div className="mt-4 text-center text-xs" style={{ color: "var(--text-muted)" }}>
+          <div
+            className="mt-4 text-center text-xs"
+            style={{ color: "var(--text-muted)" }}
+          >
             Say hi.
           </div>
         ) : (
           messages.map((m) => (
-            <div key={m.id} className="mb-2 flex flex-col" style={{ alignItems: m.mine ? "flex-end" : "flex-start" }}>
-              <div className="text-[10px]" style={{ color: "var(--text-muted)" }}>{m.from}</div>
+            <div
+              key={m.id}
+              className="mb-2 flex flex-col"
+              style={{ alignItems: m.mine ? "flex-end" : "flex-start" }}
+            >
+              <div
+                className="text-[10px]"
+                style={{ color: "var(--text-muted)" }}
+              >
+                {m.from}
+              </div>
               <div
                 className="max-w-[80%] rounded-2xl px-3 py-1.5 text-sm"
                 style={{
-                  background: m.mine ? "var(--primary)" : "var(--surface-raised)",
+                  background: m.mine
+                    ? "var(--primary)"
+                    : "var(--surface-raised)",
                   color: m.mine ? "#fff" : "var(--text)",
                 }}
               >
@@ -101,14 +145,26 @@ export function ChatDock({ client }: { client: any }) {
           ))
         )}
       </div>
-      <div className="flex shrink-0 items-center gap-2 border-t px-3 py-2" style={{ borderColor: "var(--border)" }}>
+      <div
+        className="flex shrink-0 items-center gap-2 border-t px-3 py-2"
+        style={{ borderColor: "var(--border)" }}
+      >
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              void send();
+            }
+          }}
           placeholder="Type a message"
           className="flex-1 rounded-md border px-3 py-1.5 text-sm outline-none"
-          style={{ background: "var(--surface)", color: "var(--text)", borderColor: "var(--border)" }}
+          style={{
+            background: "var(--surface)",
+            color: "var(--text)",
+            borderColor: "var(--border)",
+          }}
         />
         <button
           type="button"

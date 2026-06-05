@@ -24,7 +24,11 @@ import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Lock, Eye, EyeOff, Check, X } from "lucide-react";
 import { Wordmark } from "@/app/_components/Wordmark";
-import { checkPassword, passwordIsValid, PASSWORD_MIN_LENGTH } from "@/lib/password-policy";
+import {
+  checkPassword,
+  passwordIsValid,
+  PASSWORD_MIN_LENGTH,
+} from "@/lib/password-policy";
 import { Button, Input, Toast, cn } from "@/app/_components/ui";
 
 export function SetPasswordClient() {
@@ -40,9 +44,12 @@ export function SetPasswordClient() {
   const [error, setError] = useState<string | null>(null);
 
   const checks = checkPassword(password);
-  const canSubmit = passwordIsValid(password) && password === confirm && !loading;
+  const canSubmit =
+    passwordIsValid(password) && password === confirm && !loading;
   const confirmError =
-    confirm.length > 0 && confirm !== password ? "Passwords don't match." : undefined;
+    confirm.length > 0 && confirm !== password
+      ? "Passwords don't match."
+      : undefined;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,8 +107,8 @@ export function SetPasswordClient() {
             Set a password
           </h1>
           <p className="mx-auto mt-3 max-w-sm text-sm leading-relaxed text-[var(--text-muted)]">
-            One last step. From here on you&apos;ll sign in with your email
-            and password — no code needed.
+            One last step. From here on you&apos;ll sign in with your email and
+            password — no code needed.
           </p>
         </header>
 
@@ -126,17 +133,30 @@ export function SetPasswordClient() {
                 aria-label={show ? "Hide password" : "Show password"}
                 className="pointer-events-auto inline-flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text)]"
               >
-                {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                {show ? (
+                  <EyeOff className="size-4" />
+                ) : (
+                  <Eye className="size-4" />
+                )}
               </button>
             }
           />
 
           {password.length > 0 && (
             <ul className="-mt-1 flex flex-col gap-1 text-xs">
-              <RuleRow ok={checks.length} label={`At least ${PASSWORD_MIN_LENGTH} characters`} />
-              <RuleRow ok={checks.lowercase} label="One lowercase letter (a-z)" />
+              <RuleRow
+                ok={checks.length}
+                label={`At least ${PASSWORD_MIN_LENGTH} characters`}
+              />
+              <RuleRow
+                ok={checks.lowercase}
+                label="One lowercase letter (a-z)"
+              />
               <RuleRow ok={checks.digit} label="One number (0-9)" />
-              <RuleRow ok={checks.special} label="One special character (!@#$%&...)" />
+              <RuleRow
+                ok={checks.special}
+                label="One special character (!@#$%&...)"
+              />
             </ul>
           )}
 
@@ -169,7 +189,7 @@ function RuleRow({ ok, label }: { ok: boolean; label: string }) {
     <li
       className={cn(
         "flex items-center gap-1.5 transition-colors",
-        ok ? "text-[var(--ok)]" : "text-[var(--text-muted)]",
+        ok ? "text-[var(--ok)]" : "text-[var(--text-muted)]"
       )}
     >
       {ok ? (

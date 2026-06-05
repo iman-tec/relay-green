@@ -26,7 +26,11 @@ type Props = {
   iconSize?: number;
 };
 
-export function RingingBall({ size = 280, ballSize = 200, iconSize = 72 }: Props) {
+export function RingingBall({
+  size = 280,
+  ballSize = 200,
+  iconSize = 72,
+}: Props) {
   return (
     <div
       className="relative flex items-center justify-center"
@@ -34,9 +38,18 @@ export function RingingBall({ size = 280, ballSize = 200, iconSize = 72 }: Props
       aria-hidden="true"
     >
       {/* 3 staggered halo rings (CSS keyframe). */}
-      <span className="relay-ringing-halo absolute inset-0 rounded-full" style={{ animationDelay: "0s" }} />
-      <span className="relay-ringing-halo absolute inset-0 rounded-full" style={{ animationDelay: "-0.6s" }} />
-      <span className="relay-ringing-halo absolute inset-0 rounded-full" style={{ animationDelay: "-1.2s" }} />
+      <span
+        className="relay-ringing-halo absolute inset-0 rounded-full"
+        style={{ animationDelay: "0s" }}
+      />
+      <span
+        className="relay-ringing-halo absolute inset-0 rounded-full"
+        style={{ animationDelay: "-0.6s" }}
+      />
+      <span
+        className="relay-ringing-halo absolute inset-0 rounded-full"
+        style={{ animationDelay: "-1.2s" }}
+      />
 
       {/* Soft under-glow, blurred, low alpha. */}
       <span
@@ -65,7 +78,12 @@ export function RingingBall({ size = 280, ballSize = 200, iconSize = 72 }: Props
             "inset 0 10px 20px rgba(255, 255, 255, 0.14)",
         }}
       >
-        <Phone size={iconSize} className="relay-ringing-icon" style={{ color: "#fff" }} strokeWidth={1.6} />
+        <Phone
+          size={iconSize}
+          className="relay-ringing-icon"
+          style={{ color: "#fff" }}
+          strokeWidth={1.6}
+        />
       </div>
     </div>
   );

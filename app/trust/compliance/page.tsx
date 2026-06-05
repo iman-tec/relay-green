@@ -197,9 +197,9 @@ export default function TrustCompliancePage() {
         <div className="r-wrap-narrow">
           <h2 className="r-h-2">Auditor reports.</h2>
           <p className="r-body" style={{ marginBottom: 24 }}>
-            Formal attestation reports, once issued, are available to
-            enterprise prospects under NDA. Send the request and we will route
-            it to the team that owns compliance review.
+            Formal attestation reports, once issued, are available to enterprise
+            prospects under NDA. Send the request and we will route it to the
+            team that owns compliance review.
           </p>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             <Link href="/company/about#contact" className="r-btn r-btn-ink">

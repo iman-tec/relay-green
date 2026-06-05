@@ -17,15 +17,20 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export async function findUserInAnotherOrg(
   admin: SupabaseClient,
   email: string,
-  targetOrgId: string,
+  targetOrgId: string
 ): Promise<{ blocked: boolean; orgName: string | null }> {
   const lower = email.trim().toLowerCase();
   if (!lower) return { blocked: false, orgName: null };
 
   let userId: string | null = null;
   try {
-    const { data } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-    userId = (data?.users ?? []).find((u) => (u.email ?? "").toLowerCase() === lower)?.id ?? null;
+    const { data } = await admin.auth.admin.listUsers({
+      page: 1,
+      perPage: 1000,
+    });
+    userId =
+      (data?.users ?? []).find((u) => (u.email ?? "").toLowerCase() === lower)
+        ?.id ?? null;
   } catch {
     // If the lookup fails we don't block — the downstream upsert still runs.
     return { blocked: false, orgName: null };
@@ -37,14 +42,19 @@ export async function findUserInAnotherOrg(
     .select("organization_id")
     .eq("id", userId)
     .maybeSingle();
-  const otherOrgId = (prof as { organization_id: string | null } | null)?.organization_id ?? null;
+  const otherOrgId =
+    (prof as { organization_id: string | null } | null)?.organization_id ??
+    null;
   if (otherOrgId && otherOrgId !== targetOrgId) {
     const { data: org } = await admin
       .from("organizations")
       .select("name")
       .eq("id", otherOrgId)
       .maybeSingle();
-    return { blocked: true, orgName: (org as { name: string } | null)?.name ?? null };
+    return {
+      blocked: true,
+      orgName: (org as { name: string } | null)?.name ?? null,
+    };
   }
   return { blocked: false, orgName: null };
 }

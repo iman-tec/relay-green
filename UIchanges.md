@@ -4,10 +4,10 @@
 **Scope:** UI-only. No data-model, route-handler, RPC, or business-logic changes.
 **Target file(s) to redesign later:**
 
-- [app/(staff)/admin/users/UsersClient.tsx](app/(staff)/admin/users/UsersClient.tsx) — current 5-tab container; will be reshaped into the new 4-tab header.
-- [app/(staff)/admin/users/EnterpriseTab.tsx](app/(staff)/admin/users/EnterpriseTab.tsx)
-- [app/(staff)/admin/users/ResellersTab.tsx](app/(staff)/admin/users/ResellersTab.tsx)
-- [app/(staff)/admin/users/PodsTab.tsx](app/(staff)/admin/users/PodsTab.tsx)
+- [app/(staff)/admin/users/UsersClient.tsx](<app/(staff)/admin/users/UsersClient.tsx>) — current 5-tab container; will be reshaped into the new 4-tab header.
+- [app/(staff)/admin/users/EnterpriseTab.tsx](<app/(staff)/admin/users/EnterpriseTab.tsx>)
+- [app/(staff)/admin/users/ResellersTab.tsx](<app/(staff)/admin/users/ResellersTab.tsx>)
+- [app/(staff)/admin/users/PodsTab.tsx](<app/(staff)/admin/users/PodsTab.tsx>)
 - (new "Internal Users" tab will subsume the existing `StaffTab` rendered inside `UsersClient.tsx`)
 
 > Note: The Superadmin panel sits inside the existing [StaffShell](app/_components/StaffShell.tsx) left-nav chrome. The new page-level tabbed header described here lives **inside** the main content area of `StaffShell`, not in place of it.
@@ -300,13 +300,13 @@ Each card has its own `Edit / Activate-Deactivate / Delete` actions. The stack e
 
 These are new shared UI primitives. Implementation deferred — listed here so the next step is concrete:
 
-| Component | Purpose | Likely path |
-|---|---|---|
-| `TabsHeader` | Page-level tab strip used by Superadmin panel. | `app/_components/TabsHeader.tsx` |
-| `Sidebar` (master-list) | Column with search box on top, scrollable list in the middle, action button pinned to the bottom. Used 3× in Reseller tab, 2× in Enterprise tab, 1× in Pods. | `app/_components/Sidebar.tsx` |
-| `Drawer` (right slide-over) | Right-anchored panel with scrim, header, body, footer. Used by every Add button. | `app/_components/Drawer.tsx` |
-| `DetailCard` | Title + meta row + description block + action row used by reseller/enterprise/department/pod detail cards. | `app/_components/DetailCard.tsx` |
-| `FilterTile` | Big clickable tile with label + count, used by Internal Users sidebar. | `app/_components/FilterTile.tsx` |
+| Component                   | Purpose                                                                                                                                                      | Likely path                      |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------- |
+| `TabsHeader`                | Page-level tab strip used by Superadmin panel.                                                                                                               | `app/_components/TabsHeader.tsx` |
+| `Sidebar` (master-list)     | Column with search box on top, scrollable list in the middle, action button pinned to the bottom. Used 3× in Reseller tab, 2× in Enterprise tab, 1× in Pods. | `app/_components/Sidebar.tsx`    |
+| `Drawer` (right slide-over) | Right-anchored panel with scrim, header, body, footer. Used by every Add button.                                                                             | `app/_components/Drawer.tsx`     |
+| `DetailCard`                | Title + meta row + description block + action row used by reseller/enterprise/department/pod detail cards.                                                   | `app/_components/DetailCard.tsx` |
+| `FilterTile`                | Big clickable tile with label + count, used by Internal Users sidebar.                                                                                       | `app/_components/FilterTile.tsx` |
 
 > All components will follow existing `var(--text) / var(--border) / var(--accent) / var(--muted)` tokens from [app/globals.css](app/globals.css). No new design tokens.
 
@@ -342,8 +342,8 @@ All open questions have been answered. Keeping the resolutions here so the next 
 
 ### 9.1 Try-RELAY 3-question funnel → Match Found (Order 1)
 
-- Marketing modal at [app/_marketing/TryRelayProvider.tsx](app/_marketing/TryRelayProvider.tsx) now mounts the new 3-step editorial wizard + live "Match Found" engineer card.
-- New component: [app/_marketing/TryRelayFunnel.tsx](app/_marketing/TryRelayFunnel.tsx). Replaces the prior `TryRelayWizard` from `app/_marketing/try-relay/` in the mount point (legacy files left in place, unused). Steps:
+- Marketing modal at [app/\_marketing/TryRelayProvider.tsx](app/_marketing/TryRelayProvider.tsx) now mounts the new 3-step editorial wizard + live "Match Found" engineer card.
+- New component: [app/\_marketing/TryRelayFunnel.tsx](app/_marketing/TryRelayFunnel.tsx). Replaces the prior `TryRelayWizard` from `app/_marketing/try-relay/` in the mount point (legacy files left in place, unused). Steps:
   1. **Need** — "I'm building / I'm ready to launch / I need ongoing support" (3 radio cards). Constants in [lib/relay/profile.ts](lib/relay/profile.ts) `NEED_OPTIONS`.
   2. **Stack** — 3 columns (AI tool, Backend, Frontend), multi-select. Reuses `STACK_OPTIONS` from `profile.ts`.
   3. **Urgency** — "Right now / This week / Planning". Reuses `URGENCY_OPTIONS`.
@@ -366,7 +366,7 @@ All open questions have been answered. Keeping the resolutions here so the next 
 
 ### 9.4 New-account "Welcome back" / canned chat bug (Order 2)
 
-- **Root cause:** [app/_components/intake/IntakeAssistant.tsx](app/_components/intake/IntakeAssistant.tsx) bootstrap previously gated the "Welcome back" greeting on `profile.hasFullIntake` read straight from `localStorage`. On a shared browser, a new sign-in inherited the prior account's flag and saw the wrong greeting plus the canned "Last time you were using X" stack-check prompt.
+- **Root cause:** [app/\_components/intake/IntakeAssistant.tsx](app/_components/intake/IntakeAssistant.tsx) bootstrap previously gated the "Welcome back" greeting on `profile.hasFullIntake` read straight from `localStorage`. On a shared browser, a new sign-in inherited the prior account's flag and saw the wrong greeting plus the canned "Last time you were using X" stack-check prompt.
 - **Fix:**
   - The synchronous bootstrap now always renders a first-time greeting (`"Hi! Describe your issue — what do you need help with?"`) unless an explicit resume-context handoff (`relay-resume-context`, set when the user clicks "Continue this session") is present.
   - An async upgrade effect verifies the current Supabase user has real `guest_calls` history (`status IN ('ended','abandoned','cancelled','expired_free')`); only then does it swap the messages to a personalized "Welcome back" + stack-increment prompt.
@@ -397,10 +397,10 @@ No new public env vars. No new secrets shipped to the client.
 
 ### 9.8 Open TODOs (search markers)
 
-| Marker | File | Note |
-| --- | --- | --- |
-| `// TODO(auth)` | `app/_marketing/TryRelayFunnel.tsx`, `app/try-room/page.tsx`, `app/try-room/TryRoomClient.tsx` | Upgrade guest landing to real passwordless session keyed by `guest_calls` + magic-link upsell. |
-| `// TODO(profile)` | `lib/relay/profile.ts`, `app/intake/IntakeClient.tsx` | Move localStorage profile snapshot to a real backend store (the new `customer_profiles` table that landed on main already covers part of this). |
+| Marker             | File                                                                                           | Note                                                                                                                                            |
+| ------------------ | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `// TODO(auth)`    | `app/_marketing/TryRelayFunnel.tsx`, `app/try-room/page.tsx`, `app/try-room/TryRoomClient.tsx` | Upgrade guest landing to real passwordless session keyed by `guest_calls` + magic-link upsell.                                                  |
+| `// TODO(profile)` | `lib/relay/profile.ts`, `app/intake/IntakeClient.tsx`                                          | Move localStorage profile snapshot to a real backend store (the new `customer_profiles` table that landed on main already covers part of this). |
 
 ---
 
@@ -412,12 +412,12 @@ Follow-up to §9 covering four user-reported issues against the v1-demo branch.
 
 **Verified already correct on all live surfaces — no code change to selection logic needed.**
 
-| File | Line | State shape | Toggle | Verdict |
-|------|------|-------------|--------|---------|
-| `app/_marketing/TryRelayFunnel.tsx` | 59, 524–532, 552–554 | `aiTools: string[]` | `.some()` + spread, true toggle | Multi ✓ |
-| `app/intake/IntakeClient.tsx` | 80–84, 530–538 | `aiTools: string[]` | `.some()` + spread, true toggle | Multi ✓ |
-| `app/_components/intake/QuickReturnIntake.tsx` | — | (project picker, not stack) | n/a | n/a |
-| `app/account/AccountClient.tsx` | — | (no AI-tool selector) | n/a | n/a |
+| File                                           | Line                 | State shape                 | Toggle                          | Verdict |
+| ---------------------------------------------- | -------------------- | --------------------------- | ------------------------------- | ------- |
+| `app/_marketing/TryRelayFunnel.tsx`            | 59, 524–532, 552–554 | `aiTools: string[]`         | `.some()` + spread, true toggle | Multi ✓ |
+| `app/intake/IntakeClient.tsx`                  | 80–84, 530–538       | `aiTools: string[]`         | `.some()` + spread, true toggle | Multi ✓ |
+| `app/_components/intake/QuickReturnIntake.tsx` | —                    | (project picker, not stack) | n/a                             | n/a     |
+| `app/account/AccountClient.tsx`                | —                    | (no AI-tool selector)       | n/a                             | n/a     |
 
 **Eliminated source of confusion:** `app/_marketing/try-relay/` (legacy `TryRelayWizard`, `steps.tsx`, `data.ts`) had `aiTool: string | null` (single-string) + `multi: false` and a hardcoded `ENGINEERS` array (Jordan D. / Priya R. / Marcus K.). The directory was unused at runtime (`TryRelayProvider` mounts `TryRelayFunnel`) but kept showing up in greps as a "this code allows only one selection" red herring. **Directory deleted in this commit.**
 
@@ -441,14 +441,14 @@ The matcher already rings only-online engineers (offline engineers are filtered 
 
 **Verified clean across the entry surfaces:**
 
-| Entry | File | Click target |
-|-------|------|--------------|
-| Nav button | `app/_marketing/Nav.tsx:127` | `<TryRelayButton />` → context `open()` |
-| Hero "Press the dot" | `app/_marketing/PressTheDot.tsx:26` | context `open()` |
-| Proof dots | `app/_marketing/ProofDotButton.tsx:12` | context `open()` |
-| Product hero orb | `app/product/ProductHeroOrb.tsx:13` | context `open()` |
-| CTA banner | `app/_marketing/CtaBanner.tsx:69` | `<TryRelayButton />` |
-| Mobile nav | `app/_marketing/MobileNavDrawer.tsx:104` | `<TryRelayButton />` |
+| Entry                | File                                     | Click target                            |
+| -------------------- | ---------------------------------------- | --------------------------------------- |
+| Nav button           | `app/_marketing/Nav.tsx:127`             | `<TryRelayButton />` → context `open()` |
+| Hero "Press the dot" | `app/_marketing/PressTheDot.tsx:26`      | context `open()`                        |
+| Proof dots           | `app/_marketing/ProofDotButton.tsx:12`   | context `open()`                        |
+| Product hero orb     | `app/product/ProductHeroOrb.tsx:13`      | context `open()`                        |
+| CTA banner           | `app/_marketing/CtaBanner.tsx:69`        | `<TryRelayButton />`                    |
+| Mobile nav           | `app/_marketing/MobileNavDrawer.tsx:104` | `<TryRelayButton />`                    |
 
 Every entry resolves through `TryRelayProvider` → `TryRelayFunnel` → `startSession()` → `router.push("/try-room")` (no auth check). [`proxy.ts`](proxy.ts:36-39) `CUSTOMER_PREFIXES = ["/room", "/account"]` — `/try-room` and `/intake` are **not** gated by the edge proxy.
 
@@ -471,12 +471,10 @@ The chat-continues-into-room mechanism is unchanged:
 
 ### 10.5 Files touched this pass
 
-| Action | Path | Reason |
-|--------|------|--------|
-| delete | `app/_marketing/try-relay/TryRelayWizard.tsx` | unused legacy single-select wizard |
-| delete | `app/_marketing/try-relay/steps.tsx` | unused, hardcoded selection state |
-| delete | `app/_marketing/try-relay/data.ts` | hardcoded `ENGINEERS` mock array + `multi: false` constraint |
-| edit | `app/intake/IntakeClient.tsx:381` | CTA label `Find my engineer →` → `Get an engineer →` |
-| edit | `UIchanges.md` (this file) | §10 follow-up audit |
-
-
+| Action | Path                                          | Reason                                                       |
+| ------ | --------------------------------------------- | ------------------------------------------------------------ |
+| delete | `app/_marketing/try-relay/TryRelayWizard.tsx` | unused legacy single-select wizard                           |
+| delete | `app/_marketing/try-relay/steps.tsx`          | unused, hardcoded selection state                            |
+| delete | `app/_marketing/try-relay/data.ts`            | hardcoded `ENGINEERS` mock array + `multi: false` constraint |
+| edit   | `app/intake/IntakeClient.tsx:381`             | CTA label `Find my engineer →` → `Get an engineer →`         |
+| edit   | `UIchanges.md` (this file)                    | §10 follow-up audit                                          |

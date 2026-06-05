@@ -20,7 +20,7 @@ import { requireEnterpriseAdmin } from "@/lib/enterprise-auth";
 import { PLAN_CATALOG, type PlanTier } from "@/lib/billing/plans";
 
 export const dynamic = "force-dynamic";
-export const runtime  = "nodejs";
+export const runtime = "nodejs";
 
 // Per-minute rate the platform charges the enterprise's end-users. The
 // enterprise's "revenue" is duration × this rate × markup. For now the
@@ -30,7 +30,8 @@ const CENTS_PER_MINUTE = 300;
 
 export async function GET() {
   const gate = await requireEnterpriseAdmin();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { admin, orgId } = gate;
 
   // 1. Org row — plan info + billing handles
@@ -38,18 +39,24 @@ export async function GET() {
     .from("organizations")
     .select(
       "id, name, plan_tier, plan_status, plan_current_period_end, " +
-      "stripe_customer_id, stripe_subscription_id, billing_currency",
+        "stripe_customer_id, stripe_subscription_id, billing_currency"
     )
     .eq("id", orgId)
     .single();
   if (orgErr || !org) {
-    return NextResponse.json({ error: orgErr?.message ?? "Org not found." }, { status: 404 });
+    return NextResponse.json(
+      { error: orgErr?.message ?? "Org not found." },
+      { status: 404 }
+    );
   }
   const orgRow = org as unknown as {
-    id: string; name: string;
-    plan_tier: PlanTier; plan_status: string;
+    id: string;
+    name: string;
+    plan_tier: PlanTier;
+    plan_status: string;
     plan_current_period_end: string | null;
-    stripe_customer_id: string | null; stripe_subscription_id: string | null;
+    stripe_customer_id: string | null;
+    stripe_subscription_id: string | null;
     billing_currency: string;
   };
   const planDef = PLAN_CATALOG[orgRow.plan_tier] ?? PLAN_CATALOG.starter;
@@ -60,18 +67,25 @@ export async function GET() {
     .from("profiles")
     .select("id")
     .eq("organization_id", orgId);
-  const profileIds = ((profiles ?? []) as Array<{ id: string }>).map((p) => p.id);
+  const profileIds = ((profiles ?? []) as Array<{ id: string }>).map(
+    (p) => p.id
+  );
 
   // 3. Sessions across last 90 days (covers month, 30d, lifetime windows
   //    cheaply enough). Tighten the lifetime window if it ever blows up.
   const now = Date.now();
-  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const monthStart = new Date(
+    new Date().getFullYear(),
+    new Date().getMonth(),
+    1
+  );
   const since30 = new Date(now - 30 * 86_400_000);
   const since90 = new Date(now - 90 * 86_400_000);
 
-  const orFilter = profileIds.length > 0
-    ? `organization_id.eq.${orgId},customer_user_id.in.(${profileIds.join(",")})`
-    : `organization_id.eq.${orgId}`;
+  const orFilter =
+    profileIds.length > 0
+      ? `organization_id.eq.${orgId},customer_user_id.in.(${profileIds.join(",")})`
+      : `organization_id.eq.${orgId}`;
   // GDPR minimization: the billing feed must not carry customer names or AI
   // summary content. Transactions are labelled generically by date, not by
   // who/what the session was about. See docs/gdpr-data-access-matrix.md.
@@ -83,18 +97,21 @@ export async function GET() {
     .order("created_at", { ascending: false });
 
   const sessions = (rows ?? []) as Array<{
-    id: string; status: string; created_at: string;
-    ended_at: string | null; duration_minutes: number | null;
+    id: string;
+    status: string;
+    created_at: string;
+    ended_at: string | null;
+    duration_minutes: number | null;
   }>;
 
   let thisMonth = 0;
-  let last30    = 0;
-  let lifetime  = 0;
+  let last30 = 0;
+  let lifetime = 0;
   for (const s of sessions) {
     if (s.status !== "ended" || !s.duration_minutes) continue;
     const cents = Math.round(Number(s.duration_minutes) * CENTS_PER_MINUTE);
     lifetime += cents;
-    if (new Date(s.created_at) >= since30)    last30    += cents;
+    if (new Date(s.created_at) >= since30) last30 += cents;
     if (new Date(s.created_at) >= monthStart) thisMonth += cents;
   }
 
@@ -104,32 +121,32 @@ export async function GET() {
     .filter((s) => s.status === "ended" && s.duration_minutes)
     .slice(0, 10)
     .map((s) => ({
-      id:           s.id,
-      occurredAt:   s.ended_at ?? s.created_at,
+      id: s.id,
+      occurredAt: s.ended_at ?? s.created_at,
       // Generic label — no customer name, no AI summary (PII minimization).
-      label:        "Engineering session",
-      durationMin:  Number(s.duration_minutes),
-      amountCents:  Math.round(Number(s.duration_minutes) * CENTS_PER_MINUTE),
-      kind:         "session_revenue" as const,
+      label: "Engineering session",
+      durationMin: Number(s.duration_minutes),
+      amountCents: Math.round(Number(s.duration_minutes) * CENTS_PER_MINUTE),
+      kind: "session_revenue" as const,
     }));
 
   return NextResponse.json({
     currency: orgRow.billing_currency || "EUR",
     revenue: {
-      thisMonthCents:  thisMonth,
+      thisMonthCents: thisMonth,
       last30DaysCents: last30,
-      lifetimeCents:   lifetime,
-      perMinuteCents:  CENTS_PER_MINUTE,
+      lifetimeCents: lifetime,
+      perMinuteCents: CENTS_PER_MINUTE,
     },
     plan: {
-      tier:                  planDef.tier,
-      name:                  planDef.name,
-      description:           planDef.description,
-      monthlyPriceCents:     planDef.monthlyPriceCents,
-      includedSeats:         planDef.includedSeats,
-      features:              planDef.features,
-      status:                orgRow.plan_status,
-      currentPeriodEnd:      orgRow.plan_current_period_end,
+      tier: planDef.tier,
+      name: planDef.name,
+      description: planDef.description,
+      monthlyPriceCents: planDef.monthlyPriceCents,
+      includedSeats: planDef.includedSeats,
+      features: planDef.features,
+      status: orgRow.plan_status,
+      currentPeriodEnd: orgRow.plan_current_period_end,
       // stripeCustomerId / stripeSubscriptionId intentionally NOT returned to
       // the browser — sensitive billing identifiers, never needed client-side.
     },

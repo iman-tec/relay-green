@@ -56,11 +56,9 @@ export function WizardShell({
   const buttonLabel = nextLabel ?? (isLast ? "Finish" : "Next");
 
   return (
-    <div className="min-h-[100dvh] w-full grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+    <div className="grid min-h-[100dvh] w-full lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
       {/* ── Editorial left panel ─────────────────────────────────────── */}
-      <aside
-        className="relative flex flex-col justify-between overflow-hidden bg-[var(--surface-raised)] text-[var(--text)] px-8 py-8 lg:px-12 lg:py-12"
-      >
+      <aside className="relative flex flex-col justify-between overflow-hidden bg-[var(--surface-raised)] px-8 py-8 text-[var(--text)] lg:px-12 lg:py-12">
         <span
           aria-hidden
           className="pointer-events-none absolute inset-x-0 top-0 h-96"
@@ -83,10 +81,10 @@ export function WizardShell({
         </header>
 
         <div className="relative mt-10 hidden flex-1 flex-col justify-center lg:flex">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--primary)]">
+          <p className="text-xs font-semibold tracking-[0.18em] text-[var(--primary)] uppercase">
             Step {step} of {totalSteps}
           </p>
-          <h1 className="mt-3 font-serif text-4xl font-medium leading-tight tracking-tight text-[var(--text)]">
+          <h1 className="mt-3 font-serif text-4xl leading-tight font-medium tracking-tight text-[var(--text)]">
             {title}
           </h1>
           {subtitle && (
@@ -111,7 +109,7 @@ export function WizardShell({
           )}
         </div>
 
-        <div className="flex flex-1 flex-col justify-center max-w-3xl">
+        <div className="flex max-w-3xl flex-1 flex-col justify-center">
           <div className="flex flex-col gap-6">{children}</div>
         </div>
 
@@ -142,7 +140,13 @@ export function WizardShell({
   );
 }
 
-function ProgressBar({ step, totalSteps }: { step: number; totalSteps: number }) {
+function ProgressBar({
+  step,
+  totalSteps,
+}: {
+  step: number;
+  totalSteps: number;
+}) {
   return (
     <div className="relative mt-8 flex gap-2">
       {Array.from({ length: totalSteps }).map((_, i) => {

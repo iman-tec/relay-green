@@ -18,22 +18,25 @@ export function AddEmployeeDrawer({
   onClose,
   onCreated,
 }: {
-  open:                  boolean;
-  orgId:                 string | null;
-  deptId:                string | null;
+  open: boolean;
+  orgId: string | null;
+  deptId: string | null;
   /** Used to surface "X min available in this dept" hint. */
   deptRemainingMinutes?: number;
-  onClose:               () => void;
-  onCreated:             (empId: string) => void;
+  onClose: () => void;
+  onCreated: (empId: string) => void;
 }) {
-  const [name,    setName]    = useState("");
-  const [email,   setEmail]   = useState("");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
   const [minutes, setMinutes] = useState("");
-  const [error,   setError]   = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const reset = () => {
-    setName(""); setEmail(""); setMinutes(""); setError(null);
+    setName("");
+    setEmail("");
+    setMinutes("");
+    setError(null);
   };
 
   const submit = async () => {
@@ -51,17 +54,18 @@ export function AddEmployeeDrawer({
       const res = await fetch(
         `/api/admin/orgs/${orgId}/departments/${deptId}/employees`,
         {
-          method:  "POST",
+          method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            name:             name.trim(),
-            email:            email.trim(),
+            name: name.trim(),
+            email: email.trim(),
             allocatedMinutes: minutes.trim() ? Number(minutes) : 0,
           }),
-        },
+        }
       );
       const body = (await res.json().catch(() => ({}))) as {
-        employee?: { id: string }; error?: string;
+        employee?: { id: string };
+        error?: string;
       };
       if (!res.ok || !body.employee) {
         setError(body.error ?? "Couldn't add employee.");
@@ -79,11 +83,22 @@ export function AddEmployeeDrawer({
   return (
     <Drawer
       open={open}
-      onClose={() => { reset(); onClose(); }}
+      onClose={() => {
+        reset();
+        onClose();
+      }}
       title="Add Employee"
       footer={
         <>
-          <SecondaryBtn onClick={() => { reset(); onClose(); }} disabled={loading}>Cancel</SecondaryBtn>
+          <SecondaryBtn
+            onClick={() => {
+              reset();
+              onClose();
+            }}
+            disabled={loading}
+          >
+            Cancel
+          </SecondaryBtn>
           <PrimaryBtn onClick={submit} disabled={loading}>
             {loading ? "Inviting…" : "Invite"}
           </PrimaryBtn>
@@ -95,13 +110,30 @@ export function AddEmployeeDrawer({
           <Input value={name} onChange={setName} placeholder="Jordan Patel" />
         </Field>
         <Field label="Employee email">
-          <Input value={email} onChange={setEmail} placeholder="jordan@acme.com" type="email" />
+          <Input
+            value={email}
+            onChange={setEmail}
+            placeholder="jordan@acme.com"
+            type="email"
+          />
         </Field>
         <Field label="Initial minutes from the dept pool">
-          <Input value={minutes} onChange={setMinutes} placeholder="0" inputMode="numeric" />
+          <Input
+            value={minutes}
+            onChange={setMinutes}
+            placeholder="0"
+            inputMode="numeric"
+          />
           {typeof deptRemainingMinutes === "number" && (
-            <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-              Available in this department: {deptRemainingMinutes.toLocaleString(undefined, { maximumFractionDigits: 2 })} min
+            <span
+              className="text-[11px]"
+              style={{ color: "var(--text-muted)" }}
+            >
+              Available in this department:{" "}
+              {deptRemainingMinutes.toLocaleString(undefined, {
+                maximumFractionDigits: 2,
+              })}{" "}
+              min
             </span>
           )}
         </Field>
@@ -111,20 +143,35 @@ export function AddEmployeeDrawer({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <label className="flex flex-col gap-1.5">
-      <span className="text-xs font-medium" style={{ color: "var(--text)" }}>{label}</span>
+      <span className="text-xs font-medium" style={{ color: "var(--text)" }}>
+        {label}
+      </span>
       {children}
     </label>
   );
 }
 
 function Input({
-  value, onChange, placeholder, type, inputMode,
+  value,
+  onChange,
+  placeholder,
+  type,
+  inputMode,
 }: {
-  value: string; onChange: (v: string) => void; placeholder?: string;
-  type?: string; inputMode?: "numeric" | "text";
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  type?: string;
+  inputMode?: "numeric" | "text";
 }) {
   return (
     <input
@@ -139,12 +186,20 @@ function Input({
   );
 }
 
-function PrimaryBtn({ onClick, disabled, children }: {
-  onClick: () => void; disabled?: boolean; children: React.ReactNode;
+function PrimaryBtn({
+  onClick,
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
 }) {
   return (
     <button
-      type="button" onClick={onClick} disabled={disabled}
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
       className="rounded-md px-3 py-2 text-sm font-medium transition-opacity disabled:opacity-50"
       style={{ background: "var(--primary)", color: "#fff" }}
     >
@@ -153,12 +208,20 @@ function PrimaryBtn({ onClick, disabled, children }: {
   );
 }
 
-function SecondaryBtn({ onClick, disabled, children }: {
-  onClick: () => void; disabled?: boolean; children: React.ReactNode;
+function SecondaryBtn({
+  onClick,
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
 }) {
   return (
     <button
-      type="button" onClick={onClick} disabled={disabled}
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
       className="rounded-md border px-3 py-2 text-sm font-medium transition-opacity disabled:opacity-50"
       style={{ borderColor: "var(--border)", color: "var(--text)" }}
     >
@@ -173,8 +236,8 @@ function ErrorBanner({ message }: { message: string }) {
       className="rounded-md border px-3 py-2 text-xs"
       style={{
         borderColor: "color-mix(in srgb, var(--primary) 30%, transparent)",
-        background:  "color-mix(in srgb, var(--primary) 8%, transparent)",
-        color:       "var(--primary)",
+        background: "color-mix(in srgb, var(--primary) 8%, transparent)",
+        color: "var(--primary)",
       }}
     >
       {message}

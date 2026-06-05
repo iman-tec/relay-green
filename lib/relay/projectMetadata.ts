@@ -74,7 +74,7 @@ export function readProjectMetadata(projectId: string): ProjectMetadata | null {
  *  don't merge with any older entry for the same id. */
 export function writeProjectMetadata(
   projectId: string,
-  data: Omit<ProjectMetadata, "updatedAt">,
+  data: Omit<ProjectMetadata, "updatedAt">
 ): void {
   if (!projectId) return;
   const map = safeRead();

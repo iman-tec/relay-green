@@ -68,59 +68,61 @@ const VARIANT_CLASS: Record<ButtonVariant, string> = {
     "bg-[var(--green-dot)] text-white hover:bg-[var(--primary-hover)] border border-transparent font-semibold shadow-sm",
 };
 
-export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  {
-    variant = "primary",
-    size = "md",
-    loading = false,
-    iconLeft,
-    iconRight,
-    full,
-    pulse = true,
-    className,
-    disabled,
-    children,
-    type = "button",
-    ...rest
-  },
-  ref,
-) {
-  const isDisabled = disabled || loading;
-  const pulseAttr =
-    variant === "launcher" && pulse && !isDisabled
-      ? { "data-relay-pulse": true }
-      : {};
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
+  function Button(
+    {
+      variant = "primary",
+      size = "md",
+      loading = false,
+      iconLeft,
+      iconRight,
+      full,
+      pulse = true,
+      className,
+      disabled,
+      children,
+      type = "button",
+      ...rest
+    },
+    ref
+  ) {
+    const isDisabled = disabled || loading;
+    const pulseAttr =
+      variant === "launcher" && pulse && !isDisabled
+        ? { "data-relay-pulse": true }
+        : {};
 
-  return (
-    <button
-      ref={ref}
-      type={type}
-      disabled={isDisabled}
-      aria-busy={loading || undefined}
-      className={cn(
-        // base
-        "inline-flex items-center justify-center rounded-full font-medium",
-        "transition-[background-color,border-color,color,box-shadow,transform] duration-[var(--motion-fast)]",
-        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--green-dot)]",
-        // Disabled used to combine opacity-50 + saturate-50, which on a
-        // white canvas produced a muddy olive tint for primary buttons.
-        // Drop saturate-50 so disabled stays a clean translucent primary.
-        "disabled:opacity-55 disabled:cursor-not-allowed",
-        "active:translate-y-px",
-        full && "w-full",
-        SIZE_CLASS[size],
-        VARIANT_CLASS[variant],
-        className,
-      )}
-      {...pulseAttr}
-      {...rest}
-    >
-      {loading ? <Spinner /> : iconLeft}
-      <span className="inline-flex items-center">{children}</span>
-      {!loading && iconRight}
-    </button>
-  );
-});
+    return (
+      <button
+        ref={ref}
+        type={type}
+        disabled={isDisabled}
+        aria-busy={loading || undefined}
+        className={cn(
+          // base
+          "inline-flex items-center justify-center rounded-full font-medium",
+          "transition-[background-color,border-color,color,box-shadow,transform] duration-[var(--motion-fast)]",
+          "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--green-dot)]",
+          // Disabled used to combine opacity-50 + saturate-50, which on a
+          // white canvas produced a muddy olive tint for primary buttons.
+          // Drop saturate-50 so disabled stays a clean translucent primary.
+          "disabled:cursor-not-allowed disabled:opacity-55",
+          "active:translate-y-px",
+          full && "w-full",
+          SIZE_CLASS[size],
+          VARIANT_CLASS[variant],
+          className
+        )}
+        {...pulseAttr}
+        {...rest}
+      >
+        {loading ? <Spinner /> : iconLeft}
+        <span className="inline-flex items-center">{children}</span>
+        {!loading && iconRight}
+      </button>
+    );
+  }
+);
 
 function Spinner() {
   return (

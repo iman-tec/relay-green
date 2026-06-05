@@ -71,7 +71,8 @@ export function Modal({
       document.body.style.overflow = "hidden";
       // Move focus into the dialog.
       requestAnimationFrame(() => {
-        const focusable = dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE);
+        const focusable =
+          dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE);
         focusable?.focus();
       });
       return () => {
@@ -91,7 +92,8 @@ export function Modal({
         return;
       }
       if (e.key === "Tab" && dialogRef.current) {
-        const nodes = dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE);
+        const nodes =
+          dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE);
         if (nodes.length === 0) return;
         const first = nodes[0];
         const last = nodes[nodes.length - 1];
@@ -104,7 +106,7 @@ export function Modal({
         }
       }
     },
-    [open, onClose],
+    [open, onClose]
   );
 
   if (!open) return null;
@@ -116,7 +118,7 @@ export function Modal({
     >
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-[var(--scrim)] animate-[relay-fade-in_var(--motion-fast)_ease-out]"
+        className="absolute inset-0 animate-[relay-fade-in_var(--motion-fast)_ease-out] bg-[var(--scrim)]"
         onClick={dismissOnBackdrop ? onClose : undefined}
         aria-hidden
       />
@@ -130,32 +132,32 @@ export function Modal({
         aria-describedby={description ? descId : undefined}
         onKeyDown={handleKeyDown}
         className={cn(
-          "relative w-full bg-[var(--surface)] border border-[var(--border)] rounded-2xl shadow-2xl",
-          "animate-[relay-toast-in_var(--motion-med)_ease-out] flex flex-col max-h-[90vh]",
-          SIZE[size],
+          "relative w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl",
+          "flex max-h-[90vh] animate-[relay-toast-in_var(--motion-med)_ease-out] flex-col",
+          SIZE[size]
         )}
       >
         {title && (
-          <div className="px-6 pt-5 pb-3 border-b border-[var(--border)]">
+          <div className="border-b border-[var(--border)] px-6 pt-5 pb-3">
             <h2
               id={titleId}
-              className="font-serif text-xl text-[var(--text)] leading-tight"
+              className="font-serif text-xl leading-tight text-[var(--text)]"
             >
               {title}
             </h2>
             {description && (
               <p
                 id={descId}
-                className="text-sm text-[var(--text-muted)] leading-relaxed mt-1.5"
+                className="mt-1.5 text-sm leading-relaxed text-[var(--text-muted)]"
               >
                 {description}
               </p>
             )}
           </div>
         )}
-        <div className="px-6 py-5 overflow-y-auto">{children}</div>
+        <div className="overflow-y-auto px-6 py-5">{children}</div>
         {footer && (
-          <div className="px-6 py-3 border-t border-[var(--border)] flex items-center justify-end gap-2">
+          <div className="flex items-center justify-end gap-2 border-t border-[var(--border)] px-6 py-3">
             {footer}
           </div>
         )}

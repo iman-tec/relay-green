@@ -23,32 +23,48 @@ type TabKey = "overview" | "usage" | "billing" | "settings";
 
 const TABS: readonly Tab<TabKey>[] = [
   { key: "overview", label: "Overview" },
-  { key: "usage",    label: "Usage" },
-  { key: "billing",  label: "Billing" },
+  { key: "usage", label: "Usage" },
+  { key: "billing", label: "Billing" },
   { key: "settings", label: "Settings" },
 ];
 
 const VALID = new Set<TabKey>(TABS.map((t) => t.key));
 
 // Map legacy ?tab= values onto the new structure.
-function resolveInitial(param: string | null | undefined): { tab: TabKey; view: OverviewView } {
+function resolveInitial(param: string | null | undefined): {
+  tab: TabKey;
+  view: OverviewView;
+} {
   switch (param) {
-    case "departments": return { tab: "overview", view: "departments" };
-    case "members":     return { tab: "overview", view: "members" };
+    case "departments":
+      return { tab: "overview", view: "departments" };
+    case "members":
+      return { tab: "overview", view: "members" };
     case "dashboard":
-    case "overview":    return { tab: "overview", view: "dashboard" };
+    case "overview":
+      return { tab: "overview", view: "dashboard" };
     case "wallet":
-    case "billing":     return { tab: "billing", view: "dashboard" };
-    case "usage":       return { tab: "usage", view: "dashboard" };
-    case "settings":    return { tab: "settings", view: "dashboard" };
-    default:            return { tab: "overview", view: "dashboard" };
+    case "billing":
+      return { tab: "billing", view: "dashboard" };
+    case "usage":
+      return { tab: "usage", view: "dashboard" };
+    case "settings":
+      return { tab: "settings", view: "dashboard" };
+    default:
+      return { tab: "overview", view: "dashboard" };
   }
 }
 
-export function PanelClient({ me }: { me: { email: string; roleLabel: string } }) {
+export function PanelClient({
+  me,
+}: {
+  me: { email: string; roleLabel: string };
+}) {
   const params = useSearchParams();
   const initial = resolveInitial(params?.get("tab"));
-  const [active, setActive] = useState<TabKey>(VALID.has(initial.tab) ? initial.tab : "overview");
+  const [active, setActive] = useState<TabKey>(
+    VALID.has(initial.tab) ? initial.tab : "overview"
+  );
 
   return (
     <div className="flex h-screen min-h-0 flex-col">
@@ -67,9 +83,9 @@ export function PanelClient({ me }: { me: { email: string; roleLabel: string } }
       />
       <div className="min-h-0 flex-1 overflow-hidden">
         {active === "overview" && <OverviewTab initialView={initial.view} />}
-        {active === "usage"     && <UsageTab />}
-        {active === "billing"   && <BillingWalletTab />}
-        {active === "settings"  && <SettingsTab />}
+        {active === "usage" && <UsageTab />}
+        {active === "billing" && <BillingWalletTab />}
+        {active === "settings" && <SettingsTab />}
       </div>
     </div>
   );

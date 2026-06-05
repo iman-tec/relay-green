@@ -46,11 +46,11 @@ export function DeleteProjectModal({
   onConfirm: (projectId: string) => Promise<void>;
   onClose: () => void;
 }) {
-  const [password,    setPassword]    = useState("");
-  const [nameInput,   setNameInput]   = useState("");
+  const [password, setPassword] = useState("");
+  const [nameInput, setNameInput] = useState("");
   const [phraseInput, setPhraseInput] = useState("");
-  const [verifying,   setVerifying]   = useState(false);
-  const [error,       setError]       = useState<string | null>(null);
+  const [verifying, setVerifying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   // Scroll-lock + Tab-trap + Esc-closes (top layer). Focus is re-pointed at
   // the password field by the effect below.
   const dialogRef = useOverlayDismiss(onClose);
@@ -60,17 +60,20 @@ export function DeleteProjectModal({
   // (which is wrapped — passing refs through is fragile).
   useEffect(() => {
     const t = setTimeout(() => {
-      const el = document.querySelector<HTMLInputElement>('input[type="password"][autocomplete="current-password"]');
+      const el = document.querySelector<HTMLInputElement>(
+        'input[type="password"][autocomplete="current-password"]'
+      );
       el?.focus();
     }, 0);
     return () => clearTimeout(t);
   }, []);
 
   // Gate checks — all three must pass before Delete activates.
-  const nameMatches   = nameInput.trim() === projectName.trim();
+  const nameMatches = nameInput.trim() === projectName.trim();
   const phraseMatches = phraseInput.trim().toLowerCase() === REQUIRED_PHRASE;
   const passwordReady = password.length > 0;
-  const allGatesReady = nameMatches && phraseMatches && passwordReady && !verifying;
+  const allGatesReady =
+    nameMatches && phraseMatches && passwordReady && !verifying;
 
   const handleConfirm = useCallback(async () => {
     if (!allGatesReady) return;
@@ -103,7 +106,11 @@ export function DeleteProjectModal({
       // succeeds, the caller is responsible for closing the modal
       // (typically via state mutation that unmounts us).
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't delete the project — try again.");
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Couldn't delete the project — try again."
+      );
       setVerifying(false);
     }
   }, [allGatesReady, customerEmail, password, projectId, onConfirm]);
@@ -124,7 +131,7 @@ export function DeleteProjectModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="delete-project-title"
-        className="fixed left-1/2 top-1/2 z-[var(--z-modal)] w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border shadow-2xl"
+        className="fixed top-1/2 left-1/2 z-[var(--z-modal)] w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border shadow-2xl"
         style={{
           borderColor: "var(--border)",
           backgroundColor: "var(--surface)",
@@ -132,11 +139,15 @@ export function DeleteProjectModal({
         }}
       >
         {/* Header */}
-        <div className="flex items-start gap-3 border-b px-5 py-4" style={{ borderColor: "var(--border)" }}>
+        <div
+          className="flex items-start gap-3 border-b px-5 py-4"
+          style={{ borderColor: "var(--border)" }}
+        >
           <div
             className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
             style={{
-              backgroundColor: "color-mix(in srgb, var(--accent-red) 12%, transparent)",
+              backgroundColor:
+                "color-mix(in srgb, var(--accent-red) 12%, transparent)",
               color: "var(--accent-red)",
             }}
           >
@@ -150,11 +161,15 @@ export function DeleteProjectModal({
             >
               Delete project
             </h2>
-            <p className="mt-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
+            <p
+              className="mt-1 text-[12px]"
+              style={{ color: "var(--text-muted)" }}
+            >
               You&apos;re about to permanently delete{" "}
-              <strong style={{ color: "var(--text)" }}>{projectName}</strong>. Past sessions
-              tied to it move to the General bucket; saved drafts, project metadata, and
-              the project entry itself are removed. This can&apos;t be undone.
+              <strong style={{ color: "var(--text)" }}>{projectName}</strong>.
+              Past sessions tied to it move to the General bucket; saved drafts,
+              project metadata, and the project entry itself are removed. This
+              can&apos;t be undone.
             </p>
           </div>
           <button
@@ -181,7 +196,10 @@ export function DeleteProjectModal({
           className="flex flex-col gap-4 px-5 py-4"
         >
           <div>
-            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text-faint)" }}>
+            <div
+              className="mb-1.5 text-[10px] font-semibold tracking-[0.08em] uppercase"
+              style={{ color: "var(--text-faint)" }}
+            >
               Step 1 of 3 · Password
             </div>
             <Input
@@ -195,7 +213,10 @@ export function DeleteProjectModal({
           </div>
 
           <div>
-            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text-faint)" }}>
+            <div
+              className="mb-1.5 text-[10px] font-semibold tracking-[0.08em] uppercase"
+              style={{ color: "var(--text-faint)" }}
+            >
               Step 2 of 3 · Type the project name
             </div>
             <Input
@@ -205,16 +226,28 @@ export function DeleteProjectModal({
               disabled={verifying}
             />
             {nameInput.length > 0 && !nameMatches && (
-              <p className="mt-1 text-[11px]" style={{ color: "var(--text-faint)" }}>
-                Must match <strong style={{ color: "var(--text-muted)" }}>{projectName}</strong> exactly.
+              <p
+                className="mt-1 text-[11px]"
+                style={{ color: "var(--text-faint)" }}
+              >
+                Must match{" "}
+                <strong style={{ color: "var(--text-muted)" }}>
+                  {projectName}
+                </strong>{" "}
+                exactly.
               </p>
             )}
           </div>
 
           <div>
-            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--text-faint)" }}>
+            <div
+              className="mb-1.5 text-[10px] font-semibold tracking-[0.08em] uppercase"
+              style={{ color: "var(--text-faint)" }}
+            >
               Step 3 of 3 · Type{" "}
-              <span style={{ color: "var(--accent-red)" }}>&ldquo;{REQUIRED_PHRASE}&rdquo;</span>
+              <span style={{ color: "var(--accent-red)" }}>
+                &ldquo;{REQUIRED_PHRASE}&rdquo;
+              </span>
             </div>
             <Input
               placeholder={REQUIRED_PHRASE}
@@ -228,8 +261,10 @@ export function DeleteProjectModal({
             <div
               className="rounded-md border px-3 py-2 text-[12px]"
               style={{
-                borderColor: "color-mix(in srgb, var(--accent-red) 30%, transparent)",
-                backgroundColor: "color-mix(in srgb, var(--accent-red) 8%, transparent)",
+                borderColor:
+                  "color-mix(in srgb, var(--accent-red) 30%, transparent)",
+                backgroundColor:
+                  "color-mix(in srgb, var(--accent-red) 8%, transparent)",
                 color: "var(--accent-red)",
               }}
             >

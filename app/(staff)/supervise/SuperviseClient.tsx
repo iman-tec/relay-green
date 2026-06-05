@@ -310,7 +310,9 @@ export function SuperviseClient() {
       const [supRes, legacyRes] = await Promise.all([
         sb
           .from("latest_sup_sentiment")
-          .select("session_id, score, state, summary, activeness, phase, chat_count, caption_count, computed_at")
+          .select(
+            "session_id, score, state, summary, activeness, phase, chat_count, caption_count, computed_at"
+          )
           .in("session_id", allIds),
         sb
           .from("latest_session_health")

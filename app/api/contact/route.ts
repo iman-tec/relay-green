@@ -97,15 +97,18 @@ async function persistEnquiry(payload: ContactPayload): Promise<void> {
   if (!url || !key) return;
   const admin = createClient(url, key, { auth: { persistSession: false } });
   const { error } = await admin.from("enquiries").insert({
-    name:              payload.name,
-    email:             payload.email,
-    company:           payload.company || null,
-    topic:             payload.topic,
-    message:           payload.message,
+    name: payload.name,
+    email: payload.email,
+    company: payload.company || null,
+    topic: payload.topic,
+    message: payload.message,
     marketing_consent: payload.marketingConsent,
   });
   if (error) {
-    console.error("[contact] enquiry persist failed (lead still emailed):", error.message);
+    console.error(
+      "[contact] enquiry persist failed (lead still emailed):",
+      error.message
+    );
   }
 }
 

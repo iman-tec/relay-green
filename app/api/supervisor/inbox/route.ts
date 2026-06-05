@@ -27,8 +27,11 @@ const SESSION_CAP = 400;
 
 export async function GET() {
   const supabase = await createServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user)
+    return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
 
   const { data: roleRows } = await supabase
     .from("user_role_names")
@@ -42,7 +45,10 @@ export async function GET() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
-    return NextResponse.json({ error: "service_role_not_configured" }, { status: 500 });
+    return NextResponse.json(
+      { error: "service_role_not_configured" },
+      { status: 500 }
+    );
   }
   const admin = createAdminClient(url, key, {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -54,7 +60,8 @@ export async function GET() {
     .order("created_at", { ascending: false })
     .limit(SESSION_CAP);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error)
+    return NextResponse.json({ error: error.message }, { status: 500 });
 
   return NextResponse.json({ sessions: data ?? [] });
 }

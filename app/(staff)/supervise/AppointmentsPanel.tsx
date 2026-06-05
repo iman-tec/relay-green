@@ -418,7 +418,7 @@ export function LiveAppointmentsSection() {
             table: "guest_calls",
             filter: `supervisor_user_id=eq.${uid}`,
           },
-          () => setTick((t) => t + 1),
+          () => setTick((t) => t + 1)
         )
         .subscribe();
       if (!alive) {
@@ -437,7 +437,8 @@ export function LiveAppointmentsSection() {
   const active = appts
     .filter((a) => apptState(a, now) !== "scheduled")
     .sort((a, b) => {
-      const rank = (x: SupervisorAppt) => (apptState(x, now) === "live" ? 0 : 1);
+      const rank = (x: SupervisorAppt) =>
+        apptState(x, now) === "live" ? 0 : 1;
       return rank(a) - rank(b) || a.slotStart.localeCompare(b.slotStart);
     });
 
@@ -507,7 +508,7 @@ export function AppointmentsPanel() {
             table: "guest_calls",
             filter: `supervisor_user_id=eq.${uid}`,
           },
-          () => setTick((t) => t + 1),
+          () => setTick((t) => t + 1)
         )
         .subscribe();
       if (!alive) {

@@ -20,7 +20,8 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY =
-  Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY")!;
+  Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ??
+  Deno.env.get("SUPABASE_ANON_KEY")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const ZOOM_ACCOUNT_ID = Deno.env.get("ZOOM_ACCOUNT_ID");
@@ -31,15 +32,17 @@ async function getZoomAccessToken(): Promise<string> {
   const basic = btoa(`${ZOOM_CLIENT_ID}:${ZOOM_CLIENT_SECRET}`);
   const r = await fetch(
     `https://zoom.us/oauth/token?grant_type=account_credentials&account_id=${ZOOM_ACCOUNT_ID}`,
-    { method: "POST", headers: { Authorization: `Basic ${basic}` } },
+    { method: "POST", headers: { Authorization: `Basic ${basic}` } }
   );
   const data = await r.json();
-  if (!r.ok) throw new Error(`Zoom OAuth failed [${r.status}]: ${JSON.stringify(data)}`);
+  if (!r.ok)
+    throw new Error(`Zoom OAuth failed [${r.status}]: ${JSON.stringify(data)}`);
   return data.access_token as string;
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method === "OPTIONS")
+    return new Response("ok", { headers: corsHeaders });
 
   try {
     if (!ZOOM_ACCOUNT_ID || !ZOOM_CLIENT_ID || !ZOOM_CLIENT_SECRET) {
@@ -92,12 +95,16 @@ Deno.serve(async (req) => {
       });
     }
     const isParticipant =
-      session.claimed_by === u.user.id || session.customer_user_id === u.user.id;
+      session.claimed_by === u.user.id ||
+      session.customer_user_id === u.user.id;
     if (!isParticipant) {
-      return new Response(JSON.stringify({ error: "Not a session participant" }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ error: "Not a session participant" }),
+        {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
     if (!session.zoom_meeting_id) {
       // Nothing to hang up. Treat as success so callers don't have to know
@@ -118,18 +125,24 @@ Deno.serve(async (req) => {
       `https://api.zoom.us/v2/meetings/${session.zoom_meeting_id}/status`,
       {
         method: "PUT",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({ action: "end" }),
-      },
+      }
     );
     if (!r.ok) {
       const data = await r.json().catch(() => ({}));
       if (data?.code !== 3027) {
         console.error("Zoom end failed:", r.status, data);
-        return new Response(JSON.stringify({ error: "Couldn't end Zoom meeting", detail: data }), {
-          status: 502,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify({ error: "Couldn't end Zoom meeting", detail: data }),
+          {
+            status: 502,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
       }
     }
 
@@ -157,7 +170,9 @@ Deno.serve(async (req) => {
       .limit(1)
       .maybeSingle();
     const alreadyEnded =
-      !!lastEnd && (!lastStart || new Date(lastEnd.created_at) > new Date(lastStart.created_at));
+      !!lastEnd &&
+      (!lastStart ||
+        new Date(lastEnd.created_at) > new Date(lastStart.created_at));
     if (!alreadyEnded) {
       await admin.from("guest_messages").insert({
         guest_call_id: sessionId,

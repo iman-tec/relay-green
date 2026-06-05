@@ -33,9 +33,13 @@ export function genInviteCode(): string {
  * If the role is null we fall back to /login so a generic invite still
  * works for customers signing up directly.
  */
-export function inviteLink(code: string, email: string, role?: string | null): string {
+export function inviteLink(
+  code: string,
+  email: string,
+  role?: string | null
+): string {
   const brand = process.env.NEXT_PUBLIC_BRAND_DOMAIN || "relay.green";
-  const path  = loginUrlForInvitedRole(role);
+  const path = loginUrlForInvitedRole(role);
   return `https://${brand}${path}?invite=${encodeURIComponent(code)}&email=${encodeURIComponent(email)}`;
 }
 
@@ -68,24 +72,30 @@ export interface InviteRow {
 /** Insert an invite row (service-role) and return it + the claim link. */
 export async function recordInvite(
   admin: SupabaseClient,
-  input: RecordInviteInput,
+  input: RecordInviteInput
 ): Promise<{ row: InviteRow; link: string } | { error: string }> {
   const code = input.code ?? genInviteCode();
   const { data, error } = await admin
     .from("invites")
     .insert({
-      email:         input.email.trim().toLowerCase(),
-      name:          input.name ?? null,
-      role:          input.role ?? null,
-      scope_type:    input.scopeType,
-      scope_id:      input.scopeId,
-      company_name:  input.companyName ?? null,
+      email: input.email.trim().toLowerCase(),
+      name: input.name ?? null,
+      role: input.role ?? null,
+      scope_type: input.scopeType,
+      scope_id: input.scopeId,
+      company_name: input.companyName ?? null,
       department_id: input.departmentId ?? null,
       code,
-      invited_by:    input.invitedBy,
+      invited_by: input.invitedBy,
     })
-    .select("id, email, name, role, company_name, code, status, sent_at, opened_at, accepted_at, expires_at")
+    .select(
+      "id, email, name, role, company_name, code, status, sent_at, opened_at, accepted_at, expires_at"
+    )
     .single();
-  if (error || !data) return { error: error?.message ?? "Could not record invite" };
-  return { row: data as InviteRow, link: inviteLink(code, (data as InviteRow).email, (data as InviteRow).role) };
+  if (error || !data)
+    return { error: error?.message ?? "Could not record invite" };
+  return {
+    row: data as InviteRow,
+    link: inviteLink(code, (data as InviteRow).email, (data as InviteRow).role),
+  };
 }

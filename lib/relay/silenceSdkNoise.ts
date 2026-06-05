@@ -37,16 +37,23 @@ export function silenceSdkNoise(): void {
     try {
       const first = args[0];
       const text =
-        typeof first === "string" ? first :
-        first instanceof Error ? first.message :
-        (first as { message?: string } | null)?.message ?? "";
-      if (typeof text === "string" && NOISE_PATTERNS.some((p) => p.test(text))) {
+        typeof first === "string"
+          ? first
+          : first instanceof Error
+            ? first.message
+            : ((first as { message?: string } | null)?.message ?? "");
+      if (
+        typeof text === "string" &&
+        NOISE_PATTERNS.some((p) => p.test(text))
+      ) {
         // Downgrade — still log it (so it's discoverable in DevTools) but
         // don't trip the Next overlay.
         console.warn("[silenced sdk noise]", ...args);
         return;
       }
-    } catch { /* fall through to real console.error */ }
+    } catch {
+      /* fall through to real console.error */
+    }
     orig(...args);
   };
 }

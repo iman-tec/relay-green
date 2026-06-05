@@ -18,22 +18,25 @@ const envPath = path.resolve(process.cwd(), ".env.local");
 if (fs.existsSync(envPath)) {
   for (const line of fs.readFileSync(envPath, "utf8").split("\n")) {
     const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
+    if (m && !process.env[m[1]])
+      process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
   }
 }
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!url || !key) {
-  console.error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env.local");
+  console.error(
+    "Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env.local"
+  );
   process.exit(1);
 }
 
 const headers = {
-  apikey:        key,
+  apikey: key,
   Authorization: `Bearer ${key}`,
   "Content-Type": "application/json",
-  Prefer:        "return=minimal,count=exact",
+  Prefer: "return=minimal,count=exact",
 };
 
 async function deleteAll(table) {

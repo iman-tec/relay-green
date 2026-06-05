@@ -22,7 +22,18 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Sparkles, Send, Loader2, History as HistoryIcon, Plus, Copy, Check, ChevronRight, ArrowLeft, MessageSquare } from "lucide-react";
+import {
+  Sparkles,
+  Send,
+  Loader2,
+  History as HistoryIcon,
+  Plus,
+  Copy,
+  Check,
+  ChevronRight,
+  ArrowLeft,
+  MessageSquare,
+} from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { createClient } from "@/lib/supabase/browser";
@@ -42,7 +53,12 @@ type HistRow = {
   user_name: string | null;
   created_at: string;
 };
-type HistThread = { threadId: string; asker: string; startedAt: string; rows: HistRow[] };
+type HistThread = {
+  threadId: string;
+  asker: string;
+  startedAt: string;
+  rows: HistRow[];
+};
 
 export function ProjectAIAssistant({
   projectId,
@@ -80,15 +96,21 @@ export function ProjectAIAssistant({
       for (const r of rows) {
         let t = map.get(r.thread_id);
         if (!t) {
-          t = { threadId: r.thread_id, asker: r.user_name ?? "Staff", startedAt: r.created_at, rows: [] };
+          t = {
+            threadId: r.thread_id,
+            asker: r.user_name ?? "Staff",
+            startedAt: r.created_at,
+            rows: [],
+          };
           map.set(r.thread_id, t);
         }
         t.rows.push(r);
       }
       setHistoryThreads(
         Array.from(map.values()).sort(
-          (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
-        ),
+          (a, b) =>
+            new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
+        )
       );
     } finally {
       setHistoryLoading(false);
@@ -122,7 +144,11 @@ export function ProjectAIAssistant({
   const send = useCallback(async () => {
     const question = draft.trim();
     if (!question || busy || !projectId) return;
-    const userMsg: Message = { role: "user", content: question, id: crypto.randomUUID() };
+    const userMsg: Message = {
+      role: "user",
+      content: question,
+      id: crypto.randomUUID(),
+    };
     setMessages((prev) => [...prev, userMsg]);
     setDraft("");
     setBusy(true);
@@ -131,21 +157,40 @@ export function ProjectAIAssistant({
       // Build history pairs for the model — strip our id field. We
       // include all prior turns so the engineer can ask follow-ups
       // ("ok, when was that?", "and the engineer's name?").
-      const history = messages.map((m) => ({ role: m.role, content: m.content }));
+      const history = messages.map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
       const res = await fetch("/api/staff/project-qa", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, question, history, threadId: threadIdRef.current }),
+        body: JSON.stringify({
+          projectId,
+          question,
+          history,
+          threadId: threadIdRef.current,
+        }),
       });
-      const json = (await res.json()) as { text?: string; fallback?: string; error?: string };
-      if (!res.ok) throw new Error(json.error ?? `Server returned ${res.status}`);
+      const json = (await res.json()) as {
+        text?: string;
+        fallback?: string;
+        error?: string;
+      };
+      if (!res.ok)
+        throw new Error(json.error ?? `Server returned ${res.status}`);
       const text = json.text ?? "AI returned no answer. Try rephrasing.";
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: text, id: crypto.randomUUID(), fallback: json.fallback },
+        {
+          role: "assistant",
+          content: text,
+          id: crypto.randomUUID(),
+          fallback: json.fallback,
+        },
       ]);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Couldn't reach the AI service.";
+      const msg =
+        e instanceof Error ? e.message : "Couldn't reach the AI service.";
       setError(msg);
     } finally {
       setBusy(false);
@@ -162,7 +207,10 @@ export function ProjectAIAssistant({
   return (
     <section
       className="flex h-full flex-col border-l"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
+      style={{
+        borderColor: "var(--border)",
+        backgroundColor: "var(--surface)",
+      }}
     >
       {/* Header — Sparkles + label + project name. Keeps the panel
           unambiguously branded as "AI", not "another chat". */}
@@ -178,19 +226,27 @@ export function ProjectAIAssistant({
           {/* Status dot — pulses green while the assistant is answering. */}
           <span
             aria-hidden
-            className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2"
+            className="absolute -right-0.5 -bottom-0.5 h-2 w-2 rounded-full border-2"
             style={{
               backgroundColor: "var(--green-dot, var(--primary))",
               borderColor: "var(--surface)",
-              animation: busy ? "relay-pulse-ok 1.2s ease-in-out infinite" : undefined,
+              animation: busy
+                ? "relay-pulse-ok 1.2s ease-in-out infinite"
+                : undefined,
             }}
           />
         </span>
         <div className="min-w-0 flex-1">
-          <div className="text-[12px] font-semibold uppercase tracking-wider" style={{ color: "var(--text)" }}>
+          <div
+            className="text-[12px] font-semibold tracking-wider uppercase"
+            style={{ color: "var(--text)" }}
+          >
             AI project assistant
           </div>
-          <div className="truncate text-[10px]" style={{ color: "var(--text-muted)" }}>
+          <div
+            className="truncate text-[10px]"
+            style={{ color: "var(--text-muted)" }}
+          >
             {view === "history"
               ? "Shared history — everyone on this project"
               : projectName
@@ -218,7 +274,8 @@ export function ProjectAIAssistant({
             className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-black/5 dark:hover:bg-white/5"
             style={{
               color: view === "history" ? BRAND_GREEN : "var(--text-muted)",
-              backgroundColor: view === "history" ? BRAND_GREEN_SOFT : undefined,
+              backgroundColor:
+                view === "history" ? BRAND_GREEN_SOFT : undefined,
             }}
           >
             <HistoryIcon size={15} />
@@ -241,8 +298,12 @@ export function ProjectAIAssistant({
               m.role === "user" ? (
                 <UserBubble key={m.id} text={m.content} />
               ) : (
-                <AssistantBubble key={m.id} text={m.content} fallback={m.fallback} />
-              ),
+                <AssistantBubble
+                  key={m.id}
+                  text={m.content}
+                  fallback={m.fallback}
+                />
+              )
             )}
             {busy && <AssistantThinking />}
           </div>
@@ -252,44 +313,63 @@ export function ProjectAIAssistant({
       {/* Composer — single textarea + send. Enter to send, Shift+
           Enter for newline. Hidden while viewing history. */}
       {view === "chat" && (
-      <div className="shrink-0 border-t p-3" style={{ borderColor: "var(--border)" }}>
-        {error && (
-          <p className="mb-2 text-[11px]" style={{ color: "var(--accent-red)" }}>
-            {error}
-          </p>
-        )}
-        {!projectId && (
-          <p className="mb-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
-            No project bound to this session — the assistant has nothing to look up.
-          </p>
-        )}
-        <div className="flex items-end gap-2">
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder={projectId ? "Ask about this project…" : "No project — assistant disabled"}
-            disabled={busy || !projectId}
-            rows={2}
-            className="block w-full resize-none rounded-md border bg-transparent px-2.5 py-2 text-[13px] outline-none focus:ring-2 disabled:opacity-50"
-            style={{
-              borderColor: "var(--border)",
-              color: "var(--text)",
-              ["--tw-ring-color" as string]: "color-mix(in srgb, var(--primary) 35%, transparent)",
-            }}
-          />
-          <button
-            type="button"
-            onClick={() => void send()}
-            disabled={busy || !draft.trim() || !projectId}
-            aria-label="Send"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-            style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
-          >
-            {busy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-          </button>
+        <div
+          className="shrink-0 border-t p-3"
+          style={{ borderColor: "var(--border)" }}
+        >
+          {error && (
+            <p
+              className="mb-2 text-[11px]"
+              style={{ color: "var(--accent-red)" }}
+            >
+              {error}
+            </p>
+          )}
+          {!projectId && (
+            <p
+              className="mb-2 text-[11px]"
+              style={{ color: "var(--text-muted)" }}
+            >
+              No project bound to this session — the assistant has nothing to
+              look up.
+            </p>
+          )}
+          <div className="flex items-end gap-2">
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder={
+                projectId
+                  ? "Ask about this project…"
+                  : "No project — assistant disabled"
+              }
+              disabled={busy || !projectId}
+              rows={2}
+              className="block w-full resize-none rounded-md border bg-transparent px-2.5 py-2 text-[13px] outline-none focus:ring-2 disabled:opacity-50"
+              style={{
+                borderColor: "var(--border)",
+                color: "var(--text)",
+                ["--tw-ring-color" as string]:
+                  "color-mix(in srgb, var(--primary) 35%, transparent)",
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => void send()}
+              disabled={busy || !draft.trim() || !projectId}
+              aria-label="Send"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+              style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
+            >
+              {busy ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Send size={14} />
+              )}
+            </button>
+          </div>
         </div>
-      </div>
       )}
     </section>
   );
@@ -306,7 +386,10 @@ function relTime(iso: string): string {
   if (h < 24) return `${h}h ago`;
   const d = Math.floor(h / 24);
   if (d < 30) return `${d}d ago`;
-  return new Date(iso).toLocaleDateString([], { month: "short", day: "numeric" });
+  return new Date(iso).toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+  });
 }
 
 /** A thread's title = the first question asked in it. */
@@ -315,25 +398,40 @@ function threadTitle(t: HistThread): string {
   return firstQ?.content.trim() || "Conversation";
 }
 
-function HistoryPanel({ threads, loading }: { threads: HistThread[]; loading: boolean }) {
+function HistoryPanel({
+  threads,
+  loading,
+}: {
+  threads: HistThread[];
+  loading: boolean;
+}) {
   const [openId, setOpenId] = useState<string | null>(null);
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center py-12" style={{ color: "var(--text-muted)" }}>
+      <div
+        className="flex h-full items-center justify-center py-12"
+        style={{ color: "var(--text-muted)" }}
+      >
         <Loader2 size={16} className="animate-spin" />
       </div>
     );
   }
   if (threads.length === 0) {
     return (
-      <p className="px-2 py-12 text-center text-[12px]" style={{ color: "var(--text-muted)" }}>
-        No questions asked about this project yet. Anything you ask is saved here for the whole team.
+      <p
+        className="px-2 py-12 text-center text-[12px]"
+        style={{ color: "var(--text-muted)" }}
+      >
+        No questions asked about this project yet. Anything you ask is saved
+        here for the whole team.
       </p>
     );
   }
 
-  const open = openId ? threads.find((t) => t.threadId === openId) ?? null : null;
+  const open = openId
+    ? (threads.find((t) => t.threadId === openId) ?? null)
+    : null;
 
   // ── A single past conversation ──────────────────────────────────────
   if (open) {
@@ -349,13 +447,20 @@ function HistoryPanel({ threads, loading }: { threads: HistThread[]; loading: bo
         </button>
         <div className="mb-3">
           <h3
-            className="text-[14px] font-semibold leading-snug"
-            style={{ color: "var(--text)", fontFamily: "var(--font-source-serif)" }}
+            className="text-[14px] leading-snug font-semibold"
+            style={{
+              color: "var(--text)",
+              fontFamily: "var(--font-source-serif)",
+            }}
           >
             {threadTitle(open)}
           </h3>
-          <p className="mt-0.5 text-[10px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
-            <span style={{ color: BRAND_GREEN }}>{open.asker}</span> · {relTime(open.startedAt)}
+          <p
+            className="mt-0.5 text-[10px] tracking-wider uppercase"
+            style={{ color: "var(--text-faint)" }}
+          >
+            <span style={{ color: BRAND_GREEN }}>{open.asker}</span> ·{" "}
+            {relTime(open.startedAt)}
           </p>
         </div>
         <div className="space-y-3">
@@ -364,7 +469,7 @@ function HistoryPanel({ threads, loading }: { threads: HistThread[]; loading: bo
               <UserBubble key={r.id} text={r.content} />
             ) : (
               <AssistantBubble key={r.id} text={r.content} />
-            ),
+            )
           )}
         </div>
       </div>
@@ -384,17 +489,31 @@ function HistoryPanel({ threads, loading }: { threads: HistThread[]; loading: bo
               className="flex w-full items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
               style={{ borderColor: "var(--border)" }}
             >
-              <MessageSquare size={14} className="shrink-0" style={{ color: BRAND_GREEN }} />
+              <MessageSquare
+                size={14}
+                className="shrink-0"
+                style={{ color: BRAND_GREEN }}
+              />
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[13px] font-medium" style={{ color: "var(--text)" }}>
+                <div
+                  className="truncate text-[13px] font-medium"
+                  style={{ color: "var(--text)" }}
+                >
                   {threadTitle(t)}
                 </div>
-                <div className="truncate text-[10px]" style={{ color: "var(--text-faint)" }}>
+                <div
+                  className="truncate text-[10px]"
+                  style={{ color: "var(--text-faint)" }}
+                >
                   {t.asker} · {relTime(t.startedAt)}
                   {questions > 1 ? ` · ${questions} questions` : ""}
                 </div>
               </div>
-              <ChevronRight size={14} className="shrink-0" style={{ color: "var(--text-muted)" }} />
+              <ChevronRight
+                size={14}
+                className="shrink-0"
+                style={{ color: "var(--text-muted)" }}
+              />
             </button>
           </li>
         );
@@ -412,14 +531,23 @@ function EmptyState() {
       >
         <Sparkles size={18} />
       </div>
-      <p className="max-w-[280px] text-[13px] font-medium" style={{ color: "var(--text)" }}>
+      <p
+        className="max-w-[280px] text-[13px] font-medium"
+        style={{ color: "var(--text)" }}
+      >
         Quick context, no scroll.
       </p>
-      <p className="mt-1.5 max-w-[280px] text-[11.5px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
-        Ask anything about this project — past sessions, files shared, stack used,
-        pending next steps. The AI has full project memory.
+      <p
+        className="mt-1.5 max-w-[280px] text-[11.5px] leading-relaxed"
+        style={{ color: "var(--text-muted)" }}
+      >
+        Ask anything about this project — past sessions, files shared, stack
+        used, pending next steps. The AI has full project memory.
       </p>
-      <ul className="mt-2 flex flex-col gap-1 text-left text-[11px]" style={{ color: "var(--text-faint)" }}>
+      <ul
+        className="mt-2 flex flex-col gap-1 text-left text-[11px]"
+        style={{ color: "var(--text-faint)" }}
+      >
         <li>— What was last session about?</li>
         <li>— Which files has the customer shared?</li>
         <li>— What&apos;s still open from last call?</li>
@@ -445,7 +573,13 @@ function UserBubble({ text }: { text: string }) {
   );
 }
 
-function AssistantBubble({ text, fallback }: { text: string; fallback?: string }) {
+function AssistantBubble({
+  text,
+  fallback,
+}: {
+  text: string;
+  fallback?: string;
+}) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     try {
@@ -500,11 +634,17 @@ function AssistantBubble({ text, fallback }: { text: string; fallback?: string }
             {copied ? "Copied" : "Copy"}
           </button>
           {fallback && (
-            <span className="text-[9px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
-              {fallback === "no_key" ? "offline mode" :
-               fallback === "openai_error" ? "ai unreachable" :
-               fallback === "no_context" ? "no project history yet" :
-               fallback}
+            <span
+              className="text-[9px] tracking-wider uppercase"
+              style={{ color: "var(--text-faint)" }}
+            >
+              {fallback === "no_key"
+                ? "offline mode"
+                : fallback === "openai_error"
+                  ? "ai unreachable"
+                  : fallback === "no_context"
+                    ? "no project history yet"
+                    : fallback}
             </span>
           )}
         </div>
@@ -531,7 +671,10 @@ function AssistantThinking() {
           borderBottomLeftRadius: 6,
         }}
       >
-        <span className="inline-flex items-center gap-1" aria-label="Assistant is typing">
+        <span
+          className="inline-flex items-center gap-1"
+          aria-label="Assistant is typing"
+        >
           {[0, 1, 2].map((i) => (
             <span
               key={i}

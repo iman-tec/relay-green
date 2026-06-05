@@ -23,13 +23,13 @@
 
 import { useEffect, useRef } from "react";
 
-const MUTE_KEY      = "relay-ring-muted";
+const MUTE_KEY = "relay-ring-muted";
 const ALERT_FAVICON = "/favicon-alert.svg";
-const RING_HZ       = 660;
-const RING_GAIN     = 0.045;
-const RING_MS       = 400;
-const RING_PERIOD   = 1800;
-const BLINK_PERIOD  = 900;
+const RING_HZ = 660;
+const RING_GAIN = 0.045;
+const RING_MS = 400;
+const RING_PERIOD = 1800;
+const BLINK_PERIOD = 900;
 
 /**
  * Mute / unmute the ring sound. Persists in localStorage; consumed by
@@ -39,7 +39,9 @@ export function setRingMuted(muted: boolean): boolean {
   if (typeof window === "undefined") return muted;
   try {
     window.localStorage.setItem(MUTE_KEY, muted ? "1" : "0");
-  } catch { /* private mode / quota — fall through */ }
+  } catch {
+    /* private mode / quota — fall through */
+  }
   return muted;
 }
 
@@ -47,7 +49,9 @@ export function isRingMuted(): boolean {
   if (typeof window === "undefined") return false;
   try {
     return window.localStorage.getItem(MUTE_KEY) === "1";
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
 type HudOptions = {
@@ -76,12 +80,16 @@ export function useRingingHud({ active, label, body, tag }: HudOptions): void {
     let ctx: AudioContext | null = audioContextRef.current;
     try {
       if (!ctx) {
-        const AudioCtx = (window as unknown as { AudioContext?: typeof AudioContext }).AudioContext;
+        const AudioCtx = (
+          window as unknown as { AudioContext?: typeof AudioContext }
+        ).AudioContext;
         if (!AudioCtx) return;
         ctx = new AudioCtx();
         audioContextRef.current = ctx;
       }
-    } catch { return; }
+    } catch {
+      return;
+    }
 
     const ring = () => {
       if (!ctx) return;
@@ -96,11 +104,15 @@ export function useRingingHud({ active, label, body, tag }: HudOptions): void {
         gain.gain.linearRampToValueAtTime(0, ctx.currentTime + RING_MS / 1000);
         osc.start();
         osc.stop(ctx.currentTime + (RING_MS + 50) / 1000);
-      } catch { /* AudioContext unprimed; degrade silently */ }
+      } catch {
+        /* AudioContext unprimed; degrade silently */
+      }
     };
     ring();
     const id = window.setInterval(ring, RING_PERIOD);
-    return () => { window.clearInterval(id); };
+    return () => {
+      window.clearInterval(id);
+    };
   }, [active, muted]);
 
   // ── Favicon swap ───────────────────────────────────────────────────────
@@ -149,7 +161,8 @@ export function useRingingHud({ active, label, body, tag }: HudOptions): void {
 
   // ── Browser Notification — fire once per active episode ───────────────
   useEffect(() => {
-    if (!active || typeof window === "undefined" || !("Notification" in window)) return;
+    if (!active || typeof window === "undefined" || !("Notification" in window))
+      return;
     const notifTag = tag ?? `relay-ring`;
     if (notifiedTagRef.current === notifTag) return;
     notifiedTagRef.current = notifTag;
@@ -161,7 +174,9 @@ export function useRingingHud({ active, label, body, tag }: HudOptions): void {
           tag: notifTag,
           requireInteraction: true,
         });
-      } catch { /* not allowed / not focused */ }
+      } catch {
+        /* not allowed / not focused */
+      }
     };
 
     if (Notification.permission === "granted") {
@@ -171,7 +186,9 @@ export function useRingingHud({ active, label, body, tag }: HudOptions): void {
         if (perm === "granted") fire();
       });
     }
-    return () => { /* tag-based dedupe; nothing to clean up */ };
+    return () => {
+      /* tag-based dedupe; nothing to clean up */
+    };
   }, [active, label, body, tag]);
 
   // Reset notification dedupe when active flips back to false so the next

@@ -56,9 +56,9 @@ export function StatusBadge({
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border font-medium leading-none",
+        "inline-flex shrink-0 items-center gap-1.5 rounded-full border leading-none font-medium whitespace-nowrap",
         compact ? "px-2 py-1 text-[11px]" : "px-2.5 py-1 text-xs",
-        TONE_CLASS[tone],
+        TONE_CLASS[tone]
       )}
     >
       <span
@@ -66,7 +66,7 @@ export function StatusBadge({
         className={cn(
           "inline-flex items-center justify-center",
           compact ? "text-[8px]" : "text-[9px]",
-          pulse && "animate-[relay-pulse-ok_1800ms_ease-in-out_infinite]",
+          pulse && "animate-[relay-pulse-ok_1800ms_ease-in-out_infinite]"
         )}
       >
         {icon ?? GLYPH[tone]}

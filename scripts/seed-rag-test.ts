@@ -39,13 +39,20 @@ const BUCKET = "chat-attachments";
 
 async function findUserId(sb: SupabaseClient, email: string): Promise<string> {
   for (let page = 1; page <= 20; page++) {
-    const { data, error } = await sb.auth.admin.listUsers({ page, perPage: 1000 });
+    const { data, error } = await sb.auth.admin.listUsers({
+      page,
+      perPage: 1000,
+    });
     if (error) throw new Error(`listUsers failed: ${error.message}`);
-    const hit = data.users.find((u) => u.email?.toLowerCase() === email.toLowerCase());
+    const hit = data.users.find(
+      (u) => u.email?.toLowerCase() === email.toLowerCase()
+    );
     if (hit) return hit.id;
     if (data.users.length < 1000) break;
   }
-  throw new Error(`No auth user found for ${email} — create the account first (sign up once), then re-run.`);
+  throw new Error(
+    `No auth user found for ${email} — create the account first (sign up once), then re-run.`
+  );
 }
 
 function fileBuffer(f: SeedFile): Buffer {
@@ -92,12 +99,14 @@ async function main() {
           name: PROJECT_NAME,
           slug,
           status: "active",
-          description: "AI meal-planning web app (Next.js + Supabase + Stripe + OpenAI) — RAG seed project.",
+          description:
+            "AI meal-planning web app (Next.js + Supabase + Stripe + OpenAI) — RAG seed project.",
           created_at: "2026-04-14T13:55:00Z",
         })
         .select("id")
         .single();
-      if (projErr || !created) throw new Error(`project insert failed: ${projErr?.message}`);
+      if (projErr || !created)
+        throw new Error(`project insert failed: ${projErr?.message}`);
       projectId = created.id as string;
     }
   }
@@ -105,12 +114,17 @@ async function main() {
 
   // ── Wipe previous seed runs for this project ────────────────────────────
   console.log("Wiping any previous seed data for this project…");
-  const { data: oldCalls } = await sb.from("guest_calls").select("id").eq("project_id", projectId);
+  const { data: oldCalls } = await sb
+    .from("guest_calls")
+    .select("id")
+    .eq("project_id", projectId);
   const oldIds = ((oldCalls ?? []) as { id: string }[]).map((r) => r.id);
   if (oldIds.length > 0) {
     // Remove storage objects under each old session folder.
     for (const sid of oldIds) {
-      const { data: objs } = await sb.storage.from(BUCKET).list(sid, { limit: 100 });
+      const { data: objs } = await sb.storage
+        .from(BUCKET)
+        .list(sid, { limit: 100 });
       const paths = (objs ?? []).map((o) => `${sid}/${o.name}`);
       if (paths.length > 0) await sb.storage.from(BUCKET).remove(paths);
     }
@@ -119,7 +133,10 @@ async function main() {
     console.log(`  removed ${oldIds.length} old session(s)`);
   }
   await sb.from("project_quote_requests").delete().eq("project_id", projectId);
-  await sb.from("project_assistant_messages").delete().eq("project_id", projectId);
+  await sb
+    .from("project_assistant_messages")
+    .delete()
+    .eq("project_id", projectId);
 
   // ── Project summary fields ──────────────────────────────────────────────
   {
@@ -133,7 +150,8 @@ async function main() {
         summary_updated_at: new Date().toISOString(),
       })
       .eq("id", projectId);
-    if (error) throw new Error(`project summary update failed: ${error.message}`);
+    if (error)
+      throw new Error(`project summary update failed: ${error.message}`);
   }
 
   // ── Intake (unique on project_id + customer_user_id) ────────────────────
@@ -148,7 +166,7 @@ async function main() {
         technologies: INTAKE.technologies,
         created_at: "2026-04-14T13:58:00Z",
       },
-      { onConflict: "project_id,customer_user_id" },
+      { onConflict: "project_id,customer_user_id" }
     );
     if (error) throw new Error(`intake upsert failed: ${error.message}`);
     console.log("Intake upserted.");
@@ -185,7 +203,8 @@ async function main() {
       })
       .select("id")
       .single();
-    if (callErr || !call) throw new Error(`session ${i + 1} insert failed: ${callErr?.message}`);
+    if (callErr || !call)
+      throw new Error(`session ${i + 1} insert failed: ${callErr?.message}`);
     const sessionId = call.id as string;
 
     // Chat messages, 75s apart; attachments hang off their message.
@@ -205,27 +224,39 @@ async function main() {
         })
         .select("id")
         .single();
-      if (msgErr || !msg) throw new Error(`message insert failed (session ${i + 1}): ${msgErr?.message}`);
+      if (msgErr || !msg)
+        throw new Error(
+          `message insert failed (session ${i + 1}): ${msgErr?.message}`
+        );
 
       if (m.attach) {
         const file = s.files.find((f) => f.name === m.attach);
-        if (!file) throw new Error(`session ${i + 1}: chat references missing file ${m.attach}`);
+        if (!file)
+          throw new Error(
+            `session ${i + 1}: chat references missing file ${m.attach}`
+          );
         const buf = fileBuffer(file);
         const path = `${sessionId}/${randomUUID()}-${file.name}`;
         const { error: upErr } = await sb.storage
           .from(BUCKET)
           .upload(path, buf, { contentType: file.mime, upsert: false });
-        if (upErr) throw new Error(`upload ${file.name} failed: ${upErr.message}`);
-        const { error: attErr } = await sb.from("guest_message_attachments").insert({
-          message_id: msg.id as string,
-          path,
-          name: file.name,
-          mime: file.mime,
-          size_bytes: buf.byteLength,
-          kind: file.kind,
-          created_at: createdAt,
-        });
-        if (attErr) throw new Error(`attachment row ${file.name} failed: ${attErr.message}`);
+        if (upErr)
+          throw new Error(`upload ${file.name} failed: ${upErr.message}`);
+        const { error: attErr } = await sb
+          .from("guest_message_attachments")
+          .insert({
+            message_id: msg.id as string,
+            path,
+            name: file.name,
+            mime: file.mime,
+            size_bytes: buf.byteLength,
+            kind: file.kind,
+            created_at: createdAt,
+          });
+        if (attErr)
+          throw new Error(
+            `attachment row ${file.name} failed: ${attErr.message}`
+          );
       }
     }
 
@@ -240,10 +271,13 @@ async function main() {
       created_at: iso(start, 180 + j * 60),
     }));
     const { error: capErr } = await sb.from("session_captions").insert(capRows);
-    if (capErr) throw new Error(`captions insert failed (session ${i + 1}): ${capErr.message}`);
+    if (capErr)
+      throw new Error(
+        `captions insert failed (session ${i + 1}): ${capErr.message}`
+      );
 
     console.log(
-      `Session ${i + 1}/7 "${s.title}" → ${sessionId} (${s.chat.length} msgs, ${s.captions.length} captions, ${s.files.length} file(s))`,
+      `Session ${i + 1}/7 "${s.title}" → ${sessionId} (${s.chat.length} msgs, ${s.captions.length} captions, ${s.files.length} file(s))`
     );
   }
 
@@ -263,12 +297,19 @@ async function main() {
       created_at: q.createdAt,
       responded_at: q.respondedAt,
       ...(q.status === "committed"
-        ? { committed_at: q.respondedAt, paid_at: q.respondedAt, customer_viewed_at: q.respondedAt }
+        ? {
+            committed_at: q.respondedAt,
+            paid_at: q.respondedAt,
+            customer_viewed_at: q.respondedAt,
+          }
         : { customer_viewed_at: q.respondedAt }),
     });
-    if (error) throw new Error(`quote (${q.kind}) insert failed: ${error.message}`);
+    if (error)
+      throw new Error(`quote (${q.kind}) insert failed: ${error.message}`);
   }
-  console.log(`Quotes inserted: ${QUOTES.map((q) => `${q.kind}=${q.status}`).join(", ")}`);
+  console.log(
+    `Quotes inserted: ${QUOTES.map((q) => `${q.kind}=${q.status}`).join(", ")}`
+  );
 
   // ── Index into Qdrant ────────────────────────────────────────────────────
   console.log("\nIndexing project into Qdrant (OpenAI embeddings)…");
