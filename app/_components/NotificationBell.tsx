@@ -587,11 +587,11 @@ export function NotificationBell({
       {/* Glassmorphism toasts — frosted, translucent cards dropping in at
           the TOP-CENTER of the main panel (dynamic-island style) so they
           can't be missed; the bell keeps the full history for review.
-          Click anywhere on a card to open the panel; × dismisses it. */}
+          Click anywhere on a card to open the panel; × dismisses it.
+          <lg the stack starts BELOW the header strip (hamburger + pills +
+          bell live in the top ~56px band — at top-6 the toast covered
+          them on phones); ≥lg it floats at the original top-center. */}
       {toasts.length > 0 && (
-        {/* <lg the stack starts BELOW the header strip (hamburger + pills +
-            bell live in the top ~56px band — at top-6 the toast covered
-            them on phones); ≥lg it floats at the original top-center. */}
         <div
           className="pointer-events-none fixed inset-x-0 top-[4.5rem] z-[var(--z-toast)] flex flex-col items-center gap-2 px-4 lg:top-6"
           style={{ paddingTop: "env(safe-area-inset-top)" }}
