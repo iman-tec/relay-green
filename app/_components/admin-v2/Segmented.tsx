@@ -13,12 +13,18 @@ export function Segmented<K extends string>({
   onChange,
   options,
   ariaLabel,
+  size = "sm",
 }: {
   value: K;
   onChange: (k: K) => void;
   options: readonly Segment<K>[];
   ariaLabel?: string;
+  /** Pill size. "sm" (default) keeps the existing compact look; "md" is a
+   *  slightly larger tab for surfaces that lead with the switch. */
+  size?: "sm" | "md";
 }) {
+  const pillClass =
+    size === "md" ? "px-4 py-2 text-[15px]" : "px-3.5 py-1.5 text-sm";
   return (
     <div
       role="tablist"
@@ -34,7 +40,7 @@ export function Segmented<K extends string>({
             role="tab"
             aria-selected={active}
             onClick={() => onChange(o.key)}
-            className="rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors"
+            className={`rounded-full border font-medium transition-colors ${pillClass}`}
             style={{
               borderColor: active ? "var(--primary)" : "var(--border)",
               background: active ? "var(--primary-tint)" : "transparent",

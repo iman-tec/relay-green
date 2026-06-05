@@ -6,26 +6,30 @@
  * their own commission. They do NOT see allocation (minute pools), departments
  * or members — a company manages its own people internally.
  *
+ * Two segmented sub-views: Clients (portfolio: stat strip + master/detail) and
+ * Invitations (the redesigned reseller-scoped InvitationsView). Status colours
+ * are shared across both grids — green = active/accepted, amber = onboarding/
+ * sent, red = suspended/revoked.
+ *
  * Onboarding: the partner provisions a company by naming the individual who
  * becomes its enterprise admin (invited by email). That person then builds out
  * departments + members.
  */
 
-import { useMemo, useState } from "react";
-import { Building2, UserPlus, Copy, Check, Share2, Upload } from "lucide-react";
+import { useState } from "react";
+import { Building2, UserPlus, Copy, Check, Share2, Search } from "lucide-react";
 import {
   Button,
   Input,
   Modal,
   StatusBadge,
   EmptyState,
+  Avatar,
 } from "@/app/_components/ui";
-import { InviteFlow } from "@/app/_components/invite/InviteFlow";
-import { InviteStatusTable } from "@/app/_components/invite/InviteStatusTable";
+import { InvitationsView } from "./InvitationsView";
 import {
   useApiData,
   eur,
-  num,
   TabBody,
   LoadingState,
   ErrorState,
@@ -51,25 +55,54 @@ type Dashboard = {
 };
 
 const CENTS_PER_MINUTE = 300;
-const TONE: Record<string, "ok" | "warn" | "neutral"> = {
+// Shared status palette for the Clients grid: green = active, amber =
+// onboarding (pending), red = suspended, muted = churned.
+const TONE: Record<string, "ok" | "warn" | "risk" | "neutral"> = {
   active: "ok",
   onboarding: "warn",
   churned: "neutral",
-  suspended: "neutral",
+  suspended: "risk",
 };
 
-export function ClientsTab() {
+// Two sub-views. The Clients/Invitations switch lives in the page top bar
+// (browser-style tabs in PanelClient); this component renders whichever the
+// parent selects via the `view` prop.
+export type ClientsView = "clients" | "invitations";
+
+// Status filter chips for the enterprise list (mirrors the Invitations chips).
+type StatusFilter = "all" | "active" | "suspended";
+const STATUS_FILTERS: readonly { key: StatusFilter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "active", label: "Active" },
+  { key: "suspended", label: "Suspended" },
+];
+
+export function ClientsTab({ view }: { view: ClientsView }) {
   const dash = useApiData<Dashboard>("/api/reseller/dashboard");
   const [selId, setSelId] = useState<string | null>(null);
+
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
   const ents = dash.data?.enterprises ?? [];
   const commissionPct = (dash.data?.reseller.commission ?? 0) / 100;
   const sel = ents.find((e) => e.id === selId) ?? null;
   const spend = (e: Enterprise) => e.usedMinutes * CENTS_PER_MINUTE;
 
+  // Enterprise list filter — status chips + free-text search (name or code),
+  // mirroring the Invitations controls.
+  const q = query.trim().toLowerCase();
+  const shownEnts = ents.filter((e) => {
+    if (statusFilter !== "all" && e.status !== statusFilter) return false;
+    if (!q) return true;
+    return (
+      e.name.toLowerCase().includes(q) ||
+      e.enterpriseCode.toLowerCase().includes(q)
+    );
+  });
+
   // Onboarding
   const [open, setOpen] = useState(false);
-  const [bulkOpen, setBulkOpen] = useState(false);
   const [inviteKey, setInviteKey] = useState(0);
   const [co, setCo] = useState("");
   const [adminName, setAdminName] = useState("");
@@ -102,7 +135,7 @@ export function ClientsTab() {
 
   const onboard = async () => {
     if (!co.trim() || !adminName.trim() || !adminEmail.trim()) {
-      setErr("Company name, admin name and email are required.");
+      setErr("Enterprise name, admin name and email are required.");
       return;
     }
     setBusy(true);
@@ -126,7 +159,7 @@ export function ClientsTab() {
         error?: string;
         enterprise?: { enterpriseCode?: string };
       };
-      if (!r.ok) throw new Error(b.error || "Could not onboard company");
+      if (!r.ok) throw new Error(b.error || "Could not onboard enterprise");
       const code = b.enterprise?.enterpriseCode ?? "";
       const email = adminEmail.trim().toLowerCase();
       // Verified onboarding link, also sent to the company email by the invite.
@@ -143,7 +176,7 @@ export function ClientsTab() {
       dash.reload();
       setInviteKey((k) => k + 1);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Could not onboard company");
+      setErr(e instanceof Error ? e.message : "Could not onboard enterprise");
     } finally {
       setBusy(false);
     }
@@ -162,7 +195,7 @@ export function ClientsTab() {
       try {
         await nav.share({
           title: `Set up ${created.company} on Relay`,
-          text: "Click to set up your company's Relay account.",
+          text: "Click to set up your enterprise's Relay account.",
           url: created.url,
         });
       } catch {
@@ -183,7 +216,7 @@ export function ClientsTab() {
       next === "suspended"
         ? " Their members will lose access until you reactivate."
         : "";
-    if (!window.confirm(`${verb} this company?${warn}`)) return;
+    if (!window.confirm(`${verb} this enterprise?${warn}`)) return;
     const res = await fetch(`/api/reseller/enterprises/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -196,11 +229,6 @@ export function ClientsTab() {
           "Update failed."
       );
   };
-
-  const totalSpend = useMemo(
-    () => ents.reduce((s, e) => s + spend(e), 0),
-    [ents]
-  );
 
   if (dash.loading)
     return (
@@ -216,222 +244,276 @@ export function ClientsTab() {
     );
 
   return (
-    <TabBody>
-      <div className="mb-6 flex items-center justify-between gap-3">
-        <h1
-          className="font-serif text-2xl font-medium"
-          style={{ color: "var(--text)" }}
-        >
-          Clients
-        </h1>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            iconLeft={<Upload size={15} />}
-            onClick={() => setBulkOpen(true)}
-          >
-            Bulk add (CSV)
-          </Button>
-          <Button
-            iconLeft={<UserPlus size={15} />}
-            onClick={() => setOpen(true)}
-          >
-            Onboard a company
-          </Button>
-        </div>
-      </div>
-
-      {ents.length === 0 ? (
-        <EmptyState
-          icon={<Building2 size={20} />}
-          title="No companies yet"
-          body="Onboard your first company — name the person who'll run their Relay account."
-          action={
-            <Button onClick={() => setOpen(true)}>Onboard a company</Button>
-          }
-        />
-      ) : (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          {/* List */}
-          <div
-            className="rounded-2xl border lg:col-span-1"
-            style={{
-              borderColor: "var(--border)",
-              background: "var(--surface)",
-            }}
-          >
-            <ul>
-              {ents.map((e) => (
-                <li key={e.id}>
-                  <button
-                    type="button"
-                    onClick={() => setSelId(e.id)}
-                    className="flex w-full items-center gap-3 border-t px-4 py-3 text-left transition-colors first:border-t-0 hover:bg-[var(--surface-raised)]"
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="min-h-0 flex-1 overflow-hidden">
+        {view === "clients" ? (
+          <TabBody>
+            {/* Controls: search (left) + status chips and the onboard CTA on
+                one line (right). */}
+            {ents.length > 0 && (
+              <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="relative w-full sm:max-w-xs">
+                  <Search
+                    className="pointer-events-none absolute top-2.5 left-2.5 size-4"
+                    style={{ color: "var(--text-muted)" }}
+                  />
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search enterprises…"
+                    className="w-full rounded-lg border bg-transparent py-2 pr-2 pl-8 text-sm outline-none"
                     style={{
                       borderColor: "var(--border)",
-                      background:
-                        selId === e.id ? "var(--primary-tint)" : undefined,
+                      color: "var(--text)",
                     }}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div
-                        className="truncate text-sm"
-                        style={{ color: "var(--text)" }}
-                      >
-                        {e.name}
-                      </div>
-                      <div
-                        className="text-xs tabular-nums"
-                        style={{ color: "var(--text-muted)" }}
-                      >
-                        {eur(spend(e))} spent
-                      </div>
-                    </div>
-                    <StatusBadge compact tone={TONE[e.status] ?? "neutral"}>
-                      {e.status}
-                    </StatusBadge>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Detail — spend + commission, no allocation/departments/members */}
-          <div className="lg:col-span-2">
-            {!sel ? (
-              <div
-                className="rounded-2xl border p-8"
-                style={{
-                  borderColor: "var(--border)",
-                  background: "var(--surface)",
-                }}
-              >
-                <EmptyState
-                  compact
-                  title="Select a company"
-                  body="See spend, commission and account status."
-                />
-              </div>
-            ) : (
-              <div
-                className="rounded-2xl border p-5"
-                style={{
-                  borderColor: "var(--border)",
-                  background: "var(--surface)",
-                }}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h2
-                      className="font-serif text-xl font-medium"
-                      style={{ color: "var(--text)" }}
-                    >
-                      {sel.name}
-                    </h2>
-                    <p
-                      className="font-mono text-xs"
-                      style={{ color: "var(--text-muted)" }}
-                    >
-                      {sel.enterpriseCode}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 flex-col items-end gap-2">
-                    <StatusBadge tone={TONE[sel.status] ?? "neutral"}>
-                      {sel.status}
-                    </StatusBadge>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() =>
-                        setCompanyStatus(
-                          sel.id,
-                          sel.status === "active" ? "suspended" : "active"
-                        )
-                      }
-                    >
-                      {sel.status === "active" ? "Deactivate" : "Reactivate"}
-                    </Button>
-                  </div>
+                  />
                 </div>
-                <dl className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
-                  <Metric label="Spend to date" value={eur(spend(sel))} />
-                  <Metric
-                    label="Your commission"
-                    value={eur(Math.round(spend(sel) * commissionPct))}
-                  />
-                  <Metric
-                    label="Discount"
-                    value={sel.discountPct > 0 ? `${sel.discountPct}%` : "None"}
-                  />
-                  <Metric
-                    label="Client since"
-                    value={new Date(sel.createdAt).toLocaleDateString()}
-                  />
-                </dl>
-                {sel.discountPct > 0 && sel.discountUntil && (
-                  <p
-                    className="mt-2 text-xs"
-                    style={{ color: "var(--text-muted)" }}
+                <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                  <div className="flex flex-wrap gap-1.5">
+                    {STATUS_FILTERS.map((f) => {
+                      const active = statusFilter === f.key;
+                      return (
+                        <button
+                          key={f.key}
+                          type="button"
+                          onClick={() => setStatusFilter(f.key)}
+                          className="rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
+                          style={{
+                            borderColor: active
+                              ? "var(--primary)"
+                              : "var(--border)",
+                            background: active
+                              ? "var(--primary-tint)"
+                              : "transparent",
+                            color: active
+                              ? "var(--primary-hover)"
+                              : "var(--text-muted)",
+                          }}
+                        >
+                          {f.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <Button
+                    size="sm"
+                    iconLeft={<UserPlus size={14} />}
+                    onClick={() => setOpen(true)}
                   >
-                    {sel.discountPct}% discount applied{" "}
-                    <strong style={{ color: "var(--text)" }}>
-                      until {new Date(sel.discountUntil).toLocaleDateString()}
-                    </strong>
-                    .
-                  </p>
-                )}
-                <p
-                  className="mt-5 text-xs leading-relaxed"
-                  style={{ color: "var(--text-faint)" }}
-                >
-                  This company manages its own departments and people. You see
-                  spend and commission — not their internal teams or member
-                  details.
-                </p>
+                    Onboard an enterprise
+                  </Button>
+                </div>
               </div>
             )}
-          </div>
-        </div>
-      )}
 
-      {ents.length > 0 && (
-        <p className="mt-4 text-xs" style={{ color: "var(--text-muted)" }}>
-          Portfolio spend to date:{" "}
-          <strong style={{ color: "var(--text)" }}>{eur(totalSpend)}</strong>{" "}
-          across {num(ents.length)} companies.
-        </p>
-      )}
+            {ents.length === 0 ? (
+              <EmptyState
+                icon={<Building2 size={20} />}
+                title="No enterprises yet"
+                body="Onboard your first enterprise — name the person who'll run their Relay account."
+                action={
+                  <Button onClick={() => setOpen(true)}>
+                    Onboard an enterprise
+                  </Button>
+                }
+              />
+            ) : (
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                {/* List */}
+                <div
+                  className="overflow-hidden rounded-2xl border lg:col-span-1"
+                  style={{
+                    borderColor: "var(--border)",
+                    background: "var(--surface)",
+                  }}
+                >
+                  {shownEnts.length === 0 ? (
+                    <p
+                      className="px-4 py-6 text-center text-xs"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      No enterprises match your search.
+                    </p>
+                  ) : (
+                    <ul>
+                      {shownEnts.map((e) => (
+                        <li key={e.id}>
+                          <button
+                            type="button"
+                            onClick={() => setSelId(e.id)}
+                            className="flex w-full items-center gap-3 border-t px-3 py-3 text-left transition-colors first:border-t-0 hover:bg-[var(--surface-raised)]"
+                            style={{
+                              borderColor: "var(--border)",
+                              background:
+                                selId === e.id
+                                  ? "var(--primary-tint)"
+                                  : undefined,
+                            }}
+                          >
+                            <Avatar size="sm" name={e.name} tone="brand" />
+                            <div className="min-w-0 flex-1">
+                              <div
+                                className="truncate text-sm"
+                                style={{ color: "var(--text)" }}
+                              >
+                                {e.name}
+                              </div>
+                              <div
+                                className="text-xs tabular-nums"
+                                style={{ color: "var(--text-muted)" }}
+                              >
+                                {eur(spend(e))} spent
+                              </div>
+                            </div>
+                            <StatusBadge
+                              compact
+                              tone={TONE[e.status] ?? "neutral"}
+                            >
+                              {e.status}
+                            </StatusBadge>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
 
-      <section className="mt-8">
-        <h2
-          className="mb-3 font-serif text-lg font-medium"
-          style={{ color: "var(--text)" }}
-        >
-          Invitations
-        </h2>
-        <InviteStatusTable reloadKey={inviteKey} />
-      </section>
+                {/* Detail — spend + commission, no allocation/departments/members */}
+                <div className="lg:col-span-2">
+                  {!sel ? (
+                    <div
+                      className="rounded-2xl border p-8"
+                      style={{
+                        borderColor: "var(--border)",
+                        background: "var(--surface)",
+                      }}
+                    >
+                      <EmptyState
+                        compact
+                        title="Select an enterprise"
+                        body="See spend, commission and account status."
+                      />
+                    </div>
+                  ) : (
+                    <div
+                      className="overflow-hidden rounded-2xl border"
+                      style={{
+                        borderColor: "var(--border)",
+                        background: "var(--surface)",
+                      }}
+                    >
+                      {/* Header strip — company name + ID. Theme-aware
+                          (surface-raised) so it matches the rest of the app. */}
+                      <div
+                        className="flex items-center gap-3 border-b p-5"
+                        style={{
+                          borderColor: "var(--border)",
+                          background: "var(--surface-raised)",
+                        }}
+                      >
+                        <Avatar size="md" name={sel.name} tone="brand" />
+                        <div className="min-w-0 flex-1">
+                          <h2
+                            className="truncate text-lg font-medium"
+                            style={{ color: "var(--text)" }}
+                          >
+                            {sel.name}
+                          </h2>
+                          <p
+                            className="font-mono text-xs"
+                            style={{ color: "var(--text-muted)" }}
+                          >
+                            {sel.enterpriseCode}
+                          </p>
+                        </div>
+                      </div>
 
-      <InviteFlow
-        open={bulkOpen}
-        onClose={() => setBulkOpen(false)}
-        variant="companies"
-        endpoint="/api/reseller/enterprises"
-        title="Add companies in bulk"
-        onSent={() => {
-          dash.reload();
-          setInviteKey((k) => k + 1);
-        }}
-      />
+                      {/* Body */}
+                      <div className="p-5">
+                        <div className="flex items-center justify-between gap-3">
+                          <StatusBadge tone={TONE[sel.status] ?? "neutral"}>
+                            {sel.status}
+                          </StatusBadge>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() =>
+                              setCompanyStatus(
+                                sel.id,
+                                sel.status === "active" ? "suspended" : "active"
+                              )
+                            }
+                          >
+                            {sel.status === "active"
+                              ? "Deactivate"
+                              : "Reactivate"}
+                          </Button>
+                        </div>
+                        <dl className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
+                          <Metric
+                            label="Spend to date"
+                            value={eur(spend(sel))}
+                          />
+                          <Metric
+                            label="Your commission"
+                            value={eur(Math.round(spend(sel) * commissionPct))}
+                          />
+                          <Metric
+                            label="Discount"
+                            value={
+                              sel.discountPct > 0
+                                ? `${sel.discountPct}%`
+                                : "None"
+                            }
+                          />
+                          <Metric
+                            label="Client since"
+                            value={new Date(sel.createdAt).toLocaleDateString()}
+                          />
+                        </dl>
+                        {sel.discountPct > 0 && sel.discountUntil && (
+                          <p
+                            className="mt-2 text-xs"
+                            style={{ color: "var(--text-muted)" }}
+                          >
+                            {sel.discountPct}% discount applied{" "}
+                            <strong style={{ color: "var(--text)" }}>
+                              until{" "}
+                              {new Date(sel.discountUntil).toLocaleDateString()}
+                            </strong>
+                            .
+                          </p>
+                        )}
+                        <p
+                          className="mt-5 text-xs leading-relaxed"
+                          style={{ color: "var(--text-faint)" }}
+                        >
+                          This enterprise manages its own departments and
+                          people. You see spend and commission — not their
+                          internal teams or member details.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </TabBody>
+        ) : (
+          <TabBody>
+            <InvitationsView reloadKey={inviteKey} />
+          </TabBody>
+        )}
+      </div>
 
       <Modal
         open={open}
         onClose={resetModal}
-        title={created ? "Share the onboarding link" : "Onboard a company"}
+        title={created ? "Share the onboarding link" : "Onboard an enterprise"}
         description={
           created
-            ? `${created.company} is set up. Share this link or QR with ${created.email} — when they sign up they become the company's enterprise admin.`
-            : "Name the person who'll run this company's Relay account. They become the enterprise admin and set up their own departments and team."
+            ? `${created.company} is set up. Share this link or QR with ${created.email} — when they sign up they become the enterprise's admin.`
+            : "Name the person who'll run this enterprise's Relay account. They become the enterprise admin and set up their own departments and team."
         }
         footer={
           created ? (
@@ -521,7 +603,7 @@ export function ClientsTab() {
         ) : (
           <div className="flex flex-col gap-3">
             <Input
-              label="Company name"
+              label="Enterprise name"
               value={co}
               onChange={(e) => setCo(e.target.value)}
               placeholder="Acme Inc."
@@ -544,7 +626,7 @@ export function ClientsTab() {
                 className="flex flex-col gap-1 text-xs"
                 style={{ color: "var(--text-muted)" }}
               >
-                Company discount
+                Enterprise discount
                 <div className="flex items-center gap-1.5">
                   <input
                     type="number"
@@ -603,7 +685,7 @@ export function ClientsTab() {
           </div>
         )}
       </Modal>
-    </TabBody>
+    </div>
   );
 }
 

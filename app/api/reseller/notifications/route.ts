@@ -1,9 +1,10 @@
 /*
  * Reseller notifications inbox.
  *
- * GET  /api/reseller/notifications      → 50 latest notifications for the
+ * GET    /api/reseller/notifications    → 50 latest notifications for the
  *                                          caller (auth.uid()) + unread count.
- * POST /api/reseller/notifications      → Mark all unread as read.
+ * POST   /api/reseller/notifications    → Mark all unread as read.
+ * DELETE /api/reseller/notifications    → Clear all the caller's notifications.
  *
  * Scoped per-USER, not per-RESELLER: each team member (once we add them)
  * has their own inbox. We reuse public.notifications + its RLS
@@ -65,6 +66,24 @@ export async function POST() {
     .update({ read_at: new Date().toISOString() })
     .eq("user_id", user.id)
     .is("read_at", null);
+
+  if (error)
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ ok: true });
+}
+
+// Clear all — removes every notification for the caller. RLS
+// (user_id = auth.uid()) keeps this scoped to the signed-in partner.
+export async function DELETE() {
+  const gate = await requireReseller();
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
+  const { supabase, user } = gate;
+
+  const { error } = await supabase
+    .from("notifications")
+    .delete()
+    .eq("user_id", user.id);
 
   if (error)
     return NextResponse.json({ error: error.message }, { status: 500 });

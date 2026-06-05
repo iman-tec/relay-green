@@ -17,7 +17,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, CheckCheck, Trash2 } from "lucide-react";
+import { Bell, CheckCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 
 type NotificationItem = {
@@ -45,10 +45,18 @@ export function NotificationBell({
   endpoint = "/api/reseller/notifications",
   channelKey = "reseller",
   clearable = false,
+  align = "right",
 }: {
   endpoint?: string;
   channelKey?: string;
   clearable?: boolean;
+  /**
+   * Horizontal anchor of the dropdown relative to the bell. Defaults to
+   * "right" (right edges align — correct for a top-right top-bar bell).
+   * Pass "left" when the bell sits in a left sidebar so the panel opens
+   * rightward into the content area instead of clipping off-screen.
+   */
+  align?: "left" | "right";
 } = {}) {
   const [data, setData] = useState<Payload>({ items: [], unread: 0 });
   const [loading, setLoading] = useState(true);
@@ -237,7 +245,7 @@ export function NotificationBell({
         <div
           role="dialog"
           aria-label="Notifications"
-          className="absolute right-0 z-50 mt-2 w-[360px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border shadow-2xl"
+          className={`absolute z-50 mt-2 w-[360px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border shadow-2xl ${align === "left" ? "left-0" : "right-0"}`}
           style={{ background: "var(--surface)", borderColor: "var(--border)" }}
         >
           <div
@@ -273,10 +281,10 @@ export function NotificationBell({
                 <button
                   type="button"
                   onClick={clearAll}
-                  className="inline-flex items-center gap-1 text-xs transition-colors hover:underline"
+                  className="text-xs font-medium transition-opacity hover:opacity-70"
                   style={{ color: "var(--text-muted)" }}
                 >
-                  <Trash2 size={12} /> Clear all
+                  Clear
                 </button>
               )}
             </div>

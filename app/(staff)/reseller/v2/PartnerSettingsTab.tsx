@@ -279,12 +279,17 @@ export function PartnerSettingsTab() {
 
   return (
     <TabBody>
-      <h1
-        className="mb-6 font-serif text-2xl font-medium"
-        style={{ color: "var(--text)" }}
-      >
-        Settings
-      </h1>
+      <div className="mb-6">
+        <h1
+          className="font-serif text-2xl font-medium"
+          style={{ color: "var(--text)" }}
+        >
+          Settings
+        </h1>
+        <p className="mt-0.5 text-sm" style={{ color: "var(--text-muted)" }}>
+          Your partner profile, team, branding &amp; payouts.
+        </p>
+      </div>
       <div className="flex flex-col gap-5">
         <SettingsSection
           icon={<Briefcase size={16} />}
