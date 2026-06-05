@@ -3075,7 +3075,12 @@ function CenterHeaderActions({
           {divider}
         </>
       )}
-      <NotificationBell customerUserId={customerUserId} />
+      <NotificationBell
+        customerUserId={customerUserId}
+        onOpenView={(view) =>
+          view === "contracts" ? onOpenContracts() : onOpenScheduled()
+        }
+      />
       {/* Chat drawer trigger — <lg only (the chat stub is an in-flow rail
           on desktop). Far right, separated by the same thin rule. */}
       {onOpenChat && (
