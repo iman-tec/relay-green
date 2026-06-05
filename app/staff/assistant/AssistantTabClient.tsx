@@ -81,11 +81,21 @@ export function AssistantTabClient() {
       className="relative flex h-dvh flex-col"
       style={{ backgroundColor: "var(--background)", color: "var(--text)" }}
     >
-      <div className="min-h-0 flex-1">
-        <ProjectAIAssistant
-          projectId={projectId}
-          projectName={projectName}
-        />
+      {/* Centered reading column — the assistant was designed for a narrow
+          side panel; unconstrained it stretches bubbles edge-to-edge on a
+          full window. ~860px is the comfortable Q&A width; the column gets
+          a faint frame so it reads as the page's content, not a strip
+          floating in a void. */}
+      <div className="mx-auto min-h-0 w-full max-w-[860px] flex-1 px-4 py-2 sm:px-6">
+        <div
+          className="h-full overflow-hidden rounded-2xl border"
+          style={{
+            borderColor: "var(--border)",
+            backgroundColor: "var(--surface)",
+          }}
+        >
+          <ProjectAIAssistant projectId={projectId} projectName={projectName} />
+        </div>
       </div>
 
       {/* "Session ended" — quiet overlay; project memory stays readable
