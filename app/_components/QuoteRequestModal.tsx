@@ -20,10 +20,11 @@
  * the table + create_project_quote_request RPC + RLS.
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Loader2,
   X,
+  ChevronDown,
   ChevronLeft,
   Check,
   Send,
@@ -221,6 +222,11 @@ export function QuoteRequestModal({
         {step === "details" && projectId && (
           <DetailsStep
             project={projects.find((p) => p.id === projectId) ?? null}
+            projects={projects}
+            onChangeProject={(id) => {
+              setProjectId(id);
+              setErrMsg(null);
+            }}
             blurb={copy.blurb}
             commentLabel={copy.commentLabel}
             comments={comments}
@@ -339,6 +345,8 @@ function PickProjectStep({
 // ── Step 2: comments + submit ─────────────────────────────────────────
 function DetailsStep({
   project,
+  projects,
+  onChangeProject,
   blurb,
   commentLabel,
   comments,
@@ -350,6 +358,10 @@ function DetailsStep({
   hideBack,
 }: {
   project: QuoteProjectOption | null;
+  /** Full list — the PROJECT field is a dropdown so the customer can
+   *  switch projects without backing out to the pick step. */
+  projects: QuoteProjectOption[];
+  onChangeProject: (id: string) => void;
   blurb: string;
   commentLabel: string;
   comments: string;
@@ -360,6 +372,19 @@ function DetailsStep({
   onSubmit: () => void;
   hideBack: boolean;
 }) {
+  const [projMenuOpen, setProjMenuOpen] = useState(false);
+  const projMenuRef = useRef<HTMLDivElement>(null);
+  // Outside-click closes the project dropdown.
+  useEffect(() => {
+    if (!projMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (projMenuRef.current && !projMenuRef.current.contains(e.target as Node))
+        setProjMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [projMenuOpen]);
+
   return (
     <div className="px-5 py-4">
       {!hideBack && (
@@ -373,22 +398,79 @@ function DetailsStep({
           <ChevronLeft size={11} /> Pick a different project
         </button>
       )}
-      <div
-        className="mb-3 rounded-lg border px-3 py-2 text-[12px]"
-        style={{
-          borderColor: "var(--border)",
-          backgroundColor: "var(--surface-raised)",
-        }}
-      >
-        <div
-          className="text-[10px] font-semibold tracking-[0.08em] uppercase"
-          style={{ color: "var(--text-faint)" }}
+      {/* PROJECT — dropdown, not a static label: the customer can switch
+          the target project right here. */}
+      <div ref={projMenuRef} className="relative mb-3">
+        <button
+          type="button"
+          disabled={submitting}
+          onClick={() => setProjMenuOpen((o) => !o)}
+          aria-expanded={projMenuOpen}
+          aria-label="Change project"
+          className="flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-[12px] transition-colors hover:bg-black/5 disabled:opacity-60 dark:hover:bg-white/5"
+          style={{
+            borderColor: "var(--border)",
+            backgroundColor: "var(--surface-raised)",
+          }}
         >
-          Project
-        </div>
-        <div className="mt-0.5 text-[13px]" style={{ color: "var(--text)" }}>
-          {project?.name ?? "—"}
-        </div>
+          <span className="min-w-0 flex-1">
+            <span
+              className="block text-[10px] font-semibold tracking-[0.08em] uppercase"
+              style={{ color: "var(--text-faint)" }}
+            >
+              Project
+            </span>
+            <span
+              className="mt-0.5 block truncate text-[13px]"
+              style={{ color: "var(--text)" }}
+            >
+              {project?.name ?? "—"}
+            </span>
+          </span>
+          <ChevronDown
+            size={14}
+            className="shrink-0 transition-transform"
+            style={{
+              color: "var(--text-muted)",
+              transform: projMenuOpen ? "rotate(180deg)" : "none",
+            }}
+          />
+        </button>
+        {projMenuOpen && (
+          <div
+            role="listbox"
+            aria-label="Project"
+            className="absolute top-full right-0 left-0 z-10 mt-1 max-h-56 overflow-y-auto rounded-lg border py-1 shadow-xl"
+            style={{
+              borderColor: "var(--border)",
+              backgroundColor: "var(--surface)",
+            }}
+          >
+            {projects.map((p) => {
+              const active = p.id === project?.id;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  role="option"
+                  aria-selected={active}
+                  onClick={() => {
+                    setProjMenuOpen(false);
+                    if (!active) onChangeProject(p.id);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12.5px] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                  style={{
+                    color: active ? BRAND_GREEN : "var(--text)",
+                    fontWeight: active ? 600 : 400,
+                  }}
+                >
+                  <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                  {active && <Check size={12} className="shrink-0" />}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
       <p
         className="mb-3 text-[11.5px] leading-relaxed"

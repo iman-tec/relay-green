@@ -7353,13 +7353,12 @@ const Sidebar = memo(function Sidebar({
   // Drag-to-resize the expanded sidebar (handle on its right edge).
   const leftResize = useResizableWidth({
     storageKey: "relay:room-left-sidebar-width",
-    // Floor lowered (280 → 220) so the rail can be dragged usefully
-    // narrower — project names truncate gracefully (every row label is
-    // min-w-0 + truncate) and the brand row tucks its centre/right
-    // clusters. def stays at the comfortable 300; only the customer's
-    // own drag goes below it.
+    // Floor calibrated to the reference layout (~270px): "Ship it" /
+    // "Maintain it" still sit side-by-side and project rows keep their
+    // call + ⋯ cluster without cramping. def stays at the comfortable
+    // 300; only the customer's own drag goes down to the floor.
     def: 300,
-    min: 220,
+    min: 270,
     max: 460,
     edge: "right",
   });
