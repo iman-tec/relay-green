@@ -747,6 +747,34 @@ function Sidebar({
   isSupervisor: boolean;
 }) {
   const router = useRouter();
+
+  // Engineer ALIAS for the profile chip — the customer-facing pseudonym
+  // (engineer_profiles.display_alias), not the raw email handle. Falls
+  // back to the email handle while loading / when no alias is set.
+  const [alias, setAlias] = useState<string | null>(null);
+  useEffect(() => {
+    if (isSupervisor) return;
+    let alive = true;
+    void (async () => {
+      const sb = createClient();
+      const { data: u } = await sb.auth.getUser();
+      if (!alive || !u.user) return;
+      const { data } = await sb
+        .from("engineer_profiles")
+        .select("display_alias")
+        .eq("user_id", u.user.id)
+        .maybeSingle();
+      if (alive && data?.display_alias)
+        setAlias(data.display_alias as string);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [isSupervisor]);
+  const displayName =
+    alias ||
+    engineerEmail.split("@")[0] ||
+    (isSupervisor ? "Supervisor" : "Engineer");
   const [past, setPast] = useState<PastSession[]>([]);
 
   useEffect(() => {
@@ -921,11 +949,11 @@ function Sidebar({
 
         {/* Engineer avatar at bottom */}
         <div
-          title={`${engineerEmail.split("@")[0] || "Engineer"} · Engineer · on call`}
+          title={`${displayName} · Engineer · on call`}
           className="flex h-9 w-9 items-center justify-center rounded-full text-[11px] font-semibold uppercase"
           style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
         >
-          {(engineerEmail || "?")[0]}
+          {(displayName || "?")[0]}
         </div>
       </aside>
     );
@@ -1153,15 +1181,14 @@ function Sidebar({
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold uppercase"
             style={{ backgroundColor: BRAND_GREEN, color: "#fff" }}
           >
-            {(engineerEmail || "?")[0]}
+            {(displayName || "?")[0]}
           </div>
-          <div className="min-w-0 flex-1 text-left">
+          <div className="min-w-0 flex-1 text-left" title={engineerEmail}>
             <div
               className="truncate text-[12px] font-medium"
               style={{ color: "var(--text)" }}
             >
-              {engineerEmail.split("@")[0] ||
-                (isSupervisor ? "Supervisor" : "Engineer")}
+              {displayName}
             </div>
             <div
               className="truncate text-[10px]"

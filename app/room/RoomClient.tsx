@@ -2849,11 +2849,15 @@ function HeaderPill({
   label,
   count,
   onClick,
+  blinkDot = false,
 }: {
   icon: React.ReactNode;
   label: string;
   count: number;
   onClick: () => void;
+  /** Blinking attention dot when unseen items exist — reserved for the
+   *  surfaces we want the customer to prioritise (bids/contracts). */
+  blinkDot?: boolean;
 }) {
   return (
     <button
@@ -2886,6 +2890,7 @@ function HeaderPill({
             {count > 99 ? "99+" : count}
           </span>
           {/* Blinking attention dot — pinned to the pill's corner. */}
+          {blinkDot && (
           <span
             aria-hidden
             className="absolute -top-0.5 -right-0.5 inline-flex size-2"
@@ -2902,6 +2907,7 @@ function HeaderPill({
               }}
             />
           </span>
+          )}
         </>
       )}
     </button>
@@ -3055,6 +3061,8 @@ function CenterHeaderActions({
             icon={<FileText size={14} />}
             label="Contracts"
             count={contractCount}
+            // Bids are the priority surface — only Contracts blinks.
+            blinkDot
             onClick={() => {
               markSeen(contractsSeenKey);
               setContractCount(0);
