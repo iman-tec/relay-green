@@ -7,6 +7,12 @@
  *     - currentCustomer: name of the guest on their active call (or null)
  *     - lastCallAt + lastCustomer: most recent completed session
  *
+ *   Also returns `supervisors[]` for the pod (the assigned-supervisor
+ *   column + capacity-meter slots): { userId, displayName, email, online,
+ *   slotIndex }. Online state comes from supervisor_presence.is_online.
+ *   The engineer → supervisor mapping itself lives in
+ *   lib/allocation/podAllocation (a pass-through today).
+ *
  * Gated to supervisors only. Super admins see other surfaces; the
  * supervisor's personal team roster doesn't apply to them.
  */
@@ -15,6 +21,7 @@ import { NextResponse } from "next/server";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { ROLE } from "@/lib/relay/roles";
+import { distributeFreeEngineers } from "@/lib/allocation/podAllocation";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -67,17 +74,107 @@ export async function GET() {
     .eq("id", podId)
     .maybeSingle();
 
-  // 2. Engineers in that pod.
+  // 2. Engineers in the caller's OWN pod.
   const { data: members } = await admin
     .from("pod_members")
     .select("user_id")
     .eq("pod_id", podId)
     .eq("pod_role", "engineer");
-  const engineerIds = (members ?? []).map(
+  const ownEngineerIds = (members ?? []).map(
     (m: { user_id: string }) => m.user_id
   );
+
+  // 2b. Cross-pod coverage. Pull the GLOBAL pod / supervisor map so we can work
+  //     out which off-duty supervisors' engineers this on-duty supervisor is
+  //     covering. Round-robin distribution lives in lib/allocation/podAllocation
+  //     (read-time, deterministic, no cap). When the caller is off duty they
+  //     cover nobody, so this collapses to "own pod only" — today's behavior.
+  const [{ data: allPods }, { data: allMembers }, { data: presenceRows }] =
+    await Promise.all([
+      admin.from("pods").select("id, name").is("archived_at", null),
+      admin
+        .from("pod_members")
+        .select("user_id, pod_id, pod_role")
+        .in("pod_role", ["supervisor", "engineer"]),
+      admin.from("supervisor_presence").select("user_id, is_online"),
+    ]);
+
+  const onlineByUser = new Map<string, boolean>();
+  for (const r of (presenceRows ?? []) as {
+    user_id: string;
+    is_online: boolean;
+  }[]) {
+    onlineByUser.set(r.user_id, r.is_online);
+  }
+  const podNameById = new Map<string, string>();
+  for (const p of (allPods ?? []) as { id: string; name: string }[]) {
+    podNameById.set(p.id, p.name);
+  }
+
+  const memberRows = (allMembers ?? []) as {
+    user_id: string;
+    pod_id: string;
+    pod_role: string;
+  }[];
+  const supMemberRows = memberRows.filter((m) => m.pod_role === "supervisor");
+  const engMemberRows = memberRows.filter((m) => m.pod_role === "engineer");
+
+  // Supervisor display names — used for the stable round-robin order, the
+  // "Assigned supervisor" column, and the "Covering for X" label.
+  const supervisorUserIds = supMemberRows.map((m) => m.user_id);
+  const supNameById = new Map<string, string>();
+  if (supervisorUserIds.length) {
+    const { data: supProfiles } = await admin
+      .from("profiles_with_role")
+      .select("id, full_name")
+      .in("id", supervisorUserIds);
+    for (const p of (supProfiles ?? []) as {
+      id: string;
+      full_name: string | null;
+    }[]) {
+      supNameById.set(p.id, p.full_name ?? "Unnamed");
+    }
+  }
+
+  const coverageSupervisors = supMemberRows.map((m) => ({
+    userId: m.user_id,
+    podId: m.pod_id,
+    online: onlineByUser.get(m.user_id) ?? false,
+    displayName: supNameById.get(m.user_id) ?? "Unnamed",
+  }));
+  const { assignment, uncovered } = distributeFreeEngineers({
+    supervisors: coverageSupervisors,
+    engineers: engMemberRows.map((m) => ({
+      userId: m.user_id,
+      podId: m.pod_id,
+    })),
+  });
+  const coveredEngineerIds = assignment.get(user.id) ?? [];
+  const callerOnDuty = onlineByUser.get(user.id) ?? false;
+
+  // Each covered engineer's source pod + that pod's (off-duty) supervisor name,
+  // for the "Covering — <pod>" grouping and assigned-supervisor column.
+  const podIdByEngineer = new Map<string, string>();
+  for (const m of engMemberRows) podIdByEngineer.set(m.user_id, m.pod_id);
+  const supNameByPod = new Map<string, string>();
+  for (const s of [...coverageSupervisors].sort((a, b) =>
+    a.displayName.localeCompare(b.displayName)
+  )) {
+    if (!supNameByPod.has(s.podId)) supNameByPod.set(s.podId, s.displayName);
+  }
+
+  // Union of own + covered. Disjoint by construction (the caller's own pod has
+  // an on-duty supervisor — the caller — so it is never a "free" pod). All the
+  // enrichment below runs over this combined set, then we partition.
+  const engineerIds = [...ownEngineerIds, ...coveredEngineerIds];
   if (engineerIds.length === 0) {
-    return NextResponse.json({ pod, engineers: [] });
+    return NextResponse.json({
+      pod,
+      engineers: [],
+      coveredEngineers: [],
+      supervisors: [],
+      coverage: { coveredCount: 0, uncovered: uncovered.length, callerOnDuty },
+    });
   }
 
   // 3. Profiles + emails (auth.users) + availability flag in one shot.
@@ -297,5 +394,52 @@ export async function GET() {
   );
 
   engineers.sort((a, b) => a.displayName.localeCompare(b.displayName));
-  return NextResponse.json({ pod, engineers });
+
+  // Partition the enriched rows: the caller's own pod vs the engineers they are
+  // covering for off-duty supervisors. (Disjoint sets — see the union above.)
+  const ownSet = new Set(ownEngineerIds);
+  const coveredSet = new Set(coveredEngineerIds);
+  const ownEngineers = engineers.filter((e) => ownSet.has(e.userId));
+  const coveredEngineers = engineers
+    .filter((e) => coveredSet.has(e.userId))
+    .map((e) => {
+      const fromPodId = podIdByEngineer.get(e.userId) ?? null;
+      return {
+        ...e,
+        coveredFromPodId: fromPodId,
+        coveredFromPodName: fromPodId
+          ? (podNameById.get(fromPodId) ?? null)
+          : null,
+        coveredFromSupervisorName: fromPodId
+          ? (supNameByPod.get(fromPodId) ?? null)
+          : null,
+      };
+    });
+
+  // Own-pod supervisors → "Assigned supervisor" column for own engineers + the
+  // left capacity-meter slot. Derived from the global map (online =
+  // supervisor_presence.is_online); email is reused from the enrichment fetch.
+  const supervisors = coverageSupervisors
+    .filter((s) => s.podId === podId)
+    .map((s) => ({
+      userId: s.userId,
+      displayName: s.displayName,
+      email: emailById.get(s.userId) ?? "",
+      online: s.online,
+    }))
+    // Stable order so slot 0 / slot 1 don't flip between 5s polls.
+    .sort((a, b) => a.displayName.localeCompare(b.displayName))
+    .map((s, i) => ({ ...s, slotIndex: i }));
+
+  return NextResponse.json({
+    pod,
+    engineers: ownEngineers,
+    coveredEngineers,
+    supervisors,
+    coverage: {
+      coveredCount: coveredEngineers.length,
+      uncovered: uncovered.length,
+      callerOnDuty,
+    },
+  });
 }

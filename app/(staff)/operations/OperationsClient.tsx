@@ -33,12 +33,11 @@ import {
   cn,
 } from "@/app/_components/ui";
 import { createClient } from "@/lib/supabase/browser";
+import { Segmented } from "@/app/_components/admin-v2/Segmented";
 import {
   getSupervisorForEngineer,
   isOnlineFromLastSeen,
   podCapacity,
-  POD_MAX_ENGINEERS,
-  POD_PRIMARY_SUPERVISOR_CAP,
   type AllocationEngineer,
   type AllocationSupervisor,
   type Pod,
@@ -57,19 +56,39 @@ type Engineer = {
   isOnline: boolean | null;
 };
 
+/** An engineer the caller is covering for an off-duty supervisor (cross-pod). */
+type CoveredEngineer = Engineer & {
+  coveredFromPodId: string | null;
+  coveredFromPodName: string | null;
+  coveredFromSupervisorName: string | null;
+};
+
+type Coverage = {
+  coveredCount: number;
+  uncovered: number; // free engineers nobody can cover (only when 0 on-duty)
+  callerOnDuty: boolean;
+};
+
 type TeamResponse = {
   pod?: Pod | null;
   engineers?: Engineer[];
-  /** TODO(api): backend can populate this; UI ignores when missing. */
+  /** Free engineers from off-duty pods, round-robin allocated to this caller. */
+  coveredEngineers?: CoveredEngineer[];
   supervisors?: AllocationSupervisor[];
+  coverage?: Coverage | null;
 };
 
 export function OperationsClient() {
   const [pod, setPod] = useState<Pod | null>(null);
   const [rows, setRows] = useState<Engineer[]>([]);
+  const [coveredRows, setCoveredRows] = useState<CoveredEngineer[]>([]);
+  const [coverage, setCoverage] = useState<Coverage | null>(null);
   const [supervisors, setSupervisors] = useState<AllocationSupervisor[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
+  // Which roster the table shows: the caller's own pod, or the engineers they
+  // are fostering (covering) for off-duty supervisors.
+  const [tab, setTab] = useState<"pod" | "foster">("pod");
   const [pendingId, setPendingId] = useState<string | null>(null);
   const supabaseRef = useRef(createClient());
 
@@ -79,11 +98,16 @@ export function OperationsClient() {
   const setEngineerOnline = useCallback(
     async (engineerId: string, makeOnline: boolean) => {
       setPendingId(engineerId);
-      setRows((prev) =>
-        prev.map((r) =>
-          r.userId === engineerId ? { ...r, isOnline: makeOnline } : r
-        )
-      );
+      // Optimistic on both lists — covered engineers get full control too.
+      const flip = (online: boolean) => {
+        const apply = <T extends Engineer>(prev: T[]): T[] =>
+          prev.map((r) =>
+            r.userId === engineerId ? { ...r, isOnline: online } : r
+          );
+        setRows(apply);
+        setCoveredRows(apply);
+      };
+      flip(makeOnline);
       const { error } = await supabaseRef.current.rpc(
         "supervisor_set_engineer_online",
         {
@@ -92,11 +116,7 @@ export function OperationsClient() {
         }
       );
       if (error) {
-        setRows((prev) =>
-          prev.map((r) =>
-            r.userId === engineerId ? { ...r, isOnline: !makeOnline } : r
-          )
-        );
+        flip(!makeOnline); // revert
         console.warn("[operations] set engineer online failed:", error.message);
       }
       setPendingId(null);
@@ -114,6 +134,8 @@ export function OperationsClient() {
       if (!alive) return;
       setPod((body.pod ?? null) as Pod | null);
       setRows((body.engineers ?? []) as Engineer[]);
+      setCoveredRows((body.coveredEngineers ?? []) as CoveredEngineer[]);
+      setCoverage((body.coverage ?? null) as Coverage | null);
       setSupervisors((body.supervisors ?? []) as AllocationSupervisor[]);
       setLoading(false);
     };
@@ -125,20 +147,35 @@ export function OperationsClient() {
     };
   }, []);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter(
-      (r) =>
+  const matchesQuery = useCallback(
+    (r: Engineer) => {
+      const q = query.trim().toLowerCase();
+      if (!q) return true;
+      return (
         r.displayName.toLowerCase().includes(q) ||
         r.email.toLowerCase().includes(q) ||
         (r.currentCustomer ?? "").toLowerCase().includes(q)
-    );
-  }, [rows, query]);
+      );
+    },
+    [query]
+  );
 
-  // Build the AllocationEngineer view-model for each row. positionInPod
-  // is 1-based and reflects the caller's row order (the threshold rule
-  // will replace this with a durable sort later).
+  const filtered = useMemo(
+    () => rows.filter(matchesQuery),
+    [rows, matchesQuery]
+  );
+  const filteredCovered = useMemo(
+    () => coveredRows.filter(matchesQuery),
+    [coveredRows, matchesQuery]
+  );
+
+  // The roster the active tab renders (and its unfiltered total, for the
+  // empty-state copy: "no matches" vs "nothing here yet").
+  const activeRows = tab === "pod" ? filtered : filteredCovered;
+  const activeTotal = tab === "pod" ? rows.length : coveredRows.length;
+
+  // Build the AllocationEngineer view-model for each OWN row, used to derive
+  // the assigned supervisor (pass-through → the pod's own supervisor).
   const allocRows = useMemo<AllocationEngineer[]>(
     () =>
       rows.map((r, i) => ({
@@ -150,7 +187,8 @@ export function OperationsClient() {
     [rows]
   );
 
-  const capacity = podCapacity(allocRows);
+  // Left slot = own pod count; right slot = free engineers covered (uncapped).
+  const capacity = podCapacity(rows.length, coveredRows.length);
 
   return (
     <div className="mx-auto max-w-screen-xl space-y-6 px-4 py-6 sm:px-8 sm:py-8">
@@ -160,9 +198,8 @@ export function OperationsClient() {
         // collapses); shown on sm+.
         subtitle={
           <span className="hidden sm:inline">
-            Engineers under your watch. The capacity meter shows the 10-engineer
-            threshold — engineers 1–10 belong to the first supervisor, 11–15 to
-            the second.
+            Engineers under your watch. While you&apos;re on duty, engineers from
+            off-duty supervisors&apos; pods are shared out to you here.
           </span>
         }
         right={
@@ -179,11 +216,31 @@ export function OperationsClient() {
         }
       />
 
-      {pod && allocRows.length > 0 && (
+      {pod && (rows.length > 0 || coveredRows.length > 0) && (
         <CapacityMeter capacity={capacity} supervisors={supervisors} />
       )}
 
+      {coverage && coverage.uncovered > 0 && (
+        <p className="text-xs text-[var(--risk)]">
+          {coverage.uncovered} free engineer
+          {coverage.uncovered === 1 ? "" : "s"} have no supervisor on duty — go
+          on duty to cover them.
+        </p>
+      )}
+
       <Card variant="surface">
+        <div className="pb-3">
+          <Segmented
+            value={tab}
+            onChange={setTab}
+            ariaLabel="Roster view"
+            options={[
+              { key: "pod", label: `Pod Engineers · ${rows.length}` },
+              { key: "foster", label: `Foster Engineers · ${coveredRows.length}` },
+            ]}
+          />
+        </div>
+
         {loading ? (
           <div className="flex justify-center py-10">
             <Loader2
@@ -191,17 +248,23 @@ export function OperationsClient() {
               className="animate-spin text-[var(--text-muted)]"
             />
           </div>
-        ) : filtered.length === 0 ? (
+        ) : activeRows.length === 0 ? (
           <UiEmptyState
             compact
             icon={<Users size={20} className="text-[var(--text-muted)]" />}
             title={
-              rows.length === 0 ? "No engineers in your pod yet" : "No matches"
+              activeTotal > 0
+                ? "No matches"
+                : tab === "pod"
+                  ? "No engineers in your pod yet"
+                  : "No engineers to foster"
             }
             body={
-              rows.length === 0
-                ? "Once an engineer joins your pod they'll appear here."
-                : `No engineers match "${query}".`
+              activeTotal > 0
+                ? `No engineers match "${query}".`
+                : tab === "pod"
+                  ? "Once an engineer joins your pod they'll appear here."
+                  : "While you're on duty, engineers from off-duty supervisors' pods show up here."
             }
           />
         ) : (
@@ -219,150 +282,47 @@ export function OperationsClient() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((r) => {
-                  const alloc = allocRows.find((a) => a.userId === r.userId);
-                  const supervisor =
-                    alloc && pod
-                      ? getSupervisorForEngineer(alloc, pod, supervisors)
-                      : null;
-                  // Prefer the explicit online toggle (§3.2); fall back to
-                  // the last-seen heuristic for engineers without a profile.
-                  const engineerOnline =
-                    !!r.currentCustomer ||
-                    (r.isOnline ??
-                      isOnlineFromLastSeen(r.lastCallAt, {
-                        onLiveCall: !!r.currentCustomer,
-                      }));
-                  return (
-                    <tr
-                      key={r.userId}
-                      className="border-t border-[var(--border)] transition-colors hover:bg-[color-mix(in_srgb,var(--text)_3%,transparent)]"
-                    >
-                      <Td>
-                        <div className="flex items-center gap-3">
-                          <Avatar
-                            name={r.displayName}
-                            email={r.email}
-                            size="sm"
-                            tone={engineerOnline ? "ok" : "neutral"}
-                          />
-                          <div className="min-w-0">
-                            <div className="font-medium text-[var(--text)]">
-                              {r.displayName}
-                            </div>
-                            <div className="truncate text-xs text-[var(--text-muted)]">
-                              {r.email || "—"}
-                            </div>
-                          </div>
-                        </div>
-                      </Td>
-                      <Td>
-                        {supervisor ? (
-                          <div className="flex items-center gap-2">
-                            <span
-                              aria-hidden
-                              className={cn(
-                                "inline-block size-1.5 rounded-full",
-                                supervisor.online
-                                  ? "bg-[var(--ok)]"
-                                  : "bg-[var(--text-faint)]"
-                              )}
-                              title={supervisor.online ? "Online" : "Offline"}
-                            />
-                            <div className="min-w-0">
-                              <div className="text-sm text-[var(--text)]">
-                                {supervisor.displayName}
-                              </div>
-                              <div className="truncate text-xs text-[var(--text-muted)]">
-                                {supervisor.online ? "Online" : "Offline"}
-                              </div>
-                            </div>
-                          </div>
-                        ) : (
-                          <span
-                            className="text-xs text-[var(--text-faint)]"
-                            title="Allocation pending — waiting for backend to expose supervisors[]"
-                          >
-                            —
-                          </span>
-                        )}
-                      </Td>
-                      <Td>
-                        {r.currentCustomer ? (
-                          <span className="inline-flex items-center gap-2">
-                            <StatusBadge tone="ok" compact pulse>
-                              On call
-                            </StatusBadge>
-                            <span className="text-xs text-[var(--text)]">
-                              with {r.currentCustomer}
-                            </span>
-                          </span>
-                        ) : (
-                          <StatusBadge tone="neutral" compact>
-                            Idle
-                          </StatusBadge>
-                        )}
-                      </Td>
-                      <Td>
-                        {r.lastCallAt ? (
-                          <span className="text-[var(--text)]">
-                            {r.lastCustomer ?? "—"}
-                            <span className="ml-2 text-[12px] text-[var(--text-muted)]">
-                              {new Date(r.lastCallAt).toLocaleString(
-                                undefined,
-                                {
-                                  month: "short",
-                                  day: "numeric",
-                                  hour: "numeric",
-                                  minute: "2-digit",
+                {tab === "pod"
+                  ? filtered.map((r) => {
+                      const alloc = allocRows.find(
+                        (a) => a.userId === r.userId
+                      );
+                      const supervisor =
+                        alloc && pod
+                          ? getSupervisorForEngineer(alloc, pod, supervisors)
+                          : null;
+                      return (
+                        <EngineerRow
+                          key={r.userId}
+                          r={r}
+                          assigned={
+                            supervisor
+                              ? {
+                                  displayName: supervisor.displayName,
+                                  online: supervisor.online,
+                                  covering: false,
                                 }
-                              )}
-                            </span>
-                          </span>
-                        ) : (
-                          <span className="text-[var(--text-muted)]">—</span>
-                        )}
-                      </Td>
-                      <Td>
-                        {(() => {
-                          const isAvail = r.isOnline ?? false;
-                          return (
-                            <button
-                              type="button"
-                              disabled={pendingId === r.userId}
-                              onClick={() =>
-                                void setEngineerOnline(r.userId, !isAvail)
-                              }
-                              title={
-                                isAvail
-                                  ? "Set this engineer offline"
-                                  : "Set this engineer online"
-                              }
-                              aria-pressed={isAvail}
-                              className={cn(
-                                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50",
-                                isAvail
-                                  ? "border-[color-mix(in_srgb,var(--ok)_40%,transparent)] bg-[var(--ok-soft)] text-[var(--ok)]"
-                                  : "border-[var(--border)] text-[var(--text-muted)] hover:bg-[color-mix(in_srgb,var(--text)_5%,transparent)]"
-                              )}
-                            >
-                              <span
-                                aria-hidden
-                                className={cn(
-                                  "inline-block size-1.5 rounded-full",
-                                  isAvail
-                                    ? "bg-[var(--ok)]"
-                                    : "bg-[var(--text-faint)]"
-                                )}
-                              />
-                              {isAvail ? "Online" : "Offline"}
-                            </button>
-                          );
-                        })()}
-                      </Td>
-                    </tr>
-                  );
-                })}
+                              : null
+                          }
+                          pendingId={pendingId}
+                          onToggle={setEngineerOnline}
+                        />
+                      );
+                    })
+                  : filteredCovered.map((r) => (
+                      <EngineerRow
+                        key={r.userId}
+                        r={r}
+                        assigned={{
+                          displayName: r.coveredFromSupervisorName ?? "—",
+                          online: false,
+                          covering: true,
+                          podName: r.coveredFromPodName,
+                        }}
+                        pendingId={pendingId}
+                        onToggle={setEngineerOnline}
+                      />
+                    ))}
               </tbody>
             </table>
           </div>
@@ -372,7 +332,155 @@ export function OperationsClient() {
   );
 }
 
-/* ── Capacity meter (1–10 / 11–15 threshold visualisation) ───────── */
+/* ── Roster row (shared by own-pod + covered engineers) ──────────── */
+
+function EngineerRow({
+  r,
+  assigned,
+  pendingId,
+  onToggle,
+}: {
+  r: Engineer;
+  assigned: {
+    displayName: string;
+    online: boolean;
+    covering: boolean;
+    podName?: string | null;
+  } | null;
+  pendingId: string | null;
+  onToggle: (engineerId: string, makeOnline: boolean) => void;
+}) {
+  // Prefer the explicit online toggle (§3.2); fall back to the last-seen
+  // heuristic for engineers without a profile.
+  const engineerOnline =
+    !!r.currentCustomer ||
+    (r.isOnline ??
+      isOnlineFromLastSeen(r.lastCallAt, {
+        onLiveCall: !!r.currentCustomer,
+      }));
+  const isAvail = r.isOnline ?? false;
+
+  return (
+    <tr className="border-t border-[var(--border)] transition-colors hover:bg-[color-mix(in_srgb,var(--text)_3%,transparent)]">
+      <Td>
+        <div className="flex items-center gap-3">
+          <Avatar
+            name={r.displayName}
+            email={r.email}
+            size="sm"
+            tone={engineerOnline ? "ok" : "neutral"}
+          />
+          <div className="min-w-0">
+            <div className="font-medium text-[var(--text)]">
+              {r.displayName}
+            </div>
+            <div className="truncate text-xs text-[var(--text-muted)]">
+              {r.email || "—"}
+            </div>
+          </div>
+        </div>
+      </Td>
+      <Td>
+        {assigned ? (
+          <div className="flex items-center gap-2">
+            <span
+              aria-hidden
+              className={cn(
+                "inline-block size-1.5 rounded-full",
+                assigned.online ? "bg-[var(--ok)]" : "bg-[var(--text-faint)]"
+              )}
+              title={assigned.online ? "Online" : "Offline"}
+            />
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm text-[var(--text)]">
+                  {assigned.displayName}
+                </span>
+                {assigned.covering && (
+                  <span className="rounded-full border border-[var(--border)] px-1.5 py-px text-[10px] font-medium text-[var(--text-muted)]">
+                    Covering
+                  </span>
+                )}
+              </div>
+              <div className="truncate text-xs text-[var(--text-muted)]">
+                {assigned.covering
+                  ? `Off duty${assigned.podName ? ` · ${assigned.podName}` : ""}`
+                  : assigned.online
+                    ? "Online"
+                    : "Offline"}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <span className="text-xs text-[var(--text-faint)]">—</span>
+        )}
+      </Td>
+      <Td>
+        {r.currentCustomer ? (
+          <span className="inline-flex items-center gap-2">
+            <StatusBadge tone="ok" compact pulse>
+              On call
+            </StatusBadge>
+            <span className="text-xs text-[var(--text)]">
+              with {r.currentCustomer}
+            </span>
+          </span>
+        ) : (
+          <StatusBadge tone="neutral" compact>
+            Idle
+          </StatusBadge>
+        )}
+      </Td>
+      <Td>
+        {r.lastCallAt ? (
+          <span className="text-[var(--text)]">
+            {r.lastCustomer ?? "—"}
+            <span className="ml-2 text-[12px] text-[var(--text-muted)]">
+              {new Date(r.lastCallAt).toLocaleString(undefined, {
+                month: "short",
+                day: "numeric",
+                hour: "numeric",
+                minute: "2-digit",
+              })}
+            </span>
+          </span>
+        ) : (
+          <span className="text-[var(--text-muted)]">—</span>
+        )}
+      </Td>
+      <Td>
+        <button
+          type="button"
+          disabled={pendingId === r.userId}
+          onClick={() => void onToggle(r.userId, !isAvail)}
+          title={
+            isAvail
+              ? "Set this engineer offline"
+              : "Set this engineer online"
+          }
+          aria-pressed={isAvail}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50",
+            isAvail
+              ? "border-[color-mix(in_srgb,var(--ok)_40%,transparent)] bg-[var(--ok-soft)] text-[var(--ok)]"
+              : "border-[var(--border)] text-[var(--text-muted)] hover:bg-[color-mix(in_srgb,var(--text)_5%,transparent)]"
+          )}
+        >
+          <span
+            aria-hidden
+            className={cn(
+              "inline-block size-1.5 rounded-full",
+              isAvail ? "bg-[var(--ok)]" : "bg-[var(--text-faint)]"
+            )}
+          />
+          {isAvail ? "Online" : "Offline"}
+        </button>
+      </Td>
+    </tr>
+  );
+}
+
+/* ── Capacity meter: own pod (left) + free engineers covered (right) ── */
 
 function CapacityMeter({
   capacity,
@@ -382,7 +490,10 @@ function CapacityMeter({
   supervisors: AllocationSupervisor[];
 }) {
   const sup1 = supervisors[0] ?? null;
-  const sup2 = supervisors[1] ?? null;
+  const ownPct =
+    capacity.primaryCap > 0
+      ? Math.min(100, (capacity.ownCount / capacity.primaryCap) * 100)
+      : 0;
 
   return (
     <Card variant="raised">
@@ -394,74 +505,42 @@ function CapacityMeter({
               Pod capacity
             </h3>
           </div>
-          <div className="flex items-center gap-3 text-xs">
-            <span className="text-[var(--text-muted)] tabular-nums">
-              {capacity.total} / {POD_MAX_ENGINEERS}
-            </span>
-            {capacity.overflow > 0 && (
-              <StatusBadge tone="risk" compact>
-                {capacity.overflow} over
-              </StatusBadge>
-            )}
-          </div>
+          <span className="text-xs text-[var(--text-muted)] tabular-nums">
+            {capacity.ownCount} / {capacity.primaryCap}
+            {capacity.coveredCount > 0 &&
+              ` + ${capacity.coveredCount} covering`}
+          </span>
         </div>
 
-        <div
-          className="grid h-2 overflow-hidden rounded-full bg-[color-mix(in_srgb,var(--text)_8%,transparent)]"
-          style={{
-            gridTemplateColumns: `${POD_PRIMARY_SUPERVISOR_CAP}fr ${POD_MAX_ENGINEERS - POD_PRIMARY_SUPERVISOR_CAP}fr`,
-          }}
-        >
-          <div className="relative">
-            <div
-              className="h-full bg-[var(--primary)] transition-[width] duration-[var(--motion-med)]"
-              style={{
-                width: `${(capacity.primary / POD_PRIMARY_SUPERVISOR_CAP) * 100}%`,
-              }}
-            />
-          </div>
-          <div className="relative border-l-2 border-[var(--background)]">
-            <div
-              className="h-full bg-[var(--green-dot)] transition-[width] duration-[var(--motion-med)]"
-              style={{
-                width: `${
-                  (capacity.secondary /
-                    (POD_MAX_ENGINEERS - POD_PRIMARY_SUPERVISOR_CAP)) *
-                  100
-                }%`,
-              }}
-            />
-          </div>
+        {/* Own-pod fill — a container filled to ownCount / 10 (e.g. 4/10 = 40%). */}
+        <div className="h-2.5 overflow-hidden rounded-full border border-[var(--border)] bg-[var(--surface-raised)]">
+          <div
+            className="h-full rounded-full bg-[var(--primary)] transition-[width] duration-[var(--motion-med)]"
+            style={{ width: `${ownPct}%` }}
+          />
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-3 text-[11px]">
           <SupervisorSlot
-            label="Engineers 1–10"
+            label="Pod Engineers"
             supervisor={sup1}
-            count={capacity.primary}
-            cap={POD_PRIMARY_SUPERVISOR_CAP}
+            count={capacity.ownCount}
+            cap={capacity.primaryCap}
             accent="primary"
           />
           <SupervisorSlot
-            label="Engineers 11–15"
-            supervisor={sup2}
-            count={capacity.secondary}
-            cap={POD_MAX_ENGINEERS - POD_PRIMARY_SUPERVISOR_CAP}
+            label="Engineers"
+            supervisor={null}
+            count={capacity.coveredCount}
+            cap={null}
             accent="green"
+            subtitle={
+              capacity.coveredCount > 0
+                ? `Covering ${capacity.coveredCount}`
+                : "Slot open"
+            }
           />
         </div>
-
-        <p className="mt-3 hidden text-[11px] leading-relaxed text-[var(--text-faint)] sm:block">
-          {/* SEAM hint surfaced inline so admins know why allocation looks
-              flat today (pass-through impl). Hidden on phones. */}
-          Allocation rule (preview): the first 10 engineers belong to the
-          first supervisor; engineers 11–15 belong to the second once
-          they&apos;re online. Cleanup in progress — see
-          <code className="mx-1 rounded bg-[color-mix(in_srgb,var(--text)_8%,transparent)] px-1 py-0.5 font-mono text-[10px]">
-            lib/allocation/podAllocation.ts
-          </code>
-          for the seam.
-        </p>
       </div>
     </Card>
   );
@@ -473,12 +552,15 @@ function SupervisorSlot({
   count,
   cap,
   accent,
+  subtitle,
 }: {
   label: string;
   supervisor: AllocationSupervisor | null;
+  /** null → show just the count (uncapped slot). */
+  cap: number | null;
   count: number;
-  cap: number;
   accent: "primary" | "green";
+  subtitle?: string;
 }) {
   const dot = accent === "primary" ? "var(--primary)" : "var(--green-dot)";
   return (
@@ -493,13 +575,14 @@ function SupervisorSlot({
           {label}
         </span>
         <span className="text-[var(--text-muted)] tabular-nums">
-          {count} / {cap}
+          {cap === null ? count : `${count} / ${cap}`}
         </span>
       </div>
       <div className="mt-1 truncate text-[var(--text-muted)]">
-        {supervisor
-          ? `${supervisor.online ? "● Online · " : "○ Offline · "}${supervisor.displayName}`
-          : "Slot open"}
+        {subtitle ??
+          (supervisor
+            ? `${supervisor.online ? "● Online · " : "○ Offline · "}${supervisor.displayName}`
+            : "Slot open")}
       </div>
     </div>
   );

@@ -4,18 +4,24 @@
  * Powers the "Assign manually" dropdown on the matching boards
  * (master-prompt §4.3). Scope follows the caller's role:
  *   • super_admin / admin / ops_manager → every engineer, platform-wide
- *   • supervisor / pod_lead             → engineers in the pods they run
+ *   • supervisor / pod_lead             → only the engineers in their remit:
+ *       their own pod + the "foster" engineers they're covering for off-duty
+ *       supervisors (same round-robin rule as the Operations roster). When a
+ *       supervisor is off duty they cover nobody, so they only see their pod.
  *
  * Each engineer is annotated with `available` (their is_available toggle)
  * and `busy` (currently on a live call), so the UI can grey out engineers
  * who can't take the call. The actual assignment is done client-side via
- * the supervisor_assign_engineer RPC, which re-checks authority server-side.
+ * the supervisor_assign_engineer RPC. NOTE: that RPC still permits assigning
+ * any engineer server-side — this route scopes what a supervisor SEES; tightening
+ * the RPC to the same remit is a separate migration.
  */
 
 import { NextResponse } from "next/server";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { ROLE } from "@/lib/relay/roles";
+import { getSupervisorRoster } from "@/lib/allocation/supervisorRoster";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -75,20 +81,29 @@ export async function GET() {
   });
 
   // ── Resolve the candidate engineer set ────────────────────────────────────
-  // Both super_admins AND supervisors can assign/reassign to ANY engineer
-  // (matches _can_manually_assign), so the picker always offers every engineer
-  // platform-wide. Each row is annotated with its pod name for context.
-  // user_roles stores role_id (FK), not a role text column — read the
-  // resolved-name view instead.
+  // Admins get every engineer platform-wide. Supervisors are scoped to their
+  // remit (own pod + foster). user_roles stores role_id (FK), not a role text
+  // column — read the resolved-name view instead.
   const { data: allEngineers } = await admin
     .from("user_role_names")
     .select("user_id")
     .eq("role", "engineer");
-  const engineerIds: string[] = Array.from(
+  let engineerIds: string[] = Array.from(
     new Set(
       ((allEngineers ?? []) as { user_id: string }[]).map((r) => r.user_id)
     )
   );
+
+  // Supervisor (and not also an admin) → only their own pod + foster engineers,
+  // matching the Operations roster's Pod / Foster tabs.
+  if (isSupervisor && !isAdmin) {
+    const { ownEngineerIds, fosterEngineerIds } = await getSupervisorRoster(
+      admin,
+      user.id
+    );
+    const allowed = new Set<string>([...ownEngineerIds, ...fosterEngineerIds]);
+    engineerIds = engineerIds.filter((id) => allowed.has(id));
+  }
 
   if (engineerIds.length === 0) {
     return NextResponse.json({ engineers: [] });

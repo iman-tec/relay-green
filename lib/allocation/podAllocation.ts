@@ -118,33 +118,101 @@ export function groupEngineersByPod(
 }
 
 /**
- * Capacity meter input. Returns 1–10 / 11–15 slot counts so the UI can
- * render a visual cue around the 10-engineer threshold without doing
- * its own counting math.
+ * Capacity-meter input. The left slot shows the caller's OWN pod engineers
+ * against the soft 10-engineer reference; the right slot shows the count of
+ * "free" engineers the caller is currently covering for off-duty supervisors
+ * (see `distributeFreeEngineers`). The covered slot is uncapped — its number
+ * is just however many round-robin allocated to this supervisor.
  */
-export function podCapacity(engineers: AllocationEngineer[]): {
-  total: number;
-  primary: number; // engineers in slots 1–10
-  secondary: number; // engineers in slots 11–15
-  overflow: number; // engineers beyond 15 (shouldn't happen; surfaced loud if it does)
-  primaryCap: number;
-  totalCap: number;
+export function podCapacity(
+  ownCount: number,
+  coveredCount: number
+): {
+  total: number; // own + covered (informational header)
+  ownCount: number; // left slot — engineers in the caller's own pod
+  coveredCount: number; // right slot — free engineers the caller is covering
+  primaryCap: number; // soft reference for the left slot (10)
 } {
-  const total = engineers.length;
-  const primary = Math.min(total, POD_PRIMARY_SUPERVISOR_CAP);
-  const secondary = Math.min(
-    Math.max(0, total - POD_PRIMARY_SUPERVISOR_CAP),
-    POD_MAX_ENGINEERS - POD_PRIMARY_SUPERVISOR_CAP
-  );
-  const overflow = Math.max(0, total - POD_MAX_ENGINEERS);
   return {
-    total,
-    primary,
-    secondary,
-    overflow,
+    total: ownCount + coveredCount,
+    ownCount,
+    coveredCount,
     primaryCap: POD_PRIMARY_SUPERVISOR_CAP,
-    totalCap: POD_MAX_ENGINEERS,
   };
+}
+
+/* ── Cross-pod coverage: free-engineer round-robin ─────────────────────────
+ *
+ * When a supervisor is OFF DUTY their whole pod is left uncovered, so every
+ * engineer in that pod becomes a "free engineer". Free engineers are dealt
+ * round-robin across the ON-DUTY supervisors (sup1, sup2, sup1, …) so an odd
+ * remainder lands on the earlier supervisor. There is no per-supervisor cap —
+ * everyone free is allocated as long as at least one supervisor is on duty.
+ *
+ * Pure + deterministic (no randomness, stable sorts) so the 5 s roster poll
+ * never reshuffles who covers whom between refreshes.
+ */
+
+export interface CoverageSupervisor {
+  userId: string;
+  podId: string;
+  online: boolean;
+  /** Stable, human-meaningful order key (sup1 < sup2 < sup3). */
+  displayName: string;
+}
+
+export interface CoverageEngineer {
+  userId: string;
+  podId: string;
+}
+
+export interface FreeEngineerAllocation {
+  /** on-duty supervisor userId → the free engineer userIds they cover. */
+  assignment: Map<string, string[]>;
+  /** free engineers nobody can cover — only non-empty when zero supervisors
+   *  are on duty. Surfaced so the UI never silently drops them. */
+  uncovered: string[];
+}
+
+export function distributeFreeEngineers(input: {
+  supervisors: CoverageSupervisor[];
+  engineers: CoverageEngineer[];
+}): FreeEngineerAllocation {
+  // 1. On-duty supervisors, stable order (remainder lands on the earlier one).
+  const onDuty = input.supervisors
+    .filter((s) => s.online)
+    .sort(
+      (a, b) =>
+        a.displayName.localeCompare(b.displayName) ||
+        a.userId.localeCompare(b.userId)
+    );
+
+  const assignment = new Map<string, string[]>();
+  for (const s of onDuty) assignment.set(s.userId, []);
+
+  // 2. A pod is "covered" if it has at least one on-duty supervisor.
+  const coveredPodIds = new Set(onDuty.map((s) => s.podId));
+
+  // 3. Free engineers = those whose pod has no on-duty supervisor, stable order.
+  const free = input.engineers
+    .filter((e) => !coveredPodIds.has(e.podId))
+    .sort(
+      (a, b) =>
+        a.podId.localeCompare(b.podId) || a.userId.localeCompare(b.userId)
+    );
+
+  // 4. Nobody on duty → nobody can cover; report every free engineer.
+  if (onDuty.length === 0) {
+    return { assignment, uncovered: free.map((e) => e.userId) };
+  }
+
+  // 5. Deal round-robin across the on-duty supervisors.
+  free.forEach((eng, i) => {
+    const sup = onDuty[i % onDuty.length];
+    assignment.get(sup.userId)!.push(eng.userId);
+  });
+
+  return { assignment, uncovered: [] };
 }
 
 /**
