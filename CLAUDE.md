@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **Optimizing or removing code? Read [docs/audit/CONTEXT.md](docs/audit/CONTEXT.md) first** — team do-not-break orientation (load-bearing paths, decommission landmines, open security findings). NOTE: the "Anthropic Claude" AI-stack claim below is inaccurate — the live AI stack is OpenAI + Groq (confirmed in code).
+
 @AGENTS.md
 
 ## Critical: Next.js 16
@@ -24,7 +26,7 @@ divergences in this repo:
 ## Commands
 
 ```bash
-npm run dev          # https://10.0.1.207:3000  (LAN IP + experimental HTTPS, set in package.json)
+npm run dev          # https://10.0.2.129:3000  (LAN IP + experimental HTTPS, set in package.json)
 npm run build        # production build
 npm run lint
 npm run typecheck    # tsc --noEmit
@@ -38,14 +40,16 @@ npm run db:migrate   # prisma migrate dev
 npm run db:seed      # tsx prisma/seed.ts
 
 # Playwright (no npm script — invoke directly)
-npx playwright test                       # all e2e tests, configured for https://10.0.1.207:3000
+npx playwright test                       # all e2e tests, configured for https://10.0.2.129:3000
 npx playwright test tests/customer.spec.ts  # single file
 npx playwright test -g "session name"     # by test title
 ```
 
-The dev server binds to `10.0.1.207` (the developer's LAN IP), not localhost.
-Playwright's `baseURL` matches. If your LAN IP differs, both will need
-updating, and `allowedDevOrigins` in [next.config.ts](next.config.ts) too.
+The dev server binds to `10.0.2.129` (the developer's LAN IP), not localhost.
+Playwright's `baseURL` matches (override with `PLAYWRIGHT_BASE_URL`). If your
+LAN IP differs, both will need updating, and `allowedDevOrigins` in
+[next.config.ts](next.config.ts) too. The IP appears in `package.json` (`dev`
+script `-H`), `playwright.config.ts`, and `next.config.ts` — grep all three.
 
 Playwright is sequential (`workers: 1`, `fullyParallel: false`) because tests
 share Supabase state.
@@ -105,6 +109,24 @@ Five roles map to the routes in [app/](app/):
 
 Staff routes are grouped under `app/(staff)/` and share
 `app/(staff)/layout.tsx`.
+
+## Where the live logic lives: `lib/`
+
+Client-side feature logic and Supabase access is concentrated in `lib/`, not
+scattered through components:
+
+- [lib/relay/](lib/relay/) — the heart of the running app. React hooks
+  (`use*`) and helpers for sessions, queue, heartbeat, presence, pricing,
+  profiles, and the staff guard. New live-surface behavior belongs here, not
+  inline in `app/` pages.
+- [lib/supabase/](lib/supabase/) — `browser.ts` / `server.ts` clients +
+  generated `types.ts`. Always go through these, never `createClient` ad hoc.
+- Role/tenant authorization helpers are split per audience:
+  `admin-auth.ts`, `enterprise-auth.ts`, `department-auth.ts`,
+  `reseller-auth.ts`, plus `auth-ban.ts` / `password-policy.ts`. Match the
+  helper to the surface.
+- [lib/video/](lib/video/) — Zoom Video SDK client + noise silencing
+  (paired with `reactStrictMode: false`).
 
 ## Edge functions
 

@@ -63,6 +63,9 @@ certificates
 # Local QA artifacts (screenshots, lighthouse reports) — never commit.
 /qa/
 
+# Perf/UI-diff harness output (DOM snapshots, screenshots, perf reports) — ephemeral.
+/perf/
+
 # Nested worktree-style checkout used during pre-launch redesign. Has its
 # own node_modules and .next; must never be deployed.
 /relay-green/

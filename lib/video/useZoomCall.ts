@@ -1030,7 +1030,18 @@ export function useZoomCall({
         try {
           await client.leave(!!endForAll);
         } catch {
-          /* may already be out */
+          // end-for-all requires being the CURRENT SDK host. Since either
+          // side can start the call, the other side may hold host (e.g. the
+          // customer started, engineer ends) and leave(true) rejects — fall
+          // back to a plain leave so this side still exits; the server-side
+          // zoom-video-sdk-end below posts the ended card either way.
+          if (endForAll) {
+            try {
+              await client.leave();
+            } catch {
+              /* may already be out */
+            }
+          }
         }
       }
       // CRITICAL: flush any pending live-transcription captions BEFORE
