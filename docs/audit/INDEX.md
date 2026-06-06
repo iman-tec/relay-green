@@ -284,6 +284,10 @@ flows/*.md per-flow write-ups. → resume target for next Phase 2 session.
 | 10 | 2026-06-06 | engineer (DEPLOY) | global sign-out attempt to invalidate leaked token | returned 401 — token not cleanly invalidated (~1h expiry); **recommend rotating gtlengineer QA password** |
 | 11 | 2026-06-06 | supervisor (DEPLOY) | injected context for flows 4–6; walked /supervise, /bids, /schedule | token echoed (rotate gtlsupervisor pw); global sign-out best-effort + context closed |
 | 12 | 2026-06-06 | client (DEPLOY) | flow 8: /account → Recharge → Stripe test checkout opened | **no payment completed**, no charge; modal dismissed |
+| 13 | 2026-06-06 | service-role (MCP, Claude latency session) | **DDL** `project_completion_retention_fix`: added `projects.completion_status/completed_at/archived_at` + `mark_project_complete/active` RPCs. **Resolves AUDIT-DATA-400-1** (no more 400 on `/room`+`/dashboard` projects selects). | KEPT (live, by decision). Behavior change: `/dashboard` `completion_status` KPI buckets now populate — verify real numbers per R11. Repo file `20260603120000_…_fix.sql` present. |
+| 14 | 2026-06-06 | service-role (MCP, Claude latency session) | **DDL** `rls_initplan_wrap_auth_uid`: wrapped `auth.uid()`→`(select auth.uid())` across **139** policies (InitPlan perf; semantics-preserving). Security advisor: no new findings; `bare_initplan_remaining=0`. | KEPT (live). Repo `.sql` NOT re-added (per decision); in remote migration history `20260605212055`. |
+| 15 | 2026-06-06 | service-role (MCP, Claude latency session) | **DDL** `fk_covering_indexes_and_drop_dupes`: +**71** FK covering indexes, dropped 3 duplicate indexes (additive/safe). | KEPT (live). Repo `.sql` NOT re-added; remote history `20260605212345`. |
+| 16 | 2026-06-06 | service-role (MCP, Claude latency session) | **DDL** `consolidate_projects_permissive_policies`: `projects` 6→2 permissive policies (dropped 4 redundant; surviving `ALL` policy is a superset). Verified customer-visible rows unchanged 16→16 in rolled-back txn. | KEPT (live, `projects_policies=2`). Repo `.sql` NOT re-added; remote history `20260605212839`. |
 
 ## Checkpoint log
 
