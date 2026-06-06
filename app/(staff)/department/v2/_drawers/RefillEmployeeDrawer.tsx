@@ -9,7 +9,6 @@
 
 import { useState } from "react";
 import { Drawer } from "@/app/_components/admin-v2/Drawer";
-import { BRAND_GREEN } from "@/app/(staff)/enterprise/v2/_kit";
 
 export function RefillEmployeeDrawer({
   open,
@@ -147,8 +146,8 @@ function PrimaryBtn({ onClick, disabled, children }: {
   return (
     <button
       type="button" onClick={onClick} disabled={disabled}
-      className="rounded-md px-3 py-2 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-50"
-      style={{ background: BRAND_GREEN, color: "#fff" }}
+      className="rounded-md px-3 py-2 text-sm font-medium transition-opacity disabled:opacity-50"
+      style={{ background: "var(--primary)", color: "#fff" }}
     >
       {children}
     </button>

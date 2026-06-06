@@ -9,9 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { StatusBadge, EmptyState } from "@/app/_components/ui";
 import { useApiData, eur, LoadingState, ErrorState } from "@/app/(staff)/enterprise/v2/_shared";
-import {
-  TabBody, TabTitle, BRAND_GREEN, BRAND_GREEN_SOFT,
-} from "@/app/(staff)/enterprise/v2/_kit";
+import { TabBody, TabTitle } from "@/app/(staff)/enterprise/v2/_kit";
 
 type Session = {
   id: string; status: string; urgency: string; createdAt: string;
@@ -75,11 +73,11 @@ export function SessionsTab() {
               key={f}
               type="button"
               onClick={() => setFilter(f)}
-              className="rounded-md px-2.5 py-1.5 text-xs capitalize transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
+              className="rounded-full border px-3 py-1.5 text-xs font-medium capitalize transition-colors"
               style={{
-                fontWeight: filter === f ? 600 : 500,
-                background: filter === f ? BRAND_GREEN_SOFT : "transparent",
-                color: filter === f ? BRAND_GREEN : "var(--text-muted)",
+                borderColor: filter === f ? "var(--primary)" : "var(--border)",
+                background: filter === f ? "var(--primary-tint)" : "transparent",
+                color: filter === f ? "var(--primary-hover)" : "var(--text-muted)",
               }}
             >
               {f}
@@ -95,7 +93,7 @@ export function SessionsTab() {
       ) : rows.length === 0 ? (
         <EmptyState title="No sessions" body={q || filter !== "all" ? "No sessions match your filters." : "Sessions from your team will appear here."} />
       ) : (
-        <div className="overflow-hidden rounded-xl border" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+        <div className="overflow-hidden rounded-2xl border" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
           <ul>
             {rows.map((s) => (
               <li key={s.id} className="flex items-center gap-3 border-t px-4 py-3 first:border-t-0" style={{ borderColor: "var(--border)" }}>

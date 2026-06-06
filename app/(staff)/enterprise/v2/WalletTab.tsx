@@ -9,14 +9,14 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Wallet, Check, X, Loader2 } from "lucide-react";
+import { Wallet, Zap, TrendingDown, Layers, Check, X, Loader2 } from "lucide-react";
 import { loadStripe, type Stripe as StripeJs } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { Button, EmptyState } from "@/app/_components/ui";
 import { useTheme } from "@/app/_components/ThemeProvider";
 import { buildStripeAppearance } from "@/lib/stripe/appearance";
 import { useApiData, eur, num, LoadingState, ErrorState } from "./_shared";
-import { TabTitle, StatCard, PrimaryButton, BRAND_GREEN } from "./_kit";
+import { TabTitle, StatCard, PrimaryButton } from "./_kit";
 import { useOverlayDismiss } from "@/lib/relay/useOverlayDismiss";
 
 const STRIPE_PUBLISHABLE_KEY =
@@ -60,11 +60,11 @@ export function WalletTab() {
         sub="Prepaid minutes · pay-per-minute, no subscription. Buy minutes once — they never expire."
       />
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatCard value={num(data.remainingMinutes)} label="Minutes available" accent={BRAND_GREEN} />
-        <StatCard value={num(data.usedMinutes)} label="Minutes used" accent="#0ea5e9" />
-        <StatCard value={num(data.distributedMinutes)} label="Distributed" hint="to departments" accent="#7c3aed" />
-        <StatCard value={num(free)} label="Undistributed" accent="#d4a017" />
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <StatCard icon={<Wallet size={16} />} value={num(data.remainingMinutes)} label="Minutes available" />
+        <StatCard icon={<Zap size={16} />} value={num(data.usedMinutes)} label="Minutes used" />
+        <StatCard icon={<Layers size={16} />} value={num(data.distributedMinutes)} label="Distributed" hint="to departments" />
+        <StatCard icon={<TrendingDown size={16} />} value={num(free)} label="Undistributed" />
       </div>
 
       {low && (
@@ -75,21 +75,21 @@ export function WalletTab() {
       )}
 
       <section className="mt-6">
-        <h2 className="mb-3 text-[12px] font-semibold tracking-[0.08em] uppercase" style={{ color: "var(--text)" }}>
+        <h2 className="mb-3 text-sm font-semibold" style={{ color: "var(--text)" }}>
           Buy minutes
         </h2>
         {data.bundles.length === 0 ? (
           <EmptyState compact title="No bundles available" body="Contact your account manager." />
         ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             {data.bundles.map((b) => {
               const perMin = Math.round(b.amountCents / b.minutes);
               return (
-                <div key={b.code} className="flex flex-col rounded-xl border p-5"
+                <div key={b.code} className="flex flex-col rounded-2xl border p-5"
                   style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
-                  <div className="text-[12px] font-semibold tracking-[0.08em] uppercase" style={{ color: "var(--text)" }}>{b.label}</div>
-                  <div className="mt-1 text-[26px] font-semibold tabular-nums" style={{ color: BRAND_GREEN, fontFamily: "var(--font-source-serif)" }}>
-                    {num(b.minutes)}<span className="ml-1 text-sm font-medium" style={{ color: "var(--text-muted)" }}>min</span>
+                  <div className="text-sm font-semibold" style={{ color: "var(--text)" }}>{b.label}</div>
+                  <div className="mt-1 font-serif text-3xl tabular-nums" style={{ color: "var(--text)" }}>
+                    {num(b.minutes)}<span className="ml-1 text-sm" style={{ color: "var(--text-muted)" }}>min</span>
                   </div>
                   <div className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
                     {eur(perMin)}/min · billed by the second

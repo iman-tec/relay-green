@@ -57,7 +57,6 @@ export function PanelClient({ me }: { me: { email: string; roleLabel: string } }
     <div className="flex h-full min-h-0 flex-col">
       <PanelHeader
         name={firstName}
-        subtitle={`Enterprise console · ${me.roleLabel}`}
         rightSlot={
           <NotificationBell endpoint="/api/enterprise/notifications" channelKey="enterprise" />
         }
