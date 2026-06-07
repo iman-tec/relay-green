@@ -6,7 +6,9 @@
 
 /** Enterprise + Department admin command centers (the /enterprise/v2 +
  *  /department/v2 bare-mode redesign). Off → today's StaffShell-embedded tabs. */
+// LAUNCHED: on by default. Kill-switch — set NEXT_PUBLIC_ENTERPRISE_V2=0
+// (or "false") to disable in an environment without a code change.
 export function enterpriseV2Enabled(): boolean {
   const v = process.env.NEXT_PUBLIC_ENTERPRISE_V2;
-  return v === "1" || v === "true";
+  return v !== "0" && v !== "false";
 }

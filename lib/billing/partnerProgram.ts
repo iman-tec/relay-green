@@ -14,7 +14,9 @@
  * server and client since it's a NEXT_PUBLIC_ var.
  */
 
+// LAUNCHED: on by default. Kill-switch — set NEXT_PUBLIC_PARTNER_PROGRAM=0
+// (or "false") to disable in an environment without a code change.
 export function partnerProgramEnabled(): boolean {
   const v = process.env.NEXT_PUBLIC_PARTNER_PROGRAM;
-  return v === "1" || v === "true";
+  return v !== "0" && v !== "false";
 }
