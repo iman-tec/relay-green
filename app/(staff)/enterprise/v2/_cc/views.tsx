@@ -34,8 +34,6 @@ function Shell({
   );
 }
 
-const RATE = 300;
-
 // ---- Members ---------------------------------------------------------------
 type Member = {
   id: string;
