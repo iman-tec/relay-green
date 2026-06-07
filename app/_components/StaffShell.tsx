@@ -49,6 +49,7 @@ import {
 } from "lucide-react";
 import { Wordmark } from "./Wordmark";
 import { ThemeTriplet } from "./ThemeTriplet";
+import { enterpriseV2Enabled } from "@/lib/flags";
 import { EngineerProfilePane } from "./EngineerProfilePane";
 import { EngineerPresenceBall } from "./EngineerPresenceBall";
 import { LegalPane, type LegalKind } from "./LegalPane";
@@ -133,15 +134,40 @@ const NAV: Nav[] = [
   },
   // super_admin's primary surface — the redesigned 4-tab panel
   // (Enterprise / Reseller / Pods / Internal Users).
-  { href: "/admin/v2",             label: "Users",     icon: UsersIcon,       roles: [ROLE.super_admin] },
+  {
+    href: "/admin/v2",
+    label: "Users",
+    icon: UsersIcon,
+    roles: [ROLE.super_admin],
+  },
   // enterprise_admin's console — the panel's tabs surface directly as
   // sidebar items (the in-page tab strip was removed; ?tab= drives which
   // tab PanelClient renders, so these are plain links). Active-state for
   // these query-carrying hrefs is resolved tab-aware in the nav render.
-  { href: "/enterprise/v2?tab=overview", label: "Overview", icon: LayoutDashboard, roles: [ROLE.enterprise_admin] },
-  { href: "/enterprise/v2?tab=usage",    label: "Usage",    icon: BarChart3,       roles: [ROLE.enterprise_admin] },
-  { href: "/enterprise/v2?tab=billing",  label: "Billing",  icon: WalletIcon,      roles: [ROLE.enterprise_admin] },
-  { href: "/enterprise/v2?tab=settings", label: "Settings", icon: Settings,        roles: [ROLE.enterprise_admin] },
+  {
+    href: "/enterprise/v2?tab=overview",
+    label: "Overview",
+    icon: LayoutDashboard,
+    roles: [ROLE.enterprise_admin],
+  },
+  {
+    href: "/enterprise/v2?tab=usage",
+    label: "Usage",
+    icon: BarChart3,
+    roles: [ROLE.enterprise_admin],
+  },
+  {
+    href: "/enterprise/v2?tab=billing",
+    label: "Billing",
+    icon: WalletIcon,
+    roles: [ROLE.enterprise_admin],
+  },
+  {
+    href: "/enterprise/v2?tab=settings",
+    label: "Settings",
+    icon: Settings,
+    roles: [ROLE.enterprise_admin],
+  },
   // reseller-owner console — redesigned v2 panel (from rutul-working).
   {
     href: "/reseller/v2",
@@ -237,11 +263,15 @@ function isEngineer(roles: readonly Role[]): boolean {
 // app/(staff)/enterprise/v2/PanelClient.tsx — keep the two in sync.
 function enterpriseTabOf(param: string | null): string {
   switch (param) {
-    case "usage":    return "usage";
+    case "usage":
+      return "usage";
     case "wallet":
-    case "billing":  return "billing";
-    case "settings": return "settings";
-    default:         return "overview"; // dashboard / departments / members / null
+    case "billing":
+      return "billing";
+    case "settings":
+      return "settings";
+    default:
+      return "overview"; // dashboard / departments / members / null
   }
 }
 
@@ -249,10 +279,14 @@ function enterpriseTabOf(param: string | null): string {
 // resolveInitial in app/(staff)/department/v2/PanelClient.tsx.
 function departmentTabOf(param: string | null): string {
   switch (param) {
-    case "sessions": return "sessions";
-    case "usage":    return "usage";
-    case "settings": return "settings";
-    default:         return "overview"; // dashboard / members / null
+    case "sessions":
+      return "sessions";
+    case "usage":
+      return "usage";
+    case "settings":
+      return "settings";
+    default:
+      return "overview"; // dashboard / members / null
   }
 }
 
@@ -272,9 +306,9 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   // (staff) route is dynamically rendered (the group layout reads auth
   // cookies), so there's no static prerender to bail out of.
   const searchParams = useSearchParams();
-  const router   = useRouter();
-  const guard    = useStaffGuard();
-  const roles    = guard.kind === "staff" ? guard.roles : [];
+  const router = useRouter();
+  const guard = useStaffGuard();
+  const roles = guard.kind === "staff" ? guard.roles : [];
   const engineer = isEngineer(roles);
   const isEnterpriseAdmin =
     roles.includes(ROLE.enterprise_admin) && !roles.includes(ROLE.super_admin);
@@ -511,13 +545,21 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   // Used by the v2 panels where each panel owns its own navigation
   // (tab header). The guard still runs above, so auth + role
   // enforcement stays intact.
-  // NOTE: /enterprise/v2 and /department/v2 are intentionally NOT bare
-  // anymore — they render inside this sidebar shell so the enterprise /
-  // department admin consoles share the engineer panel's chrome (their
-  // tab strip moved in-page; see each panel's PanelClient).
+  // NOTE: /enterprise/v2 and /department/v2 are embedded (NOT bare) by default
+  // — they share this sidebar chrome. The reimagined command centers flip them
+  // to bare-mode ONLY when NEXT_PUBLIC_ENTERPRISE_V2 is on (each panel then owns
+  // its own rail). Flag off → unchanged embedded tabs.
+  const orgV2 = enterpriseV2Enabled();
   const isBare =
-    pathname === "/admin/v2"    || pathname.startsWith("/admin/v2/")    ||
-    pathname === "/reseller/v2" || pathname.startsWith("/reseller/v2/");
+    pathname === "/admin/v2" ||
+    pathname.startsWith("/admin/v2/") ||
+    pathname === "/reseller/v2" ||
+    pathname.startsWith("/reseller/v2/") ||
+    (orgV2 &&
+      (pathname === "/enterprise/v2" ||
+        pathname.startsWith("/enterprise/v2/") ||
+        pathname === "/department/v2" ||
+        pathname.startsWith("/department/v2/")));
   if (isBare) {
     return (
       <div
@@ -551,11 +593,12 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   // can join real sessions, but /operations is a supervisor surface).
   const SUPER_ADMIN_HIDDEN = new Set(["/operations", "/bids"]);
   const isSuperAdmin = roles.includes(ROLE.super_admin);
-  const navItems = NAV
-    .filter((n) => n.roles.some((r) => roles.includes(r)))
+  const navItems = NAV.filter((n) => n.roles.some((r) => roles.includes(r)))
     // Strip the ?tab=… query before matching — the enterprise console
     // items all live under the allowed /enterprise/v2 path.
-    .filter((n) => !isEnterpriseAdmin || ENT_ADMIN_ALLOW.has(n.href.split("?")[0]))
+    .filter(
+      (n) => !isEnterpriseAdmin || ENT_ADMIN_ALLOW.has(n.href.split("?")[0])
+    )
     .filter((n) => !isSuperAdmin || !SUPER_ADMIN_HIDDEN.has(n.href));
 
   return (
@@ -1282,7 +1325,8 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
   const isSupervisor = !isEngineer(roles);
   const pathname = usePathname();
   const onSupervise =
-    !!pathname && (pathname === "/supervise" || pathname.startsWith("/supervise/"));
+    !!pathname &&
+    (pathname === "/supervise" || pathname.startsWith("/supervise/"));
   const [alerts, setAlerts] = useState<AlertToast[]>([]);
   const seenRef = useRef<Set<string>>(new Set());
   // Separate dedupe set for "reassignment needed" toasts so a session can be
@@ -1480,7 +1524,7 @@ function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
   if (!isSupervisor || !alerts.length) return null;
 
   return (
-    <div className="fixed left-1/2 top-4 z-50 flex -translate-x-1/2 flex-col items-center gap-2">
+    <div className="fixed top-4 left-1/2 z-50 flex -translate-x-1/2 flex-col items-center gap-2">
       {alerts.map((a) => {
         const isEscalation = a.urgency === "escalation";
         const tintFg =
