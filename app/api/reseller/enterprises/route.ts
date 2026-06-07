@@ -74,7 +74,7 @@ export async function POST(request: Request) {
   // pre-flight here gives a friendly error before we create the org row.
   const { data: rRow } = await admin
     .from("resellers")
-    .select("id, name, reseller_code, remaining_minutes, status")
+    .select("id, name, reseller_code, remaining_minutes, status, commission")
     .eq("id", resellerId)
     .maybeSingle();
   if (!rRow) {
@@ -86,6 +86,7 @@ export async function POST(request: Request) {
     reseller_code: string;
     remaining_minutes: number;
     status: string;
+    commission: number;
   };
   if (reseller.status !== "active") {
     return NextResponse.json(
@@ -113,8 +114,20 @@ export async function POST(request: Request) {
   };
   if (primaryDomain?.trim()) orgInsert.primary_domain = primaryDomain.trim();
 
-  // Promo discount granted by the partner (e.g. 10% for 12 months).
+  // Passthrough discount granted by the partner (e.g. 10% for 12 months).
+  // Hard rule: the partner can't pass through more than Relay's wholesale
+  // discount to them (commission) — otherwise the partner's margin goes
+  // negative. Enforced server-side; the UI should mirror it.
   const discPct = Math.max(0, Math.min(100, Number(discountPct ?? 0)));
+  const wholesalePct = Number(reseller.commission ?? 0);
+  if (discPct > wholesalePct) {
+    return NextResponse.json(
+      {
+        error: `Passthrough discount (${discPct}%) can't exceed your wholesale rate (${wholesalePct}%).`,
+      },
+      { status: 400 }
+    );
+  }
   const discMonths = Math.max(0, Number(discountMonths ?? 0));
   if (discPct > 0) {
     orgInsert.discount_pct = discPct;
