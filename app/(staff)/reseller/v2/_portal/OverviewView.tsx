@@ -8,10 +8,16 @@
 
 import { useState } from "react";
 import type { PortalPayload, PortalCompany } from "./types";
-import { KpiRibbon, type Kpi } from "./KpiRibbon";
-import { StatusDot } from "./StatusDot";
-import { DrillPanel } from "./DrillPanel";
-import { eur, eurCompact, int, dateShort, relativeTime } from "./format";
+import { KpiRibbon, type Kpi } from "@/app/_components/portal/KpiRibbon";
+import { StatusDot } from "@/app/_components/portal/StatusDot";
+import { DrillPanel } from "@/app/_components/portal/DrillPanel";
+import {
+  eur,
+  eurCompact,
+  int,
+  dateShort,
+  relativeTime,
+} from "@/app/_components/portal/format";
 
 export function OverviewView({
   data,

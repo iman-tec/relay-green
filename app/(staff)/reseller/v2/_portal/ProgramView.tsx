@@ -9,7 +9,7 @@
  */
 
 import type { PortalPayload } from "./types";
-import { eur } from "./format";
+import { eur } from "@/app/_components/portal/format";
 import {
   TIER_LABEL,
   tierFromMonthlyBookCents,
