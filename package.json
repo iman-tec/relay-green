@@ -51,7 +51,6 @@
     "react-markdown": "^10.1.0",
     "react-resizable-panels": "^2.1.9",
     "remark-gfm": "^4.0.1",
-    "tsc": "^2.0.4",
     "unpdf": "^1.6.2",
     "xlsx": "^0.18.5"
   },
