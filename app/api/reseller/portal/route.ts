@@ -48,32 +48,38 @@ export async function GET() {
   const { admin, resellerId } = gate;
 
   // Reseller header + the partner's companies + their payout ledger.
-  const [{ data: r, error: rErr }, { data: orgs, error: oErr }, { data: payouts }] =
-    await Promise.all([
-      admin
-        .from("resellers")
-        .select(
-          "id, name, reseller_code, tier, commission, default_passthrough_pct"
-        )
-        .eq("id", resellerId)
-        .maybeSingle(),
-      admin
-        .from("organizations")
-        .select(
-          "id, name, enterprise_code, status, partner_status, discount_pct, discount_until, onboarded_at, used_minutes"
-        )
-        .eq("reseller_id", resellerId)
-        .order("onboarded_at", { ascending: false }),
-      admin
-        .from("partner_payouts")
-        .select("paid_cents")
-        .eq("reseller_id", resellerId),
-    ]);
+  const [
+    { data: r, error: rErr },
+    { data: orgs, error: oErr },
+    { data: payouts },
+  ] = await Promise.all([
+    admin
+      .from("resellers")
+      .select(
+        "id, name, reseller_code, tier, commission, default_passthrough_pct"
+      )
+      .eq("id", resellerId)
+      .maybeSingle(),
+    admin
+      .from("organizations")
+      .select(
+        "id, name, enterprise_code, status, partner_status, discount_pct, discount_until, onboarded_at, used_minutes"
+      )
+      .eq("reseller_id", resellerId)
+      .order("onboarded_at", { ascending: false }),
+    admin
+      .from("partner_payouts")
+      .select("paid_cents")
+      .eq("reseller_id", resellerId),
+  ]);
 
   if (rErr) return NextResponse.json({ error: rErr.message }, { status: 500 });
   if (oErr) return NextResponse.json({ error: oErr.message }, { status: 500 });
   if (!r)
-    return NextResponse.json({ error: "reseller row missing" }, { status: 500 });
+    return NextResponse.json(
+      { error: "reseller row missing" },
+      { status: 500 }
+    );
 
   const reseller = r as {
     id: string;
@@ -137,10 +143,14 @@ export async function GET() {
     const minutesThisMonth = monthMinByOrg.get(c.id) ?? 0;
     const lifetimeMinutes = Number(c.used_minutes ?? 0);
 
-    // Net spend this month = month usage valued at the effective (discounted) rate.
-    const listMonthCents = Math.round(minutesThisMonth * LIST_CENTS_PER_MINUTE);
+    // Net spend = usage valued at the effective (discounted) rate. Both windows.
     const spendThisMonthCents = effectiveBundleCents(
-      listMonthCents,
+      Math.round(minutesThisMonth * LIST_CENTS_PER_MINUTE),
+      discountPct,
+      c.discount_until
+    );
+    const spendLifetimeCents = effectiveBundleCents(
+      Math.round(lifetimeMinutes * LIST_CENTS_PER_MINUTE),
       discountPct,
       c.discount_until
     );
@@ -159,18 +169,22 @@ export async function GET() {
       status: c.status,
       discountPct,
       minutesThisMonth,
+      minutesLifetime: lifetimeMinutes,
       spendThisMonthCents,
+      spendLifetimeCents,
       earnedLifetimeCents,
       onboardedAt: c.onboarded_at,
       lastActivityAt: lastActivityByOrg.get(c.id) ?? null,
     };
   });
 
-  const earnedLifetimeCents = rows.reduce((a, b) => a + b.earnedLifetimeCents, 0);
-  const paidLifetimeCents = ((payouts ?? []) as Array<{ paid_cents: number }>).reduce(
-    (a, b) => a + Number(b.paid_cents ?? 0),
+  const earnedLifetimeCents = rows.reduce(
+    (a, b) => a + b.earnedLifetimeCents,
     0
   );
+  const paidLifetimeCents = (
+    (payouts ?? []) as Array<{ paid_cents: number }>
+  ).reduce((a, b) => a + Number(b.paid_cents ?? 0), 0);
 
   return NextResponse.json({
     reseller: {
@@ -182,9 +196,12 @@ export async function GET() {
       defaultPassthroughPct: Number(reseller.default_passthrough_pct ?? 0),
     },
     ribbon: {
+      totalCompanies: rows.length,
       activeCompanies: rows.filter((c) => c.partnerStatus === "active").length,
       minutesThisMonth: rows.reduce((a, b) => a + b.minutesThisMonth, 0),
+      minutesLifetime: rows.reduce((a, b) => a + b.minutesLifetime, 0),
       spendThisMonthCents: rows.reduce((a, b) => a + b.spendThisMonthCents, 0),
+      spendLifetimeCents: rows.reduce((a, b) => a + b.spendLifetimeCents, 0),
       earnedLifetimeCents,
       paidLifetimeCents,
       balanceDueCents: earnedLifetimeCents - paidLifetimeCents,

@@ -1,0 +1,114 @@
+"use client";
+
+/*
+ * Command-center rail: the left nav (Overview · Onboard · Program · Resources ·
+ * Help), the shared ThemeTriplet switcher (consistent with every other staff
+ * surface), and the partner identity foot. Mirrors ResellerSidebar's visual
+ * language; the portal is bare-mode full-bleed so this IS the only sidebar.
+ */
+
+import {
+  LayoutDashboard,
+  Plus,
+  BadgeCheck,
+  BookOpen,
+  HelpCircle,
+} from "lucide-react";
+import { ThemeTriplet } from "@/app/_components/ThemeTriplet";
+import type { PortalTab } from "./types";
+
+const NAV: { key: PortalTab; label: string; Icon: typeof LayoutDashboard }[] = [
+  { key: "overview", label: "Overview", Icon: LayoutDashboard },
+  { key: "onboard", label: "Onboard", Icon: Plus },
+  { key: "program", label: "Program", Icon: BadgeCheck },
+  { key: "resources", label: "Resources", Icon: BookOpen },
+  { key: "help", label: "Help", Icon: HelpCircle },
+];
+
+export function PortalSidebar({
+  active,
+  onChange,
+  partnerName,
+  tierLabel,
+}: {
+  active: PortalTab;
+  onChange: (t: PortalTab) => void;
+  partnerName: string;
+  tierLabel: string;
+}) {
+  return (
+    <aside
+      className="flex w-[232px] shrink-0 flex-col border-r p-3"
+      style={{
+        background: "var(--surface-raised)",
+        borderColor: "var(--border)",
+      }}
+    >
+      <div className="flex items-center gap-2.5 px-2.5 pt-1.5 pb-4">
+        <span
+          className="size-2.5 rounded-full"
+          style={{ background: "var(--primary)" }}
+        />
+        <span className="text-[15px] font-semibold">Relay</span>
+        <span className="text-[13px]" style={{ color: "var(--text-muted)" }}>
+          Partners
+        </span>
+      </div>
+
+      <nav className="flex flex-col gap-0.5">
+        {NAV.map(({ key, label, Icon }) => {
+          const on = active === key;
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => onChange(key)}
+              aria-current={on ? "page" : undefined}
+              className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-colors"
+              style={{
+                background: on ? "var(--surface)" : "transparent",
+                color: on ? "var(--text)" : "var(--text-muted)",
+                boxShadow: on ? "0 1px 2px rgba(20,23,26,.04)" : undefined,
+              }}
+              onMouseEnter={(e) => {
+                if (!on) e.currentTarget.style.color = "var(--text)";
+              }}
+              onMouseLeave={(e) => {
+                if (!on) e.currentTarget.style.color = "var(--text-muted)";
+              }}
+            >
+              <Icon size={16} />
+              {label}
+            </button>
+          );
+        })}
+      </nav>
+
+      <div className="mt-auto flex flex-col gap-2">
+        <div className="px-1.5">
+          <ThemeTriplet />
+        </div>
+        <div
+          className="flex items-center gap-2.5 border-t px-2.5 pt-3"
+          style={{ borderColor: "var(--border)" }}
+        >
+          <span
+            className="grid size-6 place-items-center rounded-full text-[11px] font-semibold"
+            style={{
+              background: "var(--primary-tint)",
+              color: "var(--primary-hover)",
+            }}
+          >
+            {partnerName.slice(0, 2).toUpperCase()}
+          </span>
+          <div className="min-w-0 text-[12px]">
+            <div className="truncate font-medium">{partnerName}</div>
+            <div style={{ color: "var(--text-faint)" }}>
+              {tierLabel} partner
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  );
+}

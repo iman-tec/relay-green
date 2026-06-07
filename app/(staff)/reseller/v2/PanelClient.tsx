@@ -22,6 +22,8 @@ import {
 } from "./PartnerOverviewTab";
 import { ClientsTab, type ClientsView } from "./ClientsTab";
 import { PartnerSettingsTab } from "./PartnerSettingsTab";
+import { partnerProgramEnabled } from "@/lib/billing/partnerProgram";
+import { PortalClient } from "./_portal/PortalClient";
 
 const VALID = new Set<ResellerTabKey>(["dashboard", "clients", "settings"]);
 
@@ -49,6 +51,17 @@ export function PanelClient({
 }: {
   me: { email: string; roleLabel: string };
 }) {
+  // Channel Partner program (Phase 3): the reimagined command center, behind a
+  // flag. When off, the original Dashboard/Clients/Settings console renders
+  // unchanged. Gate precedes all hooks → no rules-of-hooks issue (the flag is
+  // a per-build constant).
+  if (partnerProgramEnabled()) {
+    return <PortalClient me={{ email: me.email }} />;
+  }
+  return <LegacyPanel me={me} />;
+}
+
+function LegacyPanel({ me }: { me: { email: string; roleLabel: string } }) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
