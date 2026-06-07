@@ -116,8 +116,8 @@ export function ProgramView({ data }: { data: PortalPayload | null }) {
         </h2>
         <div className="flex flex-wrap items-end gap-6">
           <div
-            className="overflow-hidden rounded-xl border"
-            style={{ borderColor: "var(--border)", width: 320 }}
+            className="overflow-hidden rounded-xl border [&>svg]:block [&>svg]:h-auto [&>svg]:w-full"
+            style={{ borderColor: "var(--border)", width: 340 }}
             dangerouslySetInnerHTML={{ __html: svg }}
           />
           <div className="flex flex-col gap-2.5">
