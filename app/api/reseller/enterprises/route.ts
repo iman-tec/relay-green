@@ -74,7 +74,9 @@ export async function POST(request: Request) {
   // pre-flight here gives a friendly error before we create the org row.
   const { data: rRow } = await admin
     .from("resellers")
-    .select("id, name, reseller_code, remaining_minutes, status, commission")
+    .select(
+      "id, name, reseller_code, remaining_minutes, status, commission, default_passthrough_pct"
+    )
     .eq("id", resellerId)
     .maybeSingle();
   if (!rRow) {
@@ -87,6 +89,7 @@ export async function POST(request: Request) {
     remaining_minutes: number;
     status: string;
     commission: number;
+    default_passthrough_pct: number;
   };
   if (reseller.status !== "active") {
     return NextResponse.json(
@@ -111,14 +114,21 @@ export async function POST(request: Request) {
     enterprise_type: "inorganic",
     reseller_id: resellerId,
     created_by_user_id: actor.id,
+    // Partner lifecycle: invited until the admin accepts the clickwrap, at
+    // which point /api/enterprise/accept-terms flips it to 'active'. The
+    // existing `status` (active/suspended) is left to its default.
+    partner_status: "invited",
+    onboarded_at: new Date().toISOString(),
   };
   if (primaryDomain?.trim()) orgInsert.primary_domain = primaryDomain.trim();
 
   // Passthrough discount granted by the partner (e.g. 10% for 12 months).
+  // Defaults to the reseller's configured split when not specified per-company.
   // Hard rule: the partner can't pass through more than Relay's wholesale
   // discount to them (commission) — otherwise the partner's margin goes
   // negative. Enforced server-side; the UI should mirror it.
-  const discPct = Math.max(0, Math.min(100, Number(discountPct ?? 0)));
+  const rawDiscount = discountPct ?? reseller.default_passthrough_pct ?? 0;
+  const discPct = Math.max(0, Math.min(100, Number(rawDiscount)));
   const wholesalePct = Number(reseller.commission ?? 0);
   if (discPct > wholesalePct) {
     return NextResponse.json(

@@ -28,7 +28,7 @@ export async function GET() {
   const { data: org, error: orgErr } = await admin
     .from("organizations")
     .select(
-      "id, name, primary_domain, status, enterprise_code, created_at, reseller_id, discount_pct, discount_until, retention_days"
+      "id, name, primary_domain, status, enterprise_code, created_at, reseller_id, discount_pct, discount_until, retention_days, partner_status"
     )
     .eq("id", orgId)
     .single();
@@ -160,6 +160,8 @@ export async function GET() {
       discountPct: Number((org as { discount_pct?: number }).discount_pct ?? 0),
       discountUntil:
         (org as { discount_until?: string | null }).discount_until ?? null,
+      partnerStatus:
+        (org as { partner_status?: string | null }).partner_status ?? null,
       // 0 in the UI = "indefinite"; stored as NULL in the column.
       retentionDays: Number(
         (org as { retention_days?: number | null }).retention_days ?? 0

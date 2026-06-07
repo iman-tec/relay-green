@@ -23,6 +23,7 @@ import { OverviewTab, type OverviewView } from "./OverviewTab";
 import { UsageTab } from "./UsageTab";
 import { BillingWalletTab } from "./BillingWalletTab";
 import { SettingsTab } from "./SettingsTab";
+import { PartnerTermsGate } from "./PartnerTermsGate";
 
 type TabKey = "overview" | "usage" | "billing" | "settings";
 
@@ -55,6 +56,9 @@ export function PanelClient({ me }: { me: { email: string; roleLabel: string } }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {/* Clickwrap gate — inert unless the partner program is on AND this org
+          is a partner-onboarded enterprise still pending acceptance. */}
+      <PartnerTermsGate />
       <PanelHeader
         name={firstName}
         rightSlot={
