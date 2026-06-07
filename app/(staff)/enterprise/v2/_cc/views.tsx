@@ -2,16 +2,21 @@
 
 /*
  * Enterprise command center — secondary views (Members, Usage, Settings,
- * Resources). Each reuses an existing enterprise endpoint, read-only here;
- * mutation forms stay in the legacy console for now (break-nothing).
+ * Resources). Members owns inviting in-console; Usage is read-only.
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { eur, int, dateShort } from "@/app/_components/portal/format";
 import {
   StatusDot,
   type PortalStatus,
 } from "@/app/_components/portal/StatusDot";
+import {
+  Modal,
+  ModalField,
+  modalInputClass,
+  modalInputStyle,
+} from "@/app/_components/portal/Modal";
 import type { EntMe } from "./types";
 
 function Shell({
@@ -45,20 +50,31 @@ type Member = {
 
 export function MembersView() {
   const [members, setMembers] = useState<Member[] | null>(null);
-  useEffect(() => {
-    let off = false;
+  const [inviting, setInviting] = useState(false);
+
+  const load = useCallback(() => {
     fetch("/api/enterprise/users?scope=staff", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (!off) setMembers((d?.members ?? d?.users ?? []) as Member[]);
-      })
+      .then((d) => setMembers((d?.members ?? d?.users ?? []) as Member[]))
       .catch(() => setMembers([]));
-    return () => {
-      off = true;
-    };
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
   return (
     <Shell title="Members">
+      <div className="mb-3 flex justify-end">
+        <button
+          type="button"
+          onClick={() => setInviting(true)}
+          className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white"
+          style={{ background: "var(--primary)" }}
+        >
+          <span aria-hidden>＋</span> Invite admin
+        </button>
+      </div>
       {members === null ? (
         <Skel />
       ) : members.length === 0 ? (
@@ -110,7 +126,103 @@ export function MembersView() {
           </tbody>
         </table>
       )}
+      <InviteMemberModal
+        open={inviting}
+        onClose={() => setInviting(false)}
+        onInvited={() => {
+          setInviting(false);
+          load();
+        }}
+      />
     </Shell>
+  );
+}
+
+function InviteMemberModal({
+  open,
+  onClose,
+  onInvited,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onInvited: () => void;
+}) {
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const emailOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
+  const canSubmit = emailOk && name.trim().length > 0 && !busy;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!canSubmit) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await fetch("/api/enterprise/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: email.trim(),
+          displayName: name.trim(),
+          role: "enterprise_admin",
+        }),
+      });
+      if (!r.ok) {
+        const b = (await r.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Invite failed.");
+      }
+      setEmail("");
+      setName("");
+      onInvited();
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : "Invite failed.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Invite admin">
+      <form onSubmit={submit}>
+        <ModalField label="Name">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Jane Doe"
+            className={modalInputClass}
+            style={modalInputStyle}
+          />
+        </ModalField>
+        <ModalField label="Email">
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="jane@acme.com"
+            className={modalInputClass}
+            style={modalInputStyle}
+          />
+        </ModalField>
+        {err && (
+          <p className="mb-3 text-[13px]" style={{ color: "var(--risk)" }}>
+            {err}
+          </p>
+        )}
+        <button
+          type="submit"
+          disabled={!canSubmit}
+          className="w-full rounded-lg px-4 py-2.5 text-[14px] font-semibold text-white transition-opacity"
+          style={{
+            background: "var(--primary)",
+            opacity: canSubmit ? 1 : 0.5,
+            cursor: canSubmit ? "pointer" : "not-allowed",
+          }}
+        >
+          {busy ? "Inviting…" : "Send invite"}
+        </button>
+      </form>
+    </Modal>
   );
 }
 

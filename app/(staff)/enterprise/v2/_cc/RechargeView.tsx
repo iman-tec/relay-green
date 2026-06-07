@@ -10,6 +10,7 @@
 
 import { useEffect, useState } from "react";
 import { eur, int, dateShort } from "@/app/_components/portal/format";
+import { BuyBundleModal } from "@/app/(staff)/enterprise/v2/WalletTab";
 import type { EntMe, EntWallet } from "./types";
 
 type Txn = {
@@ -20,14 +21,24 @@ type Txn = {
   amountCents: number;
 };
 
+type Bundle = {
+  code: string;
+  label: string;
+  minutes: number;
+  amountCents: number;
+};
+
 export function RechargeView({
   me,
   wallet,
+  onCredited,
 }: {
   me: EntMe | null;
   wallet: EntWallet | null;
+  onCredited: () => void;
 }) {
   const [txns, setTxns] = useState<Txn[] | null>(null);
+  const [buying, setBuying] = useState<Bundle | null>(null);
 
   useEffect(() => {
     let off = false;
@@ -151,21 +162,32 @@ export function RechargeView({
               <div className="mt-2 font-mono text-[20px] tabular-nums">
                 {eur(b.amountCents)}
               </div>
-              <a
-                href="/enterprise/v2?tab=billing"
-                className="mt-3 inline-block rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white no-underline"
+              <button
+                type="button"
+                onClick={() => setBuying(b)}
+                className="mt-3 inline-block rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white"
                 style={{ background: "var(--primary)" }}
               >
                 Buy
-              </a>
+              </button>
             </div>
           ))}
         </div>
         <p className="mt-2 text-[12px]" style={{ color: "var(--text-faint)" }}>
-          Checkout is the existing Stripe flow; any partner discount is applied
-          automatically at payment.
+          Any partner discount is applied automatically at payment.
         </p>
       </section>
+
+      {buying && (
+        <BuyBundleModal
+          bundle={buying}
+          onClose={() => setBuying(null)}
+          onCredited={() => {
+            setBuying(null);
+            onCredited();
+          }}
+        />
+      )}
 
       {/* Unified ledger (display-only) */}
       <section>

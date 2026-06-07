@@ -59,7 +59,7 @@ export function EnterpriseClient({ me }: { me: { email: string } }) {
   const params = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const { me: data, depts, wallet, loading, error } = useEnterprise();
+  const { me: data, depts, wallet, loading, error, refetch } = useEnterprise();
   const [tab, setTab] = useState<EntTab>(tabFrom(params?.get("tab")));
 
   useEffect(() => {
@@ -71,10 +71,6 @@ export function EnterpriseClient({ me }: { me: { email: string } }) {
   }, [tab, pathname, router, params]);
 
   const goRecharge = useCallback(() => setTab("recharge"), []);
-  const onOnboardDept = useCallback(() => {
-    // Department creation lives in the existing console; deep-link to it.
-    window.location.assign("/enterprise/v2?tab=overview");
-  }, []);
 
   const name = data?.org.name ?? me.email.split("@")[0];
 
@@ -101,10 +97,12 @@ export function EnterpriseClient({ me }: { me: { email: string } }) {
             loading={loading}
             error={error}
             onRecharge={goRecharge}
-            onOnboardDept={onOnboardDept}
+            onChanged={refetch}
           />
         )}
-        {tab === "recharge" && <RechargeView me={data} wallet={wallet} />}
+        {tab === "recharge" && (
+          <RechargeView me={data} wallet={wallet} onCredited={refetch} />
+        )}
         {tab === "usage" && <UsageView />}
         {tab === "members" && <MembersView />}
         {tab === "settings" && <SettingsView me={data} />}
