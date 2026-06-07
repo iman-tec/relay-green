@@ -23,26 +23,52 @@ import { OverviewTab, type OverviewView } from "./OverviewTab";
 import { UsageTab } from "./UsageTab";
 import { BillingWalletTab } from "./BillingWalletTab";
 import { SettingsTab } from "./SettingsTab";
+import { PartnerTermsGate } from "./PartnerTermsGate";
+import { enterpriseV2Enabled } from "@/lib/flags";
+import { EnterpriseClient } from "./_cc/EnterpriseClient";
 
 type TabKey = "overview" | "usage" | "billing" | "settings";
 
 // Map legacy ?tab= values onto the new structure. Keep in sync with
 // enterpriseTabOf in app/_components/StaffShell.tsx (sidebar active state).
-function resolveInitial(param: string | null | undefined): { tab: TabKey; view: OverviewView } {
+function resolveInitial(param: string | null | undefined): {
+  tab: TabKey;
+  view: OverviewView;
+} {
   switch (param) {
-    case "departments": return { tab: "overview", view: "departments" };
-    case "members":     return { tab: "overview", view: "members" };
+    case "departments":
+      return { tab: "overview", view: "departments" };
+    case "members":
+      return { tab: "overview", view: "members" };
     case "dashboard":
-    case "overview":    return { tab: "overview", view: "dashboard" };
+    case "overview":
+      return { tab: "overview", view: "dashboard" };
     case "wallet":
-    case "billing":     return { tab: "billing", view: "dashboard" };
-    case "usage":       return { tab: "usage", view: "dashboard" };
-    case "settings":    return { tab: "settings", view: "dashboard" };
-    default:            return { tab: "overview", view: "dashboard" };
+    case "billing":
+      return { tab: "billing", view: "dashboard" };
+    case "usage":
+      return { tab: "usage", view: "dashboard" };
+    case "settings":
+      return { tab: "settings", view: "dashboard" };
+    default:
+      return { tab: "overview", view: "dashboard" };
   }
 }
 
-export function PanelClient({ me }: { me: { email: string; roleLabel: string } }) {
+export function PanelClient({
+  me,
+}: {
+  me: { email: string; roleLabel: string };
+}) {
+  // Command-center redesign behind NEXT_PUBLIC_ENTERPRISE_V2. Off → today's
+  // embedded tabs render unchanged. Gate precedes hooks (per-build constant).
+  if (enterpriseV2Enabled()) {
+    return <EnterpriseClient me={{ email: me.email }} />;
+  }
+  return <LegacyPanel me={me} />;
+}
+
+function LegacyPanel({ me }: { me: { email: string; roleLabel: string } }) {
   const params = useSearchParams();
 
   // The URL is the single source of truth for the active tab — deep links
@@ -55,17 +81,23 @@ export function PanelClient({ me }: { me: { email: string; roleLabel: string } }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {/* Clickwrap gate — inert unless the partner program is on AND this org
+          is a partner-onboarded enterprise still pending acceptance. */}
+      <PartnerTermsGate />
       <PanelHeader
         name={firstName}
         rightSlot={
-          <NotificationBell endpoint="/api/enterprise/notifications" channelKey="enterprise" />
+          <NotificationBell
+            endpoint="/api/enterprise/notifications"
+            channelKey="enterprise"
+          />
         }
       />
       <div className="min-h-0 flex-1 overflow-hidden">
         {active === "overview" && <OverviewTab initialView={initial.view} />}
-        {active === "usage"     && <UsageTab />}
-        {active === "billing"   && <BillingWalletTab />}
-        {active === "settings"  && <SettingsTab />}
+        {active === "usage" && <UsageTab />}
+        {active === "billing" && <BillingWalletTab />}
+        {active === "settings" && <SettingsTab />}
       </div>
     </div>
   );

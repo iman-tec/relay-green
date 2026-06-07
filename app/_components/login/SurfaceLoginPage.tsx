@@ -47,6 +47,10 @@ type Props = {
    *  query-param read happens client-side via the form's useSearchParams,
    *  but the notice itself is rendered server-side based on the prop. */
   wrongSurfaceNotice?: boolean;
+  /** Optional right-side panel. When provided, the page renders as a split
+   *  (form left, panel right on lg+); when absent, the centered-card layout is
+   *  unchanged. Used by /partner for its salesy proof panel. */
+  aside?: React.ReactNode;
 };
 
 async function bounceSignedInUser(surface: LoginSurface): Promise<void> {
@@ -79,76 +83,104 @@ export async function SurfaceLoginPage({
   copy,
   showDevQuickPick = false,
   wrongSurfaceNotice = false,
+  aside,
 }: Props): Promise<React.ReactElement> {
   await bounceSignedInUser(surface);
   const devMode = showDevQuickPick && process.env.NODE_ENV === "development";
+
+  const card = (
+    <div
+      className="w-full max-w-md rounded-2xl border p-8 shadow-sm"
+      style={{
+        backgroundColor: "var(--surface)",
+        borderColor: "var(--border)",
+      }}
+    >
+      <div className="mb-7 flex flex-col items-center gap-3 text-center">
+        <Link href="/" className="no-underline">
+          <Wordmark size="lg" />
+        </Link>
+        <div className="flex flex-col gap-1.5">
+          <h1
+            className="text-xl font-semibold"
+            style={{ color: "var(--text)" }}
+          >
+            {copy.title}
+          </h1>
+          <p
+            className="text-sm leading-relaxed"
+            style={{ color: "var(--text-muted)" }}
+          >
+            {copy.blurb}
+          </p>
+        </div>
+      </div>
+
+      {wrongSurfaceNotice && (
+        <div
+          className="mb-5 rounded-md border px-4 py-3 text-sm"
+          style={{
+            borderColor: "color-mix(in srgb, var(--warn) 30%, transparent)",
+            backgroundColor: "color-mix(in srgb, var(--warn) 7%, transparent)",
+            color: "var(--text)",
+          }}
+        >
+          That account doesn&apos;t belong to this sign-in page. We&apos;ve
+          brought you here — sign in below.
+        </div>
+      )}
+
+      <Suspense fallback={<div className="h-44" />}>
+        <StaffLoginForm devMode={devMode} surface={surface} />
+      </Suspense>
+
+      {copy.footer && (
+        <>
+          <div
+            className="my-6 border-t"
+            style={{ borderColor: "var(--border)" }}
+          />
+          <div
+            className="text-center text-xs"
+            style={{ color: "var(--text-muted)" }}
+          >
+            {copy.footer}
+          </div>
+        </>
+      )}
+    </div>
+  );
+
+  // Split layout when a proof panel is supplied (e.g. /partner); otherwise the
+  // unchanged centered card used by /login, /staff, /business.
+  if (aside) {
+    return (
+      <main
+        className="grid min-h-screen lg:grid-cols-2"
+        style={{ backgroundColor: "var(--background)" }}
+      >
+        <div className="flex items-center justify-center px-6 py-16">
+          {card}
+        </div>
+        <aside
+          className="hidden flex-col justify-center gap-6 border-l px-[6vw] lg:flex"
+          style={{
+            backgroundColor: "var(--surface-raised)",
+            borderColor: "var(--border)",
+          }}
+        >
+          {aside}
+        </aside>
+      </main>
+    );
+  }
 
   return (
     <main
       className="flex min-h-screen flex-col items-center justify-center px-6 py-16"
       style={{ backgroundColor: "var(--background)" }}
     >
-      <div
-        className="w-full max-w-md rounded-2xl border p-8 shadow-sm"
-        style={{
-          backgroundColor: "var(--surface)",
-          borderColor: "var(--border)",
-        }}
-      >
-        <div className="mb-7 flex flex-col items-center gap-3 text-center">
-          <Link href="/" className="no-underline">
-            <Wordmark size="lg" />
-          </Link>
-          <div className="flex flex-col gap-1.5">
-            <h1
-              className="text-xl font-semibold"
-              style={{ color: "var(--text)" }}
-            >
-              {copy.title}
-            </h1>
-            <p
-              className="text-sm leading-relaxed"
-              style={{ color: "var(--text-muted)" }}
-            >
-              {copy.blurb}
-            </p>
-          </div>
-        </div>
-
-        {wrongSurfaceNotice && (
-          <div
-            className="mb-5 rounded-md border px-4 py-3 text-sm"
-            style={{
-              borderColor: "color-mix(in srgb, var(--warn) 30%, transparent)",
-              backgroundColor:
-                "color-mix(in srgb, var(--warn) 7%, transparent)",
-              color: "var(--text)",
-            }}
-          >
-            That account doesn&apos;t belong to this sign-in page. We&apos;ve
-            brought you here — sign in below.
-          </div>
-        )}
-
-        <Suspense fallback={<div className="h-44" />}>
-          <StaffLoginForm devMode={devMode} surface={surface} />
-        </Suspense>
-
-        {copy.footer && (
-          <>
-            <div
-              className="my-6 border-t"
-              style={{ borderColor: "var(--border)" }}
-            />
-            <div
-              className="text-center text-xs"
-              style={{ color: "var(--text-muted)" }}
-            >
-              {copy.footer}
-            </div>
-          </>
-        )}
-      </div>
+      {card}
     </main>
   );
 }

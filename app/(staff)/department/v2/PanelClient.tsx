@@ -19,24 +19,48 @@ import { DeptOverviewTab, type DeptOverviewView } from "./DeptOverviewTab";
 import { SessionsTab } from "./SessionsTab";
 import { DeptUsageTab } from "./DeptUsageTab";
 import { DeptSettingsTab } from "./DeptSettingsTab";
+import { enterpriseV2Enabled } from "@/lib/flags";
+import { DeptClient } from "./_cc/DeptClient";
 
 type TabKey = "overview" | "sessions" | "usage" | "settings";
 
 // Map legacy ?tab= values onto the new structure. Keep in sync with
 // departmentTabOf in app/_components/StaffShell.tsx (sidebar active state).
-function resolveInitial(param: string | null | undefined): { tab: TabKey; view: DeptOverviewView } {
+function resolveInitial(param: string | null | undefined): {
+  tab: TabKey;
+  view: DeptOverviewView;
+} {
   switch (param) {
-    case "members":   return { tab: "overview", view: "members" };
+    case "members":
+      return { tab: "overview", view: "members" };
     case "dashboard":
-    case "overview":  return { tab: "overview", view: "dashboard" };
-    case "sessions":  return { tab: "sessions", view: "dashboard" };
-    case "usage":     return { tab: "usage", view: "dashboard" };
-    case "settings":  return { tab: "settings", view: "dashboard" };
-    default:          return { tab: "overview", view: "dashboard" };
+    case "overview":
+      return { tab: "overview", view: "dashboard" };
+    case "sessions":
+      return { tab: "sessions", view: "dashboard" };
+    case "usage":
+      return { tab: "usage", view: "dashboard" };
+    case "settings":
+      return { tab: "settings", view: "dashboard" };
+    default:
+      return { tab: "overview", view: "dashboard" };
   }
 }
 
-export function PanelClient({ me }: { me: { email: string; roleLabel: string } }) {
+export function PanelClient({
+  me,
+}: {
+  me: { email: string; roleLabel: string };
+}) {
+  // Command-center redesign behind NEXT_PUBLIC_ENTERPRISE_V2. Off → today's
+  // embedded tabs render unchanged. Gate precedes hooks (per-build constant).
+  if (enterpriseV2Enabled()) {
+    return <DeptClient me={{ email: me.email }} />;
+  }
+  return <LegacyPanel me={me} />;
+}
+
+function LegacyPanel({ me }: { me: { email: string; roleLabel: string } }) {
   const params = useSearchParams();
 
   // The URL is the single source of truth for the active tab — deep links
@@ -52,13 +76,18 @@ export function PanelClient({ me }: { me: { email: string; roleLabel: string } }
       <PanelHeader
         name={firstName}
         rightSlot={
-          <NotificationBell endpoint="/api/department/notifications" channelKey="department" />
+          <NotificationBell
+            endpoint="/api/department/notifications"
+            channelKey="department"
+          />
         }
       />
       <div className="min-h-0 flex-1 overflow-hidden">
-        {active === "overview" && <DeptOverviewTab initialView={initial.view} />}
+        {active === "overview" && (
+          <DeptOverviewTab initialView={initial.view} />
+        )}
         {active === "sessions" && <SessionsTab />}
-        {active === "usage"    && <DeptUsageTab />}
+        {active === "usage" && <DeptUsageTab />}
         {active === "settings" && <DeptSettingsTab />}
       </div>
     </div>
