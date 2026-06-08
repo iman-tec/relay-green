@@ -2,6 +2,9 @@
  * Console feature flags (NEXT_PUBLIC_, build-time inlined, readable on server
  * and client). Each gates a reimagined console behind an off-by-default switch
  * so the existing surface is byte-identical until the flag is set.
+ *
+ * NB: NEXT_PUBLIC_* values are inlined at BUILD time — a flag flip needs a
+ * rebuild/redeploy, not just an env change on a running instance.
  */
 
 /** Enterprise + Department admin command centers (the /enterprise/v2 +
