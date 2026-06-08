@@ -22,11 +22,11 @@ function PartnerProof() {
         style={{ borderColor: "var(--border)", aspectRatio: "16 / 10" }}
       />
       <p
-        className="max-w-[15ch] font-serif text-[25px] leading-[1.25] font-semibold"
+        className="max-w-[30ch] text-balance font-serif text-[25px] leading-[1.25] font-semibold"
         style={{ color: "var(--text)", letterSpacing: "-0.01em" }}
       >
-        Resell senior engineering support your clients already need — on your
-        margin.
+        Resell senior engineering support your clients already need —
+        on&nbsp;your&nbsp;margin.
       </p>
       <p
         className="max-w-sm text-[14px]"

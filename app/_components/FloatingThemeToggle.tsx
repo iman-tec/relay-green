@@ -13,7 +13,7 @@
  */
 
 import { usePathname } from "next/navigation";
-import { ThemeToggle } from "./ThemeToggle";
+import { ThemeTriplet } from "./ThemeTriplet";
 
 const STAFF_PREFIXES = [
   "/dashboard",
@@ -89,15 +89,10 @@ export function FloatingThemeToggle() {
         paddingRight: "env(safe-area-inset-right, 0)",
       }}
     >
-      <div
-        className="rounded-full border shadow-sm backdrop-blur"
-        style={{
-          borderColor: "var(--border)",
-          backgroundColor:
-            "color-mix(in srgb, var(--surface) 92%, transparent)",
-        }}
-      >
-        <ThemeToggle className="rounded-full !border-0 !px-2.5" />
+      {/* Shared triplet (Sun / Moon / Coffee) so all three themes — including
+          espresso — are reachable and the control can't drift to two-state. */}
+      <div className="rounded-full shadow-sm">
+        <ThemeTriplet />
       </div>
     </div>
   );
