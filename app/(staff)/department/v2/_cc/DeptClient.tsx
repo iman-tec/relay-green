@@ -16,11 +16,12 @@ import { SuperviseView } from "./SuperviseView";
 import { UsageView, SettingsView, ResourcesView } from "./views";
 import type { DeptTab } from "./types";
 
+// Settings lives in the bottom account dropdown (alongside Theme + Sign out),
+// not the nav — mirrors the enterprise console. Still a valid ?tab= target.
 const NAV = [
   { key: "overview", label: "Overview", Icon: Users },
   { key: "supervise", label: "Supervise", Icon: Eye },
   { key: "usage", label: "Usage", Icon: BarChart3 },
-  { key: "settings", label: "Settings", Icon: Settings },
   { key: "resources", label: "Resources", Icon: BookOpen },
 ];
 
@@ -71,6 +72,13 @@ export function DeptClient({ me }: { me: { email: string } }) {
         identityName={name}
         identityEmail={me.email}
         identitySub="Department admin"
+        accountItems={[
+          {
+            label: "Settings",
+            Icon: Settings,
+            onClick: () => setTab("settings"),
+          },
+        ]}
       />
       <main className="min-w-0 flex-1 overflow-auto">
         {tab === "overview" && (
