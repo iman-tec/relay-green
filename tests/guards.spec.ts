@@ -36,6 +36,14 @@ test.describe("auth guards", () => {
     await expect(page).toHaveURL(/\/partner(\?|$)/);
   });
 
+  // The authed partner portal moved to /partner/v2; it's a protected prefix, so
+  // an anonymous hit bounces to the /partner login (NOT bare /partner, which is
+  // the login page itself).
+  test("/partner/v2 redirects anonymous to /partner", async ({ page }) => {
+    await page.goto("/partner/v2");
+    await expect(page).toHaveURL(/\/partner(\?|$)/);
+  });
+
   test("/enterprise/v2 redirects anonymous to /business", async ({ page }) => {
     await page.goto("/enterprise/v2");
     await expect(page).toHaveURL(/\/business(\?|$)/);

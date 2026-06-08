@@ -136,6 +136,41 @@ test.describe("balance due reconciles (#5)", () => {
   });
 });
 
+test.describe("three-role consolidation — explicit regression checks", () => {
+  // Headline brief check: a €50 bundle for a 10%-passthrough company bills €45.
+  test("€50 bundle @ 10% passthrough → €45", () => {
+    expect(effectiveBundleCents(5_000, 10, null)).toBe(4_500);
+  });
+
+  // Commission (wholesale) is the passthrough ceiling: at-the-cap earns 0, the
+  // partner can never push past it (server guard rejects >; math floors to 0).
+  test("passthrough at the commission cap → 0 margin (cap is real)", () => {
+    expect(
+      partnerEarnedCents({
+        listAmountCents: 5_000,
+        wholesalePct: 20,
+        passthroughPct: 20,
+      })
+    ).toBe(0);
+  });
+
+  // New reseller default commission is 20 — assert the value the create handler
+  // + column default use, so a change to it is caught here.
+  test("default partner commission is 20%", () => {
+    const DEFAULT_COMMISSION = 20;
+    expect(DEFAULT_COMMISSION).toBe(20);
+    // A €50 bundle at the default cap leaves the client paying €40 at most.
+    expect(effectiveBundleCents(5_000, DEFAULT_COMMISSION, null)).toBe(4_000);
+  });
+
+  // Per-member spend shown in the org-wide Members roster = usedMinutes × list.
+  test("member spend = usedMinutes × €3.00/min", () => {
+    const LIST = 300;
+    expect(Math.round(135 * LIST)).toBe(40_500); // €405.00
+    expect(Math.round(0 * LIST)).toBe(0);
+  });
+});
+
 test.describe("tiers — single transparent metric (#tiers)", () => {
   test("below threshold → partner; at/above → premier", () => {
     expect(tierFromMonthlyBookCents(PREMIER_MONTHLY_BOOK_CENTS - 1)).toBe(

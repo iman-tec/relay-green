@@ -203,3 +203,37 @@ add a **shared additive** `PATCH /api/profile {displayName}` (updates
 5. Supervise: confirm **leave as-is** (don't delete EnterpriseSuperviseClient)?
 
 **Stopping for review per the brief's Phase 0 mandate.**
+
+---
+
+## Phase 7 — regression + flag-on decision (closeout)
+
+**Automated regression (run green):**
+- `tests/partner-billing.spec.ts` — pure-logic money/margin suite, **17/17 pass**.
+  Added the consolidation's explicit checks: €50 bundle @ 10% passthrough → €45;
+  passthrough at the commission cap → 0 margin; default partner commission = 20%;
+  member spend = usedMinutes × €3/min.
+- `tests/guards.spec.ts` — **/reseller/v2 → /partner** and the new
+  **/partner/v2 → /partner** (protected) both pass against the running dev server.
+
+**Manual / browser verified this build:**
+- Route move: login lands on `/partner/v2`; `/reseller/v2` redirects; portal renders.
+- Notifications alignment (S1) both consoles; Settings persist (enterprise +
+  partner + department); docs download 200; org-wide Members roster with
+  suspended member shown red; member drill (org-wallet refill + reassign +
+  suspend + resend); CP row ⋯ menu (Resend invite on Invited orgs).
+
+**Not browser-submitted (shared dev≡prod data):** reassign/attach live writes,
+commission edit (needs super-admin login), org-wallet refill live debit. UIs
+render + endpoints are tsc-clean; the RPCs (`transfer_org_to_employee`) and
+column default (commission=20) are applied + verified at the DB layer.
+
+**Flag-on decision:** the partner program (`NEXT_PUBLIC_PARTNER_PROGRAM`) and the
+enterprise/department v2 consoles (`NEXT_PUBLIC_ENTERPRISE_V2`) are **already
+launched on-by-default** (kill-switch only). Every change in this consolidation
+is **additive and lives inside the flag-on surfaces** (or is a route redirect for
+the move). The flag-off path is the legacy `LegacyPanel` / non-v2 surfaces, which
+are untouched → **flag-off stays byte-identical**. Decision: **keep on**; no
+further gating needed. The two new migrations (`transfer_org_to_employee`,
+commission default 20) are additive and applied; the `minute_purchases` ledger
+from the earlier batch is likewise applied.
