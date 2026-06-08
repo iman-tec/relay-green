@@ -44,7 +44,7 @@ function PartnerProof() {
           Talk to our team
         </a>
         <a
-          href="/for-enterprise"
+          href="/partner/apply"
           className="text-[13px] font-medium no-underline"
           style={{ color: "var(--primary-hover)" }}
         >

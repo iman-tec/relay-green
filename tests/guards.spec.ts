@@ -44,6 +44,31 @@ test.describe("auth guards", () => {
     await expect(page).toHaveURL(/\/partner(\?|$)/);
   });
 
+  // /partner/apply is the PUBLIC application landing — not flag-gated, not a
+  // login. Anonymous must reach it (200) and see the application, not a bounce.
+  test("/partner/apply is public (200) and shows the application", async ({
+    page,
+  }) => {
+    const res = await page.goto("/partner/apply");
+    expect(res?.status(), "/partner/apply should return 200").toBe(200);
+    await expect(page).toHaveURL(/\/partner\/apply(\?|$)/);
+    await expect(
+      page.getByRole("heading", { name: /Apply to become a partner/i })
+    ).toBeVisible();
+    // It's an application, not the login OTP form.
+    await expect(page.getByLabel(/Work email/i)).toBeVisible();
+  });
+
+  test("the /partner login 'Apply' link points at /partner/apply", async ({
+    page,
+  }) => {
+    await page.goto("/partner");
+    const apply = page.getByRole("link", {
+      name: /Apply to become a partner/i,
+    });
+    await expect(apply).toHaveAttribute("href", "/partner/apply");
+  });
+
   test("/enterprise/v2 redirects anonymous to /business", async ({ page }) => {
     await page.goto("/enterprise/v2");
     await expect(page).toHaveURL(/\/business(\?|$)/);

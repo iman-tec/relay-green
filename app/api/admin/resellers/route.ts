@@ -17,8 +17,7 @@
 
 import { NextResponse } from "next/server";
 import { requireSuperAdmin } from "@/lib/admin-auth";
-import { sendInvitationEmail } from "@/lib/admin-invite";
-import { ROLE } from "@/lib/relay/roles";
+import { provisionReseller } from "@/lib/reseller-provision";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -188,166 +187,32 @@ export async function POST(request: Request) {
     );
   }
 
-  // Duplicate-email guard — reseller_email is unique in our schema, but
-  // surface a clean message instead of letting the unique-violation bubble.
-  const { data: existing } = await admin
-    .from("resellers")
-    .select("id")
-    .ilike("email", cleanEmail)
-    .maybeSingle();
-  if (existing) {
-    return NextResponse.json(
-      { error: "A reseller with this email already exists." },
-      { status: 409 }
-    );
-  }
-
-  // Insert the reseller row. The set-code trigger fills reseller_code in
-  // the RLC-AB12CD format. Initial minutes columns stay at 0 until refill.
-  const { data: resellerData, error: insertErr } = await admin
-    .from("resellers")
-    .insert({
-      name: name.trim(),
-      email: cleanEmail,
-      commission: commissionNum,
-      status: "active",
-      created_by_user_id: actor.id,
-    })
-    .select("id, name, email, reseller_code, commission, status, created_at")
-    .single();
-  if (insertErr || !resellerData) {
-    return NextResponse.json(
-      { error: insertErr?.message ?? "Couldn't create reseller." },
-      { status: 400 }
-    );
-  }
-  const reseller = resellerData as ResellerRow;
-
-  // Send the Supabase invite (creates the auth user if new; magic-link
-  // fallback for existing-confirmed users). Metadata carries the
-  // spec-required fields so the email template can render them.
-  const invite = await sendInvitationEmail(admin, {
+  // Provision via the shared path. onExisting:"error" keeps the manual-create
+  // duplicate-email guard (409) — the partner-application approve route reuses
+  // the same function with onExisting:"link".
+  const result = await provisionReseller(admin, {
+    name: name.trim(),
     email: cleanEmail,
-    displayName: name.trim(),
-    metadata: {
-      role_label: "reseller",
-      reseller_id: reseller.id,
-      reseller_code: reseller.reseller_code,
-      allocated_minutes: allocNum,
-      created_by: actor.id,
-    },
+    commission: commissionNum,
+    allocatedMinutes: allocNum,
+    actorId: actor.id,
+    onExisting: "error",
   });
-  if (!invite.ok) {
-    await admin.from("resellers").delete().eq("id", reseller.id);
-    return NextResponse.json({ error: invite.error }, { status: 400 });
-  }
-
-  let userId = invite.userId ?? null;
-  if (!userId) {
-    const lookup = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-    userId =
-      lookup.data?.users?.find((u) => u.email?.toLowerCase() === cleanEmail)
-        ?.id ?? null;
-  }
-  if (!userId) {
-    await admin.from("resellers").delete().eq("id", reseller.id);
+  if (!result.ok) {
     return NextResponse.json(
-      {
-        error:
-          "Reseller invited but auth row not yet visible — try again in a moment.",
-      },
-      { status: 500 }
+      { error: result.error },
+      { status: result.status }
     );
   }
-
-  // Look up reseller role_id and link the user as the reseller owner.
-  const { data: roleRow } = await admin
-    .from("roles")
-    .select("id")
-    .eq("name", ROLE.reseller)
-    .maybeSingle();
-  const resellerRoleId = (roleRow as { id: string } | null)?.id;
-  if (!resellerRoleId) {
-    await admin.from("resellers").delete().eq("id", reseller.id);
-    return NextResponse.json(
-      { error: "reseller role not seeded" },
-      { status: 500 }
-    );
-  }
-
-  // Update the profile with reseller_id + full_name (only if blank).
-  const { data: currentProfile } = await admin
-    .from("profiles")
-    .select("full_name")
-    .eq("id", userId)
-    .maybeSingle();
-  const fullNameInsert = (
-    currentProfile as { full_name: string | null } | null
-  )?.full_name?.trim()
-    ? undefined
-    : name.trim();
-
-  const profileUpdate: Record<string, unknown> = {
-    id: userId,
-    reseller_id: reseller.id,
-    is_onboarded: true,
-  };
-  if (fullNameInsert) profileUpdate.full_name = fullNameInsert;
-
-  const { error: profileErr } = await admin
-    .from("profiles")
-    .upsert(profileUpdate, { onConflict: "id" });
-  if (profileErr) {
-    await admin.from("resellers").delete().eq("id", reseller.id);
-    return NextResponse.json({ error: profileErr.message }, { status: 500 });
-  }
-
-  // Grant the reseller role (idempotent).
-  await admin
-    .from("user_roles")
-    .upsert(
-      { user_id: userId, role_id: resellerRoleId },
-      { onConflict: "user_id,role_id", ignoreDuplicates: true }
-    );
-
-  // Link the reseller's owner_user_id back to the user.
-  await admin
-    .from("resellers")
-    .update({ owner_user_id: userId })
-    .eq("id", reseller.id);
-
-  // Initial minutes allocation via the RPC (atomic, validates ≥ 0).
-  if (allocNum > 0) {
-    const { error: tErr } = await admin.rpc("transfer_to_reseller", {
-      _reseller_id: reseller.id,
-      _amount: allocNum,
-    });
-    if (tErr) {
-      // Reseller is created and invited; we just couldn't credit the
-      // initial pool. Surface this as a soft warning rather than rolling
-      // back — the super admin can hit "Add minutes" to retry.
-      console.warn("[admin/resellers] initial transfer failed:", tErr.message);
-    }
-  }
-
-  const mode = invite.mode === "invited" ? "invited" : "attached_existing";
 
   return NextResponse.json({
-    reseller: {
-      id: reseller.id,
-      name: reseller.name,
-      email: reseller.email,
-      resellerCode: reseller.reseller_code,
-      commission: Number(reseller.commission ?? 0),
-      status: reseller.status,
-      createdAt: reseller.created_at,
-    },
+    reseller: result.reseller,
     contact: {
-      id: userId,
+      id: result.userId,
       email: cleanEmail,
       displayName: name.trim(),
     },
-    invited: mode === "invited",
-    attachedExisting: mode === "attached_existing",
+    invited: result.mode === "invited",
+    attachedExisting: result.mode === "attached_existing",
   });
 }
