@@ -4,7 +4,7 @@
  * Resources). Read-only; reuse existing department endpoints. */
 
 import { useEffect, useState } from "react";
-import { eur, int, dateShort } from "@/app/_components/portal/format";
+import { eur, int } from "@/app/_components/portal/format";
 import { ThemeTriplet } from "@/app/_components/ThemeTriplet";
 import { createClient } from "@/lib/supabase/browser";
 import type { DeptData } from "./types";
@@ -26,82 +26,6 @@ function Shell({
       </h1>
       {children}
     </div>
-  );
-}
-
-// ---- Sessions --------------------------------------------------------------
-type Sess = {
-  id: string;
-  status: string;
-  createdAt: string;
-  durationMinutes: number;
-  customerName?: string;
-  engineerName?: string;
-};
-
-export function SessionsView() {
-  const [rows, setRows] = useState<Sess[] | null>(null);
-  useEffect(() => {
-    let off = false;
-    fetch("/api/department/sessions", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => !off && setRows((d?.sessions ?? []) as Sess[]))
-      .catch(() => setRows([]));
-    return () => {
-      off = true;
-    };
-  }, []);
-  return (
-    <Shell title="Sessions">
-      {rows === null ? (
-        <Skel />
-      ) : rows.length === 0 ? (
-        <Muted>No sessions yet.</Muted>
-      ) : (
-        <table className="w-full border-collapse">
-          <thead>
-            <tr>
-              {[
-                ["When", "left"],
-                ["Status", "left"],
-                ["Minutes", "right"],
-              ].map(([h, a]) => (
-                <th
-                  key={h}
-                  className="px-4 pb-2.5 text-[12px] font-medium tracking-[0.04em] uppercase"
-                  style={{
-                    color: "var(--text-muted)",
-                    textAlign: a as "left" | "right",
-                    borderBottom: "1px solid var(--border)",
-                  }}
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((s) => (
-              <tr
-                key={s.id}
-                style={{ borderBottom: "1px solid var(--border)" }}
-              >
-                <td
-                  className="px-4 py-3 text-[14px]"
-                  style={{ color: "var(--text-muted)" }}
-                >
-                  {dateShort(s.createdAt)}
-                </td>
-                <td className="px-4 py-3 text-[14px]">{s.status}</td>
-                <td className="px-4 py-3 text-right font-mono text-[14px] tabular-nums">
-                  {int(s.durationMinutes)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </Shell>
   );
 }
 
@@ -358,7 +282,7 @@ export function SettingsView({ data }: { data: DeptData | null }) {
         <p className="text-[14px]" style={{ color: "var(--text-muted)" }}>
           Retention is set at the organization level by your enterprise admin.
           Session data is kept per that policy; you can view your department’s
-          sessions under the Sessions tab.
+          sessions under the Supervise tab.
         </p>
       </section>
     </Shell>

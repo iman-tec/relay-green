@@ -25,6 +25,8 @@ import { EnterpriseMsaGate } from "./EnterpriseMsaGate";
 import { useEnterprise } from "./useEnterprise";
 import { OverviewView } from "./OverviewView";
 import { RechargeView } from "./RechargeView";
+import { SuperviseView } from "./SuperviseView";
+import { FinanceView } from "./FinanceView";
 import { MembersView, UsageView, SettingsView, ResourcesView } from "./views";
 import type { EntTab } from "./types";
 
@@ -32,21 +34,25 @@ const NAV = [
   { key: "overview", label: "Overview", Icon: LayoutDashboard },
   { key: "recharge", label: "Recharge", Icon: Wallet },
   { key: "usage", label: "Usage", Icon: BarChart3 },
+  { key: "finance", label: "Finance", Icon: Banknote },
   { key: "members", label: "Members", Icon: Users },
+  { key: "supervise", label: "Supervise", Icon: Eye },
   { key: "settings", label: "Settings", Icon: Settings },
   { key: "resources", label: "Resources", Icon: BookOpen },
 ];
 
-const LINKS = [
-  { label: "Supervise", href: "/supervise", Icon: Eye },
-  { label: "Finance", href: "/finance", Icon: Banknote },
-];
+// No external link-outs. Supervise and Finance are now in-console tabs above —
+// neither is a /supervise or /finance link-out that ejected the admin into the
+// legacy StaffShell.
+const LINKS: { label: string; href: string; Icon: typeof Wallet }[] = [];
 
 const VALID: EntTab[] = [
   "overview",
   "recharge",
   "usage",
+  "finance",
   "members",
+  "supervise",
   "settings",
   "resources",
 ];
@@ -105,7 +111,9 @@ export function EnterpriseClient({ me }: { me: { email: string } }) {
           <RechargeView me={data} wallet={wallet} onCredited={refetch} />
         )}
         {tab === "usage" && <UsageView />}
+        {tab === "finance" && <FinanceView />}
         {tab === "members" && <MembersView />}
+        {tab === "supervise" && <SuperviseView />}
         {tab === "settings" && <SettingsView me={data} onChanged={refetch} />}
         {tab === "resources" && <ResourcesView />}
       </main>

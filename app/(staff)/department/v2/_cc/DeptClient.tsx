@@ -8,33 +8,30 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import {
-  Users,
-  Activity,
-  BarChart3,
-  Settings,
-  BookOpen,
-  Eye,
-} from "lucide-react";
+import { Users, Eye, BarChart3, Settings, BookOpen } from "lucide-react";
 import { CommandRail } from "@/app/_components/portal/CommandRail";
 import { useDepartment } from "./useDepartment";
 import { OverviewView } from "./OverviewView";
-import { SessionsView, UsageView, SettingsView, ResourcesView } from "./views";
+import { SuperviseView } from "./SuperviseView";
+import { UsageView, SettingsView, ResourcesView } from "./views";
 import type { DeptTab } from "./types";
 
 const NAV = [
   { key: "overview", label: "Overview", Icon: Users },
-  { key: "sessions", label: "Sessions", Icon: Activity },
+  { key: "supervise", label: "Supervise", Icon: Eye },
   { key: "usage", label: "Usage", Icon: BarChart3 },
   { key: "settings", label: "Settings", Icon: Settings },
   { key: "resources", label: "Resources", Icon: BookOpen },
 ];
 
-const LINKS = [{ label: "Supervise", href: "/supervise", Icon: Eye }];
+// No external link-outs. The department's live session monitoring lives
+// in-console under the Supervise tab — the old "Supervise" link ejected the
+// admin into the legacy StaffShell standalone, so it was removed.
+const LINKS: { label: string; href: string; Icon: typeof Users }[] = [];
 
 const VALID: DeptTab[] = [
   "overview",
-  "sessions",
+  "supervise",
   "usage",
   "settings",
   "resources",
@@ -84,7 +81,7 @@ export function DeptClient({ me }: { me: { email: string } }) {
             onChanged={refetch}
           />
         )}
-        {tab === "sessions" && <SessionsView />}
+        {tab === "supervise" && <SuperviseView />}
         {tab === "usage" && <UsageView />}
         {tab === "settings" && <SettingsView data={data} />}
         {tab === "resources" && <ResourcesView />}
