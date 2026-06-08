@@ -6,7 +6,7 @@
  * loading skeleton, error, empty (the designed first-run message).
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PortalPayload, PortalCompany } from "./types";
 import { KpiRibbon, type Kpi } from "@/app/_components/portal/KpiRibbon";
 import { StatusDot } from "@/app/_components/portal/StatusDot";
@@ -218,18 +218,103 @@ function CompaniesTable({
               >
                 {relativeTime(c.lastActivityAt)}
               </td>
-              <td
-                className="px-2 py-3 text-right text-[18px] opacity-0 transition-opacity group-hover/row:opacity-100"
-                style={{ color: "var(--text-faint)" }}
-                aria-hidden
-              >
-                ⋯
-              </td>
+              <RowActions c={c} />
             </tr>
           );
         })}
       </tbody>
     </table>
+  );
+}
+
+function RowActions({ c }: { c: PortalCompany }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const ref = useRef<HTMLTableCellElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  async function act(path: string, ok: string) {
+    setBusy(true);
+    setNote(null);
+    try {
+      const r = await fetch(`/api/reseller/enterprises/${c.id}/${path}`, {
+        method: "POST",
+      });
+      if (!r.ok) {
+        const b = (await r.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Failed.");
+      }
+      setNote(ok);
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : "Failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <td
+      ref={ref}
+      className="relative px-2 py-3 text-right"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-label="Actions"
+        className="rounded px-1 text-[18px] opacity-0 transition-opacity group-hover/row:opacity-100"
+        style={{ color: "var(--text-muted)" }}
+      >
+        ⋯
+      </button>
+      {open && (
+        <div
+          className="absolute right-2 z-50 mt-1 w-[170px] overflow-hidden rounded-lg border text-left shadow-lg"
+          style={{ background: "var(--surface)", borderColor: "var(--border)" }}
+        >
+          {c.partnerStatus === "invited" && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => act("resend-invite", "Invite re-sent")}
+              className="block w-full px-3 py-2 text-left text-[13px] transition-colors hover:bg-[var(--surface-raised)] disabled:opacity-50"
+              style={{ color: "var(--text)" }}
+            >
+              Resend invite
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => act("nudge", "Nudge sent")}
+            className="block w-full px-3 py-2 text-left text-[13px] transition-colors hover:bg-[var(--surface-raised)] disabled:opacity-50"
+            style={{ color: "var(--text)" }}
+          >
+            Nudge admin
+          </button>
+          {note && (
+            <div
+              className="border-t px-3 py-1.5 text-[11px]"
+              style={{
+                borderColor: "var(--border)",
+                color: "var(--text-muted)",
+              }}
+            >
+              {note}
+            </div>
+          )}
+        </div>
+      )}
+    </td>
   );
 }
 

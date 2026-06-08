@@ -246,6 +246,15 @@ export function ResellersTab() {
     if (res.ok) refresh();
     else alert((await res.json().catch(() => ({}))).error ?? "Update failed.");
   };
+  const setResellerCommission = async (id: string, commission: number) => {
+    const res = await fetch(`/api/admin/resellers/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ commission }),
+    });
+    if (res.ok) refresh();
+    else alert((await res.json().catch(() => ({}))).error ?? "Update failed.");
+  };
   const setOrgStatus = async (id: string, status: "active" | "suspended") => {
     const res = await fetch(`/api/admin/orgs/${id}`, {
       method: "PATCH",
@@ -602,6 +611,9 @@ export function ResellersTab() {
             )}
             onEdit={() => setEditReseller(true)}
             onToggle={(s) => setResellerStatus(selReseller.id, s)}
+            onSetCommission={(pct) =>
+              setResellerCommission(selReseller.id, pct)
+            }
             onAddMinutes={() =>
               setRefillTarget({
                 title: `Add minutes — ${selReseller.name}`,
@@ -882,14 +894,18 @@ function ResellerSummary({
   distributedAllocated,
   onEdit,
   onToggle,
+  onSetCommission,
   onAddMinutes,
 }: {
   reseller: Reseller;
   distributedAllocated: number;
   onEdit: () => void;
   onToggle: (next: "active" | "suspended") => void;
+  onSetCommission: (pct: number) => void;
   onAddMinutes: () => void;
 }) {
+  const [editingComm, setEditingComm] = useState(false);
+  const [commVal, setCommVal] = useState(String(reseller.commission));
   const badges: Badge[] = [
     {
       label: reseller.status === "active" ? "Active" : "Suspended",
@@ -947,6 +963,53 @@ function ResellerSummary({
           >
             {reseller.status === "active" ? "Deactivate" : "Activate"}
           </button>
+          {editingComm ? (
+            <span className="inline-flex items-center gap-1">
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={commVal}
+                onChange={(e) => setCommVal(e.target.value)}
+                className="w-16 rounded-md border px-2 py-1.5 text-xs"
+                style={{ borderColor: "var(--border)", color: "var(--text)" }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const n = Number(commVal);
+                  if (Number.isFinite(n) && n >= 0 && n <= 100) {
+                    onSetCommission(n);
+                    setEditingComm(false);
+                  }
+                }}
+                className="rounded-md px-2.5 py-1.5 text-xs font-medium"
+                style={{ background: "var(--primary)", color: "#fff" }}
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCommVal(String(reseller.commission));
+                  setEditingComm(false);
+                }}
+                className="rounded-md px-2 py-1.5 text-xs"
+                style={{ color: "var(--text-muted)" }}
+              >
+                Cancel
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setEditingComm(true)}
+              className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium"
+              style={{ borderColor: "var(--border)", color: "var(--text)" }}
+            >
+              <Pencil className="size-3" /> Commission ({reseller.commission}%)
+            </button>
+          )}
         </>
       }
       footerHint="Channel partners cannot be hard-deleted — only suspended. Suspending freezes the partner and blocks their login; reactivating restores them with their enterprises intact."

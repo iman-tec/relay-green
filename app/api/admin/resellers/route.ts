@@ -170,7 +170,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid email." }, { status: 400 });
   }
 
-  const commissionNum = Number(commission ?? 0);
+  // Commission defaults to 20% when the creator leaves it blank.
+  const commissionNum =
+    commission === undefined || commission === "" ? 20 : Number(commission);
   if (Number.isNaN(commissionNum) || commissionNum < 0 || commissionNum > 100) {
     return NextResponse.json(
       { error: "Commission must be between 0 and 100." },

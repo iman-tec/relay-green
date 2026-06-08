@@ -19,7 +19,7 @@ export function AddResellerDrawer({
 }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [commission, setComm] = useState("");
+  const [commission, setComm] = useState("20");
   const [minutes, setMinutes] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -27,7 +27,7 @@ export function AddResellerDrawer({
   const reset = () => {
     setName("");
     setEmail("");
-    setComm("");
+    setComm("20");
     setMinutes("");
     setError(null);
   };
@@ -46,7 +46,7 @@ export function AddResellerDrawer({
         body: JSON.stringify({
           name: name.trim(),
           email: email.trim(),
-          commission: commission.trim() ? Number(commission) : 0,
+          commission: commission.trim() ? Number(commission) : 20,
           allocatedMinutes: minutes.trim() ? Number(minutes) : 0,
         }),
       });

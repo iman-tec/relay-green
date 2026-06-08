@@ -31,6 +31,7 @@ export function OverviewView({
   onChanged?: () => void;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
   const rows = data?.employees ?? [];
   const open = rows.find((e) => e.id === openId) ?? null;
   const dept = data?.department;
@@ -82,14 +83,33 @@ export function OverviewView({
         </div>
       )}
 
-      <div className="mb-2.5">
+      <div className="mb-2.5 flex items-center justify-between">
         <span
           className="text-[13px] font-medium tracking-[0.04em] uppercase"
           style={{ color: "var(--text)" }}
         >
           Employees
         </span>
+        <button
+          type="button"
+          onClick={() => setAdding((v) => !v)}
+          className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white"
+          style={{ background: "var(--primary)" }}
+        >
+          <span aria-hidden>＋</span> Add employee
+        </button>
       </div>
+
+      {adding && (
+        <AddEmployeeForm
+          deptRemaining={dept?.remainingMinutes ?? 0}
+          onClose={() => setAdding(false)}
+          onAdded={() => {
+            setAdding(false);
+            onChanged?.();
+          }}
+        />
+      )}
 
       {error ? null : !data ? (
         <TableSkeleton />
@@ -201,6 +221,123 @@ function Num({ children }: { children: React.ReactNode }) {
     >
       {children}
     </td>
+  );
+}
+
+function AddEmployeeForm({
+  deptRemaining,
+  onClose,
+  onAdded,
+}: {
+  deptRemaining: number;
+  onClose: () => void;
+  onAdded: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [minutes, setMinutes] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const emailOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
+  const alloc = minutes.trim() ? Number(minutes) : 0;
+  const canAdd =
+    name.trim().length > 0 &&
+    emailOk &&
+    alloc >= 0 &&
+    alloc <= deptRemaining &&
+    !busy;
+
+  async function add() {
+    if (!canAdd) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await fetch("/api/department/employees", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name.trim(),
+          email: email.trim(),
+          allocatedMinutes: alloc,
+        }),
+      });
+      if (!r.ok) {
+        const b = (await r.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Couldn't add employee.");
+      }
+      onAdded();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Couldn't add employee.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      className="mb-5 rounded-xl border p-4"
+      style={{
+        borderColor: "var(--border)",
+        background: "var(--surface-raised)",
+      }}
+    >
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Full name"
+          className="flex-1 rounded-md border px-3 py-2 text-[14px] outline-none"
+          style={modalInputStyle}
+        />
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="name@company.com"
+          className="flex-1 rounded-md border px-3 py-2 text-[14px] outline-none"
+          style={modalInputStyle}
+        />
+        <input
+          type="number"
+          min={0}
+          max={deptRemaining}
+          value={minutes}
+          onChange={(e) => setMinutes(e.target.value)}
+          placeholder="Minutes"
+          className="w-28 rounded-md border px-3 py-2 text-[14px] outline-none"
+          style={modalInputStyle}
+        />
+        <button
+          type="button"
+          onClick={add}
+          disabled={!canAdd}
+          className="rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white transition-opacity"
+          style={{
+            background: "var(--primary)",
+            opacity: canAdd ? 1 : 0.5,
+            cursor: canAdd ? "pointer" : "not-allowed",
+          }}
+        >
+          {busy ? "Adding…" : "Add & invite"}
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-lg px-2.5 py-2 text-[13px]"
+          style={{ color: "var(--text-muted)" }}
+        >
+          Cancel
+        </button>
+      </div>
+      <p className="mt-1.5 text-[12px]" style={{ color: "var(--text-faint)" }}>
+        Minutes draw from this department’s pool ({int(deptRemaining)}{" "}
+        available).
+      </p>
+      {err && (
+        <p className="mt-2 text-[13px]" style={{ color: "var(--risk)" }}>
+          {err}
+        </p>
+      )}
+    </div>
   );
 }
 

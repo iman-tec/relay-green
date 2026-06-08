@@ -289,18 +289,17 @@ function MemberDetail({
 
   async function refill() {
     const amt = Number(amount);
-    if (!(amt > 0) || !m.departmentId) return;
+    if (!(amt > 0)) return;
     setBusy("refill");
     setErr(null);
     try {
-      const r = await fetch(
-        `/api/enterprise/departments/${m.departmentId}/employees/${m.id}/refill`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ amount: amt }),
-        }
-      );
+      // Enterprise admin refills straight from the ORG WALLET
+      // (transfer_org_to_employee) — works for any member regardless of dept.
+      const r = await fetch(`/api/enterprise/members/${m.id}/refill`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: amt }),
+      });
       if (!r.ok) {
         const b = (await r.json().catch(() => ({}))) as { error?: string };
         throw new Error(b.error ?? "Refill failed.");
@@ -331,43 +330,41 @@ function MemberDetail({
       />
       <Row k="Status" v={suspended ? "Suspended" : "Active"} />
 
-      {m.departmentId && (
-        <div className="mt-5">
-          <div
-            className="mb-2 text-[12px] font-medium tracking-[0.04em] uppercase"
-            style={{ color: "var(--text-muted)" }}
-          >
-            Refill from {m.departmentName ?? "department"} pool
-          </div>
-          <div className="flex gap-2">
-            <input
-              type="number"
-              min={1}
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="Minutes"
-              className="w-32 rounded-md border px-3 py-2 text-[14px] outline-none"
-              style={modalInputStyle}
-            />
-            <button
-              type="button"
-              onClick={refill}
-              disabled={busy !== null || !(Number(amount) > 0)}
-              className="rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white transition-opacity"
-              style={{
-                background: "var(--primary)",
-                opacity: busy !== null || !(Number(amount) > 0) ? 0.5 : 1,
-                cursor:
-                  busy !== null || !(Number(amount) > 0)
-                    ? "not-allowed"
-                    : "pointer",
-              }}
-            >
-              {busy === "refill" ? "Adding…" : "Refill"}
-            </button>
-          </div>
+      <div className="mt-5">
+        <div
+          className="mb-2 text-[12px] font-medium tracking-[0.04em] uppercase"
+          style={{ color: "var(--text-muted)" }}
+        >
+          Refill from org wallet
         </div>
-      )}
+        <div className="flex gap-2">
+          <input
+            type="number"
+            min={1}
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="Minutes"
+            className="w-32 rounded-md border px-3 py-2 text-[14px] outline-none"
+            style={modalInputStyle}
+          />
+          <button
+            type="button"
+            onClick={refill}
+            disabled={busy !== null || !(Number(amount) > 0)}
+            className="rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white transition-opacity"
+            style={{
+              background: "var(--primary)",
+              opacity: busy !== null || !(Number(amount) > 0) ? 0.5 : 1,
+              cursor:
+                busy !== null || !(Number(amount) > 0)
+                  ? "not-allowed"
+                  : "pointer",
+            }}
+          >
+            {busy === "refill" ? "Adding…" : "Refill"}
+          </button>
+        </div>
+      </div>
 
       {departments.length > 0 && (
         <div className="mt-5">
