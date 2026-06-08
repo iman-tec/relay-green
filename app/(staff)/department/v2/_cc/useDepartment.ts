@@ -42,5 +42,5 @@ export function useDepartment() {
     };
   }, [load]);
 
-  return { data, loading, error };
+  return { data, loading, error, refetch: load };
 }

@@ -1,0 +1,64 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [5 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Length 2551 >>
+stream
+BT /F1 11 Tf
+/F1 20 Tf 1 0 0 1 64 778 Tm (Relay  Enterprise Admin Guide) Tj
+/F1 11 Tf 1 0 0 1 64 748 Tm (DRAFT v0.1  first-pass content, pending content review.) Tj
+/F1 11 Tf 1 0 0 1 64 732 Tm () Tj
+/F1 14 Tf 1 0 0 1 64 722 Tm (1. Your console) Tj
+/F1 11 Tf 1 0 0 1 64 698 Tm (The enterprise console is your single place to manage departments, people, minutes and) Tj
+/F1 11 Tf 1 0 0 1 64 682 Tm (billing. The left rail switches between Overview, Recharge, Usage, Members, Settings and) Tj
+/F1 11 Tf 1 0 0 1 64 666 Tm (Resources. Supervise and Finance open the org-level consoles in a new view.) Tj
+/F1 11 Tf 1 0 0 1 64 650 Tm () Tj
+/F1 14 Tf 1 0 0 1 64 640 Tm (2. Departments & people) Tj
+/F1 11 Tf 1 0 0 1 64 616 Tm (Open Overview to see every department with its minutes and activity. Click a department to) Tj
+/F1 11 Tf 1 0 0 1 64 600 Tm (drill in: there you can refill it from the org pool and add a new employee \(name + email +) Tj
+/F1 11 Tf 1 0 0 1 64 584 Tm (optional starting minutes\). New employees receive an email invitation to join; their) Tj
+/F1 11 Tf 1 0 0 1 64 568 Tm (starting minutes are drawn from the department's pool.) Tj
+/F1 11 Tf 1 0 0 1 64 552 Tm () Tj
+/F1 14 Tf 1 0 0 1 64 542 Tm (3. Recharge & wallet) Tj
+/F1 11 Tf 1 0 0 1 64 518 Tm (Recharge buys minutes for the organization's pool. Pick a bundle, then Recharge once  your) Tj
+/F1 11 Tf 1 0 0 1 64 502 Tm (partner discount, if any, applies automatically at payment. Recent transactions lists each) Tj
+/F1 11 Tf 1 0 0 1 64 486 Tm (session debit and recharge with its date and amount.) Tj
+/F1 11 Tf 1 0 0 1 64 470 Tm () Tj
+/F1 14 Tf 1 0 0 1 64 460 Tm (4. Settings & profile) Tj
+/F1 11 Tf 1 0 0 1 64 436 Tm (Settings lets you edit your own name, the organization name, primary domain and) Tj
+/F1 11 Tf 1 0 0 1 64 420 Tm (data-retention window, and switch the theme \(light / dark / espresso\). Changes save) Tj
+/F1 11 Tf 1 0 0 1 64 404 Tm (immediately and persist across reloads.) Tj
+/F1 11 Tf 1 0 0 1 64 388 Tm () Tj
+/F1 14 Tf 1 0 0 1 64 378 Tm (5. Supervise & Finance) Tj
+/F1 11 Tf 1 0 0 1 64 354 Tm (Supervise shows the live, org-scoped session grid for your organization. Finance is the) Tj
+/F1 11 Tf 1 0 0 1 64 338 Tm (org-level money and feedback console. Both are scoped to your organization only.) Tj
+/F1 11 Tf 1 0 0 1 64 322 Tm () Tj
+/F1 14 Tf 1 0 0 1 64 312 Tm (6. Support) Tj
+/F1 11 Tf 1 0 0 1 64 288 Tm (Questions? Contact your Relay account manager or your channel partner if your account was) Tj
+/F1 11 Tf 1 0 0 1 64 272 Tm (provisioned through one.) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 4 0 R >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000212 00000 n 
+0000002815 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+2941
+%%EOF

@@ -48,7 +48,7 @@ export function DeptClient({ me }: { me: { email: string } }) {
   const params = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const { data, loading, error } = useDepartment();
+  const { data, loading, error, refetch } = useDepartment();
   const [tab, setTab] = useState<DeptTab>(tabFrom(params?.get("tab")));
 
   useEffect(() => {
@@ -76,7 +76,12 @@ export function DeptClient({ me }: { me: { email: string } }) {
       />
       <main className="min-w-0 flex-1 overflow-auto">
         {tab === "overview" && (
-          <OverviewView data={data} loading={loading} error={error} />
+          <OverviewView
+            data={data}
+            loading={loading}
+            error={error}
+            onChanged={refetch}
+          />
         )}
         {tab === "sessions" && <SessionsView />}
         {tab === "usage" && <UsageView />}

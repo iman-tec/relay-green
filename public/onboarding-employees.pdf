@@ -1,0 +1,58 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [5 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Length 2012 >>
+stream
+BT /F1 11 Tf
+/F1 20 Tf 1 0 0 1 64 778 Tm (Relay  Onboarding Employees) Tj
+/F1 11 Tf 1 0 0 1 64 748 Tm (DRAFT v0.1  first-pass content, pending content review.) Tj
+/F1 11 Tf 1 0 0 1 64 732 Tm () Tj
+/F1 14 Tf 1 0 0 1 64 722 Tm (Before you start) Tj
+/F1 11 Tf 1 0 0 1 64 698 Tm (Make sure the department exists and has minutes. In Overview, click a department to see its) Tj
+/F1 11 Tf 1 0 0 1 64 682 Tm (remaining pool; refill it from the org pool first if it is low.) Tj
+/F1 11 Tf 1 0 0 1 64 666 Tm () Tj
+/F1 14 Tf 1 0 0 1 64 656 Tm (Step 1  Add the employee) Tj
+/F1 11 Tf 1 0 0 1 64 632 Tm (Open the department \(Overview -> click the department row\). In the drill-in, under 'Add) Tj
+/F1 11 Tf 1 0 0 1 64 616 Tm (employee', enter the person's full name and work email, and optionally a starting minute) Tj
+/F1 11 Tf 1 0 0 1 64 600 Tm (allocation \(drawn from the department pool\). Press 'Add & invite'.) Tj
+/F1 11 Tf 1 0 0 1 64 584 Tm () Tj
+/F1 14 Tf 1 0 0 1 64 574 Tm (Step 2  They accept the invite) Tj
+/F1 11 Tf 1 0 0 1 64 550 Tm (The employee receives an email invitation. When they sign in for the first time, their) Tj
+/F1 11 Tf 1 0 0 1 64 534 Tm (account is linked to the department and activated. Their status moves from invited to) Tj
+/F1 11 Tf 1 0 0 1 64 518 Tm (active.) Tj
+/F1 11 Tf 1 0 0 1 64 502 Tm () Tj
+/F1 14 Tf 1 0 0 1 64 492 Tm (Step 3  Top up minutes as needed) Tj
+/F1 11 Tf 1 0 0 1 64 468 Tm (Department admins can refill an individual employee from the department pool: Overview ->) Tj
+/F1 11 Tf 1 0 0 1 64 452 Tm (click the employee -> 'Refill from department pool'. Enterprise admins refill the whole) Tj
+/F1 11 Tf 1 0 0 1 64 436 Tm (department from the org pool.) Tj
+/F1 11 Tf 1 0 0 1 64 420 Tm () Tj
+/F1 14 Tf 1 0 0 1 64 410 Tm (Notes) Tj
+/F1 11 Tf 1 0 0 1 64 386 Tm (Minutes always flow org pool -> department pool -> employee. Top up the level above first if) Tj
+/F1 11 Tf 1 0 0 1 64 370 Tm (a pool is dry. All transfers are recorded with a date in the transactions list.) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 4 0 R >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000212 00000 n 
+0000002276 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+2402
+%%EOF

@@ -62,7 +62,14 @@ export function CommandRail({
             {brandLabel}
           </span>
         </div>
-        <NotificationBell endpoint={bellEndpoint} channelKey={bellChannelKey} />
+        {/* align="left": the bell lives in the LEFT rail, so the dropdown must
+            open rightward into the content area. Without this it defaults to
+            right-edge anchoring and clips off the screen (S1). */}
+        <NotificationBell
+          endpoint={bellEndpoint}
+          channelKey={bellChannelKey}
+          align="left"
+        />
       </div>
 
       <nav className="flex flex-col gap-0.5">

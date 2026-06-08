@@ -250,6 +250,51 @@ function DeptDetail({
   const amt = Number(amount);
   const canRefill = amt > 0 && amt <= orgRemaining && !busy;
 
+  // Add-employee (invite new) — POSTs to the existing departments/[id]/employees
+  // endpoint, which invites the user, links them to this department, and
+  // transfers the initial minutes from the DEPARTMENT pool (≤ its remaining).
+  const [empName, setEmpName] = useState("");
+  const [empEmail, setEmpEmail] = useState("");
+  const [empMinutes, setEmpMinutes] = useState("");
+  const [empBusy, setEmpBusy] = useState(false);
+  const [empErr, setEmpErr] = useState<string | null>(null);
+  const empEmailOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(empEmail.trim());
+  const empAlloc = empMinutes.trim() ? Number(empMinutes) : 0;
+  const canAddEmp =
+    empName.trim().length > 0 &&
+    empEmailOk &&
+    empAlloc >= 0 &&
+    empAlloc <= d.remainingMinutes &&
+    !empBusy;
+
+  async function addEmployee() {
+    if (!canAddEmp) return;
+    setEmpBusy(true);
+    setEmpErr(null);
+    try {
+      const r = await fetch(`/api/enterprise/departments/${d.id}/employees`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: empName.trim(),
+          email: empEmail.trim(),
+          allocatedMinutes: empAlloc,
+        }),
+      });
+      if (!r.ok) {
+        const b = (await r.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Couldn't add employee.");
+      }
+      setEmpName("");
+      setEmpEmail("");
+      setEmpMinutes("");
+      onRefilled();
+    } catch (e) {
+      setEmpErr(e instanceof Error ? e.message : "Couldn't add employee.");
+      setEmpBusy(false);
+    }
+  }
+
   async function refill() {
     if (!canRefill) return;
     setBusy(true);
@@ -322,6 +367,73 @@ function DeptDetail({
         {err && (
           <p className="mt-2 text-[13px]" style={{ color: "var(--risk)" }}>
             {err}
+          </p>
+        )}
+      </div>
+
+      {/* Add employee (invite new) — assigns into this department. */}
+      <div
+        className="mt-6 border-t pt-5"
+        style={{ borderColor: "var(--border)" }}
+      >
+        <div
+          className="mb-2 text-[12px] font-medium tracking-[0.04em] uppercase"
+          style={{ color: "var(--text-muted)" }}
+        >
+          Add employee
+        </div>
+        <div className="flex flex-col gap-2">
+          <input
+            value={empName}
+            onChange={(e) => setEmpName(e.target.value)}
+            placeholder="Full name"
+            className="rounded-md border px-3 py-2 text-[14px] outline-none"
+            style={modalInputStyle}
+          />
+          <input
+            type="email"
+            value={empEmail}
+            onChange={(e) => setEmpEmail(e.target.value)}
+            placeholder="name@company.com"
+            className="rounded-md border px-3 py-2 text-[14px] outline-none"
+            style={modalInputStyle}
+          />
+          <div className="flex gap-2">
+            <input
+              type="number"
+              min={0}
+              max={d.remainingMinutes}
+              value={empMinutes}
+              onChange={(e) => setEmpMinutes(e.target.value)}
+              placeholder="Initial minutes (optional)"
+              className="w-56 rounded-md border px-3 py-2 text-[14px] outline-none"
+              style={modalInputStyle}
+            />
+            <button
+              type="button"
+              onClick={addEmployee}
+              disabled={!canAddEmp}
+              className="rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white transition-opacity"
+              style={{
+                background: "var(--primary)",
+                opacity: canAddEmp ? 1 : 0.5,
+                cursor: canAddEmp ? "pointer" : "not-allowed",
+              }}
+            >
+              {empBusy ? "Adding…" : "Add & invite"}
+            </button>
+          </div>
+        </div>
+        <p
+          className="mt-1.5 text-[12px]"
+          style={{ color: "var(--text-faint)" }}
+        >
+          Minutes draw from this department’s pool ({int(d.remainingMinutes)}{" "}
+          available). They’re emailed an invite to join.
+        </p>
+        {empErr && (
+          <p className="mt-2 text-[13px]" style={{ color: "var(--risk)" }}>
+            {empErr}
           </p>
         )}
       </div>

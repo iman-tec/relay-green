@@ -180,3 +180,38 @@ export async function GET() {
     },
   });
 }
+
+/*
+ * PATCH /api/enterprise/me
+ *   Body: { displayName: string }
+ *   Updates the CALLER's own profile name (profiles.full_name for auth.uid()).
+ *   Self-only — never another user; the org is untouched (org edits go through
+ *   PATCH /api/enterprise/org). Additive, no money path.
+ */
+export async function PATCH(request: Request) {
+  const gate = await requireEnterpriseAdmin();
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error }, { status: gate.status });
+  const { admin, user } = gate;
+
+  const body = (await request.json().catch(() => ({}))) as {
+    displayName?: string;
+  };
+  const displayName = body.displayName?.trim();
+  if (!displayName) {
+    return NextResponse.json({ error: "name_required" }, { status: 400 });
+  }
+  if (displayName.length > 120) {
+    return NextResponse.json({ error: "name_too_long" }, { status: 400 });
+  }
+
+  const { error } = await admin
+    .from("profiles")
+    .update({ full_name: displayName })
+    .eq("id", user.id);
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true, displayName });
+}

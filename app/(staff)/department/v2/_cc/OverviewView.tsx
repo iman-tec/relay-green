@@ -13,6 +13,7 @@ import {
   type PortalStatus,
 } from "@/app/_components/portal/StatusDot";
 import { DrillPanel } from "@/app/_components/portal/DrillPanel";
+import { modalInputStyle } from "@/app/_components/portal/Modal";
 import { eur, int, dateShort } from "@/app/_components/portal/format";
 import type { DeptData, DeptEmployee } from "./types";
 
@@ -22,10 +23,12 @@ export function OverviewView({
   data,
   loading,
   error,
+  onChanged,
 }: {
   data: DeptData | null;
   loading: boolean;
   error: string | null;
+  onChanged?: () => void;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const rows = data?.employees ?? [];
@@ -175,7 +178,16 @@ export function OverviewView({
         title={open?.displayName || open?.email || ""}
         subtitle={open ? `joined ${dateShort(open.createdAt)}` : undefined}
       >
-        {open && <EmpDetail e={open} />}
+        {open && (
+          <EmpDetail
+            e={open}
+            deptRemaining={dept?.remainingMinutes ?? 0}
+            onRefilled={() => {
+              setOpenId(null);
+              onChanged?.();
+            }}
+          />
+        )}
       </DrillPanel>
     </div>
   );
@@ -192,7 +204,45 @@ function Num({ children }: { children: React.ReactNode }) {
   );
 }
 
-function EmpDetail({ e }: { e: DeptEmployee }) {
+function EmpDetail({
+  e,
+  deptRemaining,
+  onRefilled,
+}: {
+  e: DeptEmployee;
+  deptRemaining: number;
+  onRefilled: () => void;
+}) {
+  // Refill an employee from the DEPARTMENT pool (transfer_to_employee).
+  // Minutes come out of the dept's remaining balance — same source the
+  // endpoint enforces (amount ≤ department.remaining_minutes).
+  const [amount, setAmount] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const amt = Number(amount);
+  const canRefill = amt > 0 && amt <= deptRemaining && !busy;
+
+  async function refill() {
+    if (!canRefill) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await fetch(`/api/department/employees/${e.id}/refill`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: amt }),
+      });
+      if (!r.ok) {
+        const b = (await r.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Refill failed.");
+      }
+      onRefilled();
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : "Refill failed.");
+      setBusy(false);
+    }
+  }
+
   return (
     <>
       <div
@@ -206,6 +256,45 @@ function EmpDetail({ e }: { e: DeptEmployee }) {
       <Field k="Email" v={e.email || "—"} />
       <Field k="Spend (synthetic)" v={eur(Math.round(e.usedMinutes * RATE))} />
       <Field k="Status" v={e.status} />
+
+      <div className="mt-5">
+        <div
+          className="mb-2 text-[12px] font-medium tracking-[0.04em] uppercase"
+          style={{ color: "var(--text-muted)" }}
+        >
+          Refill from department pool ({int(deptRemaining)} available)
+        </div>
+        <div className="flex gap-2">
+          <input
+            type="number"
+            min={1}
+            max={deptRemaining}
+            value={amount}
+            onChange={(ev) => setAmount(ev.target.value)}
+            placeholder="Minutes"
+            className="w-32 rounded-md border px-3 py-2 text-[14px] outline-none"
+            style={modalInputStyle}
+          />
+          <button
+            type="button"
+            onClick={refill}
+            disabled={!canRefill}
+            className="rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white transition-opacity"
+            style={{
+              background: "var(--primary)",
+              opacity: canRefill ? 1 : 0.5,
+              cursor: canRefill ? "pointer" : "not-allowed",
+            }}
+          >
+            {busy ? "Adding…" : "Refill"}
+          </button>
+        </div>
+        {err && (
+          <p className="mt-2 text-[13px]" style={{ color: "var(--risk)" }}>
+            {err}
+          </p>
+        )}
+      </div>
     </>
   );
 }

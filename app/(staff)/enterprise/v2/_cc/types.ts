@@ -5,6 +5,7 @@ export type EntMe = {
   org: {
     id: string;
     name: string;
+    primaryDomain: string | null;
     status: string;
     enterpriseCode: string;
     discountPct: number;

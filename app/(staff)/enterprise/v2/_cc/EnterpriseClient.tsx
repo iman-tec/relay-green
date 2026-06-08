@@ -105,7 +105,7 @@ export function EnterpriseClient({ me }: { me: { email: string } }) {
         )}
         {tab === "usage" && <UsageView />}
         {tab === "members" && <MembersView />}
-        {tab === "settings" && <SettingsView me={data} />}
+        {tab === "settings" && <SettingsView me={data} onChanged={refetch} />}
         {tab === "resources" && <ResourcesView />}
       </main>
     </div>
