@@ -14,14 +14,22 @@ import { UserChip } from "@/app/_components/admin-v2/UserChip";
 import { ThemeToggle } from "@/app/_components/ThemeToggle";
 import { EnterpriseTab } from "./EnterpriseTab";
 import { ResellersTab } from "./ResellersTab";
+import { ApplicationsTab } from "./ApplicationsTab";
 import { PodsTab } from "./PodsTab";
 import { InternalUsersTab } from "./InternalUsersTab";
 import { BenchTab } from "./BenchTab";
 
-type TabKey = "enterprise" | "reseller" | "pods" | "internal" | "bench";
+type TabKey =
+  | "enterprise"
+  | "reseller"
+  | "applications"
+  | "pods"
+  | "internal"
+  | "bench";
 
 const TABS: readonly Tab<TabKey>[] = [
   { key: "reseller", label: "Channel Partners" },
+  { key: "applications", label: "Partner Applications" },
   { key: "enterprise", label: "Enterprise" },
   { key: "pods", label: "Pods" },
   { key: "bench", label: "Bench" },
@@ -60,6 +68,7 @@ export function PanelClient({
       <div className="min-h-0 flex-1 overflow-hidden">
         {tab === "enterprise" && <EnterpriseTab />}
         {tab === "reseller" && <ResellersTab />}
+        {tab === "applications" && <ApplicationsTab />}
         {tab === "pods" && <PodsTab />}
         {tab === "bench" && <BenchTab />}
         {tab === "internal" && <InternalUsersTab />}
