@@ -168,9 +168,9 @@ const NAV: Nav[] = [
     icon: Settings,
     roles: [ROLE.enterprise_admin],
   },
-  // reseller-owner console — redesigned v2 panel (from rutul-working).
+  // reseller-owner console — redesigned v2 panel, now under /partner/v2.
   {
-    href: "/reseller/v2",
+    href: "/partner/v2",
     label: "Channel Partner",
     icon: LayoutDashboard,
     roles: [ROLE.reseller],
@@ -553,8 +553,8 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   const isBare =
     pathname === "/admin/v2" ||
     pathname.startsWith("/admin/v2/") ||
-    pathname === "/reseller/v2" ||
-    pathname.startsWith("/reseller/v2/") ||
+    pathname === "/partner/v2" ||
+    pathname.startsWith("/partner/v2/") ||
     (orgV2 &&
       (pathname === "/enterprise/v2" ||
         pathname.startsWith("/enterprise/v2/") ||

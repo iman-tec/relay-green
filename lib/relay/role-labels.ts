@@ -67,7 +67,7 @@ export function landingForRoles(roles: readonly string[]): string {
   // v2 panels. Legacy /admin/users, /enterprise, /department still work
   // for direct navigation until those surfaces are retired.
   if (roles.includes(ROLE.super_admin)) return "/admin/v2";
-  if (roles.includes(ROLE.reseller)) return "/reseller/v2";
+  if (roles.includes(ROLE.reseller)) return "/partner/v2";
   if (roles.includes(ROLE.enterprise_admin)) return "/enterprise/v2";
   if (roles.includes(ROLE.department_admin)) return "/department/v2";
   if (roles.includes(ROLE.supervisor)) return "/supervise";

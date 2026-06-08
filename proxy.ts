@@ -55,7 +55,10 @@ const STAFF_PREFIXES = [
   "/staff/onboarding",
 ];
 
-const PARTNER_PREFIXES = ["/reseller"];
+// Protect the authed portal at /partner/v2 (NOT bare /partner — that's the
+// public login). Keep /reseller so the old URLs still bounce to login before
+// the in-app redirect to /partner/v2.
+const PARTNER_PREFIXES = ["/partner/v2", "/reseller"];
 
 const BUSINESS_PREFIXES = ["/enterprise", "/department"];
 

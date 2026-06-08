@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 
 // Legacy Channel Partner (reseller) console retired — the redesigned panel
-// lives at /reseller/v2 (which role-gates + scopes to the partner's own
-// enterprises). Route segment stays `reseller` internally.
+// lives at /partner/v2 now (moved from /reseller/v2 to sit under the /partner
+// surface). Keep this redirect so /reseller still lands on the portal.
 export default function ResellerPage() {
-  redirect("/reseller/v2");
+  redirect("/partner/v2");
 }
