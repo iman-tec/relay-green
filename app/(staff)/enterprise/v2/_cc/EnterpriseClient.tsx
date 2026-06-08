@@ -12,7 +12,6 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   LayoutDashboard,
   Wallet,
-  BarChart3,
   Users,
   Settings,
   BookOpen,
@@ -27,17 +26,17 @@ import { OverviewView } from "./OverviewView";
 import { RechargeView } from "./RechargeView";
 import { SuperviseView } from "./SuperviseView";
 import { FinanceView } from "./FinanceView";
-import { MembersView, UsageView, SettingsView, ResourcesView } from "./views";
+import { MembersView, SettingsView, ResourcesView } from "./views";
 import type { EntTab } from "./types";
 
+// Usage merged into Finance (revenue + usage + feedback). Settings lives in the
+// bottom account dropdown, not the nav.
 const NAV = [
   { key: "overview", label: "Overview", Icon: LayoutDashboard },
   { key: "recharge", label: "Recharge", Icon: Wallet },
-  { key: "usage", label: "Usage", Icon: BarChart3 },
   { key: "finance", label: "Finance", Icon: Banknote },
   { key: "members", label: "Members", Icon: Users },
   { key: "supervise", label: "Supervise", Icon: Eye },
-  { key: "settings", label: "Settings", Icon: Settings },
   { key: "resources", label: "Resources", Icon: BookOpen },
 ];
 
@@ -49,7 +48,6 @@ const LINKS: { label: string; href: string; Icon: typeof Wallet }[] = [];
 const VALID: EntTab[] = [
   "overview",
   "recharge",
-  "usage",
   "finance",
   "members",
   "supervise",
@@ -95,6 +93,13 @@ export function EnterpriseClient({ me }: { me: { email: string } }) {
         identityName={name}
         identityEmail={me.email}
         identitySub="Enterprise admin"
+        accountItems={[
+          {
+            label: "Settings",
+            Icon: Settings,
+            onClick: () => setTab("settings"),
+          },
+        ]}
       />
       <main className="min-w-0 flex-1 overflow-auto">
         {tab === "overview" && (
@@ -110,7 +115,6 @@ export function EnterpriseClient({ me }: { me: { email: string } }) {
         {tab === "recharge" && (
           <RechargeView me={data} wallet={wallet} onCredited={refetch} />
         )}
-        {tab === "usage" && <UsageView />}
         {tab === "finance" && <FinanceView />}
         {tab === "members" && <MembersView />}
         {tab === "supervise" && <SuperviseView />}

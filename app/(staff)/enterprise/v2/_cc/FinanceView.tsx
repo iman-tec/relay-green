@@ -13,7 +13,7 @@
 
 import { useEffect, useState } from "react";
 import { KpiRibbon, type Kpi } from "@/app/_components/portal/KpiRibbon";
-import { eur } from "@/app/_components/portal/format";
+import { eur, int } from "@/app/_components/portal/format";
 
 type Billing = {
   currency: string;
@@ -23,6 +23,15 @@ type Billing = {
     lifetimeCents: number;
     perMinuteCents: number;
   };
+};
+
+type UsageRow = {
+  period: string;
+  minutes: number;
+  sessions: number;
+  spendCents: number;
+  suppressed?: boolean;
+  suppressedLabel?: string;
 };
 
 type Feedback = {
@@ -42,6 +51,7 @@ function tone(score: number): { color: string; label: string } {
 
 export function FinanceView() {
   const [billing, setBilling] = useState<Billing | null>(null);
+  const [usage, setUsage] = useState<UsageRow[] | null>(null);
   const [feedback, setFeedback] = useState<Feedback[] | null>(null);
 
   useEffect(() => {
@@ -52,6 +62,21 @@ export function FinanceView() {
         if (!off && b && !b.error) setBilling(b as Billing);
       })
       .catch(() => {});
+    return () => {
+      off = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let off = false;
+    fetch("/api/enterprise/usage", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!off) setUsage((d?.byPeriod ?? []) as UsageRow[]);
+      })
+      .catch(() => {
+        if (!off) setUsage([]);
+      });
     return () => {
       off = true;
     };
@@ -107,6 +132,73 @@ export function FinanceView() {
         <div className="mb-10">
           <KpiRibbon items={ribbon} />
         </div>
+      )}
+
+      {/* Usage — month-by-month consumption */}
+      <div
+        className="mb-3 text-[13px] font-medium tracking-[0.04em] uppercase"
+        style={{ color: "var(--text)" }}
+      >
+        Usage
+      </div>
+      {usage === null ? (
+        <ListSkeleton />
+      ) : usage.length === 0 ? (
+        <p className="mb-10 text-[14px]" style={{ color: "var(--text-muted)" }}>
+          No usage in the reporting window yet.
+        </p>
+      ) : (
+        <table className="mb-10 w-full border-collapse">
+          <thead>
+            <tr>
+              {(
+                [
+                  ["Month", "left"],
+                  ["Sessions", "right"],
+                  ["Minutes", "right"],
+                  ["Spend", "right"],
+                ] as const
+              ).map(([h, a]) => (
+                <th
+                  key={h}
+                  className="px-4 pb-2.5 text-[12px] font-medium tracking-[0.04em] uppercase"
+                  style={{
+                    color: "var(--text-muted)",
+                    textAlign: a,
+                    borderBottom: "1px solid var(--border)",
+                  }}
+                >
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {usage.map((r) => (
+              <tr
+                key={r.period}
+                style={{ borderBottom: "1px solid var(--border)" }}
+              >
+                <td className="px-4 py-3 text-[14px]">{r.period}</td>
+                {r.suppressed ? (
+                  <td
+                    colSpan={3}
+                    className="px-4 py-3 text-right text-[13px]"
+                    style={{ color: "var(--text-faint)" }}
+                  >
+                    {r.suppressedLabel ?? "Insufficient data"}
+                  </td>
+                ) : (
+                  <>
+                    <UNum>{int(r.sessions)}</UNum>
+                    <UNum>{int(r.minutes)}</UNum>
+                    <UNum>{eur(r.spendCents)}</UNum>
+                  </>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
 
       {/* Feedback */}
@@ -187,6 +279,17 @@ export function FinanceView() {
         </ul>
       )}
     </div>
+  );
+}
+
+function UNum({ children }: { children: React.ReactNode }) {
+  return (
+    <td
+      className="px-4 py-3 text-right font-mono text-[14px] tabular-nums"
+      style={{ color: "var(--text)" }}
+    >
+      {children}
+    </td>
   );
 }
 

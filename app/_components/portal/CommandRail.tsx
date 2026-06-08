@@ -15,7 +15,7 @@
 
 import type { ComponentType } from "react";
 import { NotificationBell } from "@/app/_components/admin-v2/NotificationBell";
-import { AccountMenu } from "./AccountMenu";
+import { AccountMenu, type AccountMenuItem } from "./AccountMenu";
 
 type IconType = ComponentType<{ size?: number }>;
 
@@ -33,6 +33,7 @@ export function CommandRail({
   identityName,
   identityEmail,
   identitySub,
+  accountItems = [],
 }: {
   brandLabel: string;
   nav: RailNav[];
@@ -44,6 +45,8 @@ export function CommandRail({
   identityName: string;
   identityEmail?: string;
   identitySub: string;
+  /** Extra actions in the bottom account dropdown (e.g. Settings). */
+  accountItems?: AccountMenuItem[];
 }) {
   return (
     <aside
@@ -136,6 +139,7 @@ export function CommandRail({
           name={identityName}
           email={identityEmail}
           sub={identitySub}
+          items={accountItems}
         />
       </div>
     </aside>
