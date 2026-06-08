@@ -11,6 +11,7 @@ import {
   StatusDot,
   type PortalStatus,
 } from "@/app/_components/portal/StatusDot";
+import { DrillPanel } from "@/app/_components/portal/DrillPanel";
 import {
   Modal,
   ModalField,
@@ -41,37 +42,50 @@ function Shell({
   );
 }
 
-// ---- Members ---------------------------------------------------------------
-type Member = {
+// ---- Members (org-wide roster + management) --------------------------------
+type EntMember = {
   id: string;
   displayName: string;
   email: string;
-  primaryRole: string;
+  departmentId: string | null;
+  departmentName: string | null;
+  allocatedMinutes: number;
+  usedMinutes: number;
+  remainingMinutes: number;
+  spendCents: number;
   status: string;
+  lastSignIn: string | null;
+  createdAt: string;
 };
 
 export function MembersView() {
-  const [members, setMembers] = useState<Member[] | null>(null);
+  const [members, setMembers] = useState<EntMember[] | null>(null);
   const [inviting, setInviting] = useState(false);
+  const [openId, setOpenId] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    fetch("/api/enterprise/users?scope=staff", { cache: "no-store" })
+    fetch("/api/enterprise/members", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => setMembers((d?.members ?? d?.users ?? []) as Member[]))
+      .then((d) => setMembers((d?.members ?? []) as EntMember[]))
       .catch(() => setMembers([]));
   }, []);
-
   useEffect(() => {
     load();
   }, [load]);
 
+  const open = members?.find((m) => m.id === openId) ?? null;
+
   return (
     <Shell title="Members">
-      <div className="mb-3 flex justify-end">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <p className="text-[13px]" style={{ color: "var(--text-muted)" }}>
+          Every employee across your departments. Add employees from a
+          department in Overview.
+        </p>
         <button
           type="button"
           onClick={() => setInviting(true)}
-          className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white"
           style={{ background: "var(--primary)" }}
         >
           <span aria-hidden>＋</span> Invite admin
@@ -80,54 +94,100 @@ export function MembersView() {
       {members === null ? (
         <Skel />
       ) : members.length === 0 ? (
-        <Muted>No staff members yet.</Muted>
+        <Muted>
+          No employees yet — add them from a department in Overview.
+        </Muted>
       ) : (
         <table className="w-full border-collapse">
           <thead>
             <tr>
-              {["Name", "Email", "Role", "Status"].map((h) => (
+              {[
+                ["Name", "left"],
+                ["Department", "left"],
+                ["Min used", "right"],
+                ["Min left", "right"],
+                ["Spend", "right"],
+                ["Status", "left"],
+              ].map(([h, a]) => (
                 <th
                   key={h}
-                  className="px-4 pb-2.5 text-left text-[12px] font-medium tracking-[0.04em] uppercase"
+                  className="px-4 pb-2.5 text-[12px] font-medium tracking-[0.04em] uppercase"
                   style={{
                     color: "var(--text-muted)",
+                    textAlign: a as "left" | "right",
                     borderBottom: "1px solid var(--border)",
                   }}
                 >
                   {h}
                 </th>
               ))}
+              <th
+                style={{ borderBottom: "1px solid var(--border)", width: 24 }}
+                aria-hidden
+              />
             </tr>
           </thead>
           <tbody>
             {members.map((m) => (
               <tr
                 key={m.id}
+                onClick={() => setOpenId(m.id)}
+                tabIndex={0}
+                onKeyDown={(e) => e.key === "Enter" && setOpenId(m.id)}
+                className="group/row cursor-pointer outline-none"
                 style={{ borderBottom: "1px solid var(--border)" }}
+                onMouseEnter={(e) =>
+                  (e.currentTarget.style.background = "var(--surface-raised)")
+                }
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.background = "transparent")
+                }
               >
                 <td className="px-4 py-3 text-[14px] font-medium">
-                  {m.displayName || "—"}
+                  {m.displayName || m.email || "—"}
                 </td>
                 <td
                   className="px-4 py-3 text-[14px]"
                   style={{ color: "var(--text-muted)" }}
                 >
-                  {m.email}
+                  {m.departmentName ?? "—"}
                 </td>
-                <td
-                  className="px-4 py-3 text-[14px]"
-                  style={{ color: "var(--text-muted)" }}
-                >
-                  {m.primaryRole || "—"}
-                </td>
+                <Num>{int(m.usedMinutes)}</Num>
+                <Num>{int(m.remainingMinutes)}</Num>
+                <Num>{eur(m.spendCents)}</Num>
                 <td className="px-4 py-3">
-                  <StatusDot status={m.status?.toLowerCase() as PortalStatus} />
+                  <StatusDot status={m.status as PortalStatus} />
+                </td>
+                <td
+                  className="px-2 py-3 text-right text-[18px] opacity-0 transition-opacity group-hover/row:opacity-100"
+                  style={{ color: "var(--text-faint)" }}
+                  aria-hidden
+                >
+                  ⋯
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
+
+      <DrillPanel
+        open={open !== null}
+        onClose={() => setOpenId(null)}
+        title={open?.displayName || open?.email || ""}
+        subtitle={open ? (open.departmentName ?? "No department") : undefined}
+      >
+        {open && (
+          <MemberDetail
+            m={open}
+            onChanged={() => {
+              setOpenId(null);
+              load();
+            }}
+          />
+        )}
+      </DrillPanel>
+
       <InviteMemberModal
         open={inviting}
         onClose={() => setInviting(false)}
@@ -137,6 +197,217 @@ export function MembersView() {
         }}
       />
     </Shell>
+  );
+}
+
+function MemberDetail({
+  m,
+  onChanged,
+}: {
+  m: EntMember;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [amount, setAmount] = useState("");
+  const suspended = m.status === "suspended";
+  const pending = !m.lastSignIn;
+
+  async function setStatus(next: "ACTIVE" | "DEACTIVATED") {
+    setBusy("status");
+    setErr(null);
+    try {
+      const r = await fetch(`/api/enterprise/members/${m.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: next }),
+      });
+      if (!r.ok) {
+        const b = (await r.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Failed.");
+      }
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Failed.");
+      setBusy(null);
+    }
+  }
+
+  async function resend() {
+    setBusy("resend");
+    setErr(null);
+    setNote(null);
+    try {
+      const r = await fetch(`/api/enterprise/members/${m.id}/resend-invite`, {
+        method: "POST",
+      });
+      if (!r.ok) {
+        const b = (await r.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Failed.");
+      }
+      setNote("Invite re-sent.");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Failed.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function refill() {
+    const amt = Number(amount);
+    if (!(amt > 0) || !m.departmentId) return;
+    setBusy("refill");
+    setErr(null);
+    try {
+      const r = await fetch(
+        `/api/enterprise/departments/${m.departmentId}/employees/${m.id}/refill`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ amount: amt }),
+        }
+      );
+      if (!r.ok) {
+        const b = (await r.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Refill failed.");
+      }
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Refill failed.");
+      setBusy(null);
+    }
+  }
+
+  return (
+    <>
+      <div
+        className="flex gap-8 border-y py-4"
+        style={{ borderColor: "var(--border)" }}
+      >
+        <MStat label="Allocated" v={int(m.allocatedMinutes)} />
+        <MStat label="Used" v={int(m.usedMinutes)} />
+        <MStat label="Remaining" v={int(m.remainingMinutes)} />
+      </div>
+      <Row k="Email" v={m.email || "—"} />
+      <Row k="Department" v={m.departmentName ?? "—"} />
+      <Row k="Spend" v={eur(m.spendCents)} />
+      <Row
+        k="Last activity"
+        v={m.lastSignIn ? dateShort(m.lastSignIn) : "Never signed in"}
+      />
+      <Row k="Status" v={suspended ? "Suspended" : "Active"} />
+
+      {m.departmentId && (
+        <div className="mt-5">
+          <div
+            className="mb-2 text-[12px] font-medium tracking-[0.04em] uppercase"
+            style={{ color: "var(--text-muted)" }}
+          >
+            Refill from {m.departmentName ?? "department"} pool
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="number"
+              min={1}
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="Minutes"
+              className="w-32 rounded-md border px-3 py-2 text-[14px] outline-none"
+              style={modalInputStyle}
+            />
+            <button
+              type="button"
+              onClick={refill}
+              disabled={busy !== null || !(Number(amount) > 0)}
+              className="rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white transition-opacity"
+              style={{
+                background: "var(--primary)",
+                opacity: busy !== null || !(Number(amount) > 0) ? 0.5 : 1,
+                cursor:
+                  busy !== null || !(Number(amount) > 0)
+                    ? "not-allowed"
+                    : "pointer",
+              }}
+            >
+              {busy === "refill" ? "Adding…" : "Refill"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div
+        className="mt-6 flex flex-wrap gap-2 border-t pt-4"
+        style={{ borderColor: "var(--border)" }}
+      >
+        <button
+          type="button"
+          onClick={() => setStatus(suspended ? "ACTIVE" : "DEACTIVATED")}
+          disabled={busy !== null}
+          className="rounded-lg border px-3.5 py-2 text-[13px] font-semibold transition-opacity disabled:opacity-50"
+          style={{
+            borderColor: suspended ? "var(--primary)" : "var(--risk)",
+            color: suspended ? "var(--primary-hover)" : "var(--risk)",
+          }}
+        >
+          {busy === "status"
+            ? "…"
+            : suspended
+              ? "Reactivate access"
+              : "Suspend access"}
+        </button>
+        {pending && (
+          <button
+            type="button"
+            onClick={resend}
+            disabled={busy !== null}
+            className="rounded-lg border px-3.5 py-2 text-[13px] font-medium transition-opacity disabled:opacity-50"
+            style={{
+              borderColor: "var(--border-strong)",
+              color: "var(--text)",
+            }}
+          >
+            {busy === "resend" ? "…" : "Resend invite"}
+          </button>
+        )}
+      </div>
+      {note && (
+        <p
+          className="mt-2 text-[13px]"
+          style={{ color: "var(--primary-hover)" }}
+        >
+          {note}
+        </p>
+      )}
+      {err && (
+        <p className="mt-2 text-[13px]" style={{ color: "var(--risk)" }}>
+          {err}
+        </p>
+      )}
+      <p className="mt-3 text-[12px]" style={{ color: "var(--text-faint)" }}>
+        Suspending blocks the member’s sign-in immediately (server-enforced);
+        reactivating restores access.
+      </p>
+    </>
+  );
+}
+
+function MStat({ label, v }: { label: string; v: string }) {
+  return (
+    <div>
+      <div
+        className="mb-1.5 text-[12px] font-medium tracking-[0.04em] uppercase"
+        style={{ color: "var(--text-muted)" }}
+      >
+        {label}
+      </div>
+      <div
+        className="font-mono text-[19px] tabular-nums"
+        style={{ color: "var(--text)" }}
+      >
+        {v}
+      </div>
+    </div>
   );
 }
 

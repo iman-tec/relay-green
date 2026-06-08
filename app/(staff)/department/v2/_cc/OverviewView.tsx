@@ -219,8 +219,32 @@ function EmpDetail({
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [statusBusy, setStatusBusy] = useState(false);
   const amt = Number(amount);
   const canRefill = amt > 0 && amt <= deptRemaining && !busy;
+  const suspended = (e.status ?? "").toLowerCase() === "suspended";
+
+  // Suspend / reactivate an employee (deactivate_employee RPC + auth ban).
+  // Suspending returns the employee's unused minutes to the department pool.
+  async function setStatus(next: "active" | "suspended") {
+    setStatusBusy(true);
+    setErr(null);
+    try {
+      const r = await fetch(`/api/department/employees/${e.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: next }),
+      });
+      if (!r.ok) {
+        const b = (await r.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Failed.");
+      }
+      onRefilled();
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : "Failed.");
+      setStatusBusy(false);
+    }
+  }
 
   async function refill() {
     if (!canRefill) return;
@@ -295,6 +319,32 @@ function EmpDetail({
           </p>
         )}
       </div>
+
+      <div
+        className="mt-6 flex flex-wrap gap-2 border-t pt-4"
+        style={{ borderColor: "var(--border)" }}
+      >
+        <button
+          type="button"
+          onClick={() => setStatus(suspended ? "active" : "suspended")}
+          disabled={statusBusy}
+          className="rounded-lg border px-3.5 py-2 text-[13px] font-semibold transition-opacity disabled:opacity-50"
+          style={{
+            borderColor: suspended ? "var(--primary)" : "var(--risk)",
+            color: suspended ? "var(--primary-hover)" : "var(--risk)",
+          }}
+        >
+          {statusBusy
+            ? "…"
+            : suspended
+              ? "Reactivate access"
+              : "Suspend access"}
+        </button>
+      </div>
+      <p className="mt-3 text-[12px]" style={{ color: "var(--text-faint)" }}>
+        Suspending blocks the employee’s sign-in and returns their unused
+        minutes to the department pool; reactivating restores access.
+      </p>
     </>
   );
 }
