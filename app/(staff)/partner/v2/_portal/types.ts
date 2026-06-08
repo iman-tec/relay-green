@@ -49,4 +49,5 @@ export type PortalTab =
   | "onboard"
   | "program"
   | "resources"
+  | "settings"
   | "help";

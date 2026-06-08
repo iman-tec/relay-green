@@ -5,6 +5,8 @@
 
 import { useEffect, useState } from "react";
 import { eur, int, dateShort } from "@/app/_components/portal/format";
+import { ThemeTriplet } from "@/app/_components/ThemeTriplet";
+import { createClient } from "@/lib/supabase/browser";
 import type { DeptData } from "./types";
 
 function Shell({
@@ -195,8 +197,110 @@ export function UsageView() {
 
 // ---- Settings (with downstream terms NOTICE — never a second contract) -----
 export function SettingsView({ data }: { data: DeptData | null }) {
+  // Caller's own profile (name editable, email read-only).
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  useEffect(() => {
+    let off = false;
+    void (async () => {
+      const sb = createClient();
+      const { data: u } = await sb.auth.getUser();
+      if (off || !u.user) return;
+      setEmail(u.user.email ?? "");
+      const { data: p } = await sb
+        .from("profiles")
+        .select("full_name")
+        .eq("id", u.user.id)
+        .maybeSingle();
+      if (off) return;
+      setName((p as { full_name: string | null } | null)?.full_name ?? "");
+      setLoaded(true);
+    })();
+    return () => {
+      off = true;
+    };
+  }, []);
+  const saveName = async () => {
+    setSaving(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ displayName: name.trim() }),
+      });
+      if (!res.ok) throw new Error("Couldn't save.");
+      setMsg("Saved.");
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Couldn't save.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <Shell title="Settings">
+      {/* Your profile */}
+      <section className="mb-8 max-w-md">
+        <h2
+          className="mb-3 text-[13px] font-medium tracking-[0.04em] uppercase"
+          style={{ color: "var(--text)" }}
+        >
+          Your profile
+        </h2>
+        <div
+          className="flex items-center justify-between gap-4 border-b py-3"
+          style={{ borderColor: "var(--border)" }}
+        >
+          <span className="text-[13px]" style={{ color: "var(--text-muted)" }}>
+            Name
+          </span>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Your name"
+            disabled={!loaded}
+            className="w-[260px] max-w-[60%] rounded-md border px-3 py-2 text-[14px] outline-none"
+            style={{
+              borderColor: "var(--border-strong)",
+              background: "var(--surface)",
+            }}
+          />
+        </div>
+        <Row k="Email" v={email || "—"} />
+        <div className="mt-3 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={saveName}
+            disabled={saving || !name.trim() || !loaded}
+            className="rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white transition-opacity"
+            style={{
+              background: "var(--primary)",
+              opacity: saving || !name.trim() || !loaded ? 0.5 : 1,
+              cursor:
+                saving || !name.trim() || !loaded ? "not-allowed" : "pointer",
+            }}
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+          {msg && (
+            <span
+              className="text-[12px]"
+              style={{
+                color:
+                  msg === "Saved." ? "var(--primary-hover)" : "var(--risk)",
+              }}
+            >
+              {msg}
+            </span>
+          )}
+        </div>
+      </section>
+
+      {/* Department (read-only — dept admins don't rename their dept) */}
       <section className="mb-8 max-w-md">
         <h2
           className="mb-3 text-[13px] font-medium tracking-[0.04em] uppercase"
@@ -209,7 +313,27 @@ export function SettingsView({ data }: { data: DeptData | null }) {
         <Row k="Organization" v={data?.enterprise.name ?? "—"} />
       </section>
 
-      <section className="max-w-md">
+      {/* Appearance */}
+      <section className="mb-8 max-w-md">
+        <h2
+          className="mb-3 text-[13px] font-medium tracking-[0.04em] uppercase"
+          style={{ color: "var(--text)" }}
+        >
+          Appearance
+        </h2>
+        <div
+          className="flex items-center justify-between border-b py-3"
+          style={{ borderColor: "var(--border)" }}
+        >
+          <span className="text-[13px]" style={{ color: "var(--text-muted)" }}>
+            Theme
+          </span>
+          <ThemeTriplet />
+        </div>
+      </section>
+
+      {/* Terms (notice, not a re-sign) */}
+      <section className="mb-8 max-w-md">
         <h2
           className="mb-3 text-[13px] font-medium tracking-[0.04em] uppercase"
           style={{ color: "var(--text)" }}
@@ -223,9 +347,20 @@ export function SettingsView({ data }: { data: DeptData | null }) {
         </p>
       </section>
 
-      <p className="mt-6 text-[13px]" style={{ color: "var(--text-muted)" }}>
-        Theme (light / dark / espresso) lives in the rail.
-      </p>
+      {/* Data retention (view) */}
+      <section className="max-w-md">
+        <h2
+          className="mb-3 text-[13px] font-medium tracking-[0.04em] uppercase"
+          style={{ color: "var(--text)" }}
+        >
+          Data retention
+        </h2>
+        <p className="text-[14px]" style={{ color: "var(--text-muted)" }}>
+          Retention is set at the organization level by your enterprise admin.
+          Session data is kept per that policy; you can view your department’s
+          sessions under the Sessions tab.
+        </p>
+      </section>
     </Shell>
   );
 }

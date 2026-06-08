@@ -12,6 +12,7 @@ import {
   Plus,
   BadgeCheck,
   BookOpen,
+  Settings,
   HelpCircle,
 } from "lucide-react";
 import { AccountMenu } from "@/app/_components/portal/AccountMenu";
@@ -22,6 +23,7 @@ const NAV: { key: PortalTab; label: string; Icon: typeof LayoutDashboard }[] = [
   { key: "onboard", label: "Onboard", Icon: Plus },
   { key: "program", label: "Program", Icon: BadgeCheck },
   { key: "resources", label: "Resources", Icon: BookOpen },
+  { key: "settings", label: "Settings", Icon: Settings },
   { key: "help", label: "Help", Icon: HelpCircle },
 ];
 

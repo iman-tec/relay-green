@@ -17,6 +17,7 @@ import { OverviewView } from "./OverviewView";
 import { OnboardView } from "./OnboardView";
 import { ProgramView } from "./ProgramView";
 import { ResourcesView } from "./ResourcesView";
+import { SettingsView } from "./SettingsView";
 import { HelpView } from "./HelpView";
 
 const VALID: PortalTab[] = [
@@ -24,6 +25,7 @@ const VALID: PortalTab[] = [
   "onboard",
   "program",
   "resources",
+  "settings",
   "help",
 ];
 
@@ -82,6 +84,7 @@ export function PortalClient({ me }: { me: { email: string } }) {
         {tab === "onboard" && <OnboardView data={data} onDone={onOnboarded} />}
         {tab === "program" && <ProgramView data={data} />}
         {tab === "resources" && <ResourcesView data={data} />}
+        {tab === "settings" && <SettingsView data={data} email={me.email} />}
         {tab === "help" && <HelpView />}
       </main>
     </div>
