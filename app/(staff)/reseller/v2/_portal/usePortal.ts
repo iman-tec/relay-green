@@ -42,6 +42,12 @@ export function usePortal() {
     // fetch-on-mount pattern.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
+    // Poll quietly so invite acceptance (partner_status flips server-side in the
+    // recipient's session) and fresh activity surface without a manual reload.
+    // Realtime isn't the live transport here, so an interval is the reliable
+    // path; `load` doesn't toggle the loading flag, so the table never flickers.
+    const id = setInterval(() => void load(), 20_000);
+    return () => clearInterval(id);
   }, [load]);
 
   return { data, loading, error, refetch };

@@ -17,6 +17,8 @@ export type PortalCompany = {
   earnedLifetimeCents: number;
   onboardedAt: string | null;
   lastActivityAt: string | null;
+  adminName: string | null;
+  adminEmail: string | null;
 };
 
 export type PortalPayload = {

@@ -115,11 +115,9 @@ export async function GET() {
     if (new Date(s.created_at) >= monthStart) thisMonth += cents;
   }
 
-  // 4. Recent revenue events — last 10 ended sessions, formatted for the
-  // transactions list.
-  const recentTransactions = sessions
+  // 4a. Session revenue events — ended sessions, formatted for the feed.
+  const sessionTransactions = sessions
     .filter((s) => s.status === "ended" && s.duration_minutes)
-    .slice(0, 10)
     .map((s) => ({
       id: s.id,
       occurredAt: s.ended_at ?? s.created_at,
@@ -129,6 +127,39 @@ export async function GET() {
       amountCents: Math.round(Number(s.duration_minutes) * CENTS_PER_MINUTE),
       kind: "session_revenue" as const,
     }));
+
+  // 4b. Wallet top-ups — dated recharge purchases from the minute_purchases
+  // ledger (written by /api/enterprise/wallet/topup). These give the partner a
+  // real, dated transaction for every recharge, not just session usage.
+  const { data: purchaseRows } = await admin
+    .from("minute_purchases")
+    .select("id, minutes, amount_cents, created_at")
+    .eq("organization_id", orgId)
+    .order("created_at", { ascending: false })
+    .limit(20);
+  const purchaseTransactions = (
+    (purchaseRows ?? []) as Array<{
+      id: string;
+      minutes: number;
+      amount_cents: number;
+      created_at: string;
+    }>
+  ).map((p) => ({
+    id: `purchase-${p.id}`,
+    occurredAt: p.created_at,
+    label: "Wallet top-up",
+    durationMin: Number(p.minutes),
+    amountCents: Number(p.amount_cents),
+    kind: "minute_purchase" as const,
+  }));
+
+  // Merge both streams, newest first, cap at 10.
+  const recentTransactions = [...sessionTransactions, ...purchaseTransactions]
+    .sort(
+      (a, b) =>
+        new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime()
+    )
+    .slice(0, 10);
 
   return NextResponse.json({
     currency: orgRow.billing_currency || "EUR",

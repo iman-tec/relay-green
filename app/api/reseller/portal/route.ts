@@ -33,9 +33,14 @@ import {
   effectiveBundleCents,
   partnerEarnedCents,
 } from "@/lib/billing/partnerMargin";
+import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+
+function normName(s: string | null | undefined): string {
+  return (s ?? "").trim().toLowerCase();
+}
 
 export async function GET() {
   if (!partnerProgramEnabled()) {
@@ -112,18 +117,88 @@ export async function GET() {
 
   const monthMinByOrg = new Map<string, number>();
   const lastActivityByOrg = new Map<string, string>();
+  // Admin identity per company — email + name from the enterprise_admin invite
+  // recorded at onboarding (keyed to org by company name, newest wins), with
+  // the org's enterprise_admin profile name as fallback when no invite matches.
+  const adminByCompany = new Map<
+    string,
+    { name: string | null; email: string }
+  >();
+  const adminNameByOrg = new Map<string, string>();
+
   if (orgIds.length > 0) {
+    const [{ data: invRows }, { data: profRows }] = await Promise.all([
+      admin
+        .from("invites")
+        .select("email, name, company_name, sent_at")
+        .eq("scope_type", "partner")
+        .eq("scope_id", resellerId)
+        .eq("role", ROLE.enterprise_admin)
+        .order("sent_at", { ascending: true }),
+      admin
+        .from("profiles_with_role")
+        .select("id, organization_id, full_name, primary_role")
+        .in("organization_id", orgIds),
+    ]);
+
+    for (const row of (invRows ?? []) as Array<{
+      email: string;
+      name: string | null;
+      company_name: string | null;
+      sent_at: string;
+    }>) {
+      const key = normName(row.company_name);
+      if (key) adminByCompany.set(key, { name: row.name, email: row.email });
+    }
+
+    // Member profiles serve two jobs: session attribution (below) and the
+    // admin-name fallback.
+    const profiles = (profRows ?? []) as Array<{
+      id: string;
+      organization_id: string | null;
+      full_name: string | null;
+      primary_role: string | null;
+    }>;
+    const orgOfProfile = new Map<string, string>();
+    for (const p of profiles) {
+      if (p.organization_id) orgOfProfile.set(p.id, p.organization_id);
+      if (
+        p.organization_id &&
+        p.primary_role === ROLE.enterprise_admin &&
+        p.full_name?.trim() &&
+        !adminNameByOrg.has(p.organization_id)
+      ) {
+        adminNameByOrg.set(p.organization_id, p.full_name.trim());
+      }
+    }
+
+    // Sessions attach to an org EITHER directly (guest_calls.organization_id)
+    // OR via the member who placed them (customer_user_id ∈ the org's
+    // profiles). organization_id is effectively never populated, so matching it
+    // alone under-reports minutes + last-activity to zero — resolve members and
+    // attribute each session through them.
+    const memberIds = profiles.map((p) => p.id);
+    const orParts = [`organization_id.in.(${orgIds.join(",")})`];
+    if (memberIds.length > 0) {
+      orParts.push(`customer_user_id.in.(${memberIds.join(",")})`);
+    }
     const { data: sessions } = await admin
       .from("guest_calls")
-      .select("organization_id, status, duration_minutes, created_at")
-      .in("organization_id", orgIds);
+      .select(
+        "organization_id, customer_user_id, status, duration_minutes, created_at"
+      )
+      .or(orParts.join(","));
+
     for (const s of (sessions ?? []) as Array<{
       organization_id: string | null;
+      customer_user_id: string | null;
       status: string;
       duration_minutes: number | null;
       created_at: string;
     }>) {
-      const oid = s.organization_id;
+      const oid =
+        s.organization_id ??
+        (s.customer_user_id ? orgOfProfile.get(s.customer_user_id) : undefined);
       if (!oid) continue;
       const prevLast = lastActivityByOrg.get(oid);
       if (!prevLast || s.created_at > prevLast)
@@ -175,6 +250,11 @@ export async function GET() {
       earnedLifetimeCents,
       onboardedAt: c.onboarded_at,
       lastActivityAt: lastActivityByOrg.get(c.id) ?? null,
+      adminName:
+        adminByCompany.get(normName(c.name))?.name ??
+        adminNameByOrg.get(c.id) ??
+        null,
+      adminEmail: adminByCompany.get(normName(c.name))?.email ?? null,
     };
   });
 

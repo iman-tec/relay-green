@@ -100,8 +100,14 @@ export function ResourcesView({ data }: { data: PortalPayload | null }) {
           Enablement
         </h2>
         <div className="flex flex-wrap gap-2.5">
-          <Download href="/partner-guide.pdf" label="How-to guide (PDF)" />
-          <Download href="/partner-deck.pdf" label="Partner deck (PDF)" />
+          {/* Real files served from /public (see Relay-Partner-Deck.*). The
+              prior /partner-deck.pdf + /partner-guide.pdf hrefs 404'd — no such
+              files existed. A how-to guide returns here once its file is added. */}
+          <Download href="/Relay-Partner-Deck.pdf" label="Partner deck (PDF)" />
+          <Download
+            href="/Relay-Partner-Deck.pptx"
+            label="Partner deck (PowerPoint)"
+          />
         </div>
       </section>
 

@@ -262,6 +262,16 @@ function CompanyDetail({ c }: { c: PortalCompany }) {
           earn
         />
       </div>
+      <Field
+        k="Admin"
+        v={
+          c.adminName || c.adminEmail
+            ? c.adminName && c.adminEmail
+              ? `${c.adminName} · ${c.adminEmail}`
+              : c.adminName || c.adminEmail || "—"
+            : "—"
+        }
+      />
       <Field k="Passthrough discount" v={`${c.discountPct}%`} />
       <Field
         k="This month"

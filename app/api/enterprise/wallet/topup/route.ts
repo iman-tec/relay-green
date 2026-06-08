@@ -26,6 +26,7 @@ export const runtime = "nodejs";
 type PaymentIntent = {
   id: string;
   status: string;
+  amount: number;
   metadata: Record<string, string>;
 };
 
@@ -33,7 +34,7 @@ export async function POST(request: Request) {
   const gate = await requireEnterpriseAdmin();
   if (!gate.ok)
     return NextResponse.json({ error: gate.error }, { status: gate.status });
-  const { admin, orgId } = gate;
+  const { admin, orgId, user: actor } = gate;
 
   if (!STRIPE_KEY) {
     return NextResponse.json(
@@ -120,6 +121,33 @@ export async function POST(request: Request) {
   if (updErr) {
     return NextResponse.json({ error: updErr.message }, { status: 500 });
   }
+
+  // Record the purchase in the dated transaction ledger so it shows in
+  // Billing → Recent transactions with a date + amount. Best-effort and
+  // idempotent on the PaymentIntent id — a repeat/webhook call won't dup, and a
+  // failure here must never undo the credit above. `amount` is the cents Stripe
+  // collected; falls back to minutes × list rate if Stripe omitted it.
+  await admin
+    .from("minute_purchases")
+    .upsert(
+      {
+        organization_id: orgId,
+        minutes,
+        amount_cents: Number(pi.amount ?? 0) || minutes * 300,
+        currency: "eur",
+        bundle_code: pi.metadata?.relay_bundle ?? null,
+        stripe_payment_intent_id: pi.id,
+        created_by: actor.id,
+      },
+      { onConflict: "stripe_payment_intent_id", ignoreDuplicates: true }
+    )
+    .then(({ error }) => {
+      if (error)
+        console.warn(
+          "[enterprise/wallet/topup] ledger insert failed:",
+          error.message
+        );
+    });
 
   // Stamp the PI so a repeat/webhook call won't double-credit.
   await stripeRequest(`/payment_intents/${paymentIntentId}`, "POST", {
