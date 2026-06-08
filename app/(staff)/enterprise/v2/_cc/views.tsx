@@ -407,6 +407,27 @@ export function SettingsView({
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [me]);
 
+  // ── Org MSA acceptance record (read-only) — the clickwrap gate captures the
+  // signature on first sign-in; this surfaces the accepted version + date.
+  const [terms, setTerms] = useState<{
+    version?: string;
+    termsVersion?: string;
+    acceptedAt?: string | null;
+    needsAcceptance?: boolean;
+  } | null>(null);
+  useEffect(() => {
+    let off = false;
+    fetch("/api/enterprise/accept-msa", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!off) setTerms(d);
+      })
+      .catch(() => {});
+    return () => {
+      off = true;
+    };
+  }, []);
+
   const saveOrg = async () => {
     setSavingOrg(true);
     setOrgMsg(null);
@@ -523,10 +544,40 @@ export function SettingsView({
         </Section>
       )}
 
-      <Section title="Terms">
-        <Row k="Organization agreement" v="Managed at sign-in" />
-        <p className="mt-1 text-[12px]" style={{ color: "var(--text-faint)" }}>
-          The accepted version + date appear here once the org-terms gate ships.
+      <Section title="Contract">
+        <Row
+          k="Master Services Agreement"
+          v={
+            terms?.version || terms?.termsVersion
+              ? `v${terms.version ?? terms.termsVersion}`
+              : "—"
+          }
+        />
+        <Row
+          k="Accepted"
+          v={
+            terms?.acceptedAt
+              ? new Date(terms.acceptedAt).toLocaleDateString()
+              : terms?.needsAcceptance
+                ? "Not yet accepted"
+                : "—"
+          }
+        />
+        <a
+          href="/legal/terms-commercial"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-2 inline-block text-[13px] no-underline"
+          style={{ color: "var(--primary-hover)" }}
+        >
+          View the agreement ↗
+        </a>
+        <p
+          className="mt-1.5 text-[12px]"
+          style={{ color: "var(--text-faint)" }}
+        >
+          The agreement is accepted via clickwrap on first sign-in and binds
+          your departments + members.
         </p>
       </Section>
     </Shell>

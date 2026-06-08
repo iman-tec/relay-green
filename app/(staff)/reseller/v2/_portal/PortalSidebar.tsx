@@ -14,7 +14,7 @@ import {
   BookOpen,
   HelpCircle,
 } from "lucide-react";
-import { ThemeTriplet } from "@/app/_components/ThemeTriplet";
+import { AccountMenu } from "@/app/_components/portal/AccountMenu";
 import type { PortalTab } from "./types";
 
 const NAV: { key: PortalTab; label: string; Icon: typeof LayoutDashboard }[] = [
@@ -29,11 +29,13 @@ export function PortalSidebar({
   active,
   onChange,
   partnerName,
+  partnerEmail,
   tierLabel,
 }: {
   active: PortalTab;
   onChange: (t: PortalTab) => void;
   partnerName: string;
+  partnerEmail?: string;
   tierLabel: string;
 }) {
   return (
@@ -84,30 +86,12 @@ export function PortalSidebar({
         })}
       </nav>
 
-      <div className="mt-auto flex flex-col gap-2">
-        <div className="px-1.5">
-          <ThemeTriplet />
-        </div>
-        <div
-          className="flex items-center gap-2.5 border-t px-2.5 pt-3"
-          style={{ borderColor: "var(--border)" }}
-        >
-          <span
-            className="grid size-6 place-items-center rounded-full text-[11px] font-semibold"
-            style={{
-              background: "var(--primary-tint)",
-              color: "var(--primary-hover)",
-            }}
-          >
-            {partnerName.slice(0, 2).toUpperCase()}
-          </span>
-          <div className="min-w-0 text-[12px]">
-            <div className="truncate font-medium">{partnerName}</div>
-            <div style={{ color: "var(--text-faint)" }}>
-              {tierLabel} partner
-            </div>
-          </div>
-        </div>
+      <div className="mt-auto">
+        <AccountMenu
+          name={partnerName}
+          email={partnerEmail}
+          sub={`${tierLabel} partner`}
+        />
       </div>
     </aside>
   );

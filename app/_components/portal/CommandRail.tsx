@@ -14,8 +14,8 @@
  */
 
 import type { ComponentType } from "react";
-import { ThemeTriplet } from "@/app/_components/ThemeTriplet";
 import { NotificationBell } from "@/app/_components/admin-v2/NotificationBell";
+import { AccountMenu } from "./AccountMenu";
 
 type IconType = ComponentType<{ size?: number }>;
 
@@ -31,6 +31,7 @@ export function CommandRail({
   bellEndpoint,
   bellChannelKey,
   identityName,
+  identityEmail,
   identitySub,
 }: {
   brandLabel: string;
@@ -41,6 +42,7 @@ export function CommandRail({
   bellEndpoint: string;
   bellChannelKey: string;
   identityName: string;
+  identityEmail?: string;
   identitySub: string;
 }) {
   return (
@@ -129,30 +131,12 @@ export function CommandRail({
         </div>
       )}
 
-      <div className="mt-auto flex flex-col gap-2">
-        <div className="px-1.5">
-          <ThemeTriplet />
-        </div>
-        <div
-          className="flex items-center gap-2.5 border-t px-2.5 pt-3"
-          style={{ borderColor: "var(--border)" }}
-        >
-          <span
-            className="grid size-6 place-items-center rounded-full text-[11px] font-semibold"
-            style={{
-              background: "var(--primary-tint)",
-              color: "var(--primary-hover)",
-            }}
-          >
-            {identityName.slice(0, 2).toUpperCase()}
-          </span>
-          <div className="min-w-0 text-[12px]">
-            <div className="truncate font-medium">{identityName}</div>
-            <div className="truncate" style={{ color: "var(--text-faint)" }}>
-              {identitySub}
-            </div>
-          </div>
-        </div>
+      <div className="mt-auto">
+        <AccountMenu
+          name={identityName}
+          email={identityEmail}
+          sub={identitySub}
+        />
       </div>
     </aside>
   );

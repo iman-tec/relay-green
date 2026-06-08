@@ -87,6 +87,7 @@ export function EnterpriseClient({ me }: { me: { email: string } }) {
         bellEndpoint="/api/enterprise/notifications"
         bellChannelKey="enterprise"
         identityName={name}
+        identityEmail={me.email}
         identitySub="Enterprise admin"
       />
       <main className="min-w-0 flex-1 overflow-auto">

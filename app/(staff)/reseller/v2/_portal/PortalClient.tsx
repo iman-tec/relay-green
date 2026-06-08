@@ -66,6 +66,7 @@ export function PortalClient({ me }: { me: { email: string } }) {
         active={tab}
         onChange={setTab}
         partnerName={partnerName}
+        partnerEmail={me.email}
         tierLabel={tierLabel}
       />
       <main className="min-w-0 flex-1 overflow-auto">

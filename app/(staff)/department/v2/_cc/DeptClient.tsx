@@ -72,6 +72,7 @@ export function DeptClient({ me }: { me: { email: string } }) {
         bellEndpoint="/api/department/notifications"
         bellChannelKey="department"
         identityName={name}
+        identityEmail={me.email}
         identitySub="Department admin"
       />
       <main className="min-w-0 flex-1 overflow-auto">
