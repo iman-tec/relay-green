@@ -1,11 +1,11 @@
 "use client";
 
 /*
- * Enterprise command center — secondary views (Members, Usage, Settings,
- * Resources). Members owns inviting in-console; Usage is read-only.
+ * Enterprise command center — secondary views (Members, Settings, Resources).
+ * Members owns inviting in-console (employees into a department + org admins).
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { eur, int, dateShort } from "@/app/_components/portal/format";
 import {
   StatusDot,
@@ -58,12 +58,14 @@ type EntMember = {
   createdAt: string;
 };
 
+type InviteMode = "member" | "admin" | null;
+
 export function MembersView() {
   const [members, setMembers] = useState<EntMember[] | null>(null);
   const [departments, setDepartments] = useState<
     { id: string; name: string }[]
   >([]);
-  const [inviting, setInviting] = useState(false);
+  const [inviteMode, setInviteMode] = useState<InviteMode>(null);
   const [openId, setOpenId] = useState<string | null>(null);
 
   const load = useCallback(() => {
@@ -85,25 +87,42 @@ export function MembersView() {
 
   return (
     <Shell title="Members">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <p className="text-[13px]" style={{ color: "var(--text-muted)" }}>
-          Every employee across your departments. Add employees from a
-          department in Overview.
-        </p>
-        <button
-          type="button"
-          onClick={() => setInviting(true)}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white"
-          style={{ background: "var(--primary)" }}
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <p
+          className="max-w-md text-[13px]"
+          style={{ color: "var(--text-muted)" }}
         >
-          <span aria-hidden>＋</span> Invite admin
-        </button>
+          Every employee across your departments. Invite a member into a
+          department, or invite an organization admin.
+        </p>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setInviteMode("admin")}
+            className="inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-[13px] font-medium"
+            style={{
+              borderColor: "var(--border-strong)",
+              color: "var(--text)",
+            }}
+          >
+            Invite admin
+          </button>
+          <button
+            type="button"
+            onClick={() => setInviteMode("member")}
+            className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white"
+            style={{ background: "var(--primary)" }}
+          >
+            <span aria-hidden>＋</span> Invite a member
+          </button>
+        </div>
       </div>
       {members === null ? (
         <Skel />
       ) : members.length === 0 ? (
         <Muted>
-          No employees yet — add them from a department in Overview.
+          No members yet — use “Invite a member” to add an employee to a
+          department.
         </Muted>
       ) : (
         <table className="w-full border-collapse">
@@ -167,11 +186,14 @@ export function MembersView() {
                   <StatusDot status={m.status as PortalStatus} />
                 </td>
                 <td
-                  className="px-2 py-3 text-right text-[18px] opacity-0 transition-opacity group-hover/row:opacity-100"
-                  style={{ color: "var(--text-faint)" }}
-                  aria-hidden
+                  className="px-2 py-3 text-right"
+                  onClick={(e) => e.stopPropagation()}
                 >
-                  ⋯
+                  <MemberRowMenu
+                    m={m}
+                    departments={departments}
+                    onChanged={load}
+                  />
                 </td>
               </tr>
             ))}
@@ -198,10 +220,11 @@ export function MembersView() {
       </DrillPanel>
 
       <InviteMemberModal
-        open={inviting}
-        onClose={() => setInviting(false)}
+        mode={inviteMode}
+        departments={departments}
+        onClose={() => setInviteMode(null)}
         onInvited={() => {
-          setInviting(false);
+          setInviteMode(null);
           load();
         }}
       />
@@ -489,20 +512,41 @@ function MStat({ label, v }: { label: string; v: string }) {
 }
 
 function InviteMemberModal({
-  open,
+  mode,
+  departments,
   onClose,
   onInvited,
 }: {
-  open: boolean;
+  mode: "member" | "admin" | null;
+  departments: { id: string; name: string }[];
   onClose: () => void;
   onInvited: () => void;
 }) {
+  const isMember = mode === "member";
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
+  const [deptId, setDeptId] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // Reset the per-open fields whenever the modal (re)opens in a given mode.
+  useEffect(() => {
+    if (mode) {
+      setEmail("");
+      setName("");
+      setDeptId("");
+      setErr(null);
+      setBusy(false);
+    }
+  }, [mode]);
+
   const emailOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
-  const canSubmit = emailOk && name.trim().length > 0 && !busy;
+  // A member must be placed in a department; an admin must not.
+  const canSubmit =
+    emailOk &&
+    name.trim().length > 0 &&
+    !busy &&
+    (!isMember || deptId.length > 0);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -513,18 +557,25 @@ function InviteMemberModal({
       const r = await fetch("/api/enterprise/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: email.trim(),
-          displayName: name.trim(),
-          role: "enterprise_admin",
-        }),
+        body: JSON.stringify(
+          isMember
+            ? {
+                email: email.trim(),
+                displayName: name.trim(),
+                role: "client",
+                departmentId: deptId,
+              }
+            : {
+                email: email.trim(),
+                displayName: name.trim(),
+                role: "enterprise_admin",
+              }
+        ),
       });
       if (!r.ok) {
         const b = (await r.json().catch(() => ({}))) as { error?: string };
         throw new Error(b.error ?? "Invite failed.");
       }
-      setEmail("");
-      setName("");
       onInvited();
     } catch (e2) {
       setErr(e2 instanceof Error ? e2.message : "Invite failed.");
@@ -533,7 +584,11 @@ function InviteMemberModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Invite admin">
+    <Modal
+      open={mode !== null}
+      onClose={onClose}
+      title={isMember ? "Invite a member" : "Invite admin"}
+    >
       <form onSubmit={submit}>
         <ModalField label="Name">
           <input
@@ -554,6 +609,28 @@ function InviteMemberModal({
             style={modalInputStyle}
           />
         </ModalField>
+        {isMember && (
+          <ModalField label="Department">
+            <select
+              value={deptId}
+              onChange={(e) => setDeptId(e.target.value)}
+              className={modalInputClass}
+              style={modalInputStyle}
+            >
+              <option value="">— Choose a department —</option>
+              {departments.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </ModalField>
+        )}
+        <p className="mb-3 text-[12px]" style={{ color: "var(--text-faint)" }}>
+          {isMember
+            ? "The member joins this department and verifies via an email magic-link. Minutes are billed from the department pool."
+            : "An organization admin manages all departments. They aren’t placed in a department."}
+        </p>
         {err && (
           <p className="mb-3 text-[13px]" style={{ color: "var(--risk)" }}>
             {err}
@@ -569,10 +646,272 @@ function InviteMemberModal({
             cursor: canSubmit ? "pointer" : "not-allowed",
           }}
         >
-          {busy ? "Inviting…" : "Send invite"}
+          {busy ? "Inviting…" : isMember ? "Send member invite" : "Send invite"}
         </button>
       </form>
     </Modal>
+  );
+}
+
+/* ── Per-member row action menu (the `…`) — a real dropdown on every row.
+ * Full inline controls: refill from org wallet, change department,
+ * suspend/reactivate, resend invite. Hits the same endpoints as the drill
+ * panel; outside-click + Escape close. */
+function MemberRowMenu({
+  m,
+  departments,
+  onChanged,
+}: {
+  m: EntMember;
+  departments: { id: string; name: string }[];
+  onChanged: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [amount, setAmount] = useState("");
+  const [deptSel, setDeptSel] = useState(m.departmentId ?? "");
+  const ref = useRef<HTMLDivElement>(null);
+
+  const suspended = m.status === "suspended";
+  const pending = !m.lastSignIn;
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  async function call(
+    key: string,
+    url: string,
+    init: RequestInit,
+    after?: () => void
+  ) {
+    setBusy(key);
+    setErr(null);
+    try {
+      const r = await fetch(url, init);
+      if (!r.ok) {
+        const b = (await r.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Action failed.");
+      }
+      after?.();
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Action failed.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const json = (body: unknown): RequestInit => ({
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  const refill = () => {
+    const amt = Number(amount);
+    if (!(amt > 0)) return;
+    void call(
+      "refill",
+      `/api/enterprise/members/${m.id}/refill`,
+      json({ amount: amt }),
+      () => setAmount("")
+    );
+  };
+  const moveDept = () => {
+    if (!deptSel || deptSel === m.departmentId) return;
+    void call(
+      "dept",
+      `/api/enterprise/members/${m.id}/reassign`,
+      json({ departmentId: deptSel })
+    );
+  };
+  const setStatus = (next: "ACTIVE" | "DEACTIVATED", after?: () => void) =>
+    void call(
+      "status",
+      `/api/enterprise/members/${m.id}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: next }),
+      },
+      after
+    );
+  // Bottom toggle closes the menu; the in-place "reactivate to refill" prompt
+  // keeps it open so the admin can refill immediately after.
+  const toggleStatus = () =>
+    setStatus(suspended ? "ACTIVE" : "DEACTIVATED", () => setOpen(false));
+  const reactivateInPlace = () => setStatus("ACTIVE");
+  const resend = () =>
+    void call("resend", `/api/enterprise/members/${m.id}/resend-invite`, {
+      method: "POST",
+    });
+
+  return (
+    <div ref={ref} className="relative inline-block text-left">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Member actions"
+        onClick={() => setOpen((v) => !v)}
+        className="grid size-7 place-items-center rounded-md text-[18px] leading-none transition-colors hover:bg-black/[0.05] dark:hover:bg-white/[0.06]"
+        style={{ color: "var(--text-muted)" }}
+      >
+        ⋯
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 z-50 mt-1 w-[252px] rounded-xl border p-3 shadow-2xl"
+          style={{ background: "var(--surface)", borderColor: "var(--border)" }}
+        >
+          {/* Refill — blocked while suspended; ask to reactivate first. */}
+          <div
+            className="mb-1 text-[11px] font-medium tracking-[0.04em] uppercase"
+            style={{ color: "var(--text-muted)" }}
+          >
+            Refill from org wallet
+          </div>
+          {suspended ? (
+            <div
+              className="mb-3 rounded-md border px-2.5 py-2"
+              style={{
+                borderColor: "var(--border)",
+                background: "var(--surface-raised)",
+              }}
+            >
+              <p className="mb-2 text-[12px]" style={{ color: "var(--text)" }}>
+                This member is suspended. Reactivate access before refilling
+                minutes.
+              </p>
+              <button
+                type="button"
+                onClick={reactivateInPlace}
+                disabled={busy !== null}
+                className="rounded-md px-3 py-1.5 text-[12px] font-semibold text-white transition-opacity disabled:opacity-50"
+                style={{ background: "var(--primary)" }}
+              >
+                {busy === "status" ? "…" : "Reactivate access"}
+              </button>
+            </div>
+          ) : (
+            <div className="mb-3 flex gap-2">
+              <input
+                type="number"
+                min={1}
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="Minutes"
+                className="w-full rounded-md border px-2.5 py-1.5 text-[13px] outline-none"
+                style={modalInputStyle}
+              />
+              <button
+                type="button"
+                onClick={refill}
+                disabled={busy !== null || !(Number(amount) > 0)}
+                className="shrink-0 rounded-md px-3 py-1.5 text-[12px] font-semibold text-white transition-opacity disabled:opacity-50"
+                style={{ background: "var(--primary)" }}
+              >
+                {busy === "refill" ? "…" : "Refill"}
+              </button>
+            </div>
+          )}
+
+          {/* Change department */}
+          {departments.length > 0 && (
+            <>
+              <div
+                className="mb-1 text-[11px] font-medium tracking-[0.04em] uppercase"
+                style={{ color: "var(--text-muted)" }}
+              >
+                Department
+              </div>
+              <div className="mb-3 flex gap-2">
+                <select
+                  value={deptSel}
+                  onChange={(e) => setDeptSel(e.target.value)}
+                  className="w-full rounded-md border px-2.5 py-1.5 text-[13px] outline-none"
+                  style={modalInputStyle}
+                >
+                  {!m.departmentId && <option value="">— none —</option>}
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={moveDept}
+                  disabled={
+                    busy !== null || !deptSel || deptSel === m.departmentId
+                  }
+                  className="shrink-0 rounded-md px-3 py-1.5 text-[12px] font-semibold text-white transition-opacity disabled:opacity-50"
+                  style={{ background: "var(--primary)" }}
+                >
+                  {busy === "dept" ? "…" : "Move"}
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* Suspend / Reactivate + Resend */}
+          <div
+            className="flex flex-col gap-1 border-t pt-2"
+            style={{ borderColor: "var(--border)" }}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              onClick={toggleStatus}
+              disabled={busy !== null}
+              className="w-full rounded-md px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-black/[0.04] disabled:opacity-50 dark:hover:bg-white/[0.05]"
+              style={{
+                color: suspended ? "var(--primary-hover)" : "var(--risk)",
+              }}
+            >
+              {busy === "status"
+                ? "…"
+                : suspended
+                  ? "Reactivate access"
+                  : "Suspend access"}
+            </button>
+            {pending && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={resend}
+                disabled={busy !== null}
+                className="w-full rounded-md px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-black/[0.04] disabled:opacity-50 dark:hover:bg-white/[0.05]"
+                style={{ color: "var(--text)" }}
+              >
+                {busy === "resend" ? "…" : "Resend invite"}
+              </button>
+            )}
+          </div>
+
+          {err && (
+            <p className="mt-2 text-[12px]" style={{ color: "var(--risk)" }}>
+              {err}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
