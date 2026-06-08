@@ -15,20 +15,30 @@
  *     presence off best-effort, then auth.signOut(), then bounce to /staff).
  */
 
+import type { ComponentType } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronUp, LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import { ThemeTriplet } from "@/app/_components/ThemeTriplet";
 
+export type AccountMenuItem = {
+  label: string;
+  Icon: ComponentType<{ size?: number }>;
+  onClick: () => void;
+};
+
 export function AccountMenu({
   name,
   email,
   sub,
+  items = [],
 }: {
   name: string;
   email?: string;
   sub: string;
+  /** Extra in-console actions (e.g. Settings) shown above Sign out. */
+  items?: AccountMenuItem[];
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -150,6 +160,23 @@ export function AccountMenu({
             </span>
             <ThemeTriplet />
           </div>
+
+          {items.map((it) => (
+            <button
+              key={it.label}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                it.onClick();
+              }}
+              className="flex w-full items-center gap-2 border-b px-3 py-2.5 text-left text-[13px] transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
+              style={{ borderColor: "var(--border)", color: "var(--text)" }}
+            >
+              <it.Icon size={14} />
+              {it.label}
+            </button>
+          ))}
 
           <button
             type="button"

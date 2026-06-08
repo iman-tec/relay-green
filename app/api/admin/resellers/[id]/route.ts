@@ -31,6 +31,8 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
     name?: string;
     email?: string;
     commission?: number | string;
+    individualReferralDiscountPct?: number | string;
+    individualReferralCommissionPct?: number | string;
     status?: string;
   };
 
@@ -97,6 +99,27 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
       );
     }
     update.commission = n;
+  }
+  // Individual-referral 10/10 defaults — same super-admin control as commission.
+  if (body.individualReferralDiscountPct !== undefined) {
+    const n = Number(body.individualReferralDiscountPct);
+    if (Number.isNaN(n) || n < 0 || n > 100) {
+      return NextResponse.json(
+        { error: "Individual referral discount must be 0–100." },
+        { status: 400 }
+      );
+    }
+    update.individual_referral_discount_pct = n;
+  }
+  if (body.individualReferralCommissionPct !== undefined) {
+    const n = Number(body.individualReferralCommissionPct);
+    if (Number.isNaN(n) || n < 0 || n > 100) {
+      return NextResponse.json(
+        { error: "Individual referral commission must be 0–100." },
+        { status: 400 }
+      );
+    }
+    update.individual_referral_commission_pct = n;
   }
 
   if (!Object.keys(update).length) {

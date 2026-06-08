@@ -28,7 +28,7 @@ export type DeptData = {
 
 export type DeptTab =
   | "overview"
-  | "sessions"
+  | "supervise"
   | "usage"
   | "settings"
   | "resources";

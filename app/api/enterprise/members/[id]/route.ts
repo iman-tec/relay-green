@@ -7,6 +7,14 @@
  *   member/employee lists derive their status badge from the auth ban, so
  *   this is what flips "active" ↔ "suspended" in the UI.
  *
+ *   On DEACTIVATE we also run deactivate_employee(profile) — the existing
+ *   money-safe RPC that refunds the member's remaining minutes back to their
+ *   department pool and sets profiles.status='suspended' (so the department
+ *   console, which reads profiles.status, agrees with the enterprise badge).
+ *   On REACTIVATE we lift the ban and flip profiles.status back to 'active'.
+ *   Minutes are NOT auto-restored on reactivate — they were returned to the
+ *   pool on suspend; the admin refills again as needed.
+ *
  *   Scoped + guarded so an enterprise admin can only act inside their own
  *   org and can't lock out themselves or a peer enterprise_admin:
  *     - target must belong to the caller's org                 → else 404
@@ -78,8 +86,30 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
     );
   }
 
-  if (status === "DEACTIVATED") await banUser(admin, id);
-  else await unbanUser(admin, id);
+  if (status === "DEACTIVATED") {
+    await banUser(admin, id);
+    // Refund the member's remaining minutes to their department pool and set
+    // profiles.status='suspended' (money-safe RPC, FOR UPDATE locks).
+    const { error: rpcErr } = await admin.rpc("deactivate_employee", {
+      _profile_id: id,
+    });
+    if (rpcErr) {
+      // Auth ban already applied; surface the refund failure so it's not silent.
+      return NextResponse.json({ error: rpcErr.message }, { status: 400 });
+    }
+  } else {
+    await unbanUser(admin, id);
+    // Flip the status column back so the department console (which reads
+    // profiles.status) shows the member active again. Minutes stay where they
+    // were refunded; the admin re-refills as needed.
+    const { error: statusErr } = await admin
+      .from("profiles")
+      .update({ status: "active" })
+      .eq("id", id);
+    if (statusErr) {
+      return NextResponse.json({ error: statusErr.message }, { status: 400 });
+    }
+  }
 
   return NextResponse.json({ ok: true, status });
 }

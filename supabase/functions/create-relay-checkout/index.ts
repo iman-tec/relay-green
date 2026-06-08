@@ -90,8 +90,42 @@ Deno.serve(async (req) => {
     });
 
     const p = PLANS[plan];
+
+    // Channel-partner individual referral: if this organic user was attributed
+    // to a partner (an active individual_referrals row), apply their locked-in
+    // discount and stash audit + accrual metadata for the webhook. The presence
+    // of that row IS the gate — it only exists when the program is enabled — so
+    // no separate flag check is needed here. Falls back to list price on any miss.
+    let chargeCents = p.priceCents;
+    const discountMeta: Record<string, string> = {};
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (serviceKey) {
+      try {
+        const admin = createClient(SUPABASE_URL, serviceKey);
+        const { data: ref } = await admin
+          .from("individual_referrals")
+          .select("reseller_id, discount_pct_applied, status")
+          .eq("customer_user_id", u.user.id)
+          .maybeSingle();
+        if (ref && ref.status === "active") {
+          const pct = Math.max(
+            0,
+            Math.min(100, Number(ref.discount_pct_applied) || 0)
+          );
+          if (pct > 0) {
+            chargeCents = Math.floor(p.priceCents * (1 - pct / 100));
+            discountMeta.relay_list_cents = String(p.priceCents);
+            discountMeta.relay_discount_pct = String(pct);
+            discountMeta.relay_partner_id = String(ref.reseller_id);
+          }
+        }
+      } catch (e) {
+        console.warn("[create-relay-checkout] referral discount lookup failed:", e);
+      }
+    }
+
     const intent = await stripe.paymentIntents.create({
-      amount: p.priceCents,
+      amount: chargeCents,
       currency: "eur",
       // Card-only — no Link / wallets / regional methods. Keeps the form
       // single-purpose for now. To open up to more methods later, swap
@@ -108,6 +142,7 @@ Deno.serve(async (req) => {
         relay_plan: plan,
         relay_minutes: String(p.minutes),
         relay_plan_name: p.name,
+        ...discountMeta,
       },
     });
 
@@ -115,7 +150,8 @@ Deno.serve(async (req) => {
       JSON.stringify({
         client_secret: intent.client_secret,
         payment_intent_id: intent.id,
-        amount_cents: p.priceCents,
+        amount_cents: chargeCents,
+        list_cents: p.priceCents,
         plan_name: p.name,
         minutes: p.minutes,
       }),

@@ -10,17 +10,29 @@
 import {
   LayoutDashboard,
   Plus,
+  UserPlus,
   BadgeCheck,
   BookOpen,
   Settings,
   HelpCircle,
 } from "lucide-react";
 import { AccountMenu } from "@/app/_components/portal/AccountMenu";
+import { partnerProgramEnabled } from "@/lib/billing/partnerProgram";
 import type { PortalTab } from "./types";
 
 const NAV: { key: PortalTab; label: string; Icon: typeof LayoutDashboard }[] = [
   { key: "overview", label: "Overview", Icon: LayoutDashboard },
   { key: "onboard", label: "Onboard", Icon: Plus },
+  // Individual referrals — distinct from the enterprise companies table.
+  ...(partnerProgramEnabled()
+    ? [
+        {
+          key: "referrals" as PortalTab,
+          label: "Individual referrals",
+          Icon: UserPlus,
+        },
+      ]
+    : []),
   { key: "program", label: "Program", Icon: BadgeCheck },
   { key: "resources", label: "Resources", Icon: BookOpen },
   { key: "settings", label: "Settings", Icon: Settings },

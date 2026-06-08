@@ -71,7 +71,8 @@ export type EntWallet = {
 export type EntTab =
   | "overview"
   | "recharge"
-  | "usage"
+  | "finance"
   | "members"
+  | "supervise"
   | "settings"
   | "resources";

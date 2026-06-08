@@ -15,6 +15,7 @@ import { usePortal } from "./usePortal";
 import { PortalSidebar } from "./PortalSidebar";
 import { OverviewView } from "./OverviewView";
 import { OnboardView } from "./OnboardView";
+import { IndividualReferralsView } from "./IndividualReferralsView";
 import { ProgramView } from "./ProgramView";
 import { ResourcesView } from "./ResourcesView";
 import { SettingsView } from "./SettingsView";
@@ -23,6 +24,7 @@ import { HelpView } from "./HelpView";
 const VALID: PortalTab[] = [
   "overview",
   "onboard",
+  "referrals",
   "program",
   "resources",
   "settings",
@@ -82,6 +84,7 @@ export function PortalClient({ me }: { me: { email: string } }) {
           />
         )}
         {tab === "onboard" && <OnboardView data={data} onDone={onOnboarded} />}
+        {tab === "referrals" && <IndividualReferralsView />}
         {tab === "program" && <ProgramView data={data} />}
         {tab === "resources" && <ResourcesView data={data} />}
         {tab === "settings" && <SettingsView data={data} email={me.email} />}
