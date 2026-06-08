@@ -60,13 +60,21 @@ type EntMember = {
 
 export function MembersView() {
   const [members, setMembers] = useState<EntMember[] | null>(null);
+  const [departments, setDepartments] = useState<
+    { id: string; name: string }[]
+  >([]);
   const [inviting, setInviting] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
 
   const load = useCallback(() => {
     fetch("/api/enterprise/members", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => setMembers((d?.members ?? []) as EntMember[]))
+      .then((d) => {
+        setMembers((d?.members ?? []) as EntMember[]);
+        setDepartments(
+          (d?.departments ?? []) as { id: string; name: string }[]
+        );
+      })
       .catch(() => setMembers([]));
   }, []);
   useEffect(() => {
@@ -180,6 +188,7 @@ export function MembersView() {
         {open && (
           <MemberDetail
             m={open}
+            departments={departments}
             onChanged={() => {
               setOpenId(null);
               load();
@@ -202,17 +211,41 @@ export function MembersView() {
 
 function MemberDetail({
   m,
+  departments,
   onChanged,
 }: {
   m: EntMember;
+  departments: { id: string; name: string }[];
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
+  const [reassignTo, setReassignTo] = useState("");
   const suspended = m.status === "suspended";
   const pending = !m.lastSignIn;
+
+  async function reassign() {
+    if (!reassignTo || reassignTo === m.departmentId) return;
+    setBusy("reassign");
+    setErr(null);
+    try {
+      const r = await fetch(`/api/enterprise/members/${m.id}/reassign`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ departmentId: reassignTo }),
+      });
+      if (!r.ok) {
+        const b = (await r.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Reassign failed.");
+      }
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Reassign failed.");
+      setBusy(null);
+    }
+  }
 
   async function setStatus(next: "ACTIVE" | "DEACTIVATED") {
     setBusy("status");
@@ -331,6 +364,53 @@ function MemberDetail({
               }}
             >
               {busy === "refill" ? "Adding…" : "Refill"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {departments.length > 0 && (
+        <div className="mt-5">
+          <div
+            className="mb-2 text-[12px] font-medium tracking-[0.04em] uppercase"
+            style={{ color: "var(--text-muted)" }}
+          >
+            Department
+          </div>
+          <div className="flex gap-2">
+            <select
+              value={reassignTo || m.departmentId || ""}
+              onChange={(e) => setReassignTo(e.target.value)}
+              className="rounded-md border px-3 py-2 text-[14px] outline-none"
+              style={modalInputStyle}
+            >
+              {!m.departmentId && <option value="">— none —</option>}
+              {departments.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={reassign}
+              disabled={
+                busy !== null || !reassignTo || reassignTo === m.departmentId
+              }
+              className="rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white transition-opacity"
+              style={{
+                background: "var(--primary)",
+                opacity:
+                  busy !== null || !reassignTo || reassignTo === m.departmentId
+                    ? 0.5
+                    : 1,
+                cursor:
+                  busy !== null || !reassignTo || reassignTo === m.departmentId
+                    ? "not-allowed"
+                    : "pointer",
+              }}
+            >
+              {busy === "reassign" ? "Moving…" : "Reassign"}
             </button>
           </div>
         </div>

@@ -220,9 +220,31 @@ function EmpDetail({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [statusBusy, setStatusBusy] = useState(false);
+  const [resendBusy, setResendBusy] = useState(false);
+  const [resendNote, setResendNote] = useState<string | null>(null);
   const amt = Number(amount);
   const canRefill = amt > 0 && amt <= deptRemaining && !busy;
   const suspended = (e.status ?? "").toLowerCase() === "suspended";
+
+  async function resend() {
+    setResendBusy(true);
+    setErr(null);
+    setResendNote(null);
+    try {
+      const r = await fetch(`/api/department/employees/${e.id}/resend-invite`, {
+        method: "POST",
+      });
+      if (!r.ok) {
+        const b = (await r.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Failed.");
+      }
+      setResendNote("Invite re-sent.");
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : "Failed.");
+    } finally {
+      setResendBusy(false);
+    }
+  }
 
   // Suspend / reactivate an employee (deactivate_employee RPC + auth ban).
   // Suspending returns the employee's unused minutes to the department pool.
@@ -340,7 +362,24 @@ function EmpDetail({
               ? "Reactivate access"
               : "Suspend access"}
         </button>
+        <button
+          type="button"
+          onClick={resend}
+          disabled={resendBusy}
+          className="rounded-lg border px-3.5 py-2 text-[13px] font-medium transition-opacity disabled:opacity-50"
+          style={{ borderColor: "var(--border-strong)", color: "var(--text)" }}
+        >
+          {resendBusy ? "…" : "Resend invite"}
+        </button>
       </div>
+      {resendNote && (
+        <p
+          className="mt-2 text-[13px]"
+          style={{ color: "var(--primary-hover)" }}
+        >
+          {resendNote}
+        </p>
+      )}
       <p className="mt-3 text-[12px]" style={{ color: "var(--text-faint)" }}>
         Suspending blocks the employee’s sign-in and returns their unused
         minutes to the department pool; reactivating restores access.

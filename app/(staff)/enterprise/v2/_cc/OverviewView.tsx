@@ -267,6 +267,38 @@ function DeptDetail({
     empAlloc <= d.remainingMinutes &&
     !empBusy;
 
+  // Add-existing — attach an existing Relay user (by email) into this dept,
+  // no fresh invite. POSTs to departments/[id]/employees/attach.
+  const [attachEmail, setAttachEmail] = useState("");
+  const [attachBusy, setAttachBusy] = useState(false);
+  const [attachErr, setAttachErr] = useState<string | null>(null);
+  const attachOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(attachEmail.trim());
+
+  async function attachExisting() {
+    if (!attachOk || attachBusy) return;
+    setAttachBusy(true);
+    setAttachErr(null);
+    try {
+      const r = await fetch(
+        `/api/enterprise/departments/${d.id}/employees/attach`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: attachEmail.trim() }),
+        }
+      );
+      if (!r.ok) {
+        const b = (await r.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Couldn't add user.");
+      }
+      setAttachEmail("");
+      onRefilled();
+    } catch (e) {
+      setAttachErr(e instanceof Error ? e.message : "Couldn't add user.");
+      setAttachBusy(false);
+    }
+  }
+
   async function addEmployee() {
     if (!canAddEmp) return;
     setEmpBusy(true);
@@ -434,6 +466,53 @@ function DeptDetail({
         {empErr && (
           <p className="mt-2 text-[13px]" style={{ color: "var(--risk)" }}>
             {empErr}
+          </p>
+        )}
+      </div>
+
+      {/* Add an existing user (no invite). */}
+      <div
+        className="mt-5 border-t pt-5"
+        style={{ borderColor: "var(--border)" }}
+      >
+        <div
+          className="mb-2 text-[12px] font-medium tracking-[0.04em] uppercase"
+          style={{ color: "var(--text-muted)" }}
+        >
+          Add existing user
+        </div>
+        <div className="flex gap-2">
+          <input
+            type="email"
+            value={attachEmail}
+            onChange={(e) => setAttachEmail(e.target.value)}
+            placeholder="existing@company.com"
+            className="w-64 rounded-md border px-3 py-2 text-[14px] outline-none"
+            style={modalInputStyle}
+          />
+          <button
+            type="button"
+            onClick={attachExisting}
+            disabled={!attachOk || attachBusy}
+            className="rounded-lg border px-3.5 py-2 text-[13px] font-semibold transition-opacity disabled:opacity-50"
+            style={{
+              borderColor: "var(--border-strong)",
+              color: "var(--text)",
+            }}
+          >
+            {attachBusy ? "Adding…" : "Add to department"}
+          </button>
+        </div>
+        <p
+          className="mt-1.5 text-[12px]"
+          style={{ color: "var(--text-faint)" }}
+        >
+          For someone who already has a Relay account — no new invite. Refill
+          their minutes after.
+        </p>
+        {attachErr && (
+          <p className="mt-2 text-[13px]" style={{ color: "var(--risk)" }}>
+            {attachErr}
           </p>
         )}
       </div>
