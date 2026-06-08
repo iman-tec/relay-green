@@ -11,10 +11,14 @@
  */
 
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { landingForRoles } from "@/lib/relay/role-labels";
 import { toRoles } from "@/lib/relay/roles";
+import { partnerProgramEnabled } from "@/lib/billing/partnerProgram";
+import { attributeIndividualReferral } from "@/lib/billing/individualReferral";
+import { REF_COOKIE } from "@/lib/billing/referralCookie";
 import {
   SURFACE_ROLES,
   SURFACE_URL,
@@ -175,5 +179,35 @@ export async function POST(request: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, next });
+  // Channel-partner: attribute an organic individual to the referring partner
+  // if they arrived via a ?ref=<reseller_code> link. Idempotent + organic-only
+  // (enterprise/staff users are skipped inside the helper), so it's safe on
+  // every customer verify. Flag-off → skipped entirely. The cookie is consumed
+  // after one attempt so it doesn't linger across future logins.
+  let clearRefCookie = false;
+  if (surface === "customer" && userId && partnerProgramEnabled()) {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (supabaseUrl && serviceKey) {
+      try {
+        const refCode = (await cookies()).get(REF_COOKIE)?.value;
+        if (refCode) {
+          const admin = createAdminClient(supabaseUrl, serviceKey, {
+            auth: { persistSession: false, autoRefreshToken: false },
+          });
+          await attributeIndividualReferral(admin, userId, refCode);
+          clearRefCookie = true;
+        }
+      } catch (e) {
+        console.warn(
+          "[verify-otp] referral attribution failed:",
+          e instanceof Error ? e.message : e
+        );
+      }
+    }
+  }
+
+  const res = NextResponse.json({ ok: true, next });
+  if (clearRefCookie) res.cookies.set(REF_COOKIE, "", { path: "/", maxAge: 0 });
+  return res;
 }

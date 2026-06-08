@@ -23,6 +23,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { GEO_COOKIE, USER_COOKIE, themeForCountry } from "./lib/relay/theme";
+import { REF_COOKIE } from "./lib/billing/referralCookie";
+import { partnerProgramEnabled } from "./lib/billing/partnerProgram";
 
 // Routes split by which login surface their audience belongs to. Each
 // surface has its own URL — unauthed traffic on a protected prefix is
@@ -126,6 +128,25 @@ export async function proxy(req: NextRequest) {
       const url = req.nextUrl.clone();
       url.pathname = target;
       return NextResponse.redirect(url);
+    }
+  }
+
+  // Channel-partner referral first-touch capture. A visit to any page carrying
+  // ?ref=<reseller_code> stamps a durable cookie that the signup flow reads to
+  // attribute an organic individual to the partner. First touch wins — never
+  // overwrite an in-progress attribution. Flag-off → no cookie (byte-identical).
+  if (partnerProgramEnabled()) {
+    const ref = req.nextUrl.searchParams.get("ref");
+    if (ref && !req.cookies.get(REF_COOKIE)) {
+      const clean = ref.trim().slice(0, 64);
+      if (clean) {
+        res.cookies.set(REF_COOKIE, clean, {
+          path: "/",
+          maxAge: 60 * 60 * 24 * 30,
+          httpOnly: true,
+          sameSite: "lax",
+        });
+      }
     }
   }
 

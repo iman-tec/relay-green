@@ -184,6 +184,29 @@ Deno.serve(async (req) => {
         .eq("customer_user_id", userId);
     }
 
+    // Channel-partner: accrue individual-referral commission for this purchase.
+    // No-op unless the buyer is an attributed organic individual (the RPC checks
+    // individual_referrals). Net = the charged amount (the discount was applied
+    // at checkout); gross = the list price from checkout metadata, falling back
+    // to the charged amount. Idempotent on the Stripe object id (this whole
+    // block already runs at most once per id via the credit_transactions dedupe,
+    // and the RPC dedupes again on source_ref).
+    try {
+      const amountCents = Number(obj.amount ?? obj.amount_total ?? 0);
+      const grossCents = Number(
+        (obj.metadata as { relay_list_cents?: string } | undefined)
+          ?.relay_list_cents ?? amountCents
+      );
+      await admin.rpc("accrue_referral_commission", {
+        _customer_user_id: userId,
+        _source_ref: obj.id,
+        _gross_cents: grossCents,
+        _net_cents: amountCents,
+      });
+    } catch (e) {
+      console.warn("[relay-stripe-webhook] referral accrual failed:", e);
+    }
+
     return new Response(JSON.stringify({ received: true, credited: minutes }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

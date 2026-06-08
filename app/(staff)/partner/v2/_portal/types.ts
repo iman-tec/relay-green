@@ -47,6 +47,7 @@ export type PortalPayload = {
 export type PortalTab =
   | "overview"
   | "onboard"
+  | "referrals"
   | "program"
   | "resources"
   | "settings"
