@@ -18,7 +18,6 @@ import {
   Banknote,
 } from "lucide-react";
 import { CommandRail } from "@/app/_components/portal/CommandRail";
-import { PartnerTermsGate } from "@/app/(staff)/enterprise/v2/PartnerTermsGate";
 import { EnterpriseMsaGate } from "./EnterpriseMsaGate";
 import { useEnterprise } from "./useEnterprise";
 import { OverviewView } from "./OverviewView";
@@ -78,7 +77,6 @@ export function EnterpriseClient({ me }: { me: { email: string } }) {
   return (
     <div className="flex h-screen min-h-0 overflow-hidden">
       <EnterpriseMsaGate />
-      <PartnerTermsGate />
       <CommandRail
         brandLabel="Enterprise"
         nav={NAV}
