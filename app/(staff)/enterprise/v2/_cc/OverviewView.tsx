@@ -274,6 +274,33 @@ function DeptDetail({
   const [attachErr, setAttachErr] = useState<string | null>(null);
   const attachOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(attachEmail.trim());
 
+  // Suspend / reactivate the whole department. Suspend cascades server-side
+  // (members' minutes return to the pool, every dept user is banned); reactivate
+  // cascades the unban back. Reversible.
+  const suspended = d.status === "suspended";
+  const [statusBusy, setStatusBusy] = useState(false);
+  const [statusErr, setStatusErr] = useState<string | null>(null);
+  async function setDeptStatus(next: "active" | "suspended") {
+    if (statusBusy) return;
+    setStatusBusy(true);
+    setStatusErr(null);
+    try {
+      const r = await fetch(`/api/enterprise/departments/${d.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: next }),
+      });
+      if (!r.ok) {
+        const b = (await r.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Couldn't update the department.");
+      }
+      onRefilled();
+    } catch (e) {
+      setStatusErr(e instanceof Error ? e.message : "Couldn't update.");
+      setStatusBusy(false);
+    }
+  }
+
   async function attachExisting() {
     if (!attachOk || attachBusy) return;
     setAttachBusy(true);
@@ -363,159 +390,196 @@ function DeptDetail({
         v={`${int(d.activeEmployees)} active / ${int(d.totalEmployees)}`}
       />
       <Field k="Spend" v={eur(Math.round(d.usedMinutes * RATE))} />
-      <Field k="Status" v={d.status} />
+      <Field k="Status" v={suspended ? "Suspended" : "Active"} />
 
-      <div className="mt-5">
-        <div
-          className="mb-2 text-[12px] font-medium tracking-[0.04em] uppercase"
-          style={{ color: "var(--text-muted)" }}
+      {/* Suspend / reactivate the department */}
+      <div className="mt-5 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => setDeptStatus(suspended ? "active" : "suspended")}
+          disabled={statusBusy}
+          className="rounded-lg border px-3.5 py-2 text-[13px] font-semibold transition-opacity disabled:opacity-50"
+          style={{
+            borderColor: suspended ? "var(--primary)" : "var(--risk)",
+            color: suspended ? "var(--primary-hover)" : "var(--risk)",
+          }}
         >
-          Refill from org pool ({int(orgRemaining)} available)
-        </div>
-        <div className="flex gap-2">
-          <input
-            type="number"
-            min={1}
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder="Minutes"
-            className="w-32 rounded-md border px-3 py-2 text-[14px] outline-none"
-            style={modalInputStyle}
-          />
-          <button
-            type="button"
-            onClick={refill}
-            disabled={!canRefill}
-            className="rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white transition-opacity"
-            style={{
-              background: "var(--primary)",
-              opacity: canRefill ? 1 : 0.5,
-              cursor: canRefill ? "pointer" : "not-allowed",
-            }}
-          >
-            {busy ? "Adding…" : "Refill"}
-          </button>
-        </div>
-        {err && (
-          <p className="mt-2 text-[13px]" style={{ color: "var(--risk)" }}>
-            {err}
-          </p>
+          {statusBusy
+            ? "…"
+            : suspended
+              ? "Reactivate department"
+              : "Suspend department"}
+        </button>
+        {statusErr && (
+          <span className="text-[13px]" style={{ color: "var(--risk)" }}>
+            {statusErr}
+          </span>
         )}
       </div>
+      {suspended && (
+        <p className="mt-3 text-[12px]" style={{ color: "var(--text-faint)" }}>
+          Suspended — members can’t sign in and their minutes were returned to
+          the org pool. Reactivate to restore access (minutes aren’t
+          auto-restored — refill as needed).
+        </p>
+      )}
 
-      {/* Add employee (invite new) — assigns into this department. */}
-      <div
-        className="mt-6 border-t pt-5"
-        style={{ borderColor: "var(--border)" }}
-      >
-        <div
-          className="mb-2 text-[12px] font-medium tracking-[0.04em] uppercase"
-          style={{ color: "var(--text-muted)" }}
-        >
-          Add employee
-        </div>
-        <div className="flex flex-col gap-2">
-          <input
-            value={empName}
-            onChange={(e) => setEmpName(e.target.value)}
-            placeholder="Full name"
-            className="rounded-md border px-3 py-2 text-[14px] outline-none"
-            style={modalInputStyle}
-          />
-          <input
-            type="email"
-            value={empEmail}
-            onChange={(e) => setEmpEmail(e.target.value)}
-            placeholder="name@company.com"
-            className="rounded-md border px-3 py-2 text-[14px] outline-none"
-            style={modalInputStyle}
-          />
-          <div className="flex gap-2">
-            <input
-              type="number"
-              min={0}
-              max={d.remainingMinutes}
-              value={empMinutes}
-              onChange={(e) => setEmpMinutes(e.target.value)}
-              placeholder="Initial minutes (optional)"
-              className="w-56 rounded-md border px-3 py-2 text-[14px] outline-none"
-              style={modalInputStyle}
-            />
-            <button
-              type="button"
-              onClick={addEmployee}
-              disabled={!canAddEmp}
-              className="rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white transition-opacity"
-              style={{
-                background: "var(--primary)",
-                opacity: canAddEmp ? 1 : 0.5,
-                cursor: canAddEmp ? "pointer" : "not-allowed",
-              }}
+      {!suspended && (
+        <>
+          <div className="mt-5">
+            <div
+              className="mb-2 text-[12px] font-medium tracking-[0.04em] uppercase"
+              style={{ color: "var(--text-muted)" }}
             >
-              {empBusy ? "Adding…" : "Add & invite"}
-            </button>
+              Refill from org pool ({int(orgRemaining)} available)
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="number"
+                min={1}
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="Minutes"
+                className="w-32 rounded-md border px-3 py-2 text-[14px] outline-none"
+                style={modalInputStyle}
+              />
+              <button
+                type="button"
+                onClick={refill}
+                disabled={!canRefill}
+                className="rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white transition-opacity"
+                style={{
+                  background: "var(--primary)",
+                  opacity: canRefill ? 1 : 0.5,
+                  cursor: canRefill ? "pointer" : "not-allowed",
+                }}
+              >
+                {busy ? "Adding…" : "Refill"}
+              </button>
+            </div>
+            {err && (
+              <p className="mt-2 text-[13px]" style={{ color: "var(--risk)" }}>
+                {err}
+              </p>
+            )}
           </div>
-        </div>
-        <p
-          className="mt-1.5 text-[12px]"
-          style={{ color: "var(--text-faint)" }}
-        >
-          Minutes draw from this department’s pool ({int(d.remainingMinutes)}{" "}
-          available). They’re emailed an invite to join.
-        </p>
-        {empErr && (
-          <p className="mt-2 text-[13px]" style={{ color: "var(--risk)" }}>
-            {empErr}
-          </p>
-        )}
-      </div>
 
-      {/* Add an existing user (no invite). */}
-      <div
-        className="mt-5 border-t pt-5"
-        style={{ borderColor: "var(--border)" }}
-      >
-        <div
-          className="mb-2 text-[12px] font-medium tracking-[0.04em] uppercase"
-          style={{ color: "var(--text-muted)" }}
-        >
-          Add existing user
-        </div>
-        <div className="flex gap-2">
-          <input
-            type="email"
-            value={attachEmail}
-            onChange={(e) => setAttachEmail(e.target.value)}
-            placeholder="existing@company.com"
-            className="w-64 rounded-md border px-3 py-2 text-[14px] outline-none"
-            style={modalInputStyle}
-          />
-          <button
-            type="button"
-            onClick={attachExisting}
-            disabled={!attachOk || attachBusy}
-            className="rounded-lg border px-3.5 py-2 text-[13px] font-semibold transition-opacity disabled:opacity-50"
-            style={{
-              borderColor: "var(--border-strong)",
-              color: "var(--text)",
-            }}
+          {/* Add employee (invite new) — assigns into this department. */}
+          <div
+            className="mt-6 border-t pt-5"
+            style={{ borderColor: "var(--border)" }}
           >
-            {attachBusy ? "Adding…" : "Add to department"}
-          </button>
-        </div>
-        <p
-          className="mt-1.5 text-[12px]"
-          style={{ color: "var(--text-faint)" }}
-        >
-          For someone who already has a Relay account — no new invite. Refill
-          their minutes after.
-        </p>
-        {attachErr && (
-          <p className="mt-2 text-[13px]" style={{ color: "var(--risk)" }}>
-            {attachErr}
-          </p>
-        )}
-      </div>
+            <div
+              className="mb-2 text-[12px] font-medium tracking-[0.04em] uppercase"
+              style={{ color: "var(--text-muted)" }}
+            >
+              Add employee
+            </div>
+            <div className="flex flex-col gap-2">
+              <input
+                value={empName}
+                onChange={(e) => setEmpName(e.target.value)}
+                placeholder="Full name"
+                className="rounded-md border px-3 py-2 text-[14px] outline-none"
+                style={modalInputStyle}
+              />
+              <input
+                type="email"
+                value={empEmail}
+                onChange={(e) => setEmpEmail(e.target.value)}
+                placeholder="name@company.com"
+                className="rounded-md border px-3 py-2 text-[14px] outline-none"
+                style={modalInputStyle}
+              />
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  min={0}
+                  max={d.remainingMinutes}
+                  value={empMinutes}
+                  onChange={(e) => setEmpMinutes(e.target.value)}
+                  placeholder="Initial minutes (optional)"
+                  className="w-56 rounded-md border px-3 py-2 text-[14px] outline-none"
+                  style={modalInputStyle}
+                />
+                <button
+                  type="button"
+                  onClick={addEmployee}
+                  disabled={!canAddEmp}
+                  className="rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white transition-opacity"
+                  style={{
+                    background: "var(--primary)",
+                    opacity: canAddEmp ? 1 : 0.5,
+                    cursor: canAddEmp ? "pointer" : "not-allowed",
+                  }}
+                >
+                  {empBusy ? "Adding…" : "Add & invite"}
+                </button>
+              </div>
+            </div>
+            <p
+              className="mt-1.5 text-[12px]"
+              style={{ color: "var(--text-faint)" }}
+            >
+              Minutes draw from this department’s pool (
+              {int(d.remainingMinutes)} available). They’re emailed an invite to
+              join.
+            </p>
+            {empErr && (
+              <p className="mt-2 text-[13px]" style={{ color: "var(--risk)" }}>
+                {empErr}
+              </p>
+            )}
+          </div>
+
+          {/* Add an existing user (no invite). */}
+          <div
+            className="mt-5 border-t pt-5"
+            style={{ borderColor: "var(--border)" }}
+          >
+            <div
+              className="mb-2 text-[12px] font-medium tracking-[0.04em] uppercase"
+              style={{ color: "var(--text-muted)" }}
+            >
+              Add existing user
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="email"
+                value={attachEmail}
+                onChange={(e) => setAttachEmail(e.target.value)}
+                placeholder="existing@company.com"
+                className="w-64 rounded-md border px-3 py-2 text-[14px] outline-none"
+                style={modalInputStyle}
+              />
+              <button
+                type="button"
+                onClick={attachExisting}
+                disabled={!attachOk || attachBusy}
+                className="rounded-lg border px-3.5 py-2 text-[13px] font-semibold transition-opacity disabled:opacity-50"
+                style={{
+                  borderColor: "var(--border-strong)",
+                  color: "var(--text)",
+                }}
+              >
+                {attachBusy ? "Adding…" : "Add to department"}
+              </button>
+            </div>
+            <p
+              className="mt-1.5 text-[12px]"
+              style={{ color: "var(--text-faint)" }}
+            >
+              For someone who already has a Relay account — no new invite.
+              Refill their minutes after.
+            </p>
+            {attachErr && (
+              <p className="mt-2 text-[13px]" style={{ color: "var(--risk)" }}>
+                {attachErr}
+              </p>
+            )}
+          </div>
+        </>
+      )}
     </>
   );
 }

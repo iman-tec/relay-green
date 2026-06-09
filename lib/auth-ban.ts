@@ -53,3 +53,11 @@ export async function unbanUser(
     console.warn(`[auth-ban] unban failed for ${userId}: ${error.message}`);
   }
 }
+
+/** Lift the ban on many users in parallel. */
+export async function unbanUsers(
+  admin: SupabaseClient,
+  ids: readonly string[]
+): Promise<void> {
+  await Promise.all(ids.filter(Boolean).map((id) => unbanUser(admin, id)));
+}
