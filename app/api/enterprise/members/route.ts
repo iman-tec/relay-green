@@ -2,7 +2,8 @@
  * GET /api/enterprise/members
  *   Org-wide member roster for the enterprise admin: every employee across ALL
  *   departments, with minutes (allocated / used / remaining), spend, status
- *   (active / suspended via auth ban), department, and last activity.
+ *   (Invited until first login → Active; Suspended via auth ban), department,
+ *   and last activity.
  *
  *   Powers the enterprise console's org-wide Members surface — the admin owns
  *   the whole org, so this is not dept-scoped. Read-only; the per-member
@@ -100,7 +101,9 @@ export async function GET() {
       usedMinutes: used,
       remainingMinutes: Number(p.remaining_minutes ?? 0),
       spendCents: Math.round(used * CENTS_PER_MINUTE),
-      status: a?.banned ? "suspended" : "active",
+      // Lifecycle: Suspended (banned) > Invited (never signed in) > Active.
+      // Auto-flips Invited→Active on first login via the poll.
+      status: a?.banned ? "suspended" : a?.lastSignIn ? "active" : "invited",
       lastSignIn: a?.lastSignIn ?? null,
       createdAt: p.created_at,
     };

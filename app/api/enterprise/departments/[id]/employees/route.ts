@@ -17,6 +17,7 @@ import { NextResponse } from "next/server";
 import { requireEnterpriseAdmin } from "@/lib/enterprise-auth";
 import { sendInvitationEmail } from "@/lib/admin-invite";
 import { findUserInAnotherOrg, crossOrgError } from "@/lib/relay/orgGuard";
+import { convertIndividualReferralOnOrgJoin } from "@/lib/billing/individualReferral";
 import { writeAccessAudit } from "@/lib/relay/accessAudit";
 import { ROLE } from "@/lib/relay/roles";
 
@@ -365,6 +366,9 @@ export async function POST(request: Request, { params }: RouteCtx) {
       { user_id: userId, role_id: roleId },
       { onConflict: "user_id,role_id", ignoreDuplicates: true }
     );
+
+  // Convert any attributed individual referral on org-join (CP commission stops).
+  await convertIndividualReferralOnOrgJoin(admin, userId);
 
   if (allocNum > 0) {
     const { error: tErr } = await admin.rpc("transfer_to_employee", {

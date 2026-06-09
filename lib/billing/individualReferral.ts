@@ -96,3 +96,27 @@ export async function attributeIndividualReferral(
   }
   return { attributed: true };
 }
+
+/*
+ * When an attributed individual becomes an enterprise/department member, their
+ * referral CONVERTS: future CP commission stops (the anti-double-count rule —
+ * an org employee bills from the org pool, not the individual checkout path).
+ * Idempotent: only flips a row still in 'active'. Best-effort, money-path-safe
+ * (no balance change — it just halts future accrual, which already no-ops on
+ * non-active status). Call whenever a profile gains an organization_id.
+ */
+export async function convertIndividualReferralOnOrgJoin(
+  admin: SupabaseClient,
+  userId: string
+): Promise<void> {
+  if (!userId) return;
+  await admin
+    .from("individual_referrals")
+    .update({ status: "converted" })
+    .eq("customer_user_id", userId)
+    .eq("status", "active")
+    .then(
+      () => {},
+      () => {}
+    );
+}

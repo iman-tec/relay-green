@@ -18,6 +18,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireDepartmentAdmin } from "@/lib/department-auth";
 import { sendInvitationEmail } from "@/lib/admin-invite";
 import { recordInvite } from "@/lib/relay/invites";
+import { convertIndividualReferralOnOrgJoin } from "@/lib/billing/individualReferral";
 import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
@@ -59,17 +60,28 @@ export async function GET() {
   if (!org) return NextResponse.json({ error: "org missing" }, { status: 500 });
 
   const profileIds = (profileRows ?? []).map((p: { id: string }) => p.id);
-  let emails = new Map<string, string>();
+  // Auth rows give email + the status signals: a member is Invited until they
+  // first sign in (last_sign_in_at null), Active after, Suspended when banned.
+  const authById = new Map<
+    string,
+    { email: string; lastSignIn: string | null; banned: boolean }
+  >();
   if (profileIds.length) {
     const { data: authPage } = await admin.auth.admin.listUsers({
       page: 1,
       perPage: 1000,
     });
-    emails = new Map(
-      (authPage?.users ?? [])
-        .filter((u) => u.id && profileIds.includes(u.id))
-        .map((u) => [u.id, u.email ?? ""])
-    );
+    for (const u of authPage?.users ?? []) {
+      if (u.id && profileIds.includes(u.id)) {
+        authById.set(u.id, {
+          email: u.email ?? "",
+          lastSignIn: u.last_sign_in_at ?? null,
+          banned: Boolean(
+            u.banned_until && new Date(u.banned_until) > new Date()
+          ),
+        });
+      }
+    }
   }
 
   const d = dept as {
@@ -109,17 +121,28 @@ export async function GET() {
         remaining_minutes: number;
         created_at: string;
       }>) ?? []
-    ).map((p) => ({
-      id: p.id,
-      displayName: p.full_name ?? "",
-      email: emails.get(p.id) ?? "",
-      clientType: p.client_type,
-      status: p.status,
-      allocatedMinutes: Number(p.allocated_minutes ?? 0),
-      usedMinutes: Number(p.used_minutes ?? 0),
-      remainingMinutes: Number(p.remaining_minutes ?? 0),
-      createdAt: p.created_at,
-    })),
+    ).map((p) => {
+      const a = authById.get(p.id);
+      // Derived lifecycle: Suspended (banned) > Invited (never signed in) >
+      // Active. Consistent with the enterprise members surface; auto-flips
+      // Invited→Active on first login via the poll.
+      const status = a?.banned
+        ? "suspended"
+        : a?.lastSignIn
+          ? "active"
+          : "invited";
+      return {
+        id: p.id,
+        displayName: p.full_name ?? "",
+        email: a?.email ?? "",
+        clientType: p.client_type,
+        status,
+        allocatedMinutes: Number(p.allocated_minutes ?? 0),
+        usedMinutes: Number(p.used_minutes ?? 0),
+        remainingMinutes: Number(p.remaining_minutes ?? 0),
+        createdAt: p.created_at,
+      };
+    }),
   });
 }
 
@@ -291,6 +314,10 @@ async function provisionEmployee(
       { user_id: userId, role_id: roleId },
       { onConflict: "user_id,role_id", ignoreDuplicates: true }
     );
+
+  // If this email was an attributed individual referral, joining a department
+  // converts it (CP commission stops). Best-effort, idempotent.
+  await convertIndividualReferralOnOrgJoin(admin, userId);
 
   // Atomic transfer (dept pool → employee pool). RPC re-validates.
   if (allocNum > 0) {

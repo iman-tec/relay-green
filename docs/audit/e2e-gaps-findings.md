@@ -52,6 +52,13 @@ the `?? "live"` fallback; reserve a distinct "Live" (in-session) badge for a rea
 signal or remove it. Disambiguate colors.
 
 ### CP4 — Remove CP + SA minutes pool
+> **Decision (user):** SA `ResellersTab` is the minute-PROVISIONING tool (mint →
+> distribute down the hierarchy) — **leave the reseller/CP allocation as-is**, do
+> NOT remove it. Instead surface the CP's own remaining/allocated pool as a small
+> **detail in the CP overview or settings** (not a new tab). Done so far: removed
+> the CP OnboardView "starting minutes from your pool" input. TODO (additive):
+> show pool balance as read-only detail in CP overview/settings.
+
 CP (live): `OnboardView.tsx:8,167` "Starting minutes from your pool" field
 (`allocatedMinutes`). KPI "Minutes · this month/lifetime" (`OverviewView.tsx:53-56`)
 and "Min · mo" column (`:205`) are **usage reporting** — legit, keep. 

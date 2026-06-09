@@ -12,6 +12,7 @@
 
 import { NextResponse } from "next/server";
 import { requireEnterpriseAdmin } from "@/lib/enterprise-auth";
+import { convertIndividualReferralOnOrgJoin } from "@/lib/billing/individualReferral";
 import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
@@ -106,6 +107,9 @@ export async function POST(request: Request, { params }: RouteCtx) {
         { onConflict: "user_id,role_id", ignoreDuplicates: true }
       );
   }
+
+  // Attaching an existing individual into an org converts their referral.
+  await convertIndividualReferralOnOrgJoin(admin, authUser.id);
 
   return NextResponse.json({
     ok: true,

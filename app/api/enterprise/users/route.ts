@@ -21,6 +21,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireEnterpriseAdmin } from "@/lib/enterprise-auth";
 import { sendInvitationEmail } from "@/lib/admin-invite";
 import { recordInvite } from "@/lib/relay/invites";
+import { convertIndividualReferralOnOrgJoin } from "@/lib/billing/individualReferral";
 import { findUserInAnotherOrg, crossOrgError } from "@/lib/relay/orgGuard";
 import { ROLE, STAFF_ROLES as ALL_STAFF_ROLES } from "@/lib/relay/roles";
 
@@ -361,6 +362,10 @@ async function provisionMember(
   if (profileErr) {
     return { ok: false, status: 500, error: profileErr.message };
   }
+
+  // Joining an org converts any attributed individual referral (CP commission
+  // stops — anti-double-count). Best-effort, idempotent.
+  await convertIndividualReferralOnOrgJoin(admin, userId);
 
   const mode = invite.mode === "invited" ? "invited" : "attached_existing";
 
