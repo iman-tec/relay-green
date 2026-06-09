@@ -79,8 +79,17 @@ export function MembersView() {
       })
       .catch(() => setMembers([]));
   }, []);
+  // Poll so minute / status / spend values stay current without a manual
+  // refresh (realtime is non-functional; 20s mirrors the other consoles).
   useEffect(() => {
     load();
+    const id = setInterval(load, 20_000);
+    const onFocus = () => load();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener("focus", onFocus);
+    };
   }, [load]);
 
   const open = members?.find((m) => m.id === openId) ?? null;

@@ -10,7 +10,7 @@
  *   - /api/enterprise/usage   → per-month sessions / minutes / spend
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { KpiRibbon, type Kpi } from "@/app/_components/portal/KpiRibbon";
 import { eur, int } from "@/app/_components/portal/format";
 
@@ -37,33 +37,30 @@ export function FinanceView() {
   const [billing, setBilling] = useState<Billing | null>(null);
   const [usage, setUsage] = useState<UsageRow[] | null>(null);
 
-  useEffect(() => {
-    let off = false;
+  const load = useCallback(() => {
     fetch("/api/enterprise/billing", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((b) => {
-        if (!off && b && !b.error) setBilling(b as Billing);
+        if (b && !b.error) setBilling(b as Billing);
       })
       .catch(() => {});
-    return () => {
-      off = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let off = false;
     fetch("/api/enterprise/usage", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (!off) setUsage((d?.byPeriod ?? []) as UsageRow[]);
-      })
-      .catch(() => {
-        if (!off) setUsage([]);
-      });
-    return () => {
-      off = true;
-    };
+      .then((d) => setUsage((d?.byPeriod ?? []) as UsageRow[]))
+      .catch(() => setUsage([]));
   }, []);
+
+  // Poll so revenue + usage stay current without a manual refresh.
+  useEffect(() => {
+    load();
+    const id = setInterval(load, 20_000);
+    const onFocus = () => load();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [load]);
 
   const ribbon: Kpi[] = billing
     ? [

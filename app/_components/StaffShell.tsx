@@ -258,6 +258,15 @@ function isEngineer(roles: readonly Role[]): boolean {
   return roles.includes(ROLE.engineer);
 }
 
+// Allow-list for the supervisor toasters (escalations, reassign, appointments).
+// ONLY actual ops roles — supervisor + super_admin (who gets toasts on /admin/v2
+// per the comment at the mount sites). Enterprise/department admins and resellers
+// are NOT ops and must never receive escalation/appointment alerts — this is the
+// gate that closes the cross-role leak (a deny-list of `!isEngineer` let them in).
+function isSupervisorRole(roles: readonly Role[]): boolean {
+  return roles.includes(ROLE.supervisor) || roles.includes(ROLE.super_admin);
+}
+
 // Map an ?tab= value (incl. legacy aliases like ?tab=wallet) onto the
 // enterprise panel's four sidebar entries. Mirrors resolveInitial in
 // app/(staff)/enterprise/v2/PanelClient.tsx — keep the two in sync.
@@ -310,6 +319,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   const guard = useStaffGuard();
   const roles = guard.kind === "staff" ? guard.roles : [];
   const engineer = isEngineer(roles);
+  const supervisorAlerts = isSupervisorRole(roles);
   const isEnterpriseAdmin =
     roles.includes(ROLE.enterprise_admin) && !roles.includes(ROLE.super_admin);
   const homeHref = isEnterpriseAdmin
@@ -572,8 +582,8 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
             "assignment declined, reassign" toast — so a super_admin sitting on
             /admin/v2 is notified just like on /supervise. */}
         {isEngineer(roles) && <EngineerIncomingMatch />}
-        {!engineer && <SupervisorAlerts roles={roles} />}
-        {!engineer && <SupervisorAppointmentToaster />}
+        {supervisorAlerts && <SupervisorAlerts roles={roles} />}
+        {supervisorAlerts && <SupervisorAppointmentToaster />}
       </div>
     );
   }
@@ -880,11 +890,11 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
       {engineer && <EngineerAlerts />}
 
       {/* Supervisor-only: non-blocking urgent session alerts */}
-      {!engineer && <SupervisorAlerts roles={roles} />}
+      {supervisorAlerts && <SupervisorAlerts roles={roles} />}
 
       {/* Supervisor-only: appointment-booked pop-up on every staff screen
           (auto-dismiss 5s). The notification bell keeps the full history. */}
-      {!engineer && <SupervisorAppointmentToaster />}
+      {supervisorAlerts && <SupervisorAppointmentToaster />}
     </div>
   );
 }
@@ -1322,7 +1332,7 @@ type AlertToast = {
 const SUPERVISOR_MUTE_KEY = "relay.engineer.ring.muted.v1";
 
 function SupervisorAlerts({ roles }: { roles: readonly Role[] }) {
-  const isSupervisor = !isEngineer(roles);
+  const isSupervisor = isSupervisorRole(roles);
   const pathname = usePathname();
   const onSupervise =
     !!pathname &&
