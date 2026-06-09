@@ -5,7 +5,6 @@
  *   - identity: company name, admin email + name, optional primary domain
  *   - the deal: passthrough discount % (the cut of YOUR wholesale rate you give
  *     the client) + how long it lasts (months → discount_until)
- *   - optional starting minutes allocation from your pool
  * The summary makes the economics legible (client price vs your margin) before
  * you send. Posts to the existing POST /api/reseller/enterprises, which guards
  * passthrough ≤ your wholesale rate and persists discount_pct + discount_until.
@@ -44,17 +43,14 @@ export function OnboardView({
   const [domain, setDomain] = useState("");
   const [passthrough, setPassthrough] = useState<number>(defaultPass);
   const [months, setMonths] = useState<number>(12);
-  const [minutes, setMinutes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
   const emailOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
   const passOk = passthrough >= 0 && passthrough <= wholesale;
-  const minutesNum = minutes.trim() ? Number(minutes) : 0;
-  const minutesOk = Number.isFinite(minutesNum) && minutesNum >= 0;
   const canSubmit =
-    company.trim().length > 1 && emailOk && passOk && minutesOk && !submitting;
+    company.trim().length > 1 && emailOk && passOk && !submitting;
 
   // Economics preview.
   const clientPerMin = Math.round(LIST_CENTS_PER_MIN * (1 - passthrough / 100));
@@ -74,7 +70,6 @@ export function OnboardView({
           primaryDomain: domain.trim() || undefined,
           adminEmail: email.trim(),
           adminDisplayName: adminName.trim() || email.trim().split("@")[0],
-          allocatedMinutes: minutesNum,
           discountPct: passthrough,
           discountMonths: months,
         }),
@@ -164,15 +159,6 @@ export function OnboardView({
               </div>
             </Field>
           </div>
-          <Field label="Starting minutes from your pool (optional)">
-            <Input
-              value={minutes}
-              onChange={setMinutes}
-              placeholder="0"
-              type="number"
-              min={0}
-            />
-          </Field>
           {!passOk && (
             <p className="text-[13px]" style={{ color: "var(--risk)" }}>
               Passthrough can’t exceed your wholesale rate ({wholesale}%).

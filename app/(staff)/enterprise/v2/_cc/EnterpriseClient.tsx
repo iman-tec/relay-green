@@ -15,7 +15,6 @@ import {
   Users,
   Settings,
   BookOpen,
-  Eye,
   Banknote,
 } from "lucide-react";
 import { CommandRail } from "@/app/_components/portal/CommandRail";
@@ -24,19 +23,18 @@ import { EnterpriseMsaGate } from "./EnterpriseMsaGate";
 import { useEnterprise } from "./useEnterprise";
 import { OverviewView } from "./OverviewView";
 import { RechargeView } from "./RechargeView";
-import { SuperviseView } from "./SuperviseView";
 import { FinanceView } from "./FinanceView";
 import { MembersView, SettingsView, ResourcesView } from "./views";
 import type { EntTab } from "./types";
 
-// Usage merged into Finance (revenue + usage + feedback). Settings lives in the
-// bottom account dropdown, not the nav.
+// Usage merged into Finance (revenue + usage). Settings lives in the bottom
+// account dropdown, not the nav. Supervise is a department-only surface — the
+// enterprise admin manages via Overview/Members, not a live session view.
 const NAV = [
   { key: "overview", label: "Overview", Icon: LayoutDashboard },
   { key: "recharge", label: "Recharge", Icon: Wallet },
   { key: "finance", label: "Finance", Icon: Banknote },
   { key: "members", label: "Members", Icon: Users },
-  { key: "supervise", label: "Supervise", Icon: Eye },
   { key: "resources", label: "Resources", Icon: BookOpen },
 ];
 
@@ -50,7 +48,6 @@ const VALID: EntTab[] = [
   "recharge",
   "finance",
   "members",
-  "supervise",
   "settings",
   "resources",
 ];
@@ -117,7 +114,6 @@ export function EnterpriseClient({ me }: { me: { email: string } }) {
         )}
         {tab === "finance" && <FinanceView />}
         {tab === "members" && <MembersView />}
-        {tab === "supervise" && <SuperviseView />}
         {tab === "settings" && <SettingsView me={data} onChanged={refetch} />}
         {tab === "resources" && <ResourcesView />}
       </main>

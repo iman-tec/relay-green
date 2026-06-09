@@ -339,10 +339,6 @@ export function RechargeView({
             </tbody>
           </table>
         )}
-        <p className="mt-2 text-[12px]" style={{ color: "var(--text-faint)" }}>
-          Derived from recharges + session usage — a durable transactions ledger
-          is the planned follow-up.
-        </p>
       </section>
     </div>
   );

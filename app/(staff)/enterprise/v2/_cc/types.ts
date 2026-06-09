@@ -73,6 +73,5 @@ export type EntTab =
   | "recharge"
   | "finance"
   | "members"
-  | "supervise"
   | "settings"
   | "resources";

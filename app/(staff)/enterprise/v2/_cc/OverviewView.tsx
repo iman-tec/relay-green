@@ -362,7 +362,7 @@ function DeptDetail({
         k="People"
         v={`${int(d.activeEmployees)} active / ${int(d.totalEmployees)}`}
       />
-      <Field k="Spend (synthetic)" v={eur(Math.round(d.usedMinutes * RATE))} />
+      <Field k="Spend" v={eur(Math.round(d.usedMinutes * RATE))} />
       <Field k="Status" v={d.status} />
 
       <div className="mt-5">

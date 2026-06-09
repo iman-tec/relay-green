@@ -1,14 +1,13 @@
 "use client";
 
 /*
- * Enterprise Finance tab — in-console revenue + session feedback. Replaces the
- * legacy `/finance` link-out that ejected the admin into StaffShell (a foreign,
- * hardcoded-hex card stack). Console-native: KpiRibbon revenue + a token-styled
- * feedback list, matching Overview / Members / Usage.
+ * Enterprise Finance tab — in-console revenue + month-by-month usage. Metadata
+ * only (no session content / sentiment). Console-native: KpiRibbon revenue + a
+ * usage table, matching Overview / Members.
  *
- * Reuses the exact endpoints the legacy FinanceClient used:
- *   - /api/enterprise/billing      → revenue (this month / 30d / lifetime + rate)
- *   - /api/internal/feedback?limit  → AI sentiment per recent session
+ * Reuses existing endpoints:
+ *   - /api/enterprise/billing → revenue (this month / 30d / lifetime + rate)
+ *   - /api/enterprise/usage   → per-month sessions / minutes / spend
  */
 
 import { useEffect, useState } from "react";
@@ -34,25 +33,9 @@ type UsageRow = {
   suppressedLabel?: string;
 };
 
-type Feedback = {
-  sessionId: string;
-  score: number;
-  summary: string;
-  computedAt: string;
-  customerName: string;
-  engineerName: string;
-};
-
-function tone(score: number): { color: string; label: string } {
-  if (score >= 0.25) return { color: "var(--ok)", label: "Positive" };
-  if (score >= -0.1) return { color: "var(--warn)", label: "Neutral" };
-  return { color: "var(--risk)", label: "Negative" };
-}
-
 export function FinanceView() {
   const [billing, setBilling] = useState<Billing | null>(null);
   const [usage, setUsage] = useState<UsageRow[] | null>(null);
-  const [feedback, setFeedback] = useState<Feedback[] | null>(null);
 
   useEffect(() => {
     let off = false;
@@ -82,21 +65,6 @@ export function FinanceView() {
     };
   }, []);
 
-  useEffect(() => {
-    let off = false;
-    fetch("/api/internal/feedback?limit=40", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : { feedback: [] }))
-      .then((d) => {
-        if (!off) setFeedback((d?.feedback ?? []) as Feedback[]);
-      })
-      .catch(() => {
-        if (!off) setFeedback([]);
-      });
-    return () => {
-      off = true;
-    };
-  }, []);
-
   const ribbon: Kpi[] = billing
     ? [
         {
@@ -120,8 +88,7 @@ export function FinanceView() {
           Finance
         </h1>
         <p className="mt-1 text-[13px]" style={{ color: "var(--text-muted)" }}>
-          Revenue earned from your members&apos; call minutes, and how customers
-          felt about each session.
+          Revenue and usage across your members&apos; call minutes.
         </p>
       </div>
 
@@ -199,84 +166,6 @@ export function FinanceView() {
             ))}
           </tbody>
         </table>
-      )}
-
-      {/* Feedback */}
-      <div className="mb-3 flex items-baseline justify-between">
-        <span
-          className="text-[13px] font-medium tracking-[0.04em] uppercase"
-          style={{ color: "var(--text)" }}
-        >
-          Feedback
-        </span>
-        <span className="text-[12px]" style={{ color: "var(--text-faint)" }}>
-          AI-derived sentiment per session
-        </span>
-      </div>
-
-      {feedback === null ? (
-        <ListSkeleton />
-      ) : feedback.length === 0 ? (
-        <div
-          className="rounded-lg border border-dashed px-8 py-14 text-center"
-          style={{ borderColor: "var(--border-strong)" }}
-        >
-          <p
-            className="text-[15px] font-medium"
-            style={{ color: "var(--text)" }}
-          >
-            No session feedback yet
-          </p>
-          <p
-            className="mx-auto mt-1.5 max-w-sm text-[14px]"
-            style={{ color: "var(--text-muted)" }}
-          >
-            Once your members complete calls, sentiment summaries land here.
-          </p>
-        </div>
-      ) : (
-        <ul>
-          {feedback.map((f) => {
-            const t = tone(f.score);
-            return (
-              <li
-                key={`${f.sessionId}-${f.computedAt}`}
-                className="flex items-start gap-3 border-b py-3.5"
-                style={{ borderColor: "var(--border)" }}
-              >
-                <span
-                  className="mt-0.5 inline-flex shrink-0 items-center gap-1.5 text-[13px] whitespace-nowrap"
-                  style={{ color: "var(--text-muted)" }}
-                  title={`Sentiment score ${f.score.toFixed(2)}`}
-                >
-                  <span
-                    aria-hidden
-                    className="size-2 rounded-full"
-                    style={{ background: t.color }}
-                  />
-                  {t.label}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-[14px]" style={{ color: "var(--text)" }}>
-                    {f.summary}
-                  </div>
-                  <div
-                    className="mt-0.5 text-[12px]"
-                    style={{ color: "var(--text-muted)" }}
-                  >
-                    {f.customerName} ↔ {f.engineerName} ·{" "}
-                    {new Date(f.computedAt).toLocaleString(undefined, {
-                      month: "short",
-                      day: "numeric",
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })}
-                  </div>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
       )}
     </div>
   );
