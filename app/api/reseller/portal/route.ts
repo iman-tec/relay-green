@@ -27,6 +27,7 @@
 
 import { NextResponse } from "next/server";
 import { requireReseller } from "@/lib/reseller-auth";
+import { laterIso } from "@/lib/relay/memberStatus";
 import { partnerProgramEnabled } from "@/lib/billing/partnerProgram";
 import { LIST_CENTS_PER_MINUTE } from "@/lib/billing/minuteBundles";
 import {
@@ -40,12 +41,6 @@ export const runtime = "nodejs";
 
 function normName(s: string | null | undefined): string {
   return (s ?? "").trim().toLowerCase();
-}
-
-/** The later of two ISO timestamps (string compare is valid for ISO-8601). */
-function laterIso(a: string | null, b: string | null): string | null {
-  if (a && b) return a > b ? a : b;
-  return a ?? b;
 }
 
 export async function GET() {

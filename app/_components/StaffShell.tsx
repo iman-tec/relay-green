@@ -60,7 +60,7 @@ import {
   highestRoleSummary,
   formatRole,
 } from "@/lib/relay/role-labels";
-import { ROLE, type Role } from "@/lib/relay/roles";
+import { ROLE, type Role, canReceiveSupervisorAlerts } from "@/lib/relay/roles";
 // TEMP 2026-05-18: legacy first-come-first-served ring disabled while
 // the push-ring path (EngineerIncomingMatch) is validated. Re-enable the
 // import + mount below to bring it back.
@@ -258,14 +258,11 @@ function isEngineer(roles: readonly Role[]): boolean {
   return roles.includes(ROLE.engineer);
 }
 
-// Allow-list for the supervisor toasters (escalations, reassign, appointments).
-// ONLY actual ops roles — supervisor + super_admin (who gets toasts on /admin/v2
-// per the comment at the mount sites). Enterprise/department admins and resellers
-// are NOT ops and must never receive escalation/appointment alerts — this is the
-// gate that closes the cross-role leak (a deny-list of `!isEngineer` let them in).
-function isSupervisorRole(roles: readonly Role[]): boolean {
-  return roles.includes(ROLE.supervisor) || roles.includes(ROLE.super_admin);
-}
+// Allow-list for the supervisor toasters (escalations, reassign, appointments):
+// supervisor + super_admin only. Closes the cross-role escalation leak — a
+// deny-list of `!isEngineer` previously let enterprise/department admins in.
+// Single tested source of truth: canReceiveSupervisorAlerts (lib/relay/roles).
+const isSupervisorRole = canReceiveSupervisorAlerts;
 
 // Map an ?tab= value (incl. legacy aliases like ?tab=wallet) onto the
 // enterprise panel's four sidebar entries. Mirrors resolveInitial in

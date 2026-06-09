@@ -15,6 +15,7 @@
 import { NextResponse } from "next/server";
 import { requireEnterpriseAdmin } from "@/lib/enterprise-auth";
 import { writeAccessAudit } from "@/lib/relay/accessAudit";
+import { deriveMemberStatus } from "@/lib/relay/memberStatus";
 import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
@@ -101,9 +102,7 @@ export async function GET() {
       usedMinutes: used,
       remainingMinutes: Number(p.remaining_minutes ?? 0),
       spendCents: Math.round(used * CENTS_PER_MINUTE),
-      // Lifecycle: Suspended (banned) > Invited (never signed in) > Active.
-      // Auto-flips Invited→Active on first login via the poll.
-      status: a?.banned ? "suspended" : a?.lastSignIn ? "active" : "invited",
+      status: deriveMemberStatus(Boolean(a?.banned), a?.lastSignIn),
       lastSignIn: a?.lastSignIn ?? null,
       createdAt: p.created_at,
     };

@@ -75,6 +75,17 @@ export const PLATFORM_OPS_ROLES: readonly Role[] = [
   ROLE.engineer,
 ] as const;
 
+/**
+ * Who may receive supervisor ops alerts (escalation toasts/ringtone, reassign,
+ * appointment pop-ups): pod supervisors + super_admin ONLY. This is an
+ * allow-list, not a deny-list — enterprise/department admins and resellers must
+ * never be subscribed (the cross-role escalation leak), and engineers get their
+ * own session-scoped signals elsewhere. The shared StaffShell gates on this.
+ */
+export function canReceiveSupervisorAlerts(roles: readonly Role[]): boolean {
+  return roles.includes(ROLE.supervisor) || roles.includes(ROLE.super_admin);
+}
+
 /** Type guard. Useful when a value comes in from a DB row or JSON body. */
 export function isRole(value: unknown): value is Role {
   return (

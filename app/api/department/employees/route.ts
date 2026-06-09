@@ -19,6 +19,7 @@ import { requireDepartmentAdmin } from "@/lib/department-auth";
 import { sendInvitationEmail } from "@/lib/admin-invite";
 import { recordInvite } from "@/lib/relay/invites";
 import { convertIndividualReferralOnOrgJoin } from "@/lib/billing/individualReferral";
+import { deriveMemberStatus } from "@/lib/relay/memberStatus";
 import { ROLE } from "@/lib/relay/roles";
 
 export const dynamic = "force-dynamic";
@@ -123,14 +124,7 @@ export async function GET() {
       }>) ?? []
     ).map((p) => {
       const a = authById.get(p.id);
-      // Derived lifecycle: Suspended (banned) > Invited (never signed in) >
-      // Active. Consistent with the enterprise members surface; auto-flips
-      // Invited→Active on first login via the poll.
-      const status = a?.banned
-        ? "suspended"
-        : a?.lastSignIn
-          ? "active"
-          : "invited";
+      const status = deriveMemberStatus(Boolean(a?.banned), a?.lastSignIn);
       return {
         id: p.id,
         displayName: p.full_name ?? "",
