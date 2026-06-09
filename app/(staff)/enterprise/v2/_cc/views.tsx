@@ -126,6 +126,16 @@ export function MembersView() {
           </button>
         </div>
       </div>
+
+      {/* Admins — a distinct category from employees/members. */}
+      <AdminsSection />
+
+      <div
+        className="mt-9 mb-2.5 text-[13px] font-medium tracking-[0.04em] uppercase"
+        style={{ color: "var(--text)" }}
+      >
+        Members
+      </div>
       {members === null ? (
         <Skel />
       ) : members.length === 0 ? (
@@ -238,6 +248,151 @@ export function MembersView() {
         }}
       />
     </Shell>
+  );
+}
+
+// ---- Admins (org + department admins — a distinct category from members) ----
+type AdminRow = {
+  id: string;
+  displayName: string;
+  email: string;
+  primaryRole: string;
+  status: string;
+  lastSignIn: string | null;
+};
+
+function adminRoleLabel(r: string): string {
+  if (r === "enterprise_admin") return "Organization admin";
+  if (r === "department_admin") return "Department admin";
+  return r.replace(/_/g, " ");
+}
+
+function AdminsSection() {
+  const [admins, setAdmins] = useState<AdminRow[] | null>(null);
+  const [resending, setResending] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    fetch("/api/enterprise/users?scope=staff", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setAdmins((d?.members ?? []) as AdminRow[]))
+      .catch(() => setAdmins([]));
+  }, []);
+  useEffect(() => {
+    load();
+    const id = setInterval(load, 20_000);
+    const onFocus = () => load();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [load]);
+
+  async function resend(id: string) {
+    setResending(id);
+    try {
+      await fetch(`/api/enterprise/members/${id}/resend-invite`, {
+        method: "POST",
+      });
+      load();
+    } finally {
+      setResending(null);
+    }
+  }
+
+  return (
+    <div>
+      <div
+        className="mb-2.5 text-[13px] font-medium tracking-[0.04em] uppercase"
+        style={{ color: "var(--text)" }}
+      >
+        Admins
+      </div>
+      {admins === null ? (
+        <Skel />
+      ) : admins.length === 0 ? (
+        <Muted>No admins yet.</Muted>
+      ) : (
+        <table className="w-full border-collapse">
+          <thead>
+            <tr>
+              {[
+                ["Name", "left"],
+                ["Email", "left"],
+                ["Role", "left"],
+                ["Status", "left"],
+              ].map(([h, a]) => (
+                <th
+                  key={h}
+                  className="px-4 pb-2.5 text-[12px] font-medium tracking-[0.04em] uppercase"
+                  style={{
+                    color: "var(--text-muted)",
+                    textAlign: a as "left" | "right",
+                    borderBottom: "1px solid var(--border)",
+                  }}
+                >
+                  {h}
+                </th>
+              ))}
+              <th
+                style={{ borderBottom: "1px solid var(--border)", width: 80 }}
+                aria-hidden
+              />
+            </tr>
+          </thead>
+          <tbody>
+            {admins.map((a) => {
+              const pending = !a.lastSignIn && a.status !== "erased";
+              const dot =
+                a.status === "active" || a.status === "invited"
+                  ? a.status
+                  : "suspended";
+              return (
+                <tr
+                  key={a.id}
+                  style={{ borderBottom: "1px solid var(--border)" }}
+                >
+                  <td className="px-4 py-3 text-[14px] font-medium">
+                    {a.displayName || a.email || "—"}
+                  </td>
+                  <td
+                    className="px-4 py-3 text-[14px]"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {a.email || "—"}
+                  </td>
+                  <td
+                    className="px-4 py-3 text-[14px]"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {adminRoleLabel(a.primaryRole)}
+                  </td>
+                  <td className="px-4 py-3">
+                    <StatusDot status={dot as PortalStatus} />
+                  </td>
+                  <td className="px-2 py-3 text-right">
+                    {pending && (
+                      <button
+                        type="button"
+                        onClick={() => resend(a.id)}
+                        disabled={resending === a.id}
+                        className="rounded-md border px-2.5 py-1 text-[12px] font-medium whitespace-nowrap transition-opacity disabled:opacity-50"
+                        style={{
+                          borderColor: "var(--border-strong)",
+                          color: "var(--text)",
+                        }}
+                      >
+                        {resending === a.id ? "…" : "Resend"}
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
   );
 }
 
