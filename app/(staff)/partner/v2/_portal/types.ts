@@ -29,6 +29,8 @@ export type PortalPayload = {
     tier: string;
     commission: number;
     defaultPassthroughPct: number;
+    poolAllocatedMinutes: number;
+    poolRemainingMinutes: number;
   };
   ribbon: {
     totalCompanies: number;

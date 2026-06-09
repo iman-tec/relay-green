@@ -62,7 +62,7 @@ export async function GET() {
     admin
       .from("resellers")
       .select(
-        "id, name, reseller_code, tier, commission, default_passthrough_pct"
+        "id, name, reseller_code, tier, commission, default_passthrough_pct, allocated_minutes, remaining_minutes"
       )
       .eq("id", resellerId)
       .maybeSingle(),
@@ -94,6 +94,8 @@ export async function GET() {
     tier: string;
     commission: number;
     default_passthrough_pct: number;
+    allocated_minutes: number | null;
+    remaining_minutes: number | null;
   };
   const commission = Number(reseller.commission ?? 0);
 
@@ -297,6 +299,8 @@ export async function GET() {
       tier: reseller.tier ?? "partner",
       commission,
       defaultPassthroughPct: Number(reseller.default_passthrough_pct ?? 0),
+      poolAllocatedMinutes: Number(reseller.allocated_minutes ?? 0),
+      poolRemainingMinutes: Number(reseller.remaining_minutes ?? 0),
     },
     ribbon: {
       totalCompanies: rows.length,

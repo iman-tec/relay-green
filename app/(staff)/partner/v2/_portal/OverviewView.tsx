@@ -75,6 +75,17 @@ export function OverviewView({
             {data.reseller.tier === "premier" ? "Premier" : "Partner"} ·{" "}
             {data.ribbon.totalCompanies}{" "}
             {data.ribbon.totalCompanies === 1 ? "company" : "companies"}
+            {data.reseller.poolAllocatedMinutes > 0 && (
+              <>
+                {" · "}
+                <span
+                  title={`${int(data.reseller.poolAllocatedMinutes)} allocated to your pool`}
+                >
+                  {int(data.reseller.poolRemainingMinutes)} of{" "}
+                  {int(data.reseller.poolAllocatedMinutes)} min in pool
+                </span>
+              </>
+            )}
           </div>
         )}
       </div>
