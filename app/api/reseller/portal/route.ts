@@ -42,6 +42,12 @@ function normName(s: string | null | undefined): string {
   return (s ?? "").trim().toLowerCase();
 }
 
+/** The later of two ISO timestamps (string compare is valid for ISO-8601). */
+function laterIso(a: string | null, b: string | null): string | null {
+  if (a && b) return a > b ? a : b;
+  return a ?? b;
+}
+
 export async function GET() {
   if (!partnerProgramEnabled()) {
     return NextResponse.json({ error: "Not found." }, { status: 404 });
@@ -117,6 +123,10 @@ export async function GET() {
 
   const monthMinByOrg = new Map<string, number>();
   const lastActivityByOrg = new Map<string, string>();
+  // Last LOGIN per org (auth.users.last_sign_in_at, max across the org's
+  // profiles) — the real "last activity" signal: an org whose admin has signed
+  // in shows a timestamp even before any session. "—" only when truly never.
+  const lastLoginByOrg = new Map<string, string>();
   // Admin identity per company — email + name from the enterprise_admin invite
   // recorded at onboarding (keyed to org by company name, newest wins), with
   // the org's enterprise_admin profile name as fallback when no invite matches.
@@ -211,6 +221,20 @@ export async function GET() {
         );
       }
     }
+
+    // Last login per org — max last_sign_in_at across the org's profiles.
+    const { data: authPage } = await admin.auth.admin.listUsers({
+      page: 1,
+      perPage: 1000,
+    });
+    for (const u of authPage?.users ?? []) {
+      if (!u.id || !u.last_sign_in_at) continue;
+      const oid = orgOfProfile.get(u.id);
+      if (!oid) continue;
+      const prev = lastLoginByOrg.get(oid);
+      if (!prev || u.last_sign_in_at > prev)
+        lastLoginByOrg.set(oid, u.last_sign_in_at);
+    }
   }
 
   const rows = companies.map((c) => {
@@ -249,7 +273,11 @@ export async function GET() {
       spendLifetimeCents,
       earnedLifetimeCents,
       onboardedAt: c.onboarded_at,
-      lastActivityAt: lastActivityByOrg.get(c.id) ?? null,
+      // Most recent of last-login and last-session; "—" only when neither.
+      lastActivityAt: laterIso(
+        lastLoginByOrg.get(c.id) ?? null,
+        lastActivityByOrg.get(c.id) ?? null
+      ),
       adminName:
         adminByCompany.get(normName(c.name))?.name ??
         adminNameByOrg.get(c.id) ??

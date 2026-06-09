@@ -200,7 +200,10 @@ function CompaniesTable({
                 {c.name}
               </td>
               <td className="px-4 py-3">
-                <StatusDot status={c.partnerStatus} />
+                {/* Account state only — Active / Invited / Paused / Suspended.
+                    A null partner_status is an onboarded org (Active), NOT the
+                    "Live" (in-session) signal; don't conflate the two. */}
+                <StatusDot status={c.partnerStatus ?? "active"} />
               </td>
               <Num em={noData}>{noData ? "—" : int(c.minutesThisMonth)}</Num>
               <Num em={noData}>{noData ? "—" : eur(c.spendThisMonthCents)}</Num>
